@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package livekit;
+
+// Room service that can be performed on any node
+service RoomService {
+  // TODO: how do we secure room service?
+  // should be accessible to only internal servers, not external
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+  rpc JoinRoom(JoinRoomRequest) returns (JoinRoomResponse);
+  rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
+}
+
+message CreateRoomRequest {
+
+}
+
+message CreateRoomResponse {
+
+}
+
+message JoinRoomRequest {
+  string room = 1;
+  string client_id = 2;
+}
+
+message JoinRoomResponse {
+  string node_ip = 1;
+  string node_port = 2;
+}
+
+message DeleteRoomRequest {
+  string room = 1;
+}
+
+message DeleteRoomResponse {
+}
+
+// RTC methods performed on target node
+service RTCService {
+  rpc Offer(SessionDescription) returns (SessionDescription);
+
+  // push channel to allow server to push commands to client
+  rpc Signal(SignalRequest) returns (stream SignalResponse);
+  rpc Trickle(TrickleRequest) returns (TrickleResponse);
+}
+
+message SignalRequest {
+}
+
+message SignalResponse {
+  oneof payload {
+      SessionDescription desc = 1;
+      TrickleRequest trickle = 2;
+  }
+}
+
+message TrickleRequest {
+  string candidate = 1;
+}
+
+message TrickleResponse {
+}
+
+message SessionDescription {
+    string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
+    bytes sdp = 2;
+}

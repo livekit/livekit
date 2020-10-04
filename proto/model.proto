@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package livekit;
+
+// internal types, declaring in proto to get serialization for free
+
+message Node {
+  string id = 1;
+  string ip = 2;
+  int32 port = 3;
+  NodeStats stats = 4;
+}
+
+message NodeStats {
+  int32 num_rooms = 1;
+  int32 num_clients = 2;
+}

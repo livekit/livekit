@@ -10,6 +10,8 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+livekit-server
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+.idea/
