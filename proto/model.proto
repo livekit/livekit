@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package livekit;
+option go_package = "github.com/davidzhao/livekit-server/proto";
 
 // internal types, declaring in proto to get serialization for free
 

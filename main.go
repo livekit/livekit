@@ -16,5 +16,5 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("my IP", n.IP)
+	fmt.Println("my IP", n.Ip)
 }

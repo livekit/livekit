@@ -1,6 +1,8 @@
 syntax = "proto3";
 
 package livekit;
+option go_package = "github.com/davidzhao/livekit-server/proto";
+
 
 // Room service that can be performed on any node
 service RoomService {
@@ -12,11 +14,13 @@ service RoomService {
 }
 
 message CreateRoomRequest {
-
+  string room = 1;
 }
 
 message CreateRoomResponse {
-
+  string room = 1;
+  string node_ip = 2;
+  string node_port = 3;
 }
 
 message JoinRoomRequest {

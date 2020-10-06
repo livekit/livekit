@@ -3,6 +3,8 @@ package node
 import (
 	"github.com/google/uuid"
 	"github.com/pion/stun"
+
+	"github.com/livekit/livekit-server/proto"
 )
 
 const (
@@ -10,9 +12,7 @@ const (
 )
 
 type Node struct {
-	ID string
-	IP string
-	Stats NodeStats
+	proto.Node
 }
 
 type NodeStats struct {
@@ -29,7 +29,9 @@ func NewLocalNode() (*Node, error) {
 		return nil, err
 	}
 	return &Node{
-		ID: id.String(),
+		proto.Node{
+			Id: id.String(),
+		},
 	}, nil
 }
 
@@ -56,7 +58,7 @@ func (n *Node) DiscoverNetworkInfo() error {
 			stunErr = err
 			return
 		}
-		n.IP = xorAddr.IP.String()
+		n.Ip = xorAddr.IP.String()
 	})
 
 	if stunErr != nil {
