@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package livekit;
-option go_package = "github.com/davidzhao/livekit-server/proto";
+option go_package = "github.com/livekit/livekit-server/proto";
 
 
 // Room service that can be performed on any node
