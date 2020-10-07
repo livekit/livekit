@@ -14,7 +14,7 @@ import (
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config) (*LivekitServer, error) {
-	nodeNode, err := node.NewLocalNode()
+	nodeNode, err := node.NewLocalNode(conf)
 	if err != nil {
 		return nil, err
 	}

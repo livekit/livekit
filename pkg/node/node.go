@@ -5,6 +5,7 @@ import (
 	"github.com/google/wire"
 	"github.com/pion/stun"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/proto"
 )
 
@@ -26,14 +27,15 @@ type NodeStats struct {
 	BytesPerMin      int64
 }
 
-func NewLocalNode() (*Node, error) {
+func NewLocalNode(conf *config.Config) (*Node, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
 	}
 	n := &Node{
-		proto.Node{
-			Id: id.String(),
+		Node: proto.Node{
+			Id:      id.String(),
+			RtcPort: conf.RTCPort,
 		},
 	}
 	if err = n.DiscoverNetworkInfo(); err != nil {

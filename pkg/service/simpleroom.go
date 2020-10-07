@@ -4,8 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/node"
 	"github.com/livekit/livekit-server/proto"
@@ -33,7 +32,7 @@ func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *proto.CreateRoo
 	defer s.roomLock.Unlock()
 
 	if s.rooms[req.Room] {
-		err = status.Errorf(codes.AlreadyExists, "room %s already exists", req.Room)
+		err = twirp.NewError(twirp.AlreadyExists, "room already exists")
 		return
 	}
 
@@ -49,7 +48,7 @@ func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *proto.CreateRoo
 
 func (s *SimpleRoomService) JoinRoom(ctx context.Context, req *proto.JoinRoomRequest) (res *proto.JoinRoomResponse, err error) {
 	if !s.rooms[req.Room] {
-		err = status.Errorf(codes.NotFound, "room %s does not exist", req.Room)
+		err = twirp.NewError(twirp.AlreadyExists, "the room does not exist")
 		return
 	}
 
