@@ -1,14 +1,14 @@
 syntax = "proto3";
 
 package livekit;
-option go_package = "github.com/livekit/livekit-server/proto";
+option go_package = "livekit";
 
 // internal types, declaring in proto to get serialization for free
 
 message Node {
   string id = 1;
   string ip = 2;
-  int32 port = 3;
+  uint32 rtc_port = 3;
   NodeStats stats = 4;
 }
 

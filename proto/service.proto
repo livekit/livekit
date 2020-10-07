@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package livekit;
-option go_package = "github.com/livekit/livekit-server/proto";
+option go_package = "livekit";
 
 
 // Room service that can be performed on any node
@@ -20,7 +20,7 @@ message CreateRoomRequest {
 message CreateRoomResponse {
   string room = 1;
   string node_ip = 2;
-  string node_port = 3;
+  uint32 node_rtc_port = 3;
 }
 
 message JoinRoomRequest {
@@ -30,7 +30,7 @@ message JoinRoomRequest {
 
 message JoinRoomResponse {
   string node_ip = 1;
-  string node_port = 2;
+  uint32 node_rtc_port = 2;
 }
 
 message DeleteRoomRequest {
@@ -42,10 +42,13 @@ message DeleteRoomResponse {
 
 // RTC methods performed on target node
 service RTCService {
+  // offer allows client to initiate a RTC session
   rpc Offer(SessionDescription) returns (SessionDescription);
 
   // push channel to allow server to push commands to client
-  rpc Signal(SignalRequest) returns (stream SignalResponse);
+//  rpc Signal(SignalRequest) returns (stream SignalResponse);
+
+  // trickle sends more ICE candidates to server
   rpc Trickle(TrickleRequest) returns (TrickleResponse);
 }
 

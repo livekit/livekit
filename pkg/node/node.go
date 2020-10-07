@@ -2,6 +2,7 @@ package node
 
 import (
 	"github.com/google/uuid"
+	"github.com/google/wire"
 	"github.com/pion/stun"
 
 	"github.com/livekit/livekit-server/proto"
@@ -11,16 +12,18 @@ const (
 	googleStunServer = "stun.l.google.com:19302"
 )
 
+var NodeSet = wire.NewSet(NewLocalNode)
+
 type Node struct {
 	proto.Node
 }
 
 type NodeStats struct {
-	NumRooms int32
-	NumClients int32
+	NumRooms         int32
+	NumClients       int32
 	NumVideoChannels int32
 	NumAudioChannels int32
-	BytesPerMin int64
+	BytesPerMin      int64
 }
 
 func NewLocalNode() (*Node, error) {
@@ -28,11 +31,15 @@ func NewLocalNode() (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Node{
+	n := &Node{
 		proto.Node{
 			Id: id.String(),
 		},
-	}, nil
+	}
+	if err = n.DiscoverNetworkInfo(); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
 func (n *Node) DiscoverNetworkInfo() error {
