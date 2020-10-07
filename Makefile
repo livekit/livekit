@@ -7,7 +7,12 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 server: generate
-	go build -i -o livekit-server
+	@{ \
+  	echo "building" ;\
+  	mkdir -p bin ;\
+  	cd cmd/server ;\
+	go build -i -o ../../bin/livekit-server ;\
+	}
 
 generate: wire
 	go generate
