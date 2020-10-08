@@ -1,6 +1,8 @@
 package node
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"github.com/google/wire"
 	"github.com/pion/stun"
@@ -45,7 +47,10 @@ func NewLocalNode(conf *config.Config) (*Node, error) {
 }
 
 func (n *Node) DiscoverNetworkInfo() error {
-	c, err := stun.Dial("udp", n.config.StunServer)
+	if len(n.config.StunServers) == 0 {
+		return errors.New("STUN servers are required but not defined")
+	}
+	c, err := stun.Dial("udp", n.config.StunServers[0])
 	if err != nil {
 		return err
 	}
