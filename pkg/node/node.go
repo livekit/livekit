@@ -9,14 +9,13 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-const (
-	googleStunServer = "stun.l.google.com:19302"
-)
+const ()
 
 var NodeSet = wire.NewSet(NewLocalNode)
 
 type Node struct {
 	livekit.Node
+	config *config.Config
 }
 
 type NodeStats struct {
@@ -37,6 +36,7 @@ func NewLocalNode(conf *config.Config) (*Node, error) {
 			Id:      id.String(),
 			RtcPort: conf.RTCPort,
 		},
+		config: conf,
 	}
 	if err = n.DiscoverNetworkInfo(); err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func NewLocalNode(conf *config.Config) (*Node, error) {
 }
 
 func (n *Node) DiscoverNetworkInfo() error {
-	c, err := stun.Dial("udp", googleStunServer)
+	c, err := stun.Dial("udp", n.config.StunServer)
 	if err != nil {
 		return err
 	}

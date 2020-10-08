@@ -14,6 +14,9 @@ type Config struct {
 	// multi-node configuration,
 	MultiNode   bool `yaml:"multi_node"`
 	Development bool `yaml:"development"`
+
+	// Stun server
+	StunServer string `yaml:"stun_server"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -23,6 +26,7 @@ func NewConfig(confString string) (*Config, error) {
 		RTCPort:       7881,
 		UDPRangeStart: 10000,
 		UDPRangeEnd:   11000,
+		StunServer:    "stun.l.google.com:19302",
 	}
 	if confString != "" {
 		yaml.Unmarshal([]byte(confString), conf)
