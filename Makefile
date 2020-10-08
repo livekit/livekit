@@ -15,11 +15,12 @@ server: generate
 	}
 
 generate: wire
-	go generate
+	$(WIRE)
 
-GO_TARGET=proto
+GO_TARGET=proto/livekit
 proto: protoc protoc-gen-go twirp-gen
 	@{ \
+  	mkdir -p $(GO_TARGET) ;\
 	protoc --go_out=$(GO_TARGET) --twirp_out=$(GO_TARGET) \
     	--go_opt=paths=source_relative \
     	--twirp_opt=paths=source_relative \

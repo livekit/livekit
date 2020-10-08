@@ -16,3 +16,11 @@ message NodeStats {
   int32 num_rooms = 1;
   int32 num_clients = 2;
 }
+
+message Room {
+  string room_id = 1;
+  uint32 empty_timeout = 2;
+  uint32 max_participants = 3;
+  int64 creation_time = 4;
+  string token = 5;
+}

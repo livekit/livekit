@@ -8,33 +8,32 @@ option go_package = "livekit";
 service RoomService {
   // TODO: how do we secure room service?
   // should be accessible to only internal servers, not external
-  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
-  rpc JoinRoom(JoinRoomRequest) returns (JoinRoomResponse);
+  rpc CreateRoom(CreateRoomRequest) returns (RoomInfo);
+  rpc GetRoom(GetRoomRequest) returns (RoomInfo);
   rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
 message CreateRoomRequest {
-  string room = 1;
+  string room_id = 1;
+  // number of seconds the room should cleanup after being empty
+  uint32 empty_timeout = 2;
+  uint32 max_participants = 3;
 }
 
-message CreateRoomResponse {
-  string room = 1;
+message GetRoomRequest {
+  string room_id = 1;
+}
+
+message RoomInfo {
+  string room_id = 1;
   string node_ip = 2;
   uint32 node_rtc_port = 3;
-}
-
-message JoinRoomRequest {
-  string room = 1;
-  string client_id = 2;
-}
-
-message JoinRoomResponse {
-  string node_ip = 1;
-  uint32 node_rtc_port = 2;
+  int64 creation_time = 4;
+  string token = 5;
 }
 
 message DeleteRoomRequest {
-  string room = 1;
+  string room_id = 1;
 }
 
 message DeleteRoomResponse {
@@ -42,24 +41,24 @@ message DeleteRoomResponse {
 
 // RTC methods performed on target node
 service RTCService {
+  rpc Join(JoinRequest) returns (JoinResponse);
+
   // offer allows client to initiate a RTC session
   rpc Offer(SessionDescription) returns (SessionDescription);
-
-  // push channel to allow server to push commands to client
-//  rpc Signal(SignalRequest) returns (stream SignalResponse);
 
   // trickle sends more ICE candidates to server
   rpc Trickle(TrickleRequest) returns (TrickleResponse);
 }
 
-message SignalRequest {
+message JoinRequest {
+  string room_id = 1;
+  string token = 2;
+  string session_id = 3;
+  SessionDescription offer = 4;
 }
 
-message SignalResponse {
-  oneof payload {
-      SessionDescription desc = 1;
-      TrickleRequest trickle = 2;
-  }
+message JoinResponse {
+  SessionDescription answer = 1;
 }
 
 message TrickleRequest {

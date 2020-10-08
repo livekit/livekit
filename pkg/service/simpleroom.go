@@ -7,60 +7,59 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/node"
-	"github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/rooms"
+	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-// A room service that supports a single node
+// A rooms service that supports a single node
 type SimpleRoomService struct {
 	localNode *node.Node
-	rooms     map[string]bool
+	rooms     map[string]*livekit.Room
 	roomLock  sync.Mutex
 }
 
 func NewSimpleRoomService(localNode *node.Node) (svc *SimpleRoomService, err error) {
 	svc = &SimpleRoomService{
 		localNode: localNode,
-		rooms:     make(map[string]bool),
+		rooms:     make(map[string]*livekit.Room),
 		roomLock:  sync.Mutex{},
 	}
 
 	return
 }
 
-func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *proto.CreateRoomRequest) (res *proto.CreateRoomResponse, err error) {
+func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.RoomInfo, err error) {
 	s.roomLock.Lock()
 	defer s.roomLock.Unlock()
 
-	if s.rooms[req.Room] {
-		err = twirp.NewError(twirp.AlreadyExists, "room already exists")
+	if s.rooms[req.RoomId] != nil {
+		err = twirp.NewError(twirp.AlreadyExists, "rooms already exists")
 		return
 	}
 
-	s.rooms[req.Room] = true
-
-	res = &proto.CreateRoomResponse{
-		Room:        req.Room,
-		NodeIp:      s.localNode.Ip,
-		NodeRtcPort: s.localNode.RtcPort,
+	room, err := rooms.NewRoomForRequest(req)
+	if err != nil {
+		return
 	}
+	s.rooms[req.RoomId] = room
+
+	res = rooms.ToRoomInfo(&s.localNode.Node, room)
 	return
 }
 
-func (s *SimpleRoomService) JoinRoom(ctx context.Context, req *proto.JoinRoomRequest) (res *proto.JoinRoomResponse, err error) {
-	if !s.rooms[req.Room] {
-		err = twirp.NewError(twirp.AlreadyExists, "the room does not exist")
+func (s *SimpleRoomService) GetRoom(ctx context.Context, req *livekit.GetRoomRequest) (res *livekit.RoomInfo, err error) {
+	room := s.rooms[req.RoomId]
+	if room == nil {
+		err = twirp.NewError(twirp.NotFound, "the rooms does not exist")
 		return
 	}
 
-	res = &proto.JoinRoomResponse{
-		NodeIp:      s.localNode.Ip,
-		NodeRtcPort: s.localNode.RtcPort,
-	}
+	res = rooms.ToRoomInfo(&s.localNode.Node, room)
 	return
 }
 
-func (s *SimpleRoomService) DeleteRoom(ctx context.Context, req *proto.DeleteRoomRequest) (res *proto.DeleteRoomResponse, err error) {
-	delete(s.rooms, req.Room)
-	res = &proto.DeleteRoomResponse{}
+func (s *SimpleRoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (res *livekit.DeleteRoomResponse, err error) {
+	delete(s.rooms, req.RoomId)
+	res = &livekit.DeleteRoomResponse{}
 	return
 }

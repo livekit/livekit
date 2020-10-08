@@ -6,7 +6,7 @@ import (
 	"github.com/pion/stun"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 const (
@@ -16,7 +16,7 @@ const (
 var NodeSet = wire.NewSet(NewLocalNode)
 
 type Node struct {
-	proto.Node
+	livekit.Node
 }
 
 type NodeStats struct {
@@ -33,7 +33,7 @@ func NewLocalNode(conf *config.Config) (*Node, error) {
 		return nil, err
 	}
 	n := &Node{
-		Node: proto.Node{
+		Node: livekit.Node{
 			Id:      id.String(),
 			RtcPort: conf.RTCPort,
 		},

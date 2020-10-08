@@ -18,7 +18,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 func main() {
@@ -74,8 +74,8 @@ func startServer(c *cli.Context) error {
 
 type LivekitServer struct {
 	config     *config.Config
-	roomServer proto.TwirpServer
-	rtcServer  proto.TwirpServer
+	roomServer livekit.TwirpServer
+	rtcServer  livekit.TwirpServer
 	roomHttp   *http.Server
 	rtcHttp    *http.Server
 	running    bool
@@ -83,12 +83,12 @@ type LivekitServer struct {
 }
 
 func NewLivekitServer(conf *config.Config,
-	roomService proto.RoomService,
+	roomService livekit.RoomService,
 	rtcService *service.RTCService) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:     conf,
-		roomServer: proto.NewRoomServiceServer(roomService),
-		rtcServer:  proto.NewRTCServiceServer(rtcService),
+		roomServer: livekit.NewRoomServiceServer(roomService),
+		rtcServer:  livekit.NewRTCServiceServer(rtcService),
 	}
 
 	roomHandler := configureMiddlewares(conf, s.roomServer)
@@ -98,7 +98,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	rtcMux := http.NewServeMux()
-	rtcMux.Handle(proto.RTCServicePathPrefix, s.rtcServer)
+	rtcMux.Handle(livekit.RTCServicePathPrefix, s.rtcServer)
 	rtcMux.HandleFunc("/rtc/Signal", rtcService.Signal)
 	rtcHandler := configureMiddlewares(conf, rtcMux)
 	s.rtcHttp = &http.Server{
