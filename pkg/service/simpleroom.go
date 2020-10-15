@@ -2,64 +2,70 @@ package service
 
 import (
 	"context"
-	"sync"
 
 	"github.com/twitchtv/twirp"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/node"
-	"github.com/livekit/livekit-server/pkg/rooms"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 // A rooms service that supports a single node
 type SimpleRoomService struct {
 	localNode *node.Node
-	rooms     map[string]*livekit.Room
-	roomLock  sync.Mutex
+
+	manager *rtc.RoomManager
 }
 
-func NewSimpleRoomService(localNode *node.Node) (svc *SimpleRoomService, err error) {
+func NewSimpleRoomService(conf *config.Config, localNode *node.Node) (svc *SimpleRoomService, err error) {
+	manager, err := rtc.NewRoomManager(conf.RTC, localNode.Ip)
+	if err != nil {
+		return
+	}
+
 	svc = &SimpleRoomService{
 		localNode: localNode,
-		rooms:     make(map[string]*livekit.Room),
-		roomLock:  sync.Mutex{},
+		manager:   manager,
 	}
 
 	return
 }
 
 func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.RoomInfo, err error) {
-	s.roomLock.Lock()
-	defer s.roomLock.Unlock()
-
-	if s.rooms[req.RoomId] != nil {
+	room := s.manager.GetRoom(req.RoomId)
+	if room != nil {
 		err = twirp.NewError(twirp.AlreadyExists, "rooms already exists")
 		return
 	}
 
-	room, err := rooms.NewRoomForRequest(req)
+	room, err = s.manager.CreateRoom(req)
 	if err != nil {
+		err = twirp.WrapError(twirp.InternalError("could not create room"), err)
 		return
 	}
-	s.rooms[req.RoomId] = room
 
-	res = rooms.ToRoomInfo(&s.localNode.Node, room)
+	res = room.ToRoomInfo(&s.localNode.Node)
 	return
 }
 
 func (s *SimpleRoomService) GetRoom(ctx context.Context, req *livekit.GetRoomRequest) (res *livekit.RoomInfo, err error) {
-	room := s.rooms[req.RoomId]
-	if room == nil {
-		err = twirp.NewError(twirp.NotFound, "the rooms does not exist")
+	room := s.manager.GetRoom(req.RoomId)
+	if room != nil {
+		err = twirp.NewError(twirp.NotFound, "rooms already exists")
 		return
 	}
 
-	res = rooms.ToRoomInfo(&s.localNode.Node, room)
+	res = room.ToRoomInfo(&s.localNode.Node)
 	return
 }
 
 func (s *SimpleRoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (res *livekit.DeleteRoomResponse, err error) {
-	delete(s.rooms, req.RoomId)
+	err = s.manager.DeleteRoom(req.RoomId)
+	if err != nil {
+		err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
+		return
+	}
 	res = &livekit.DeleteRoomResponse{}
 	return
 }

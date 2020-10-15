@@ -24,3 +24,8 @@ message Room {
   int64 creation_time = 4;
   string token = 5;
 }
+
+message DataChannel {
+  string session_id = 1;
+  bytes payload = 2;
+}

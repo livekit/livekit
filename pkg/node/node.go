@@ -47,10 +47,10 @@ func NewLocalNode(conf *config.Config) (*Node, error) {
 }
 
 func (n *Node) DiscoverNetworkInfo() error {
-	if len(n.config.StunServers) == 0 {
+	if len(n.config.RTC.StunServers) == 0 {
 		return errors.New("STUN servers are required but not defined")
 	}
-	c, err := stun.Dial("udp", n.config.StunServers[0])
+	c, err := stun.Dial("udp", n.config.RTC.StunServers[0])
 	if err != nil {
 		return err
 	}

@@ -19,6 +19,6 @@ func NewRoomService(conf *config.Config, localNode *node.Node) (livekit.RoomServ
 	if conf.MultiNode {
 		return nil, fmt.Errorf("multinode is not supported")
 	} else {
-		return NewSimpleRoomService(localNode)
+		return NewSimpleRoomService(conf, localNode)
 	}
 }
