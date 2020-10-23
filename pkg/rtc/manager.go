@@ -3,8 +3,6 @@ package rtc
 import (
 	"sync"
 
-	"github.com/pion/webrtc/v3"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -13,7 +11,7 @@ type RoomManager struct {
 	rtcConf    config.RTCConfig
 	externalIP string
 
-	feedbackTypes []webrtc.RTCPFeedback
+	config WebRTCConfig
 
 	rooms    map[string]*Room
 	roomLock sync.Mutex
@@ -23,14 +21,15 @@ func NewRoomManager(rtcConf config.RTCConfig, externalIP string) (m *RoomManager
 	m = &RoomManager{
 		rtcConf:    rtcConf,
 		externalIP: externalIP,
-		feedbackTypes: []webrtc.RTCPFeedback{
-			{Type: webrtc.TypeRTCPFBCCM},
-			{Type: webrtc.TypeRTCPFBNACK},
-			{Type: "nack pli"},
-		},
-		rooms:    make(map[string]*Room),
-		roomLock: sync.Mutex{},
+		rooms:      make(map[string]*Room),
+		roomLock:   sync.Mutex{},
 	}
+
+	wc, err := NewWebRTCConfig(&rtcConf, externalIP)
+	if err != nil {
+		return
+	}
+	m.config = *wc
 	return
 }
 
@@ -56,4 +55,8 @@ func (m *RoomManager) DeleteRoom(roomId string) error {
 	defer m.roomLock.Unlock()
 	delete(m.rooms, roomId)
 	return nil
+}
+
+func (m *RoomManager) NewWebRTCPeer(me MediaEngine) (*WebRTCPeer, error) {
+	return nil, nil
 }

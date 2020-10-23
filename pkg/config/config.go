@@ -16,21 +16,13 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	ICEPortRangeStart uint32   `yaml:"port_range_start"`
-	ICEPortRangeEnd   uint32   `yaml:"port_range_end"`
+	ICEPortRangeStart uint16   `yaml:"port_range_start"`
+	ICEPortRangeEnd   uint16   `yaml:"port_range_end"`
 	StunServers       []string `yaml:"stun_servers"`
+	UseExternalIP     bool     `yaml:"use_external_ip"`
 
-	MaxBandwidth uint64            `yaml:"max_bandwidth"`
-	MaxNackTime  int64             `yaml:"max_nack_time"`
-	Video        WebRTCVideoConfig `yaml:"video"`
-}
-
-type WebRTCVideoConfig struct {
-	REMBFeedback  bool `yaml:"remb_feedback"`
-	REMBCycle     int  `yaml:"remb_cycle"`
-	PLICycle      int  `yaml:"pli_cycle"`
-	TCCCycle      int  `yaml:"tcc_cycle"`
-	MaxBufferTime int  `yaml:"max_buffer_time"`
+	MaxBandwidth  uint64 `yaml:"max_bandwidth"`
+	MaxBufferTime int    `yaml:"max_buffer_time"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -43,9 +35,6 @@ func NewConfig(confString string) (*Config, error) {
 			ICEPortRangeEnd:   10000,
 			StunServers: []string{
 				"stun.l.google.com:19302",
-			},
-			Video: WebRTCVideoConfig{
-				REMBFeedback: true,
 			},
 		},
 	}

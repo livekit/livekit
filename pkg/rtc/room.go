@@ -10,6 +10,9 @@ import (
 
 type Room struct {
 	livekit.Room
+
+	// Client ID => list of tracks they are publishing
+	tracks map[string][]PeerTrack
 }
 
 func NewRoomForRequest(req *livekit.CreateRoomRequest) (*Room, error) {
