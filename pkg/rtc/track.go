@@ -3,7 +3,6 @@ package rtc
 import (
 	"sync"
 
-	sfu "github.com/pion/ion-sfu/pkg"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -11,15 +10,26 @@ import (
  * Peer track represents a track that needs to be forwarded
  */
 type PeerTrack struct {
-	id     string
+	id     uint32
 	peerId string
 	// source track
 	track *webrtc.Track
 	lock  sync.RWMutex
 	// map of target peerId -> forwarder
 	forwarders map[string]Forwarder
-	receiver   sfu.Receiver
+	receiver   Receiver
 	lastNack   int64
+}
+
+func NewPeerTrack(peerId string, track *webrtc.Track, receiver Receiver) *PeerTrack {
+	return &PeerTrack{
+		id:         track.SSRC(),
+		peerId:     peerId,
+		track:      track,
+		lock:       sync.RWMutex{},
+		forwarders: make(map[string]Forwarder),
+		receiver:   receiver,
+	}
 }
 
 // subscribes peer to current track

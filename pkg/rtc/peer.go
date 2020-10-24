@@ -7,19 +7,19 @@ import (
 )
 
 type WebRTCPeer struct {
+	id          string
 	conn        *webrtc.PeerConnection
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
 	mediaEngine MediaEngine
 
-	maxBandwidth  uint64
-	maxBufferTime int
+	receiverConfig ReceiverConfig
 
 	// callbacks & handlers
 	onPeerTrack func(*PeerTrack)
 }
 
-func NewWebRTCPeer(me MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
+func NewWebRTCPeer(id string, me MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me.MediaEngine), webrtc.WithSettingEngine(conf.setting))
 	pc, err := api.NewPeerConnection(conf.configuration)
 
@@ -29,12 +29,12 @@ func NewWebRTCPeer(me MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	peer := &WebRTCPeer{
-		conn:          pc,
-		ctx:           ctx,
-		cancelFunc:    cancel,
-		mediaEngine:   me,
-		maxBandwidth:  conf.maxBandwidth,
-		maxBufferTime: conf.maxBufferTime,
+		id:             id,
+		conn:           pc,
+		ctx:            ctx,
+		cancelFunc:     cancel,
+		mediaEngine:    me,
+		receiverConfig: conf.receiver,
 	}
 
 	pc.OnTrack(peer.onTrack)
@@ -44,5 +44,8 @@ func NewWebRTCPeer(me MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
 
 // when a new track is created, creates a PeerTrack and adds it to room
 func (p *WebRTCPeer) onTrack(track *webrtc.Track, receiver *webrtc.RTPReceiver) {
+	onPeerTrack := p.onPeerTrack
+	if onPeerTrack != nil {
 
+	}
 }

@@ -15,6 +15,10 @@ type WebRTCConfig struct {
 	setting       webrtc.SettingEngine
 	feedbackTypes []webrtc.RTCPFeedback
 
+	receiver ReceiverConfig
+}
+
+type ReceiverConfig struct {
 	maxBandwidth  uint64
 	maxBufferTime int
 }
@@ -67,7 +71,9 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		configuration: c,
 		setting:       s,
 		feedbackTypes: ft,
-		maxBandwidth:  conf.MaxBandwidth,
-		maxBufferTime: conf.MaxBufferTime,
+		receiver: ReceiverConfig{
+			maxBandwidth:  conf.MaxBandwidth,
+			maxBufferTime: conf.MaxBufferTime,
+		},
 	}, nil
 }
