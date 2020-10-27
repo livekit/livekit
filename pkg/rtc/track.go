@@ -17,11 +17,11 @@ type PeerTrack struct {
 	lock  sync.RWMutex
 	// map of target peerId -> forwarder
 	forwarders map[string]Forwarder
-	receiver   Receiver
+	receiver   *Receiver
 	lastNack   int64
 }
 
-func NewPeerTrack(peerId string, track *webrtc.Track, receiver Receiver) *PeerTrack {
+func NewPeerTrack(peerId string, track *webrtc.Track, receiver *Receiver) *PeerTrack {
 	return &PeerTrack{
 		id:         track.SSRC(),
 		peerId:     peerId,
@@ -42,4 +42,11 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 // stop all forwarders to the peer
 func (t *PeerTrack) RemoveSubscriber(peerId string) error {
 	return nil
+}
+
+// forwardWorker reads from the receiver and writes to each sender
+func (t *PeerTrack) forwardWorker() {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
 }

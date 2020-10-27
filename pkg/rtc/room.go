@@ -11,8 +11,10 @@ import (
 type Room struct {
 	livekit.Room
 
+	// map of peerId -> WebRTCPeer
+	peers map[string]*WebRTCPeer
 	// Client ID => list of tracks they are publishing
-	tracks map[string][]PeerTrack
+	//tracks map[string][]PeerTrack
 }
 
 func NewRoomForRequest(req *livekit.CreateRoomRequest) (*Room, error) {
@@ -28,6 +30,7 @@ func NewRoomForRequest(req *livekit.CreateRoomRequest) (*Room, error) {
 			CreationTime:    time.Now().Unix(),
 			Token:           id.String(),
 		},
+		peers: make(map[string]*WebRTCPeer),
 	}, nil
 }
 

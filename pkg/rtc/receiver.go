@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"io"
+	"sync"
 
 	"github.com/pion/rtp"
 
@@ -26,6 +27,7 @@ type Receiver struct {
 	track       *webrtc.Track
 	buffer      *sfu.Buffer
 	rtpChan     chan *rtp.Packet
+	once        sync.Once
 
 	onCloseHandler func(r *Receiver)
 }
@@ -44,17 +46,24 @@ func NewReceiver(ctx context.Context, rtpReceiver *webrtc.RTPReceiver, conf Rece
 			MaxBitRate: conf.maxBandwidth * 1000,
 			TCCExt:     me.tCCExt,
 		}),
+		once: sync.Once{},
 	}
 }
 
 // starts reading RTP and push to buffer
 func (r *Receiver) Start() {
-
+	r.once.Do(func() {
+		go r.rtpWorker()
+		go r.rtcpWorker()
+	})
 }
 
-// close the stream
+// Close gracefully close the track. if the context is canceled
 func (r *Receiver) Close() {
-
+	if r.ctx.Err() != nil {
+		return
+	}
+	r.cancel()
 }
 
 // reaturns channel to read rtp packets
@@ -62,7 +71,7 @@ func (r *Receiver) RTPChan() <-chan *rtp.Packet {
 	return r.rtpChan
 }
 
-// Builds RTCP report from buffer
+// Builds RTCP report from buffer, report indicates receiving quality
 func (r *Receiver) BuildRTCP() (rtcp.ReceptionReport, []rtcp.Packet) {
 	return r.buffer.BuildRTCP()
 }

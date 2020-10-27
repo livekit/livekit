@@ -432,7 +432,7 @@ func (b *Buffer) WritePacket(sn uint16, track *webrtc.Track, snOffset uint16, ts
 		bufferPkt.SSRC = bSsrc
 		return err
 	}
-	return errPacketNotFound
+	return ErrPacketNotFound
 }
 
 func (b *Buffer) onLostHandler(fn func(nack *rtcp.TransportLayerNack)) {
