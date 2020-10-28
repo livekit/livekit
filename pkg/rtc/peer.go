@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
 )
 
 type WebRTCPeer struct {
@@ -19,10 +20,16 @@ type WebRTCPeer struct {
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
 	tracks         []*PeerTrack // tracks that the peer is publishing
+	once           sync.Once
 
 	// callbacks & handlers
-	onClose     func(*WebRTCPeer)
-	onPeerTrack func(*WebRTCPeer, *PeerTrack)
+	// OnPeerTrack - remote peer added a track
+	OnPeerTrack func(*WebRTCPeer, *PeerTrack)
+	// OnOffer - offer is ready for remote peer
+	OnOffer func(webrtc.SessionDescription)
+	// OnIceCandidate - ice candidate discovered for local peer
+	OnICECandidate func(c *webrtc.ICECandidate)
+	OnClose        func(*WebRTCPeer)
 }
 
 func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
@@ -47,6 +54,32 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 
 	pc.OnTrack(peer.onTrack)
 
+	pc.OnNegotiationNeeded(func() {
+		offer, err := pc.CreateOffer(nil)
+		if err != nil {
+			// TODO: log
+			return
+		}
+
+		err = pc.SetLocalDescription(offer)
+		if err != nil {
+			// TODO: log
+			return
+		}
+		if peer.OnOffer != nil {
+			peer.OnOffer(offer)
+		}
+	})
+
+	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		if peer.OnICECandidate != nil {
+			peer.OnICECandidate(c)
+		}
+	})
+
 	// TODO: handle data channel
 
 	return peer, nil
@@ -56,24 +89,57 @@ func (p *WebRTCPeer) ID() string {
 	return p.id
 }
 
+// Answer an offer from remote peer
+func (p *WebRTCPeer) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+	if err = p.SetRemoteDescription(sdp); err != nil {
+		return
+	}
+
+	answer, err = p.conn.CreateAnswer(nil)
+	if err != nil {
+		err = errors.Wrap(err, "could not create answer")
+		return
+	}
+
+	if err = p.conn.SetLocalDescription(answer); err != nil {
+		err = errors.Wrap(err, "could not set local description")
+		return
+	}
+
+	return
+}
+
+// SetRemoteDescription when receiving an answer from remote
+func (p *WebRTCPeer) SetRemoteDescription(sdp webrtc.SessionDescription) error {
+	if err := p.conn.SetRemoteDescription(sdp); err != nil {
+		return errors.Wrap(err, "could not set remote description")
+	}
+	return nil
+}
+
+// AddICECandidate adds candidates for remote peer
+func (p *WebRTCPeer) AddICECandidate(candidate webrtc.ICECandidateInit) error {
+	if err := p.conn.AddICECandidate(candidate); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *WebRTCPeer) Start() {
+	p.once.Do(func() {
+		go p.rtcpSendWorker()
+	})
+}
+
 func (p *WebRTCPeer) Close() error {
 	if p.ctx.Err() != nil {
 		return p.ctx.Err()
 	}
-	// TODO: notify handler of closure
-	if p.onClose != nil {
-		p.onClose(p)
+	if p.OnClose != nil {
+		p.OnClose(p)
 	}
 	p.cancel()
 	return p.conn.Close()
-}
-
-func (p *WebRTCPeer) OnClose(f func(*WebRTCPeer)) {
-	p.onClose = f
-}
-
-func (p *WebRTCPeer) OnPeerTrack(f func(*WebRTCPeer, *PeerTrack)) {
-	p.onPeerTrack = f
 }
 
 // when a new track is created, creates a PeerTrack and adds it to room
@@ -87,9 +153,9 @@ func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceive
 	defer p.lock.Unlock()
 	p.tracks = append(p.tracks, pt)
 
-	if p.onPeerTrack != nil {
+	if p.OnPeerTrack != nil {
 		// caller should hook up what happens when the peer track is available
-		p.onPeerTrack(p, pt)
+		p.OnPeerTrack(p, pt)
 	}
 }
 

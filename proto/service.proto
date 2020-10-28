@@ -53,7 +53,7 @@ service RTCService {
 message JoinRequest {
   string room_id = 1;
   string token = 2;
-  string session_id = 3;
+  string peer_id = 3;
   SessionDescription offer = 4;
 }
 

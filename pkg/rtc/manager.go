@@ -40,7 +40,7 @@ func (m *RoomManager) GetRoom(roomId string) *Room {
 }
 
 func (m *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (r *Room, err error) {
-	r, err = NewRoomForRequest(req)
+	r, err = NewRoomForRequest(req, &m.config)
 	if err != nil {
 		return
 	}
