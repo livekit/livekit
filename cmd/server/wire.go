@@ -15,6 +15,7 @@ func InitializeServer(conf *config.Config) (*LivekitServer, error) {
 		NewLivekitServer,
 		node.NodeSet,
 		service.ServiceSet,
+		newManager,
 	)
 	return &LivekitServer{}, nil
 }

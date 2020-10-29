@@ -1,10 +1,10 @@
 syntax = "proto3";
 
 package livekit;
-option go_package = "livekit";
-
+option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
 // Room service that can be performed on any node
+// they are simple HTTP req/responses
 service RoomService {
   // TODO: how do we secure room service?
   // should be accessible to only internal servers, not external
@@ -37,38 +37,4 @@ message DeleteRoomRequest {
 }
 
 message DeleteRoomResponse {
-}
-
-// RTC methods performed on target node
-service RTCService {
-  rpc Join(JoinRequest) returns (JoinResponse);
-
-  // offer allows client to initiate a RTC session
-  rpc Offer(SessionDescription) returns (SessionDescription);
-
-  // trickle sends more ICE candidates to server
-  rpc Trickle(TrickleRequest) returns (TrickleResponse);
-}
-
-message JoinRequest {
-  string room_id = 1;
-  string token = 2;
-  string peer_id = 3;
-  SessionDescription offer = 4;
-}
-
-message JoinResponse {
-  SessionDescription answer = 1;
-}
-
-message TrickleRequest {
-  string candidate = 1;
-}
-
-message TrickleResponse {
-}
-
-message SessionDescription {
-    string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
-    bytes sdp = 2;
 }

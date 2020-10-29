@@ -7,6 +7,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/node"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -15,10 +16,10 @@ var ServiceSet = wire.NewSet(
 	NewRTCService,
 )
 
-func NewRoomService(conf *config.Config, localNode *node.Node) (livekit.RoomService, error) {
+func NewRoomService(conf *config.Config, manager *rtc.RoomManager, localNode *node.Node) (livekit.RoomService, error) {
 	if conf.MultiNode {
 		return nil, fmt.Errorf("multinode is not supported")
 	} else {
-		return NewSimpleRoomService(conf, localNode)
+		return NewSimpleRoomService(manager, localNode)
 	}
 }

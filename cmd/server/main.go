@@ -14,9 +14,12 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/negroni"
+	"google.golang.org/grpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/node"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -75,9 +78,9 @@ func startServer(c *cli.Context) error {
 type LivekitServer struct {
 	config     *config.Config
 	roomServer livekit.TwirpServer
-	rtcServer  livekit.TwirpServer
+	rtcServer  livekit.RTCServiceServer
 	roomHttp   *http.Server
-	rtcHttp    *http.Server
+	rtcGrpc    *grpc.Server
 	running    bool
 	doneChan   chan bool
 }
@@ -88,7 +91,7 @@ func NewLivekitServer(conf *config.Config,
 	s = &LivekitServer{
 		config:     conf,
 		roomServer: livekit.NewRoomServiceServer(roomService),
-		rtcServer:  livekit.NewRTCServiceServer(rtcService),
+		rtcServer:  rtcService,
 	}
 
 	roomHandler := configureMiddlewares(conf, s.roomServer)
@@ -97,14 +100,8 @@ func NewLivekitServer(conf *config.Config,
 		Handler: roomHandler,
 	}
 
-	rtcMux := http.NewServeMux()
-	rtcMux.Handle(livekit.RTCServicePathPrefix, s.rtcServer)
-	rtcMux.HandleFunc("/rtc/Signal", rtcService.Signal)
-	rtcHandler := configureMiddlewares(conf, rtcMux)
-	s.rtcHttp = &http.Server{
-		Addr:    fmt.Sprintf(":%d", conf.RTCPort),
-		Handler: rtcHandler,
-	}
+	s.rtcGrpc = grpc.NewServer()
+	livekit.RegisterRTCServiceServer(s.rtcGrpc, s.rtcServer)
 
 	return
 }
@@ -121,7 +118,9 @@ func (s *LivekitServer) Start() error {
 	if err != nil {
 		return err
 	}
-	rtcLn, err := net.Listen("tcp", s.rtcHttp.Addr)
+
+	rtcAddr := fmt.Sprintf(":%d", s.config.RTCPort)
+	rtcLn, err := net.Listen("tcp", rtcAddr)
 	if err != nil {
 		return err
 	}
@@ -131,8 +130,8 @@ func (s *LivekitServer) Start() error {
 		s.roomHttp.Serve(roomLn)
 	}()
 	go func() {
-		logger.GetLogger().Infow("starting RTC service", "address", s.rtcHttp.Addr)
-		s.rtcHttp.Serve(rtcLn)
+		logger.GetLogger().Infow("starting RTC service", "address", rtcAddr)
+		s.rtcGrpc.Serve(rtcLn)
 	}()
 
 	<-s.doneChan
@@ -143,7 +142,7 @@ func (s *LivekitServer) Start() error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		s.rtcHttp.Shutdown(ctx)
+		s.rtcGrpc.GracefulStop()
 	}()
 	go func() {
 		defer wg.Done()
@@ -165,4 +164,8 @@ func configureMiddlewares(conf *config.Config, handler http.Handler) *negroni.Ne
 	n.Use(negroni.NewRecovery())
 	n.UseHandler(handler)
 	return n
+}
+
+func newManager(conf *config.Config, localNode *node.Node) (*rtc.RoomManager, error) {
+	return rtc.NewRoomManager(conf.RTC, localNode.Ip)
 }

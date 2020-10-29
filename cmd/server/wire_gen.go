@@ -18,11 +18,15 @@ func InitializeServer(conf *config.Config) (*LivekitServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := service.NewRoomService(conf, nodeNode)
+	roomManager, err := newManager(conf, nodeNode)
 	if err != nil {
 		return nil, err
 	}
-	rtcService := service.NewRTCService()
+	roomService, err := service.NewRoomService(conf, roomManager, nodeNode)
+	if err != nil {
+		return nil, err
+	}
+	rtcService := service.NewRTCService(roomManager)
 	livekitServer, err := NewLivekitServer(conf, roomService, rtcService)
 	if err != nil {
 		return nil, err

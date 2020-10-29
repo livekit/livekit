@@ -15,7 +15,11 @@ server: generate
 	}
 
 generate: wire
-	$(WIRE)
+	@{ \
+  	echo "wiring" ;\
+  	cd cmd/server ;\
+  	$(WIRE) ;\
+	}
 
 GO_TARGET=proto/livekit
 proto: protoc protoc-gen-go twirp-gen
@@ -26,7 +30,13 @@ proto: protoc protoc-gen-go twirp-gen
     	--twirp_opt=paths=source_relative \
     	--plugin=$(PROTOC_GEN_GO) \
     	-I=proto \
-    	proto/*.proto ;\
+    	proto/room.proto proto/model.proto ;\
+    protoc --go_out=$(GO_TARGET) --go-grpc_out=$(GO_TARGET) \
+    	--go_opt=paths=source_relative \
+    	--go-grpc_opt=paths=source_relative \
+    	--plugin=$(PROTOC_GEN_GO) \
+    	-I=proto \
+    	proto/rtc.proto ;\
     }
 
 protoc:

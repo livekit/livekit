@@ -5,7 +5,6 @@ import (
 
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/node"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -18,12 +17,7 @@ type SimpleRoomService struct {
 	manager *rtc.RoomManager
 }
 
-func NewSimpleRoomService(conf *config.Config, localNode *node.Node) (svc *SimpleRoomService, err error) {
-	manager, err := rtc.NewRoomManager(conf.RTC, localNode.Ip)
-	if err != nil {
-		return
-	}
-
+func NewSimpleRoomService(manager *rtc.RoomManager, localNode *node.Node) (svc *SimpleRoomService, err error) {
 	svc = &SimpleRoomService{
 		localNode: localNode,
 		manager:   manager,

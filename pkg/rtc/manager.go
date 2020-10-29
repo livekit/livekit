@@ -56,7 +56,3 @@ func (m *RoomManager) DeleteRoom(roomId string) error {
 	delete(m.rooms, roomId)
 	return nil
 }
-
-func (m *RoomManager) NewWebRTCPeer(me MediaEngine) (*WebRTCPeer, error) {
-	return nil, nil
-}

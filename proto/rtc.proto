@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package livekit;
+option go_package = "github.com/livekit/livekit-server/proto/livekit";
+
+// RTC methods performed on target node
+service RTCService {
+  rpc Signal(stream SignalRequest) returns (stream SignalResponse);
+}
+
+message SignalRequest {
+  oneof message {
+    JoinRequest join = 1;
+    SessionDescription negotiate = 2;
+    Trickle trickle = 3;
+  }
+}
+
+message SignalResponse {
+  oneof message {
+    JoinResponse jin = 1;
+    SessionDescription negotiate = 2;
+    Trickle trickle = 3;
+  }
+}
+
+message JoinRequest {
+  string room_id = 1;
+  string token = 2;
+  string peer_id = 3;
+  SessionDescription offer = 4;
+}
+
+message JoinResponse {
+  SessionDescription answer = 1;
+}
+
+message Trickle {
+  // serialized JSON structure of candidate init
+  string candidate_init = 1;
+}
+
+message SessionDescription {
+    string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
+    string sdp = 2;
+}
