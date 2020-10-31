@@ -52,6 +52,8 @@ func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 }
 
 func (r *Room) Join(peerId string, token string, sdp string) (peer *WebRTCPeer, err error) {
+	// TODO: check token and reject
+
 	r.lock.Lock()
 	defer r.lock.Unlock()
 

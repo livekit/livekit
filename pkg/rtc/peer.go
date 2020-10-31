@@ -28,7 +28,7 @@ type WebRTCPeer struct {
 	// OnOffer - offer is ready for remote peer
 	OnOffer func(webrtc.SessionDescription)
 	// OnIceCandidate - ice candidate discovered for local peer
-	OnICECandidate func(c *webrtc.ICECandidate)
+	OnICECandidate func(c *webrtc.ICECandidateInit)
 	OnClose        func(*WebRTCPeer)
 }
 
@@ -76,7 +76,8 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 			return
 		}
 		if peer.OnICECandidate != nil {
-			peer.OnICECandidate(c)
+			ci := c.ToJSON()
+			peer.OnICECandidate(&ci)
 		}
 	})
 

@@ -18,7 +18,7 @@ message SignalRequest {
 
 message SignalResponse {
   oneof message {
-    JoinResponse jin = 1;
+    JoinResponse join = 1;
     SessionDescription negotiate = 2;
     Trickle trickle = 3;
   }
