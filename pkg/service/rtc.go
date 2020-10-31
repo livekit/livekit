@@ -51,18 +51,30 @@ func (s *RTCService) Signal(stream livekit.RTCService_SignalServer) error {
 
 		switch msg := req.Message.(type) {
 		case *livekit.SignalRequest_Join:
-			peer, err = s.handleJoin(msg.Join, stream)
+			peer, err = s.handleJoin(stream, msg.Join)
 		case *livekit.SignalRequest_Negotiate:
 			if peer == nil {
 				return status.Errorf(codes.FailedPrecondition, "peer has not joined yet")
 			}
+			err = s.handleNegotiate(stream, peer, *msg.Negotiate)
+			if err != nil {
+				return status.Errorf(codes.Internal, "could not handle megptoate: %v", err)
+			}
+		case *livekit.SignalRequest_Trickle:
+			if peer != nil {
+				return status.Errorf(codes.FailedPrecondition, "peer has not joined yet")
+			}
 
+			err = s.handleTrickle(peer, msg.Trickle)
+			if err != nil {
+				return status.Errorf(codes.Internal, "could not handle trickle: %v", err)
+			}
 		}
 	}
 	return nil
 }
 
-func (s *RTCService) handleJoin(join *livekit.JoinRequest, stream livekit.RTCService_SignalServer) (*rtc.WebRTCPeer, error) {
+func (s *RTCService) handleJoin(stream livekit.RTCService_SignalServer, join *livekit.JoinRequest) (*rtc.WebRTCPeer, error) {
 	// join a room
 	room := s.manager.GetRoom(join.RoomId)
 	if room == nil {
@@ -106,7 +118,7 @@ func (s *RTCService) handleJoin(join *livekit.JoinRequest, stream livekit.RTCSer
 	peer.OnOffer = func(o webrtc.SessionDescription) {
 		err := stream.Send(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: ToProtoSessionDescription(&o),
+				Negotiate: ToProtoSessionDescription(o),
 			},
 		})
 		if err != nil {
@@ -119,7 +131,7 @@ func (s *RTCService) handleJoin(join *livekit.JoinRequest, stream livekit.RTCSer
 	err = stream.Send(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
-				Answer: ToProtoSessionDescription(&answer),
+				Answer: ToProtoSessionDescription(answer),
 			},
 		},
 	})
@@ -129,4 +141,46 @@ func (s *RTCService) handleJoin(join *livekit.JoinRequest, stream livekit.RTCSer
 	}
 
 	return peer, nil
+}
+
+func (s *RTCService) handleNegotiate(stream livekit.RTCService_SignalServer, peer *rtc.WebRTCPeer, neg livekit.SessionDescription) error {
+	if neg.Type == webrtc.SDPTypeOffer.String() {
+		offer := FromProtoSessionDescription(&neg)
+		answer, err := peer.Answer(offer)
+		if err != nil {
+			return err
+		}
+
+		err = stream.Send(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Negotiate{
+				Negotiate: ToProtoSessionDescription(answer),
+			},
+		})
+
+		if err != nil {
+			return err
+		}
+	} else if neg.Type == webrtc.SDPTypeAnswer.String() {
+		answer := FromProtoSessionDescription(&neg)
+		err := peer.SetRemoteDescription(answer)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *RTCService) handleTrickle(peer *rtc.WebRTCPeer, trickle *livekit.Trickle) error {
+	var candidate webrtc.ICECandidateInit
+	err := json.Unmarshal([]byte(trickle.CandidateInit), &candidate)
+	if err != nil {
+		return err
+	}
+
+	err = peer.AddICECandidate(candidate)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
