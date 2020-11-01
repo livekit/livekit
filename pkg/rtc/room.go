@@ -8,6 +8,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -78,8 +79,39 @@ func (r *Room) Join(peerId string, token string, sdp string) (peer *WebRTCPeer, 
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create peer")
 	}
+	peer.OnPeerTrack = r.onTrackAdded
 
 	r.peers[peerId] = peer
 
+	// subscribe peer to existing tracks
+	for _, p := range r.peers {
+		if err := p.AddSubscriber(peer); err != nil {
+			// TODO: log error? or disconnect?
+			logger.GetLogger().Errorw("could not subscribe to peer",
+				"dstPeer", peer.ID(),
+				"srcPeer", p.ID())
+		}
+	}
+
 	return
+}
+
+// a peer in the room added a new track, subscribe other peers to it
+func (r *Room) onTrackAdded(peer *WebRTCPeer, track *PeerTrack) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	// subscribe all existing peers to this track
+	for _, p := range r.peers {
+		if p == peer {
+			// skip publishing peer
+			continue
+		}
+		if err := track.AddSubscriber(peer); err != nil {
+			logger.GetLogger().Errorw("could not subscribe to track",
+				"srcPeer", peer.ID(),
+				"track", track.id,
+				"dstPeer", p.ID())
+		}
+	}
 }

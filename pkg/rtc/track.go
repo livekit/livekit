@@ -35,13 +35,14 @@ func NewPeerTrack(peerId string, track *webrtc.Track, receiver *Receiver) *PeerT
 // subscribes peer to current track
 // creates and add necessary forwarders and starts them
 func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
+
 	return nil
 }
 
 // removes peer from subscription
 // stop all forwarders to the peer
-func (t *PeerTrack) RemoveSubscriber(peerId string) error {
-	return nil
+func (t *PeerTrack) RemoveSubscriber(peerId string) {
+
 }
 
 // forwardWorker reads from the receiver and writes to each sender

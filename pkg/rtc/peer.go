@@ -143,6 +143,28 @@ func (p *WebRTCPeer) Close() error {
 	return p.conn.Close()
 }
 
+// Subscribes otherPeer to all of the tracks
+func (p *WebRTCPeer) AddSubscriber(otherPeer *WebRTCPeer) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	for _, track := range p.tracks {
+		if err := track.AddSubscriber(otherPeer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *WebRTCPeer) RemoveSubscriber(peerId string) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	for _, track := range p.tracks {
+		track.RemoveSubscriber(peerId)
+	}
+}
+
 // when a new track is created, creates a PeerTrack and adds it to room
 func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
 
@@ -151,12 +173,12 @@ func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceive
 	pt := NewPeerTrack(p.id, track, receiver)
 
 	p.lock.Lock()
-	defer p.lock.Unlock()
 	p.tracks = append(p.tracks, pt)
+	p.lock.Unlock()
 
 	if p.OnPeerTrack != nil {
 		// caller should hook up what happens when the peer track is available
-		p.OnPeerTrack(p, pt)
+		go p.OnPeerTrack(p, pt)
 	}
 }
 
