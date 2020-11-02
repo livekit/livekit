@@ -21,19 +21,22 @@ type PeerTrack struct {
 	peerId string
 	// source track
 	track *webrtc.Track
-	lock  sync.RWMutex
+	// source RTCPWriter to forward RTCP requests
+	rtcpWriter RTCPWriter
+	lock       sync.RWMutex
 	// map of target peerId -> forwarder
 	forwarders map[string]Forwarder
 	receiver   *Receiver
 	lastNack   int64
 }
 
-func NewPeerTrack(ctx context.Context, peerId string, track *webrtc.Track, receiver *Receiver) *PeerTrack {
+func NewPeerTrack(ctx context.Context, peerId string, rtcpWriter RTCPWriter, track *webrtc.Track, receiver *Receiver) *PeerTrack {
 	return &PeerTrack{
 		id:         track.SSRC(),
 		ctx:        ctx,
 		peerId:     peerId,
 		track:      track,
+		rtcpWriter: rtcpWriter,
 		lock:       sync.RWMutex{},
 		forwarders: make(map[string]Forwarder),
 		receiver:   receiver,
@@ -60,7 +63,7 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 		return err
 	}
 
-	forwarder := NewSimpleForwarder(t.ctx, peer, rtpSender, t.receiver.buffer)
+	forwarder := NewSimpleForwarder(t.ctx, t.rtcpWriter, rtpSender, t.receiver.buffer)
 	forwarder.OnClose(func(f Forwarder) {
 		t.lock.Lock()
 		delete(t.forwarders, peer.ID())
@@ -68,7 +71,8 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 
 		if err := peer.conn.RemoveTrack(rtpSender); err != nil {
 			logger.GetLogger().Warnw("could not remove track from forwarder",
-				"peer", peer.ID())
+				"peer", peer.ID(),
+				"err", err)
 		}
 	})
 
@@ -98,7 +102,7 @@ func (t *PeerTrack) forwardWorker() {
 	for pkt := range t.receiver.RTPChan() {
 		now := time.Now()
 		t.lock.RLock()
-		for _, forwarder := range t.forwarders {
+		for dstPeerId, forwarder := range t.forwarders {
 			// There exists a bug in chrome where setLocalDescription
 			// fails if track RTP arrives before the sfu offer is set.
 			// We delay sending RTP here to avoid the issue.
@@ -109,8 +113,9 @@ func (t *PeerTrack) forwardWorker() {
 			if err := forwarder.WriteRTP(pkt); err != nil {
 				logger.GetLogger().Warnw("could not forward packet to peer",
 					"srcPeer", t.peerId,
-					"dstPeer", forwarder.PeerID(),
-					"track", forwarder.ID())
+					"dstPeer", dstPeerId,
+					"track", t.track.SSRC(),
+					"err", err)
 			}
 		}
 		t.lock.RUnlock()

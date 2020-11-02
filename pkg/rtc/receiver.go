@@ -6,6 +6,7 @@ import (
 
 	"github.com/pion/rtp"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu"
 
 	"context"
@@ -21,6 +22,7 @@ const (
 
 // A receiver is responsible for pulling from a track
 type Receiver struct {
+	peerId      string
 	ctx         context.Context
 	cancel      context.CancelFunc
 	rtpReceiver *webrtc.RTPReceiver
@@ -32,12 +34,13 @@ type Receiver struct {
 	onCloseHandler func(r *Receiver)
 }
 
-func NewReceiver(ctx context.Context, rtpReceiver *webrtc.RTPReceiver, conf ReceiverConfig, me *MediaEngine) *Receiver {
+func NewReceiver(ctx context.Context, peerId string, rtpReceiver *webrtc.RTPReceiver, conf ReceiverConfig, me *MediaEngine) *Receiver {
 	ctx, cancel := context.WithCancel(ctx)
 	track := rtpReceiver.Track()
 	return &Receiver{
 		ctx:         ctx,
 		cancel:      cancel,
+		peerId:      peerId,
 		rtpReceiver: rtpReceiver,
 		track:       track,
 		rtpChan:     make(chan *rtp.Packet, maxChanSize),
@@ -102,6 +105,11 @@ func (r *Receiver) rtpWorker() {
 
 		if err != nil {
 			// log and continue
+			logger.GetLogger().Warnw("receiver error reading RTP",
+				"peer", r.peerId,
+				"track", r.track.SSRC(),
+				"err", err,
+			)
 			continue
 		}
 
@@ -124,7 +132,11 @@ func (r *Receiver) rtcpWorker() {
 			return
 		}
 		if err != nil {
-			// TODO: log
+			logger.GetLogger().Warnw("receiver error reading RTCP",
+				"peer", r.peerId,
+				"track", r.track.SSRC(),
+				"err", err,
+			)
 			continue
 		}
 

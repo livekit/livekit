@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/log"
 	"github.com/pion/rtcp"
@@ -16,16 +17,17 @@ import (
 // a forwarder publishes data to a target track or datachannel
 // manages the RTCP loop with the target peer
 type Forwarder interface {
-	ID() string
 	ChannelType() ChannelType
-	PeerID() string
 	WriteRTP(*rtp.Packet) error
-	WriteRTCP(pkts []rtcp.Packet) error
 	Start()
 	Close()
 	CreatedAt() time.Time
 
 	OnClose(func(Forwarder))
+}
+
+type RTCPWriter interface {
+	WriteRTCP(pkts []rtcp.Packet) error
 }
 
 type ChannelType int
@@ -37,10 +39,9 @@ const (
 )
 
 type SimpleForwarder struct {
-	id          string
 	ctx         context.Context
 	cancel      context.CancelFunc
-	peer        *WebRTCPeer       // destination peer
+	rtcpWriter  RTCPWriter        // write RTCP to source peer
 	sender      *webrtc.RTPSender // destination sender
 	track       *webrtc.Track     // sender track
 	buffer      *sfu.Buffer
@@ -56,18 +57,17 @@ type SimpleForwarder struct {
 	onClose func(forwarder Forwarder)
 }
 
-func NewSimpleForwarder(ctx context.Context, peer *WebRTCPeer, sender *webrtc.RTPSender, buffer *sfu.Buffer) *SimpleForwarder {
+func NewSimpleForwarder(ctx context.Context, rtcpWriter RTCPWriter, sender *webrtc.RTPSender, buffer *sfu.Buffer) *SimpleForwarder {
 	ctx, cancel := context.WithCancel(ctx)
 	f := &SimpleForwarder{
-		id:        peer.ID(),
-		ctx:       ctx,
-		cancel:    cancel,
-		peer:      peer,
-		sender:    sender,
-		buffer:    buffer,
-		track:     sender.Track(),
-		payload:   sender.Track().PayloadType(),
-		createdAt: time.Now(),
+		ctx:        ctx,
+		cancel:     cancel,
+		rtcpWriter: rtcpWriter,
+		sender:     sender,
+		buffer:     buffer,
+		track:      sender.Track(),
+		payload:    sender.Track().PayloadType(),
+		createdAt:  time.Now(),
 	}
 
 	if f.track.Kind() == webrtc.RTPCodecTypeAudio {
@@ -77,15 +77,6 @@ func NewSimpleForwarder(ctx context.Context, peer *WebRTCPeer, sender *webrtc.RT
 	}
 
 	return f
-}
-
-// should be identical to peer id
-func (f *SimpleForwarder) ID() string {
-	return f.id
-}
-
-func (f *SimpleForwarder) PeerID() string {
-	return f.peer.ID()
 }
 
 func (f *SimpleForwarder) ChannelType() ChannelType {
@@ -127,10 +118,6 @@ func (f *SimpleForwarder) WriteRTP(pkt *rtp.Packet) error {
 	return nil
 }
 
-func (f *SimpleForwarder) WriteRTCP(pkts []rtcp.Packet) error {
-	return f.peer.conn.WriteRTCP(pkts)
-}
-
 func (f *SimpleForwarder) OnClose(closeFunc func(Forwarder)) {
 	f.onClose = closeFunc
 }
@@ -145,10 +132,6 @@ func (f *SimpleForwarder) rtcpWorker() {
 	for {
 		pkts, err := f.sender.ReadRTCP()
 		if err == io.ErrClosedPipe {
-			// TODO: handle peer closed
-			//if recv := s.router.GetReceiver(0); recv != nil {
-			//	recv.DeleteSender(s.id)
-			//}
 			f.Close()
 			return
 		}
@@ -186,9 +169,9 @@ func (f *SimpleForwarder) rtcpWorker() {
 		}
 
 		if len(fwdPkts) > 0 {
-			if err := f.WriteRTCP(fwdPkts); err != nil {
-				// TODO: log error
-				//log.Errorf("Forwarding rtcp from sender err: %v", err)
+			if err := f.rtcpWriter.WriteRTCP(fwdPkts); err != nil {
+				logger.GetLogger().Warnw("could not forward RTCP to peer",
+					"err", err)
 			}
 		}
 	}

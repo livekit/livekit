@@ -8,6 +8,8 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
+
+	"github.com/livekit/livekit-server/pkg/logger"
 )
 
 type WebRTCPeer struct {
@@ -169,8 +171,8 @@ func (p *WebRTCPeer) RemoveSubscriber(peerId string) {
 func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
 
 	// create Receiver
-	receiver := NewReceiver(p.ctx, rtpReceiver, p.receiverConfig, p.mediaEngine)
-	pt := NewPeerTrack(p.ctx, p.id, track, receiver)
+	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.receiverConfig, p.mediaEngine)
+	pt := NewPeerTrack(p.ctx, p.id, p.conn, track, receiver)
 
 	p.lock.Lock()
 	p.tracks = append(p.tracks, pt)
@@ -201,8 +203,10 @@ func (p *WebRTCPeer) rtcpSendWorker() {
 			p.lock.RUnlock()
 			if len(pkts) > 0 {
 				if err := p.conn.WriteRTCP(pkts); err != nil {
-					// TODO: log error
-					//log.Errorf("write rtcp err: %v", err)
+					logger.GetLogger().Errorw("error writing RTCP to peer",
+						"peer", p.id,
+						"err", err,
+					)
 				}
 			}
 		case <-p.ctx.Done():
