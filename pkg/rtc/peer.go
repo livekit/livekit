@@ -170,7 +170,7 @@ func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceive
 
 	// create Receiver
 	receiver := NewReceiver(p.ctx, rtpReceiver, p.receiverConfig, p.mediaEngine)
-	pt := NewPeerTrack(p.id, track, receiver)
+	pt := NewPeerTrack(p.ctx, p.id, track, receiver)
 
 	p.lock.Lock()
 	p.tracks = append(p.tracks, pt)

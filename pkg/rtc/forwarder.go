@@ -18,9 +18,14 @@ import (
 type Forwarder interface {
 	ID() string
 	ChannelType() ChannelType
+	PeerID() string
 	WriteRTP(*rtp.Packet) error
+	WriteRTCP(pkts []rtcp.Packet) error
 	Start()
 	Close()
+	CreatedAt() time.Time
+
+	OnClose(func(Forwarder))
 }
 
 type ChannelType int
@@ -35,32 +40,41 @@ type SimpleForwarder struct {
 	id          string
 	ctx         context.Context
 	cancel      context.CancelFunc
-	peer        *WebRTCPeer       // source peer
+	peer        *WebRTCPeer       // destination peer
 	sender      *webrtc.RTPSender // destination sender
 	track       *webrtc.Track     // sender track
 	buffer      *sfu.Buffer
 	channelType ChannelType
 	payload     uint8
 
-	lastPli time.Time
+	lastPli   time.Time
+	createdAt time.Time
 
 	once sync.Once
+
+	// handlers
+	onClose func(forwarder Forwarder)
 }
 
 func NewSimpleForwarder(ctx context.Context, peer *WebRTCPeer, sender *webrtc.RTPSender, buffer *sfu.Buffer) *SimpleForwarder {
 	ctx, cancel := context.WithCancel(ctx)
 	f := &SimpleForwarder{
-		id:      peer.ID(),
-		ctx:     ctx,
-		cancel:  cancel,
-		peer:    peer,
-		sender:  sender,
-		buffer:  buffer,
-		track:   sender.Track(),
-		payload: sender.Track().PayloadType(),
+		id:        peer.ID(),
+		ctx:       ctx,
+		cancel:    cancel,
+		peer:      peer,
+		sender:    sender,
+		buffer:    buffer,
+		track:     sender.Track(),
+		payload:   sender.Track().PayloadType(),
+		createdAt: time.Now(),
 	}
 
-	// TODO: set channel type
+	if f.track.Kind() == webrtc.RTPCodecTypeAudio {
+		f.channelType = ChannelAudio
+	} else if f.track.Kind() == webrtc.RTPCodecTypeVideo {
+		f.channelType = ChannelVideo
+	}
 
 	return f
 }
@@ -68,6 +82,10 @@ func NewSimpleForwarder(ctx context.Context, peer *WebRTCPeer, sender *webrtc.RT
 // should be identical to peer id
 func (f *SimpleForwarder) ID() string {
 	return f.id
+}
+
+func (f *SimpleForwarder) PeerID() string {
+	return f.peer.ID()
 }
 
 func (f *SimpleForwarder) ChannelType() ChannelType {
@@ -85,7 +103,9 @@ func (f *SimpleForwarder) Close() {
 		return
 	}
 	f.cancel()
-	// TODO: on close handler
+	if f.onClose != nil {
+		f.onClose(f)
+	}
 }
 
 // Writes an RTP packet to peer
@@ -109,6 +129,14 @@ func (f *SimpleForwarder) WriteRTP(pkt *rtp.Packet) error {
 
 func (f *SimpleForwarder) WriteRTCP(pkts []rtcp.Packet) error {
 	return f.peer.conn.WriteRTCP(pkts)
+}
+
+func (f *SimpleForwarder) OnClose(closeFunc func(Forwarder)) {
+	f.onClose = closeFunc
+}
+
+func (f *SimpleForwarder) CreatedAt() time.Time {
+	return f.createdAt
 }
 
 // rtcpWorker receives RTCP packets from the destination peer
