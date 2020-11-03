@@ -52,9 +52,7 @@ func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	}
 }
 
-func (r *Room) Join(peerId string, token string, sdp string) (peer *WebRTCPeer, err error) {
-	// TODO: check token and reject
-
+func (r *Room) Join(peerId string, sdp string) (peer *WebRTCPeer, err error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 

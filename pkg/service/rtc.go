@@ -2,96 +2,127 @@ package service
 
 import (
 	"encoding/json"
-	"io"
+	"net/http"
 
+	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 type RTCService struct {
-	livekit.UnimplementedRTCServiceServer
-	manager *rtc.RoomManager
+	manager  *rtc.RoomManager
+	upgrader websocket.Upgrader
 }
 
-func NewRTCService(manager *rtc.RoomManager) *RTCService {
-	return &RTCService{
-		manager: manager,
+func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
+	s := &RTCService{
+		manager:  manager,
+		upgrader: websocket.Upgrader{},
 	}
+
+	if conf.Development {
+		s.upgrader.CheckOrigin = func(r *http.Request) bool {
+			// allow all in dev
+			return true
+		}
+	}
+
+	return s
 }
 
-// each client establishes a persistent signaling connection to the server
-// when the connection is terminated, WebRTC session shall end
-// similarly, when WebRTC connection is disconnected, we'll terminate signaling
-func (s *RTCService) Signal(stream livekit.RTCService_SignalServer) error {
+func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	roomId := r.FormValue("room_id")
+	token := r.FormValue("token")
+	peerId := r.FormValue("peer_id")
+
+	logger.GetLogger().Infow("new client connected",
+		"roomId", roomId,
+		"peerId", peerId,
+	)
+
+	room := s.manager.GetRoom(roomId)
+	if room == nil {
+		writeJSONError(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if room.Token != token {
+		writeJSONError(w, http.StatusUnauthorized, "invalid room token")
+		return
+	}
+
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.GetLogger().Warnw("could not upgrade to WS",
+			"err", err,
+		)
+	}
+
+	signalConn := NewWSSignalConnection(conn, peerId)
 	var peer *rtc.WebRTCPeer
+
+	// read connection and wait for commands
+
+	// TODO: pass in context from WS, so termination of WS would disconnect RTC
+	//ctx := context.Background()
 	for {
-		req, err := stream.Recv()
+		req, err := signalConn.ReadRequest()
 		if err != nil {
-			if peer != nil {
-				peer.Close()
-
-				if err == io.EOF {
-					return nil
-				}
-
-				errStatus, _ := status.FromError(err)
-				if errStatus.Code() == codes.Canceled {
-					return nil
-				}
-
-				logger.GetLogger().Errorf("signaling error", errStatus.Message(), errStatus.Code())
-				return err
-			}
+			logger.GetLogger().Errorw("error reading WS",
+				"err", err,
+				"peerId", peerId,
+				"roomId", roomId)
 		}
 
 		switch msg := req.Message.(type) {
-		case *livekit.SignalRequest_Join:
-			peer, err = s.handleJoin(stream, msg.Join)
+		case *livekit.SignalRequest_Offer:
+			peer, err = s.handleJoin(signalConn, room, msg.Offer.Sdp)
 		case *livekit.SignalRequest_Negotiate:
 			if peer == nil {
-				return status.Errorf(codes.FailedPrecondition, "peer has not joined yet")
+				conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
+				return
 			}
-			err = s.handleNegotiate(stream, peer, *msg.Negotiate)
+			err = s.handleNegotiate(signalConn, peer, msg.Negotiate)
 			if err != nil {
-				return status.Errorf(codes.Internal, "could not handle megptoate: %v", err)
+				conn.WriteJSON(
+					jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
+				return
 			}
 		case *livekit.SignalRequest_Trickle:
 			if peer != nil {
-				return status.Errorf(codes.FailedPrecondition, "peer has not joined yet")
+				conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
+				return
 			}
 
 			err = s.handleTrickle(peer, msg.Trickle)
 			if err != nil {
-				return status.Errorf(codes.Internal, "could not handle trickle: %v", err)
+				conn.WriteJSON(
+					jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
+				return
 			}
 		}
+
 	}
-	return nil
 }
 
-func (s *RTCService) handleJoin(stream livekit.RTCService_SignalServer, join *livekit.JoinRequest) (*rtc.WebRTCPeer, error) {
-	// join a room
-	room := s.manager.GetRoom(join.RoomId)
-	if room == nil {
-		return nil, status.Errorf(codes.NotFound, "room %s doesn't exist", join.RoomId)
-	}
-	peer, err := room.Join(join.PeerId, join.Token, join.Offer.Sdp)
+func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string) (*rtc.WebRTCPeer, error) {
+	peer, err := room.Join(sc.PeerId(), sdp)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "could not join room: %v", err)
+		return nil, errors.Wrap(err, "could not join room")
 	}
 
 	offer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
-		SDP:  string(join.Offer.Sdp),
+		SDP:  sdp,
 	}
 	answer, err := peer.Answer(offer)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "could not answer offer: %v", err)
+		return nil, errors.Wrap(err, "could not answer offer")
 	}
 
 	// TODO: it might be better to return error instead of nil
@@ -102,7 +133,7 @@ func (s *RTCService) handleJoin(stream livekit.RTCService_SignalServer, join *li
 			return
 		}
 
-		err = stream.Send(&livekit.SignalResponse{
+		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: &livekit.Trickle{
 					CandidateInit: string(bytes),
@@ -116,7 +147,7 @@ func (s *RTCService) handleJoin(stream livekit.RTCService_SignalServer, join *li
 
 	// send peer new offer
 	peer.OnOffer = func(o webrtc.SessionDescription) {
-		err := stream.Send(&livekit.SignalResponse{
+		err := sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
 				Negotiate: ToProtoSessionDescription(o),
 			},
@@ -128,30 +159,28 @@ func (s *RTCService) handleJoin(stream livekit.RTCService_SignalServer, join *li
 	}
 
 	// finally send answer
-	err = stream.Send(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Join{
-			Join: &livekit.JoinResponse{
-				Answer: ToProtoSessionDescription(answer),
-			},
+	err = sc.WriteResponse(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Answer{
+			Answer: ToProtoSessionDescription(answer),
 		},
 	})
 
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "could not join: %v", err)
+		return nil, errors.Wrap(err, "could not join")
 	}
 
 	return peer, nil
 }
 
-func (s *RTCService) handleNegotiate(stream livekit.RTCService_SignalServer, peer *rtc.WebRTCPeer, neg livekit.SessionDescription) error {
+func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.WebRTCPeer, neg *livekit.SessionDescription) error {
 	if neg.Type == webrtc.SDPTypeOffer.String() {
-		offer := FromProtoSessionDescription(&neg)
+		offer := FromProtoSessionDescription(neg)
 		answer, err := peer.Answer(offer)
 		if err != nil {
 			return err
 		}
 
-		err = stream.Send(&livekit.SignalResponse{
+		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
 				Negotiate: ToProtoSessionDescription(answer),
 			},
@@ -161,7 +190,7 @@ func (s *RTCService) handleNegotiate(stream livekit.RTCService_SignalServer, pee
 			return err
 		}
 	} else if neg.Type == webrtc.SDPTypeAnswer.String() {
-		answer := FromProtoSessionDescription(&neg)
+		answer := FromProtoSessionDescription(neg)
 		err := peer.SetRemoteDescription(answer)
 		if err != nil {
 			return err
@@ -183,4 +212,31 @@ func (s *RTCService) handleTrickle(peer *rtc.WebRTCPeer, trickle *livekit.Trickl
 	}
 
 	return nil
+}
+
+type errStruct struct {
+	StatusCode int    `json:"statusCode"`
+	Error      string `json:"error"`
+	Message    string `json:"message,omitempty"`
+}
+
+func writeJSONError(w http.ResponseWriter, code int, error ...string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+
+	json.NewEncoder(w).Encode(jsonError(code, error...))
+}
+
+func jsonError(code int, error ...string) errStruct {
+	es := errStruct{
+		StatusCode: code,
+	}
+	if len(error) > 0 {
+		es.Error = error[0]
+	}
+	if len(error) > 1 {
+		es.Message = error[1]
+	}
+	return es
 }

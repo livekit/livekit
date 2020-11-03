@@ -14,7 +14,7 @@ type RoomManager struct {
 	config WebRTCConfig
 
 	rooms    map[string]*Room
-	roomLock sync.Mutex
+	roomLock sync.RWMutex
 }
 
 func NewRoomManager(rtcConf config.RTCConfig, externalIP string) (m *RoomManager, err error) {
@@ -22,7 +22,7 @@ func NewRoomManager(rtcConf config.RTCConfig, externalIP string) (m *RoomManager
 		rtcConf:    rtcConf,
 		externalIP: externalIP,
 		rooms:      make(map[string]*Room),
-		roomLock:   sync.Mutex{},
+		roomLock:   sync.RWMutex{},
 	}
 
 	wc, err := NewWebRTCConfig(&rtcConf, externalIP)
@@ -34,8 +34,8 @@ func NewRoomManager(rtcConf config.RTCConfig, externalIP string) (m *RoomManager
 }
 
 func (m *RoomManager) GetRoom(roomId string) *Room {
-	m.roomLock.Lock()
-	defer m.roomLock.Unlock()
+	m.roomLock.RLock()
+	defer m.roomLock.RUnlock()
 	return m.rooms[roomId]
 }
 

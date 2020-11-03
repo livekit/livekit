@@ -31,10 +31,8 @@ proto: protoc protoc-gen-go twirp-gen
     	--plugin=$(PROTOC_GEN_GO) \
     	-I=proto \
     	proto/room.proto proto/model.proto ;\
-    protoc --go_out=$(GO_TARGET) --go-grpc_out=$(GO_TARGET) \
+    protoc --go_out=$(GO_TARGET) \
     	--go_opt=paths=source_relative \
-    	--go-grpc_opt=paths=source_relative \
-    	--plugin=$(PROTOC_GEN_GO) \
     	-I=proto \
     	proto/rtc.proto ;\
     }
@@ -45,10 +43,10 @@ ifeq (, $(shell which protoc))
 endif
 
 protoc-gen-go:
-ifeq (, $(shell which protoc-gen-go-grpc))
+ifeq (, $(shell which protoc-gen-go))
 	@{ \
 	echo "installing go protobuf plugin" ;\
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc ;\
+	go install google.golang.org/protobuf/cmd/protoc-gen-go ;\
 	}
 endif
 

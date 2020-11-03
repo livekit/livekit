@@ -14,7 +14,6 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/negroni"
-	"google.golang.org/grpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -40,7 +39,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		logger.GetLogger().Fatal(err)
+		fmt.Println(err)
 	}
 }
 
@@ -78,9 +77,9 @@ func startServer(c *cli.Context) error {
 type LivekitServer struct {
 	config     *config.Config
 	roomServer livekit.TwirpServer
-	rtcServer  livekit.RTCServiceServer
+	rtcService *service.RTCService
 	roomHttp   *http.Server
-	rtcGrpc    *grpc.Server
+	rtcHttp    *http.Server
 	running    bool
 	doneChan   chan bool
 }
@@ -91,7 +90,7 @@ func NewLivekitServer(conf *config.Config,
 	s = &LivekitServer{
 		config:     conf,
 		roomServer: livekit.NewRoomServiceServer(roomService),
-		rtcServer:  rtcService,
+		rtcService: rtcService,
 	}
 
 	roomHandler := configureMiddlewares(conf, s.roomServer)
@@ -100,8 +99,11 @@ func NewLivekitServer(conf *config.Config,
 		Handler: roomHandler,
 	}
 
-	s.rtcGrpc = grpc.NewServer()
-	livekit.RegisterRTCServiceServer(s.rtcGrpc, s.rtcServer)
+	rtcHandler := configureMiddlewares(conf, rtcService)
+	s.rtcHttp = &http.Server{
+		Addr:    fmt.Sprintf(":%d", conf.RTCPort),
+		Handler: rtcHandler,
+	}
 
 	return
 }
@@ -131,7 +133,7 @@ func (s *LivekitServer) Start() error {
 	}()
 	go func() {
 		logger.GetLogger().Infow("starting RTC service", "address", rtcAddr)
-		s.rtcGrpc.Serve(rtcLn)
+		s.rtcHttp.Serve(rtcLn)
 	}()
 
 	<-s.doneChan
@@ -142,7 +144,7 @@ func (s *LivekitServer) Start() error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		s.rtcGrpc.GracefulStop()
+		s.rtcHttp.Shutdown(ctx)
 	}()
 	go func() {
 		defer wg.Done()

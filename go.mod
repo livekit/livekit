@@ -7,6 +7,7 @@ require (
 	github.com/golang/protobuf v1.4.3
 	github.com/google/uuid v1.1.2
 	github.com/google/wire v0.4.0
+	github.com/gorilla/websocket v1.4.2
 	github.com/pion/ion-sfu v1.0.27
 	github.com/pion/rtcp v1.2.4
 	github.com/pion/rtp v1.6.1
@@ -18,6 +19,6 @@ require (
 	github.com/urfave/cli/v2 v2.2.0
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.16.0
-	google.golang.org/grpc v1.33.1
+	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.3.0
 )
