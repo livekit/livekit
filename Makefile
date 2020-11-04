@@ -6,9 +6,20 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+
+build: server client
+
+client: generate
+	@{ \
+  	echo "building client" ;\
+  	mkdir -p bin ;\
+  	cd cmd/cli ;\
+  	go build -i -o ../../bin/livekit-cli ;\
+  	}
+
 server: generate
 	@{ \
-  	echo "building" ;\
+  	echo "building server" ;\
   	mkdir -p bin ;\
   	cd cmd/server ;\
 	go build -i -o ../../bin/livekit-server ;\

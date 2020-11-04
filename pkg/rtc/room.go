@@ -28,6 +28,10 @@ func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) (*R
 		return nil, err
 	}
 
+	if req.RoomId == "" {
+		return nil, ErrRoomIdMissing
+	}
+
 	return &Room{
 		Room: livekit.Room{
 			RoomId:          req.RoomId,

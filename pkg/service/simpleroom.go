@@ -35,7 +35,6 @@ func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateR
 
 	room, err = s.manager.CreateRoom(req)
 	if err != nil {
-		err = twirp.WrapError(twirp.InternalError("could not create room"), err)
 		return
 	}
 
@@ -45,8 +44,8 @@ func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateR
 
 func (s *SimpleRoomService) GetRoom(ctx context.Context, req *livekit.GetRoomRequest) (res *livekit.RoomInfo, err error) {
 	room := s.manager.GetRoom(req.RoomId)
-	if room != nil {
-		err = twirp.NewError(twirp.NotFound, "rooms already exists")
+	if room == nil {
+		err = twirp.NewError(twirp.NotFound, "room does not exist")
 		return
 	}
 
