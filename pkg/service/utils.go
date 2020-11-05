@@ -30,3 +30,15 @@ func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionD
 		SDP:  sd.Sdp,
 	}
 }
+
+func ToProtoTrickle(candidateInit *webrtc.ICECandidateInit) *livekit.Trickle {
+	return &livekit.Trickle{
+		Candidate: candidateInit.Candidate,
+	}
+}
+
+func FromProtoTrickle(trickle *livekit.Trickle) *webrtc.ICECandidateInit {
+	return &webrtc.ICECandidateInit{
+		Candidate: trickle.Candidate,
+	}
+}

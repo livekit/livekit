@@ -11,14 +11,6 @@ import (
 )
 
 var (
-	roomFlag = &cli.StringFlag{
-		Name:     "room-id",
-		Required: true,
-	}
-	hostFlag = &cli.StringFlag{
-		Name:  "host",
-		Value: "http://localhost:7880",
-	}
 	RoomCommands = []*cli.Command{
 		{
 			Name:   "create-room",
@@ -26,7 +18,7 @@ var (
 			Action: createRoom,
 			Flags: []cli.Flag{
 				roomFlag,
-				hostFlag,
+				roomHostFlag,
 			},
 		},
 		{
@@ -35,7 +27,7 @@ var (
 			Action: getRoom,
 			Flags: []cli.Flag{
 				roomFlag,
-				hostFlag,
+				roomHostFlag,
 			},
 		},
 		{
@@ -44,7 +36,7 @@ var (
 			Action: deleteRoom,
 			Flags: []cli.Flag{
 				roomFlag,
-				hostFlag,
+				roomHostFlag,
 			},
 		},
 	}

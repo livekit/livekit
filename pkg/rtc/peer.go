@@ -35,8 +35,8 @@ type WebRTCPeer struct {
 }
 
 func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me.MediaEngine), webrtc.WithSettingEngine(conf.setting))
-	pc, err := api.NewPeerConnection(conf.configuration)
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(me.MediaEngine), webrtc.WithSettingEngine(conf.SettingEngine))
+	pc, err := api.NewPeerConnection(conf.Configuration)
 
 	if err != nil {
 		return nil, err

@@ -11,8 +11,8 @@ import (
 )
 
 type WebRTCConfig struct {
-	configuration webrtc.Configuration
-	setting       webrtc.SettingEngine
+	Configuration webrtc.Configuration
+	SettingEngine webrtc.SettingEngine
 	feedbackTypes []webrtc.RTCPFeedback
 
 	receiver ReceiverConfig
@@ -68,8 +68,8 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	s.AddSDPExtensions(webrtc.SDPSectionVideo, exts)
 
 	return &WebRTCConfig{
-		configuration: c,
-		setting:       s,
+		Configuration: c,
+		SettingEngine: s,
 		feedbackTypes: ft,
 		receiver: ReceiverConfig{
 			maxBandwidth:  conf.MaxBandwidth,

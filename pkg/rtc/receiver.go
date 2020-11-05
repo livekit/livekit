@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// TODO: could probably increase this depending on configuration/memory
+	// TODO: could probably increase this depending on Configuration/memory
 	maxChanSize = 1024
 )
 

@@ -20,8 +20,7 @@ message SignalResponse {
 }
 
 message Trickle {
-  // serialized JSON structure of candidate init
-  string candidate_init = 1;
+  string candidate = 1;
 }
 
 message SessionDescription {

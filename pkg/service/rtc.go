@@ -127,16 +127,11 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 
 	// TODO: it might be better to return error instead of nil
 	peer.OnICECandidate = func(c *webrtc.ICECandidateInit) {
-		bytes, err := json.Marshal(c)
-		if err != nil {
-			logger.GetLogger().Errorf("could not marshal ice candidate: %v", err)
-			return
-		}
-
 		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: &livekit.Trickle{
-					CandidateInit: string(bytes),
+					Candidate: c.Candidate,
+					// TODO: there are other candidateInit fields that we might want
 				},
 			},
 		})
@@ -200,14 +195,8 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.WebRTCPeer, 
 }
 
 func (s *RTCService) handleTrickle(peer *rtc.WebRTCPeer, trickle *livekit.Trickle) error {
-	var candidate webrtc.ICECandidateInit
-	err := json.Unmarshal([]byte(trickle.CandidateInit), &candidate)
-	if err != nil {
-		return err
-	}
-
-	err = peer.AddICECandidate(candidate)
-	if err != nil {
+	candidateInit := FromProtoTrickle(trickle)
+	if err := peer.AddICECandidate(*candidateInit); err != nil {
 		return err
 	}
 
