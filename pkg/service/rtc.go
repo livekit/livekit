@@ -15,8 +15,9 @@ import (
 )
 
 type RTCService struct {
-	manager  *rtc.RoomManager
-	upgrader websocket.Upgrader
+	skipTokenCheck bool
+	manager        *rtc.RoomManager
+	upgrader       websocket.Upgrader
 }
 
 func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
@@ -26,6 +27,7 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 	}
 
 	if conf.Development {
+		s.skipTokenCheck = true
 		s.upgrader.CheckOrigin = func(r *http.Request) bool {
 			// allow all in dev
 			return true
@@ -39,8 +41,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomId := r.FormValue("room_id")
 	token := r.FormValue("token")
 	peerId := r.FormValue("peer_id")
+	log := logger.GetLogger()
 
-	logger.GetLogger().Infow("new client connected",
+	log.Infow("new client connected",
 		"roomId", roomId,
 		"peerId", peerId,
 	)
@@ -51,7 +54,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if room.Token != token {
+	if !s.skipTokenCheck && room.Token != token {
 		writeJSONError(w, http.StatusUnauthorized, "invalid room token")
 		return
 	}
@@ -62,6 +65,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"err", err,
 		)
 	}
+	conn.SetCloseHandler(func(code int, text string) error {
+		log.Infow("websocket closed by remote")
+		return nil
+	})
+	defer func() {
+		log.Infow("connection returned")
+	}()
 
 	signalConn := NewWSSignalConnection(conn, peerId)
 	var peer *rtc.WebRTCPeer
@@ -77,32 +87,45 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"err", err,
 				"peerId", peerId,
 				"roomId", roomId)
+			return
 		}
 
 		switch msg := req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
 			peer, err = s.handleJoin(signalConn, room, msg.Offer.Sdp)
+			defer func() {
+				// remove peer from room
+				room.RemovePeer(peerId)
+			}()
+			if err != nil {
+				log.Errorw("could not handle join", "err", err, "peerId", peerId)
+				return
+			}
 		case *livekit.SignalRequest_Negotiate:
 			if peer == nil {
-				conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
+				log.Errorw("cannot negotiate before peer offer", "peerId", peerId)
+				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
 			}
 			err = s.handleNegotiate(signalConn, peer, msg.Negotiate)
 			if err != nil {
-				conn.WriteJSON(
-					jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
+				log.Errorw("could not handle negotiate", "peerId", peerId, "err", err)
+				//conn.WriteJSON(
+				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 				return
 			}
 		case *livekit.SignalRequest_Trickle:
-			if peer != nil {
-				conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
+			if peer == nil {
+				log.Errorw("cannot trickle before peer offer", "peerId", peerId)
+				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 				return
 			}
 
 			err = s.handleTrickle(peer, msg.Trickle)
 			if err != nil {
-				conn.WriteJSON(
-					jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
+				log.Errorw("could not handle trickle", "peerId", peerId, "err", err)
+				//conn.WriteJSON(
+				//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 				return
 			}
 		}
@@ -111,18 +134,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string) (*rtc.WebRTCPeer, error) {
+	log := logger.GetLogger()
+
+	log.Infow("handling join")
 	peer, err := room.Join(sc.PeerId(), sdp)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not join room")
-	}
-
-	offer := webrtc.SessionDescription{
-		Type: webrtc.SDPTypeOffer,
-		SDP:  sdp,
-	}
-	answer, err := peer.Answer(offer)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not answer offer")
 	}
 
 	// TODO: it might be better to return error instead of nil
@@ -151,6 +168,15 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 			logger.GetLogger().Errorw("could not send offer to peer",
 				"err", err)
 		}
+	}
+
+	offer := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeOffer,
+		SDP:  sdp,
+	}
+	answer, err := peer.Answer(offer)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not answer offer")
 	}
 
 	// finally send answer

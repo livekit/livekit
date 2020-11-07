@@ -65,8 +65,10 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 	var err error
 
 	if c.useJSON {
+		msgType = websocket.TextMessage
 		payload, err = protojson.Marshal(msg)
 	} else {
+		msgType = websocket.BinaryMessage
 		payload, err = proto.Marshal(msg)
 	}
 	if err != nil {

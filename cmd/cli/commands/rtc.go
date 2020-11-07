@@ -5,6 +5,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/urfave/cli/v2"
+
+	"github.com/livekit/livekit-server/cmd/cli/client"
+	"github.com/livekit/livekit-server/pkg/logger"
 )
 
 var (
@@ -16,8 +19,7 @@ var (
 				roomFlag,
 				rtcHostFlag,
 				&cli.StringFlag{
-					Name:     "token",
-					Required: true,
+					Name: "token",
 				},
 				&cli.StringFlag{
 					Name:  "peer-id",
@@ -35,16 +37,24 @@ func joinRoom(c *cli.Context) error {
 	}
 
 	v := url.Values{}
-	v.Set("roomId", c.String("room-id"))
+	v.Set("room_id", c.String("room-id"))
 	v.Set("token", c.String("token"))
-	v.Set("peerId", c.String("peer-id"))
+	v.Set("peer_id", c.String("peer-id"))
 	u.RawQuery = v.Encode()
 
+	logger.GetLogger().Infow("connecting to Websocket signal", "url", u.String())
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	return nil
+	rc, err := client.NewRTCClient(conn)
+	if err != nil {
+		return err
+	}
+
+	// TODO: input loop to detect user commands
+
+	return rc.Run()
 }

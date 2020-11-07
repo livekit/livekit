@@ -98,6 +98,18 @@ func (r *Room) Join(peerId string, sdp string) (peer *WebRTCPeer, err error) {
 	return
 }
 
+func (r *Room) RemovePeer(peerId string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if p, ok := r.peers[peerId]; ok {
+		// also stop connection if needed
+		p.Close()
+	}
+
+	delete(r.peers, peerId)
+}
+
 // a peer in the room added a new track, subscribe other peers to it
 func (r *Room) onTrackAdded(peer *WebRTCPeer, track *PeerTrack) {
 	r.lock.RLock()
