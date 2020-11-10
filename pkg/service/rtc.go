@@ -144,6 +144,7 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 
 	// TODO: it might be better to return error instead of nil
 	peer.OnICECandidate = func(c *webrtc.ICECandidateInit) {
+		log.Debugw("sending ICE candidate", "peerId", peer.ID())
 		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: &livekit.Trickle{
@@ -153,7 +154,7 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 			},
 		})
 		if err != nil {
-			logger.GetLogger().Errorw("could not send trickle", "err", err)
+			log.Errorw("could not send trickle", "err", err)
 		}
 	}
 
@@ -222,6 +223,7 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.WebRTCPeer, 
 
 func (s *RTCService) handleTrickle(peer *rtc.WebRTCPeer, trickle *livekit.Trickle) error {
 	candidateInit := FromProtoTrickle(trickle)
+	logger.GetLogger().Debugw("adding peer candidate", "peerId", peer.ID())
 	if err := peer.AddICECandidate(*candidateInit); err != nil {
 		return err
 	}

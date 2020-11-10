@@ -3,11 +3,14 @@ package client
 import (
 	"container/ring"
 	"context"
+	"fmt"
 	"io"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/randutil"
 	"github.com/pion/webrtc/v3"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -18,14 +21,19 @@ import (
 )
 
 type RTCClient struct {
-	conn              *websocket.Conn
-	PeerConn          *webrtc.PeerConnection
-	pendingCandidates []*webrtc.ICECandidate
-	lock              sync.Mutex
-	ctx               context.Context
-	cancel            context.CancelFunc
-	connected         bool
-	paused            bool
+	conn         *websocket.Conn
+	PeerConn     *webrtc.PeerConnection
+	localTracks  []*webrtc.Track
+	lock         sync.Mutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	connected    bool
+	iceConnected bool
+	paused       bool
+
+	// pending actions to start after connected to peer
+	pendingCandidates   []*webrtc.ICECandidate
+	pendingTrackWriters []*TrackWriter
 
 	// navigate log ring buffer. saving the last N entries
 	writer *ring.Ring
@@ -41,7 +49,17 @@ var (
 			},
 		},
 	}
-	maxLogs = 256
+	maxLogs          = 256
+	extFormatMapping = map[string]string{
+		".ivf":  webrtc.VP8,
+		".h264": webrtc.H264,
+		".ogg":  webrtc.Opus,
+	}
+	payloadTypes = map[string]int{
+		webrtc.VP8:  webrtc.DefaultPayloadTypeVP8,
+		webrtc.H264: webrtc.DefaultPayloadTypeH264,
+		webrtc.Opus: webrtc.DefaultPayloadTypeOpus,
+	}
 )
 
 func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
@@ -56,6 +74,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		conn:              conn,
 		lock:              sync.Mutex{},
 		pendingCandidates: make([]*webrtc.ICECandidate, 0),
+		localTracks:       make([]*webrtc.Track, 0),
 		reader:            logRing,
 		writer:            logRing,
 		PeerConn:          peerConn,
@@ -88,9 +107,27 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	peerConn.OnNegotiationNeeded(func() {
+		c.AppendLog("negotiate needed")
+		// TODO: negotiate
 	})
 
 	peerConn.OnDataChannel(func(channel *webrtc.DataChannel) {
+	})
+
+	peerConn.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+		c.AppendLog("ICE state has changed", "state", connectionState.String())
+		if connectionState == webrtc.ICEConnectionStateConnected {
+			// flush peers
+			c.lock.Lock()
+			defer c.lock.Unlock()
+			for _, tw := range c.pendingTrackWriters {
+				if err := tw.Start(); err != nil {
+					c.AppendLog("track writer error", "err", err)
+				}
+			}
+
+			c.iceConnected = true
+		}
 	})
 
 	return c, nil
@@ -169,7 +206,7 @@ func (c *RTCClient) Run() error {
 			c.pendingCandidates = nil
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Negotiate:
-		// TBD
+			c.AppendLog("remote wants to negotiate")
 		case *livekit.SignalResponse_Trickle:
 			candidateInit := service.FromProtoTrickle(msg.Trickle)
 			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
@@ -217,6 +254,7 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 }
 
 func (c *RTCClient) Stop() {
+	c.conn.Close()
 	c.cancel()
 }
 
@@ -245,6 +283,41 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 			Trickle: service.ToProtoTrickle(&candInit),
 		},
 	})
+}
+
+func (c *RTCClient) AddTrack(path string, codecType webrtc.RTPCodecType, id string, label string) error {
+	// determine file type
+	format, ok := extFormatMapping[filepath.Ext(path)]
+	if !ok {
+		return fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
+	}
+	payloadType := uint8(payloadTypes[format])
+
+	logger.GetLogger().Infow("adding track",
+		"format", format,
+	)
+	track, err := c.PeerConn.NewTrack(payloadType, randutil.NewMathRandomGenerator().Uint32(), id, label)
+	if err != nil {
+		return err
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.localTracks = append(c.localTracks, track)
+
+	if _, err := c.PeerConn.AddTrack(track); err != nil {
+		return err
+	}
+
+	tw := NewTrackWriter(c.ctx, track, path, format)
+	// write tracks only after ICE connectivity
+	if c.iceConnected {
+		return tw.Start()
+	}
+
+	c.pendingTrackWriters = append(c.pendingTrackWriters, tw)
+
+	return nil
 }
 
 type logEntry struct {

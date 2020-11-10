@@ -43,6 +43,11 @@ func NewPeerTrack(ctx context.Context, peerId string, rtcpWriter RTCPWriter, tra
 	}
 }
 
+func (t *PeerTrack) Start() {
+	// start worker
+	go t.forwardWorker()
+}
+
 // subscribes peer to current track
 // creates and add necessary forwarders and starts them
 func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
@@ -100,7 +105,14 @@ func (t *PeerTrack) RemoveSubscriber(peerId string) {
 // forwardWorker reads from the receiver and writes to each sender
 func (t *PeerTrack) forwardWorker() {
 	for pkt := range t.receiver.RTPChan() {
+		if t.ctx.Err() != nil {
+			return
+		}
 		now := time.Now()
+
+		logger.GetLogger().Debugw("read packet from track",
+			"peerId", t.peerId,
+			"track", t.track.ID())
 		t.lock.RLock()
 		for dstPeerId, forwarder := range t.forwarders {
 			// There exists a bug in chrome where setLocalDescription

@@ -83,6 +83,10 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 		}
 	})
 
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.GetLogger().Debugw("ICE connection state changed", "state", state.String())
+	})
+
 	// TODO: handle data channel
 
 	return peer, nil
@@ -169,6 +173,7 @@ func (p *WebRTCPeer) RemoveSubscriber(peerId string) {
 
 // when a new track is created, creates a PeerTrack and adds it to room
 func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
+	logger.GetLogger().Debugw("track added", "peerId", p.ID(), "track", track.Label())
 
 	// create Receiver
 	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.receiverConfig, p.mediaEngine)
@@ -178,6 +183,7 @@ func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceive
 	p.tracks = append(p.tracks, pt)
 	p.lock.Unlock()
 
+	pt.Start()
 	if p.OnPeerTrack != nil {
 		// caller should hook up what happens when the peer track is available
 		go p.OnPeerTrack(p, pt)
