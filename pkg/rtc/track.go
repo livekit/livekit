@@ -44,6 +44,7 @@ func NewPeerTrack(ctx context.Context, peerId string, rtcpWriter RTCPWriter, tra
 }
 
 func (t *PeerTrack) Start() {
+	t.receiver.Start()
 	// start worker
 	go t.forwardWorker()
 }

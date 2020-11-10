@@ -108,7 +108,14 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	peerConn.OnNegotiationNeeded(func() {
 		c.AppendLog("negotiate needed")
-		// TODO: negotiate
+		if !c.connected {
+			c.AppendLog("not yet connected, skipping negotiate")
+			return
+		}
+		err := c.Negotiate()
+		if err != nil {
+			c.AppendLog("error negotiating", "err", err)
+		}
 	})
 
 	peerConn.OnDataChannel(func(channel *webrtc.DataChannel) {
@@ -126,6 +133,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 				}
 			}
 
+			c.pendingTrackWriters = nil
 			c.iceConnected = true
 		}
 	})
@@ -206,7 +214,11 @@ func (c *RTCClient) Run() error {
 			c.pendingCandidates = nil
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Negotiate:
-			c.AppendLog("remote wants to negotiate")
+			c.AppendLog("received negotate answer")
+			answer := service.FromProtoSessionDescription(msg.Negotiate)
+			if err := c.PeerConn.SetRemoteDescription(answer); err != nil {
+				return err
+			}
 		case *livekit.SignalResponse_Trickle:
 			candidateInit := service.FromProtoTrickle(msg.Trickle)
 			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
@@ -283,6 +295,30 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 			Trickle: service.ToProtoTrickle(&candInit),
 		},
 	})
+}
+
+func (c *RTCClient) Negotiate() error {
+	// Create an offer to send to the other process
+	offer, err := c.PeerConn.CreateOffer(nil)
+	if err != nil {
+		return err
+	}
+
+	if err = c.PeerConn.SetLocalDescription(offer); err != nil {
+		return err
+	}
+
+	// send the offer to remote
+	req := &livekit.SignalRequest{
+		Message: &livekit.SignalRequest_Negotiate{
+			Negotiate: service.ToProtoSessionDescription(offer),
+		},
+	}
+	c.AppendLog("sending negotiate offer to remote...")
+	if err = c.SendRequest(req); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *RTCClient) AddTrack(path string, codecType webrtc.RTPCodecType, id string, label string) error {
