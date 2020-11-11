@@ -67,6 +67,8 @@ func (r *Room) Join(peerId string, sdp string) (peer *WebRTCPeer, err error) {
 		return nil, ErrPeerExists
 	}
 
+	logger.GetLogger().Infow("new peer joined", "peerId", peerId,
+		"roomId", r.RoomId)
 	offer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
 		SDP:  sdp,
@@ -83,8 +85,6 @@ func (r *Room) Join(peerId string, sdp string) (peer *WebRTCPeer, err error) {
 	}
 	peer.OnPeerTrack = r.onTrackAdded
 
-	r.peers[peerId] = peer
-
 	// subscribe peer to existing tracks
 	for _, p := range r.peers {
 		if err := p.AddSubscriber(peer); err != nil {
@@ -94,6 +94,8 @@ func (r *Room) Join(peerId string, sdp string) (peer *WebRTCPeer, err error) {
 				"srcPeer", p.ID())
 		}
 	}
+
+	r.peers[peerId] = peer
 
 	return
 }

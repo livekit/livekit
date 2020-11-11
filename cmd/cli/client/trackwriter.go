@@ -76,10 +76,12 @@ func (w *TrackWriter) writeOgg() {
 		if err == io.EOF {
 			logger.GetLogger().Infow("all audio samples parsed and sent")
 			w.onWriteComplete()
+			return
 		}
 
 		if err != nil {
 			logger.GetLogger().Errorw("could not parse ogg page", "err", err)
+			return
 		}
 
 		// The amount of samples is the difference between the last and current timestamp

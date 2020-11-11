@@ -102,7 +102,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	peerConn.OnTrack(func(track *webrtc.Track, r *webrtc.RTPReceiver) {
-		c.AppendLog("track received", "track", track.Label(), "ssrc", track.SSRC())
+		c.AppendLog("track received", "label", track.Label(), "id", track.ID())
 		// TODO: set up track consumer to read
 	})
 
@@ -214,9 +214,10 @@ func (c *RTCClient) Run() error {
 			c.pendingCandidates = nil
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Negotiate:
-			c.AppendLog("received negotate answer")
-			answer := service.FromProtoSessionDescription(msg.Negotiate)
-			if err := c.PeerConn.SetRemoteDescription(answer); err != nil {
+			c.AppendLog("received negotate answer",
+				"type", msg.Negotiate.Type)
+			desc := service.FromProtoSessionDescription(msg.Negotiate)
+			if err := c.handleNegotiate(desc); err != nil {
 				return err
 			}
 		case *livekit.SignalResponse_Trickle:
@@ -317,6 +318,32 @@ func (c *RTCClient) Negotiate() error {
 	c.AppendLog("sending negotiate offer to remote...")
 	if err = c.SendRequest(req); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
+	// always set remote description
+	if err := c.PeerConn.SetRemoteDescription(desc); err != nil {
+		return err
+	}
+
+	if desc.Type == webrtc.SDPTypeOffer {
+		answer, err := c.PeerConn.CreateAnswer(nil)
+		if err != nil {
+			return err
+		}
+
+		if err := c.PeerConn.SetLocalDescription(answer); err != nil {
+			return err
+		}
+
+		// send remote an answer
+		return c.SendRequest(&livekit.SignalRequest{
+			Message: &livekit.SignalRequest_Negotiate{
+				Negotiate: service.ToProtoSessionDescription(answer),
+			},
+		})
 	}
 	return nil
 }

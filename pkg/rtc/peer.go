@@ -56,23 +56,6 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 
 	pc.OnTrack(peer.onTrack)
 
-	pc.OnNegotiationNeeded(func() {
-		offer, err := pc.CreateOffer(nil)
-		if err != nil {
-			// TODO: log
-			return
-		}
-
-		err = pc.SetLocalDescription(offer)
-		if err != nil {
-			// TODO: log
-			return
-		}
-		if peer.OnOffer != nil {
-			peer.OnOffer(offer)
-		}
-	})
-
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
@@ -112,6 +95,25 @@ func (p *WebRTCPeer) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessio
 		err = errors.Wrap(err, "could not set local description")
 		return
 	}
+
+	// only set after answered
+	p.conn.OnNegotiationNeeded(func() {
+		logger.GetLogger().Debugw("negotiation needed")
+		offer, err := p.conn.CreateOffer(nil)
+		if err != nil {
+			// TODO: log
+			return
+		}
+
+		err = p.conn.SetLocalDescription(offer)
+		if err != nil {
+			// TODO: log
+			return
+		}
+		if p.OnOffer != nil {
+			p.OnOffer(offer)
+		}
+	})
 
 	return
 }
@@ -155,6 +157,10 @@ func (p *WebRTCPeer) AddSubscriber(otherPeer *WebRTCPeer) error {
 	defer p.lock.RUnlock()
 
 	for _, track := range p.tracks {
+		logger.GetLogger().Debugw("subscribing to track",
+			"srcPeer", p.ID(),
+			"dstPeer", otherPeer.ID(),
+			"track", track.id)
 		if err := track.AddSubscriber(otherPeer); err != nil {
 			return err
 		}

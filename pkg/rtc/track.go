@@ -16,7 +16,7 @@ var (
 
 // Peer track represents a track that needs to be forwarded
 type PeerTrack struct {
-	id     uint32
+	id     string
 	ctx    context.Context
 	peerId string
 	// source track
@@ -32,7 +32,7 @@ type PeerTrack struct {
 
 func NewPeerTrack(ctx context.Context, peerId string, rtcpWriter RTCPWriter, track *webrtc.Track, receiver *Receiver) *PeerTrack {
 	return &PeerTrack{
-		id:         track.SSRC(),
+		id:         track.ID(),
 		ctx:        ctx,
 		peerId:     peerId,
 		track:      track,
@@ -111,9 +111,9 @@ func (t *PeerTrack) forwardWorker() {
 		}
 		now := time.Now()
 
-		logger.GetLogger().Debugw("read packet from track",
-			"peerId", t.peerId,
-			"track", t.track.ID())
+		//logger.GetLogger().Debugw("read packet from track",
+		//	"peerId", t.peerId,
+		//	"track", t.track.ID())
 		t.lock.RLock()
 		for dstPeerId, forwarder := range t.forwarders {
 			// There exists a bug in chrome where setLocalDescription
