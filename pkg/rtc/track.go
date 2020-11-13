@@ -58,8 +58,11 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 		return ErrUnsupportedPayloadType
 	}
 
+	// pack ID to identify all tracks
+	packedId := PackPeerTrack(t.peerId, t.track.ID())
+
 	// use existing SSRC with simple forwarders. adaptive forwarders require unique SSRC per layer
-	outTrack, err := peer.conn.NewTrack(codecs[0].PayloadType, t.track.SSRC(), t.track.ID(), t.track.Label())
+	outTrack, err := peer.conn.NewTrack(codecs[0].PayloadType, t.track.SSRC(), packedId, t.track.Label())
 	if err != nil {
 		return err
 	}

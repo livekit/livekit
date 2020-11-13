@@ -34,7 +34,7 @@ type Receiver struct {
 	onCloseHandler func(r *Receiver)
 }
 
-func NewReceiver(ctx context.Context, peerId string, rtpReceiver *webrtc.RTPReceiver, conf ReceiverConfig, me *MediaEngine) *Receiver {
+func NewReceiver(ctx context.Context, peerId string, rtpReceiver *webrtc.RTPReceiver, conf ReceiverConfig, tccExt int) *Receiver {
 	ctx, cancel := context.WithCancel(ctx)
 	track := rtpReceiver.Track()
 	return &Receiver{
@@ -47,10 +47,18 @@ func NewReceiver(ctx context.Context, peerId string, rtpReceiver *webrtc.RTPRece
 		buffer: sfu.NewBuffer(track, sfu.BufferOptions{
 			BufferTime: conf.maxBufferTime,
 			MaxBitRate: conf.maxBandwidth * 1000,
-			TCCExt:     me.tCCExt,
+			TCCExt:     tccExt,
 		}),
 		once: sync.Once{},
 	}
+}
+
+func (r *Receiver) PeerId() string {
+	return r.peerId
+}
+
+func (r *Receiver) TrackId() string {
+	return r.track.ID()
 }
 
 // starts reading RTP and push to buffer
@@ -69,7 +77,7 @@ func (r *Receiver) Close() {
 	r.cancel()
 }
 
-// reaturns channel to read rtp packets
+// returns channel to read rtp packets
 func (r *Receiver) RTPChan() <-chan *rtp.Packet {
 	return r.rtpChan
 }

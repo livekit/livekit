@@ -3,6 +3,8 @@ syntax = "proto3";
 package livekit;
 option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
+import "model.proto";
+
 // Room service that can be performed on any node
 // they are simple HTTP req/responses
 service RoomService {
@@ -22,14 +24,6 @@ message CreateRoomRequest {
 
 message GetRoomRequest {
   string room_id = 1;
-}
-
-message RoomInfo {
-  string room_id = 1;
-  string node_ip = 2;
-  uint32 node_rtc_port = 3;
-  int64 creation_time = 4;
-  string token = 5;
 }
 
 message DeleteRoomRequest {

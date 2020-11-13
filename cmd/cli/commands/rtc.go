@@ -159,7 +159,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 	mediaPath = ExpandUser(mediaPath)
 
 	// TODO: see what the ID should be
-	err = rc.AddTrack(mediaPath, codecType, filepath.Base(mediaPath), "livekit")
+	err = rc.AddTrack(mediaPath, codecType, codecType.String(), filepath.Base(mediaPath))
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 
 	audioPath := mediaPath[0:len(mediaPath)-len(videoExt)] + ".ogg"
 	if _, err = os.Stat(audioPath); err == nil {
-		err = rc.AddTrack(audioPath, webrtc.RTPCodecTypeAudio, filepath.Base(audioPath), "livekit")
+		err = rc.AddTrack(audioPath, webrtc.RTPCodecTypeAudio, codecType.String(), filepath.Base(audioPath))
 		if err != nil {
 			fmt.Printf("added audio track: %s\n", audioPath)
 		}

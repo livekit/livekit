@@ -18,7 +18,7 @@ const (
 type MediaEngine struct {
 	webrtc.MediaEngine
 	feedbackTypes []webrtc.RTCPFeedback
-	tCCExt        int
+	TCCExt        int
 }
 
 // PopulateFromSDP finds all codecs in sd and adds them to m, using the dynamic
@@ -40,7 +40,7 @@ func (e *MediaEngine) PopulateFromSDP(sd webrtc.SessionDescription) error {
 
 		for _, att := range md.Attributes {
 			if att.Key == sdp.AttrKeyExtMap && strings.HasSuffix(att.Value, sdp.TransportCCURI) {
-				e.tCCExt, _ = strconv.Atoi(att.Value[:1])
+				e.TCCExt, _ = strconv.Atoi(att.Value[:1])
 				break
 			}
 		}

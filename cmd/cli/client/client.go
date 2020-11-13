@@ -12,10 +12,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/randutil"
 	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -30,6 +32,8 @@ type RTCClient struct {
 	connected    bool
 	iceConnected bool
 	paused       bool
+	me           *rtc.MediaEngine // optional, populated only when receiving tracks
+	receivers    []*rtc.Receiver
 
 	// pending actions to start after connected to peer
 	pendingCandidates   []*webrtc.ICECandidate
@@ -81,7 +85,6 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	// TODO: set up callbacks
 	peerConn.OnICECandidate(func(ic *webrtc.ICECandidate) {
 		if ic == nil {
 			return
@@ -101,9 +104,19 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		}
 	})
 
-	peerConn.OnTrack(func(track *webrtc.Track, r *webrtc.RTPReceiver) {
+	peerConn.OnTrack(func(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
 		c.AppendLog("track received", "label", track.Label(), "id", track.ID())
-		// TODO: set up track consumer to read
+		peerId, _ := rtc.UnpackPeerTrack(track.ID())
+		tccExt := 0
+		if c.me != nil {
+			tccExt = c.me.TCCExt
+		}
+		r := rtc.NewReceiver(c.ctx, peerId, rtpReceiver, rtc.ReceiverConfig{}, tccExt)
+		c.lock.Lock()
+		c.receivers = append(c.receivers, r)
+		r.Start()
+		go c.consumeReceiver(r)
+		c.lock.Unlock()
 	})
 
 	peerConn.OnNegotiationNeeded(func() {
@@ -214,7 +227,7 @@ func (c *RTCClient) Run() error {
 			c.pendingCandidates = nil
 			c.lock.Unlock()
 		case *livekit.SignalResponse_Negotiate:
-			c.AppendLog("received negotate answer",
+			c.AppendLog("received negotiate",
 				"type", msg.Negotiate.Type)
 			desc := service.FromProtoSessionDescription(msg.Negotiate)
 			if err := c.handleNegotiate(desc); err != nil {
@@ -323,12 +336,19 @@ func (c *RTCClient) Negotiate() error {
 }
 
 func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
-	// always set remote description
+	// always set remote description for both offer and answer
 	if err := c.PeerConn.SetRemoteDescription(desc); err != nil {
 		return err
 	}
 
+	// if we received an offer, we'd have to answer
 	if desc.Type == webrtc.SDPTypeOffer {
+		// create media engine
+		c.me = &rtc.MediaEngine{}
+		if err := c.me.PopulateFromSDP(desc); err != nil {
+			return errors.Wrapf(err, "could not parse SDP")
+		}
+
 		answer, err := c.PeerConn.CreateAnswer(nil)
 		if err != nil {
 			return err
@@ -416,6 +436,35 @@ func (c *RTCClient) logLoop() {
 		case <-c.ctx.Done():
 			return
 		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
+	lastUpdate := time.Time{}
+	peerId, trackId := rtc.UnpackPeerTrack(r.TrackId())
+	numBytes := 0
+	for {
+		select {
+		case packet, ok := <-r.RTPChan():
+			if !ok {
+				// channel closed, we are done
+				return
+			}
+			numBytes += packet.MarshalSize()
+			if time.Now().Sub(lastUpdate) > 30*time.Second {
+				c.AppendLog("consumed from peer",
+					"track", trackId, "peer", peerId,
+					"size", numBytes)
+				numBytes = 0
+				lastUpdate = time.Now()
+			}
+		case <-c.ctx.Done():
+			return
+		}
+
+		if c.ctx.Err() != nil {
+			return
 		}
 	}
 }

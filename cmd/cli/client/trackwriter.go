@@ -15,6 +15,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 )
 
+// Writes a file to an RTP track.
+// makes it easier to debug and create RTP streams
 type TrackWriter struct {
 	ctx      context.Context
 	track    *webrtc.Track
@@ -72,6 +74,9 @@ func (w *TrackWriter) writeOgg() {
 	// Keep track of last granule, the difference is the amount of samples in the buffer
 	var lastGranule uint64
 	for {
+		if w.ctx.Err() != nil {
+			return
+		}
 		pageData, pageHeader, err := w.ogg.ParseNextPage()
 		if err == io.EOF {
 			logger.GetLogger().Infow("all audio samples parsed and sent")
@@ -103,6 +108,9 @@ func (w *TrackWriter) writeVP8() {
 	// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
 	sleepTime := time.Millisecond * time.Duration((float32(w.ivfheader.TimebaseNumerator)/float32(w.ivfheader.TimebaseDenominator))*1000)
 	for {
+		if w.ctx.Err() != nil {
+			return
+		}
 		frame, _, err := w.ivf.ParseNextFrame()
 		if err == io.EOF {
 			logger.GetLogger().Infow("all video frames parsed and sent")
