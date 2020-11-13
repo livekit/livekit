@@ -28,11 +28,20 @@ var (
 				roomFlag,
 				rtcHostFlag,
 				&cli.StringFlag{
-					Name: "token",
+					Name:  "token",
+					Usage: "room token, not required in dev mode",
 				},
 				&cli.StringFlag{
 					Name:  "peer-id",
 					Value: "peer",
+				},
+				&cli.StringFlag{
+					Name:  "audio",
+					Usage: "an ogg file to publish upon connection",
+				},
+				&cli.StringFlag{
+					Name:  "video",
+					Usage: "an ivf file to publish upon connection",
 				},
 			},
 		},
@@ -65,15 +74,17 @@ func joinRoom(c *cli.Context) error {
 		return err
 	}
 
-	// signal to stop client
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	handleSignals(rc)
 
-	go func() {
-		sig := <-sigChan
-		log.Infow("exit requested, shutting down", "signal", sig)
-		rc.Stop()
-	}()
+	// add tracks if needed
+	audioFile := c.String("audio")
+	videoFile := c.String("video")
+	if audioFile != "" {
+		rc.AddTrack(audioFile, webrtc.RTPCodecTypeAudio, "audio", filepath.Base(audioFile))
+	}
+	if videoFile != "" {
+		rc.AddTrack(videoFile, webrtc.RTPCodecTypeVideo, "video", filepath.Base(videoFile))
+	}
 
 	// start loop to detect input
 	go func() {
@@ -183,4 +194,16 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 		}
 	}
 	return err
+}
+
+func handleSignals(rc *client.RTCClient) {
+	// signal to stop client
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	go func() {
+		sig := <-sigChan
+		logger.GetLogger().Infow("exit requested, shutting down", "signal", sig)
+		rc.Stop()
+	}()
 }
