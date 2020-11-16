@@ -32,6 +32,9 @@ generate: wire
   	$(WIRE) ;\
 	}
 
+test: wire
+	go test ./...
+
 GO_TARGET=proto/livekit
 proto: protoc protoc-gen-go twirp-gen
 	@{ \
