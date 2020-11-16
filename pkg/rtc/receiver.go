@@ -30,6 +30,7 @@ type Receiver struct {
 	buffer      *sfu.Buffer
 	rtpChan     chan *rtp.Packet
 	once        sync.Once
+	bytesRead   int64
 
 	onCloseHandler func(r *Receiver)
 }
@@ -93,6 +94,10 @@ func (r *Receiver) WriteBufferedPacket(sn uint16, track *webrtc.Track, snOffset 
 		return nil
 	}
 	return r.buffer.WritePacket(sn, track, snOffset, tsOffset, ssrc)
+}
+
+func (r *Receiver) Stats() (sfu.BufferStats, rtcp.ReceptionReport) {
+	return r.buffer.Stats(), r.buffer.BuildReceptionReport()
 }
 
 // rtpWorker reads RTP stream, fills buffer and channel

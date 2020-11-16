@@ -292,6 +292,12 @@ func (c *RTCClient) ResumeLogs() {
 	c.paused = false
 }
 
+func (c *RTCClient) Receivers() []*rtc.Receiver {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return append([]*rtc.Receiver{}, c.receivers...)
+}
+
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
 	payload, err := protojson.Marshal(msg)
 	if err != nil {
@@ -456,7 +462,6 @@ func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
 				c.AppendLog("consumed from peer",
 					"track", trackId, "peer", peerId,
 					"size", numBytes)
-				numBytes = 0
 				lastUpdate = time.Now()
 			}
 		case <-c.ctx.Done():

@@ -349,7 +349,7 @@ func (b *Buffer) buildTransportCCPacket() *rtcp.TransportLayerCC {
 	return rtcpTCC
 }
 
-func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
+func (b *Buffer) BuildReceptionReport() rtcp.ReceptionReport {
 	extMaxSeq := b.cycles | uint32(b.maxSeqNo)
 	expected := extMaxSeq - uint32(b.baseSN) + 1
 	lost := expected - b.packetCount
@@ -402,7 +402,7 @@ func (b *Buffer) BuildRTCP() (rtcp.ReceptionReport, []rtcp.Packet) {
 	var pkts []rtcp.Packet
 	var report rtcp.ReceptionReport
 
-	report = b.buildReceptionReport()
+	report = b.BuildReceptionReport()
 
 	if b.remb {
 		pkts = append(pkts, b.buildREMBPacket())
@@ -438,5 +438,17 @@ func (b *Buffer) WritePacket(sn uint16, track *webrtc.Track, snOffset uint16, ts
 func (b *Buffer) onLostHandler(fn func(nack *rtcp.TransportLayerNack)) {
 	if b.nack {
 		b.pktQueue.onLost = fn
+	}
+}
+
+type BufferStats struct {
+	TotalBytes     uint64
+	LastPacketTime int64
+}
+
+func (b *Buffer) Stats() BufferStats {
+	return BufferStats{
+		TotalBytes:     b.totalByte,
+		LastPacketTime: b.lastPacketTime,
 	}
 }
