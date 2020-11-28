@@ -10,13 +10,11 @@ import (
 )
 
 type SignalConnection interface {
-	Name() string
 	ReadRequest() (*livekit.SignalRequest, error)
 	WriteResponse(*livekit.SignalResponse) error
 }
 
 type WSSignalConnection struct {
-	name    string
 	conn    *websocket.Conn
 	useJSON bool
 }
@@ -24,12 +22,7 @@ type WSSignalConnection struct {
 func NewWSSignalConnection(conn *websocket.Conn, name string) *WSSignalConnection {
 	return &WSSignalConnection{
 		conn: conn,
-		name: name,
 	}
-}
-
-func (c *WSSignalConnection) Name() string {
-	return c.name
 }
 
 func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {

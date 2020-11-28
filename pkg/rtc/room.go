@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -57,19 +56,15 @@ func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	}
 }
 
-func (r *Room) Join(participantName string) (participant *Participant, err error) {
+func (r *Room) Join(participant *Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	participant, err = NewParticipant(r.config, participantName)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create participant")
-	}
 	participant.OnPeerTrack = r.onTrackAdded
 
 	logger.GetLogger().Infow("new participant joined",
 		"id", participant.ID(),
-		"name", participantName,
+		"name", participant.Name(),
 		"roomId", r.Id)
 
 	// subscribe participant to existing tracks
@@ -84,7 +79,7 @@ func (r *Room) Join(participantName string) (participant *Participant, err error
 
 	r.participants[participant.ID()] = participant
 
-	return
+	return nil
 }
 
 func (r *Room) RemoveParticipant(id string) {

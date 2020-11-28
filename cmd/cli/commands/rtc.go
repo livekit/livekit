@@ -50,7 +50,7 @@ var (
 )
 
 func joinRoom(c *cli.Context) error {
-	u, err := url.Parse(c.String("host"))
+	u, err := url.Parse(c.String("host") + "/rtc")
 	if err != nil {
 		return err
 	}

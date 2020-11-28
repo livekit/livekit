@@ -56,3 +56,7 @@ func (m *RoomManager) DeleteRoom(roomId string) error {
 	delete(m.rooms, roomId)
 	return nil
 }
+
+func (m *RoomManager) Config() *WebRTCConfig {
+	return &m.config
+}

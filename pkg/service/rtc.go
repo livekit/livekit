@@ -59,6 +59,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	participant, err := rtc.NewParticipant(s.manager.Config(), pName)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
+	}
+
+	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.GetLogger().Warnw("could not upgrade to WS",
@@ -72,12 +78,18 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		log.Infow("connection returned")
 	}()
-
 	signalConn := NewWSSignalConnection(conn, pName)
-	var participant *rtc.Participant
+
+	// send Join response
+	signalConn.WriteResponse(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Join{
+			Join: &livekit.JoinResponse{
+				Participant: participant.ToProto(),
+			},
+		},
+	})
 
 	// read connection and wait for commands
-
 	// TODO: pass in context from WS, so termination of WS would disconnect RTC
 	//ctx := context.Background()
 	for {
@@ -92,38 +104,38 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch msg := req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
-			participant, err = s.handleJoin(signalConn, room, msg.Offer.Sdp)
+			err = s.handleJoin(signalConn, room, participant, msg.Offer.Sdp)
 			if err != nil {
-				log.Errorw("could not handle join", "err", err, "participantName", pName)
+				log.Errorw("could not handle join", "err", err, "participant", participant.ID())
 				return
 			}
 			defer func() {
-				// remove peer from room
+				// remove peer from room upon disconnection
 				room.RemoveParticipant(participant.ID())
 			}()
 		case *livekit.SignalRequest_Negotiate:
-			if participant == nil {
-				log.Errorw("cannot negotiate before peer offer", "participantName", pName)
+			if participant.State() == rtc.ParticipantStateConnecting {
+				log.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
 			}
 			err = s.handleNegotiate(signalConn, participant, msg.Negotiate)
 			if err != nil {
-				log.Errorw("could not handle negotiate", "participantName", pName, "err", err)
+				log.Errorw("could not handle negotiate", "participant", participant.ID(), "err", err)
 				//conn.WriteJSON(
 				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 				return
 			}
 		case *livekit.SignalRequest_Trickle:
-			if participant == nil {
-				log.Errorw("cannot trickle before peer offer", "participantName", pName)
+			if participant.State() == rtc.ParticipantStateConnecting {
+				log.Errorw("cannot trickle before peer offer", "participant", participant.ID())
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 				return
 			}
 
 			err = s.handleTrickle(participant, msg.Trickle)
 			if err != nil {
-				log.Errorw("could not handle trickle", "participantName", pName, "err", err)
+				log.Errorw("could not handle trickle", "participant", participant.ID(), "err", err)
 				//conn.WriteJSON(
 				//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 				return
@@ -133,13 +145,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string) (*rtc.Participant, error) {
+func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, participant *rtc.Participant, sdp string) error {
 	log := logger.GetLogger()
 
 	log.Infow("handling join")
-	participant, err := room.Join(sc.Name())
+	err := room.Join(participant)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not join room")
+		return errors.Wrap(err, "could not join room")
 	}
 
 	// TODO: it might be better to return error instead of nil
@@ -178,7 +190,7 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 	}
 	answer, err := participant.Answer(offer)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not answer offer")
+		return errors.Wrap(err, "could not answer offer")
 	}
 
 	logger.GetLogger().Debugw("answered, writing response")
@@ -191,10 +203,10 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 	})
 
 	if err != nil {
-		return nil, errors.Wrap(err, "could not join")
+		return errors.Wrap(err, "could not create answer")
 	}
 
-	return participant, nil
+	return nil
 }
 
 func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant, neg *livekit.SessionDescription) error {

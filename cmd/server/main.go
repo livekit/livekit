@@ -99,10 +99,11 @@ func NewLivekitServer(conf *config.Config,
 		Handler: roomHandler,
 	}
 
-	rtcHandler := configureMiddlewares(conf, rtcService)
+	rtcHandler := http.NewServeMux()
+	rtcHandler.Handle("/rtc", rtcService)
 	s.rtcHttp = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.RTCPort),
-		Handler: rtcHandler,
+		Handler: configureMiddlewares(conf, rtcHandler),
 	}
 
 	return

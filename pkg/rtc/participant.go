@@ -11,6 +11,15 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/proto/livekit"
+)
+
+type ParticipantState string
+
+const (
+	ParticipantStateConnecting ParticipantState = "connecting" // websocket connected, but no offer yet
+	ParticipantStateJoined     ParticipantState = "joined"     // sent offer, establishing ICE
+	ParticipantStateActive     ParticipantState = "active"     // ice connected
 )
 
 type Participant struct {
@@ -20,6 +29,7 @@ type Participant struct {
 	cancel      context.CancelFunc
 	mediaEngine *MediaEngine
 	name        string
+	state       ParticipantState
 
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
@@ -36,7 +46,7 @@ type Participant struct {
 	OnClose        func(*Participant)
 }
 
-func NewParticipant(conf WebRTCConfig, name string) (*Participant, error) {
+func NewParticipant(conf *WebRTCConfig, name string) (*Participant, error) {
 	me := webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(conf.SettingEngine))
@@ -53,6 +63,7 @@ func NewParticipant(conf WebRTCConfig, name string) (*Participant, error) {
 		conn:           pc,
 		ctx:            ctx,
 		cancel:         cancel,
+		state:          ParticipantStateConnecting,
 		lock:           sync.RWMutex{},
 		receiverConfig: conf.receiver,
 		tracks:         make([]*Track, 0),
@@ -74,6 +85,9 @@ func NewParticipant(conf WebRTCConfig, name string) (*Participant, error) {
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		logger.GetLogger().Debugw("ICE connection state changed", "state", state.String())
+		if state == webrtc.ICEConnectionStateConnected {
+			participant.state = ParticipantStateActive
+		}
 	})
 
 	// TODO: handle data channel
@@ -85,13 +99,32 @@ func (p *Participant) ID() string {
 	return p.id
 }
 
+func (p *Participant) Name() string {
+	return p.name
+}
+
+func (p *Participant) State() ParticipantState {
+	return p.state
+}
+
+func (p *Participant) ToProto() *livekit.ParticipantInfo {
+	return &livekit.ParticipantInfo{
+		Id:   p.id,
+		Name: p.name,
+	}
+}
+
 // Answer an offer from remote participant
 func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
-	// set mediaengine
+	// media engine is already set to default codecs upon startup
 	//if err = p.mediaEngine.PopulateFromSDP(sdp); err != nil {
 	//	err = errors.Wrapf(err, "could not parse SDP")
 	//	return
 	//}
+
+	if p.state == ParticipantStateConnecting {
+		p.state = ParticipantStateJoined
+	}
 
 	if err = p.SetRemoteDescription(sdp); err != nil {
 		return

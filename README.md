@@ -34,3 +34,21 @@ To run a peer publishing to a room, do the following:
    ```
 
 That's it, join the room with another peer id and see it receiving those tracks
+
+## Protocol
+
+LiveKit provides room based audio/video/data channels based on WebRTC.
+It provides a set of APIs to manipulate rooms, as well as its own signaling protocol to exchange room and participant information.
+
+Room APIs are defined in room.proto, it's fairly straight forward with typical CRUD APIs. Room APIs are HTTP, built with Twirp and follows [its the conventions](https://twitchtv.github.io/twirp/docs/routing.html).
+
+The RTC service provides the signaling and everything else when the client interacts with the room. RTC service requires bidirectional
+communication between the client and server, and exchanges messages via WebSocket. Messages are encoded in either JSON or binary protobuf,
+see `rtc.proto` for the message structure. 
+
+The flow for interaction is:
+1. Establish WebSocket to ws://<host>:<port>/rtc
+1. Server will send back a `SignalResponse` with a `join` response. It'll include the new participant's details (and in the future, room info)
+1. Client sends a `SignalRequest` with an WebRTC `offer`
+1. Server will send back a `SignalResponse` with an `answer`
+1. Client and server will exchange ice candidates via `trickle` in the request & responses
