@@ -23,17 +23,18 @@ import (
 )
 
 type RTCClient struct {
-	conn         *websocket.Conn
-	PeerConn     *webrtc.PeerConnection
-	localTracks  []*webrtc.Track
-	lock         sync.Mutex
-	ctx          context.Context
-	cancel       context.CancelFunc
-	connected    bool
-	iceConnected bool
-	paused       bool
-	me           *rtc.MediaEngine // optional, populated only when receiving tracks
-	receivers    []*rtc.Receiver
+	conn             *websocket.Conn
+	PeerConn         *webrtc.PeerConnection
+	localTracks      []*webrtc.Track
+	lock             sync.Mutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	connected        bool
+	iceConnected     bool
+	paused           bool
+	me               *rtc.MediaEngine // optional, populated only when receiving tracks
+	receivers        []*rtc.Receiver
+	localParticipant *livekit.ParticipantInfo
 
 	// pending actions to start after connected to peer
 	pendingCandidates   []*webrtc.ICECandidate
@@ -174,35 +175,6 @@ func (c *RTCClient) Run() error {
 		c.AppendLog("data channel open")
 	})
 
-	c.AppendLog("creating offer")
-
-	// Create an offer to send to the other process
-	offer, err := c.PeerConn.CreateOffer(nil)
-	if err != nil {
-		return err
-	}
-
-	c.AppendLog("created offer", "offer", offer.SDP)
-
-	// Sets the LocalDescription, and starts our UDP listeners
-	// Note: this will start the gathering of ICE candidates
-	if err = c.PeerConn.SetLocalDescription(offer); err != nil {
-		return err
-	}
-
-	// send the offer to remote
-	req := &livekit.SignalRequest{
-		Message: &livekit.SignalRequest_Offer{
-			Offer: service.ToProtoSessionDescription(offer),
-		},
-	}
-	c.AppendLog("connecting to remote...")
-	if err = c.SendRequest(req); err != nil {
-		return err
-	}
-
-	defer c.PeerConn.Close()
-
 	// run the session
 	for {
 		res, err := c.ReadResponse()
@@ -210,6 +182,36 @@ func (c *RTCClient) Run() error {
 			return err
 		}
 		switch msg := res.Message.(type) {
+		case *livekit.SignalResponse_Join:
+			c.AppendLog("join accepted, sending offer..")
+			c.localParticipant = msg.Join.Participant
+
+			// Create an offer to send to the other process
+			offer, err := c.PeerConn.CreateOffer(nil)
+			if err != nil {
+				return err
+			}
+
+			c.AppendLog("created offer", "offer", offer.SDP)
+
+			// Sets the LocalDescription, and starts our UDP listeners
+			// Note: this will start the gathering of ICE candidates
+			if err = c.PeerConn.SetLocalDescription(offer); err != nil {
+				return err
+			}
+
+			// send the offer to remote
+			req := &livekit.SignalRequest{
+				Message: &livekit.SignalRequest_Offer{
+					Offer: service.ToProtoSessionDescription(offer),
+				},
+			}
+			c.AppendLog("connecting to remote...")
+			if err = c.SendRequest(req); err != nil {
+				return err
+			}
+
+			defer c.PeerConn.Close()
 		case *livekit.SignalResponse_Answer:
 			c.AppendLog("connected to remote, setting desc")
 			// remote answered the offer, establish connection
