@@ -3,8 +3,6 @@ syntax = "proto3";
 package livekit;
 option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
-// internal types, declaring in proto to get serialization for free
-
 message Node {
   string id = 1;
   string ip = 2;
@@ -17,6 +15,7 @@ message NodeStats {
   int32 num_clients = 2;
 }
 
+// internal type, for serialization with proto
 message Room {
   string id = 1;
   uint32 empty_timeout = 2;
@@ -33,10 +32,21 @@ message RoomInfo {
 }
 
 message ParticipantInfo {
+  enum State {
+    // websocket connected, but not offered yet
+    JOINING = 0;
+    // server received client offer
+    JOINED = 1;
+    // ICE connectivity established
+    ACTIVE = 2;
+    // WS disconnected
+    DISCONNECTED = 3;
+  }
   string id = 1;
   string name = 2;
-  bool has_audio = 3;
-  bool has_video = 4;
+  State state = 3;
+  bool has_audio = 4;
+  bool has_video = 5;
 }
 
 message DataChannel {

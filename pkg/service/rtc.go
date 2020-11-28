@@ -114,7 +114,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				room.RemoveParticipant(participant.ID())
 			}()
 		case *livekit.SignalRequest_Negotiate:
-			if participant.State() == rtc.ParticipantStateConnecting {
+			if participant.State() == livekit.ParticipantInfo_JOINING {
 				log.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
@@ -127,7 +127,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case *livekit.SignalRequest_Trickle:
-			if participant.State() == rtc.ParticipantStateConnecting {
+			if participant.State() == livekit.ParticipantInfo_JOINING {
 				log.Errorw("cannot trickle before peer offer", "participant", participant.ID())
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 				return

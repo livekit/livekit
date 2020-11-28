@@ -14,14 +14,6 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-type ParticipantState string
-
-const (
-	ParticipantStateConnecting ParticipantState = "connecting" // websocket connected, but no offer yet
-	ParticipantStateJoined     ParticipantState = "joined"     // sent offer, establishing ICE
-	ParticipantStateActive     ParticipantState = "active"     // ice connected
-)
-
 type Participant struct {
 	id          string
 	conn        *webrtc.PeerConnection
@@ -29,7 +21,7 @@ type Participant struct {
 	cancel      context.CancelFunc
 	mediaEngine *MediaEngine
 	name        string
-	state       ParticipantState
+	state       livekit.ParticipantInfo_State
 
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
@@ -63,7 +55,7 @@ func NewParticipant(conf *WebRTCConfig, name string) (*Participant, error) {
 		conn:           pc,
 		ctx:            ctx,
 		cancel:         cancel,
-		state:          ParticipantStateConnecting,
+		state:          livekit.ParticipantInfo_JOINING,
 		lock:           sync.RWMutex{},
 		receiverConfig: conf.receiver,
 		tracks:         make([]*Track, 0),
@@ -86,7 +78,7 @@ func NewParticipant(conf *WebRTCConfig, name string) (*Participant, error) {
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		logger.GetLogger().Debugw("ICE connection state changed", "state", state.String())
 		if state == webrtc.ICEConnectionStateConnected {
-			participant.state = ParticipantStateActive
+			participant.state = livekit.ParticipantInfo_ACTIVE
 		}
 	})
 
@@ -103,7 +95,7 @@ func (p *Participant) Name() string {
 	return p.name
 }
 
-func (p *Participant) State() ParticipantState {
+func (p *Participant) State() livekit.ParticipantInfo_State {
 	return p.state
 }
 
@@ -122,8 +114,8 @@ func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessi
 	//	return
 	//}
 
-	if p.state == ParticipantStateConnecting {
-		p.state = ParticipantStateJoined
+	if p.state == livekit.ParticipantInfo_JOINING {
+		p.state = livekit.ParticipantInfo_JOINED
 	}
 
 	if err = p.SetRemoteDescription(sdp); err != nil {
