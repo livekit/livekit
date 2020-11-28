@@ -3,19 +3,28 @@ syntax = "proto3";
 package livekit;
 option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
+import "model.proto";
+
 message SignalRequest {
   oneof message {
     SessionDescription offer = 1;
     SessionDescription negotiate = 2;
     Trickle trickle = 3;
+    MediaControl control = 4;
   }
 }
 
 message SignalResponse {
   oneof message {
-    SessionDescription answer = 1;
-    SessionDescription negotiate = 2;
-    Trickle trickle = 3;
+    // sent when join is accepted
+    JoinResponse join = 1;
+    // sent when offer is answered
+    SessionDescription answer = 2;
+    // sent when a negotiated sd is available (could be either offer or answer)
+    SessionDescription negotiate = 3;
+    // sent when an ICE candidate is available
+    Trickle trickle = 4;
+
   }
 }
 
@@ -26,4 +35,16 @@ message Trickle {
 message SessionDescription {
     string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
     string sdp = 2;
+}
+
+message JoinResponse {
+  ParticipantInfo participant = 1;
+}
+
+message MediaControl {
+
+}
+
+message ParticipantUpdate {
+
 }

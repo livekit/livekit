@@ -106,7 +106,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	peerConn.OnTrack(func(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
 		c.AppendLog("track received", "label", track.Label(), "id", track.ID())
-		peerId, _ := rtc.UnpackPeerTrack(track.ID())
+		peerId, _ := rtc.UnpackTrackId(track.ID())
 		tccExt := 0
 		if c.me != nil {
 			tccExt = c.me.TCCExt
@@ -399,14 +399,14 @@ func (c *RTCClient) AddTrack(path string, codecType webrtc.RTPCodecType, id stri
 	}
 
 	tw := NewTrackWriter(c.ctx, track, path, format)
+
 	// write tracks only after ICE connectivity
 	if c.iceConnected {
 		return tw.Start()
+	} else {
+		c.pendingTrackWriters = append(c.pendingTrackWriters, tw)
+		return nil
 	}
-
-	c.pendingTrackWriters = append(c.pendingTrackWriters, tw)
-
-	return nil
 }
 
 type logEntry struct {
@@ -448,7 +448,7 @@ func (c *RTCClient) logLoop() {
 
 func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
 	lastUpdate := time.Time{}
-	peerId, trackId := rtc.UnpackPeerTrack(r.TrackId())
+	peerId, trackId := rtc.UnpackTrackId(r.TrackId())
 	numBytes := 0
 	for {
 		select {

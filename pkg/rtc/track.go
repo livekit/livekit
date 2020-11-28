@@ -14,60 +14,60 @@ var (
 	creationDelay = 500 * time.Millisecond
 )
 
-// Peer track represents a track that needs to be forwarded
-type PeerTrack struct {
-	id     string
-	ctx    context.Context
-	peerId string
-	// source track
-	track *webrtc.Track
+// Track represents a mediaTrack that needs to be forwarded
+type Track struct {
+	id            string
+	ctx           context.Context
+	participantId string
+	// source mediaTrack
+	mediaTrack *webrtc.Track
 	// source RTCPWriter to forward RTCP requests
 	rtcpWriter RTCPWriter
 	lock       sync.RWMutex
-	// map of target peerId -> forwarder
+	// map of target participantId -> forwarder
 	forwarders map[string]Forwarder
 	receiver   *Receiver
 	lastNack   int64
 }
 
-func NewPeerTrack(ctx context.Context, peerId string, rtcpWriter RTCPWriter, track *webrtc.Track, receiver *Receiver) *PeerTrack {
-	return &PeerTrack{
-		id:         track.ID(),
-		ctx:        ctx,
-		peerId:     peerId,
-		track:      track,
-		rtcpWriter: rtcpWriter,
-		lock:       sync.RWMutex{},
-		forwarders: make(map[string]Forwarder),
-		receiver:   receiver,
+func NewTrack(ctx context.Context, pId string, rtcpWriter RTCPWriter, mediaTrack *webrtc.Track, receiver *Receiver) *Track {
+	return &Track{
+		id:            mediaTrack.ID(),
+		ctx:           ctx,
+		participantId: pId,
+		mediaTrack:    mediaTrack,
+		rtcpWriter:    rtcpWriter,
+		lock:          sync.RWMutex{},
+		forwarders:    make(map[string]Forwarder),
+		receiver:      receiver,
 	}
 }
 
-func (t *PeerTrack) Start() {
+func (t *Track) Start() {
 	t.receiver.Start()
 	// start worker
 	go t.forwardWorker()
 }
 
-// subscribes peer to current track
+// subscribes participant to current mediaTrack
 // creates and add necessary forwarders and starts them
-func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
-	// check codecs supported by outbound peer
-	codecs := peer.mediaEngine.GetCodecsByName(t.track.Codec().Name)
+func (t *Track) AddSubscriber(participant *Participant) error {
+	// check codecs supported by outbound participant
+	codecs := participant.mediaEngine.GetCodecsByName(t.mediaTrack.Codec().Name)
 	if len(codecs) == 0 {
 		return ErrUnsupportedPayloadType
 	}
 
 	// pack ID to identify all tracks
-	packedId := PackPeerTrack(t.peerId, t.track.ID())
+	packedId := PackTrackId(t.participantId, t.mediaTrack.ID())
 
 	// use existing SSRC with simple forwarders. adaptive forwarders require unique SSRC per layer
-	outTrack, err := peer.conn.NewTrack(codecs[0].PayloadType, t.track.SSRC(), packedId, t.track.Label())
+	outTrack, err := participant.conn.NewTrack(codecs[0].PayloadType, t.mediaTrack.SSRC(), packedId, t.mediaTrack.Label())
 	if err != nil {
 		return err
 	}
 
-	rtpSender, err := peer.conn.AddTrack(outTrack)
+	rtpSender, err := participant.conn.AddTrack(outTrack)
 	if err != nil {
 		return err
 	}
@@ -75,19 +75,19 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 	forwarder := NewSimpleForwarder(t.ctx, t.rtcpWriter, rtpSender, t.receiver.buffer)
 	forwarder.OnClose(func(f Forwarder) {
 		t.lock.Lock()
-		delete(t.forwarders, peer.ID())
+		delete(t.forwarders, participant.ID())
 		t.lock.Unlock()
 
-		if err := peer.conn.RemoveTrack(rtpSender); err != nil {
-			logger.GetLogger().Warnw("could not remove track from forwarder",
-				"peer", peer.ID(),
+		if err := participant.conn.RemoveTrack(rtpSender); err != nil {
+			logger.GetLogger().Warnw("could not remove mediaTrack from forwarder",
+				"participant", participant.ID(),
 				"err", err)
 		}
 	})
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	t.forwarders[peer.ID()] = forwarder
+	t.forwarders[participant.ID()] = forwarder
 
 	// start forwarder
 	forwarder.Start()
@@ -97,40 +97,40 @@ func (t *PeerTrack) AddSubscriber(peer *WebRTCPeer) error {
 
 // removes peer from subscription
 // stop all forwarders to the peer
-func (t *PeerTrack) RemoveSubscriber(peerId string) {
+func (t *Track) RemoveSubscriber(participantId string) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if forwarder := t.forwarders[peerId]; forwarder != nil {
+	if forwarder := t.forwarders[participantId]; forwarder != nil {
 		go forwarder.Close()
 	}
 }
 
 // forwardWorker reads from the receiver and writes to each sender
-func (t *PeerTrack) forwardWorker() {
+func (t *Track) forwardWorker() {
 	for pkt := range t.receiver.RTPChan() {
 		if t.ctx.Err() != nil {
 			return
 		}
 		now := time.Now()
 
-		//logger.GetLogger().Debugw("read packet from track",
-		//	"peerId", t.peerId,
-		//	"track", t.track.ID())
+		//logger.GetLogger().Debugw("read packet from mediaTrack",
+		//	"participantId", t.participantId,
+		//	"mediaTrack", t.mediaTrack.ID())
 		t.lock.RLock()
-		for dstPeerId, forwarder := range t.forwarders {
+		for dstId, forwarder := range t.forwarders {
 			// There exists a bug in chrome where setLocalDescription
-			// fails if track RTP arrives before the sfu offer is set.
-			// We delay sending RTP here to avoid the issue.
+			// fails if mediaTrack RTP arrives before the sfu offer is set.
+			// We refrain from sending RTP here to avoid the issue.
 			// https://bugs.chromium.org/p/webrtc/issues/detail?id=10139
 			if now.Sub(forwarder.CreatedAt()) < creationDelay {
 				continue
 			}
 			if err := forwarder.WriteRTP(pkt); err != nil {
-				logger.GetLogger().Warnw("could not forward packet to peer",
-					"srcPeer", t.peerId,
-					"dstPeer", dstPeerId,
-					"track", t.track.SSRC(),
+				logger.GetLogger().Warnw("could not forward packet to participant",
+					"src", t.participantId,
+					"dest", dstId,
+					"mediaTrack", t.mediaTrack.SSRC(),
 					"err", err)
 			}
 		}

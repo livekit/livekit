@@ -40,12 +40,12 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomId := r.FormValue("room_id")
 	token := r.FormValue("token")
-	peerId := r.FormValue("peer_id")
+	pName := r.FormValue("name")
 	log := logger.GetLogger()
 
 	log.Infow("new client connected",
 		"roomId", roomId,
-		"peerId", peerId,
+		"participantName", pName,
 	)
 
 	room := s.manager.GetRoom(roomId)
@@ -73,8 +73,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Infow("connection returned")
 	}()
 
-	signalConn := NewWSSignalConnection(conn, peerId)
-	var peer *rtc.WebRTCPeer
+	signalConn := NewWSSignalConnection(conn, pName)
+	var participant *rtc.Participant
 
 	// read connection and wait for commands
 
@@ -85,45 +85,45 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			logger.GetLogger().Errorw("error reading WS",
 				"err", err,
-				"peerId", peerId,
+				"participantName", pName,
 				"roomId", roomId)
 			return
 		}
 
 		switch msg := req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
-			peer, err = s.handleJoin(signalConn, room, msg.Offer.Sdp)
-			defer func() {
-				// remove peer from room
-				room.RemovePeer(peerId)
-			}()
+			participant, err = s.handleJoin(signalConn, room, msg.Offer.Sdp)
 			if err != nil {
-				log.Errorw("could not handle join", "err", err, "peerId", peerId)
+				log.Errorw("could not handle join", "err", err, "participantName", pName)
 				return
 			}
+			defer func() {
+				// remove peer from room
+				room.RemoveParticipant(participant.ID())
+			}()
 		case *livekit.SignalRequest_Negotiate:
-			if peer == nil {
-				log.Errorw("cannot negotiate before peer offer", "peerId", peerId)
+			if participant == nil {
+				log.Errorw("cannot negotiate before peer offer", "participantName", pName)
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
 			}
-			err = s.handleNegotiate(signalConn, peer, msg.Negotiate)
+			err = s.handleNegotiate(signalConn, participant, msg.Negotiate)
 			if err != nil {
-				log.Errorw("could not handle negotiate", "peerId", peerId, "err", err)
+				log.Errorw("could not handle negotiate", "participantName", pName, "err", err)
 				//conn.WriteJSON(
 				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 				return
 			}
 		case *livekit.SignalRequest_Trickle:
-			if peer == nil {
-				log.Errorw("cannot trickle before peer offer", "peerId", peerId)
+			if participant == nil {
+				log.Errorw("cannot trickle before peer offer", "participantName", pName)
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 				return
 			}
 
-			err = s.handleTrickle(peer, msg.Trickle)
+			err = s.handleTrickle(participant, msg.Trickle)
 			if err != nil {
-				log.Errorw("could not handle trickle", "peerId", peerId, "err", err)
+				log.Errorw("could not handle trickle", "participantName", pName, "err", err)
 				//conn.WriteJSON(
 				//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 				return
@@ -133,18 +133,18 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string) (*rtc.WebRTCPeer, error) {
+func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string) (*rtc.Participant, error) {
 	log := logger.GetLogger()
 
 	log.Infow("handling join")
-	peer, err := room.Join(sc.PeerId(), sdp)
+	participant, err := room.Join(sc.Name())
 	if err != nil {
 		return nil, errors.Wrap(err, "could not join room")
 	}
 
 	// TODO: it might be better to return error instead of nil
-	peer.OnICECandidate = func(c *webrtc.ICECandidateInit) {
-		log.Debugw("sending ICE candidate", "peerId", peer.ID())
+	participant.OnICECandidate = func(c *webrtc.ICECandidateInit) {
+		log.Debugw("sending ICE candidate", "participantId", participant.ID())
 		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: &livekit.Trickle{
@@ -159,7 +159,8 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 	}
 
 	// send peer new offer
-	peer.OnOffer = func(o webrtc.SessionDescription) {
+	participant.OnOffer = func(o webrtc.SessionDescription) {
+		log.Debugw("sending available offer to participant")
 		err := sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
 				Negotiate: ToProtoSessionDescription(o),
@@ -175,10 +176,12 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 		Type: webrtc.SDPTypeOffer,
 		SDP:  sdp,
 	}
-	answer, err := peer.Answer(offer)
+	answer, err := participant.Answer(offer)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not answer offer")
 	}
+
+	logger.GetLogger().Debugw("answered, writing response")
 
 	// finally send answer
 	err = sc.WriteResponse(&livekit.SignalResponse{
@@ -191,10 +194,11 @@ func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, sdp string)
 		return nil, errors.Wrap(err, "could not join")
 	}
 
-	return peer, nil
+	return participant, nil
 }
 
-func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.WebRTCPeer, neg *livekit.SessionDescription) error {
+func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant, neg *livekit.SessionDescription) error {
+	logger.GetLogger().Debugw("handling incoming negotiate")
 	if neg.Type == webrtc.SDPTypeOffer.String() {
 		offer := FromProtoSessionDescription(neg)
 		answer, err := peer.Answer(offer)
@@ -221,9 +225,9 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.WebRTCPeer, 
 	return nil
 }
 
-func (s *RTCService) handleTrickle(peer *rtc.WebRTCPeer, trickle *livekit.Trickle) error {
+func (s *RTCService) handleTrickle(peer *rtc.Participant, trickle *livekit.Trickle) error {
 	candidateInit := FromProtoTrickle(trickle)
-	logger.GetLogger().Debugw("adding peer candidate", "peerId", peer.ID())
+	logger.GetLogger().Debugw("adding peer candidate", "participantId", peer.ID())
 	if err := peer.AddICECandidate(*candidateInit); err != nil {
 		return err
 	}

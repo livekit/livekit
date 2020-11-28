@@ -18,7 +18,7 @@ message NodeStats {
 }
 
 message Room {
-  string room_id = 1;
+  string id = 1;
   uint32 empty_timeout = 2;
   uint32 max_participants = 3;
   int64 creation_time = 4;
@@ -26,17 +26,17 @@ message Room {
 }
 
 message RoomInfo {
-  string room_id = 1;
+  string id = 1;
   string node_ip = 2;
-  uint32 node_rtc_port = 3;
-  int64 creation_time = 4;
-  string token = 5;
+  int64 creation_time = 3;
+  string token = 4;
 }
 
-message PeerInfo {
-  string peer_id = 1;
-  bool has_audio = 2;
-  bool has_video = 3;
+message ParticipantInfo {
+  string id = 1;
+  string name = 2;
+  bool has_audio = 3;
+  bool has_video = 4;
 }
 
 message DataChannel {

@@ -8,13 +8,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/pion/ion-sfu/pkg/log"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 )
 
-// a forwarder publishes data to a target track or datachannel
+// a forwarder publishes data to a target mediaTrack or datachannel
 // manages the RTCP loop with the target peer
 type Forwarder interface {
 	ChannelType() ChannelType
@@ -151,7 +150,6 @@ func (f *SimpleForwarder) rtcpWorker() {
 				fwdPkts = append(fwdPkts, pkt)
 				f.lastPli = time.Now()
 			case *rtcp.TransportLayerNack:
-				log.Tracef("sender got nack: %+v", pkt)
 				for _, pair := range pkt.Nacks {
 					if err := f.buffer.WritePacket(
 						pair.PacketID,

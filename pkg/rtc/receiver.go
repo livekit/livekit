@@ -20,7 +20,7 @@ const (
 	maxChanSize = 1024
 )
 
-// A receiver is responsible for pulling from a track
+// A receiver is responsible for pulling from a mediaTrack
 type Receiver struct {
 	peerId      string
 	ctx         context.Context
@@ -70,7 +70,7 @@ func (r *Receiver) Start() {
 	})
 }
 
-// Close gracefully close the track. if the context is canceled
+// Close gracefully close the mediaTrack. if the context is canceled
 func (r *Receiver) Close() {
 	if r.ctx.Err() != nil {
 		return
@@ -88,7 +88,7 @@ func (r *Receiver) BuildRTCP() (rtcp.ReceptionReport, []rtcp.Packet) {
 	return r.buffer.BuildRTCP()
 }
 
-// WriteBufferedPacket writes buffered packet to track, return error if packet not found
+// WriteBufferedPacket writes buffered packet to mediaTrack, return error if packet not found
 func (r *Receiver) WriteBufferedPacket(sn uint16, track *webrtc.Track, snOffset uint16, tsOffset, ssrc uint32) error {
 	if r.buffer == nil || r.ctx.Err() != nil {
 		return nil
@@ -120,7 +120,7 @@ func (r *Receiver) rtpWorker() {
 			// log and continue
 			logger.GetLogger().Warnw("receiver error reading RTP",
 				"peer", r.peerId,
-				"track", r.track.SSRC(),
+				"mediaTrack", r.track.SSRC(),
 				"err", err,
 			)
 			continue
@@ -147,7 +147,7 @@ func (r *Receiver) rtcpWorker() {
 		if err != nil {
 			logger.GetLogger().Warnw("receiver error reading RTCP",
 				"peer", r.peerId,
-				"track", r.track.SSRC(),
+				"mediaTrack", r.track.SSRC(),
 				"err", err,
 			)
 			continue

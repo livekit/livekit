@@ -27,13 +27,7 @@ func NewSimpleRoomService(manager *rtc.RoomManager, localNode *node.Node) (svc *
 }
 
 func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.RoomInfo, err error) {
-	room := s.manager.GetRoom(req.RoomId)
-	if room != nil {
-		err = twirp.NewError(twirp.AlreadyExists, "rooms already exists")
-		return
-	}
-
-	room, err = s.manager.CreateRoom(req)
+	room, err := s.manager.CreateRoom(req)
 	if err != nil {
 		return
 	}

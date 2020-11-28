@@ -16,10 +16,9 @@ service RoomService {
 }
 
 message CreateRoomRequest {
-  string room_id = 1;
   // number of seconds the room should cleanup after being empty
-  uint32 empty_timeout = 2;
-  uint32 max_participants = 3;
+  uint32 empty_timeout = 1;
+  uint32 max_participants = 2;
 }
 
 message GetRoomRequest {

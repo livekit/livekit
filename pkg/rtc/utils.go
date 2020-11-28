@@ -8,7 +8,7 @@ const (
 	trackIdSeparator = "|"
 )
 
-func UnpackPeerTrack(packed string) (peerId string, trackId string) {
+func UnpackTrackId(packed string) (peerId string, trackId string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) > 1 {
 		return parts[0], packed[len(parts[0])+1:]
@@ -16,6 +16,6 @@ func UnpackPeerTrack(packed string) (peerId string, trackId string) {
 	return "", packed
 }
 
-func PackPeerTrack(peerId, trackId string) string {
-	return peerId + trackIdSeparator + trackId
+func PackTrackId(participantId, trackId string) string {
+	return participantId + trackIdSeparator + trackId
 }

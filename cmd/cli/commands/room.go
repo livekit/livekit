@@ -17,7 +17,6 @@ var (
 			Before: createClient,
 			Action: createRoom,
 			Flags: []cli.Flag{
-				roomFlag,
 				roomHostFlag,
 			},
 		},
@@ -51,10 +50,7 @@ func createClient(c *cli.Context) error {
 }
 
 func createRoom(c *cli.Context) error {
-	roomId := c.String("room-id")
-	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
-		RoomId: roomId,
-	})
+	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{})
 	if err != nil {
 		return err
 	}

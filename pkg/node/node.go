@@ -3,11 +3,11 @@ package node
 import (
 	"errors"
 
-	"github.com/google/uuid"
 	"github.com/google/wire"
 	"github.com/pion/stun"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -29,18 +29,14 @@ type NodeStats struct {
 }
 
 func NewLocalNode(conf *config.Config) (*Node, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, err
-	}
 	n := &Node{
 		Node: livekit.Node{
-			Id:      id.String(),
+			Id:      utils.NewGuid(utils.NodePrefix),
 			RtcPort: conf.RTCPort,
 		},
 		config: conf,
 	}
-	if err = n.DiscoverNetworkInfo(); err != nil {
+	if err := n.DiscoverNetworkInfo(); err != nil {
 		return nil, err
 	}
 	return n, nil
@@ -54,6 +50,7 @@ func (n *Node) DiscoverNetworkInfo() error {
 	if err != nil {
 		return err
 	}
+	defer c.Close()
 
 	message, err := stun.Build(stun.TransactionID, stun.BindingRequest)
 	if err != nil {

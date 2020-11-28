@@ -46,7 +46,7 @@ func (m *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (r *Room, err e
 	}
 	m.roomLock.Lock()
 	defer m.roomLock.Unlock()
-	m.rooms[r.RoomId] = r
+	m.rooms[r.Id] = r
 	return
 }
 

@@ -32,8 +32,9 @@ var (
 					Usage: "room token, not required in dev mode",
 				},
 				&cli.StringFlag{
-					Name:  "peer-id",
-					Value: "peer",
+					Name:     "name",
+					Usage:    "name of participant",
+					Required: true,
 				},
 				&cli.StringFlag{
 					Name:  "audio",
@@ -57,7 +58,7 @@ func joinRoom(c *cli.Context) error {
 	v := url.Values{}
 	v.Set("room_id", c.String("room-id"))
 	v.Set("token", c.String("token"))
-	v.Set("peer_id", c.String("peer-id"))
+	v.Set("name", c.String("name"))
 	u.RawQuery = v.Encode()
 
 	log := logger.GetLogger()

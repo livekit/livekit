@@ -10,32 +10,36 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
-type WebRTCPeer struct {
+type Participant struct {
 	id          string
 	conn        *webrtc.PeerConnection
 	ctx         context.Context
 	cancel      context.CancelFunc
 	mediaEngine *MediaEngine
+	name        string
 
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
-	tracks         []*PeerTrack // tracks that the peer is publishing
+	tracks         []*Track // tracks that the peer is publishing
 	once           sync.Once
 
 	// callbacks & handlers
-	// OnPeerTrack - remote peer added a track
-	OnPeerTrack func(*WebRTCPeer, *PeerTrack)
+	// OnPeerTrack - remote peer added a mediaTrack
+	OnPeerTrack func(*Participant, *Track)
 	// OnOffer - offer is ready for remote peer
 	OnOffer func(webrtc.SessionDescription)
 	// OnIceCandidate - ice candidate discovered for local peer
 	OnICECandidate func(c *webrtc.ICECandidateInit)
-	OnClose        func(*WebRTCPeer)
+	OnClose        func(*Participant)
 }
 
-func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, error) {
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me.MediaEngine), webrtc.WithSettingEngine(conf.SettingEngine))
+func NewParticipant(conf WebRTCConfig, name string) (*Participant, error) {
+	me := webrtc.MediaEngine{}
+	me.RegisterDefaultCodecs()
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(conf.SettingEngine))
 	pc, err := api.NewPeerConnection(conf.Configuration)
 
 	if err != nil {
@@ -43,26 +47,28 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	peer := &WebRTCPeer{
-		id:             id,
+	participant := &Participant{
+		id:             utils.NewGuid(utils.ParticipantPrefix),
+		name:           name,
 		conn:           pc,
 		ctx:            ctx,
 		cancel:         cancel,
-		mediaEngine:    me,
 		lock:           sync.RWMutex{},
 		receiverConfig: conf.receiver,
-		tracks:         make([]*PeerTrack, 0),
+		tracks:         make([]*Track, 0),
+		mediaEngine:    &MediaEngine{},
 	}
+	participant.mediaEngine.RegisterDefaultCodecs()
 
-	pc.OnTrack(peer.onTrack)
+	pc.OnTrack(participant.onTrack)
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
 		}
-		if peer.OnICECandidate != nil {
+		if participant.OnICECandidate != nil {
 			ci := c.ToJSON()
-			peer.OnICECandidate(&ci)
+			participant.OnICECandidate(&ci)
 		}
 	})
 
@@ -72,15 +78,21 @@ func NewWebRTCPeer(id string, me *MediaEngine, conf WebRTCConfig) (*WebRTCPeer, 
 
 	// TODO: handle data channel
 
-	return peer, nil
+	return participant, nil
 }
 
-func (p *WebRTCPeer) ID() string {
+func (p *Participant) ID() string {
 	return p.id
 }
 
-// Answer an offer from remote peer
-func (p *WebRTCPeer) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+// Answer an offer from remote participant
+func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+	// set mediaengine
+	//if err = p.mediaEngine.PopulateFromSDP(sdp); err != nil {
+	//	err = errors.Wrapf(err, "could not parse SDP")
+	//	return
+	//}
+
 	if err = p.SetRemoteDescription(sdp); err != nil {
 		return
 	}
@@ -98,18 +110,20 @@ func (p *WebRTCPeer) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessio
 
 	// only set after answered
 	p.conn.OnNegotiationNeeded(func() {
-		logger.GetLogger().Debugw("negotiation needed", "peerId", p.ID())
+		logger.GetLogger().Debugw("negotiation needed", "participantId", p.ID())
 		offer, err := p.conn.CreateOffer(nil)
 		if err != nil {
-			// TODO: log
+			logger.GetLogger().Errorw("could not create offer", "err", err)
 			return
 		}
 
 		err = p.conn.SetLocalDescription(offer)
 		if err != nil {
-			// TODO: log
+			logger.GetLogger().Errorw("could not set local description", "err", err)
 			return
 		}
+
+		logger.GetLogger().Debugw("created new offer", "offer", offer, "onOffer", p.OnOffer)
 		if p.OnOffer != nil {
 			p.OnOffer(offer)
 		}
@@ -119,7 +133,7 @@ func (p *WebRTCPeer) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessio
 }
 
 // SetRemoteDescription when receiving an answer from remote
-func (p *WebRTCPeer) SetRemoteDescription(sdp webrtc.SessionDescription) error {
+func (p *Participant) SetRemoteDescription(sdp webrtc.SessionDescription) error {
 	if err := p.conn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -127,20 +141,20 @@ func (p *WebRTCPeer) SetRemoteDescription(sdp webrtc.SessionDescription) error {
 }
 
 // AddICECandidate adds candidates for remote peer
-func (p *WebRTCPeer) AddICECandidate(candidate webrtc.ICECandidateInit) error {
+func (p *Participant) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	if err := p.conn.AddICECandidate(candidate); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (p *WebRTCPeer) Start() {
+func (p *Participant) Start() {
 	p.once.Do(func() {
 		go p.rtcpSendWorker()
 	})
 }
 
-func (p *WebRTCPeer) Close() error {
+func (p *Participant) Close() error {
 	if p.ctx.Err() != nil {
 		return p.ctx.Err()
 	}
@@ -152,15 +166,15 @@ func (p *WebRTCPeer) Close() error {
 }
 
 // Subscribes otherPeer to all of the tracks
-func (p *WebRTCPeer) AddSubscriber(otherPeer *WebRTCPeer) error {
+func (p *Participant) AddSubscriber(otherPeer *Participant) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	for _, track := range p.tracks {
-		logger.GetLogger().Debugw("subscribing to track",
+		logger.GetLogger().Debugw("subscribing to mediaTrack",
 			"srcPeer", p.ID(),
 			"dstPeer", otherPeer.ID(),
-			"track", track.id)
+			"mediaTrack", track.id)
 		if err := track.AddSubscriber(otherPeer); err != nil {
 			return err
 		}
@@ -168,7 +182,7 @@ func (p *WebRTCPeer) AddSubscriber(otherPeer *WebRTCPeer) error {
 	return nil
 }
 
-func (p *WebRTCPeer) RemoveSubscriber(peerId string) {
+func (p *Participant) RemoveSubscriber(peerId string) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -177,13 +191,14 @@ func (p *WebRTCPeer) RemoveSubscriber(peerId string) {
 	}
 }
 
-// when a new track is created, creates a PeerTrack and adds it to room
-func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
-	logger.GetLogger().Debugw("track added", "peerId", p.ID(), "track", track.Label())
+// when a new mediaTrack is created, creates a Track and adds it to room
+func (p *Participant) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
+	logger.GetLogger().Debugw("mediaTrack added", "participantId", p.ID(), "mediaTrack", track.Label())
 
 	// create Receiver
-	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.receiverConfig, p.mediaEngine.TCCExt)
-	pt := NewPeerTrack(p.ctx, p.id, p.conn, track, receiver)
+	// p.mediaEngine.TCCExt
+	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.receiverConfig, 0)
+	pt := NewTrack(p.ctx, p.id, p.conn, track, receiver)
 
 	p.lock.Lock()
 	p.tracks = append(p.tracks, pt)
@@ -191,12 +206,12 @@ func (p *WebRTCPeer) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceive
 
 	pt.Start()
 	if p.OnPeerTrack != nil {
-		// caller should hook up what happens when the peer track is available
+		// caller should hook up what happens when the peer mediaTrack is available
 		go p.OnPeerTrack(p, pt)
 	}
 }
 
-func (p *WebRTCPeer) rtcpSendWorker() {
+func (p *Participant) rtcpSendWorker() {
 	t := time.NewTicker(time.Second)
 	for {
 		select {

@@ -5,30 +5,31 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 type SignalConnection interface {
-	PeerId() string
+	Name() string
 	ReadRequest() (*livekit.SignalRequest, error)
 	WriteResponse(*livekit.SignalResponse) error
 }
 
 type WSSignalConnection struct {
-	peerId  string
+	name    string
 	conn    *websocket.Conn
 	useJSON bool
 }
 
-func NewWSSignalConnection(conn *websocket.Conn, peerId string) *WSSignalConnection {
+func NewWSSignalConnection(conn *websocket.Conn, name string) *WSSignalConnection {
 	return &WSSignalConnection{
-		peerId: peerId,
-		conn:   conn,
+		conn: conn,
+		name: name,
 	}
 }
 
-func (c *WSSignalConnection) PeerId() string {
-	return c.peerId
+func (c *WSSignalConnection) Name() string {
+	return c.name
 }
 
 func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
@@ -54,6 +55,7 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 			err := protojson.Unmarshal(payload, msg)
 			return msg, err
 		default:
+			logger.GetLogger().Debugw("unsupported message", "message", messageType)
 			return nil, nil
 		}
 	}
