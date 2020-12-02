@@ -119,10 +119,12 @@ func (p *Participant) State() livekit.ParticipantInfo_State {
 }
 
 func (p *Participant) ToProto() *livekit.ParticipantInfo {
-	return &livekit.ParticipantInfo{
-		Id:   p.id,
-		Name: p.name,
+	info := &livekit.ParticipantInfo{
+		Id:    p.id,
+		Name:  p.name,
+		State: p.state,
 	}
+	return info
 }
 
 // Answer an offer from remote participant
@@ -280,6 +282,7 @@ func (p *Participant) updateState(state livekit.ParticipantInfo_State) {
 	}
 	oldState := p.state
 	p.state = state
+
 	if p.OnStateChange != nil {
 		go func() {
 			p.OnStateChange(p, oldState)

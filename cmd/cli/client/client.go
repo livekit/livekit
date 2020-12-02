@@ -184,6 +184,7 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Join:
 			c.AppendLog("join accepted, sending offer..")
 			c.localParticipant = msg.Join.Participant
+			c.AppendLog("other participants", "count", len(msg.Join.OtherParticipants))
 
 			// Create an offer to send to the other process
 			offer, err := c.PeerConn.CreateOffer(nil)
@@ -239,6 +240,10 @@ func (c *RTCClient) Run() error {
 			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
 			if err := c.PeerConn.AddICECandidate(*candidateInit); err != nil {
 				return err
+			}
+		case *livekit.SignalResponse_Update:
+			for _, p := range msg.Update.Participants {
+				c.AppendLog("participant update", "id", p.Id, "state", p.State.String())
 			}
 		}
 	}

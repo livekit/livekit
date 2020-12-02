@@ -60,13 +60,16 @@ func (r *Room) Join(participant *Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	participant.OnPeerTrack = r.onTrackAdded
+	log := logger.GetLogger()
 
+	// it's important to set this before connection, we don't want to miss out on any tracks
+	participant.OnPeerTrack = r.onTrackAdded
 	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
+		log.Debugw("participant state changed", "state", p.state, "participant", p.id)
 		r.broadcastParticipantState(p)
 	}
 
-	logger.GetLogger().Infow("new participant joined",
+	log.Infow("new participant joined",
 		"id", participant.ID(),
 		"name", participant.Name(),
 		"roomId", r.Id)
@@ -137,7 +140,7 @@ func (r *Room) broadcastParticipantState(p *Participant) {
 			continue
 		}
 
-		err := p.SendParticipantUpdate(updates)
+		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			logger.GetLogger().Errorw("could not send update to participant",
 				"participant", p.id,

@@ -5,9 +5,9 @@ import (
 )
 
 const (
-	RoomPrefix        = "R-"
-	NodePrefix        = "N-"
-	ParticipantPrefix = "P-"
+	RoomPrefix        = "RM_"
+	NodePrefix        = "ND_"
+	ParticipantPrefix = "PA_"
 )
 
 func NewGuid(prefix string) string {
