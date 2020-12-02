@@ -62,6 +62,10 @@ func (r *Room) Join(participant *Participant) error {
 
 	participant.OnPeerTrack = r.onTrackAdded
 
+	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
+		r.broadcastParticipantState(p)
+	}
+
 	logger.GetLogger().Infow("new participant joined",
 		"id", participant.ID(),
 		"name", participant.Name(),
@@ -79,7 +83,15 @@ func (r *Room) Join(participant *Participant) error {
 
 	r.participants[participant.ID()] = participant
 
-	return nil
+	// gather other participants and send join response
+	otherParticipants := make([]*Participant, 0, len(r.participants))
+	for _, p := range r.participants {
+		if p.id != participant.id {
+			otherParticipants = append(otherParticipants, p)
+		}
+	}
+
+	return participant.SendJoinResponse(otherParticipants)
 }
 
 func (r *Room) RemoveParticipant(id string) {
@@ -110,6 +122,26 @@ func (r *Room) onTrackAdded(peer *Participant, track *Track) {
 				"srcParticipant", peer.ID(),
 				"mediaTrack", track.id,
 				"dstParticipant", p.ID())
+		}
+	}
+}
+
+func (r *Room) broadcastParticipantState(p *Participant) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	updates := ToProtoParticipants([]*Participant{p})
+	for _, op := range r.participants {
+		// skip itself
+		if p.id == op.id {
+			continue
+		}
+
+		err := p.SendParticipantUpdate(updates)
+		if err != nil {
+			logger.GetLogger().Errorw("could not send update to participant",
+				"participant", p.id,
+				"err", err)
 		}
 	}
 }

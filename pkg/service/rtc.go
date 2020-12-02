@@ -59,11 +59,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participant, err := rtc.NewParticipant(s.manager.Config(), pName)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
-	}
-
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -75,22 +70,25 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Infow("websocket closed by remote")
 		return nil
 	})
-	defer func() {
-		log.Infow("connection returned")
-	}()
-	signalConn := NewWSSignalConnection(conn, pName)
+	signalConn := rtc.NewWSSignalConnection(conn)
 
-	// send Join response
-	signalConn.WriteResponse(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Join{
-			Join: &livekit.JoinResponse{
-				Participant: participant.ToProto(),
-			},
-		},
-	})
+	participant, err := rtc.NewParticipant(s.manager.Config(), signalConn, pName)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
+		return
+	}
+
+	if err := room.Join(participant); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not join room", err.Error())
+		return
+	}
+
+	defer func() {
+		participant.Close()
+		log.Infow("WS connection closed")
+	}()
 
 	// read connection and wait for commands
-	// TODO: pass in context from WS, so termination of WS would disconnect RTC
 	//ctx := context.Background()
 	for {
 		req, err := signalConn.ReadRequest()
@@ -104,7 +102,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch msg := req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
-			err = s.handleJoin(signalConn, room, participant, msg.Offer.Sdp)
+			err = s.handleOffer(participant, msg.Offer)
 			if err != nil {
 				log.Errorw("could not handle join", "err", err, "participant", participant.ID())
 				return
@@ -145,74 +143,22 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) handleJoin(sc SignalConnection, room *rtc.Room, participant *rtc.Participant, sdp string) error {
+func (s *RTCService) handleOffer(participant *rtc.Participant, offer *livekit.SessionDescription) error {
 	log := logger.GetLogger()
 
-	log.Infow("handling join")
-	err := room.Join(participant)
-	if err != nil {
-		return errors.Wrap(err, "could not join room")
-	}
-
-	// TODO: it might be better to return error instead of nil
-	participant.OnICECandidate = func(c *webrtc.ICECandidateInit) {
-		log.Debugw("sending ICE candidate", "participantId", participant.ID())
-		err = sc.WriteResponse(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Trickle{
-				Trickle: &livekit.Trickle{
-					Candidate: c.Candidate,
-					// TODO: there are other candidateInit fields that we might want
-				},
-			},
-		})
-		if err != nil {
-			log.Errorw("could not send trickle", "err", err)
-		}
-	}
-
-	// send peer new offer
-	participant.OnOffer = func(o webrtc.SessionDescription) {
-		log.Debugw("sending available offer to participant")
-		err := sc.WriteResponse(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: ToProtoSessionDescription(o),
-			},
-		})
-		if err != nil {
-			logger.GetLogger().Errorw("could not send offer to peer",
-				"err", err)
-		}
-	}
-
-	offer := webrtc.SessionDescription{
-		Type: webrtc.SDPTypeOffer,
-		SDP:  sdp,
-	}
-	answer, err := participant.Answer(offer)
+	_, err := participant.Answer(rtc.FromProtoSessionDescription(offer))
 	if err != nil {
 		return errors.Wrap(err, "could not answer offer")
 	}
 
-	logger.GetLogger().Debugw("answered, writing response")
-
-	// finally send answer
-	err = sc.WriteResponse(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Answer{
-			Answer: ToProtoSessionDescription(answer),
-		},
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "could not create answer")
-	}
-
+	log.Debugw("answered client offer")
 	return nil
 }
 
-func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant, neg *livekit.SessionDescription) error {
+func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, peer *rtc.Participant, neg *livekit.SessionDescription) error {
 	logger.GetLogger().Debugw("handling incoming negotiate")
 	if neg.Type == webrtc.SDPTypeOffer.String() {
-		offer := FromProtoSessionDescription(neg)
+		offer := rtc.FromProtoSessionDescription(neg)
 		answer, err := peer.Answer(offer)
 		if err != nil {
 			return err
@@ -220,7 +166,7 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant,
 
 		err = sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: ToProtoSessionDescription(answer),
+				Negotiate: rtc.ToProtoSessionDescription(answer),
 			},
 		})
 
@@ -228,7 +174,7 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant,
 			return err
 		}
 	} else if neg.Type == webrtc.SDPTypeAnswer.String() {
-		answer := FromProtoSessionDescription(neg)
+		answer := rtc.FromProtoSessionDescription(neg)
 		err := peer.SetRemoteDescription(answer)
 		if err != nil {
 			return err
@@ -238,7 +184,7 @@ func (s *RTCService) handleNegotiate(sc SignalConnection, peer *rtc.Participant,
 }
 
 func (s *RTCService) handleTrickle(peer *rtc.Participant, trickle *livekit.Trickle) error {
-	candidateInit := FromProtoTrickle(trickle)
+	candidateInit := rtc.FromProtoTrickle(trickle)
 	logger.GetLogger().Debugw("adding peer candidate", "participantId", peer.ID())
 	if err := peer.AddICECandidate(*candidateInit); err != nil {
 		return err

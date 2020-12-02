@@ -18,7 +18,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -203,7 +202,7 @@ func (c *RTCClient) Run() error {
 			// send the offer to remote
 			req := &livekit.SignalRequest{
 				Message: &livekit.SignalRequest_Offer{
-					Offer: service.ToProtoSessionDescription(offer),
+					Offer: rtc.ToProtoSessionDescription(offer),
 				},
 			}
 			c.AppendLog("connecting to remote...")
@@ -215,7 +214,7 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Answer:
 			c.AppendLog("connected to remote, setting desc")
 			// remote answered the offer, establish connection
-			err = c.PeerConn.SetRemoteDescription(service.FromProtoSessionDescription(msg.Answer))
+			err = c.PeerConn.SetRemoteDescription(rtc.FromProtoSessionDescription(msg.Answer))
 			if err != nil {
 				return err
 			}
@@ -231,12 +230,12 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Negotiate:
 			c.AppendLog("received negotiate",
 				"type", msg.Negotiate.Type)
-			desc := service.FromProtoSessionDescription(msg.Negotiate)
+			desc := rtc.FromProtoSessionDescription(msg.Negotiate)
 			if err := c.handleNegotiate(desc); err != nil {
 				return err
 			}
 		case *livekit.SignalResponse_Trickle:
-			candidateInit := service.FromProtoTrickle(msg.Trickle)
+			candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
 			if err := c.PeerConn.AddICECandidate(*candidateInit); err != nil {
 				return err
@@ -314,7 +313,7 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 	c.AppendLog("sending trickle candidate", "candidate", candInit.Candidate)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
-			Trickle: service.ToProtoTrickle(&candInit),
+			Trickle: rtc.ToProtoTrickle(&candInit),
 		},
 	})
 }
@@ -333,7 +332,7 @@ func (c *RTCClient) Negotiate() error {
 	// send the offer to remote
 	req := &livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Negotiate{
-			Negotiate: service.ToProtoSessionDescription(offer),
+			Negotiate: rtc.ToProtoSessionDescription(offer),
 		},
 	}
 	c.AppendLog("sending negotiate offer to remote...")
@@ -369,7 +368,7 @@ func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
 		// send remote an answer
 		return c.SendRequest(&livekit.SignalRequest{
 			Message: &livekit.SignalRequest_Negotiate{
-				Negotiate: service.ToProtoSessionDescription(answer),
+				Negotiate: rtc.ToProtoSessionDescription(answer),
 			},
 		})
 	}

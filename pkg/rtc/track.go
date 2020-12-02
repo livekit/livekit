@@ -62,12 +62,12 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 	packedId := PackTrackId(t.participantId, t.mediaTrack.ID())
 
 	// use existing SSRC with simple forwarders. adaptive forwarders require unique SSRC per layer
-	outTrack, err := participant.conn.NewTrack(codecs[0].PayloadType, t.mediaTrack.SSRC(), packedId, t.mediaTrack.Label())
+	outTrack, err := participant.peerConn.NewTrack(codecs[0].PayloadType, t.mediaTrack.SSRC(), packedId, t.mediaTrack.Label())
 	if err != nil {
 		return err
 	}
 
-	rtpSender, err := participant.conn.AddTrack(outTrack)
+	rtpSender, err := participant.peerConn.AddTrack(outTrack)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 		delete(t.forwarders, participant.ID())
 		t.lock.Unlock()
 
-		if err := participant.conn.RemoveTrack(rtpSender); err != nil {
+		if err := participant.peerConn.RemoveTrack(rtpSender); err != nil {
 			logger.GetLogger().Warnw("could not remove mediaTrack from forwarder",
 				"participant", participant.ID(),
 				"err", err)

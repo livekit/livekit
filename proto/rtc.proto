@@ -24,7 +24,8 @@ message SignalResponse {
     SessionDescription negotiate = 3;
     // sent when an ICE candidate is available
     Trickle trickle = 4;
-
+    // sent when participants in the room has changed
+    ParticipantUpdate update = 5;
   }
 }
 
@@ -39,6 +40,7 @@ message SessionDescription {
 
 message JoinResponse {
   ParticipantInfo participant = 1;
+  repeated ParticipantInfo other_participants = 2;
 }
 
 message MediaControl {
@@ -46,5 +48,5 @@ message MediaControl {
 }
 
 message ParticipantUpdate {
-
+  repeated ParticipantInfo participants = 1;
 }

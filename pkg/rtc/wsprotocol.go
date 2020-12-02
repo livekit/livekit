@@ -1,4 +1,4 @@
-package service
+package rtc
 
 import (
 	"github.com/gorilla/websocket"
@@ -19,9 +19,10 @@ type WSSignalConnection struct {
 	useJSON bool
 }
 
-func NewWSSignalConnection(conn *websocket.Conn, name string) *WSSignalConnection {
+func NewWSSignalConnection(conn *websocket.Conn) *WSSignalConnection {
 	return &WSSignalConnection{
-		conn: conn,
+		conn:    conn,
+		useJSON: true,
 	}
 }
 

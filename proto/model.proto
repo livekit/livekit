@@ -45,9 +45,20 @@ message ParticipantInfo {
   string id = 1;
   string name = 2;
   State state = 3;
-  bool has_audio = 4;
-  bool has_video = 5;
 }
+
+// describing
+message TrackInfo {
+  enum Type {
+    AUDIO = 0;
+    VIDEO = 1;
+    DATA = 2;
+  }
+  string id = 1;
+  Type type = 2;
+  string name = 3;
+}
+
 
 message DataChannel {
   string session_id = 1;
