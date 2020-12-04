@@ -78,6 +78,9 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 		delete(t.forwarders, participant.ID())
 		t.lock.Unlock()
 
+		if participant.peerConn.ConnectionState() == webrtc.PeerConnectionStateClosed {
+			return
+		}
 		if err := participant.peerConn.RemoveTrack(rtpSender); err != nil {
 			logger.GetLogger().Warnw("could not remove mediaTrack from forwarder",
 				"participant", participant.ID(),
