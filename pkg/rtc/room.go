@@ -119,16 +119,16 @@ func (r *Room) onTrackAdded(peer *Participant, track *Track) {
 	defer r.lock.RUnlock()
 
 	// subscribe all existing participants to this mediaTrack
-	for _, p := range r.participants {
-		if p == peer {
+	for _, existingParticipant := range r.participants {
+		if existingParticipant == peer {
 			// skip publishing peer
 			continue
 		}
-		if err := track.AddSubscriber(peer); err != nil {
+		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.GetLogger().Errorw("could not subscribe to mediaTrack",
 				"srcParticipant", peer.ID(),
 				"mediaTrack", track.id,
-				"dstParticipant", p.ID())
+				"dstParticipant", existingParticipant.ID())
 		}
 	}
 }
