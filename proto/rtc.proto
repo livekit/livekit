@@ -30,7 +30,8 @@ message SignalResponse {
 }
 
 message Trickle {
-  string candidate = 1;
+  string candidateInit = 1;
+
 }
 
 message SessionDescription {

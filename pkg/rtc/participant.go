@@ -74,15 +74,13 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 		if c == nil {
 			return
 		}
+
 		ci := c.ToJSON()
 
 		// write candidate
 		err := sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
-				Trickle: &livekit.Trickle{
-					Candidate: ci.Candidate,
-					// TODO: there are other candidateInit fields that we might want
-				},
+				Trickle: ToProtoTrickle(ci),
 			},
 		})
 		if err != nil {

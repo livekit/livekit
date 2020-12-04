@@ -43,11 +43,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pName := r.FormValue("name")
 	log := logger.GetLogger()
 
-	log.Infow("new client connected",
-		"roomId", roomId,
-		"participantName", pName,
-	)
-
 	room := s.manager.GetRoom(roomId)
 	if room == nil {
 		writeJSONError(w, http.StatusNotFound, "room not found")
@@ -77,6 +72,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
 		return
 	}
+
+	log.Infow("new client connected",
+		"roomId", roomId,
+		"name", pName,
+		"participant", participant.ID(),
+	)
 
 	if err := room.Join(participant); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not join room", err.Error())
@@ -155,11 +156,11 @@ func (s *RTCService) handleOffer(participant *rtc.Participant, offer *livekit.Se
 	return nil
 }
 
-func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, peer *rtc.Participant, neg *livekit.SessionDescription) error {
-	logger.GetLogger().Debugw("handling incoming negotiate")
+func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, participant *rtc.Participant, neg *livekit.SessionDescription) error {
+	logger.GetLogger().Debugw("handling incoming negotiate", "participant", participant.ID())
 	if neg.Type == webrtc.SDPTypeOffer.String() {
 		offer := rtc.FromProtoSessionDescription(neg)
-		answer, err := peer.Answer(offer)
+		answer, err := participant.Answer(offer)
 		if err != nil {
 			return err
 		}
@@ -175,7 +176,7 @@ func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, peer *rtc.Particip
 		}
 	} else if neg.Type == webrtc.SDPTypeAnswer.String() {
 		answer := rtc.FromProtoSessionDescription(neg)
-		err := peer.SetRemoteDescription(answer)
+		err := participant.SetRemoteDescription(answer)
 		if err != nil {
 			return err
 		}
@@ -186,7 +187,7 @@ func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, peer *rtc.Particip
 func (s *RTCService) handleTrickle(peer *rtc.Participant, trickle *livekit.Trickle) error {
 	candidateInit := rtc.FromProtoTrickle(trickle)
 	logger.GetLogger().Debugw("adding peer candidate", "participantId", peer.ID())
-	if err := peer.AddICECandidate(*candidateInit); err != nil {
+	if err := peer.AddICECandidate(candidateInit); err != nil {
 		return err
 	}
 

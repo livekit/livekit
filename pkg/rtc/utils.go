@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -57,14 +58,15 @@ func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionD
 	}
 }
 
-func ToProtoTrickle(candidateInit *webrtc.ICECandidateInit) *livekit.Trickle {
+func ToProtoTrickle(candidateInit webrtc.ICECandidateInit) *livekit.Trickle {
+	data, _ := json.Marshal(candidateInit)
 	return &livekit.Trickle{
-		Candidate: candidateInit.Candidate,
+		CandidateInit: string(data),
 	}
 }
 
-func FromProtoTrickle(trickle *livekit.Trickle) *webrtc.ICECandidateInit {
-	return &webrtc.ICECandidateInit{
-		Candidate: trickle.Candidate,
-	}
+func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
+	ci := webrtc.ICECandidateInit{}
+	json.Unmarshal([]byte(trickle.CandidateInit), &ci)
+	return ci
 }

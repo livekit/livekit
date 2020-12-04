@@ -182,7 +182,7 @@ func (c *RTCClient) Run() error {
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
-			c.AppendLog("join accepted, sending offer..")
+			c.AppendLog("join accepted, sending offer..", "participant", msg.Join.Participant.Id)
 			c.localParticipant = msg.Join.Participant
 			c.AppendLog("other participants", "count", len(msg.Join.OtherParticipants))
 
@@ -238,7 +238,7 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Trickle:
 			candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
-			if err := c.PeerConn.AddICECandidate(*candidateInit); err != nil {
+			if err := c.PeerConn.AddICECandidate(candidateInit); err != nil {
 				return err
 			}
 		case *livekit.SignalResponse_Update:
@@ -318,7 +318,7 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 	c.AppendLog("sending trickle candidate", "candidate", candInit.Candidate)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
-			Trickle: rtc.ToProtoTrickle(&candInit),
+			Trickle: rtc.ToProtoTrickle(candInit),
 		},
 	})
 }

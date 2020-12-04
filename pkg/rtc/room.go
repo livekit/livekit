@@ -76,6 +76,10 @@ func (r *Room) Join(participant *Participant) error {
 
 	// subscribe participant to existing tracks
 	for _, p := range r.participants {
+		if p.id == participant.id {
+			// don't send to itself
+			continue
+		}
 		if err := p.AddSubscriber(participant); err != nil {
 			// TODO: log error? or disconnect?
 			logger.GetLogger().Errorw("could not subscribe to participant",
