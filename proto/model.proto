@@ -45,6 +45,7 @@ message ParticipantInfo {
   string sid = 1;
   string name = 2;
   State state = 3;
+  repeated TrackInfo tracks = 4;
 }
 
 // describing

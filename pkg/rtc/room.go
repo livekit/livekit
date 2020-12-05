@@ -63,7 +63,7 @@ func (r *Room) Join(participant *Participant) error {
 	log := logger.GetLogger()
 
 	// it's important to set this before connection, we don't want to miss out on any tracks
-	participant.OnPeerTrack = r.onTrackAdded
+	participant.OnParticipantTrack = r.onTrackAdded
 	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
 		log.Debugw("participant state changed", "state", p.state, "participant", p.id)
 		r.broadcastParticipantState(p)
@@ -114,19 +114,23 @@ func (r *Room) RemoveParticipant(id string) {
 }
 
 // a peer in the room added a new mediaTrack, subscribe other participants to it
-func (r *Room) onTrackAdded(peer *Participant, track *Track) {
+func (r *Room) onTrackAdded(participant *Participant, track *Track) {
+	// publish participant update, since track state is changed
+	r.broadcastParticipantState(participant)
+
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	// subscribe all existing participants to this mediaTrack
+	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
-		if existingParticipant == peer {
+		if existingParticipant == participant {
 			// skip publishing peer
 			continue
 		}
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.GetLogger().Errorw("could not subscribe to mediaTrack",
-				"srcParticipant", peer.ID(),
+				"srcParticipant", participant.ID(),
 				"mediaTrack", track.id,
 				"dstParticipant", existingParticipant.ID())
 		}

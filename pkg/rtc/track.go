@@ -9,6 +9,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 var (
@@ -55,6 +56,10 @@ func (t *Track) Start() {
 	t.receiver.Start()
 	// start worker
 	go t.forwardWorker()
+}
+
+func (t *Track) Kind() webrtc.RTPCodecType {
+	return t.mediaTrack.Kind()
 }
 
 // subscribes participant to current mediaTrack
@@ -122,6 +127,22 @@ func (t *Track) RemoveAllSubscribers() {
 	defer t.lock.RUnlock()
 	for _, f := range t.forwarders {
 		go f.Close()
+	}
+}
+
+func (t *Track) ToProto() *livekit.TrackInfo {
+	var kind livekit.TrackInfo_Type
+	switch t.Kind() {
+	case webrtc.RTPCodecTypeAudio:
+		kind = livekit.TrackInfo_AUDIO
+	case webrtc.RTPCodecTypeVideo:
+		kind = livekit.TrackInfo_VIDEO
+	}
+
+	return &livekit.TrackInfo{
+		Sid:  t.id,
+		Type: kind,
+		Name: t.mediaTrack.Label(),
 	}
 }
 

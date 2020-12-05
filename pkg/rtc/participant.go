@@ -30,8 +30,8 @@ type Participant struct {
 	once           sync.Once
 
 	// callbacks & handlers
-	// OnPeerTrack - remote peer added a mediaTrack
-	OnPeerTrack func(*Participant, *Track)
+	// OnParticipantTrack - remote peer added a mediaTrack
+	OnParticipantTrack func(*Participant, *Track)
 	// OnOffer - offer is ready for remote peer
 	OnOffer func(webrtc.SessionDescription)
 	// OnIceCandidate - ice candidate discovered for local peer
@@ -121,6 +121,10 @@ func (p *Participant) ToProto() *livekit.ParticipantInfo {
 		Sid:   p.id,
 		Name:  p.name,
 		State: p.state,
+	}
+
+	for _, t := range p.tracks {
+		info.Tracks = append(info.Tracks, t.ToProto())
 	}
 	return info
 }
@@ -302,9 +306,9 @@ func (p *Participant) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiv
 	p.lock.Unlock()
 
 	pt.Start()
-	if p.OnPeerTrack != nil {
+	if p.OnParticipantTrack != nil {
 		// caller should hook up what happens when the peer mediaTrack is available
-		go p.OnPeerTrack(p, pt)
+		go p.OnParticipantTrack(p, pt)
 	}
 }
 
