@@ -182,7 +182,7 @@ func (c *RTCClient) Run() error {
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
-			c.AppendLog("join accepted, sending offer..", "participant", msg.Join.Participant.Id)
+			c.AppendLog("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
 			c.localParticipant = msg.Join.Participant
 			c.AppendLog("other participants", "count", len(msg.Join.OtherParticipants))
 
@@ -243,7 +243,7 @@ func (c *RTCClient) Run() error {
 			}
 		case *livekit.SignalResponse_Update:
 			for _, p := range msg.Update.Participants {
-				c.AppendLog("participant update", "id", p.Id, "state", p.State.String())
+				c.AppendLog("participant update", "id", p.Sid, "state", p.State.String())
 			}
 		}
 	}

@@ -17,7 +17,7 @@ message NodeStats {
 
 // internal type, for serialization with proto
 message Room {
-  string id = 1;
+  string sid = 1;
   uint32 empty_timeout = 2;
   uint32 max_participants = 3;
   int64 creation_time = 4;
@@ -25,7 +25,7 @@ message Room {
 }
 
 message RoomInfo {
-  string id = 1;
+  string sid = 1;
   string node_ip = 2;
   int64 creation_time = 3;
   string token = 4;
@@ -42,7 +42,7 @@ message ParticipantInfo {
     // WS disconnected
     DISCONNECTED = 3;
   }
-  string id = 1;
+  string sid = 1;
   string name = 2;
   State state = 3;
 }
@@ -54,7 +54,7 @@ message TrackInfo {
     VIDEO = 1;
     DATA = 2;
   }
-  string id = 1;
+  string sid = 1;
   Type type = 2;
   string name = 3;
 }

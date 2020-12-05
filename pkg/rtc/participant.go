@@ -118,7 +118,7 @@ func (p *Participant) State() livekit.ParticipantInfo_State {
 
 func (p *Participant) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
-		Id:    p.id,
+		Sid:   p.id,
 		Name:  p.name,
 		State: p.state,
 	}

@@ -29,7 +29,7 @@ func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) (*R
 
 	return &Room{
 		Room: livekit.Room{
-			Id:              utils.NewGuid(utils.RoomPrefix),
+			Sid:             utils.NewGuid(utils.RoomPrefix),
 			EmptyTimeout:    req.EmptyTimeout,
 			MaxParticipants: req.MaxParticipants,
 			CreationTime:    time.Now().Unix(),
@@ -49,7 +49,7 @@ func (r *Room) GetParticipant(id string) *Participant {
 
 func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	return &livekit.RoomInfo{
-		Id:           r.Id,
+		Sid:          r.Sid,
 		NodeIp:       node.Ip,
 		CreationTime: r.CreationTime,
 		Token:        r.Token,
@@ -72,7 +72,7 @@ func (r *Room) Join(participant *Participant) error {
 	log.Infow("new participant joined",
 		"id", participant.ID(),
 		"name", participant.Name(),
-		"roomId", r.Id)
+		"roomId", r.Sid)
 
 	// subscribe participant to existing tracks
 	for _, p := range r.participants {

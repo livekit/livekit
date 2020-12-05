@@ -112,6 +112,8 @@ func (r *Receiver) rtpWorker() {
 	for {
 		pkt, err := r.track.ReadRTP()
 		if err == io.EOF {
+			// this indicates the track is done on the server side
+			// we should remove the track
 			r.Close()
 			return
 		}
