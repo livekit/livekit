@@ -8,6 +8,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 var (
@@ -31,8 +32,8 @@ type Track struct {
 }
 
 func NewTrack(ctx context.Context, pId string, rtcpWriter RTCPWriter, mediaTrack *webrtc.Track, receiver *Receiver) *Track {
-	return &Track{
-		id:            mediaTrack.ID(),
+	t := &Track{
+		id:            utils.NewGuid(utils.TrackPrefix),
 		ctx:           ctx,
 		participantId: pId,
 		mediaTrack:    mediaTrack,
@@ -41,6 +42,13 @@ func NewTrack(ctx context.Context, pId string, rtcpWriter RTCPWriter, mediaTrack
 		forwarders:    make(map[string]Forwarder),
 		receiver:      receiver,
 	}
+
+	receiver.OnClose(func(r *Receiver) {
+		t.RemoveAllSubscribers()
+		// TODO: perhaps send unpublished events
+	})
+
+	return t
 }
 
 func (t *Track) Start() {
@@ -106,6 +114,14 @@ func (t *Track) RemoveSubscriber(participantId string) {
 
 	if forwarder := t.forwarders[participantId]; forwarder != nil {
 		go forwarder.Close()
+	}
+}
+
+func (t *Track) RemoveAllSubscribers() {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	for _, f := range t.forwarders {
+		go f.Close()
 	}
 }
 

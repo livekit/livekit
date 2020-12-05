@@ -100,6 +100,10 @@ func (r *Receiver) Stats() (sfu.BufferStats, rtcp.ReceptionReport) {
 	return r.buffer.Stats(), r.buffer.BuildReceptionReport()
 }
 
+func (r *Receiver) OnClose(onclose func(r *Receiver)) {
+	r.onCloseHandler = onclose
+}
+
 // rtpWorker reads RTP stream, fills buffer and channel
 func (r *Receiver) rtpWorker() {
 	defer func() {

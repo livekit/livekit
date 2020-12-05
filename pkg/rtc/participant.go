@@ -26,7 +26,7 @@ type Participant struct {
 
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
-	tracks         []*Track // tracks that the peer is publishing
+	tracks         map[string]*Track // tracks that the peer is publishing
 	once           sync.Once
 
 	// callbacks & handlers
@@ -61,7 +61,7 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 		state:          livekit.ParticipantInfo_JOINING,
 		lock:           sync.RWMutex{},
 		receiverConfig: conf.receiver,
-		tracks:         make([]*Track, 0),
+		tracks:         make(map[string]*Track, 0),
 		mediaEngine:    &MediaEngine{},
 	}
 	participant.mediaEngine.RegisterDefaultCodecs()
@@ -298,7 +298,7 @@ func (p *Participant) onTrack(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiv
 	pt := NewTrack(p.ctx, p.id, p.peerConn, track, receiver)
 
 	p.lock.Lock()
-	p.tracks = append(p.tracks, pt)
+	p.tracks[pt.id] = pt
 	p.lock.Unlock()
 
 	pt.Start()

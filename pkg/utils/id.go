@@ -8,6 +8,7 @@ const (
 	RoomPrefix        = "RM_"
 	NodePrefix        = "ND_"
 	ParticipantPrefix = "PA_"
+	TrackPrefix       = "TR_"
 )
 
 func NewGuid(prefix string) string {
