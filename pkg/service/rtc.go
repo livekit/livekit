@@ -85,6 +85,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer func() {
+		// remove peer from room upon disconnection
+		room.RemoveParticipant(participant.ID())
 		participant.Close()
 		log.Infow("WS connection closed")
 	}()
@@ -108,10 +110,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Errorw("could not handle join", "err", err, "participant", participant.ID())
 				return
 			}
-			defer func() {
-				// remove peer from room upon disconnection
-				room.RemoveParticipant(participant.ID())
-			}()
 		case *livekit.SignalRequest_Negotiate:
 			if participant.State() == livekit.ParticipantInfo_JOINING {
 				log.Errorw("cannot negotiate before peer offer", "participant", participant.ID())

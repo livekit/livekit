@@ -108,6 +108,8 @@ func (r *Room) RemoveParticipant(id string) {
 	if p, ok := r.participants[id]; ok {
 		// also stop connection if needed
 		p.Close()
+		// update clients
+		r.broadcastParticipantState(p)
 	}
 
 	delete(r.participants, id)
