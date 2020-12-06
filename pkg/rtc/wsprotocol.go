@@ -1,6 +1,8 @@
 package rtc
 
 import (
+	"sync"
+
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -16,12 +18,14 @@ type SignalConnection interface {
 
 type WSSignalConnection struct {
 	conn    *websocket.Conn
+	mu      sync.Mutex
 	useJSON bool
 }
 
 func NewWSSignalConnection(conn *websocket.Conn) *WSSignalConnection {
 	return &WSSignalConnection{
 		conn:    conn,
+		mu:      sync.Mutex{},
 		useJSON: true,
 	}
 }
@@ -71,5 +75,7 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 		return err
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.WriteMessage(msgType, payload)
 }

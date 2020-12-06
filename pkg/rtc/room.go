@@ -106,10 +106,13 @@ func (r *Room) RemoveParticipant(id string) {
 	defer r.lock.Unlock()
 
 	if p, ok := r.participants[id]; ok {
-		// also stop connection if needed
-		p.Close()
-		// update clients
-		r.broadcastParticipantState(p)
+		// avoid blocking lock
+		go func() {
+			// also stop connection if needed
+			p.Close()
+			// update clients
+			r.broadcastParticipantState(p)
+		}()
 	}
 
 	delete(r.participants, id)

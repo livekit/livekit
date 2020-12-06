@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -95,11 +96,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//ctx := context.Background()
 	for {
 		req, err := signalConn.ReadRequest()
+		if err == io.EOF {
+			// client disconnected from websocket
+			return
+		}
 		if err != nil {
-			logger.GetLogger().Errorw("error reading WS",
-				"err", err,
-				"participantName", pName,
-				"roomId", roomId)
+			// most of these are disconnection, just return vs clogging up logs
+			//logger.GetLogger().Errorw("error reading WS",
+			//	"err", err,
+			//	"participantName", pName,
+			//	"roomId", roomId)
 			return
 		}
 

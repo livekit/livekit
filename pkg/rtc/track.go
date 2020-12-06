@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -72,7 +73,7 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 	}
 
 	// pack ID to identify all tracks
-	packedId := PackTrackId(t.participantId, t.mediaTrack.ID())
+	packedId := PackTrackId(t.participantId, t.id)
 
 	// use existing SSRC with simple forwarders. adaptive forwarders require unique SSRC per layer
 	outTrack, err := participant.peerConn.NewTrack(codecs[0].PayloadType, t.mediaTrack.SSRC(), packedId, t.mediaTrack.Label())
@@ -95,9 +96,11 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 			return
 		}
 		if err := participant.peerConn.RemoveTrack(rtpSender); err != nil {
-			logger.GetLogger().Warnw("could not remove mediaTrack from forwarder",
-				"participant", participant.ID(),
-				"err", err)
+			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+				logger.GetLogger().Warnw("could not remove mediaTrack from forwarder",
+					"participant", participant.ID(),
+					"err", err)
+			}
 		}
 	})
 
