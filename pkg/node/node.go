@@ -1,17 +1,18 @@
 package node
 
 import (
-	"errors"
+	"context"
+	"fmt"
+	"time"
 
 	"github.com/google/wire"
 	"github.com/pion/stun"
+	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
-
-const ()
 
 var NodeSet = wire.NewSet(NewLocalNode)
 
@@ -46,7 +47,7 @@ func (n *Node) DiscoverNetworkInfo() error {
 	if len(n.config.RTC.StunServers) == 0 {
 		return errors.New("STUN servers are required but not defined")
 	}
-	c, err := stun.Dial("udp", n.config.RTC.StunServers[0])
+	c, err := stun.Dial("udp4", n.config.RTC.StunServers[0])
 	if err != nil {
 		return err
 	}
@@ -58,7 +59,7 @@ func (n *Node) DiscoverNetworkInfo() error {
 	}
 
 	var stunErr error
-	err = c.Do(message, func(res stun.Event) {
+	err = c.Start(message, func(res stun.Event) {
 		if res.Error != nil {
 			stunErr = res.Error
 			return
@@ -69,11 +70,30 @@ func (n *Node) DiscoverNetworkInfo() error {
 			stunErr = err
 			return
 		}
-		n.Ip = xorAddr.IP.String()
+		ip := xorAddr.IP.To4()
+		if ip != nil {
+			n.Ip = ip.String()
+		}
 	})
-
-	if stunErr != nil {
-		err = stunErr
+	if err != nil {
+		return err
 	}
-	return err
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for n.Ip == "" {
+		select {
+		case <-ctx.Done():
+			msg := "could not determine public IP"
+			if stunErr != nil {
+				return errors.Wrap(stunErr, msg)
+			} else {
+				return fmt.Errorf(msg)
+			}
+		case <-time.After(100 * time.Millisecond):
+			continue
+		}
+	}
+
+	return nil
 }

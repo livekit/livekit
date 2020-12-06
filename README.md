@@ -24,13 +24,24 @@ To run a peer publishing to a room, do the following:
 2. Create a room
 
     ```
-    ./bin/livekit-cli create-room --room-id hello
+    ./bin/livekit-cli create-room
     ```
+   
+   It'll print out something like this. note the room id
+
+   ```json
+      {
+        "sid": "RM_CkjigXb6oZQyZ4JNFZqBen",
+        "node_ip": "98.35.19.21",
+        "creation_time": 1607240104,
+        "token": "b9e8c9f6-fbb3-46d5-b6fc-5517186510a6"
+      }
+   ```
 
 3. Join room as publishing client
 
    ```
-   ./ bin/livekit-cli join --room-id hello --audio <path/to/ogg> --video <path/to/ivf>
+   ./ bin/livekit-cli join --audio <path/to/ogg> --video <path/to/ivf> --room-id <room_sid>
    ```
 
 That's it, join the room with another peer id and see it receiving those tracks
@@ -48,7 +59,7 @@ see `rtc.proto` for the message structure.
 
 The flow for interaction is:
 1. Establish WebSocket to ws://<host>:<port>/rtc
-1. Server will send back a `SignalResponse` with a `join` response. It'll include the new participant's details (and in the future, room info)
+1. Server will send back a `SignalResponse` with a `join` response. It'll include the new participant's details, and what other participants are in the room
 1. Client sends a `SignalRequest` with an WebRTC `offer`
 1. Server will send back a `SignalResponse` with an `answer`
 1. Client and server will exchange ice candidates via `trickle` in the request & responses

@@ -26,7 +26,7 @@ var (
 )
 
 func PrintJSON(obj interface{}) {
-	txt, _ := json.Marshal(obj)
+	txt, _ := json.MarshalIndent(obj, "", "  ")
 	fmt.Println(string(txt))
 }
 
