@@ -118,7 +118,7 @@ func (r *Room) RemoveParticipant(id string) {
 	delete(r.participants, id)
 }
 
-// a peer in the room added a new mediaTrack, subscribe other participants to it
+// a peer in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackAdded(participant *Participant, track *Track) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant)
@@ -126,7 +126,7 @@ func (r *Room) onTrackAdded(participant *Participant, track *Track) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	// subscribe all existing participants to this mediaTrack
+	// subscribe all existing participants to this remoteTrack
 	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
@@ -134,9 +134,9 @@ func (r *Room) onTrackAdded(participant *Participant, track *Track) {
 			continue
 		}
 		if err := track.AddSubscriber(existingParticipant); err != nil {
-			logger.GetLogger().Errorw("could not subscribe to mediaTrack",
+			logger.GetLogger().Errorw("could not subscribe to remoteTrack",
 				"srcParticipant", participant.ID(),
-				"mediaTrack", track.id,
+				"remoteTrack", track.id,
 				"dstParticipant", existingParticipant.ID())
 		}
 	}

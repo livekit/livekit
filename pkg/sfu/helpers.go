@@ -2,7 +2,10 @@ package sfu
 
 import (
 	"encoding/binary"
+	"strings"
 	"sync/atomic"
+
+	"github.com/pion/webrtc/v3"
 )
 
 const ntpEpoch = 2208988800
@@ -71,11 +74,13 @@ func (p *VP8Helper) Unmarshal(payload []byte) error {
 	}
 
 	var idx uint8
+	S := payload[idx]&0x10 > 0
 	// Check for extended bit control
 	if payload[idx]&0x80 > 0 {
 		idx++
 		// Check if T is present, if not, no temporal layer is available
 		p.TemporalSupported = payload[idx]&0x20 > 0
+		K := payload[idx]&0x10 > 0
 		L := payload[idx]&0x40 > 0
 		// Check for PictureID
 		if payload[idx]&0x80 > 0 {
@@ -97,27 +102,22 @@ func (p *VP8Helper) Unmarshal(payload []byte) error {
 			p.tlzIdx = idx
 			p.TL0PICIDX = payload[idx]
 		}
-		idx++
-		// Set TID
-		p.TID = (payload[idx] & 0xc0) >> 6
-		idx++
+		if p.TemporalSupported || K {
+			idx++
+			p.TID = (payload[idx] & 0xc0) >> 6
+		}
 		if int(idx) >= payloadLen {
 			return errShortPacket
 		}
+		idx++
 		// Check is packet is a keyframe by looking at P bit in vp8 payload
-		p.IsKeyFrame = payload[idx]&0x01 == 0
+		p.IsKeyFrame = payload[idx]&0x01 == 0 && S
+	} else {
+		idx++
+		// Check is packet is a keyframe by looking at P bit in vp8 payload
+		p.IsKeyFrame = payload[idx]&0x01 == 0 && S
 	}
 	return nil
-}
-
-func snDiff(sn1, sn2 uint16) int {
-	if sn1 == sn2 {
-		return 0
-	}
-	if ((sn2 - sn1) & 0x8000) != 0 {
-		return 1
-	}
-	return -1
 }
 
 func timeToNtp(ns int64) uint64 {
@@ -126,9 +126,23 @@ func timeToNtp(ns int64) uint64 {
 	return seconds<<32 | fraction
 }
 
-// fromNtp converts a NTP timestamp into GO time
-func fromNtp(seconds, fraction uint32) (tm int64) {
-	n := (int64(fraction) * 1e9) >> 32
-	tm = (int64(seconds)-ntpEpoch)*1e9 + n
-	return
+// Do a fuzzy find for a codec in the list of codecs
+// Used for lookup up a codec in an existing list to find a match
+func codecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []webrtc.RTPCodecParameters) (webrtc.RTPCodecParameters, error) {
+	// First attempt to match on MimeType + SDPFmtpLine
+	for _, c := range haystack {
+		if strings.EqualFold(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) &&
+			c.RTPCodecCapability.SDPFmtpLine == needle.RTPCodecCapability.SDPFmtpLine {
+			return c, nil
+		}
+	}
+
+	// Fallback to just MimeType
+	for _, c := range haystack {
+		if strings.EqualFold(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) {
+			return c, nil
+		}
+	}
+
+	return webrtc.RTPCodecParameters{}, webrtc.ErrCodecNotFound
 }

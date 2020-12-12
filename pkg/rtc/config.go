@@ -2,9 +2,7 @@ package rtc
 
 import (
 	"fmt"
-	"net/url"
 
-	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -53,19 +51,6 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	if conf.UseExternalIP {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
-
-	// Configure required extensions
-	sdes, _ := url.Parse(sdp.SDESRTPStreamIDURI)
-	sdedMid, _ := url.Parse(sdp.SDESMidURI)
-	exts := []sdp.ExtMap{
-		{
-			URI: sdes,
-		},
-		{
-			URI: sdedMid,
-		},
-	}
-	s.AddSDPExtensions(webrtc.SDPSectionVideo, exts)
 
 	return &WebRTCConfig{
 		Configuration: c,
