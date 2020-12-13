@@ -105,11 +105,14 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 		if participant.peerConn.ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
-		if err := participant.peerConn.RemoveTrack(transceiver.Sender()); err != nil {
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				logger.GetLogger().Warnw("could not remove remoteTrack from forwarder",
-					"participant", participant.ID(),
-					"err", err)
+		sender := transceiver.Sender()
+		if sender != nil {
+			if err := participant.peerConn.RemoveTrack(sender); err != nil {
+				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+					logger.GetLogger().Warnw("could not remove remoteTrack from forwarder",
+						"participant", participant.ID(),
+						"err", err)
+				}
 			}
 		}
 
@@ -195,7 +198,15 @@ func (t *Track) forwardRTPWorker() {
 				continue
 			}
 
-			if err != nil {
+			if err == sfu.ErrRequiresKeyFrame {
+				logger.GetLogger().Infow("keyframe required, sending PLI")
+				// queue up a PLI, but don't block channel
+				go func() {
+					t.rtcpCh <- []rtcp.Packet{
+						&rtcp.PictureLossIndication{SenderSSRC: forwarder.Track().SSRC(), MediaSSRC: pkt.SSRC},
+					}
+				}()
+			} else if err != nil {
 				logger.GetLogger().Warnw("could not forward packet to participant",
 					"src", t.participantId,
 					"dest", dstId,

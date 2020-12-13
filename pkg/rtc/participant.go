@@ -73,6 +73,7 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 		ctx:            ctx,
 		cancel:         cancel,
 		bi:             bi,
+		rtcpCh:         make(chan []rtcp.Packet, 10),
 		downTracks:     make(map[string][]*sfu.DownTrack),
 		state:          livekit.ParticipantInfo_JOINING,
 		lock:           sync.RWMutex{},
@@ -190,8 +191,6 @@ func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessi
 			return
 		}
 
-		logger.GetLogger().Debugw("created new offer", "offer", offer, "onOffer", p.OnOffer)
-
 		logger.GetLogger().Debugw("sending available offer to participant")
 		err = p.sigConn.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Negotiate{
@@ -230,7 +229,9 @@ func (p *Participant) addDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
 	p.downTracks[streamId] = append(p.downTracks[streamId], dt)
 	p.lock.Unlock()
-	p.scheduleDownTrackBindingReports(streamId)
+	dt.OnBind(func() {
+		go p.scheduleDownTrackBindingReports(streamId)
+	})
 }
 
 func (p *Participant) removeDownTrack(streamId string, dt *sfu.DownTrack) {
@@ -371,10 +372,10 @@ func (p *Participant) scheduleDownTrackBindingReports(streamId string) {
 	}
 
 	go func() {
-		pkts := pkts
+		batch := pkts
 		i := 0
 		for {
-			if err := p.peerConn.WriteRTCP(pkts); err != nil {
+			if err := p.peerConn.WriteRTCP(batch); err != nil {
 				logger.GetLogger().Debugw("Sending track binding reports",
 					"participant", p.id,
 					"err", err)

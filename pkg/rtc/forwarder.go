@@ -26,6 +26,7 @@ type Forwarder interface {
 	Start()
 	Close()
 	CreatedAt() time.Time
+	Track() *sfu.DownTrack
 
 	OnClose(func(Forwarder))
 }
@@ -127,6 +128,10 @@ func (f *SimpleForwarder) OnClose(closeFunc func(Forwarder)) {
 
 func (f *SimpleForwarder) CreatedAt() time.Time {
 	return f.createdAt
+}
+
+func (f *SimpleForwarder) Track() *sfu.DownTrack {
+	return f.track
 }
 
 // rtcpWorker receives RTCP packets from the destination peer

@@ -230,10 +230,7 @@ func (d *DownTrack) writeSimpleRTP(pkt rtp.Packet) error {
 			}
 			if !relay {
 				// TODO: how do we sent PLI to the source?
-				//d.receiver.SendRTCP([]rtcp.Packet{
-				//	&rtcp.PictureLossIndication{SenderSSRC: d.ssrc, MediaSSRC: pkt.SSRC},
-				//})
-				return ErrRequiresKeyFrame
+				//return ErrRequiresKeyFrame
 			}
 		}
 		d.snOffset = pkt.SequenceNumber - d.lastSN - 1
