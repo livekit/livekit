@@ -19,9 +19,9 @@ import (
 // makes it easier to debug and create RTP streams
 type TrackWriter struct {
 	ctx      context.Context
-	track    *webrtc.Track
+	track    *webrtc.TrackLocalStaticSample
 	filePath string
-	format   string
+	mime     string
 
 	ogg       *oggreader.OggReader
 	ivfheader *ivfreader.IVFFileHeader
@@ -29,12 +29,12 @@ type TrackWriter struct {
 	h264      *h264reader.H264Reader
 }
 
-func NewTrackWriter(ctx context.Context, track *webrtc.Track, filePath string, format string) *TrackWriter {
+func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, filePath string) *TrackWriter {
 	return &TrackWriter{
 		ctx:      ctx,
 		track:    track,
 		filePath: filePath,
-		format:   format,
+		mime:     track.Codec().MimeType,
 	}
 }
 
@@ -46,21 +46,21 @@ func (w *TrackWriter) Start() error {
 
 	logger.GetLogger().Infow("starting track writer",
 		"track", w.track.ID(),
-		"format", w.format)
-	switch w.format {
-	case webrtc.Opus:
+		"mime", w.mime)
+	switch w.mime {
+	case webrtc.MimeTypeOpus:
 		w.ogg, _, err = oggreader.NewWith(file)
 		if err != nil {
 			return err
 		}
 		go w.writeOgg()
-	case webrtc.VP8:
+	case webrtc.MimeTypeVP8:
 		w.ivf, w.ivfheader, err = ivfreader.NewWith(file)
 		if err != nil {
 			return err
 		}
 		go w.writeVP8()
-	case webrtc.H264:
+	case webrtc.MimeTypeH264:
 		w.h264, err = h264reader.NewReader(file)
 		if err != nil {
 			return err
@@ -92,14 +92,15 @@ func (w *TrackWriter) writeOgg() {
 		// The amount of samples is the difference between the last and current timestamp
 		sampleCount := float64(pageHeader.GranulePosition - lastGranule)
 		lastGranule = pageHeader.GranulePosition
+		sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
 
-		if err = w.track.WriteSample(media.Sample{Data: pageData, Samples: uint32(sampleCount)}); err != nil {
+		if err = w.track.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); err != nil {
 			logger.GetLogger().Errorw("could not write sample", "err", err)
 			return
 		}
 
 		// Convert seconds to Milliseconds, Sleep doesn't accept floats
-		time.Sleep(time.Duration((sampleCount/48000)*1000) * time.Millisecond)
+		time.Sleep(sampleDuration)
 	}
 }
 
@@ -124,7 +125,7 @@ func (w *TrackWriter) writeVP8() {
 		}
 
 		time.Sleep(sleepTime)
-		if err = w.track.WriteSample(media.Sample{Data: frame, Samples: 90000}); err != nil {
+		if err = w.track.WriteSample(media.Sample{Data: frame, Duration: time.Second}); err != nil {
 			logger.GetLogger().Errorw("could not write sample", "err", err)
 			return
 		}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/randutil"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -24,14 +23,14 @@ import (
 type RTCClient struct {
 	conn             *websocket.Conn
 	PeerConn         *webrtc.PeerConnection
-	localTracks      []*webrtc.Track
+	localTracks      []webrtc.TrackLocal
 	lock             sync.Mutex
 	ctx              context.Context
 	cancel           context.CancelFunc
 	connected        bool
 	iceConnected     bool
 	paused           bool
-	me               *rtc.MediaEngine // optional, populated only when receiving tracks
+	me               *webrtc.MediaEngine // optional, populated only when receiving tracks
 	receivers        []*rtc.Receiver
 	localParticipant *livekit.ParticipantInfo
 
@@ -53,16 +52,11 @@ var (
 			},
 		},
 	}
-	maxLogs          = 256
-	extFormatMapping = map[string]string{
-		".ivf":  webrtc.VP8,
-		".h264": webrtc.H264,
-		".ogg":  webrtc.Opus,
-	}
-	payloadTypes = map[string]int{
-		webrtc.VP8:  webrtc.DefaultPayloadTypeVP8,
-		webrtc.H264: webrtc.DefaultPayloadTypeH264,
-		webrtc.Opus: webrtc.DefaultPayloadTypeOpus,
+	maxLogs        = 256
+	extMimeMapping = map[string]string{
+		".ivf":  webrtc.MimeTypeVP8,
+		".h264": webrtc.MimeTypeH264,
+		".ogg":  webrtc.MimeTypeOpus,
 	}
 )
 
@@ -78,7 +72,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		conn:              conn,
 		lock:              sync.Mutex{},
 		pendingCandidates: make([]*webrtc.ICECandidate, 0),
-		localTracks:       make([]*webrtc.Track, 0),
+		localTracks:       make([]webrtc.TrackLocal, 0),
 		reader:            logRing,
 		writer:            logRing,
 		PeerConn:          peerConn,
@@ -104,14 +98,10 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		}
 	})
 
-	peerConn.OnTrack(func(track *webrtc.Track, rtpReceiver *webrtc.RTPReceiver) {
-		c.AppendLog("track received", "label", track.Label(), "id", track.ID())
+	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+		c.AppendLog("track received", "label", track.StreamID(), "id", track.ID())
 		peerId, _ := rtc.UnpackTrackId(track.ID())
-		tccExt := 0
-		if c.me != nil {
-			tccExt = c.me.TCCExt
-		}
-		r := rtc.NewReceiver(c.ctx, peerId, rtpReceiver, rtc.ReceiverConfig{}, tccExt)
+		r := rtc.NewReceiver(c.ctx, peerId, rtpReceiver, nil)
 		c.lock.Lock()
 		c.receivers = append(c.receivers, r)
 		r.Start()
@@ -356,8 +346,8 @@ func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
 	// if we received an offer, we'd have to answer
 	if desc.Type == webrtc.SDPTypeOffer {
 		// create media engine
-		c.me = &rtc.MediaEngine{}
-		if err := c.me.PopulateFromSDP(desc); err != nil {
+		c.me = &webrtc.MediaEngine{}
+		if err := c.me.RegisterDefaultCodecs(); err != nil {
 			return errors.Wrapf(err, "could not parse SDP")
 		}
 
@@ -380,18 +370,22 @@ func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
 	return nil
 }
 
-func (c *RTCClient) AddTrack(path string, codecType webrtc.RTPCodecType, id string, label string) error {
-	// determine file type
-	format, ok := extFormatMapping[filepath.Ext(path)]
+func (c *RTCClient) AddTrack(path string, id string, label string) error {
+	// determine file mime
+	mime, ok := extMimeMapping[filepath.Ext(path)]
 	if !ok {
 		return fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
 	}
-	payloadType := uint8(payloadTypes[format])
 
 	logger.GetLogger().Infow("adding track",
-		"format", format,
+		"mime", mime,
 	)
-	track, err := c.PeerConn.NewTrack(payloadType, randutil.NewMathRandomGenerator().Uint32(), id, label)
+
+	track, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: mime},
+		id,
+		label,
+	)
 	if err != nil {
 		return err
 	}
@@ -404,7 +398,7 @@ func (c *RTCClient) AddTrack(path string, codecType webrtc.RTPCodecType, id stri
 		return err
 	}
 
-	tw := NewTrackWriter(c.ctx, track, path, format)
+	tw := NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
 	if c.iceConnected {
@@ -457,21 +451,17 @@ func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
 	peerId, trackId := rtc.UnpackTrackId(r.TrackId())
 	numBytes := 0
 	for {
-		select {
-		case packet, ok := <-r.RTPChan():
-			if !ok {
-				// channel closed, we are done
-				return
-			}
-			numBytes += packet.MarshalSize()
-			if time.Now().Sub(lastUpdate) > 30*time.Second {
-				c.AppendLog("consumed from peer",
-					"track", trackId, "peer", peerId,
-					"size", numBytes)
-				lastUpdate = time.Now()
-			}
-		case <-c.ctx.Done():
+		pkt, err := r.ReadRTP()
+		if err == io.EOF || err == io.ErrClosedPipe {
+			// all done
 			return
+		}
+		numBytes += pkt.MarshalSize()
+		if time.Now().Sub(lastUpdate) > 30*time.Second {
+			c.AppendLog("consumed from peer",
+				"track", trackId, "peer", peerId,
+				"size", numBytes)
+			lastUpdate = time.Now()
 		}
 
 		if c.ctx.Err() != nil {

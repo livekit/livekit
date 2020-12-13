@@ -81,10 +81,10 @@ func joinRoom(c *cli.Context) error {
 	audioFile := c.String("audio")
 	videoFile := c.String("video")
 	if audioFile != "" {
-		rc.AddTrack(audioFile, webrtc.RTPCodecTypeAudio, "audio", filepath.Base(audioFile))
+		rc.AddTrack(audioFile, "audio", filepath.Base(audioFile))
 	}
 	if videoFile != "" {
-		rc.AddTrack(videoFile, webrtc.RTPCodecTypeVideo, "video", filepath.Base(videoFile))
+		rc.AddTrack(videoFile, "video", filepath.Base(videoFile))
 	}
 
 	// start loop to detect input
@@ -171,7 +171,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 	mediaPath = ExpandUser(mediaPath)
 
 	// TODO: see what the ID should be
-	err = rc.AddTrack(mediaPath, codecType, codecType.String(), filepath.Base(mediaPath))
+	err = rc.AddTrack(mediaPath, codecType.String(), filepath.Base(mediaPath))
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 
 	audioPath := mediaPath[0:len(mediaPath)-len(videoExt)] + ".ogg"
 	if _, err = os.Stat(audioPath); err == nil {
-		err = rc.AddTrack(audioPath, webrtc.RTPCodecTypeAudio, codecType.String(), filepath.Base(audioPath))
+		err = rc.AddTrack(audioPath, codecType.String(), filepath.Base(audioPath))
 		if err != nil {
 			fmt.Printf("added audio track: %s\n", audioPath)
 		}

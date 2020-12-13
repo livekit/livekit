@@ -68,6 +68,9 @@ func (r *Receiver) Close() {
 
 // PacketBuffer interface, to provide forwarders packets from the buffer
 func (r *Receiver) GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet {
+	if r.bi == nil {
+		return nil
+	}
 	return r.bi.GetBufferedPackets(uint32(r.track.SSRC()), mediaSSRC, snOffset, tsOffset, sn)
 }
 
