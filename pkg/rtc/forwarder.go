@@ -94,10 +94,10 @@ func (f *SimpleForwarder) Start() {
 }
 
 func (f *SimpleForwarder) Close() {
-	//if f.ctx.Err() != nil {
-	//	return
-	//}
-	//f.cancel()
+	if f.ctx.Err() != nil {
+		return
+	}
+	f.cancel()
 	if f.onClose != nil {
 		f.onClose(f)
 	}
@@ -105,10 +105,10 @@ func (f *SimpleForwarder) Close() {
 
 // Writes an RTP packet to peer
 func (f *SimpleForwarder) WriteRTP(pkt *rtp.Packet) error {
-	//if f.ctx.Err() != nil {
-	//	// skip canceled context errors
-	//	return nil
-	//}
+	if f.ctx.Err() != nil {
+		// skip canceled context errors
+		return nil
+	}
 
 	err := f.track.WriteRTP(pkt)
 
@@ -144,13 +144,14 @@ func (f *SimpleForwarder) rtcpWorker() {
 			return
 		}
 
-		//if f.ctx.Err() != nil {
-		//	return
-		//}
+		if f.ctx.Err() != nil {
+			return
+		}
 
 		if err != nil {
 			logger.GetLogger().Errorw("could not write read RTCP",
 				"err", err)
+			continue
 		}
 
 		var fwdPkts []rtcp.Packet
@@ -196,6 +197,9 @@ func (f *SimpleForwarder) rtcpWorker() {
 			}
 		}
 
+		if f.ctx.Err() != nil {
+			return
+		}
 		if len(fwdPkts) > 0 {
 			f.sourceRtcpCh <- fwdPkts
 		}

@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -122,7 +121,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
 			}
-			err = s.handleNegotiate(signalConn, participant, msg.Negotiate)
+			sd := rtc.FromProtoSessionDescription(msg.Negotiate)
+			err = participant.HandleNegotiate(sd)
 			if err != nil {
 				log.Errorw("could not handle negotiate", "participant", participant.ID(), "err", err)
 				//conn.WriteJSON(
@@ -157,34 +157,6 @@ func (s *RTCService) handleOffer(participant *rtc.Participant, offer *livekit.Se
 	}
 
 	log.Debugw("answered client offer")
-	return nil
-}
-
-func (s *RTCService) handleNegotiate(sc rtc.SignalConnection, participant *rtc.Participant, neg *livekit.SessionDescription) error {
-	logger.GetLogger().Debugw("handling incoming negotiate", "participant", participant.ID())
-	if neg.Type == webrtc.SDPTypeOffer.String() {
-		offer := rtc.FromProtoSessionDescription(neg)
-		answer, err := participant.Answer(offer)
-		if err != nil {
-			return err
-		}
-
-		err = sc.WriteResponse(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: rtc.ToProtoSessionDescription(answer),
-			},
-		})
-
-		if err != nil {
-			return err
-		}
-	} else if neg.Type == webrtc.SDPTypeAnswer.String() {
-		answer := rtc.FromProtoSessionDescription(neg)
-		err := participant.SetRemoteDescription(answer)
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

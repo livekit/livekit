@@ -67,26 +67,28 @@ func (r *Room) Join(participant *Participant) error {
 	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
 		log.Debugw("participant state changed", "state", p.state, "participant", p.id)
 		r.broadcastParticipantState(p)
+
+		if oldState == livekit.ParticipantInfo_JOINING && p.state == livekit.ParticipantInfo_JOINED {
+			// subscribe participant to existing tracks
+			for _, p := range r.participants {
+				if p.id == participant.id {
+					// don't send to itself
+					continue
+				}
+				if err := p.AddSubscriber(participant); err != nil {
+					// TODO: log error? or disconnect?
+					logger.GetLogger().Errorw("could not subscribe to participant",
+						"dstParticipant", participant.ID(),
+						"srcParticipant", p.ID())
+				}
+			}
+		}
 	}
 
 	log.Infow("new participant joined",
 		"id", participant.ID(),
 		"name", participant.Name(),
 		"roomId", r.Sid)
-
-	// subscribe participant to existing tracks
-	for _, p := range r.participants {
-		if p.id == participant.id {
-			// don't send to itself
-			continue
-		}
-		if err := p.AddSubscriber(participant); err != nil {
-			// TODO: log error? or disconnect?
-			logger.GetLogger().Errorw("could not subscribe to participant",
-				"dstParticipant", participant.ID(),
-				"srcParticipant", p.ID())
-		}
-	}
 
 	r.participants[participant.ID()] = participant
 

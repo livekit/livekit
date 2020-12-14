@@ -147,11 +147,7 @@ func (p *Participant) ToProto() *livekit.ParticipantInfo {
 
 // Answer an offer from remote participant
 func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
-	if p.state == livekit.ParticipantInfo_JOINING {
-		p.updateState(livekit.ParticipantInfo_JOINED)
-	}
-
-	if err = p.SetRemoteDescription(sdp); err != nil {
+	if err = p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return
 	}
 
@@ -163,16 +159,6 @@ func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessi
 
 	if err = p.peerConn.SetLocalDescription(answer); err != nil {
 		err = errors.Wrap(err, "could not set local description")
-		return
-	}
-
-	// send client the answer
-	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Answer{
-			Answer: ToProtoSessionDescription(answer),
-		},
-	})
-	if err != nil {
 		return
 	}
 
@@ -206,11 +192,48 @@ func (p *Participant) Answer(sdp webrtc.SessionDescription) (answer webrtc.Sessi
 			p.OnOffer(offer)
 		}
 	})
+
+	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Answer{
+			Answer: ToProtoSessionDescription(answer),
+		},
+	})
+
+	if p.state == livekit.ParticipantInfo_JOINING {
+		p.updateState(livekit.ParticipantInfo_JOINED)
+	}
 	return
 }
 
-// SetRemoteDescription when receiving an answer from remote
+// HandleNegotiate when receiving session description from client
+func (p *Participant) HandleNegotiate(sd webrtc.SessionDescription) error {
+	if err := p.peerConn.SetRemoteDescription(sd); err != nil {
+		return errors.Wrap(err, "could not set remote description")
+	}
+
+	if sd.Type == webrtc.SDPTypeOffer {
+		answer, err := p.peerConn.CreateAnswer(nil)
+		if err != nil {
+			return errors.Wrap(err, "could not create answer")
+		}
+
+		if err = p.peerConn.SetLocalDescription(answer); err != nil {
+			return errors.Wrap(err, "could not set local description")
+		}
+
+		// send a negotiate response back
+		return p.sigConn.WriteResponse(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Negotiate{
+				Negotiate: ToProtoSessionDescription(answer),
+			},
+		})
+	}
+
+	return nil
+}
+
 func (p *Participant) SetRemoteDescription(sdp webrtc.SessionDescription) error {
+	logger.GetLogger().Debugw("setting remote description", "type", sdp.Type)
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}

@@ -141,6 +141,7 @@ func (t *Track) RemoveSubscriber(participantId string) {
 }
 
 func (t *Track) RemoveAllSubscribers() {
+	logger.GetLogger().Debugw("removing all subscribers", "track", t.id)
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	for _, f := range t.forwarders {
