@@ -99,7 +99,6 @@ func (w *TrackWriter) writeOgg() {
 			return
 		}
 
-		// Convert seconds to Milliseconds, Sleep doesn't accept floats
 		time.Sleep(sampleDuration)
 	}
 }

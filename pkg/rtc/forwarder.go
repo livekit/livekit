@@ -60,8 +60,8 @@ type SimpleForwarder struct {
 	onClose func(forwarder Forwarder)
 }
 
-func NewSimpleForwarder(rtcpCh chan []rtcp.Packet, track *sfu.DownTrack, pb PacketBuffer) *SimpleForwarder {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewSimpleForwarder(ctx context.Context, rtcpCh chan []rtcp.Packet, track *sfu.DownTrack, pb PacketBuffer) *SimpleForwarder {
+	ctx, cancel := context.WithCancel(ctx)
 	f := &SimpleForwarder{
 		ctx:          ctx,
 		cancel:       cancel,

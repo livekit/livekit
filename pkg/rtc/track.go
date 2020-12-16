@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"context"
 	"io"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ var (
 
 // Track represents a remoteTrack that needs to be forwarded
 type Track struct {
+	ctx           context.Context
 	id            string
 	participantId string
 	// source remoteTrack
@@ -37,6 +39,7 @@ type Track struct {
 
 func NewTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver *Receiver) *Track {
 	t := &Track{
+		ctx:           context.Background(),
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: pId,
 		remoteTrack:   track,
@@ -96,7 +99,7 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 	//})
 	participant.addDownTrack(t.StreamID(), outTrack)
 
-	forwarder := NewSimpleForwarder(t.rtcpCh, outTrack, t.receiver)
+	forwarder := NewSimpleForwarder(t.ctx, t.rtcpCh, outTrack, t.receiver)
 	forwarder.OnClose(func(f Forwarder) {
 		t.lock.Lock()
 		delete(t.forwarders, participant.ID())
