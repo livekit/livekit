@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	creationDelay = 500 * time.Millisecond
-	feedbackTypes = []webrtc.RTCPFeedback{{"goog-remb", ""}, {"nack", ""}, {"nack", "pli"}}
+	creationDelay   = 500 * time.Millisecond
+	maxPLIFrequency = 1 * time.Second
+	feedbackTypes   = []webrtc.RTCPFeedback{{"goog-remb", ""}, {"nack", ""}, {"nack", "pli"}}
 )
 
 // Track represents a remoteTrack that needs to be forwarded
@@ -35,6 +36,7 @@ type Track struct {
 	forwarders map[string]Forwarder
 	receiver   *Receiver
 	lastNack   int64
+	lastPLI    time.Time
 }
 
 func NewTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver *Receiver) *Track {
@@ -203,13 +205,19 @@ func (t *Track) forwardRTPWorker() {
 			}
 
 			if err == sfu.ErrRequiresKeyFrame {
+				delta := time.Now().Sub(t.lastPLI)
+				if delta < maxPLIFrequency {
+					continue
+				}
 				logger.GetLogger().Infow("keyframe required, sending PLI")
+				rtcpPkts := []rtcp.Packet{
+					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.remoteTrack.SSRC()), MediaSSRC: pkt.SSRC},
+				}
 				// queue up a PLI, but don't block channel
 				go func() {
-					t.rtcpCh <- []rtcp.Packet{
-						&rtcp.PictureLossIndication{SenderSSRC: forwarder.Track().SSRC(), MediaSSRC: pkt.SSRC},
-					}
+					t.rtcpCh <- rtcpPkts
 				}()
+				t.lastPLI = time.Now()
 			} else if err != nil {
 				logger.GetLogger().Warnw("could not forward packet to participant",
 					"src", t.participantId,

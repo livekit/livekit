@@ -229,8 +229,9 @@ func (d *DownTrack) writeSimpleRTP(pkt rtp.Packet) error {
 				}
 			}
 			if !relay {
-				// TODO: how do we sent PLI to the source?
-				//return ErrRequiresKeyFrame
+				// when we are writing to a new client and there isn't a keyframe, it makes it impossible
+				// for clients to render a frame. we'll send an error for the track writer.
+				return ErrRequiresKeyFrame
 			}
 		}
 		d.snOffset = pkt.SequenceNumber - d.lastSN - 1

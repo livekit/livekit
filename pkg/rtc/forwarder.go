@@ -89,6 +89,9 @@ func (f *SimpleForwarder) ChannelType() ChannelType {
 
 func (f *SimpleForwarder) Start() {
 	f.once.Do(func() {
+		defer func() {
+			recover()
+		}()
 		go f.rtcpWorker()
 	})
 }

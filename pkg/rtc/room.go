@@ -82,6 +82,8 @@ func (r *Room) Join(participant *Participant) error {
 						"srcParticipant", p.ID())
 				}
 			}
+			// start the workers once connectivity is established
+			participant.Start()
 		}
 	}
 

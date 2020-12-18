@@ -469,6 +469,9 @@ func (p *Participant) downTracksRTCPWorker() {
 func (p *Participant) rtcpSendWorker() {
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
+		for _, pkt := range pkts {
+			logger.GetLogger().Debugw("writing RTCP", "packet", pkt)
+		}
 		if err := p.peerConn.WriteRTCP(pkts); err != nil {
 			logger.GetLogger().Errorw("could not write RTCP to participant",
 				"participant", p.id,
