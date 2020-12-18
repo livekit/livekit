@@ -26,6 +26,8 @@ message SignalResponse {
     Trickle trickle = 4;
     // sent when participants in the room has changed
     ParticipantUpdate update = 5;
+    // sent to the participant when their track has been published
+    TrackInfo trackPublished = 6;
   }
 }
 

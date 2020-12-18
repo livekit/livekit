@@ -368,6 +368,13 @@ func (p *Participant) onTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTP
 	p.lock.Unlock()
 
 	pt.Start()
+
+	// confirm publication
+	p.sigConn.WriteResponse(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_TrackPublished{
+			TrackPublished: pt.ToProto(),
+		},
+	})
 	if p.OnParticipantTrack != nil {
 		// caller should hook up what happens when the peer remoteTrack is available
 		go p.OnParticipantTrack(p, pt)
