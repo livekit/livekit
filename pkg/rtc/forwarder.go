@@ -165,7 +165,7 @@ func (f *SimpleForwarder) rtcpWorker() {
 			case *rtcp.PictureLossIndication:
 				if pliOnce {
 					p.MediaSSRC = f.track.LastSSRC()
-					p.SenderSSRC = f.track.LastSSRC()
+					p.SenderSSRC = f.track.SSRC()
 					fwdPkts = append(fwdPkts, p)
 					pliOnce = false
 				}
