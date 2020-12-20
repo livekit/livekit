@@ -63,7 +63,7 @@ func (r *Room) Join(participant *Participant) error {
 	log := logger.GetLogger()
 
 	// it's important to set this before connection, we don't want to miss out on any tracks
-	participant.OnParticipantTrack = r.onTrackAdded
+	participant.OnTrackPublished = r.onTrackAdded
 	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
 		log.Debugw("participant state changed", "state", p.state, "participant", p.id)
 		r.broadcastParticipantState(p)
@@ -122,15 +122,15 @@ func (r *Room) RemoveParticipant(id string) {
 	delete(r.participants, id)
 }
 
-// a peer in the room added a new remoteTrack, subscribe other participants to it
-func (r *Room) onTrackAdded(participant *Participant, track *Track) {
+// a Participant in the room added a new remoteTrack, subscribe other participants to it
+func (r *Room) onTrackAdded(participant *Participant, track PublishedTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant)
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	// subscribe all existing participants to this remoteTrack
+	// subscribe all existing participants to this PublishedTrack
 	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
@@ -140,7 +140,7 @@ func (r *Room) onTrackAdded(participant *Participant, track *Track) {
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.GetLogger().Errorw("could not subscribe to remoteTrack",
 				"srcParticipant", participant.ID(),
-				"remoteTrack", track.id,
+				"remoteTrack", track.ID(),
 				"dstParticipant", existingParticipant.ID())
 		}
 	}

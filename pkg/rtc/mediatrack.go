@@ -17,13 +17,13 @@ import (
 )
 
 var (
-	creationDelay   = 500 * time.Millisecond
 	maxPLIFrequency = 1 * time.Second
 	feedbackTypes   = []webrtc.RTCPFeedback{{"goog-remb", ""}, {"nack", ""}, {"nack", "pli"}}
 )
 
-// Track represents a remoteTrack that needs to be forwarded
-type Track struct {
+// MediaTrack represents a WebRTC track that needs to be forwarded
+// Implements the PublishedTrack interface
+type MediaTrack struct {
 	ctx           context.Context
 	id            string
 	participantId string
@@ -32,21 +32,23 @@ type Track struct {
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
 	lock   sync.RWMutex
+	once   sync.Once
 	// map of target participantId -> forwarder
 	forwarders map[string]Forwarder
 	receiver   *Receiver
-	lastNack   int64
-	lastPLI    time.Time
+	//lastNack   int64
+	lastPLI time.Time
 }
 
-func NewTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver *Receiver) *Track {
-	t := &Track{
+func NewMediaTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver *Receiver) *MediaTrack {
+	t := &MediaTrack{
 		ctx:           context.Background(),
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: pId,
 		remoteTrack:   track,
 		rtcpCh:        rtcpCh,
 		lock:          sync.RWMutex{},
+		once:          sync.Once{},
 		forwarders:    make(map[string]Forwarder),
 		receiver:      receiver,
 	}
@@ -54,23 +56,35 @@ func NewTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, 
 	return t
 }
 
-func (t *Track) Start() {
-	t.receiver.Start()
-	// start worker
-	go t.forwardRTPWorker()
+func (t *MediaTrack) Start() {
+	t.once.Do(func() {
+		t.receiver.Start()
+		// start worker
+		go t.forwardRTPWorker()
+	})
 }
 
-func (t *Track) Kind() webrtc.RTPCodecType {
-	return t.remoteTrack.Kind()
+func (t *MediaTrack) ID() string {
+	return t.id
 }
 
-func (t *Track) StreamID() string {
+func (t *MediaTrack) Kind() livekit.TrackInfo_Type {
+	switch t.remoteTrack.Kind() {
+	case webrtc.RTPCodecTypeVideo:
+		return livekit.TrackInfo_VIDEO
+	case webrtc.RTPCodecTypeAudio:
+		return livekit.TrackInfo_AUDIO
+	}
+	panic("unsupported track kind")
+}
+
+func (t *MediaTrack) StreamID() string {
 	return t.remoteTrack.StreamID()
 }
 
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
-func (t *Track) AddSubscriber(participant *Participant) error {
+func (t *MediaTrack) AddSubscriber(participant *Participant) error {
 	codec := t.remoteTrack.Codec()
 	// pack ID to identify all tracks
 	packedId := PackTrackId(t.participantId, t.id)
@@ -136,7 +150,7 @@ func (t *Track) AddSubscriber(participant *Participant) error {
 
 // removes peer from subscription
 // stop all forwarders to the peer
-func (t *Track) RemoveSubscriber(participantId string) {
+func (t *MediaTrack) RemoveSubscriber(participantId string) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -145,33 +159,18 @@ func (t *Track) RemoveSubscriber(participantId string) {
 	}
 }
 
-func (t *Track) RemoveAllSubscribers() {
+func (t *MediaTrack) RemoveAllSubscribers() {
 	logger.GetLogger().Debugw("removing all subscribers", "track", t.id)
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	for _, f := range t.forwarders {
 		go f.Close()
 	}
-}
-
-func (t *Track) ToProto() *livekit.TrackInfo {
-	var kind livekit.TrackInfo_Type
-	switch t.Kind() {
-	case webrtc.RTPCodecTypeAudio:
-		kind = livekit.TrackInfo_AUDIO
-	case webrtc.RTPCodecTypeVideo:
-		kind = livekit.TrackInfo_VIDEO
-	}
-
-	return &livekit.TrackInfo{
-		Sid:  t.id,
-		Type: kind,
-		Name: t.remoteTrack.StreamID(),
-	}
+	t.forwarders = make(map[string]Forwarder)
 }
 
 // forwardRTPWorker reads from the receiver and writes to each sender
-func (t *Track) forwardRTPWorker() {
+func (t *MediaTrack) forwardRTPWorker() {
 	defer func() {
 		t.RemoveAllSubscribers()
 		// TODO: send unpublished events?

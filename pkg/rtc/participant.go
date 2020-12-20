@@ -37,12 +37,12 @@ type Participant struct {
 
 	lock           sync.RWMutex
 	receiverConfig ReceiverConfig
-	tracks         map[string]*Track // tracks that the peer is publishing
+	tracks         map[string]PublishedTrack // tracks that the peer is publishing
 	once           sync.Once
 
 	// callbacks & handlers
-	// OnParticipantTrack - remote peer added a remoteTrack
-	OnParticipantTrack func(*Participant, *Track)
+	// OnTrackPublished - remote peer added a remoteTrack
+	OnTrackPublished func(*Participant, PublishedTrack)
 	// OnOffer - offer is ready for remote peer
 	OnOffer func(webrtc.SessionDescription)
 	// OnIceCandidate - ice candidate discovered for local peer
@@ -78,13 +78,13 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 		state:          livekit.ParticipantInfo_JOINING,
 		lock:           sync.RWMutex{},
 		receiverConfig: conf.receiver,
-		tracks:         make(map[string]*Track, 0),
+		tracks:         make(map[string]PublishedTrack, 0),
 		mediaEngine:    me,
 	}
 
 	log := logger.GetLogger()
 
-	pc.OnTrack(participant.onTrack)
+	pc.OnTrack(participant.onMediaTrack)
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
@@ -116,6 +116,7 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 	})
 
 	// TODO: handle data channel
+	pc.OnDataChannel(participant.onDataChannel)
 
 	return participant, nil
 }
@@ -140,7 +141,7 @@ func (p *Participant) ToProto() *livekit.ParticipantInfo {
 	}
 
 	for _, t := range p.tracks {
-		info.Tracks = append(info.Tracks, t.ToProto())
+		info.Tracks = append(info.Tracks, TrackToProto(t))
 	}
 	return info
 }
@@ -299,7 +300,7 @@ func (p *Participant) AddSubscriber(op *Participant) error {
 		logger.GetLogger().Debugw("subscribing to remoteTrack",
 			"srcParticipant", p.ID(),
 			"dstParticipant", op.ID(),
-			"remoteTrack", track.id)
+			"remoteTrack", track.ID())
 		if err := track.AddSubscriber(op); err != nil {
 			return err
 		}
@@ -354,30 +355,44 @@ func (p *Participant) updateState(state livekit.ParticipantInfo_State) {
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
-func (p *Participant) onTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	track.StreamID()
+func (p *Participant) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	logger.GetLogger().Debugw("remoteTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
 
 	// create Receiver
-	// p.mediaEngine.TCCExt
 	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.bi)
-	pt := NewTrack(p.id, p.rtcpCh, track, receiver)
+	mt := NewMediaTrack(p.id, p.rtcpCh, track, receiver)
 
+	p.handleTrackPublished(mt)
+}
+
+func (p *Participant) onDataChannel(dc *webrtc.DataChannel) {
+	logger.GetLogger().Debugw("dataChannel added", "participantId", p.ID(), "id", dc.ID())
+
+	dt := NewDataTrack(p.id, dc)
 	p.lock.Lock()
-	p.tracks[pt.id] = pt
+	p.tracks[dt.id] = dt
 	p.lock.Unlock()
 
-	pt.Start()
+	dt.Start()
+
+	p.handleTrackPublished(dt)
+}
+
+func (p *Participant) handleTrackPublished(track PublishedTrack) {
+	p.lock.Lock()
+	p.tracks[track.ID()] = track
+	p.lock.Unlock()
+
+	track.Start()
 
 	// confirm publication
 	p.sigConn.WriteResponse(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
-			TrackPublished: pt.ToProto(),
+			TrackPublished: TrackToProto(track),
 		},
 	})
-	if p.OnParticipantTrack != nil {
-		// caller should hook up what happens when the peer remoteTrack is available
-		go p.OnParticipantTrack(p, pt)
+	if p.OnTrackPublished != nil {
+		go p.OnTrackPublished(p, track)
 	}
 }
 
@@ -478,33 +493,4 @@ func (p *Participant) rtcpSendWorker() {
 				"err", err)
 		}
 	}
-	//t := time.NewTicker(time.Second)
-	//for {
-	//	select {
-	//	case <-t.C:
-	//		pkts := make([]rtcp.Packet, 0)
-	//		p.lock.RLock()
-	//		for _, r := range p.tracks {
-	//			rr, ps := r.receiver.BuildRTCP()
-	//			if rr.SSRC != 0 {
-	//				ps = append(ps, &rtcp.ReceiverReport{
-	//					Reports: []rtcp.ReceptionReport{rr},
-	//				})
-	//			}
-	//			pkts = append(pkts, ps...)
-	//		}
-	//		p.lock.RUnlock()
-	//		if len(pkts) > 0 {
-	//			if err := p.peerConn.WriteRTCP(pkts); err != nil {
-	//				logger.GetLogger().Errorw("error writing RTCP to peer",
-	//					"peer", p.id,
-	//					"err", err,
-	//				)
-	//			}
-	//		}
-	//	case <-p.ctx.Done():
-	//		t.Stop()
-	//		return
-	//	}
-	//}
 }

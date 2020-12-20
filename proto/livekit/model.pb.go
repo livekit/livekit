@@ -542,17 +542,19 @@ func (x *TrackInfo) GetName() string {
 	return ""
 }
 
-type DataChannel struct {
+type DataMessage struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	SessionId string `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Payload   []byte `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	// Types that are assignable to Value:
+	//	*DataMessage_Text
+	//	*DataMessage_Binary
+	Value isDataMessage_Value `protobuf_oneof:"value"`
 }
 
-func (x *DataChannel) Reset() {
-	*x = DataChannel{}
+func (x *DataMessage) Reset() {
+	*x = DataMessage{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_model_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -560,13 +562,13 @@ func (x *DataChannel) Reset() {
 	}
 }
 
-func (x *DataChannel) String() string {
+func (x *DataMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DataChannel) ProtoMessage() {}
+func (*DataMessage) ProtoMessage() {}
 
-func (x *DataChannel) ProtoReflect() protoreflect.Message {
+func (x *DataMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_model_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -578,24 +580,47 @@ func (x *DataChannel) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DataChannel.ProtoReflect.Descriptor instead.
-func (*DataChannel) Descriptor() ([]byte, []int) {
+// Deprecated: Use DataMessage.ProtoReflect.Descriptor instead.
+func (*DataMessage) Descriptor() ([]byte, []int) {
 	return file_model_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *DataChannel) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
+func (m *DataMessage) GetValue() isDataMessage_Value {
+	if m != nil {
+		return m.Value
+	}
+	return nil
+}
+
+func (x *DataMessage) GetText() string {
+	if x, ok := x.GetValue().(*DataMessage_Text); ok {
+		return x.Text
 	}
 	return ""
 }
 
-func (x *DataChannel) GetPayload() []byte {
-	if x != nil {
-		return x.Payload
+func (x *DataMessage) GetBinary() []byte {
+	if x, ok := x.GetValue().(*DataMessage_Binary); ok {
+		return x.Binary
 	}
 	return nil
 }
+
+type isDataMessage_Value interface {
+	isDataMessage_Value()
+}
+
+type DataMessage_Text struct {
+	Text string `protobuf:"bytes,1,opt,name=text,proto3,oneof"`
+}
+
+type DataMessage_Binary struct {
+	Binary []byte `protobuf:"bytes,2,opt,name=binary,proto3,oneof"`
+}
+
+func (*DataMessage_Text) isDataMessage_Value() {}
+
+func (*DataMessage_Binary) isDataMessage_Value() {}
 
 var File_model_proto protoreflect.FileDescriptor
 
@@ -653,11 +678,11 @@ var file_model_proto_rawDesc = []byte{
 	0x61, 0x6d, 0x65, 0x22, 0x26, 0x0a, 0x04, 0x54, 0x79, 0x70, 0x65, 0x12, 0x09, 0x0a, 0x05, 0x41,
 	0x55, 0x44, 0x49, 0x4f, 0x10, 0x00, 0x12, 0x09, 0x0a, 0x05, 0x56, 0x49, 0x44, 0x45, 0x4f, 0x10,
 	0x01, 0x12, 0x08, 0x0a, 0x04, 0x44, 0x41, 0x54, 0x41, 0x10, 0x02, 0x22, 0x46, 0x0a, 0x0b, 0x44,
-	0x61, 0x74, 0x61, 0x43, 0x68, 0x61, 0x6e, 0x6e, 0x65, 0x6c, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x65,
-	0x73, 0x73, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09,
-	0x73, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x49, 0x64, 0x12, 0x18, 0x0a, 0x07, 0x70, 0x61, 0x79,
-	0x6c, 0x6f, 0x61, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x07, 0x70, 0x61, 0x79, 0x6c,
-	0x6f, 0x61, 0x64, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
+	0x61, 0x74, 0x61, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x14, 0x0a, 0x04, 0x74, 0x65,
+	0x78, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x48, 0x00, 0x52, 0x04, 0x74, 0x65, 0x78, 0x74,
+	0x12, 0x18, 0x0a, 0x06, 0x62, 0x69, 0x6e, 0x61, 0x72, 0x79, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c,
+	0x48, 0x00, 0x52, 0x06, 0x62, 0x69, 0x6e, 0x61, 0x72, 0x79, 0x42, 0x07, 0x0a, 0x05, 0x76, 0x61,
+	0x6c, 0x75, 0x65, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
 	0x6d, 0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69,
 	0x74, 0x2d, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x6c,
 	0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
@@ -686,7 +711,7 @@ var file_model_proto_goTypes = []interface{}{
 	(*RoomInfo)(nil),           // 5: livekit.RoomInfo
 	(*ParticipantInfo)(nil),    // 6: livekit.ParticipantInfo
 	(*TrackInfo)(nil),          // 7: livekit.TrackInfo
-	(*DataChannel)(nil),        // 8: livekit.DataChannel
+	(*DataMessage)(nil),        // 8: livekit.DataMessage
 }
 var file_model_proto_depIdxs = []int32{
 	3, // 0: livekit.Node.stats:type_name -> livekit.NodeStats
@@ -779,7 +804,7 @@ func file_model_proto_init() {
 			}
 		}
 		file_model_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DataChannel); i {
+			switch v := v.(*DataMessage); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -790,6 +815,10 @@ func file_model_proto_init() {
 				return nil
 			}
 		}
+	}
+	file_model_proto_msgTypes[6].OneofWrappers = []interface{}{
+		(*DataMessage_Text)(nil),
+		(*DataMessage_Binary)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

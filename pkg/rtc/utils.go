@@ -25,6 +25,21 @@ func PackTrackId(participantId, trackId string) string {
 	return participantId + trackIdSeparator + trackId
 }
 
+func PackDataTrackLabel(participantId, trackId string, label string) string {
+	return participantId + trackIdSeparator + trackId + trackIdSeparator + label
+}
+
+func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label string) {
+	parts := strings.Split(packed, trackIdSeparator)
+	if len(parts) != 3 {
+		return "", packed, ""
+	}
+	peerId = parts[0]
+	trackId = parts[1]
+	label = parts[2]
+	return
+}
+
 func ToProtoParticipants(participants []*Participant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {

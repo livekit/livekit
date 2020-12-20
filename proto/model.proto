@@ -61,7 +61,9 @@ message TrackInfo {
 }
 
 
-message DataChannel {
-  string session_id = 1;
-  bytes payload = 2;
+message DataMessage {
+  oneof value {
+    string text = 1;
+    bytes binary = 2;
+  }
 }
