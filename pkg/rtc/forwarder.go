@@ -142,7 +142,7 @@ func (f *SimpleForwarder) Track() *sfu.DownTrack {
 func (f *SimpleForwarder) rtcpWorker() {
 	for {
 		pkts, err := f.track.RTPSender().ReadRTCP()
-		if err == io.ErrClosedPipe {
+		if err == io.ErrClosedPipe || err == io.EOF {
 			f.Close()
 			return
 		}
