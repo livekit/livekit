@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	sdBatchSize = 20
+	placeholderDataChannel = "_private"
+	sdBatchSize            = 20
 )
 
 type Participant struct {
@@ -366,7 +367,10 @@ func (p *Participant) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrt
 }
 
 func (p *Participant) onDataChannel(dc *webrtc.DataChannel) {
-	logger.GetLogger().Debugw("dataChannel added", "participantId", p.ID(), "id", dc.ID())
+	if dc.Label() == placeholderDataChannel {
+		return
+	}
+	logger.GetLogger().Debugw("dataChannel added", "participantId", p.ID(), "label", dc.Label())
 
 	dt := NewDataTrack(p.id, dc)
 	p.lock.Lock()
