@@ -10,6 +10,10 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+const (
+	dataBufferSize = 50
+)
+
 // DataTrack wraps a WebRTC DataChannel to satisfy the PublishedTrack interface
 // it shall forward tracks to all of its subscribers
 type DataTrack struct {
@@ -30,7 +34,7 @@ func NewDataTrack(participantId string, dc *webrtc.DataChannel) *DataTrack {
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: participantId,
 		dataChannel:   dc,
-		msgChan:       make(chan livekit.DataMessage),
+		msgChan:       make(chan livekit.DataMessage, dataBufferSize),
 		lock:          sync.RWMutex{},
 		subscribers:   make(map[string]*DownDataChannel),
 	}
@@ -110,6 +114,7 @@ func (t *DataTrack) forwardWorker() {
 
 	for {
 		msg := <-t.msgChan
+
 		if msg.Value == nil {
 			// track closed
 			return
