@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -84,4 +85,8 @@ func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
 	ci := webrtc.ICECandidateInit{}
 	json.Unmarshal([]byte(trickle.CandidateInit), &ci)
 	return ci
+}
+
+func IsEOF(err error) bool {
+	return err == io.ErrClosedPipe || err == io.EOF
 }

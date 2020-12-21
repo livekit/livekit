@@ -98,14 +98,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == io.EOF {
 			// client disconnected from websocket
 			return
-		}
-		if err != nil {
-			// most of these are disconnection, just return vs clogging up logs
-			//logger.GetLogger().Errorw("error reading WS",
-			//	"err", err,
-			//	"participantName", pName,
-			//	"roomId", roomId)
+		} else if err != nil {
 			return
+		}
+
+		if req == nil {
+			continue
 		}
 
 		switch msg := req.Message.(type) {

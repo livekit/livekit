@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -11,23 +12,36 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+const (
+	pingFrequency = 10 * time.Second
+	pingTimeout   = 2 * time.Second
+)
+
+type WebsocketClient interface {
+	ReadMessage() (messageType int, p []byte, err error)
+	WriteMessage(messageType int, data []byte) error
+	WriteControl(messageType int, data []byte, deadline time.Time) error
+}
+
 type SignalConnection interface {
 	ReadRequest() (*livekit.SignalRequest, error)
 	WriteResponse(*livekit.SignalResponse) error
 }
 
 type WSSignalConnection struct {
-	conn    *websocket.Conn
+	conn    WebsocketClient
 	mu      sync.Mutex
 	useJSON bool
 }
 
-func NewWSSignalConnection(conn *websocket.Conn) *WSSignalConnection {
-	return &WSSignalConnection{
+func NewWSSignalConnection(conn WebsocketClient) *WSSignalConnection {
+	wsc := &WSSignalConnection{
 		conn:    conn,
 		mu:      sync.Mutex{},
 		useJSON: true,
 	}
+	go wsc.pingWorker()
+	return wsc
 }
 
 func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
@@ -40,9 +54,6 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 
 		msg := &livekit.SignalRequest{}
 		switch messageType {
-		case websocket.PingMessage:
-			c.conn.WriteMessage(websocket.PongMessage, nil)
-			continue
 		case websocket.BinaryMessage:
 			// protobuf encoded
 			err := proto.Unmarshal(payload, msg)
@@ -78,4 +89,14 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.conn.WriteMessage(msgType, payload)
+}
+
+func (c *WSSignalConnection) pingWorker() {
+	for {
+		<-time.After(pingFrequency)
+		err := c.conn.WriteControl(websocket.PingMessage, []byte(""), time.Now().Add(pingTimeout))
+		if err != nil {
+			return
+		}
+	}
 }

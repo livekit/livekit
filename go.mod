@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
+	github.com/magiconair/properties v1.8.1
 	github.com/manifoldco/promptui v0.8.0
 	github.com/pion/interceptor v0.0.5
 	github.com/pion/ion-log v1.0.0

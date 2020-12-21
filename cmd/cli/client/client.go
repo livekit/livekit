@@ -101,7 +101,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		c.AppendLog("track received", "label", track.StreamID(), "id", track.ID())
 		peerId, _ := rtc.UnpackTrackId(track.ID())
-		r := rtc.NewReceiver(c.ctx, peerId, rtpReceiver, nil)
+		r := rtc.NewReceiver(peerId, rtpReceiver, nil)
 		c.lock.Lock()
 		c.receivers = append(c.receivers, r)
 		r.Start()
@@ -452,7 +452,7 @@ func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
 	numBytes := 0
 	for {
 		pkt, err := r.ReadRTP()
-		if err == io.EOF || err == io.ErrClosedPipe {
+		if rtc.IsEOF(err) {
 			// all done
 			return
 		}

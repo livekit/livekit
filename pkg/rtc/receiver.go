@@ -1,8 +1,6 @@
 package rtc
 
 import (
-	"context"
-	"io"
 	"sync"
 
 	"github.com/pion/ion-sfu/pkg/buffer"
@@ -20,8 +18,6 @@ const (
 // A receiver is responsible for pulling from a remoteTrack
 type Receiver struct {
 	peerId      string
-	ctx         context.Context
-	cancel      context.CancelFunc
 	rtpReceiver *webrtc.RTPReceiver
 	track       *webrtc.TrackRemote
 	bi          *buffer.Interceptor
@@ -29,15 +25,11 @@ type Receiver struct {
 	bytesRead   int64
 }
 
-func NewReceiver(ctx context.Context, peerId string, rtpReceiver *webrtc.RTPReceiver, bi *buffer.Interceptor) *Receiver {
-	ctx, cancel := context.WithCancel(ctx)
-	track := rtpReceiver.Track()
+func NewReceiver(peerId string, rtpReceiver *webrtc.RTPReceiver, bi *buffer.Interceptor) *Receiver {
 	return &Receiver{
-		ctx:         ctx,
-		cancel:      cancel,
 		peerId:      peerId,
 		rtpReceiver: rtpReceiver,
-		track:       track,
+		track:       rtpReceiver.Track(),
 		bi:          bi,
 		once:        sync.Once{},
 	}
@@ -58,14 +50,6 @@ func (r *Receiver) Start() {
 	})
 }
 
-// Close gracefully close the remoteTrack. if the context is canceled
-func (r *Receiver) Close() {
-	if r.ctx.Err() != nil {
-		return
-	}
-	r.cancel()
-}
-
 // PacketBuffer interface, to provide forwarders packets from the buffer
 func (r *Receiver) GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet {
 	if r.bi == nil {
@@ -80,9 +64,10 @@ func (r *Receiver) ReadRTP() (*rtp.Packet, error) {
 
 // rtcpWorker reads RTCP messages from receiver, notifies buffer
 func (r *Receiver) rtcpWorker() {
+	// consume RTCP from the sender/source, but don't need to do anything with the packets
 	for {
 		_, err := r.rtpReceiver.ReadRTCP()
-		if err == io.ErrClosedPipe || r.ctx.Err() != nil {
+		if IsEOF(err) {
 			return
 		}
 		if err != nil {

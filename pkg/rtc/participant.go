@@ -360,7 +360,7 @@ func (p *Participant) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrt
 	logger.GetLogger().Debugw("remoteTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
 
 	// create Receiver
-	receiver := NewReceiver(p.ctx, p.id, rtpReceiver, p.bi)
+	receiver := NewReceiver(p.id, rtpReceiver, p.bi)
 	mt := NewMediaTrack(p.id, p.rtcpCh, track, receiver)
 
 	p.handleTrackPublished(mt)
