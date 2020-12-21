@@ -67,7 +67,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	signalConn := rtc.NewWSSignalConnection(conn)
 
-	participant, err := rtc.NewParticipant(s.manager.Config(), signalConn, pName)
+	pc, err := rtc.NewPeerConnection(s.manager.Config())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not create peerConnection", err.Error())
+		return
+	}
+	participant, err := rtc.NewParticipant(pc, signalConn, pName)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
 		return

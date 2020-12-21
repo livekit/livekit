@@ -25,14 +25,17 @@ server: generate
 	go build -i -o ../../bin/livekit-server ;\
 	}
 
-generate: wire
+generate: wire mockgen
 	@{ \
   	echo "wiring" ;\
   	cd cmd/server ;\
   	$(WIRE) ;\
+  	cd ../.. ;\
+  	echo "updating mocks" ;\
+	$(MOCKGEN) -source pkg/rtc/interfaces.go -destination pkg/rtc/mock_test.go -package rtc ;\
 	}
 
-test: wire
+test: generate
 	go test ./...
 
 GO_TARGET=proto/livekit
@@ -81,4 +84,15 @@ ifeq (, $(shell which wire))
 WIRE=$(GOBIN)/wire
 else
 WIRE=$(shell which wire)
+endif
+
+mockgen:
+ifeq (, $(shell which mockgen))
+	@{ \
+	echo "installing mockgen" ;\
+	go get github.com/golang/mock/mockgen ;\
+	}
+MOCKGEN=$(GOBIN)/mockgen
+else
+MOCKGEN=$(shell which mockgen)
 endif

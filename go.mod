@@ -3,6 +3,7 @@ module github.com/livekit/livekit-server
 go 1.15
 
 require (
+	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.3
 	github.com/google/uuid v1.1.2
 	github.com/google/wire v0.4.0

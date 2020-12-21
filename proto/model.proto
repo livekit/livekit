@@ -59,11 +59,3 @@ message TrackInfo {
   Type type = 2;
   string name = 3;
 }
-
-
-message DataMessage {
-  oneof value {
-    string text = 1;
-    bytes binary = 2;
-  }
-}

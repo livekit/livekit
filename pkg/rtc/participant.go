@@ -25,7 +25,7 @@ const (
 
 type Participant struct {
 	id          string
-	peerConn    *webrtc.PeerConnection
+	peerConn    PeerConnection
 	sigConn     SignalConnection
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -36,10 +36,9 @@ type Participant struct {
 	rtcpCh      chan []rtcp.Packet
 	downTracks  map[string][]*sfu.DownTrack
 
-	lock           sync.RWMutex
-	receiverConfig ReceiverConfig
-	tracks         map[string]PublishedTrack // tracks that the peer is publishing
-	once           sync.Once
+	lock   sync.RWMutex
+	tracks map[string]PublishedTrack // tracks that the peer is publishing
+	once   sync.Once
 
 	// callbacks & handlers
 	// OnTrackPublished - remote peer added a remoteTrack
@@ -52,14 +51,16 @@ type Participant struct {
 	OnClose        func(*Participant)
 }
 
-func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Participant, error) {
+func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(conf.SettingEngine))
-	pc, err := api.NewPeerConnection(conf.Configuration)
-	if err != nil {
-		return nil, err
-	}
+	return api.NewPeerConnection(conf.Configuration)
+}
+
+func NewParticipant(pc PeerConnection, sc SignalConnection, name string) (*Participant, error) {
+	me := &webrtc.MediaEngine{}
+	me.RegisterDefaultCodecs()
 
 	bi := buffer.NewBufferInterceptor()
 	ir := &interceptor.Registry{}
@@ -67,20 +68,19 @@ func NewParticipant(conf *WebRTCConfig, sc SignalConnection, name string) (*Part
 
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &Participant{
-		id:             utils.NewGuid(utils.ParticipantPrefix),
-		name:           name,
-		peerConn:       pc,
-		sigConn:        sc,
-		ctx:            ctx,
-		cancel:         cancel,
-		bi:             bi,
-		rtcpCh:         make(chan []rtcp.Packet, 10),
-		downTracks:     make(map[string][]*sfu.DownTrack),
-		state:          livekit.ParticipantInfo_JOINING,
-		lock:           sync.RWMutex{},
-		receiverConfig: conf.receiver,
-		tracks:         make(map[string]PublishedTrack, 0),
-		mediaEngine:    me,
+		id:          utils.NewGuid(utils.ParticipantPrefix),
+		name:        name,
+		peerConn:    pc,
+		sigConn:     sc,
+		ctx:         ctx,
+		cancel:      cancel,
+		bi:          bi,
+		rtcpCh:      make(chan []rtcp.Packet, 10),
+		downTracks:  make(map[string][]*sfu.DownTrack),
+		state:       livekit.ParticipantInfo_JOINING,
+		lock:        sync.RWMutex{},
+		tracks:      make(map[string]PublishedTrack, 0),
+		mediaEngine: me,
 	}
 
 	log := logger.GetLogger()

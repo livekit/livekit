@@ -70,20 +70,20 @@ func (r *Room) Join(participant *Participant) error {
 
 		if oldState == livekit.ParticipantInfo_JOINING && p.state == livekit.ParticipantInfo_JOINED {
 			// subscribe participant to existing tracks
-			for _, p := range r.participants {
-				if p.id == participant.id {
+			for _, op := range r.participants {
+				if p.id == op.id {
 					// don't send to itself
 					continue
 				}
-				if err := p.AddSubscriber(participant); err != nil {
+				if err := op.AddSubscriber(p); err != nil {
 					// TODO: log error? or disconnect?
 					logger.GetLogger().Errorw("could not subscribe to participant",
-						"dstParticipant", participant.ID(),
-						"srcParticipant", p.ID())
+						"dstParticipant", p.ID(),
+						"srcParticipant", op.ID())
 				}
 			}
 			// start the workers once connectivity is established
-			participant.Start()
+			p.Start()
 		}
 	}
 

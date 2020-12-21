@@ -17,17 +17,6 @@ const (
 	pingTimeout   = 2 * time.Second
 )
 
-type WebsocketClient interface {
-	ReadMessage() (messageType int, p []byte, err error)
-	WriteMessage(messageType int, data []byte) error
-	WriteControl(messageType int, data []byte, deadline time.Time) error
-}
-
-type SignalConnection interface {
-	ReadRequest() (*livekit.SignalRequest, error)
-	WriteResponse(*livekit.SignalResponse) error
-}
-
 type WSSignalConnection struct {
 	conn    WebsocketClient
 	mu      sync.Mutex
