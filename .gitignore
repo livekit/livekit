@@ -8,6 +8,10 @@
 # Test binary, built with `go test -c`
 *.test
 
+# checksums of file modification time
+.checksumgo
+proto/.checksumproto
+
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 livekit-server

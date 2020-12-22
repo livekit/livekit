@@ -4,7 +4,7 @@
 
 Ensure Go 1.14+ is installed, and GOPATH/bin is in your PATH.
 
-Run `make proto && make
+Run `./bootstrap` to install mage, then `mage` to build the project
 
 ## CLI
 
