@@ -84,7 +84,7 @@ func (t *MediaTrack) StreamID() string {
 
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
-func (t *MediaTrack) AddSubscriber(participant *Participant) error {
+func (t *MediaTrack) AddSubscriber(participant Participant) error {
 	codec := t.remoteTrack.Codec()
 	// pack ID to identify all tracks
 	packedId := PackTrackId(t.participantId, t.id)
@@ -101,7 +101,7 @@ func (t *MediaTrack) AddSubscriber(participant *Participant) error {
 		return err
 	}
 
-	transceiver, err := participant.peerConn.AddTransceiverFromTrack(outTrack, webrtc.RTPTransceiverInit{
+	transceiver, err := participant.peerConnection().AddTransceiverFromTrack(outTrack, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendonly,
 	})
 	if err != nil {
@@ -121,12 +121,12 @@ func (t *MediaTrack) AddSubscriber(participant *Participant) error {
 		delete(t.forwarders, participant.ID())
 		t.lock.Unlock()
 
-		if participant.peerConn.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		if participant.peerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
 		sender := transceiver.Sender()
 		if sender != nil {
-			if err := participant.peerConn.RemoveTrack(sender); err != nil {
+			if err := participant.peerConnection().RemoveTrack(sender); err != nil {
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					logger.GetLogger().Warnw("could not remove remoteTrack from forwarder",
 						"participant", participant.ID(),

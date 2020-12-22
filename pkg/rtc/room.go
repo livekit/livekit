@@ -16,7 +16,7 @@ type Room struct {
 	config WebRTCConfig
 	lock   sync.RWMutex
 	// map of participantId -> Participant
-	participants map[string]*Participant
+	participants map[string]Participant
 	// Client ID => list of tracks they are publishing
 	//tracks map[string][]Track
 }
@@ -37,11 +37,11 @@ func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) (*R
 		},
 		config:       *config,
 		lock:         sync.RWMutex{},
-		participants: make(map[string]*Participant),
+		participants: make(map[string]Participant),
 	}, nil
 }
 
-func (r *Room) GetParticipant(id string) *Participant {
+func (r *Room) GetParticipant(id string) Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.participants[id]
@@ -56,22 +56,22 @@ func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	}
 }
 
-func (r *Room) Join(participant *Participant) error {
+func (r *Room) Join(participant Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	log := logger.GetLogger()
 
 	// it's important to set this before connection, we don't want to miss out on any tracks
-	participant.OnTrackPublished = r.onTrackAdded
-	participant.OnStateChange = func(p *Participant, oldState livekit.ParticipantInfo_State) {
-		log.Debugw("participant state changed", "state", p.state, "participant", p.id)
+	participant.OnTrackPublished(r.onTrackAdded)
+	participant.OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State) {
+		log.Debugw("participant state changed", "state", p.State(), "participant", p.ID())
 		r.broadcastParticipantState(p)
 
-		if oldState == livekit.ParticipantInfo_JOINING && p.state == livekit.ParticipantInfo_JOINED {
+		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
 			// subscribe participant to existing tracks
 			for _, op := range r.participants {
-				if p.id == op.id {
+				if p.ID() == op.ID() {
 					// don't send to itself
 					continue
 				}
@@ -85,7 +85,7 @@ func (r *Room) Join(participant *Participant) error {
 			// start the workers once connectivity is established
 			p.Start()
 		}
-	}
+	})
 
 	log.Infow("new participant joined",
 		"id", participant.ID(),
@@ -95,9 +95,9 @@ func (r *Room) Join(participant *Participant) error {
 	r.participants[participant.ID()] = participant
 
 	// gather other participants and send join response
-	otherParticipants := make([]*Participant, 0, len(r.participants))
+	otherParticipants := make([]Participant, 0, len(r.participants))
 	for _, p := range r.participants {
-		if p.id != participant.id {
+		if p.ID() != participant.ID() {
 			otherParticipants = append(otherParticipants, p)
 		}
 	}
@@ -122,8 +122,8 @@ func (r *Room) RemoveParticipant(id string) {
 	delete(r.participants, id)
 }
 
-// a Participant in the room added a new remoteTrack, subscribe other participants to it
-func (r *Room) onTrackAdded(participant *Participant, track PublishedTrack) {
+// a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
+func (r *Room) onTrackAdded(participant Participant, track PublishedTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant)
 
@@ -146,21 +146,21 @@ func (r *Room) onTrackAdded(participant *Participant, track PublishedTrack) {
 	}
 }
 
-func (r *Room) broadcastParticipantState(p *Participant) {
+func (r *Room) broadcastParticipantState(p Participant) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	updates := ToProtoParticipants([]*Participant{p})
+	updates := ToProtoParticipants([]Participant{p})
 	for _, op := range r.participants {
 		// skip itself
-		if p.id == op.id {
+		if p.ID() == op.ID() {
 			continue
 		}
 
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			logger.GetLogger().Errorw("could not send update to participant",
-				"participant", p.id,
+				"participant", p.ID(),
 				"err", err)
 		}
 	}

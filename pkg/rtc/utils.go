@@ -41,7 +41,7 @@ func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label s
 	return
 }
 
-func ToProtoParticipants(participants []*Participant) []*livekit.ParticipantInfo {
+func ToProtoParticipants(participants []Participant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {
 		infos = append(infos, op.ToProto())
@@ -85,6 +85,14 @@ func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
 	ci := webrtc.ICECandidateInit{}
 	json.Unmarshal([]byte(trickle.CandidateInit), &ci)
 	return ci
+}
+
+func ToProtoTrack(t PublishedTrack) *livekit.TrackInfo {
+	return &livekit.TrackInfo{
+		Sid:  t.ID(),
+		Type: t.Kind(),
+		Name: t.StreamID(),
+	}
 }
 
 func IsEOF(err error) bool {

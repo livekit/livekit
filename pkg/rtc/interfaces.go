@@ -6,6 +6,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -40,4 +41,47 @@ type PeerConnection interface {
 	AddTransceiverFromTrack(track webrtc.TrackLocal, init ...webrtc.RtpTransceiverInit) (*webrtc.RTPTransceiver, error)
 	ConnectionState() webrtc.PeerConnectionState
 	RemoveTrack(sender *webrtc.RTPSender) error
+}
+
+type Participant interface {
+	ID() string
+	Name() string
+	State() livekit.ParticipantInfo_State
+	ToProto() *livekit.ParticipantInfo
+	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
+	HandleNegotiate(sd webrtc.SessionDescription) error
+	SetRemoteDescription(sdp webrtc.SessionDescription) error
+	AddICECandidate(candidate webrtc.ICECandidateInit) error
+
+	AddSubscriber(op Participant) error
+	RemoveSubscriber(peerId string)
+	SendJoinResponse(otherParticipants []Participant) error
+	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+
+	Start()
+	Close() error
+
+	// callbacks
+	OnOffer(func(webrtc.SessionDescription))
+	OnICECandidate(func(c *webrtc.ICECandidateInit))
+	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	OnTrackPublished(func(Participant, PublishedTrack))
+	OnClose(func(Participant))
+
+	// package methods
+	addDownTrack(streamId string, dt *sfu.DownTrack)
+	removeDownTrack(streamId string, dt *sfu.DownTrack)
+	peerConnection() PeerConnection
+}
+
+// PublishedTrack is the main interface representing a track published to the room
+// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
+type PublishedTrack interface {
+	Start()
+	ID() string
+	Kind() livekit.TrackInfo_Type
+	StreamID() string
+	AddSubscriber(participant Participant) error
+	RemoveSubscriber(participantId string)
+	RemoveAllSubscribers()
 }

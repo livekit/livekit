@@ -6,9 +6,10 @@ package rtc
 
 import (
 	gomock "github.com/golang/mock/gomock"
+	sfu "github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/livekit-server/proto/livekit"
 	rtcp "github.com/pion/rtcp"
-	webrtc "github.com/pion/webrtc/v3"
+	v3 "github.com/pion/webrtc/v3"
 	reflect "reflect"
 	time "time"
 )
@@ -156,7 +157,7 @@ func (m *MockPeerConnection) EXPECT() *MockPeerConnectionMockRecorder {
 }
 
 // OnICECandidate mocks base method
-func (m *MockPeerConnection) OnICECandidate(f func(*webrtc.ICECandidate)) {
+func (m *MockPeerConnection) OnICECandidate(f func(*v3.ICECandidate)) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "OnICECandidate", f)
 }
@@ -168,7 +169,7 @@ func (mr *MockPeerConnectionMockRecorder) OnICECandidate(f interface{}) *gomock.
 }
 
 // OnICEConnectionStateChange mocks base method
-func (m *MockPeerConnection) OnICEConnectionStateChange(arg0 func(webrtc.ICEConnectionState)) {
+func (m *MockPeerConnection) OnICEConnectionStateChange(arg0 func(v3.ICEConnectionState)) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "OnICEConnectionStateChange", arg0)
 }
@@ -180,7 +181,7 @@ func (mr *MockPeerConnectionMockRecorder) OnICEConnectionStateChange(arg0 interf
 }
 
 // OnTrack mocks base method
-func (m *MockPeerConnection) OnTrack(f func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
+func (m *MockPeerConnection) OnTrack(f func(*v3.TrackRemote, *v3.RTPReceiver)) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "OnTrack", f)
 }
@@ -192,7 +193,7 @@ func (mr *MockPeerConnectionMockRecorder) OnTrack(f interface{}) *gomock.Call {
 }
 
 // OnDataChannel mocks base method
-func (m *MockPeerConnection) OnDataChannel(arg0 func(*webrtc.DataChannel)) {
+func (m *MockPeerConnection) OnDataChannel(arg0 func(*v3.DataChannel)) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "OnDataChannel", arg0)
 }
@@ -230,7 +231,7 @@ func (mr *MockPeerConnectionMockRecorder) Close() *gomock.Call {
 }
 
 // SetRemoteDescription mocks base method
-func (m *MockPeerConnection) SetRemoteDescription(desc webrtc.SessionDescription) error {
+func (m *MockPeerConnection) SetRemoteDescription(desc v3.SessionDescription) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetRemoteDescription", desc)
 	ret0, _ := ret[0].(error)
@@ -244,7 +245,7 @@ func (mr *MockPeerConnectionMockRecorder) SetRemoteDescription(desc interface{})
 }
 
 // SetLocalDescription mocks base method
-func (m *MockPeerConnection) SetLocalDescription(desc webrtc.SessionDescription) error {
+func (m *MockPeerConnection) SetLocalDescription(desc v3.SessionDescription) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetLocalDescription", desc)
 	ret0, _ := ret[0].(error)
@@ -258,10 +259,10 @@ func (mr *MockPeerConnectionMockRecorder) SetLocalDescription(desc interface{}) 
 }
 
 // CreateOffer mocks base method
-func (m *MockPeerConnection) CreateOffer(options *webrtc.OfferOptions) (webrtc.SessionDescription, error) {
+func (m *MockPeerConnection) CreateOffer(options *v3.OfferOptions) (v3.SessionDescription, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateOffer", options)
-	ret0, _ := ret[0].(webrtc.SessionDescription)
+	ret0, _ := ret[0].(v3.SessionDescription)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -273,10 +274,10 @@ func (mr *MockPeerConnectionMockRecorder) CreateOffer(options interface{}) *gomo
 }
 
 // CreateAnswer mocks base method
-func (m *MockPeerConnection) CreateAnswer(options *webrtc.AnswerOptions) (webrtc.SessionDescription, error) {
+func (m *MockPeerConnection) CreateAnswer(options *v3.AnswerOptions) (v3.SessionDescription, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateAnswer", options)
-	ret0, _ := ret[0].(webrtc.SessionDescription)
+	ret0, _ := ret[0].(v3.SessionDescription)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -288,7 +289,7 @@ func (mr *MockPeerConnectionMockRecorder) CreateAnswer(options interface{}) *gom
 }
 
 // AddICECandidate mocks base method
-func (m *MockPeerConnection) AddICECandidate(candidate webrtc.ICECandidateInit) error {
+func (m *MockPeerConnection) AddICECandidate(candidate v3.ICECandidateInit) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddICECandidate", candidate)
 	ret0, _ := ret[0].(error)
@@ -316,10 +317,10 @@ func (mr *MockPeerConnectionMockRecorder) WriteRTCP(pkts interface{}) *gomock.Ca
 }
 
 // CreateDataChannel mocks base method
-func (m *MockPeerConnection) CreateDataChannel(label string, options *webrtc.DataChannelInit) (*webrtc.DataChannel, error) {
+func (m *MockPeerConnection) CreateDataChannel(label string, options *v3.DataChannelInit) (*v3.DataChannel, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateDataChannel", label, options)
-	ret0, _ := ret[0].(*webrtc.DataChannel)
+	ret0, _ := ret[0].(*v3.DataChannel)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -331,14 +332,14 @@ func (mr *MockPeerConnectionMockRecorder) CreateDataChannel(label, options inter
 }
 
 // AddTransceiverFromTrack mocks base method
-func (m *MockPeerConnection) AddTransceiverFromTrack(track webrtc.TrackLocal, init ...webrtc.RtpTransceiverInit) (*webrtc.RTPTransceiver, error) {
+func (m *MockPeerConnection) AddTransceiverFromTrack(track v3.TrackLocal, init ...v3.RtpTransceiverInit) (*v3.RTPTransceiver, error) {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{track}
 	for _, a := range init {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "AddTransceiverFromTrack", varargs...)
-	ret0, _ := ret[0].(*webrtc.RTPTransceiver)
+	ret0, _ := ret[0].(*v3.RTPTransceiver)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -351,10 +352,10 @@ func (mr *MockPeerConnectionMockRecorder) AddTransceiverFromTrack(track interfac
 }
 
 // ConnectionState mocks base method
-func (m *MockPeerConnection) ConnectionState() webrtc.PeerConnectionState {
+func (m *MockPeerConnection) ConnectionState() v3.PeerConnectionState {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ConnectionState")
-	ret0, _ := ret[0].(webrtc.PeerConnectionState)
+	ret0, _ := ret[0].(v3.PeerConnectionState)
 	return ret0
 }
 
@@ -365,7 +366,7 @@ func (mr *MockPeerConnectionMockRecorder) ConnectionState() *gomock.Call {
 }
 
 // RemoveTrack mocks base method
-func (m *MockPeerConnection) RemoveTrack(sender *webrtc.RTPSender) error {
+func (m *MockPeerConnection) RemoveTrack(sender *v3.RTPSender) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveTrack", sender)
 	ret0, _ := ret[0].(error)
@@ -376,4 +377,433 @@ func (m *MockPeerConnection) RemoveTrack(sender *webrtc.RTPSender) error {
 func (mr *MockPeerConnectionMockRecorder) RemoveTrack(sender interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveTrack", reflect.TypeOf((*MockPeerConnection)(nil).RemoveTrack), sender)
+}
+
+// MockParticipant is a mock of Participant interface
+type MockParticipant struct {
+	ctrl     *gomock.Controller
+	recorder *MockParticipantMockRecorder
+}
+
+// MockParticipantMockRecorder is the mock recorder for MockParticipant
+type MockParticipantMockRecorder struct {
+	mock *MockParticipant
+}
+
+// NewMockParticipant creates a new mock instance
+func NewMockParticipant(ctrl *gomock.Controller) *MockParticipant {
+	mock := &MockParticipant{ctrl: ctrl}
+	mock.recorder = &MockParticipantMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use
+func (m *MockParticipant) EXPECT() *MockParticipantMockRecorder {
+	return m.recorder
+}
+
+// ID mocks base method
+func (m *MockParticipant) ID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// ID indicates an expected call of ID
+func (mr *MockParticipantMockRecorder) ID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ID", reflect.TypeOf((*MockParticipant)(nil).ID))
+}
+
+// Name mocks base method
+func (m *MockParticipant) Name() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Name")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// Name indicates an expected call of Name
+func (mr *MockParticipantMockRecorder) Name() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockParticipant)(nil).Name))
+}
+
+// State mocks base method
+func (m *MockParticipant) State() livekit.ParticipantInfo_State {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "State")
+	ret0, _ := ret[0].(livekit.ParticipantInfo_State)
+	return ret0
+}
+
+// State indicates an expected call of State
+func (mr *MockParticipantMockRecorder) State() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "State", reflect.TypeOf((*MockParticipant)(nil).State))
+}
+
+// ToProto mocks base method
+func (m *MockParticipant) ToProto() *livekit.ParticipantInfo {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ToProto")
+	ret0, _ := ret[0].(*livekit.ParticipantInfo)
+	return ret0
+}
+
+// ToProto indicates an expected call of ToProto
+func (mr *MockParticipantMockRecorder) ToProto() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ToProto", reflect.TypeOf((*MockParticipant)(nil).ToProto))
+}
+
+// Answer mocks base method
+func (m *MockParticipant) Answer(sdp v3.SessionDescription) (v3.SessionDescription, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Answer", sdp)
+	ret0, _ := ret[0].(v3.SessionDescription)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Answer indicates an expected call of Answer
+func (mr *MockParticipantMockRecorder) Answer(sdp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Answer", reflect.TypeOf((*MockParticipant)(nil).Answer), sdp)
+}
+
+// HandleNegotiate mocks base method
+func (m *MockParticipant) HandleNegotiate(sd v3.SessionDescription) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HandleNegotiate", sd)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// HandleNegotiate indicates an expected call of HandleNegotiate
+func (mr *MockParticipantMockRecorder) HandleNegotiate(sd interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HandleNegotiate", reflect.TypeOf((*MockParticipant)(nil).HandleNegotiate), sd)
+}
+
+// SetRemoteDescription mocks base method
+func (m *MockParticipant) SetRemoteDescription(sdp v3.SessionDescription) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetRemoteDescription", sdp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetRemoteDescription indicates an expected call of SetRemoteDescription
+func (mr *MockParticipantMockRecorder) SetRemoteDescription(sdp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRemoteDescription", reflect.TypeOf((*MockParticipant)(nil).SetRemoteDescription), sdp)
+}
+
+// AddICECandidate mocks base method
+func (m *MockParticipant) AddICECandidate(candidate v3.ICECandidateInit) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddICECandidate", candidate)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddICECandidate indicates an expected call of AddICECandidate
+func (mr *MockParticipantMockRecorder) AddICECandidate(candidate interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddICECandidate", reflect.TypeOf((*MockParticipant)(nil).AddICECandidate), candidate)
+}
+
+// AddSubscriber mocks base method
+func (m *MockParticipant) AddSubscriber(op Participant) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddSubscriber", op)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddSubscriber indicates an expected call of AddSubscriber
+func (mr *MockParticipantMockRecorder) AddSubscriber(op interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSubscriber", reflect.TypeOf((*MockParticipant)(nil).AddSubscriber), op)
+}
+
+// RemoveSubscriber mocks base method
+func (m *MockParticipant) RemoveSubscriber(peerId string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RemoveSubscriber", peerId)
+}
+
+// RemoveSubscriber indicates an expected call of RemoveSubscriber
+func (mr *MockParticipantMockRecorder) RemoveSubscriber(peerId interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveSubscriber", reflect.TypeOf((*MockParticipant)(nil).RemoveSubscriber), peerId)
+}
+
+// SendJoinResponse mocks base method
+func (m *MockParticipant) SendJoinResponse(otherParticipants []Participant) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendJoinResponse", otherParticipants)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendJoinResponse indicates an expected call of SendJoinResponse
+func (mr *MockParticipantMockRecorder) SendJoinResponse(otherParticipants interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendJoinResponse", reflect.TypeOf((*MockParticipant)(nil).SendJoinResponse), otherParticipants)
+}
+
+// SendParticipantUpdate mocks base method
+func (m *MockParticipant) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendParticipantUpdate", participants)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendParticipantUpdate indicates an expected call of SendParticipantUpdate
+func (mr *MockParticipantMockRecorder) SendParticipantUpdate(participants interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendParticipantUpdate", reflect.TypeOf((*MockParticipant)(nil).SendParticipantUpdate), participants)
+}
+
+// Start mocks base method
+func (m *MockParticipant) Start() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Start")
+}
+
+// Start indicates an expected call of Start
+func (mr *MockParticipantMockRecorder) Start() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockParticipant)(nil).Start))
+}
+
+// Close mocks base method
+func (m *MockParticipant) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close
+func (mr *MockParticipantMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockParticipant)(nil).Close))
+}
+
+// OnOffer mocks base method
+func (m *MockParticipant) OnOffer(arg0 func(v3.SessionDescription)) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "OnOffer", arg0)
+}
+
+// OnOffer indicates an expected call of OnOffer
+func (mr *MockParticipantMockRecorder) OnOffer(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnOffer", reflect.TypeOf((*MockParticipant)(nil).OnOffer), arg0)
+}
+
+// OnICECandidate mocks base method
+func (m *MockParticipant) OnICECandidate(arg0 func(*v3.ICECandidateInit)) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "OnICECandidate", arg0)
+}
+
+// OnICECandidate indicates an expected call of OnICECandidate
+func (mr *MockParticipantMockRecorder) OnICECandidate(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnICECandidate", reflect.TypeOf((*MockParticipant)(nil).OnICECandidate), arg0)
+}
+
+// OnStateChange mocks base method
+func (m *MockParticipant) OnStateChange(arg0 func(Participant, livekit.ParticipantInfo_State)) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "OnStateChange", arg0)
+}
+
+// OnStateChange indicates an expected call of OnStateChange
+func (mr *MockParticipantMockRecorder) OnStateChange(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnStateChange", reflect.TypeOf((*MockParticipant)(nil).OnStateChange), arg0)
+}
+
+// OnTrackPublished mocks base method
+func (m *MockParticipant) OnTrackPublished(arg0 func(Participant, PublishedTrack)) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "OnTrackPublished", arg0)
+}
+
+// OnTrackPublished indicates an expected call of OnTrackPublished
+func (mr *MockParticipantMockRecorder) OnTrackPublished(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnTrackPublished", reflect.TypeOf((*MockParticipant)(nil).OnTrackPublished), arg0)
+}
+
+// OnClose mocks base method
+func (m *MockParticipant) OnClose(arg0 func(Participant)) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "OnClose", arg0)
+}
+
+// OnClose indicates an expected call of OnClose
+func (mr *MockParticipantMockRecorder) OnClose(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnClose", reflect.TypeOf((*MockParticipant)(nil).OnClose), arg0)
+}
+
+// addDownTrack mocks base method
+func (m *MockParticipant) addDownTrack(streamId string, dt *sfu.DownTrack) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "addDownTrack", streamId, dt)
+}
+
+// addDownTrack indicates an expected call of addDownTrack
+func (mr *MockParticipantMockRecorder) addDownTrack(streamId, dt interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "addDownTrack", reflect.TypeOf((*MockParticipant)(nil).addDownTrack), streamId, dt)
+}
+
+// removeDownTrack mocks base method
+func (m *MockParticipant) removeDownTrack(streamId string, dt *sfu.DownTrack) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "removeDownTrack", streamId, dt)
+}
+
+// removeDownTrack indicates an expected call of removeDownTrack
+func (mr *MockParticipantMockRecorder) removeDownTrack(streamId, dt interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "removeDownTrack", reflect.TypeOf((*MockParticipant)(nil).removeDownTrack), streamId, dt)
+}
+
+// peerConnection mocks base method
+func (m *MockParticipant) peerConnection() PeerConnection {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "peerConnection")
+	ret0, _ := ret[0].(PeerConnection)
+	return ret0
+}
+
+// peerConnection indicates an expected call of peerConnection
+func (mr *MockParticipantMockRecorder) peerConnection() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "peerConnection", reflect.TypeOf((*MockParticipant)(nil).peerConnection))
+}
+
+// MockPublishedTrack is a mock of PublishedTrack interface
+type MockPublishedTrack struct {
+	ctrl     *gomock.Controller
+	recorder *MockPublishedTrackMockRecorder
+}
+
+// MockPublishedTrackMockRecorder is the mock recorder for MockPublishedTrack
+type MockPublishedTrackMockRecorder struct {
+	mock *MockPublishedTrack
+}
+
+// NewMockPublishedTrack creates a new mock instance
+func NewMockPublishedTrack(ctrl *gomock.Controller) *MockPublishedTrack {
+	mock := &MockPublishedTrack{ctrl: ctrl}
+	mock.recorder = &MockPublishedTrackMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use
+func (m *MockPublishedTrack) EXPECT() *MockPublishedTrackMockRecorder {
+	return m.recorder
+}
+
+// Start mocks base method
+func (m *MockPublishedTrack) Start() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Start")
+}
+
+// Start indicates an expected call of Start
+func (mr *MockPublishedTrackMockRecorder) Start() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockPublishedTrack)(nil).Start))
+}
+
+// ID mocks base method
+func (m *MockPublishedTrack) ID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// ID indicates an expected call of ID
+func (mr *MockPublishedTrackMockRecorder) ID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ID", reflect.TypeOf((*MockPublishedTrack)(nil).ID))
+}
+
+// Kind mocks base method
+func (m *MockPublishedTrack) Kind() livekit.TrackInfo_Type {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Kind")
+	ret0, _ := ret[0].(livekit.TrackInfo_Type)
+	return ret0
+}
+
+// Kind indicates an expected call of Kind
+func (mr *MockPublishedTrackMockRecorder) Kind() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Kind", reflect.TypeOf((*MockPublishedTrack)(nil).Kind))
+}
+
+// StreamID mocks base method
+func (m *MockPublishedTrack) StreamID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// StreamID indicates an expected call of StreamID
+func (mr *MockPublishedTrackMockRecorder) StreamID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamID", reflect.TypeOf((*MockPublishedTrack)(nil).StreamID))
+}
+
+// AddSubscriber mocks base method
+func (m *MockPublishedTrack) AddSubscriber(participant Participant) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddSubscriber", participant)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddSubscriber indicates an expected call of AddSubscriber
+func (mr *MockPublishedTrackMockRecorder) AddSubscriber(participant interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSubscriber", reflect.TypeOf((*MockPublishedTrack)(nil).AddSubscriber), participant)
+}
+
+// RemoveSubscriber mocks base method
+func (m *MockPublishedTrack) RemoveSubscriber(participantId string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RemoveSubscriber", participantId)
+}
+
+// RemoveSubscriber indicates an expected call of RemoveSubscriber
+func (mr *MockPublishedTrackMockRecorder) RemoveSubscriber(participantId interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveSubscriber", reflect.TypeOf((*MockPublishedTrack)(nil).RemoveSubscriber), participantId)
+}
+
+// RemoveAllSubscribers mocks base method
+func (m *MockPublishedTrack) RemoveAllSubscribers() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RemoveAllSubscribers")
+}
+
+// RemoveAllSubscribers indicates an expected call of RemoveAllSubscribers
+func (mr *MockPublishedTrackMockRecorder) RemoveAllSubscribers() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAllSubscribers", reflect.TypeOf((*MockPublishedTrack)(nil).RemoveAllSubscribers))
 }

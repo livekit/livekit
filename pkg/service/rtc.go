@@ -151,7 +151,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) handleOffer(participant *rtc.Participant, offer *livekit.SessionDescription) error {
+func (s *RTCService) handleOffer(participant rtc.Participant, offer *livekit.SessionDescription) error {
 	log := logger.GetLogger()
 
 	_, err := participant.Answer(rtc.FromProtoSessionDescription(offer))
@@ -163,10 +163,10 @@ func (s *RTCService) handleOffer(participant *rtc.Participant, offer *livekit.Se
 	return nil
 }
 
-func (s *RTCService) handleTrickle(peer *rtc.Participant, trickle *livekit.Trickle) error {
+func (s *RTCService) handleTrickle(participant rtc.Participant, trickle *livekit.Trickle) error {
 	candidateInit := rtc.FromProtoTrickle(trickle)
-	logger.GetLogger().Debugw("adding peer candidate", "participantId", peer.ID())
-	if err := peer.AddICECandidate(candidateInit); err != nil {
+	logger.GetLogger().Debugw("adding peer candidate", "participant", participant.ID())
+	if err := participant.AddICECandidate(candidateInit); err != nil {
 		return err
 	}
 
