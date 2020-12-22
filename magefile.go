@@ -124,6 +124,13 @@ func Build() error {
 	return nil
 }
 
+func Test() error {
+	mg.Deps(Proto, generate)
+	cmd := exec.Command("go", "test", "./...")
+	connectStd(cmd)
+	return cmd.Run()
+}
+
 // cleans up builds
 func Clean() {
 	fmt.Println("cleaning...")
