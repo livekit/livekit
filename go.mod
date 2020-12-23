@@ -10,7 +10,6 @@ require (
 	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/magefile/mage v1.10.0
-	github.com/magiconair/properties v1.8.1
 	github.com/manifoldco/promptui v0.8.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/pion/interceptor v0.0.5
@@ -31,5 +30,5 @@ require (
 	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/tools v0.0.0-20201222163215-f2e330f49058 // indirect
 	google.golang.org/protobuf v1.25.0
-	gopkg.in/yaml.v2 v2.3.0
+	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
