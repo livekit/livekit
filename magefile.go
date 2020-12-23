@@ -28,9 +28,9 @@ var Default = Build
 var checksummer = NewChecksummer(".", goChecksumFile, ".go")
 
 func init() {
-	checksummer.IgnoredFiles = []string{
+	checksummer.IgnoredPaths = []string{
 		"cmd/server/wire_gen.go",
-		"pkg/rtc/mock_test.go",
+		"pkg/rtc/rtcfakes",
 	}
 }
 
@@ -96,7 +96,7 @@ func Proto() error {
 
 // builds LiveKit server and cli
 func Build() error {
-	mg.Deps(Proto, generate)
+	mg.Deps(Proto, generateCmd)
 	if !checksummer.IsChanged() {
 		fmt.Println("up to date")
 		return nil
@@ -125,7 +125,7 @@ func Build() error {
 }
 
 func Test() error {
-	mg.Deps(Proto, generate)
+	mg.Deps(Proto, generateTest)
 	cmd := exec.Command("go", "test", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -140,38 +140,28 @@ func Clean() {
 }
 
 // code generation
-func generate() error {
+func generateCmd() error {
 	mg.Deps(installDeps)
 	if !checksummer.IsChanged() {
 		return nil
 	}
 
-	fmt.Println("wiring...")
-	wire, err := getToolPath("wire")
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(wire)
-	cmd.Dir = "cmd/server"
+	fmt.Println("generating...")
+
+	cmd := exec.Command("go", "generate", "./cmd/...")
 	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
+	return cmd.Run()
+}
+
+func generateTest() error {
+	mg.Deps(installDeps)
+	if !checksummer.IsChanged() {
+		return nil
 	}
 
-	//cmd = exec.Command(wire)
-	//cmd.Dir = "cmd/cli"
-	//connectStd(cmd)
-	//if err := cmd.Run(); err != nil {
-	//	return err
-	//}
+	fmt.Println("generating for tests...")
 
-	fmt.Println("updating mocks...")
-	mockgen, err := getToolPath("mockgen")
-	if err != nil {
-		return err
-	}
-
-	cmd = exec.Command(mockgen, "-source", "pkg/rtc/interfaces.go", "-destination", "pkg/rtc/mock_test.go", "-package", "rtc")
+	cmd := exec.Command("go", "generate", "./pkg/...")
 	connectStd(cmd)
 	return cmd.Run()
 }
@@ -253,7 +243,7 @@ type Checksummer struct {
 	checksum     string
 	allExts      bool
 	extMap       map[string]bool
-	IgnoredFiles []string
+	IgnoredPaths []string
 }
 
 func NewChecksummer(dir string, checksumfile string, exts ...string) *Checksummer {
@@ -311,14 +301,14 @@ func (c *Checksummer) computeChecksum() error {
 
 	entries := make([]string, 0)
 	ignoredMap := make(map[string]bool)
-	for _, f := range c.IgnoredFiles {
+	for _, f := range c.IgnoredPaths {
 		ignoredMap[f] = true
 	}
 	err := filepath.Walk(c.dir, func(path string, info os.FileInfo, err error) error {
 		if path == c.dir {
 			return nil
 		}
-		if strings.HasPrefix(info.Name(), ".") {
+		if strings.HasPrefix(info.Name(), ".") || ignoredMap[path] {
 			if info.IsDir() {
 				return filepath.SkipDir
 			} else {
@@ -326,8 +316,8 @@ func (c *Checksummer) computeChecksum() error {
 			}
 		}
 		if info.IsDir() {
-			entries = append(entries, fmt.Sprintf("%s %s", path, info.ModTime().String()))
-		} else if !ignoredMap[path] && (c.allExts || c.extMap[filepath.Ext(info.Name())]) {
+			entries = append(entries, fmt.Sprintf("%s %d", path, info.ModTime().Unix()))
+		} else if c.allExts || c.extMap[filepath.Ext(info.Name())] {
 			entries = append(entries, fmt.Sprintf("%s %d %d", path, info.Size(), info.ModTime().Unix()))
 		}
 		return nil

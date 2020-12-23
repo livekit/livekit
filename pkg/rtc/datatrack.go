@@ -67,7 +67,7 @@ func (t *DataTrack) StreamID() string {
 
 func (t *DataTrack) AddSubscriber(participant Participant) error {
 	label := PackDataTrackLabel(t.participantId, t.ID(), t.dataChannel.Label())
-	downChannel, err := participant.peerConnection().CreateDataChannel(label, t.dataChannelOptions())
+	downChannel, err := participant.PeerConnection().CreateDataChannel(label, t.dataChannelOptions())
 	if err != nil {
 		return err
 	}

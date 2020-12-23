@@ -10,18 +10,22 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate . WebsocketClient
 type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
+//counterfeiter:generate . SignalConnection
 type SignalConnection interface {
 	ReadRequest() (*livekit.SignalRequest, error)
 	WriteResponse(*livekit.SignalResponse) error
 }
 
-// use interface to make it easier to mock
+//counterfeiter:generate . PeerConnection
 type PeerConnection interface {
 	OnICECandidate(f func(*webrtc.ICECandidate))
 	OnICEConnectionStateChange(func(webrtc.ICEConnectionState))
@@ -43,6 +47,7 @@ type PeerConnection interface {
 	RemoveTrack(sender *webrtc.RTPSender) error
 }
 
+//counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
 	Name() string
@@ -69,13 +74,14 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
-	addDownTrack(streamId string, dt *sfu.DownTrack)
-	removeDownTrack(streamId string, dt *sfu.DownTrack)
-	peerConnection() PeerConnection
+	AddDownTrack(streamId string, dt *sfu.DownTrack)
+	RemoveDownTrack(streamId string, dt *sfu.DownTrack)
+	PeerConnection() PeerConnection
 }
 
 // PublishedTrack is the main interface representing a track published to the room
 // it's responsible for managing subscribers and forwarding data from the input track to all subscribers
+//counterfeiter:generate . PublishedTrack
 type PublishedTrack interface {
 	Start()
 	ID() string

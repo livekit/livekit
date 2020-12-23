@@ -8,7 +8,7 @@
 # Test binary, built with `go test -c`
 *.test
 
-# checksums of file modification time
+# checksums of file tree
 .checksumgo
 proto/.checksumproto
 

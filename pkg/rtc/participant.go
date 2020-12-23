@@ -340,11 +340,11 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	})
 }
 
-func (p *ParticipantImpl) peerConnection() PeerConnection {
+func (p *ParticipantImpl) PeerConnection() PeerConnection {
 	return p.peerConn
 }
 
-func (p *ParticipantImpl) addDownTrack(streamId string, dt *sfu.DownTrack) {
+func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
 	p.downTracks[streamId] = append(p.downTracks[streamId], dt)
 	p.lock.Unlock()
@@ -353,7 +353,7 @@ func (p *ParticipantImpl) addDownTrack(streamId string, dt *sfu.DownTrack) {
 	})
 }
 
-func (p *ParticipantImpl) removeDownTrack(streamId string, dt *sfu.DownTrack) {
+func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	tracks := p.downTracks[streamId]

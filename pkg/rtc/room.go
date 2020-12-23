@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -45,6 +46,12 @@ func (r *Room) GetParticipant(id string) Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.participants[id]
+}
+
+func (r *Room) GetParticipants() []Participant {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return funk.Values(r.participants).([]Participant)
 }
 
 func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
