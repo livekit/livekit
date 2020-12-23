@@ -14,3 +14,11 @@ func newMockParticipant(name string) *rtcfakes.FakeParticipant {
 
 	return p
 }
+
+func newMockTrack(kind livekit.TrackInfo_Type, name string) *rtcfakes.FakePublishedTrack {
+	t := &rtcfakes.FakePublishedTrack{}
+	t.IDReturns(utils.NewGuid(utils.TrackPrefix))
+	t.KindReturns(kind)
+	t.StreamIDReturns(name)
+	return t
+}

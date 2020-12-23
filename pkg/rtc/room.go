@@ -144,6 +144,10 @@ func (r *Room) onTrackAdded(participant Participant, track PublishedTrack) {
 			// skip publishing peer
 			continue
 		}
+		if existingParticipant.State() != livekit.ParticipantInfo_JOINED {
+			// not fully joined. don't subscribe yet
+			continue
+		}
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.GetLogger().Errorw("could not subscribe to remoteTrack",
 				"srcParticipant", participant.ID(),

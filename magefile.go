@@ -125,7 +125,7 @@ func Build() error {
 }
 
 func Test() error {
-	mg.Deps(Proto, generateTest)
+	mg.Deps(Proto)
 	cmd := exec.Command("go", "test", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -139,6 +139,17 @@ func Clean() {
 	os.Remove(goChecksumFile)
 }
 
+// regenerate code
+func Generate() error {
+	mg.Deps(installDeps)
+
+	fmt.Println("generating...")
+
+	cmd := exec.Command("go", "generate", "./...")
+	connectStd(cmd)
+	return cmd.Run()
+}
+
 // code generation
 func generateCmd() error {
 	mg.Deps(installDeps)
@@ -149,19 +160,6 @@ func generateCmd() error {
 	fmt.Println("generating...")
 
 	cmd := exec.Command("go", "generate", "./cmd/...")
-	connectStd(cmd)
-	return cmd.Run()
-}
-
-func generateTest() error {
-	mg.Deps(installDeps)
-	if !checksummer.IsChanged() {
-		return nil
-	}
-
-	fmt.Println("generating for tests...")
-
-	cmd := exec.Command("go", "generate", "./pkg/...")
 	connectStd(cmd)
 	return cmd.Run()
 }
