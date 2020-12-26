@@ -4,7 +4,7 @@ cd /tmp
 git clone https://github.com/magefile/mage
 cd mage
 go run bootstrap.go
-rm -rf mage
+rm -rf /tmp/mage
 
 if ! command -v mage &> /dev/null
 then
