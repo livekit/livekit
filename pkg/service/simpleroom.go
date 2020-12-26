@@ -27,6 +27,9 @@ func NewSimpleRoomService(manager *rtc.RoomManager, localNode *node.Node) (svc *
 }
 
 func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.RoomInfo, err error) {
+	if err = EnsureCreatePermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
 	room, err := s.manager.CreateRoom(req)
 	if err != nil {
 		return
@@ -37,9 +40,14 @@ func (s *SimpleRoomService) CreateRoom(ctx context.Context, req *livekit.CreateR
 }
 
 func (s *SimpleRoomService) GetRoom(ctx context.Context, req *livekit.GetRoomRequest) (res *livekit.RoomInfo, err error) {
-	room := s.manager.GetRoom(req.RoomId)
-	if room == nil {
-		err = twirp.NewError(twirp.NotFound, "room does not exist")
+	onlyName, err := EnsureJoinPermission(ctx)
+	if err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	room, err := s.manager.GetRoomWithConstraint(req.Room, onlyName)
+	if err != nil {
+		// TODO: translate error codes to twirp
 		return
 	}
 
@@ -48,7 +56,10 @@ func (s *SimpleRoomService) GetRoom(ctx context.Context, req *livekit.GetRoomReq
 }
 
 func (s *SimpleRoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (res *livekit.DeleteRoomResponse, err error) {
-	err = s.manager.DeleteRoom(req.RoomId)
+	if err = EnsureCreatePermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	err = s.manager.DeleteRoom(req.Room)
 	if err != nil {
 		err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
 		return

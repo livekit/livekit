@@ -62,7 +62,7 @@ func createRoom(c *cli.Context) error {
 func getRoom(c *cli.Context) error {
 	roomId := c.String("room-id")
 	room, err := roomClient.GetRoom(context.Background(), &livekit.GetRoomRequest{
-		RoomId: roomId,
+		Room: roomId,
 	})
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func getRoom(c *cli.Context) error {
 func deleteRoom(c *cli.Context) error {
 	roomId := c.String("room-id")
 	_, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
-		RoomId: roomId,
+		Room: roomId,
 	})
 	if err != nil {
 		return err

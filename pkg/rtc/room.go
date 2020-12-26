@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -22,24 +21,19 @@ type Room struct {
 	//tracks map[string][]Track
 }
 
-func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) (*Room, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, err
-	}
-
+func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) *Room {
 	return &Room{
 		Room: livekit.Room{
 			Sid:             utils.NewGuid(utils.RoomPrefix),
+			Name:            req.Name,
 			EmptyTimeout:    req.EmptyTimeout,
 			MaxParticipants: req.MaxParticipants,
 			CreationTime:    time.Now().Unix(),
-			Token:           id.String(),
 		},
 		config:       *config,
 		lock:         sync.RWMutex{},
 		participants: make(map[string]Participant),
-	}, nil
+	}
 }
 
 func (r *Room) GetParticipant(id string) Participant {
@@ -57,9 +51,9 @@ func (r *Room) GetParticipants() []Participant {
 func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	return &livekit.RoomInfo{
 		Sid:          r.Sid,
+		Name:         r.Name,
 		NodeIp:       node.Ip,
 		CreationTime: r.CreationTime,
-		Token:        r.Token,
 	}
 }
 

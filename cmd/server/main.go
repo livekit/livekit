@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/negroni"
 
+	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/node"
@@ -29,10 +31,22 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
+				Usage:   "path to LiveKit config",
 				EnvVars: []string{"LIVEKIT_CONFIG"},
 			},
+			&cli.StringFlag{
+				Name:    "key-file",
+				Usage:   "path to file that contains API keys/secrets",
+				EnvVars: []string{"KEY_FILE"},
+			},
+			&cli.StringFlag{
+				Name:    "keys",
+				Usage:   "API keys/secret pairs (key:secret, one per line)",
+				EnvVars: []string{"KEY_FILE"},
+			},
 			&cli.BoolFlag{
-				Name: "dev",
+				Name:  "dev",
+				Usage: "when set, token validation will be disabled",
 			},
 		},
 		Action: startServer,
@@ -50,14 +64,20 @@ func startServer(c *cli.Context) error {
 	}
 
 	conf.UpdateFromCLI(c)
+	var keyProvider auth.KeyProvider
 
 	if conf.Development {
 		logger.InitDevelopment()
 	} else {
 		logger.InitProduction()
+		// require a key provider
+		if keyProvider, err = createKeyProvider(c.String("key-file"), c.String("keys")); err != nil {
+			return err
+		}
+		service.AuthRequired = true
 	}
 
-	server, err := InitializeServer(conf)
+	server, err := InitializeServer(conf, keyProvider)
 	if err != nil {
 		return err
 	}
@@ -74,6 +94,25 @@ func startServer(c *cli.Context) error {
 	return server.Start()
 }
 
+func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
+	// prefer keyfile if set
+	if keyFile != "" {
+		f, err := os.Open(keyFile)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		return auth.NewFileBasedKeyProvider(f)
+	}
+
+	if keys != "" {
+		r := bytes.NewReader([]byte(keys))
+		return auth.NewFileBasedKeyProvider(r)
+	}
+
+	return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+}
+
 type LivekitServer struct {
 	config     *config.Config
 	roomServer livekit.TwirpServer
@@ -86,24 +125,29 @@ type LivekitServer struct {
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
-	rtcService *service.RTCService) (s *LivekitServer, err error) {
+	rtcService *service.RTCService,
+	keyProvider auth.KeyProvider) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:     conf,
 		roomServer: livekit.NewRoomServiceServer(roomService),
 		rtcService: rtcService,
 	}
 
-	roomHandler := configureMiddlewares(conf, s.roomServer)
+	middlewares := make([]negroni.Handler, 0)
+	if keyProvider != nil {
+		middlewares = append(middlewares, service.NewAPIKeyAuthMiddleware(keyProvider))
+	}
+
 	s.roomHttp = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.APIPort),
-		Handler: roomHandler,
+		Handler: configureMiddlewares(conf, s.roomServer, middlewares...),
 	}
 
 	rtcHandler := http.NewServeMux()
 	rtcHandler.Handle("/rtc", rtcService)
 	s.rtcHttp = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.RTCPort),
-		Handler: configureMiddlewares(conf, rtcHandler),
+		Handler: configureMiddlewares(conf, rtcHandler, middlewares...),
 	}
 
 	return
@@ -162,9 +206,12 @@ func (s *LivekitServer) Stop() {
 	s.doneChan <- true
 }
 
-func configureMiddlewares(conf *config.Config, handler http.Handler) *negroni.Negroni {
+func configureMiddlewares(conf *config.Config, handler http.Handler, middlewares ...negroni.Handler) *negroni.Negroni {
 	n := negroni.New()
 	n.Use(negroni.NewRecovery())
+	for _, m := range middlewares {
+		n.Use(m)
+	}
 	n.UseHandler(handler)
 	return n
 }

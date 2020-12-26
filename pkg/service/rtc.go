@@ -15,9 +15,8 @@ import (
 )
 
 type RTCService struct {
-	skipTokenCheck bool
-	manager        *rtc.RoomManager
-	upgrader       websocket.Upgrader
+	manager  *rtc.RoomManager
+	upgrader websocket.Upgrader
 }
 
 func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
@@ -27,7 +26,6 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 	}
 
 	if conf.Development {
-		s.skipTokenCheck = true
 		s.upgrader.CheckOrigin = func(r *http.Request) bool {
 			// allow all in dev
 			return true
@@ -39,18 +37,19 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomId := r.FormValue("room_id")
-	token := r.FormValue("token")
 	pName := r.FormValue("name")
 	log := logger.GetLogger()
 
-	room := s.manager.GetRoom(roomId)
-	if room == nil {
-		writeJSONError(w, http.StatusNotFound, "room not found")
+	onlyName, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	if !s.skipTokenCheck && room.Token != token {
-		writeJSONError(w, http.StatusUnauthorized, "invalid room token")
+	room, err := s.manager.GetRoomWithConstraint(roomId, onlyName)
+	if err != nil {
+		// TODO: return errors/status correctly
+		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 

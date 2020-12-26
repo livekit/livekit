@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/node"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -13,7 +14,7 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider) (*LivekitServer, error) {
 	nodeNode, err := node.NewLocalNode(conf)
 	if err != nil {
 		return nil, err
@@ -27,7 +28,7 @@ func InitializeServer(conf *config.Config) (*LivekitServer, error) {
 		return nil, err
 	}
 	rtcService := service.NewRTCService(conf, roomManager)
-	livekitServer, err := NewLivekitServer(conf, roomService, rtcService)
+	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider)
 	if err != nil {
 		return nil, err
 	}

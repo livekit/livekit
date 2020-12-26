@@ -18,22 +18,22 @@ message NodeStats {
 // internal type, for serialization with proto
 message Room {
   string sid = 1;
-  uint32 empty_timeout = 2;
-  uint32 max_participants = 3;
-  int64 creation_time = 4;
-  string token = 5;
+  string name = 2;
+  uint32 empty_timeout = 3;
+  uint32 max_participants = 4;
+  int64 creation_time = 5;
 }
 
 message RoomInfo {
   string sid = 1;
-  string node_ip = 2;
-  int64 creation_time = 3;
-  string token = 4;
+  string name = 2;
+  string node_ip = 3;
+  int64 creation_time = 4;
 }
 
 message ParticipantInfo {
   enum State {
-    // websocket connected, but not offered yet
+    // websocket' connected, but not offered yet
     JOINING = 0;
     // server received client offer
     JOINED = 1;

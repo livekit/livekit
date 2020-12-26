@@ -9,6 +9,7 @@ const (
 	NodePrefix        = "ND_"
 	ParticipantPrefix = "PA_"
 	TrackPrefix       = "TR_"
+	APIKeyPrefix      = "API"
 )
 
 func NewGuid(prefix string) string {

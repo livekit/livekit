@@ -15,6 +15,32 @@ const (
 	numParticipants = 3
 )
 
+func TestNewRoomForRequest(t *testing.T) {
+	req := &livekit.CreateRoomRequest{
+		Name:            "myroom",
+		EmptyTimeout:    120,
+		MaxParticipants: 50,
+	}
+
+	rm := rtc.NewRoomForRequest(req, &rtc.WebRTCConfig{})
+	assert.NotEmpty(t, rm.Sid)
+	assert.Equal(t, req.Name, rm.Name)
+	assert.Equal(t, req.EmptyTimeout, rm.EmptyTimeout)
+	assert.Equal(t, req.MaxParticipants, rm.MaxParticipants)
+}
+
+func TestToRoomInfo(t *testing.T) {
+	rm := rtc.NewRoomForRequest(&livekit.CreateRoomRequest{
+		Name:            "myroom",
+		EmptyTimeout:    120,
+		MaxParticipants: 50,
+	}, &rtc.WebRTCConfig{})
+	info := rm.ToRoomInfo(&livekit.Node{Ip: "0.0.0.0"})
+	assert.Equal(t, rm.Sid, info.Sid)
+	assert.Equal(t, rm.Name, info.Name)
+	assert.Equal(t, "0.0.0.0", info.NodeIp)
+}
+
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, numParticipants)
@@ -96,10 +122,7 @@ func TestNewTrack(t *testing.T) {
 }
 
 func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
-	rm, err := rtc.NewRoomForRequest(&livekit.CreateRoomRequest{}, &rtc.WebRTCConfig{})
-	if err != nil {
-		panic("could not create a room")
-	}
+	rm := rtc.NewRoomForRequest(&livekit.CreateRoomRequest{}, &rtc.WebRTCConfig{})
 	for i := 0; i < num; i++ {
 		participant := newMockParticipant("")
 		err := rm.Join(participant)
