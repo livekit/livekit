@@ -65,13 +65,21 @@ func (m *RoomManager) GetRoomWithConstraint(idOrName string, onlyName string) (*
 	return rm, nil
 }
 
-func (m *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (r *Room, err error) {
-	r = NewRoomForRequest(req, &m.config)
+func (m *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*Room, error) {
+	if req.Name == "" {
+		return nil, ErrInvalidRoomName
+	}
+	r := NewRoomForRequest(req, &m.config)
 	m.roomLock.Lock()
 	defer m.roomLock.Unlock()
+
+	if m.roomsByName[req.Name] != nil {
+		return nil, ErrInvalidRoomName
+	}
+
 	m.rooms[r.Sid] = r
 	m.roomsByName[r.Name] = r
-	return
+	return r, nil
 }
 
 func (m *RoomManager) DeleteRoom(idOrName string) error {

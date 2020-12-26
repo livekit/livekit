@@ -29,7 +29,7 @@ var (
 				rtcHostFlag,
 				&cli.StringFlag{
 					Name:  "token",
-					Usage: "room token, not required in dev mode",
+					Usage: "access token, not required in dev mode",
 				},
 				&cli.StringFlag{
 					Name:     "name",
