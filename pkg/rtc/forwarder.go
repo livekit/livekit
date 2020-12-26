@@ -8,7 +8,6 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -21,7 +20,6 @@ type PacketBuffer interface {
 // a forwarder publishes data to a target remoteTrack or datachannel
 // manages the RTCP loop with the target participant
 type Forwarder interface {
-	ChannelType() ChannelType
 	WriteRTP(*rtp.Packet) error
 	Start()
 	Close()
@@ -35,21 +33,12 @@ type RTCPWriter interface {
 	WriteRTCP(pkts []rtcp.Packet) error
 }
 
-type ChannelType int
-
-const (
-	ChannelAudio ChannelType = iota + 1
-	ChannelVideo
-	ChannelData
-)
-
 type SimpleForwarder struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	sourceRtcpCh chan []rtcp.Packet // channel to write RTCP packets to source
 	track        *sfu.DownTrack     // sender track
 	packetBuffer PacketBuffer
-	channelType  ChannelType
 
 	lastPli   time.Time
 	createdAt time.Time
@@ -71,20 +60,10 @@ func NewSimpleForwarder(ctx context.Context, rtcpCh chan []rtcp.Packet, track *s
 		createdAt:    time.Now(),
 	}
 
-	if f.track.Kind() == webrtc.RTPCodecTypeAudio {
-		f.channelType = ChannelAudio
-	} else if f.track.Kind() == webrtc.RTPCodecTypeVideo {
-		f.channelType = ChannelVideo
-	}
-
 	// when underlying track is closed, close the forwarder too
 	track.OnCloseHandler(f.Close)
 
 	return f
-}
-
-func (f *SimpleForwarder) ChannelType() ChannelType {
-	return f.channelType
 }
 
 func (f *SimpleForwarder) Start() {
