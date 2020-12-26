@@ -18,6 +18,11 @@ var (
 			Action: createRoom,
 			Flags: []cli.Flag{
 				roomHostFlag,
+				&cli.StringFlag{
+					Name:     "name",
+					Usage:    "name of the room",
+					Required: true,
+				},
 			},
 		},
 		{
@@ -50,7 +55,9 @@ func createClient(c *cli.Context) error {
 }
 
 func createRoom(c *cli.Context) error {
-	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{})
+	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
+		Name: c.String("name"),
+	})
 	if err != nil {
 		return err
 	}
@@ -60,7 +67,7 @@ func createRoom(c *cli.Context) error {
 }
 
 func getRoom(c *cli.Context) error {
-	roomId := c.String("room-id")
+	roomId := c.String("room")
 	room, err := roomClient.GetRoom(context.Background(), &livekit.GetRoomRequest{
 		Room: roomId,
 	})
@@ -73,7 +80,7 @@ func getRoom(c *cli.Context) error {
 }
 
 func deleteRoom(c *cli.Context) error {
-	roomId := c.String("room-id")
+	roomId := c.String("room")
 	_, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
 		Room: roomId,
 	})

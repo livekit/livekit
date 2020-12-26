@@ -12,7 +12,8 @@ import (
 
 var (
 	roomFlag = &cli.StringFlag{
-		Name:     "room-id",
+		Name:     "room",
+		Usage:    "name or id of the room",
 		Required: true,
 	}
 	roomHostFlag = &cli.StringFlag{
