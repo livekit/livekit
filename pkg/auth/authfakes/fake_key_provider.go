@@ -19,6 +19,16 @@ type FakeKeyProvider struct {
 	getSecretReturnsOnCall map[int]struct {
 		result1 string
 	}
+	KeyCountStub        func() int
+	keyCountMutex       sync.RWMutex
+	keyCountArgsForCall []struct {
+	}
+	keyCountReturns struct {
+		result1 int
+	}
+	keyCountReturnsOnCall map[int]struct {
+		result1 int
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -84,11 +94,66 @@ func (fake *FakeKeyProvider) GetSecretReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeKeyProvider) NumKeys() int {
+	fake.keyCountMutex.Lock()
+	ret, specificReturn := fake.keyCountReturnsOnCall[len(fake.keyCountArgsForCall)]
+	fake.keyCountArgsForCall = append(fake.keyCountArgsForCall, struct {
+	}{})
+	stub := fake.KeyCountStub
+	fakeReturns := fake.keyCountReturns
+	fake.recordInvocation("NumKeys", []interface{}{})
+	fake.keyCountMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeKeyProvider) KeyCountCallCount() int {
+	fake.keyCountMutex.RLock()
+	defer fake.keyCountMutex.RUnlock()
+	return len(fake.keyCountArgsForCall)
+}
+
+func (fake *FakeKeyProvider) KeyCountCalls(stub func() int) {
+	fake.keyCountMutex.Lock()
+	defer fake.keyCountMutex.Unlock()
+	fake.KeyCountStub = stub
+}
+
+func (fake *FakeKeyProvider) KeyCountReturns(result1 int) {
+	fake.keyCountMutex.Lock()
+	defer fake.keyCountMutex.Unlock()
+	fake.KeyCountStub = nil
+	fake.keyCountReturns = struct {
+		result1 int
+	}{result1}
+}
+
+func (fake *FakeKeyProvider) KeyCountReturnsOnCall(i int, result1 int) {
+	fake.keyCountMutex.Lock()
+	defer fake.keyCountMutex.Unlock()
+	fake.KeyCountStub = nil
+	if fake.keyCountReturnsOnCall == nil {
+		fake.keyCountReturnsOnCall = make(map[int]struct {
+			result1 int
+		})
+	}
+	fake.keyCountReturnsOnCall[i] = struct {
+		result1 int
+	}{result1}
+}
+
 func (fake *FakeKeyProvider) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.getSecretMutex.RLock()
 	defer fake.getSecretMutex.RUnlock()
+	fake.keyCountMutex.RLock()
+	defer fake.keyCountMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

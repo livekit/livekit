@@ -24,4 +24,5 @@ type TokenVerifier interface {
 //counterfeiter:generate . KeyProvider
 type KeyProvider interface {
 	GetSecret(key string) string
+	NumKeys() int
 }

@@ -22,10 +22,10 @@ func TestFileBasedKeyProvider(t *testing.T) {
 		os.Remove(f.Name())
 	}()
 
-	f.WriteString("key1:secret1\n")
-	f.WriteString(" key2: secret2 \r\n")
+	f.WriteString("key1: secret1\n")
+	f.WriteString("key2: secret2 \r\n")
 	f.WriteString("\n")
-	f.WriteString("key3 : secret3")
+	f.WriteString("key3: secret3")
 
 	f.Close()
 

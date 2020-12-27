@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/node"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -50,6 +51,13 @@ func main() {
 			},
 		},
 		Action: startServer,
+		Commands: []*cli.Command{
+			{
+				Name:   "generate-keys",
+				Usage:  "generates a pair of API & secret keys",
+				Action: generateKeys,
+			},
+		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -75,6 +83,7 @@ func startServer(c *cli.Context) error {
 			return err
 		}
 		service.AuthRequired = true
+		logger.GetLogger().Infow("auth enabled", "num_keys", keyProvider.NumKeys())
 	}
 
 	server, err := InitializeServer(conf, keyProvider)
@@ -218,4 +227,12 @@ func configureMiddlewares(conf *config.Config, handler http.Handler, middlewares
 
 func newManager(conf *config.Config, localNode *node.Node) (*rtc.RoomManager, error) {
 	return rtc.NewRoomManager(conf.RTC, localNode.Ip)
+}
+
+func generateKeys(c *cli.Context) error {
+	apiKey := utils.NewGuid(utils.APIKeyPrefix)
+	secret := utils.RandomSecret()
+	fmt.Println("API Key: ", apiKey)
+	fmt.Println("Secret Key: ", secret)
+	return nil
 }

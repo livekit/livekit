@@ -150,7 +150,7 @@ func Generate() error {
 	return cmd.Run()
 }
 
-// code generation
+// code generation for cmd subfolder. It doesn't regenerate test fixtures
 func generateCmd() error {
 	mg.Deps(installDeps)
 	if !checksummer.IsChanged() {
