@@ -106,6 +106,11 @@ func startServer(c *cli.Context) error {
 func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
 	// prefer keyfile if set
 	if keyFile != "" {
+		if st, err := os.Stat(keyFile); err != nil {
+			return nil, err
+		} else if st.Mode().Perm() != 0600 {
+			return nil, fmt.Errorf("key file must have permission set to 600")
+		}
 		f, err := os.Open(keyFile)
 		if err != nil {
 			return nil, err
