@@ -18,6 +18,7 @@ func main() {
 
 	app.Commands = append(app.Commands, commands.RoomCommands...)
 	app.Commands = append(app.Commands, commands.RTCCommands...)
+	app.Commands = append(app.Commands, commands.TokenCommands...)
 
 	logger.InitDevelopment()
 	if err := app.Run(os.Args); err != nil {
