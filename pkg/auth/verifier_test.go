@@ -48,6 +48,6 @@ func TestAPIVerifier(t *testing.T) {
 
 		decoded, err := v.Verify(secret)
 		assert.NoError(t, err)
-		assert.Equal(t, &claim, decoded)
+		assert.Equal(t, &claim, decoded.Video)
 	})
 }

@@ -73,8 +73,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	next.ServeHTTP(w, r)
 }
 
-func GetGrants(ctx context.Context) *auth.VideoGrant {
-	claims, ok := ctx.Value(grantsKey).(*auth.VideoGrant)
+func GetGrants(ctx context.Context) *auth.ClaimGrants {
+	claims, ok := ctx.Value(grantsKey).(*auth.ClaimGrants)
 	if !ok {
 		return nil
 	}
@@ -90,13 +90,13 @@ func EnsureJoinPermission(ctx context.Context) (name string, err error) {
 		return "", nil
 	}
 	claims := GetGrants(ctx)
-	if claims == nil {
+	if claims == nil || claims.Video == nil {
 		err = ErrPermissionDenied
 		return
 	}
 
-	if claims.RoomJoin {
-		name = claims.Room
+	if claims.Video.RoomJoin {
+		name = claims.Video.Room
 	} else {
 		err = ErrPermissionDenied
 	}
@@ -112,7 +112,7 @@ func EnsureCreatePermission(ctx context.Context) error {
 		return ErrPermissionDenied
 	}
 
-	if claims.RoomCreate {
+	if claims.Video.RoomCreate {
 		return nil
 	}
 	return ErrPermissionDenied

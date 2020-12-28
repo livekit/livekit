@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
+	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/logger"
 )
 
@@ -29,12 +31,11 @@ var (
 				rtcHostFlag,
 				&cli.StringFlag{
 					Name:  "token",
-					Usage: "access token, not required in dev mode",
+					Usage: "access token, not required in dev mode. if passed in, ignores --api-key, --api-secret, and --name",
 				},
 				&cli.StringFlag{
-					Name:     "name",
-					Usage:    "name of participant",
-					Required: true,
+					Name:  "name",
+					Usage: "name of participant",
 				},
 				&cli.StringFlag{
 					Name:  "audio",
@@ -44,6 +45,8 @@ var (
 					Name:  "video",
 					Usage: "an ivf file to publish upon connection",
 				},
+				apiKeyFlag,
+				secretFlag,
 			},
 		},
 	}
@@ -55,16 +58,45 @@ func joinRoom(c *cli.Context) error {
 		return err
 	}
 
-	v := url.Values{}
-	v.Set("room_id", c.String("room-id"))
-	v.Set("token", c.String("token"))
-	v.Set("name", c.String("name"))
-	u.RawQuery = v.Encode()
+	name := c.String("name")
+	roomId := c.String("room")
+	token := c.String("token")
+
+	// generate access token if needed
+	if token == "" {
+		// require roomId & name to be passed in
+		if roomId == "" {
+			return fmt.Errorf("--room is required")
+		}
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		// token may be nil in dev mode
+		token, err = accessToken(c, &auth.VideoGrant{
+			RoomJoin: true,
+			Room:     roomId,
+		}, name)
+		if err != nil {
+			return err
+		}
+	}
 
 	log := logger.GetLogger()
+	var requestHeader http.Header
+	if token != "" {
+		// set this as a header
+		requestHeader = make(http.Header)
+		requestHeader.Set("Authorization", "Bearer "+token)
+	} else {
+		// dev mode, will pass these as overrides
+		v := url.Values{}
+		v.Set("room_id", roomId)
+		v.Set("name", name)
+		u.RawQuery = v.Encode()
+	}
 
 	log.Infow("connecting to Websocket signal", "url", u.String())
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), requestHeader)
 	if err != nil {
 		return err
 	}

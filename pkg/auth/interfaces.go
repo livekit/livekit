@@ -21,7 +21,7 @@ var (
 //counterfeiter:generate . TokenVerifier
 type TokenVerifier interface {
 	Identity() string
-	Verify(key interface{}) (*VideoGrant, error)
+	Verify(key interface{}) (*ClaimGrants, error)
 }
 
 //counterfeiter:generate . KeyProvider

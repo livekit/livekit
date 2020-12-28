@@ -17,15 +17,17 @@ import (
 type RTCService struct {
 	manager  *rtc.RoomManager
 	upgrader websocket.Upgrader
+	isDev    bool
 }
 
 func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 	s := &RTCService{
 		manager:  manager,
 		upgrader: websocket.Upgrader{},
+		isDev:    conf.Development,
 	}
 
-	if conf.Development {
+	if s.isDev {
 		s.upgrader.CheckOrigin = func(r *http.Request) bool {
 			// allow all in dev
 			return true
@@ -37,7 +39,17 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomId := r.FormValue("room_id")
-	pName := r.FormValue("name")
+	var pName string
+	if s.isDev {
+		r.FormValue("name")
+	} else {
+		claims := GetGrants(r.Context())
+		// require a claim
+		if claims == nil || claims.Video == nil {
+			writeJSONError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
+		}
+		pName = claims.Identity
+	}
 	log := logger.GetLogger()
 
 	onlyName, err := EnsureJoinPermission(r.Context())

@@ -39,7 +39,7 @@ func (v *APIKeyTokenVerifier) Identity() string {
 	return v.identity
 }
 
-func (v *APIKeyTokenVerifier) Verify(key interface{}) (*VideoGrant, error) {
+func (v *APIKeyTokenVerifier) Verify(key interface{}) (*ClaimGrants, error) {
 	if key == nil || key == "" {
 		return nil, ErrKeysMissing
 	}
@@ -54,5 +54,8 @@ func (v *APIKeyTokenVerifier) Verify(key interface{}) (*VideoGrant, error) {
 	if err := out.Validate(jwt.Expected{Issuer: v.apiKey, Time: time.Now()}); err != nil {
 		return nil, err
 	}
-	return claims.Video, nil
+
+	// copy over identity
+	claims.Identity = out.ID
+	return &claims, nil
 }

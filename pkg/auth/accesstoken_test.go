@@ -42,6 +42,24 @@ func TestAPIIssuer(t *testing.T) {
 
 		assert.EqualValues(t, videoGrant, decodedGrant.Video)
 	})
+
+	t.Run("default validity should be more than a minute", func(t *testing.T) {
+		apiKey, secret := apiKeypair()
+		videoGrant := &auth.VideoGrant{RoomJoin: true, Room: "myroom"}
+		at := auth.NewAccessToken(apiKey, secret).
+			AddGrant(videoGrant)
+		value, err := at.ToJWT()
+		token, err := jwt.ParseSigned(value)
+
+		claim := jwt.Claims{}
+		decodedGrant := auth.ClaimGrants{}
+		err = token.UnsafeClaimsWithoutVerification(&claim, &decodedGrant)
+		assert.NoError(t, err)
+		assert.EqualValues(t, videoGrant, decodedGrant.Video)
+
+		// default validity
+		assert.True(t, claim.Expiry.Time().Sub(claim.IssuedAt.Time()) > time.Minute)
+	})
 }
 
 func apiKeypair() (string, string) {

@@ -18,17 +18,17 @@ type FakeTokenVerifier struct {
 	identityReturnsOnCall map[int]struct {
 		result1 string
 	}
-	VerifyStub        func(interface{}) (*auth.VideoGrant, error)
+	VerifyStub        func(interface{}) (*auth.ClaimGrants, error)
 	verifyMutex       sync.RWMutex
 	verifyArgsForCall []struct {
 		arg1 interface{}
 	}
 	verifyReturns struct {
-		result1 *auth.VideoGrant
+		result1 *auth.ClaimGrants
 		result2 error
 	}
 	verifyReturnsOnCall map[int]struct {
-		result1 *auth.VideoGrant
+		result1 *auth.ClaimGrants
 		result2 error
 	}
 	invocations      map[string][][]interface{}
@@ -88,7 +88,7 @@ func (fake *FakeTokenVerifier) IdentityReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakeTokenVerifier) Verify(arg1 interface{}) (*auth.VideoGrant, error) {
+func (fake *FakeTokenVerifier) Verify(arg1 interface{}) (*auth.ClaimGrants, error) {
 	fake.verifyMutex.Lock()
 	ret, specificReturn := fake.verifyReturnsOnCall[len(fake.verifyArgsForCall)]
 	fake.verifyArgsForCall = append(fake.verifyArgsForCall, struct {
@@ -113,7 +113,7 @@ func (fake *FakeTokenVerifier) VerifyCallCount() int {
 	return len(fake.verifyArgsForCall)
 }
 
-func (fake *FakeTokenVerifier) VerifyCalls(stub func(interface{}) (*auth.VideoGrant, error)) {
+func (fake *FakeTokenVerifier) VerifyCalls(stub func(interface{}) (*auth.ClaimGrants, error)) {
 	fake.verifyMutex.Lock()
 	defer fake.verifyMutex.Unlock()
 	fake.VerifyStub = stub
@@ -126,28 +126,28 @@ func (fake *FakeTokenVerifier) VerifyArgsForCall(i int) interface{} {
 	return argsForCall.arg1
 }
 
-func (fake *FakeTokenVerifier) VerifyReturns(result1 *auth.VideoGrant, result2 error) {
+func (fake *FakeTokenVerifier) VerifyReturns(result1 *auth.ClaimGrants, result2 error) {
 	fake.verifyMutex.Lock()
 	defer fake.verifyMutex.Unlock()
 	fake.VerifyStub = nil
 	fake.verifyReturns = struct {
-		result1 *auth.VideoGrant
+		result1 *auth.ClaimGrants
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeTokenVerifier) VerifyReturnsOnCall(i int, result1 *auth.VideoGrant, result2 error) {
+func (fake *FakeTokenVerifier) VerifyReturnsOnCall(i int, result1 *auth.ClaimGrants, result2 error) {
 	fake.verifyMutex.Lock()
 	defer fake.verifyMutex.Unlock()
 	fake.VerifyStub = nil
 	if fake.verifyReturnsOnCall == nil {
 		fake.verifyReturnsOnCall = make(map[int]struct {
-			result1 *auth.VideoGrant
+			result1 *auth.ClaimGrants
 			result2 error
 		})
 	}
 	fake.verifyReturnsOnCall[i] = struct {
-		result1 *auth.VideoGrant
+		result1 *auth.ClaimGrants
 		result2 error
 	}{result1, result2}
 }

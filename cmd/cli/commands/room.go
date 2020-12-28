@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/twitchtv/twirp"
 	"github.com/urfave/cli/v2"
 
+	"github.com/livekit/livekit-server/pkg/auth"
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -23,6 +26,8 @@ var (
 					Usage:    "name of the room",
 					Required: true,
 				},
+				apiKeyFlag,
+				secretFlag,
 			},
 		},
 		{
@@ -32,6 +37,8 @@ var (
 			Flags: []cli.Flag{
 				roomFlag,
 				roomHostFlag,
+				apiKeyFlag,
+				secretFlag,
 			},
 		},
 		{
@@ -41,6 +48,8 @@ var (
 			Flags: []cli.Flag{
 				roomFlag,
 				roomHostFlag,
+				apiKeyFlag,
+				secretFlag,
 			},
 		},
 	}
@@ -55,7 +64,9 @@ func createClient(c *cli.Context) error {
 }
 
 func createRoom(c *cli.Context) error {
-	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
+	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomCreate: true})
+	fmt.Println("context", ctx)
+	room, err := roomClient.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name: c.String("name"),
 	})
 	if err != nil {
@@ -67,8 +78,9 @@ func createRoom(c *cli.Context) error {
 }
 
 func getRoom(c *cli.Context) error {
+	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomJoin: true})
 	roomId := c.String("room")
-	room, err := roomClient.GetRoom(context.Background(), &livekit.GetRoomRequest{
+	room, err := roomClient.GetRoom(ctx, &livekit.GetRoomRequest{
 		Room: roomId,
 	})
 	if err != nil {
@@ -80,8 +92,9 @@ func getRoom(c *cli.Context) error {
 }
 
 func deleteRoom(c *cli.Context) error {
+	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomCreate: true})
 	roomId := c.String("room")
-	_, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
+	_, err := roomClient.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 		Room: roomId,
 	})
 	if err != nil {
@@ -90,4 +103,23 @@ func deleteRoom(c *cli.Context) error {
 
 	fmt.Println("deleted room", roomId)
 	return nil
+}
+
+func contextWithAccessToken(c *cli.Context, grant *auth.VideoGrant) context.Context {
+	ctx := context.Background()
+	token, err := accessToken(c, grant, "")
+	if err != nil {
+		logger.GetLogger().Errorw("Could not get access token", "err", err)
+	}
+	if token != "" {
+		header := make(http.Header)
+		header.Set("Authorization", "Bearer "+token)
+		if tctx, err := twirp.WithHTTPRequestHeaders(ctx, header); err == nil {
+			logger.GetLogger().Debugw("requesting with token")
+			ctx = tctx
+		} else {
+			logger.GetLogger().Errorw("Error setting Twirp auth header", "err", err)
+		}
+	}
+	return ctx
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/livekit/livekit-server/pkg/auth"
 )
 
 var (
@@ -24,6 +26,14 @@ var (
 		Name:  "host",
 		Value: "ws://localhost:7881",
 	}
+	apiKeyFlag = &cli.StringFlag{
+		Name:    "api-key",
+		EnvVars: []string{"LK_API_KEY"},
+	}
+	secretFlag = &cli.StringFlag{
+		Name:    "api-secret",
+		EnvVars: []string{"LK_API_SECRET"},
+	}
 )
 
 func PrintJSON(obj interface{}) {
@@ -38,4 +48,18 @@ func ExpandUser(p string) string {
 	}
 
 	return p
+}
+
+func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value string, err error) {
+	apiKey := c.String("api-key")
+	apiSecret := c.String("api-secret")
+	if apiKey == "" && apiSecret == "" {
+		// not provided, don't sign request
+		return
+	}
+
+	at := auth.NewAccessToken(apiKey, apiSecret).
+		AddGrant(grant).
+		SetIdentity(identity)
+	return at.ToJWT()
 }

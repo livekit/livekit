@@ -19,7 +19,7 @@ func TestAuthMiddleware(t *testing.T) {
 	provider.GetSecretReturns(secret)
 
 	m := service.NewAPIKeyAuthMiddleware(provider)
-	var grants *auth.VideoGrant
+	var grants *auth.ClaimGrants
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		grants = service.GetGrants(r.Context())
 		w.WriteHeader(http.StatusOK)
@@ -38,7 +38,7 @@ func TestAuthMiddleware(t *testing.T) {
 	m.ServeHTTP(w, r, handler)
 
 	assert.NotNil(t, grants)
-	assert.EqualValues(t, orig, grants)
+	assert.EqualValues(t, orig, grants.Video)
 
 	// no authorization == no claims
 	grants = nil

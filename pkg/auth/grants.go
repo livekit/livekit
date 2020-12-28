@@ -7,5 +7,6 @@ type VideoGrant struct {
 }
 
 type ClaimGrants struct {
-	Video *VideoGrant `json:"video,omitempty"`
+	Identity string      `json:"-"`
+	Video    *VideoGrant `json:"video,omitempty"`
 }

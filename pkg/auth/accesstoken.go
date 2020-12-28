@@ -7,6 +7,10 @@ import (
 	"gopkg.in/square/go-jose.v2/jwt"
 )
 
+const (
+	defaultValidDuration = 10 * time.Minute
+)
+
 // Signer that produces token signed with API key and secret
 type AccessToken struct {
 	apiKey   string
@@ -49,10 +53,15 @@ func (t *AccessToken) ToJWT() (string, error) {
 		return "", err
 	}
 
+	validFor := defaultValidDuration
+	if t.validFor > 0 {
+		t.validFor = validFor
+	}
+
 	cl := jwt.Claims{
 		Issuer:    t.apiKey,
 		NotBefore: jwt.NewNumericDate(time.Now()),
-		Expiry:    jwt.NewNumericDate(time.Now().Add(t.validFor)),
+		Expiry:    jwt.NewNumericDate(time.Now().Add(validFor)),
 		ID:        t.identity,
 	}
 	grants := &ClaimGrants{}
