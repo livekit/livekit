@@ -42,8 +42,9 @@ message SessionDescription {
 }
 
 message JoinResponse {
-  ParticipantInfo participant = 1;
-  repeated ParticipantInfo other_participants = 2;
+  RoomInfo room = 1;
+  ParticipantInfo participant = 2;
+  repeated ParticipantInfo other_participants = 3;
 }
 
 message MediaControl {

@@ -49,7 +49,8 @@ func TestRoomJoin(t *testing.T) {
 		rm.Join(p)
 
 		// expect new participant to get a JoinReply
-		participants := p.SendJoinResponseArgsForCall(0)
+		info, participants := p.SendJoinResponseArgsForCall(0)
+		assert.Equal(t, info.Sid, rm.Sid)
 		assert.Len(t, participants, numParticipants)
 		assert.Len(t, rm.GetParticipants(), numParticipants+1)
 	})

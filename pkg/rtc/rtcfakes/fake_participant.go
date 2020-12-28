@@ -139,10 +139,11 @@ type FakeParticipant struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
-	SendJoinResponseStub        func([]rtc.Participant) error
+	SendJoinResponseStub        func(*livekit.RoomInfo, []rtc.Participant) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
-		arg1 []rtc.Participant
+		arg1 *livekit.RoomInfo
+		arg2 []rtc.Participant
 	}
 	sendJoinResponseReturns struct {
 		result1 error
@@ -917,23 +918,24 @@ func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) SendJoinResponse(arg1 []rtc.Participant) error {
-	var arg1Copy []rtc.Participant
-	if arg1 != nil {
-		arg1Copy = make([]rtc.Participant, len(arg1))
-		copy(arg1Copy, arg1)
+func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.RoomInfo, arg2 []rtc.Participant) error {
+	var arg2Copy []rtc.Participant
+	if arg2 != nil {
+		arg2Copy = make([]rtc.Participant, len(arg2))
+		copy(arg2Copy, arg2)
 	}
 	fake.sendJoinResponseMutex.Lock()
 	ret, specificReturn := fake.sendJoinResponseReturnsOnCall[len(fake.sendJoinResponseArgsForCall)]
 	fake.sendJoinResponseArgsForCall = append(fake.sendJoinResponseArgsForCall, struct {
-		arg1 []rtc.Participant
-	}{arg1Copy})
+		arg1 *livekit.RoomInfo
+		arg2 []rtc.Participant
+	}{arg1, arg2Copy})
 	stub := fake.SendJoinResponseStub
 	fakeReturns := fake.sendJoinResponseReturns
-	fake.recordInvocation("SendJoinResponse", []interface{}{arg1Copy})
+	fake.recordInvocation("SendJoinResponse", []interface{}{arg1, arg2Copy})
 	fake.sendJoinResponseMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -947,17 +949,17 @@ func (fake *FakeParticipant) SendJoinResponseCallCount() int {
 	return len(fake.sendJoinResponseArgsForCall)
 }
 
-func (fake *FakeParticipant) SendJoinResponseCalls(stub func([]rtc.Participant) error) {
+func (fake *FakeParticipant) SendJoinResponseCalls(stub func(*livekit.RoomInfo, []rtc.Participant) error) {
 	fake.sendJoinResponseMutex.Lock()
 	defer fake.sendJoinResponseMutex.Unlock()
 	fake.SendJoinResponseStub = stub
 }
 
-func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) []rtc.Participant {
+func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) (*livekit.RoomInfo, []rtc.Participant) {
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	argsForCall := fake.sendJoinResponseArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) SendJoinResponseReturns(result1 error) {

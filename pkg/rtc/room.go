@@ -49,12 +49,15 @@ func (r *Room) GetParticipants() []Participant {
 }
 
 func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
-	return &livekit.RoomInfo{
+	ri := &livekit.RoomInfo{
 		Sid:          r.Sid,
 		Name:         r.Name,
-		NodeIp:       node.Ip,
 		CreationTime: r.CreationTime,
 	}
+	if node != nil {
+		ri.NodeIp = node.Ip
+	}
+	return ri
 }
 
 func (r *Room) Join(participant Participant) error {
@@ -103,7 +106,7 @@ func (r *Room) Join(participant Participant) error {
 		}
 	}
 
-	return participant.SendJoinResponse(otherParticipants)
+	return participant.SendJoinResponse(r.ToRoomInfo(nil), otherParticipants)
 }
 
 func (r *Room) RemoveParticipant(id string) {

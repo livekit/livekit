@@ -318,11 +318,12 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 }
 
 // signal connection methods
-func (p *ParticipantImpl) SendJoinResponse(otherParticipants []Participant) error {
+func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.RoomInfo, otherParticipants []Participant) error {
 	// send Join response
 	return p.sigConn.WriteResponse(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
+				Room:              roomInfo,
 				Participant:       p.ToProto(),
 				OtherParticipants: ToProtoParticipants(otherParticipants),
 			},

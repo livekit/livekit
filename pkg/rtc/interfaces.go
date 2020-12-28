@@ -60,7 +60,7 @@ type Participant interface {
 
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
-	SendJoinResponse(otherParticipants []Participant) error
+	SendJoinResponse(info *livekit.RoomInfo, otherParticipants []Participant) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 
 	Start()
