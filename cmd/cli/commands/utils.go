@@ -14,9 +14,8 @@ import (
 
 var (
 	roomFlag = &cli.StringFlag{
-		Name:     "room",
-		Usage:    "name or id of the room",
-		Required: true,
+		Name:  "room",
+		Usage: "name or id of the room",
 	}
 	roomHostFlag = &cli.StringFlag{
 		Name:  "host",
@@ -27,12 +26,14 @@ var (
 		Value: "ws://localhost:7881",
 	}
 	apiKeyFlag = &cli.StringFlag{
-		Name:    "api-key",
-		EnvVars: []string{"LK_API_KEY"},
+		Name:     "api-key",
+		EnvVars:  []string{"LK_API_KEY"},
+		Required: true,
 	}
 	secretFlag = &cli.StringFlag{
-		Name:    "api-secret",
-		EnvVars: []string{"LK_API_SECRET"},
+		Name:     "api-secret",
+		EnvVars:  []string{"LK_API_SECRET"},
+		Required: true,
 	}
 )
 

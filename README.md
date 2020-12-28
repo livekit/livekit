@@ -2,49 +2,84 @@
 
 ## Building
 
-Ensure Go 1.14+ is installed, and GOPATH/bin is in your PATH.
+Ensure Go 1.15+ is installed, and GOPATH/bin is in your PATH.
 
-Run `./bootstrap` to install mage, then `mage` to build the project
+Run `./bootstrap.sh` to install mage, then `mage` to build the project
+
+## Creating API keys
+
+LiveKit utilizes JWT based access tokens to ensure secure access to the APIs and Rooms.
+Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens.
+
+Generate API key/secret pairs with:
+
+```
+./bin/livekit-server generate-keys
+```
+
+Store the generate keys in a YAML file like:
+
+```yaml
+APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
+...
+```
+
+## Starting the server
+
+With the key file ready, you can start LiveKit with
+
+```
+./bin/livekit-server --key-file <path/to/keyfile>
+```
 
 ## CLI
 
-A CLI is provided to make debugging & testing easier. One of the utilities is the ability to publish tracks from static files.
+The CLI provides a few tools that makes working with LiveKit easier:
+* Room creation/deletion/etc
+* Access token creation
+* Joining room as a participant
+* Publishing files as tracks to a room
+
+### Setting API key and secret
+
+CLI commands require --api-key and --api-secret arguments. To avoid having to pass these in for each command, it's simplest to set them as environment vars:
+
+```bash
+export LK_API_KEY=<key>
+export LK_API_SECRET=<secret>
+```
+
+### Creating a room
+
+```
+./bin/livekit-cli create-room --name myroom
+```
+
+### Creating a participant token
+
+```
+./bin/livekit-cli create-token --join --r myroom --p <participant name>
+```
+
+### Joining a participant
+
+```
+./bin/livekit-cli join --token <token>
+```
+
+### Publishing static files as tracks
 
 To use the publish client, download the following files to your computer:
 * [happier.ivf](https://www.dropbox.com/s/4ze93d6070s0qj7/happier.ivf?dl=0) - audio track in VP8
 * [happier.ogg](https://www.dropbox.com/s/istrnolnh7avftq/happier.ogg?dl=0) - audio track in ogg
 
-To run a peer publishing to a room, do the following:
+Join as a publishing participant
 
-1. Ensure server is running in dev mode
-    ```
-    ./bin/livekit-server --dev
-    ```
+```
+./ bin/livekit-cli join --audio <path/to/ogg> --video <path/to/ivf> --token <token>
+```
 
-2. Create a room
-
-    ```
-    ./bin/livekit-cli create-room
-    ```
-   
-   It'll print out something like this. note the room id
-
-   ```json
-      {
-        "sid": "RM_CkjigXb6oZQyZ4JNFZqBen",
-        "node_ip": "98.35.19.21",
-        "creation_time": 1607240104,
-        "token": "b9e8c9f6-fbb3-46d5-b6fc-5517186510a6"
-      }
-   ```
-
-3. Join room as publishing client
-
-   ```
-   ./ bin/livekit-cli join --audio <path/to/ogg> --video <path/to/ivf> --room-id <room_sid>
-   ```
-
-That's it, join the room with another peer id and see it receiving those tracks
+That's it, join the room with another participant and see it receiving those tracks
 
 ## Protocol
 
