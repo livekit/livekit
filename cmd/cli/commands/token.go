@@ -11,7 +11,7 @@ import (
 var (
 	TokenCommands = []*cli.Command{
 		{
-			Name:   "token",
+			Name:   "create-token",
 			Usage:  "create token for Room APIs",
 			Action: createToken,
 			Flags: []cli.Flag{
@@ -26,12 +26,14 @@ var (
 					Usage: "enable token to be used to create rooms",
 				},
 				&cli.StringFlag{
-					Name:  "participant",
-					Usage: "unique name of the participant, used with --join",
+					Name:    "participant",
+					Aliases: []string{"p"},
+					Usage:   "unique name of the participant, used with --join",
 				},
 				&cli.StringFlag{
-					Name:  "room",
-					Usage: "name of the room to join, empty to allow joining all rooms",
+					Name:    "room",
+					Aliases: []string{"r"},
+					Usage:   "name of the room to join, empty to allow joining all rooms",
 				},
 			},
 		},

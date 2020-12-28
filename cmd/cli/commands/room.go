@@ -65,7 +65,6 @@ func createClient(c *cli.Context) error {
 
 func createRoom(c *cli.Context) error {
 	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomCreate: true})
-	fmt.Println("context", ctx)
 	room, err := roomClient.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name: c.String("name"),
 	})

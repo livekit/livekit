@@ -27,11 +27,10 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 		isDev:    conf.Development,
 	}
 
-	if s.isDev {
-		s.upgrader.CheckOrigin = func(r *http.Request) bool {
-			// allow all in dev
-			return true
-		}
+	// allow connections from any origin, since script may be hosted anywhere
+	// security is enforced by access tokens
+	s.upgrader.CheckOrigin = func(r *http.Request) bool {
+		return true
 	}
 
 	return s
@@ -71,6 +70,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.GetLogger().Warnw("could not upgrade to WS",
 			"err", err,
 		)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	conn.SetCloseHandler(func(code int, text string) error {
 		log.Infow("websocket closed by remote")

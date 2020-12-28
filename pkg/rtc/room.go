@@ -17,8 +17,6 @@ type Room struct {
 	lock   sync.RWMutex
 	// map of participantId -> Participant
 	participants map[string]Participant
-	// Client ID => list of tracks they are publishing
-	//tracks map[string][]Track
 }
 
 func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) *Room {
