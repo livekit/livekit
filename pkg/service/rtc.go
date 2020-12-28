@@ -38,7 +38,7 @@ func NewRTCService(conf *config.Config, manager *rtc.RoomManager) *RTCService {
 }
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	roomId := r.FormValue("room_id")
+	roomId := r.FormValue("room")
 	var pName string
 	if s.isDev {
 		r.FormValue("name")

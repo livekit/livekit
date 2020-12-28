@@ -90,7 +90,7 @@ func joinRoom(c *cli.Context) error {
 	} else {
 		// dev mode, will pass these as overrides
 		v := url.Values{}
-		v.Set("room_id", roomId)
+		v.Set("room", roomId)
 		v.Set("name", name)
 		u.RawQuery = v.Encode()
 	}

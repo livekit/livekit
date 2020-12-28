@@ -15,6 +15,7 @@ const (
 	authorizationHeader = "Authorization"
 	bearerPrefix        = "Bearer "
 	grantsKey           = "grants"
+	accessTokenParam    = "access_token"
 )
 
 var (
@@ -35,6 +36,7 @@ func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
 
 func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	authHeader := r.Header.Get(authorizationHeader)
+	var authToken string
 
 	if authHeader != "" {
 		if !strings.HasPrefix(authHeader, bearerPrefix) {
@@ -43,7 +45,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		authToken := authHeader[len(bearerPrefix):]
+		authToken = authHeader[len(bearerPrefix):]
+	} else {
+		// attempt to find from request header
+		authToken = r.FormValue(accessTokenParam)
+	}
+
+	if authToken != "" {
 		v, err := auth.ParseAPIToken(authToken)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
