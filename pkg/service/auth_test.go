@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -20,16 +19,17 @@ func TestAuthMiddleware(t *testing.T) {
 	provider.GetSecretReturns(secret)
 
 	m := service.NewAPIKeyAuthMiddleware(provider)
-	var grants *auth.GrantClaims
+	var grants *auth.VideoGrant
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		grants = service.GetGrants(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
+	orig := &auth.VideoGrant{Room: "abcdefg", RoomJoin: true}
 	// ensure that the original claim could be retrieved
-	issuer := auth.NewAPIKeyTokenIssuer(api, secret)
-	orig := &auth.GrantClaims{Room: "abcdefg", RoomJoin: true}
-	token, err := issuer.CreateToken(orig, time.Minute)
+	at := auth.NewAccessToken(api, secret).
+		AddGrant(orig)
+	token, err := at.ToJWT()
 	assert.NoError(t, err)
 
 	r := &http.Request{Header: http.Header{}}

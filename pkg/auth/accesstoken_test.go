@@ -14,31 +14,33 @@ import (
 
 func TestAPIIssuer(t *testing.T) {
 	t.Run("keys must be set", func(t *testing.T) {
-		s := auth.NewAPIKeyTokenIssuer("", "")
-		_, err := s.CreateToken(&auth.GrantClaims{}, time.Hour)
+		token := auth.NewAccessToken("", "")
+		_, err := token.ToJWT()
 		assert.Equal(t, auth.ErrKeysMissing, err)
 	})
 
 	t.Run("generates a decodeable key", func(t *testing.T) {
 		apiKey, secret := apiKeypair()
-		//fmt.Println(apiKey, secret)
-		s := auth.NewAPIKeyTokenIssuer(apiKey, secret)
-		claims := auth.GrantClaims{RoomJoin: true, Room: "myroom"}
-		raw, err := s.CreateToken(&claims, time.Hour)
+		videoGrant := &auth.VideoGrant{RoomJoin: true, Room: "myroom"}
+		at := auth.NewAccessToken(apiKey, secret).
+			AddGrant(videoGrant).
+			SetValidFor(time.Minute * 5).
+			SetIdentity("user")
+		value, err := at.ToJWT()
 		//fmt.Println(raw)
 		assert.NoError(t, err)
 
-		assert.Len(t, strings.Split(raw, "."), 3)
+		assert.Len(t, strings.Split(value, "."), 3)
 
 		// ensure it's a valid JWT
-		token, err := jwt.ParseSigned(raw)
+		token, err := jwt.ParseSigned(value)
 		assert.NoError(t, err)
 
-		decodedGrant := auth.GrantClaims{}
+		decodedGrant := auth.ClaimGrants{}
 		err = token.UnsafeClaimsWithoutVerification(&decodedGrant)
 		assert.NoError(t, err)
 
-		assert.EqualValues(t, &claims, &decodedGrant)
+		assert.EqualValues(t, videoGrant, decodedGrant.Video)
 	})
 }
 

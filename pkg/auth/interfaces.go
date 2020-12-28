@@ -2,7 +2,6 @@ package auth
 
 import (
 	"errors"
-	"time"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -11,14 +10,18 @@ var (
 	ErrKeysMissing = errors.New("missing API key or secret key")
 )
 
-//counterfeiter:generate . TokenIssuer
-type TokenIssuer interface {
-	CreateToken(claims *GrantClaims, validFor time.Duration) (string, error)
-}
+////counterfeiter:generate . AccessToken
+//type AccessToken interface {
+//	SetExpiration(time.Duration) AccessToken
+//	Identity(string) AccessToken
+//	AddGrant(*VideoGrant) AccessToken
+//	ToJWT() (string, error)
+//}
 
 //counterfeiter:generate . TokenVerifier
 type TokenVerifier interface {
-	Verify() (*GrantClaims, error)
+	Identity() string
+	Verify(key interface{}) (*VideoGrant, error)
 }
 
 //counterfeiter:generate . KeyProvider

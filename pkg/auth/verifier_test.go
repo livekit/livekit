@@ -18,34 +18,35 @@ func TestAPIVerifier(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Equal(t, apiKey, v.APIKey())
-		_, err = v.Verify()
+		_, err = v.Verify("")
 		assert.Error(t, err)
 
-		v.SetSecretKey("anothersecret")
-		_, err = v.Verify()
+		_, err = v.Verify("anothersecret")
 		assert.Error(t, err)
 	})
 
 	t.Run("key has expired", func(t *testing.T) {
 		v, err := auth.ParseAPIToken(accessToken)
-		v.SetSecretKey(secret)
 
-		_, err = v.Verify()
+		_, err = v.Verify(secret)
 		assert.Error(t, err)
 	})
 
 	t.Run("unexpired token is verified", func(t *testing.T) {
-		s := auth.NewAPIKeyTokenIssuer(apiKey, secret)
-		claim := auth.GrantClaims{RoomCreate: true}
-		authToken, err := s.CreateToken(&claim, time.Minute)
+		claim := auth.VideoGrant{RoomCreate: true}
+		at := auth.NewAccessToken(apiKey, secret).
+			AddGrant(&claim).
+			SetValidFor(time.Minute).
+			SetIdentity("me")
+		authToken, err := at.ToJWT()
 		assert.NoError(t, err)
 
 		v, err := auth.ParseAPIToken(authToken)
 		assert.NoError(t, err)
 		assert.Equal(t, apiKey, v.APIKey())
+		assert.Equal(t, "me", v.Identity())
 
-		v.SetSecretKey(secret)
-		decoded, err := v.Verify()
+		decoded, err := v.Verify(secret)
 		assert.NoError(t, err)
 		assert.Equal(t, &claim, decoded)
 	})

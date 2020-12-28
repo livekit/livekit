@@ -7,9 +7,9 @@ import (
 )
 
 type APIKeyTokenVerifier struct {
-	token     *jwt.JSONWebToken
-	apiKey    string
-	secretKey string
+	token    *jwt.JSONWebToken
+	identity string
+	apiKey   string
 }
 
 func ParseAPIToken(raw string) (*APIKeyTokenVerifier, error) {
@@ -24,8 +24,9 @@ func ParseAPIToken(raw string) (*APIKeyTokenVerifier, error) {
 	}
 
 	return &APIKeyTokenVerifier{
-		token:  tok,
-		apiKey: out.Issuer,
+		token:    tok,
+		apiKey:   out.Issuer,
+		identity: out.ID,
 	}, nil
 }
 
@@ -34,21 +35,24 @@ func (v *APIKeyTokenVerifier) APIKey() string {
 	return v.apiKey
 }
 
-func (v *APIKeyTokenVerifier) SetSecretKey(secret string) {
-	v.secretKey = secret
+func (v *APIKeyTokenVerifier) Identity() string {
+	return v.identity
 }
 
-func (v *APIKeyTokenVerifier) Verify() (*GrantClaims, error) {
-	if v.secretKey == "" {
+func (v *APIKeyTokenVerifier) Verify(key interface{}) (*VideoGrant, error) {
+	if key == nil || key == "" {
 		return nil, ErrKeysMissing
 	}
+	if s, ok := key.(string); ok {
+		key = []byte(s)
+	}
 	out := jwt.Claims{}
-	claims := GrantClaims{}
-	if err := v.token.Claims([]byte(v.secretKey), &out, &claims); err != nil {
+	claims := ClaimGrants{}
+	if err := v.token.Claims(key, &out, &claims); err != nil {
 		return nil, err
 	}
 	if err := out.Validate(jwt.Expected{Issuer: v.apiKey, Time: time.Now()}); err != nil {
 		return nil, err
 	}
-	return &claims, nil
+	return claims.Video, nil
 }

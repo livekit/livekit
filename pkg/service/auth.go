@@ -58,9 +58,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		v.SetSecretKey(secret)
-
-		grants, err := v.Verify()
+		grants, err := v.Verify(secret)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte("invalid token: " + err.Error()))
@@ -75,8 +73,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	next.ServeHTTP(w, r)
 }
 
-func GetGrants(ctx context.Context) *auth.GrantClaims {
-	claims, ok := ctx.Value(grantsKey).(*auth.GrantClaims)
+func GetGrants(ctx context.Context) *auth.VideoGrant {
+	claims, ok := ctx.Value(grantsKey).(*auth.VideoGrant)
 	if !ok {
 		return nil
 	}
