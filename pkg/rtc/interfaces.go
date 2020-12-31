@@ -57,20 +57,25 @@ type Participant interface {
 	HandleNegotiate(sd webrtc.SessionDescription) error
 	SetRemoteDescription(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit) error
-
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.RoomInfo, otherParticipants []Participant) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	SetTrackMuted(trackId string, muted bool)
 
 	Start()
 	Close() error
 
 	// callbacks
+	// OnOffer - offer is ready for remote peer
 	OnOffer(func(webrtc.SessionDescription))
+	// OnICECandidate - ice candidate discovered for local peer
 	OnICECandidate(func(c *webrtc.ICECandidateInit))
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
+	// OnTrackUpdated - one of its publishedTracks changed in status
+	OnTrackUpdated(callback func(Participant, PublishedTrack))
 	OnClose(func(Participant))
 
 	// package methods
@@ -87,6 +92,7 @@ type PublishedTrack interface {
 	ID() string
 	Kind() livekit.TrackInfo_Type
 	StreamID() string
+	IsMuted() bool
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	RemoveAllSubscribers()

@@ -27,6 +27,7 @@ type MediaTrack struct {
 	ctx           context.Context
 	id            string
 	participantId string
+	muted         bool
 	// source remoteTrack
 	remoteTrack *webrtc.TrackRemote
 	// channel to send RTCP packets to the source
@@ -82,11 +83,15 @@ func (t *MediaTrack) StreamID() string {
 	return t.remoteTrack.StreamID()
 }
 
+func (t *MediaTrack) IsMuted() bool {
+	return t.muted
+}
+
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
 func (t *MediaTrack) AddSubscriber(participant Participant) error {
 	codec := t.remoteTrack.Codec()
-	// pack ID to identify all tracks
+	// pack ID to identify all publishedTracks
 	packedId := PackTrackId(t.participantId, t.id)
 
 	// using DownTrack from ion-sfu
@@ -189,6 +194,11 @@ func (t *MediaTrack) forwardRTPWorker() {
 			logger.GetLogger().Errorw("error while reading RTP",
 				"participant", t.participantId,
 				"track", t.id)
+		}
+
+		if t.muted {
+			// short circuit when track is muted
+			continue
 		}
 
 		//logger.GetLogger().Debugw("read packet from remoteTrack",

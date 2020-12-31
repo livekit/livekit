@@ -89,9 +89,10 @@ func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
 
 func ToProtoTrack(t PublishedTrack) *livekit.TrackInfo {
 	return &livekit.TrackInfo{
-		Sid:  t.ID(),
-		Type: t.Kind(),
-		Name: t.StreamID(),
+		Sid:   t.ID(),
+		Type:  t.Kind(),
+		Name:  t.StreamID(),
+		Muted: t.IsMuted(),
 	}
 }
 

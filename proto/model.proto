@@ -58,6 +58,7 @@ message TrackInfo {
   string sid = 1;
   Type type = 2;
   string name = 3;
+  bool muted = 4;
 }
 
 message DataMessage {

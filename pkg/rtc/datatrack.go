@@ -15,7 +15,7 @@ const (
 )
 
 // DataTrack wraps a WebRTC DataChannel to satisfy the PublishedTrack interface
-// it shall forward tracks to all of its subscribers
+// it shall forward publishedTracks to all of its subscribers
 type DataTrack struct {
 	id            string
 	participantId string
@@ -63,6 +63,11 @@ func (t *DataTrack) Kind() livekit.TrackInfo_Type {
 
 func (t *DataTrack) StreamID() string {
 	return t.dataChannel.Label()
+}
+
+// DataTrack cannot be muted
+func (t *DataTrack) IsMuted() bool {
+	return false
 }
 
 func (t *DataTrack) AddSubscriber(participant Participant) error {

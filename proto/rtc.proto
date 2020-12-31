@@ -10,7 +10,7 @@ message SignalRequest {
     SessionDescription offer = 1;
     SessionDescription negotiate = 2;
     Trickle trickle = 3;
-    MediaControl control = 4;
+    MuteTrack mute = 4;
   }
 }
 
@@ -37,8 +37,8 @@ message Trickle {
 }
 
 message SessionDescription {
-    string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
-    string sdp = 2;
+  string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
+  string sdp = 2;
 }
 
 message JoinResponse {
@@ -47,8 +47,9 @@ message JoinResponse {
   repeated ParticipantInfo other_participants = 3;
 }
 
-message MediaControl {
-
+message MuteTrack {
+  string track_sid = 1;
+  bool muted = 2;
 }
 
 message ParticipantUpdate {

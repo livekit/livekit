@@ -158,6 +158,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 				return
 			}
+		case *livekit.SignalRequest_Mute:
+			participant.SetTrackMuted(msg.Mute.TrackSid, msg.Mute.Muted)
 		}
 
 	}

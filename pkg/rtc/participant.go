@@ -24,31 +24,29 @@ const (
 )
 
 type ParticipantImpl struct {
-	id          string
-	peerConn    PeerConnection
-	sigConn     SignalConnection
-	ctx         context.Context
-	cancel      context.CancelFunc
-	mediaEngine *webrtc.MediaEngine
-	name        string
-	state       livekit.ParticipantInfo_State
-	bi          *buffer.Interceptor
-	rtcpCh      chan []rtcp.Packet
-	downTracks  map[string][]*sfu.DownTrack
+	id               string
+	peerConn         PeerConnection
+	sigConn          SignalConnection
+	ctx              context.Context
+	cancel           context.CancelFunc
+	mediaEngine      *webrtc.MediaEngine
+	name             string
+	state            livekit.ParticipantInfo_State
+	bi               *buffer.Interceptor
+	rtcpCh           chan []rtcp.Packet
+	subscribedTracks map[string][]*sfu.DownTrack
+	publishedTracks  map[string]PublishedTrack // publishedTracks that the peer is publishing
 
-	lock   sync.RWMutex
-	tracks map[string]PublishedTrack // tracks that the peer is publishing
-	once   sync.Once
+	lock sync.RWMutex
+	once sync.Once
 
 	// callbacks & handlers
-	// onTrackPublished - remote peer added a remoteTrack
 	onTrackPublished func(Participant, PublishedTrack)
-	// onOffer - offer is ready for remote peer
-	onOffer func(webrtc.SessionDescription)
-	// OnIceCandidate - ice candidate discovered for local peer
-	onICECandidate func(c *webrtc.ICECandidateInit)
-	onStateChange  func(p Participant, oldState livekit.ParticipantInfo_State)
-	onClose        func(Participant)
+	onTrackUpdated   func(Participant, PublishedTrack)
+	onOffer          func(webrtc.SessionDescription)
+	onICECandidate   func(c *webrtc.ICECandidateInit)
+	onStateChange    func(p Participant, oldState livekit.ParticipantInfo_State)
+	onClose          func(Participant)
 }
 
 func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
@@ -68,19 +66,19 @@ func NewParticipant(pc PeerConnection, sc SignalConnection, name string) (*Parti
 
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
-		id:          utils.NewGuid(utils.ParticipantPrefix),
-		name:        name,
-		peerConn:    pc,
-		sigConn:     sc,
-		ctx:         ctx,
-		cancel:      cancel,
-		bi:          bi,
-		rtcpCh:      make(chan []rtcp.Packet, 10),
-		downTracks:  make(map[string][]*sfu.DownTrack),
-		state:       livekit.ParticipantInfo_JOINING,
-		lock:        sync.RWMutex{},
-		tracks:      make(map[string]PublishedTrack, 0),
-		mediaEngine: me,
+		id:               utils.NewGuid(utils.ParticipantPrefix),
+		name:             name,
+		peerConn:         pc,
+		sigConn:          sc,
+		ctx:              ctx,
+		cancel:           cancel,
+		bi:               bi,
+		rtcpCh:           make(chan []rtcp.Packet, 10),
+		subscribedTracks: make(map[string][]*sfu.DownTrack),
+		state:            livekit.ParticipantInfo_JOINING,
+		lock:             sync.RWMutex{},
+		publishedTracks:  make(map[string]PublishedTrack, 0),
+		mediaEngine:      me,
 	}
 
 	log := logger.GetLogger()
@@ -141,7 +139,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		State: p.state,
 	}
 
-	for _, t := range p.tracks {
+	for _, t := range p.publishedTracks {
 		info.Tracks = append(info.Tracks, ToProtoTrack(t))
 	}
 	return info
@@ -162,6 +160,10 @@ func (p *ParticipantImpl) OnICECandidate(callback func(c *webrtc.ICECandidateIni
 
 func (p *ParticipantImpl) OnStateChange(callback func(p Participant, oldState livekit.ParticipantInfo_State)) {
 	p.onStateChange = callback
+}
+
+func (p *ParticipantImpl) OnTrackUpdated(callback func(Participant, PublishedTrack)) {
+	p.onTrackUpdated = callback
 }
 
 func (p *ParticipantImpl) OnClose(callback func(Participant)) {
@@ -291,12 +293,12 @@ func (p *ParticipantImpl) Close() error {
 	return p.peerConn.Close()
 }
 
-// Subscribes otherPeer to all of the tracks
+// Subscribes otherPeer to all of the publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op Participant) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	for _, track := range p.tracks {
+	for _, track := range p.publishedTracks {
 		logger.GetLogger().Debugw("subscribing to remoteTrack",
 			"srcParticipant", p.ID(),
 			"dstParticipant", op.ID(),
@@ -312,7 +314,7 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	for _, track := range p.tracks {
+	for _, track := range p.publishedTracks {
 		track.RemoveSubscriber(participantId)
 	}
 }
@@ -341,13 +343,33 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	})
 }
 
+func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	track := p.publishedTracks[trackId]
+	if track == nil {
+		return
+	}
+	updated := false
+
+	switch t := track.(type) {
+	case *MediaTrack:
+		updated = t.muted != muted
+		t.muted = muted
+	}
+
+	if updated && p.onTrackUpdated != nil {
+		p.onTrackUpdated(p, track)
+	}
+}
+
 func (p *ParticipantImpl) PeerConnection() PeerConnection {
 	return p.peerConn
 }
 
 func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
-	p.downTracks[streamId] = append(p.downTracks[streamId], dt)
+	p.subscribedTracks[streamId] = append(p.subscribedTracks[streamId], dt)
 	p.lock.Unlock()
 	dt.OnBind(func() {
 		go p.scheduleDownTrackBindingReports(streamId)
@@ -357,14 +379,14 @@ func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
 func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	tracks := p.downTracks[streamId]
+	tracks := p.subscribedTracks[streamId]
 	newTracks := make([]*sfu.DownTrack, 0, len(tracks))
 	for _, track := range tracks {
 		if track != dt {
 			newTracks = append(newTracks, track)
 		}
 	}
-	p.downTracks[streamId] = newTracks
+	p.subscribedTracks[streamId] = newTracks
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
@@ -400,7 +422,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 
 	dt := NewDataTrack(p.id, dc)
 	p.lock.Lock()
-	p.tracks[dt.id] = dt
+	p.publishedTracks[dt.id] = dt
 	p.lock.Unlock()
 
 	dt.Start()
@@ -410,7 +432,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 
 func (p *ParticipantImpl) handleTrackPublished(track PublishedTrack) {
 	p.lock.Lock()
-	p.tracks[track.ID()] = track
+	p.publishedTracks[track.ID()] = track
 	p.lock.Unlock()
 
 	track.Start()
@@ -430,7 +452,7 @@ func (p *ParticipantImpl) scheduleDownTrackBindingReports(streamId string) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	p.lock.RLock()
-	dts := p.downTracks[streamId]
+	dts := p.subscribedTracks[streamId]
 	for _, dt := range dts {
 		if !dt.IsBound() {
 			continue
@@ -465,7 +487,7 @@ func (p *ParticipantImpl) scheduleDownTrackBindingReports(streamId string) {
 }
 
 // downTracksRTCPWorker sends SenderReports periodically when the participant is subscribed to
-// other tracks in the room.
+// other publishedTracks in the room.
 func (p *ParticipantImpl) downTracksRTCPWorker() {
 	for {
 		time.Sleep(5 * time.Second)
@@ -473,7 +495,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		var pkts []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
-		for _, dts := range p.downTracks {
+		for _, dts := range p.subscribedTracks {
 			for _, dt := range dts {
 				if !dt.IsBound() {
 					continue
