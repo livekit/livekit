@@ -31,7 +31,7 @@ type RTCClient struct {
 	iceConnected     bool
 	paused           bool
 	me               *webrtc.MediaEngine // optional, populated only when receiving tracks
-	receivers        []*rtc.Receiver
+	receivers        []*rtc.ReceiverImpl
 	localParticipant *livekit.ParticipantInfo
 
 	// pending actions to start after connected to peer
@@ -288,10 +288,10 @@ func (c *RTCClient) ResumeLogs() {
 	c.paused = false
 }
 
-func (c *RTCClient) Receivers() []*rtc.Receiver {
+func (c *RTCClient) Receivers() []*rtc.ReceiverImpl {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return append([]*rtc.Receiver{}, c.receivers...)
+	return append([]*rtc.ReceiverImpl{}, c.receivers...)
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
@@ -446,7 +446,7 @@ func (c *RTCClient) logLoop() {
 	}
 }
 
-func (c *RTCClient) consumeReceiver(r *rtc.Receiver) {
+func (c *RTCClient) consumeReceiver(r *rtc.ReceiverImpl) {
 	lastUpdate := time.Time{}
 	peerId, trackId := rtc.UnpackTrackId(r.TrackId())
 	numBytes := 0

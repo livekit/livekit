@@ -10,35 +10,16 @@ import (
 	"github.com/pion/rtp"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 )
-
-type PacketBuffer interface {
-	GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet
-}
-
-// a forwarder publishes data to a target remoteTrack or datachannel
-// manages the RTCP loop with the target participant
-type Forwarder interface {
-	WriteRTP(*rtp.Packet) error
-	Start()
-	Close()
-	CreatedAt() time.Time
-	Track() *sfu.DownTrack
-
-	OnClose(func(Forwarder))
-}
-
-type RTCPWriter interface {
-	WriteRTCP(pkts []rtcp.Packet) error
-}
 
 type SimpleForwarder struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	sourceRtcpCh chan []rtcp.Packet // channel to write RTCP packets to source
 	track        *sfu.DownTrack     // sender track
-	packetBuffer PacketBuffer
+	packetBuffer types.PacketBuffer
 
 	lastPli   time.Time
 	createdAt time.Time
@@ -46,10 +27,10 @@ type SimpleForwarder struct {
 	once sync.Once
 
 	// handlers
-	onClose func(forwarder Forwarder)
+	onClose func(forwarder types.Forwarder)
 }
 
-func NewSimpleForwarder(ctx context.Context, rtcpCh chan []rtcp.Packet, track *sfu.DownTrack, pb PacketBuffer) *SimpleForwarder {
+func NewSimpleForwarder(ctx context.Context, rtcpCh chan []rtcp.Packet, track *sfu.DownTrack, pb types.PacketBuffer) *SimpleForwarder {
 	ctx, cancel := context.WithCancel(ctx)
 	f := &SimpleForwarder{
 		ctx:          ctx,
@@ -104,7 +85,7 @@ func (f *SimpleForwarder) WriteRTP(pkt *rtp.Packet) error {
 	return nil
 }
 
-func (f *SimpleForwarder) OnClose(closeFunc func(Forwarder)) {
+func (f *SimpleForwarder) OnClose(closeFunc func(types.Forwarder)) {
 	f.onClose = closeFunc
 }
 

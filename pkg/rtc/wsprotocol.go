@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -18,12 +19,12 @@ const (
 )
 
 type WSSignalConnection struct {
-	conn    WebsocketClient
+	conn    types.WebsocketClient
 	mu      sync.Mutex
 	useJSON bool
 }
 
-func NewWSSignalConnection(conn WebsocketClient) *WSSignalConnection {
+func NewWSSignalConnection(conn types.WebsocketClient) *WSSignalConnection {
 	wsc := &WSSignalConnection{
 		conn:    conn,
 		mu:      sync.Mutex{},

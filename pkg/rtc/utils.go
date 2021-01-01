@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -41,7 +42,7 @@ func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label s
 	return
 }
 
-func ToProtoParticipants(participants []Participant) []*livekit.ParticipantInfo {
+func ToProtoParticipants(participants []types.Participant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {
 		infos = append(infos, op.ToProto())
@@ -87,13 +88,23 @@ func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
 	return ci
 }
 
-func ToProtoTrack(t PublishedTrack) *livekit.TrackInfo {
+func ToProtoTrack(t types.PublishedTrack) *livekit.TrackInfo {
 	return &livekit.TrackInfo{
 		Sid:   t.ID(),
 		Type:  t.Kind(),
 		Name:  t.StreamID(),
 		Muted: t.IsMuted(),
 	}
+}
+
+func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackInfo_Type {
+	switch kind {
+	case webrtc.RTPCodecTypeVideo:
+		return livekit.TrackInfo_VIDEO
+	case webrtc.RTPCodecTypeAudio:
+		return livekit.TrackInfo_AUDIO
+	}
+	panic("unsupported track kind")
 }
 
 func IsEOF(err error) bool {

@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"io"
 	"sync"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -28,29 +28,37 @@ type MediaTrack struct {
 	id            string
 	participantId string
 	muted         bool
-	// source remoteTrack
-	remoteTrack *webrtc.TrackRemote
+
+	// duplicated properties from TrackRemote
+	ssrc     webrtc.SSRC
+	streamID string // otherwise known as label
+	kind     livekit.TrackInfo_Type
+	codec    webrtc.RTPCodecParameters
+
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
 	lock   sync.RWMutex
 	once   sync.Once
 	// map of target participantId -> forwarder
-	forwarders map[string]Forwarder
-	receiver   *Receiver
+	forwarders map[string]types.Forwarder
+	receiver   types.Receiver
 	//lastNack   int64
 	lastPLI time.Time
 }
 
-func NewMediaTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver *Receiver) *MediaTrack {
+func NewMediaTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
 	t := &MediaTrack{
 		ctx:           context.Background(),
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: pId,
-		remoteTrack:   track,
+		ssrc:          track.SSRC(),
+		streamID:      track.StreamID(),
+		kind:          ToProtoTrackKind(track.Kind()),
+		codec:         track.Codec(),
 		rtcpCh:        rtcpCh,
 		lock:          sync.RWMutex{},
 		once:          sync.Once{},
-		forwarders:    make(map[string]Forwarder),
+		forwarders:    make(map[string]types.Forwarder),
 		receiver:      receiver,
 	}
 
@@ -70,17 +78,11 @@ func (t *MediaTrack) ID() string {
 }
 
 func (t *MediaTrack) Kind() livekit.TrackInfo_Type {
-	switch t.remoteTrack.Kind() {
-	case webrtc.RTPCodecTypeVideo:
-		return livekit.TrackInfo_VIDEO
-	case webrtc.RTPCodecTypeAudio:
-		return livekit.TrackInfo_AUDIO
-	}
-	panic("unsupported track kind")
+	return t.kind
 }
 
 func (t *MediaTrack) StreamID() string {
-	return t.remoteTrack.StreamID()
+	return t.streamID
 }
 
 func (t *MediaTrack) IsMuted() bool {
@@ -89,8 +91,8 @@ func (t *MediaTrack) IsMuted() bool {
 
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
-func (t *MediaTrack) AddSubscriber(participant Participant) error {
-	codec := t.remoteTrack.Codec()
+func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
+	codec := t.codec
 	// pack ID to identify all publishedTracks
 	packedId := PackTrackId(t.participantId, t.id)
 
@@ -101,7 +103,7 @@ func (t *MediaTrack) AddSubscriber(participant Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, packedId, t.remoteTrack.StreamID())
+	}, packedId, t.StreamID())
 	if err != nil {
 		return err
 	}
@@ -121,7 +123,7 @@ func (t *MediaTrack) AddSubscriber(participant Participant) error {
 	participant.AddDownTrack(t.StreamID(), outTrack)
 
 	forwarder := NewSimpleForwarder(t.ctx, t.rtcpCh, outTrack, t.receiver)
-	forwarder.OnClose(func(f Forwarder) {
+	forwarder.OnClose(func(f types.Forwarder) {
 		t.lock.Lock()
 		delete(t.forwarders, participant.ID())
 		t.lock.Unlock()
@@ -171,7 +173,7 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	for _, f := range t.forwarders {
 		go f.Close()
 	}
-	t.forwarders = make(map[string]Forwarder)
+	t.forwarders = make(map[string]types.Forwarder)
 }
 
 // forwardRTPWorker reads from the receiver and writes to each sender
@@ -183,7 +185,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 
 	for {
 		pkt, err := t.receiver.ReadRTP()
-		if err == io.EOF {
+		if IsEOF(err) {
 			logger.GetLogger().Debugw("Track received EOF, closing",
 				"participant", t.participantId,
 				"track", t.id)
@@ -207,7 +209,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 		t.lock.RLock()
 		for dstId, forwarder := range t.forwarders {
 			err := forwarder.WriteRTP(pkt)
-			if err == io.EOF {
+			if IsEOF(err) {
 				// this participant unsubscribed, remove it
 				t.RemoveSubscriber(dstId)
 				continue
@@ -220,7 +222,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 				}
 				logger.GetLogger().Infow("keyframe required, sending PLI")
 				rtcpPkts := []rtcp.Packet{
-					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.remoteTrack.SSRC()), MediaSSRC: pkt.SSRC},
+					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.SSRC},
 				}
 				// queue up a PLI, but don't block channel
 				go func() {

@@ -30,7 +30,7 @@ var checksummer = NewChecksummer(".", goChecksumFile, ".go")
 func init() {
 	checksummer.IgnoredPaths = []string{
 		"cmd/server/wire_gen.go",
-		"pkg/rtc/rtcfakes",
+		"pkg/rtc/types/typesfakes",
 	}
 }
 

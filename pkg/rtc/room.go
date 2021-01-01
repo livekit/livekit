@@ -7,6 +7,7 @@ import (
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -16,7 +17,7 @@ type Room struct {
 	config WebRTCConfig
 	lock   sync.RWMutex
 	// map of participantId -> Participant
-	participants map[string]Participant
+	participants map[string]types.Participant
 }
 
 func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) *Room {
@@ -30,20 +31,20 @@ func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) *Ro
 		},
 		config:       *config,
 		lock:         sync.RWMutex{},
-		participants: make(map[string]Participant),
+		participants: make(map[string]types.Participant),
 	}
 }
 
-func (r *Room) GetParticipant(id string) Participant {
+func (r *Room) GetParticipant(id string) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.participants[id]
 }
 
-func (r *Room) GetParticipants() []Participant {
+func (r *Room) GetParticipants() []types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return funk.Values(r.participants).([]Participant)
+	return funk.Values(r.participants).([]types.Participant)
 }
 
 func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
@@ -58,7 +59,7 @@ func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
 	return ri
 }
 
-func (r *Room) Join(participant Participant) error {
+func (r *Room) Join(participant types.Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -66,7 +67,7 @@ func (r *Room) Join(participant Participant) error {
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
-	participant.OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State) {
+	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
 		log.Debugw("participant state changed", "state", p.State(), "participant", p.ID())
 		r.broadcastParticipantState(p)
 
@@ -97,7 +98,7 @@ func (r *Room) Join(participant Participant) error {
 	r.participants[participant.ID()] = participant
 
 	// gather other participants and send join response
-	otherParticipants := make([]Participant, 0, len(r.participants))
+	otherParticipants := make([]types.Participant, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() {
 			otherParticipants = append(otherParticipants, p)
@@ -125,7 +126,7 @@ func (r *Room) RemoveParticipant(id string) {
 }
 
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
-func (r *Room) onTrackAdded(participant Participant, track PublishedTrack) {
+func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant)
 
@@ -152,15 +153,15 @@ func (r *Room) onTrackAdded(participant Participant, track PublishedTrack) {
 	}
 }
 
-func (r *Room) onTrackMuted(p Participant, track PublishedTrack) {
+func (r *Room) onTrackMuted(p types.Participant, track types.PublishedTrack) {
 	r.broadcastParticipantState(p)
 }
 
-func (r *Room) broadcastParticipantState(p Participant) {
+func (r *Room) broadcastParticipantState(p types.Participant) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	updates := ToProtoParticipants([]Participant{p})
+	updates := ToProtoParticipants([]types.Participant{p})
 	for _, op := range r.participants {
 		// skip itself
 		if p.ID() == op.ID() {

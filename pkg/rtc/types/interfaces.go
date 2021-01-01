@@ -1,9 +1,10 @@
-package rtc
+package types
 
 import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -96,4 +97,30 @@ type PublishedTrack interface {
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	RemoveAllSubscribers()
+}
+
+//counterfeiter:generate . Receiver
+type Receiver interface {
+	TrackId() string
+	Start()
+	GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet
+	ReadRTP() (*rtp.Packet, error)
+}
+
+//counterfeiter:generate . PacketBuffer
+type PacketBuffer interface {
+	GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet
+}
+
+// a Forwarder publishes data to a target remoteTrack or datachannel
+// manages the RTCP loop with the target participant
+//counterfeiter:generate . Forwarder
+type Forwarder interface {
+	WriteRTP(*rtp.Packet) error
+	Start()
+	Close()
+	CreatedAt() time.Time
+	Track() *sfu.DownTrack
+
+	OnClose(func(Forwarder))
 }

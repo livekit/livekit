@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -25,8 +26,8 @@ const (
 
 type ParticipantImpl struct {
 	id               string
-	peerConn         PeerConnection
-	sigConn          SignalConnection
+	peerConn         types.PeerConnection
+	sigConn          types.SignalConnection
 	ctx              context.Context
 	cancel           context.CancelFunc
 	mediaEngine      *webrtc.MediaEngine
@@ -35,18 +36,19 @@ type ParticipantImpl struct {
 	bi               *buffer.Interceptor
 	rtcpCh           chan []rtcp.Packet
 	subscribedTracks map[string][]*sfu.DownTrack
-	publishedTracks  map[string]PublishedTrack // publishedTracks that the peer is publishing
+	// publishedTracks that participant is publishing
+	publishedTracks map[string]types.PublishedTrack
 
 	lock sync.RWMutex
 	once sync.Once
 
 	// callbacks & handlers
-	onTrackPublished func(Participant, PublishedTrack)
-	onTrackUpdated   func(Participant, PublishedTrack)
+	onTrackPublished func(types.Participant, types.PublishedTrack)
+	onTrackUpdated   func(types.Participant, types.PublishedTrack)
 	onOffer          func(webrtc.SessionDescription)
 	onICECandidate   func(c *webrtc.ICECandidateInit)
-	onStateChange    func(p Participant, oldState livekit.ParticipantInfo_State)
-	onClose          func(Participant)
+	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
+	onClose          func(types.Participant)
 }
 
 func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
@@ -56,7 +58,7 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	return api.NewPeerConnection(conf.Configuration)
 }
 
-func NewParticipant(pc PeerConnection, sc SignalConnection, name string) (*ParticipantImpl, error) {
+func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name string) (*ParticipantImpl, error) {
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
@@ -77,7 +79,7 @@ func NewParticipant(pc PeerConnection, sc SignalConnection, name string) (*Parti
 		subscribedTracks: make(map[string][]*sfu.DownTrack),
 		state:            livekit.ParticipantInfo_JOINING,
 		lock:             sync.RWMutex{},
-		publishedTracks:  make(map[string]PublishedTrack, 0),
+		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		mediaEngine:      me,
 	}
 
@@ -146,7 +148,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 }
 
 // callbacks for clients
-func (p *ParticipantImpl) OnTrackPublished(callback func(Participant, PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.PublishedTrack)) {
 	p.onTrackPublished = callback
 }
 
@@ -158,15 +160,15 @@ func (p *ParticipantImpl) OnICECandidate(callback func(c *webrtc.ICECandidateIni
 	p.onICECandidate = callback
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p Participant, oldState livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) OnStateChange(callback func(p types.Participant, oldState livekit.ParticipantInfo_State)) {
 	p.onStateChange = callback
 }
 
-func (p *ParticipantImpl) OnTrackUpdated(callback func(Participant, PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.PublishedTrack)) {
 	p.onTrackUpdated = callback
 }
 
-func (p *ParticipantImpl) OnClose(callback func(Participant)) {
+func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 	p.onClose = callback
 }
 
@@ -294,7 +296,7 @@ func (p *ParticipantImpl) Close() error {
 }
 
 // Subscribes otherPeer to all of the publishedTracks
-func (p *ParticipantImpl) AddSubscriber(op Participant) error {
+func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -320,7 +322,7 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 }
 
 // signal connection methods
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.RoomInfo, otherParticipants []Participant) error {
+func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.RoomInfo, otherParticipants []types.Participant) error {
 	// send Join response
 	return p.sigConn.WriteResponse(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
@@ -363,7 +365,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	}
 }
 
-func (p *ParticipantImpl) PeerConnection() PeerConnection {
+func (p *ParticipantImpl) PeerConnection() types.PeerConnection {
 	return p.peerConn
 }
 
@@ -407,7 +409,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	logger.GetLogger().Debugw("remoteTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
 
-	// create Receiver
+	// create ReceiverImpl
 	receiver := NewReceiver(p.id, rtpReceiver, p.bi)
 	mt := NewMediaTrack(p.id, p.rtcpCh, track, receiver)
 
@@ -430,7 +432,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	p.handleTrackPublished(dt)
 }
 
-func (p *ParticipantImpl) handleTrackPublished(track PublishedTrack) {
+func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 	p.lock.Lock()
 	p.publishedTracks[track.ID()] = track
 	p.lock.Unlock()

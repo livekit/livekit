@@ -6,6 +6,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -70,7 +71,7 @@ func (t *DataTrack) IsMuted() bool {
 	return false
 }
 
-func (t *DataTrack) AddSubscriber(participant Participant) error {
+func (t *DataTrack) AddSubscriber(participant types.Participant) error {
 	label := PackDataTrackLabel(t.participantId, t.ID(), t.dataChannel.Label())
 	downChannel, err := participant.PeerConnection().CreateDataChannel(label, t.dataChannelOptions())
 	if err != nil {

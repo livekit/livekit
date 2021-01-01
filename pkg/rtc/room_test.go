@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/rtcfakes"
+	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -73,7 +73,7 @@ func TestRoomJoin(t *testing.T) {
 			if p == op {
 				continue
 			}
-			mockP := op.(*rtcfakes.FakeParticipant)
+			mockP := op.(*typesfakes.FakeParticipant)
 			assert.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
 			assert.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
@@ -83,7 +83,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("participant removal is broadcasted to others", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, numParticipants)
 		participants := rm.GetParticipants()
-		p := participants[0].(*rtcfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeParticipant)
 
 		rm.RemoveParticipant(p.ID())
 		time.Sleep(10 * time.Millisecond)
@@ -93,7 +93,7 @@ func TestRoomJoin(t *testing.T) {
 				assert.Zero(t, p.SendParticipantUpdateCallCount())
 				continue
 			}
-			fakeP := op.(*rtcfakes.FakeParticipant)
+			fakeP := op.(*typesfakes.FakeParticipant)
 			assert.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
 		}
 	})
@@ -103,13 +103,13 @@ func TestNewTrack(t *testing.T) {
 	t.Run("new track should be added to connected participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, 4)
 		participants := rm.GetParticipants()
-		p0 := participants[0].(*rtcfakes.FakeParticipant)
+		p0 := participants[0].(*typesfakes.FakeParticipant)
 		p0.StateReturns(livekit.ParticipantInfo_JOINING)
-		p1 := participants[1].(*rtcfakes.FakeParticipant)
+		p1 := participants[1].(*typesfakes.FakeParticipant)
 		p1.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
-		p2 := participants[2].(*rtcfakes.FakeParticipant)
+		p2 := participants[2].(*typesfakes.FakeParticipant)
 		p2.StateReturns(livekit.ParticipantInfo_JOINED)
-		p3 := participants[3].(*rtcfakes.FakeParticipant)
+		p3 := participants[3].(*typesfakes.FakeParticipant)
 
 		// p3 adds track
 		track := newMockTrack(livekit.TrackInfo_VIDEO, "webcam")
