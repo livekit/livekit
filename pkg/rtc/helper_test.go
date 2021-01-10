@@ -15,10 +15,10 @@ func newMockParticipant(name string) *typesfakes.FakeParticipant {
 	return p
 }
 
-func newMockTrack(kind livekit.TrackInfo_Type, name string) *typesfakes.FakePublishedTrack {
+func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
 	t := &typesfakes.FakePublishedTrack{}
 	t.IDReturns(utils.NewGuid(utils.TrackPrefix))
 	t.KindReturns(kind)
-	t.StreamIDReturns(name)
+	t.NameReturns(name)
 	return t
 }

@@ -113,11 +113,11 @@ func (d *DownTrack) Kind() webrtc.RTPCodecType {
 }
 
 // WriteRTP writes a RTP Packet to the DownTrack
-func (d *DownTrack) WriteRTP(p *rtp.Packet) error {
+func (d *DownTrack) WriteRTP(p rtp.Packet) error {
 	if !d.IsBound() {
 		return nil
 	}
-	return d.writeSimpleRTP(*p)
+	return d.writeSimpleRTP(p)
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {

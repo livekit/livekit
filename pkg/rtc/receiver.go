@@ -1,9 +1,8 @@
 package rtc
 
 import (
-	"sync"
-
 	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
@@ -15,64 +14,70 @@ const (
 	maxChanSize = 1024
 )
 
-// A receiver is responsible for pulling from a remoteTrack
+// A receiver is responsible for pulling from a single logical track
 type ReceiverImpl struct {
-	participantId string
-	rtpReceiver   *webrtc.RTPReceiver
-	track         *webrtc.TrackRemote
-	bi            *buffer.Interceptor
-	once          sync.Once
-	bytesRead     int64
+	rtpReceiver *webrtc.RTPReceiver
+	track       *webrtc.TrackRemote
+	buffer      *buffer.Buffer
+	rtcpReader  *buffer.RTCPReader
+	rtcpChan    chan []rtcp.Packet
 }
 
-func NewReceiver(peerId string, rtpReceiver *webrtc.RTPReceiver, bi *buffer.Interceptor) *ReceiverImpl {
-	return &ReceiverImpl{
-		participantId: peerId,
-		rtpReceiver:   rtpReceiver,
-		track:         rtpReceiver.Track(),
-		bi:            bi,
-		once:          sync.Once{},
+func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, track *webrtc.TrackRemote) *ReceiverImpl {
+	r := &ReceiverImpl{
+		rtpReceiver: rtpReceiver,
+		rtcpChan:    rtcpCh,
+		track:       track,
 	}
-}
 
-func (r *ReceiverImpl) TrackId() string {
-	return r.track.ID()
-}
+	r.buffer, r.rtcpReader = bufferFactory.GetBufferPair(uint32(track.SSRC()))
 
-// starts reading RTP and push to buffer
-func (r *ReceiverImpl) Start() {
-	r.once.Do(func() {
-		go r.rtcpWorker()
+	// when we have feedback for the sender, send through the rtcp channel
+	r.buffer.OnFeedback(func(fb []rtcp.Packet) {
+		if r.rtcpChan != nil {
+			r.rtcpChan <- fb
+		}
 	})
-}
 
-// PacketBuffer interface, to provide forwarders packets from the buffer
-func (r *ReceiverImpl) GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet {
-	if r.bi == nil {
-		return nil
-	}
-	return r.bi.GetBufferedPackets(uint32(r.track.SSRC()), mediaSSRC, snOffset, tsOffset, sn)
-}
+	r.buffer.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
+		// TODO: figure out how to handle this
+	})
 
-func (r *ReceiverImpl) ReadRTP() (*rtp.Packet, error) {
-	return r.track.ReadRTP()
-}
-
-// rtcpWorker reads RTCP messages from receiver, notifies buffer
-func (r *ReceiverImpl) rtcpWorker() {
-	// consume RTCP from the sender/source, but don't need to do anything with the packets
-	for {
-		_, err := r.rtpReceiver.ReadRTCP()
-		if IsEOF(err) {
+	// received sender updates
+	r.rtcpReader.OnPacket(func(bytes []byte) {
+		pkts, err := rtcp.Unmarshal(bytes)
+		if err != nil {
+			logger.GetLogger().Warnw("could not unmarshal RTCP packet")
 			return
 		}
-		if err != nil {
-			logger.GetLogger().Warnw("receiver error reading RTCP",
-				"participant", r.participantId,
-				"remoteTrack", r.track.SSRC(),
-				"err", err,
-			)
-			continue
+		for _, pkt := range pkts {
+			switch p := pkt.(type) {
+			case *rtcp.SenderReport:
+				r.buffer.SetSenderReportData(p.RTPTime, p.NTPTime)
+			case *rtcp.SourceDescription:
+				// TODO: see what we'd want to do with this
+			}
 		}
+	})
+
+	return r
+}
+
+// PacketBuffer interface, retrieves a packet from buffer and deserializes
+// it's possible that the packet can't be found, or the connection has been closed (io.EOF)
+func (r *ReceiverImpl) GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint16) (p rtp.Packet, err error) {
+	if pktBuf == nil {
+		pktBuf = make([]byte, rtpPacketMaxSize)
 	}
+	size, err := r.buffer.GetPacket(pktBuf, sn+snOffset)
+	if err != nil {
+		return
+	}
+
+	err = p.Unmarshal(pktBuf[:size])
+	return
+}
+
+func (r *ReceiverImpl) RTPChan() <-chan rtp.Packet {
+	return r.buffer.PacketChan()
 }

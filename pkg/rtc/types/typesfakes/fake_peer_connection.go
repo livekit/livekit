@@ -153,6 +153,16 @@ type FakePeerConnection struct {
 	setRemoteDescriptionReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SignalingStateStub        func() webrtc.SignalingState
+	signalingStateMutex       sync.RWMutex
+	signalingStateArgsForCall []struct {
+	}
+	signalingStateReturns struct {
+		result1 webrtc.SignalingState
+	}
+	signalingStateReturnsOnCall map[int]struct {
+		result1 webrtc.SignalingState
+	}
 	WriteRTCPStub        func([]rtcp.Packet) error
 	writeRTCPMutex       sync.RWMutex
 	writeRTCPArgsForCall []struct {
@@ -936,6 +946,59 @@ func (fake *FakePeerConnection) SetRemoteDescriptionReturnsOnCall(i int, result1
 	}{result1}
 }
 
+func (fake *FakePeerConnection) SignalingState() webrtc.SignalingState {
+	fake.signalingStateMutex.Lock()
+	ret, specificReturn := fake.signalingStateReturnsOnCall[len(fake.signalingStateArgsForCall)]
+	fake.signalingStateArgsForCall = append(fake.signalingStateArgsForCall, struct {
+	}{})
+	stub := fake.SignalingStateStub
+	fakeReturns := fake.signalingStateReturns
+	fake.recordInvocation("SignalingState", []interface{}{})
+	fake.signalingStateMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePeerConnection) SignalingStateCallCount() int {
+	fake.signalingStateMutex.RLock()
+	defer fake.signalingStateMutex.RUnlock()
+	return len(fake.signalingStateArgsForCall)
+}
+
+func (fake *FakePeerConnection) SignalingStateCalls(stub func() webrtc.SignalingState) {
+	fake.signalingStateMutex.Lock()
+	defer fake.signalingStateMutex.Unlock()
+	fake.SignalingStateStub = stub
+}
+
+func (fake *FakePeerConnection) SignalingStateReturns(result1 webrtc.SignalingState) {
+	fake.signalingStateMutex.Lock()
+	defer fake.signalingStateMutex.Unlock()
+	fake.SignalingStateStub = nil
+	fake.signalingStateReturns = struct {
+		result1 webrtc.SignalingState
+	}{result1}
+}
+
+func (fake *FakePeerConnection) SignalingStateReturnsOnCall(i int, result1 webrtc.SignalingState) {
+	fake.signalingStateMutex.Lock()
+	defer fake.signalingStateMutex.Unlock()
+	fake.SignalingStateStub = nil
+	if fake.signalingStateReturnsOnCall == nil {
+		fake.signalingStateReturnsOnCall = make(map[int]struct {
+			result1 webrtc.SignalingState
+		})
+	}
+	fake.signalingStateReturnsOnCall[i] = struct {
+		result1 webrtc.SignalingState
+	}{result1}
+}
+
 func (fake *FakePeerConnection) WriteRTCP(arg1 []rtcp.Packet) error {
 	var arg1Copy []rtcp.Packet
 	if arg1 != nil {
@@ -1035,6 +1098,8 @@ func (fake *FakePeerConnection) Invocations() map[string][][]interface{} {
 	defer fake.setLocalDescriptionMutex.RUnlock()
 	fake.setRemoteDescriptionMutex.RLock()
 	defer fake.setRemoteDescriptionMutex.RUnlock()
+	fake.signalingStateMutex.RLock()
+	defer fake.signalingStateMutex.RUnlock()
 	fake.writeRTCPMutex.RLock()
 	defer fake.writeRTCPMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

@@ -19,6 +19,7 @@ const (
 // it shall forward publishedTracks to all of its subscribers
 type DataTrack struct {
 	id            string
+	name          string
 	participantId string
 	dataChannel   *webrtc.DataChannel
 	lock          sync.RWMutex
@@ -33,6 +34,7 @@ func NewDataTrack(participantId string, dc *webrtc.DataChannel) *DataTrack {
 	t := &DataTrack{
 		//ctx:           context.Background(),
 		id:            utils.NewGuid(utils.TrackPrefix),
+		name:          dc.Label(),
 		participantId: participantId,
 		dataChannel:   dc,
 		msgChan:       make(chan livekit.DataMessage, dataBufferSize),
@@ -58,12 +60,16 @@ func (t *DataTrack) ID() string {
 	return t.id
 }
 
-func (t *DataTrack) Kind() livekit.TrackInfo_Type {
-	return livekit.TrackInfo_DATA
+func (t *DataTrack) Kind() livekit.TrackType {
+	return livekit.TrackType_DATA
 }
 
-func (t *DataTrack) StreamID() string {
-	return t.dataChannel.Label()
+func (t *DataTrack) Name() string {
+	return t.name
+}
+
+func (t *DataTrack) SetName(name string) {
+	t.name = name
 }
 
 // DataTrack cannot be muted

@@ -74,6 +74,7 @@ func Proto() error {
 		"proto/room.proto",
 		"proto/model.proto",
 	)
+	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -86,6 +87,7 @@ func Proto() error {
 		"-I=proto",
 		"proto/rtc.proto",
 	)
+	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}

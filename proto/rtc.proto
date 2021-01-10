@@ -7,10 +7,14 @@ import "model.proto";
 
 message SignalRequest {
   oneof message {
+    // participant joining initially
     SessionDescription offer = 1;
-    SessionDescription negotiate = 2;
-    Trickle trickle = 3;
-    MuteTrack mute = 4;
+    // participant responding to server-issued offers
+    SessionDescription answer = 2;
+    TrickleRequest trickle = 3;
+    AddTrackRequest add_track = 4;
+    MuteTrackRequest mute = 5;
+    RemoveTrackRequest remove_track = 6;
   }
 }
 
@@ -20,20 +24,30 @@ message SignalResponse {
     JoinResponse join = 1;
     // sent when offer is answered
     SessionDescription answer = 2;
-    // sent when a negotiated sd is available (could be either offer or answer)
-    SessionDescription negotiate = 3;
+    // sent when server needs to negotiate, always offer
+    SessionDescription offer = 3;
     // sent when an ICE candidate is available
-    Trickle trickle = 4;
+    TrickleRequest trickle = 4;
     // sent when participants in the room has changed
     ParticipantUpdate update = 5;
     // sent to the participant when their track has been published
-    TrackInfo trackPublished = 6;
+    TrackInfo track_published = 6;
   }
 }
 
-message Trickle {
-  string candidateInit = 1;
+message AddTrackRequest {
+  string name = 1;
+  TrackType type = 2;
+  // client ID of track, to match it when RTC track is received
+  string cid = 3;
+}
 
+message TrickleRequest {
+  string candidateInit = 1;
+}
+
+message RemoveTrackRequest {
+  string sid = 1;
 }
 
 message SessionDescription {
@@ -47,8 +61,8 @@ message JoinResponse {
   repeated ParticipantInfo other_participants = 3;
 }
 
-message MuteTrack {
-  string track_sid = 1;
+message MuteTrackRequest {
+  string sid = 1;
   bool muted = 2;
 }
 

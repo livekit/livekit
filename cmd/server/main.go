@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -66,6 +67,8 @@ func main() {
 }
 
 func startServer(c *cli.Context) error {
+	rand.Seed(time.Now().UnixNano())
+
 	conf, err := config.NewConfig(c.String("config"))
 	if err != nil {
 		return err
@@ -78,13 +81,14 @@ func startServer(c *cli.Context) error {
 		logger.InitDevelopment()
 	} else {
 		logger.InitProduction()
-		// require a key provider
-		if keyProvider, err = createKeyProvider(c.String("key-file"), c.String("keys")); err != nil {
-			return err
-		}
-		service.AuthRequired = true
-		logger.GetLogger().Infow("auth enabled", "num_keys", keyProvider.NumKeys())
 	}
+
+	// require a key provider
+	if keyProvider, err = createKeyProvider(c.String("key-file"), c.String("keys")); err != nil {
+		return err
+	}
+	service.AuthRequired = true
+	logger.GetLogger().Infow("auth enabled", "num_keys", keyProvider.NumKeys())
 
 	server, err := InitializeServer(conf, keyProvider)
 	if err != nil {

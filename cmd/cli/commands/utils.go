@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v2"
 
@@ -61,6 +62,7 @@ func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value
 
 	at := auth.NewAccessToken(apiKey, apiSecret).
 		AddGrant(grant).
-		SetIdentity(identity)
+		SetIdentity(identity).
+		SetValidFor(time.Hour * 24)
 	return at.ToJWT()
 }

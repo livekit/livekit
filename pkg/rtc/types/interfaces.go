@@ -45,6 +45,7 @@ type PeerConnection interface {
 	// used by mediatrack
 	AddTransceiverFromTrack(track webrtc.TrackLocal, init ...webrtc.RtpTransceiverInit) (*webrtc.RTPTransceiver, error)
 	ConnectionState() webrtc.PeerConnectionState
+	SignalingState() webrtc.SignalingState
 	RemoveTrack(sender *webrtc.RTPSender) error
 }
 
@@ -54,9 +55,10 @@ type Participant interface {
 	Name() string
 	State() livekit.ParticipantInfo_State
 	ToProto() *livekit.ParticipantInfo
+	AddTrack(clientId, name string, trackType livekit.TrackType)
+	RemoveTrack(sid string) error
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
-	HandleNegotiate(sd webrtc.SessionDescription) error
-	SetRemoteDescription(sdp webrtc.SessionDescription) error
+	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit) error
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
@@ -68,8 +70,6 @@ type Participant interface {
 	Close() error
 
 	// callbacks
-	// OnOffer - offer is ready for remote peer
-	OnOffer(func(webrtc.SessionDescription))
 	// OnICECandidate - ice candidate discovered for local peer
 	OnICECandidate(func(c *webrtc.ICECandidateInit))
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
@@ -91,8 +91,9 @@ type Participant interface {
 type PublishedTrack interface {
 	Start()
 	ID() string
-	Kind() livekit.TrackInfo_Type
-	StreamID() string
+	Kind() livekit.TrackType
+	Name() string
+	SetName(name string)
 	IsMuted() bool
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
@@ -101,26 +102,30 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . Receiver
 type Receiver interface {
-	TrackId() string
-	Start()
-	GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet
-	ReadRTP() (*rtp.Packet, error)
+	RTPChan() <-chan rtp.Packet
+	GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint16) (rtp.Packet, error)
 }
 
-//counterfeiter:generate . PacketBuffer
-type PacketBuffer interface {
-	GetBufferedPackets(mediaSSRC uint32, snOffset uint16, tsOffset uint32, sn []uint16) []rtp.Packet
-}
-
-// a Forwarder publishes data to a target remoteTrack or datachannel
-// manages the RTCP loop with the target participant
-//counterfeiter:generate . Forwarder
-type Forwarder interface {
-	WriteRTP(*rtp.Packet) error
-	Start()
+// DownTrack publishes data to a target participant
+// using this interface to make testing more practical
+//counterfeiter:generate . DownTrack
+type DownTrack interface {
+	WriteRTP(p rtp.Packet) error
 	Close()
-	CreatedAt() time.Time
-	Track() *sfu.DownTrack
+	OnCloseHandler(fn func())
+	OnBind(fn func())
+	SSRC() uint32
+	LastSSRC() uint32
+	SnOffset() uint16
+	TsOffset() uint32
+	GetNACKSeqNo(seqNo []uint16) []uint16
+}
 
-	OnClose(func(Forwarder))
+// interface for properties of webrtc.TrackRemote
+//counterfeiter:generate . TrackRemote
+type TrackRemote interface {
+	SSRC() webrtc.SSRC
+	StreamID() string
+	Kind() webrtc.RTPCodecType
+	Codec() webrtc.RTPCodecParameters
 }

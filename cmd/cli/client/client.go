@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -100,25 +102,24 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		c.AppendLog("track received", "label", track.StreamID(), "id", track.ID())
-		peerId, _ := rtc.UnpackTrackId(track.ID())
-		r := rtc.NewReceiver(peerId, rtpReceiver, nil)
+		r := rtc.NewReceiver(nil, rtpReceiver, track)
 		c.lock.Lock()
 		c.receivers = append(c.receivers, r)
-		r.Start()
-		go c.consumeReceiver(r)
+		go c.consumeReceiver(track.ID(), r)
 		c.lock.Unlock()
 	})
 
 	peerConn.OnNegotiationNeeded(func() {
-		c.AppendLog("negotiate needed")
-		if !c.connected {
-			c.AppendLog("not yet connected, skipping negotiate")
-			return
-		}
-		err := c.Negotiate()
-		if err != nil {
-			c.AppendLog("error negotiating", "err", err)
-		}
+		// do nothing
+		//c.AppendLog("negotiate needed")
+		//if !c.connected {
+		//	c.AppendLog("not yet connected, skipping negotiate")
+		//	return
+		//}
+		//err := c.Negotiate()
+		//if err != nil {
+		//	c.AppendLog("error negotiating", "err", err)
+		//}
 	})
 
 	peerConn.OnDataChannel(func(channel *webrtc.DataChannel) {
@@ -218,11 +219,11 @@ func (c *RTCClient) Run() error {
 			}
 			c.pendingCandidates = nil
 			c.lock.Unlock()
-		case *livekit.SignalResponse_Negotiate:
-			c.AppendLog("received negotiate",
-				"type", msg.Negotiate.Type)
-			desc := rtc.FromProtoSessionDescription(msg.Negotiate)
-			if err := c.handleNegotiate(desc); err != nil {
+		case *livekit.SignalResponse_Offer:
+			c.AppendLog("received server offer",
+				"type", msg.Offer.Type)
+			desc := rtc.FromProtoSessionDescription(msg.Offer)
+			if err := c.handleOffer(desc); err != nil {
 				return err
 			}
 		case *livekit.SignalResponse_Trickle:
@@ -313,31 +314,7 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 	})
 }
 
-func (c *RTCClient) Negotiate() error {
-	// Create an offer to send to the other process
-	offer, err := c.PeerConn.CreateOffer(nil)
-	if err != nil {
-		return err
-	}
-
-	if err = c.PeerConn.SetLocalDescription(offer); err != nil {
-		return err
-	}
-
-	// send the offer to remote
-	req := &livekit.SignalRequest{
-		Message: &livekit.SignalRequest_Negotiate{
-			Negotiate: rtc.ToProtoSessionDescription(offer),
-		},
-	}
-	c.AppendLog("sending negotiate offer to remote...")
-	if err = c.SendRequest(req); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
+func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	// always set remote description for both offer and answer
 	if err := c.PeerConn.SetRemoteDescription(desc); err != nil {
 		return err
@@ -362,8 +339,8 @@ func (c *RTCClient) handleNegotiate(desc webrtc.SessionDescription) error {
 
 		// send remote an answer
 		return c.SendRequest(&livekit.SignalRequest{
-			Message: &livekit.SignalRequest_Negotiate{
-				Negotiate: rtc.ToProtoSessionDescription(answer),
+			Message: &livekit.SignalRequest_Answer{
+				Answer: rtc.ToProtoSessionDescription(answer),
 			},
 		})
 	}
@@ -407,6 +384,26 @@ func (c *RTCClient) AddTrack(path string, id string, label string) error {
 		c.pendingTrackWriters = append(c.pendingTrackWriters, tw)
 		return nil
 	}
+
+	trackType := livekit.TrackType_AUDIO
+	if strings.HasPrefix(mime, "video") {
+		trackType = livekit.TrackType_VIDEO
+	}
+
+	return c.SendAddTrack(id, label, trackType)
+}
+
+// send AddTrack command to server to initiate server-side negotiation
+func (c *RTCClient) SendAddTrack(cid string, name string, trackType livekit.TrackType) error {
+	return c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_AddTrack{
+			AddTrack: &livekit.AddTrackRequest{
+				Cid:  cid,
+				Name: name,
+				Type: trackType,
+			},
+		},
+	})
 }
 
 type logEntry struct {
@@ -446,16 +443,11 @@ func (c *RTCClient) logLoop() {
 	}
 }
 
-func (c *RTCClient) consumeReceiver(r *rtc.ReceiverImpl) {
+func (c *RTCClient) consumeReceiver(trackId string, r types.Receiver) {
 	lastUpdate := time.Time{}
-	peerId, trackId := rtc.UnpackTrackId(r.TrackId())
+	peerId, trackId := rtc.UnpackTrackId(trackId)
 	numBytes := 0
-	for {
-		pkt, err := r.ReadRTP()
-		if rtc.IsEOF(err) {
-			// all done
-			return
-		}
+	for pkt := range r.RTPChan() {
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
 			c.AppendLog("consumed from peer",

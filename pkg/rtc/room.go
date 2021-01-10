@@ -137,7 +137,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
-			// skip publishing peer
+			// skip publishing participant
 			continue
 		}
 		if existingParticipant.State() != livekit.ParticipantInfo_JOINED {

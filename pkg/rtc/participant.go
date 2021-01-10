@@ -2,12 +2,12 @@ package rtc
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"time"
 
-	"github.com/pion/interceptor"
-	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/bep/debounce"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -22,6 +22,7 @@ import (
 const (
 	placeholderDataChannel = "_private"
 	sdBatchSize            = 20
+	negotiationFrequency   = 100 * time.Millisecond
 )
 
 type ParticipantImpl struct {
@@ -33,11 +34,13 @@ type ParticipantImpl struct {
 	mediaEngine      *webrtc.MediaEngine
 	name             string
 	state            livekit.ParticipantInfo_State
-	bi               *buffer.Interceptor
 	rtcpCh           chan []rtcp.Packet
 	subscribedTracks map[string][]*sfu.DownTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
+	// client intended to publish, yet to be reconciled
+	pendingTracks      map[string]*livekit.TrackInfo
+	debouncedNegotiate func(func())
 
 	lock sync.RWMutex
 	once sync.Once
@@ -45,7 +48,6 @@ type ParticipantImpl struct {
 	// callbacks & handlers
 	onTrackPublished func(types.Participant, types.PublishedTrack)
 	onTrackUpdated   func(types.Participant, types.PublishedTrack)
-	onOffer          func(webrtc.SessionDescription)
 	onICECandidate   func(c *webrtc.ICECandidateInit)
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
 	onClose          func(types.Participant)
@@ -54,7 +56,10 @@ type ParticipantImpl struct {
 func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(conf.SettingEngine))
+	se := conf.SettingEngine
+	se.BufferFactory = bufferFactory.GetOrNew
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
 	return api.NewPeerConnection(conf.Configuration)
 }
 
@@ -62,29 +67,26 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
-	bi := buffer.NewBufferInterceptor()
-	ir := &interceptor.Registry{}
-	ir.Add(bi)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
-		id:               utils.NewGuid(utils.ParticipantPrefix),
-		name:             name,
-		peerConn:         pc,
-		sigConn:          sc,
-		ctx:              ctx,
-		cancel:           cancel,
-		bi:               bi,
-		rtcpCh:           make(chan []rtcp.Packet, 10),
-		subscribedTracks: make(map[string][]*sfu.DownTrack),
-		state:            livekit.ParticipantInfo_JOINING,
-		lock:             sync.RWMutex{},
-		publishedTracks:  make(map[string]types.PublishedTrack, 0),
-		mediaEngine:      me,
+		id:                 utils.NewGuid(utils.ParticipantPrefix),
+		name:               name,
+		peerConn:           pc,
+		sigConn:            sc,
+		ctx:                ctx,
+		cancel:             cancel,
+		rtcpCh:             make(chan []rtcp.Packet, 10),
+		subscribedTracks:   make(map[string][]*sfu.DownTrack),
+		state:              livekit.ParticipantInfo_JOINING,
+		lock:               sync.RWMutex{},
+		publishedTracks:    make(map[string]types.PublishedTrack, 0),
+		pendingTracks:      make(map[string]*livekit.TrackInfo),
+		mediaEngine:        me,
+		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 
 	log := logger.GetLogger()
-
+	pc.ConnectionState()
 	pc.OnTrack(participant.onMediaTrack)
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -95,6 +97,7 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 		ci := c.ToJSON()
 
 		// write candidate
+		logger.GetLogger().Debugw("sending ice candidates")
 		err := sc.WriteResponse(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: ToProtoTrickle(ci),
@@ -152,10 +155,6 @@ func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, type
 	p.onTrackPublished = callback
 }
 
-func (p *ParticipantImpl) OnOffer(callback func(webrtc.SessionDescription)) {
-	p.onOffer = callback
-}
-
 func (p *ParticipantImpl) OnICECandidate(callback func(c *webrtc.ICECandidateInit)) {
 	p.onICECandidate = callback
 }
@@ -172,7 +171,7 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 	p.onClose = callback
 }
 
-// Answer an offer from remote participant
+// Answer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
 	if err = p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return
@@ -192,32 +191,7 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	// only set after answered
 	p.peerConn.OnNegotiationNeeded(func() {
 		logger.GetLogger().Debugw("negotiation needed", "participantId", p.ID())
-		offer, err := p.peerConn.CreateOffer(nil)
-		if err != nil {
-			logger.GetLogger().Errorw("could not create offer", "err", err)
-			return
-		}
-
-		err = p.peerConn.SetLocalDescription(offer)
-		if err != nil {
-			logger.GetLogger().Errorw("could not set local description", "err", err)
-			return
-		}
-
-		logger.GetLogger().Debugw("sending available offer to participant")
-		err = p.sigConn.WriteResponse(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: ToProtoSessionDescription(offer),
-			},
-		})
-		if err != nil {
-			logger.GetLogger().Errorw("could not send offer to peer",
-				"err", err)
-		}
-
-		if p.onOffer != nil {
-			p.onOffer(offer)
-		}
+		p.scheduleNegotiate()
 	})
 
 	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
@@ -232,35 +206,34 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	return
 }
 
-// HandleNegotiate when receiving session description from client
-func (p *ParticipantImpl) HandleNegotiate(sd webrtc.SessionDescription) error {
-	if err := p.peerConn.SetRemoteDescription(sd); err != nil {
-		return errors.Wrap(err, "could not set remote description")
+// client intends to publish track, this function records track details and schedules negotiation
+func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.TrackType) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.pendingTracks[clientId] = &livekit.TrackInfo{
+		Type: trackType,
+		Name: name,
 	}
 
-	if sd.Type == webrtc.SDPTypeOffer {
-		answer, err := p.peerConn.CreateAnswer(nil)
-		if err != nil {
-			return errors.Wrap(err, "could not create answer")
-		}
+	p.scheduleNegotiate()
+}
 
-		if err = p.peerConn.SetLocalDescription(answer); err != nil {
-			return errors.Wrap(err, "could not set local description")
-		}
+func (p *ParticipantImpl) RemoveTrack(sid string) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
-		// send a negotiate response back
-		return p.sigConn.WriteResponse(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Negotiate{
-				Negotiate: ToProtoSessionDescription(answer),
-			},
-		})
-	}
+	//
 
+	p.scheduleNegotiate()
 	return nil
 }
 
-func (p *ParticipantImpl) SetRemoteDescription(sdp webrtc.SessionDescription) error {
-	logger.GetLogger().Debugw("setting remote description", "type", sdp.Type)
+func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
+	if sdp.Type != webrtc.SDPTypeAnswer {
+		return ErrUnexpectedOffer
+	}
+	logger.GetLogger().Debugw("setting remote answer")
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -391,6 +364,41 @@ func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.subscribedTracks[streamId] = newTracks
 }
 
+func (p *ParticipantImpl) scheduleNegotiate() {
+	p.debouncedNegotiate(p.negotiate)
+}
+
+func (p *ParticipantImpl) negotiate() {
+	offer, err := p.peerConn.CreateOffer(nil)
+	if err != nil {
+		logger.GetLogger().Errorw("could not create offer", "err", err)
+		return
+	}
+
+	if p.peerConn.SignalingState() != webrtc.SignalingStateStable {
+		// try this again
+		p.scheduleNegotiate()
+		return
+	}
+
+	err = p.peerConn.SetLocalDescription(offer)
+	if err != nil {
+		logger.GetLogger().Errorw("could not set local description", "err", err)
+		return
+	}
+
+	logger.GetLogger().Debugw("sending available offer to participant")
+	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Offer{
+			Offer: ToProtoSessionDescription(offer),
+		},
+	})
+	if err != nil {
+		logger.GetLogger().Errorw("could not send offer to peer",
+			"err", err)
+	}
+}
+
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	if state == p.state {
 		return
@@ -410,10 +418,10 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	logger.GetLogger().Debugw("remoteTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
 
 	// create ReceiverImpl
-	receiver := NewReceiver(p.id, rtpReceiver, p.bi)
+	receiver := NewReceiver(p.rtcpCh, rtpReceiver, track)
 	mt := NewMediaTrack(p.id, p.rtcpCh, track, receiver)
 
-	p.handleTrackPublished(mt)
+	p.handleTrackPublished(track.ID(), mt)
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -429,13 +437,22 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 
 	dt.Start()
 
-	p.handleTrackPublished(dt)
+	cid := fmt.Sprintf("%d", dc.ID())
+	p.handleTrackPublished(cid, dt)
 }
 
-func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
+func (p *ParticipantImpl) handleTrackPublished(clientId string, track types.PublishedTrack) {
+	// fill in
 	p.lock.Lock()
+	defer p.lock.Unlock()
+	ti := p.pendingTracks[clientId]
+	if ti == nil {
+		logger.GetLogger().Errorw("track info not published prior to track", "clientId", clientId)
+	} else {
+		track.SetName(ti.Name)
+		delete(p.pendingTracks, clientId)
+	}
 	p.publishedTracks[track.ID()] = track
-	p.lock.Unlock()
 
 	track.Start()
 

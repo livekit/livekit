@@ -11,7 +11,6 @@ import (
 type WebRTCConfig struct {
 	Configuration webrtc.Configuration
 	SettingEngine webrtc.SettingEngine
-	feedbackTypes []webrtc.RTCPFeedback
 
 	receiver ReceiverConfig
 }
@@ -26,12 +25,6 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 	s := webrtc.SettingEngine{}
-	ft := []webrtc.RTCPFeedback{
-		{Type: webrtc.TypeRTCPFBCCM},
-		{Type: webrtc.TypeRTCPFBNACK},
-		{Type: webrtc.TypeRTCPFBGoogREMB},
-		{Type: "nack pli"},
-	}
 
 	if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
 		if err := s.SetEphemeralUDPPortRange(conf.ICEPortRangeStart, conf.ICEPortRangeEnd); err != nil {
@@ -55,7 +48,6 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
-		feedbackTypes: ft,
 		receiver: ReceiverConfig{
 			maxBandwidth:  conf.MaxBandwidth,
 			maxBufferTime: conf.MaxBufferTime,

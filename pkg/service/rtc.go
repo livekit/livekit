@@ -131,16 +131,20 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Errorw("could not handle join", "err", err, "participant", participant.ID())
 				return
 			}
-		case *livekit.SignalRequest_Negotiate:
+		case *livekit.SignalRequest_AddTrack:
+			log.Debugw("publishing track", "participant", participant.ID(),
+				"track", msg.AddTrack.Cid)
+			participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
+		case *livekit.SignalRequest_Answer:
 			if participant.State() == livekit.ParticipantInfo_JOINING {
 				log.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
 				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 				return
 			}
-			sd := rtc.FromProtoSessionDescription(msg.Negotiate)
-			err = participant.HandleNegotiate(sd)
+			sd := rtc.FromProtoSessionDescription(msg.Answer)
+			err = participant.HandleAnswer(sd)
 			if err != nil {
-				log.Errorw("could not handle negotiate", "participant", participant.ID(), "err", err)
+				log.Errorw("could not handle answer", "participant", participant.ID(), "err", err)
 				//conn.WriteJSON(
 				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 				return
@@ -160,9 +164,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case *livekit.SignalRequest_Mute:
-			participant.SetTrackMuted(msg.Mute.TrackSid, msg.Mute.Muted)
+			participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
+		case *livekit.SignalRequest_RemoveTrack:
+			participant.RemoveTrack(msg.RemoveTrack.Sid)
 		}
-
 	}
 }
 
@@ -178,7 +183,7 @@ func (s *RTCService) handleOffer(participant types.Participant, offer *livekit.S
 	return nil
 }
 
-func (s *RTCService) handleTrickle(participant types.Participant, trickle *livekit.Trickle) error {
+func (s *RTCService) handleTrickle(participant types.Participant, trickle *livekit.TrickleRequest) error {
 	candidateInit := rtc.FromProtoTrickle(trickle)
 	logger.GetLogger().Debugw("adding peer candidate", "participant", participant.ID())
 	if err := participant.AddICECandidate(candidateInit); err != nil {

@@ -9,130 +9,54 @@ import (
 )
 
 type FakeReceiver struct {
-	GetBufferedPacketsStub        func(uint32, uint16, uint32, []uint16) []rtp.Packet
-	getBufferedPacketsMutex       sync.RWMutex
-	getBufferedPacketsArgsForCall []struct {
-		arg1 uint32
+	GetBufferedPacketStub        func([]byte, uint16, uint16) (rtp.Packet, error)
+	getBufferedPacketMutex       sync.RWMutex
+	getBufferedPacketArgsForCall []struct {
+		arg1 []byte
 		arg2 uint16
-		arg3 uint32
-		arg4 []uint16
+		arg3 uint16
 	}
-	getBufferedPacketsReturns struct {
-		result1 []rtp.Packet
-	}
-	getBufferedPacketsReturnsOnCall map[int]struct {
-		result1 []rtp.Packet
-	}
-	ReadRTPStub        func() (*rtp.Packet, error)
-	readRTPMutex       sync.RWMutex
-	readRTPArgsForCall []struct {
-	}
-	readRTPReturns struct {
-		result1 *rtp.Packet
+	getBufferedPacketReturns struct {
+		result1 rtp.Packet
 		result2 error
 	}
-	readRTPReturnsOnCall map[int]struct {
-		result1 *rtp.Packet
+	getBufferedPacketReturnsOnCall map[int]struct {
+		result1 rtp.Packet
 		result2 error
 	}
-	StartStub        func()
-	startMutex       sync.RWMutex
-	startArgsForCall []struct {
+	RTPChanStub        func() <-chan rtp.Packet
+	rTPChanMutex       sync.RWMutex
+	rTPChanArgsForCall []struct {
 	}
-	TrackIdStub        func() string
-	trackIdMutex       sync.RWMutex
-	trackIdArgsForCall []struct {
+	rTPChanReturns struct {
+		result1 <-chan rtp.Packet
 	}
-	trackIdReturns struct {
-		result1 string
-	}
-	trackIdReturnsOnCall map[int]struct {
-		result1 string
+	rTPChanReturnsOnCall map[int]struct {
+		result1 <-chan rtp.Packet
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeReceiver) GetBufferedPackets(arg1 uint32, arg2 uint16, arg3 uint32, arg4 []uint16) []rtp.Packet {
-	var arg4Copy []uint16
-	if arg4 != nil {
-		arg4Copy = make([]uint16, len(arg4))
-		copy(arg4Copy, arg4)
+func (fake *FakeReceiver) GetBufferedPacket(arg1 []byte, arg2 uint16, arg3 uint16) (rtp.Packet, error) {
+	var arg1Copy []byte
+	if arg1 != nil {
+		arg1Copy = make([]byte, len(arg1))
+		copy(arg1Copy, arg1)
 	}
-	fake.getBufferedPacketsMutex.Lock()
-	ret, specificReturn := fake.getBufferedPacketsReturnsOnCall[len(fake.getBufferedPacketsArgsForCall)]
-	fake.getBufferedPacketsArgsForCall = append(fake.getBufferedPacketsArgsForCall, struct {
-		arg1 uint32
+	fake.getBufferedPacketMutex.Lock()
+	ret, specificReturn := fake.getBufferedPacketReturnsOnCall[len(fake.getBufferedPacketArgsForCall)]
+	fake.getBufferedPacketArgsForCall = append(fake.getBufferedPacketArgsForCall, struct {
+		arg1 []byte
 		arg2 uint16
-		arg3 uint32
-		arg4 []uint16
-	}{arg1, arg2, arg3, arg4Copy})
-	stub := fake.GetBufferedPacketsStub
-	fakeReturns := fake.getBufferedPacketsReturns
-	fake.recordInvocation("GetBufferedPackets", []interface{}{arg1, arg2, arg3, arg4Copy})
-	fake.getBufferedPacketsMutex.Unlock()
+		arg3 uint16
+	}{arg1Copy, arg2, arg3})
+	stub := fake.GetBufferedPacketStub
+	fakeReturns := fake.getBufferedPacketReturns
+	fake.recordInvocation("GetBufferedPacket", []interface{}{arg1Copy, arg2, arg3})
+	fake.getBufferedPacketMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeReceiver) GetBufferedPacketsCallCount() int {
-	fake.getBufferedPacketsMutex.RLock()
-	defer fake.getBufferedPacketsMutex.RUnlock()
-	return len(fake.getBufferedPacketsArgsForCall)
-}
-
-func (fake *FakeReceiver) GetBufferedPacketsCalls(stub func(uint32, uint16, uint32, []uint16) []rtp.Packet) {
-	fake.getBufferedPacketsMutex.Lock()
-	defer fake.getBufferedPacketsMutex.Unlock()
-	fake.GetBufferedPacketsStub = stub
-}
-
-func (fake *FakeReceiver) GetBufferedPacketsArgsForCall(i int) (uint32, uint16, uint32, []uint16) {
-	fake.getBufferedPacketsMutex.RLock()
-	defer fake.getBufferedPacketsMutex.RUnlock()
-	argsForCall := fake.getBufferedPacketsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
-}
-
-func (fake *FakeReceiver) GetBufferedPacketsReturns(result1 []rtp.Packet) {
-	fake.getBufferedPacketsMutex.Lock()
-	defer fake.getBufferedPacketsMutex.Unlock()
-	fake.GetBufferedPacketsStub = nil
-	fake.getBufferedPacketsReturns = struct {
-		result1 []rtp.Packet
-	}{result1}
-}
-
-func (fake *FakeReceiver) GetBufferedPacketsReturnsOnCall(i int, result1 []rtp.Packet) {
-	fake.getBufferedPacketsMutex.Lock()
-	defer fake.getBufferedPacketsMutex.Unlock()
-	fake.GetBufferedPacketsStub = nil
-	if fake.getBufferedPacketsReturnsOnCall == nil {
-		fake.getBufferedPacketsReturnsOnCall = make(map[int]struct {
-			result1 []rtp.Packet
-		})
-	}
-	fake.getBufferedPacketsReturnsOnCall[i] = struct {
-		result1 []rtp.Packet
-	}{result1}
-}
-
-func (fake *FakeReceiver) ReadRTP() (*rtp.Packet, error) {
-	fake.readRTPMutex.Lock()
-	ret, specificReturn := fake.readRTPReturnsOnCall[len(fake.readRTPArgsForCall)]
-	fake.readRTPArgsForCall = append(fake.readRTPArgsForCall, struct {
-	}{})
-	stub := fake.ReadRTPStub
-	fakeReturns := fake.readRTPReturns
-	fake.recordInvocation("ReadRTP", []interface{}{})
-	fake.readRTPMutex.Unlock()
-	if stub != nil {
-		return stub()
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -140,77 +64,60 @@ func (fake *FakeReceiver) ReadRTP() (*rtp.Packet, error) {
 	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *FakeReceiver) ReadRTPCallCount() int {
-	fake.readRTPMutex.RLock()
-	defer fake.readRTPMutex.RUnlock()
-	return len(fake.readRTPArgsForCall)
+func (fake *FakeReceiver) GetBufferedPacketCallCount() int {
+	fake.getBufferedPacketMutex.RLock()
+	defer fake.getBufferedPacketMutex.RUnlock()
+	return len(fake.getBufferedPacketArgsForCall)
 }
 
-func (fake *FakeReceiver) ReadRTPCalls(stub func() (*rtp.Packet, error)) {
-	fake.readRTPMutex.Lock()
-	defer fake.readRTPMutex.Unlock()
-	fake.ReadRTPStub = stub
+func (fake *FakeReceiver) GetBufferedPacketCalls(stub func([]byte, uint16, uint16) (rtp.Packet, error)) {
+	fake.getBufferedPacketMutex.Lock()
+	defer fake.getBufferedPacketMutex.Unlock()
+	fake.GetBufferedPacketStub = stub
 }
 
-func (fake *FakeReceiver) ReadRTPReturns(result1 *rtp.Packet, result2 error) {
-	fake.readRTPMutex.Lock()
-	defer fake.readRTPMutex.Unlock()
-	fake.ReadRTPStub = nil
-	fake.readRTPReturns = struct {
-		result1 *rtp.Packet
+func (fake *FakeReceiver) GetBufferedPacketArgsForCall(i int) ([]byte, uint16, uint16) {
+	fake.getBufferedPacketMutex.RLock()
+	defer fake.getBufferedPacketMutex.RUnlock()
+	argsForCall := fake.getBufferedPacketArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeReceiver) GetBufferedPacketReturns(result1 rtp.Packet, result2 error) {
+	fake.getBufferedPacketMutex.Lock()
+	defer fake.getBufferedPacketMutex.Unlock()
+	fake.GetBufferedPacketStub = nil
+	fake.getBufferedPacketReturns = struct {
+		result1 rtp.Packet
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeReceiver) ReadRTPReturnsOnCall(i int, result1 *rtp.Packet, result2 error) {
-	fake.readRTPMutex.Lock()
-	defer fake.readRTPMutex.Unlock()
-	fake.ReadRTPStub = nil
-	if fake.readRTPReturnsOnCall == nil {
-		fake.readRTPReturnsOnCall = make(map[int]struct {
-			result1 *rtp.Packet
+func (fake *FakeReceiver) GetBufferedPacketReturnsOnCall(i int, result1 rtp.Packet, result2 error) {
+	fake.getBufferedPacketMutex.Lock()
+	defer fake.getBufferedPacketMutex.Unlock()
+	fake.GetBufferedPacketStub = nil
+	if fake.getBufferedPacketReturnsOnCall == nil {
+		fake.getBufferedPacketReturnsOnCall = make(map[int]struct {
+			result1 rtp.Packet
 			result2 error
 		})
 	}
-	fake.readRTPReturnsOnCall[i] = struct {
-		result1 *rtp.Packet
+	fake.getBufferedPacketReturnsOnCall[i] = struct {
+		result1 rtp.Packet
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeReceiver) Start() {
-	fake.startMutex.Lock()
-	fake.startArgsForCall = append(fake.startArgsForCall, struct {
+func (fake *FakeReceiver) RTPChan() <-chan rtp.Packet {
+	fake.rTPChanMutex.Lock()
+	ret, specificReturn := fake.rTPChanReturnsOnCall[len(fake.rTPChanArgsForCall)]
+	fake.rTPChanArgsForCall = append(fake.rTPChanArgsForCall, struct {
 	}{})
-	stub := fake.StartStub
-	fake.recordInvocation("Start", []interface{}{})
-	fake.startMutex.Unlock()
-	if stub != nil {
-		fake.StartStub()
-	}
-}
-
-func (fake *FakeReceiver) StartCallCount() int {
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
-	return len(fake.startArgsForCall)
-}
-
-func (fake *FakeReceiver) StartCalls(stub func()) {
-	fake.startMutex.Lock()
-	defer fake.startMutex.Unlock()
-	fake.StartStub = stub
-}
-
-func (fake *FakeReceiver) TrackId() string {
-	fake.trackIdMutex.Lock()
-	ret, specificReturn := fake.trackIdReturnsOnCall[len(fake.trackIdArgsForCall)]
-	fake.trackIdArgsForCall = append(fake.trackIdArgsForCall, struct {
-	}{})
-	stub := fake.TrackIdStub
-	fakeReturns := fake.trackIdReturns
-	fake.recordInvocation("TrackId", []interface{}{})
-	fake.trackIdMutex.Unlock()
+	stub := fake.RTPChanStub
+	fakeReturns := fake.rTPChanReturns
+	fake.recordInvocation("RTPChan", []interface{}{})
+	fake.rTPChanMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -220,52 +127,48 @@ func (fake *FakeReceiver) TrackId() string {
 	return fakeReturns.result1
 }
 
-func (fake *FakeReceiver) TrackIdCallCount() int {
-	fake.trackIdMutex.RLock()
-	defer fake.trackIdMutex.RUnlock()
-	return len(fake.trackIdArgsForCall)
+func (fake *FakeReceiver) RTPChanCallCount() int {
+	fake.rTPChanMutex.RLock()
+	defer fake.rTPChanMutex.RUnlock()
+	return len(fake.rTPChanArgsForCall)
 }
 
-func (fake *FakeReceiver) TrackIdCalls(stub func() string) {
-	fake.trackIdMutex.Lock()
-	defer fake.trackIdMutex.Unlock()
-	fake.TrackIdStub = stub
+func (fake *FakeReceiver) RTPChanCalls(stub func() <-chan rtp.Packet) {
+	fake.rTPChanMutex.Lock()
+	defer fake.rTPChanMutex.Unlock()
+	fake.RTPChanStub = stub
 }
 
-func (fake *FakeReceiver) TrackIdReturns(result1 string) {
-	fake.trackIdMutex.Lock()
-	defer fake.trackIdMutex.Unlock()
-	fake.TrackIdStub = nil
-	fake.trackIdReturns = struct {
-		result1 string
+func (fake *FakeReceiver) RTPChanReturns(result1 <-chan rtp.Packet) {
+	fake.rTPChanMutex.Lock()
+	defer fake.rTPChanMutex.Unlock()
+	fake.RTPChanStub = nil
+	fake.rTPChanReturns = struct {
+		result1 <-chan rtp.Packet
 	}{result1}
 }
 
-func (fake *FakeReceiver) TrackIdReturnsOnCall(i int, result1 string) {
-	fake.trackIdMutex.Lock()
-	defer fake.trackIdMutex.Unlock()
-	fake.TrackIdStub = nil
-	if fake.trackIdReturnsOnCall == nil {
-		fake.trackIdReturnsOnCall = make(map[int]struct {
-			result1 string
+func (fake *FakeReceiver) RTPChanReturnsOnCall(i int, result1 <-chan rtp.Packet) {
+	fake.rTPChanMutex.Lock()
+	defer fake.rTPChanMutex.Unlock()
+	fake.RTPChanStub = nil
+	if fake.rTPChanReturnsOnCall == nil {
+		fake.rTPChanReturnsOnCall = make(map[int]struct {
+			result1 <-chan rtp.Packet
 		})
 	}
-	fake.trackIdReturnsOnCall[i] = struct {
-		result1 string
+	fake.rTPChanReturnsOnCall[i] = struct {
+		result1 <-chan rtp.Packet
 	}{result1}
 }
 
 func (fake *FakeReceiver) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.getBufferedPacketsMutex.RLock()
-	defer fake.getBufferedPacketsMutex.RUnlock()
-	fake.readRTPMutex.RLock()
-	defer fake.readRTPMutex.RUnlock()
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
-	fake.trackIdMutex.RLock()
-	defer fake.trackIdMutex.RUnlock()
+	fake.getBufferedPacketMutex.RLock()
+	defer fake.getBufferedPacketMutex.RUnlock()
+	fake.rTPChanMutex.RLock()
+	defer fake.rTPChanMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

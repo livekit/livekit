@@ -40,15 +40,25 @@ type FakePublishedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	KindStub        func() livekit.TrackInfo_Type
+	KindStub        func() livekit.TrackType
 	kindMutex       sync.RWMutex
 	kindArgsForCall []struct {
 	}
 	kindReturns struct {
-		result1 livekit.TrackInfo_Type
+		result1 livekit.TrackType
 	}
 	kindReturnsOnCall map[int]struct {
-		result1 livekit.TrackInfo_Type
+		result1 livekit.TrackType
+	}
+	NameStub        func() string
+	nameMutex       sync.RWMutex
+	nameArgsForCall []struct {
+	}
+	nameReturns struct {
+		result1 string
+	}
+	nameReturnsOnCall map[int]struct {
+		result1 string
 	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
@@ -59,19 +69,14 @@ type FakePublishedTrack struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
+	SetNameStub        func(string)
+	setNameMutex       sync.RWMutex
+	setNameArgsForCall []struct {
+		arg1 string
+	}
 	StartStub        func()
 	startMutex       sync.RWMutex
 	startArgsForCall []struct {
-	}
-	StreamIDStub        func() string
-	streamIDMutex       sync.RWMutex
-	streamIDArgsForCall []struct {
-	}
-	streamIDReturns struct {
-		result1 string
-	}
-	streamIDReturnsOnCall map[int]struct {
-		result1 string
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -244,7 +249,7 @@ func (fake *FakePublishedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) Kind() livekit.TrackInfo_Type {
+func (fake *FakePublishedTrack) Kind() livekit.TrackType {
 	fake.kindMutex.Lock()
 	ret, specificReturn := fake.kindReturnsOnCall[len(fake.kindArgsForCall)]
 	fake.kindArgsForCall = append(fake.kindArgsForCall, struct {
@@ -268,32 +273,85 @@ func (fake *FakePublishedTrack) KindCallCount() int {
 	return len(fake.kindArgsForCall)
 }
 
-func (fake *FakePublishedTrack) KindCalls(stub func() livekit.TrackInfo_Type) {
+func (fake *FakePublishedTrack) KindCalls(stub func() livekit.TrackType) {
 	fake.kindMutex.Lock()
 	defer fake.kindMutex.Unlock()
 	fake.KindStub = stub
 }
 
-func (fake *FakePublishedTrack) KindReturns(result1 livekit.TrackInfo_Type) {
+func (fake *FakePublishedTrack) KindReturns(result1 livekit.TrackType) {
 	fake.kindMutex.Lock()
 	defer fake.kindMutex.Unlock()
 	fake.KindStub = nil
 	fake.kindReturns = struct {
-		result1 livekit.TrackInfo_Type
+		result1 livekit.TrackType
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) KindReturnsOnCall(i int, result1 livekit.TrackInfo_Type) {
+func (fake *FakePublishedTrack) KindReturnsOnCall(i int, result1 livekit.TrackType) {
 	fake.kindMutex.Lock()
 	defer fake.kindMutex.Unlock()
 	fake.KindStub = nil
 	if fake.kindReturnsOnCall == nil {
 		fake.kindReturnsOnCall = make(map[int]struct {
-			result1 livekit.TrackInfo_Type
+			result1 livekit.TrackType
 		})
 	}
 	fake.kindReturnsOnCall[i] = struct {
-		result1 livekit.TrackInfo_Type
+		result1 livekit.TrackType
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) Name() string {
+	fake.nameMutex.Lock()
+	ret, specificReturn := fake.nameReturnsOnCall[len(fake.nameArgsForCall)]
+	fake.nameArgsForCall = append(fake.nameArgsForCall, struct {
+	}{})
+	stub := fake.NameStub
+	fakeReturns := fake.nameReturns
+	fake.recordInvocation("Name", []interface{}{})
+	fake.nameMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) NameCallCount() int {
+	fake.nameMutex.RLock()
+	defer fake.nameMutex.RUnlock()
+	return len(fake.nameArgsForCall)
+}
+
+func (fake *FakePublishedTrack) NameCalls(stub func() string) {
+	fake.nameMutex.Lock()
+	defer fake.nameMutex.Unlock()
+	fake.NameStub = stub
+}
+
+func (fake *FakePublishedTrack) NameReturns(result1 string) {
+	fake.nameMutex.Lock()
+	defer fake.nameMutex.Unlock()
+	fake.NameStub = nil
+	fake.nameReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) NameReturnsOnCall(i int, result1 string) {
+	fake.nameMutex.Lock()
+	defer fake.nameMutex.Unlock()
+	fake.NameStub = nil
+	if fake.nameReturnsOnCall == nil {
+		fake.nameReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.nameReturnsOnCall[i] = struct {
+		result1 string
 	}{result1}
 }
 
@@ -353,6 +411,38 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
+func (fake *FakePublishedTrack) SetName(arg1 string) {
+	fake.setNameMutex.Lock()
+	fake.setNameArgsForCall = append(fake.setNameArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.SetNameStub
+	fake.recordInvocation("SetName", []interface{}{arg1})
+	fake.setNameMutex.Unlock()
+	if stub != nil {
+		fake.SetNameStub(arg1)
+	}
+}
+
+func (fake *FakePublishedTrack) SetNameCallCount() int {
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
+	return len(fake.setNameArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SetNameCalls(stub func(string)) {
+	fake.setNameMutex.Lock()
+	defer fake.setNameMutex.Unlock()
+	fake.SetNameStub = stub
+}
+
+func (fake *FakePublishedTrack) SetNameArgsForCall(i int) string {
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
+	argsForCall := fake.setNameArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakePublishedTrack) Start() {
 	fake.startMutex.Lock()
 	fake.startArgsForCall = append(fake.startArgsForCall, struct {
@@ -377,59 +467,6 @@ func (fake *FakePublishedTrack) StartCalls(stub func()) {
 	fake.StartStub = stub
 }
 
-func (fake *FakePublishedTrack) StreamID() string {
-	fake.streamIDMutex.Lock()
-	ret, specificReturn := fake.streamIDReturnsOnCall[len(fake.streamIDArgsForCall)]
-	fake.streamIDArgsForCall = append(fake.streamIDArgsForCall, struct {
-	}{})
-	stub := fake.StreamIDStub
-	fakeReturns := fake.streamIDReturns
-	fake.recordInvocation("StreamID", []interface{}{})
-	fake.streamIDMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) StreamIDCallCount() int {
-	fake.streamIDMutex.RLock()
-	defer fake.streamIDMutex.RUnlock()
-	return len(fake.streamIDArgsForCall)
-}
-
-func (fake *FakePublishedTrack) StreamIDCalls(stub func() string) {
-	fake.streamIDMutex.Lock()
-	defer fake.streamIDMutex.Unlock()
-	fake.StreamIDStub = stub
-}
-
-func (fake *FakePublishedTrack) StreamIDReturns(result1 string) {
-	fake.streamIDMutex.Lock()
-	defer fake.streamIDMutex.Unlock()
-	fake.StreamIDStub = nil
-	fake.streamIDReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) StreamIDReturnsOnCall(i int, result1 string) {
-	fake.streamIDMutex.Lock()
-	defer fake.streamIDMutex.Unlock()
-	fake.StreamIDStub = nil
-	if fake.streamIDReturnsOnCall == nil {
-		fake.streamIDReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.streamIDReturnsOnCall[i] = struct {
-		result1 string
-	}{result1}
-}
-
 func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -441,14 +478,16 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.isMutedMutex.RUnlock()
 	fake.kindMutex.RLock()
 	defer fake.kindMutex.RUnlock()
+	fake.nameMutex.RLock()
+	defer fake.nameMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.setNameMutex.RLock()
+	defer fake.setNameMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
-	fake.streamIDMutex.RLock()
-	defer fake.streamIDMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

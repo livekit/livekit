@@ -48,15 +48,16 @@ message ParticipantInfo {
   repeated TrackInfo tracks = 4;
 }
 
+enum TrackType {
+  AUDIO = 0;
+  VIDEO = 1;
+  DATA = 2;
+}
+
 // describing
 message TrackInfo {
-  enum Type {
-    AUDIO = 0;
-    VIDEO = 1;
-    DATA = 2;
-  }
   string sid = 1;
-  Type type = 2;
+  TrackType type = 2;
   string name = 3;
   bool muted = 4;
 }

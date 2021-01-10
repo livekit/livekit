@@ -75,14 +75,14 @@ func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionD
 	}
 }
 
-func ToProtoTrickle(candidateInit webrtc.ICECandidateInit) *livekit.Trickle {
+func ToProtoTrickle(candidateInit webrtc.ICECandidateInit) *livekit.TrickleRequest {
 	data, _ := json.Marshal(candidateInit)
-	return &livekit.Trickle{
+	return &livekit.TrickleRequest{
 		CandidateInit: string(data),
 	}
 }
 
-func FromProtoTrickle(trickle *livekit.Trickle) webrtc.ICECandidateInit {
+func FromProtoTrickle(trickle *livekit.TrickleRequest) webrtc.ICECandidateInit {
 	ci := webrtc.ICECandidateInit{}
 	json.Unmarshal([]byte(trickle.CandidateInit), &ci)
 	return ci
@@ -92,17 +92,17 @@ func ToProtoTrack(t types.PublishedTrack) *livekit.TrackInfo {
 	return &livekit.TrackInfo{
 		Sid:   t.ID(),
 		Type:  t.Kind(),
-		Name:  t.StreamID(),
+		Name:  t.Name(),
 		Muted: t.IsMuted(),
 	}
 }
 
-func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackInfo_Type {
+func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 	switch kind {
 	case webrtc.RTPCodecTypeVideo:
-		return livekit.TrackInfo_VIDEO
+		return livekit.TrackType_VIDEO
 	case webrtc.RTPCodecTypeAudio:
-		return livekit.TrackInfo_AUDIO
+		return livekit.TrackType_AUDIO
 	}
 	panic("unsupported track kind")
 }

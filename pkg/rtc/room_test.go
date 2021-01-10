@@ -112,7 +112,7 @@ func TestNewTrack(t *testing.T) {
 		p3 := participants[3].(*typesfakes.FakeParticipant)
 
 		// p3 adds track
-		track := newMockTrack(livekit.TrackInfo_VIDEO, "webcam")
+		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
 		trackCB := p3.OnTrackPublishedArgsForCall(0)
 		assert.NotNil(t, trackCB)
 		trackCB(p3, track)
