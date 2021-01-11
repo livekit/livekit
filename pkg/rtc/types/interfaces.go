@@ -96,7 +96,6 @@ type PublishedTrack interface {
 	ID() string
 	Kind() livekit.TrackType
 	Name() string
-	SetName(name string)
 	IsMuted() bool
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)

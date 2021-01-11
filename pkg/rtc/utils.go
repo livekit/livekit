@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -109,4 +110,14 @@ func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 
 func IsEOF(err error) bool {
 	return err == io.ErrClosedPipe || err == io.EOF
+}
+
+func RecoverSilent() {
+	recover()
+}
+
+func Recover() {
+	if r := recover(); r != nil {
+		logger.GetLogger().Errorw("recovered panic", "err", r)
+	}
 }

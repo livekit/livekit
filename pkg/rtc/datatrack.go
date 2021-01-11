@@ -67,10 +67,6 @@ func (t *DataTrack) Name() string {
 	return t.name
 }
 
-func (t *DataTrack) SetName(name string) {
-	t.name = name
-}
-
 // DataTrack cannot be muted
 func (t *DataTrack) IsMuted() bool {
 	return false
@@ -119,6 +115,7 @@ func (t *DataTrack) RemoveAllSubscribers() {
 }
 
 func (t *DataTrack) forwardWorker() {
+	defer Recover()
 	defer func() {
 		t.RemoveAllSubscribers()
 	}()

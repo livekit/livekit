@@ -410,9 +410,6 @@ func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.lock.Lock()
 	p.subscribedTracks[streamId] = append(p.subscribedTracks[streamId], dt)
 	p.lock.Unlock()
-	//dt.OnBind(func() {
-	//	go p.sendDownTrackBindingReports(streamId)
-	//})
 }
 
 func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
@@ -481,6 +478,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 	if p.onStateChange != nil {
 		go func() {
+			defer Recover()
 			p.onStateChange(p, oldState)
 		}()
 	}
@@ -498,6 +496,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	// create ReceiverImpl
 	receiver := NewReceiver(p.rtcpCh, rtpReceiver, track, p.receiverConfig)
 	mt := NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, receiver)
+	mt.name = ti.Name
 
 	p.handleTrackPublished(mt)
 }
@@ -515,6 +514,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	}
 
 	dt := NewDataTrack(ti.Sid, p.id, dc)
+	dt.name = ti.Name
 
 	p.handleTrackPublished(dt)
 }
@@ -534,57 +534,20 @@ func (p *ParticipantImpl) popPendingTrack(clientId string) *livekit.TrackInfo {
 func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 	// fill in
 	p.lock.Lock()
-	defer p.lock.Unlock()
 	p.publishedTracks[track.ID()] = track
+	p.lock.Unlock()
 
 	track.Start()
 
 	if p.onTrackPublished != nil {
-		go p.onTrackPublished(p, track)
+		p.onTrackPublished(p, track)
 	}
-}
-
-func (p *ParticipantImpl) scheduleDownTrackBindingReports(streamId string) {
-	var sd []rtcp.SourceDescriptionChunk
-
-	p.lock.RLock()
-	dts := p.subscribedTracks[streamId]
-	for _, dt := range dts {
-		if !dt.IsBound() {
-			continue
-		}
-		chunks := dt.CreateSourceDescriptionChunks()
-		if chunks != nil {
-			sd = append(sd, chunks...)
-		}
-	}
-	p.lock.RUnlock()
-
-	pkts := []rtcp.Packet{
-		&rtcp.SourceDescription{Chunks: sd},
-	}
-
-	go func() {
-		batch := pkts
-		i := 0
-		for {
-			if err := p.peerConn.WriteRTCP(batch); err != nil {
-				logger.GetLogger().Debugw("error sending track binding reports",
-					"participant", p.id,
-					"err", err)
-			}
-			if i > 5 {
-				return
-			}
-			i++
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
 }
 
 // downTracksRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
 func (p *ParticipantImpl) downTracksRTCPWorker() {
+	defer Recover()
 	for {
 		time.Sleep(5 * time.Second)
 
@@ -630,6 +593,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 }
 
 func (p *ParticipantImpl) rtcpSendWorker() {
+	defer Recover()
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		//for _, pkt := range pkts {

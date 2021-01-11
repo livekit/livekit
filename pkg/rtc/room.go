@@ -90,6 +90,7 @@ func (r *Room) Join(participant types.Participant) error {
 			p.Start()
 		}
 	})
+	participant.OnTrackUpdated(r.onTrackUpdated)
 
 	log.Infow("new participant joined",
 		"id", participant.ID(),
@@ -116,10 +117,9 @@ func (r *Room) RemoveParticipant(id string) {
 	if p, ok := r.participants[id]; ok {
 		// avoid blocking lock
 		go func() {
+			Recover()
 			// also stop connection if needed
 			p.Close()
-			// update clients
-			r.broadcastParticipantState(p)
 		}()
 	}
 
@@ -158,10 +158,11 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 	}
 }
 
-func (r *Room) onTrackMuted(p types.Participant, track types.PublishedTrack) {
+func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 	r.broadcastParticipantState(p)
 }
 
+// broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()

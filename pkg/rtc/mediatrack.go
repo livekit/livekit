@@ -36,10 +36,11 @@ type MediaTrack struct {
 	participantId string
 	muted         bool
 
-	ssrc  webrtc.SSRC
-	name  string
-	kind  livekit.TrackType
-	codec webrtc.RTPCodecParameters
+	ssrc     webrtc.SSRC
+	name     string
+	streamID string
+	kind     livekit.TrackType
+	codec    webrtc.RTPCodecParameters
 
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
@@ -59,7 +60,7 @@ func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track 
 		id:            trackId,
 		participantId: pId,
 		ssrc:          track.SSRC(),
-		name:          track.StreamID(),
+		streamID:      track.StreamID(),
 		kind:          ToProtoTrackKind(track.Kind()),
 		codec:         track.Codec(),
 		rtcpCh:        rtcpCh,
@@ -92,10 +93,6 @@ func (t *MediaTrack) Name() string {
 	return t.name
 }
 
-func (t *MediaTrack) SetName(name string) {
-	t.name = name
-}
-
 func (t *MediaTrack) IsMuted() bool {
 	return t.muted
 }
@@ -114,7 +111,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, packedId, t.Name())
+	}, packedId, t.streamID)
 	if err != nil {
 		return err
 	}
@@ -134,18 +131,23 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 				t.handleRTCP(outTrack, pkt)
 			})
 		}
-		go t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
+		t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
 	})
 	outTrack.OnCloseHandler(func() {
 		t.lock.Lock()
 		delete(t.downtracks, participant.ID())
 		t.lock.Unlock()
 
+		// ignore if the subscribing participant disconnected
 		if participant.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
 		sender := transceiver.Sender()
 		if sender != nil {
+			logger.GetLogger().Debugw("removing peerconnection track",
+				"track", t.id,
+				"srcParticipant", t.participantId,
+				"destParticipant", participant.ID())
 			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					logger.GetLogger().Warnw("could not remove remoteTrack from forwarder",
@@ -155,9 +157,9 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 			}
 		}
 
-		participant.RemoveDownTrack(t.Name(), outTrack)
+		participant.RemoveDownTrack(t.streamID, outTrack)
 	})
-	participant.AddDownTrack(t.Name(), outTrack)
+	participant.AddDownTrack(t.streamID, outTrack)
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -191,8 +193,8 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 	var sd []rtcp.SourceDescriptionChunk
 
 	t.lock.RLock()
-	defer t.lock.RUnlock()
 	dt := t.downtracks[participantId]
+	t.lock.RUnlock()
 	if !dt.IsBound() {
 		return
 	}
@@ -206,6 +208,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 	}
 
 	go func() {
+		defer RecoverSilent()
 		batch := pkts
 		i := 0
 		for {
@@ -221,8 +224,8 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 
 // b reads from the receiver and writes to each sender
 func (t *MediaTrack) forwardRTPWorker() {
+	defer Recover()
 	defer func() {
-		logger.GetLogger().Debugw("stopping forward RTP worker")
 		t.RemoveAllSubscribers()
 		// TODO: send unpublished events?
 		t.nackWorker.Stop()
@@ -276,6 +279,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 }
 
 func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
+	defer Recover()
 	pkts, err := rtcp.Unmarshal(rtcpBuf)
 	if err != nil {
 		logger.GetLogger().Warnw("could not decode RTCP packet", "err", err)

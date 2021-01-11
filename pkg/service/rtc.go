@@ -106,7 +106,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// remove peer from room upon disconnection
 		room.RemoveParticipant(participant.ID())
 		participant.Close()
-		log.Infow("WS connection closed")
+		log.Infow("WS connection closed", "participant", participant.ID())
 	}()
 
 	// read connection and wait for commands
