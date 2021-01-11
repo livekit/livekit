@@ -21,7 +21,7 @@ type RTCConfig struct {
 	StunServers       []string `yaml:"stun_servers"`
 	UseExternalIP     bool     `yaml:"use_external_ip"`
 
-	MaxBandwidth  uint64 `yaml:"max_bandwidth"`
+	MaxBitrate    uint64 `yaml:"max_bandwidth"`
 	MaxBufferTime int    `yaml:"max_buffer_time"`
 }
 

@@ -16,7 +16,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -54,10 +53,10 @@ type MediaTrack struct {
 	lastPLI time.Time
 }
 
-func NewMediaTrack(pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
+func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
 	t := &MediaTrack{
 		ctx:           context.Background(),
-		id:            utils.NewGuid(utils.TrackPrefix),
+		id:            trackId,
 		participantId: pId,
 		ssrc:          track.SSRC(),
 		name:          track.StreamID(),
@@ -135,7 +134,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 				t.handleRTCP(outTrack, pkt)
 			})
 		}
-		//go sub.sendStreamDownTracksReports(recv.Name())
+		//go t.scheduleDownTrackBindingReports(recv.Name())
 	})
 	outTrack.OnCloseHandler(func() {
 		t.lock.Lock()
@@ -188,26 +187,69 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.downtracks = make(map[string]types.DownTrack)
 }
 
-// forwardRTPWorker reads from the receiver and writes to each sender
+//func (t *MediaTrack) scheduleDownTrackBindingReports(streamId string) {
+//	var sd []rtcp.SourceDescriptionChunk
+//
+//	p.lock.RLock()
+//	dts := p.subscribedTracks[streamId]
+//	for _, dt := range dts {
+//		if !dt.IsBound() {
+//			continue
+//		}
+//		chunks := dt.CreateSourceDescriptionChunks()
+//		if chunks != nil {
+//			sd = append(sd, chunks...)
+//		}
+//	}
+//	p.lock.RUnlock()
+//
+//	pkts := []rtcp.Packet{
+//		&rtcp.SourceDescription{Chunks: sd},
+//	}
+//
+//	go func() {
+//		batch := pkts
+//		i := 0
+//		for {
+//			if err := p.peerConn.WriteRTCP(batch); err != nil {
+//				logger.GetLogger().Debugw("error sending track binding reports",
+//					"participant", p.id,
+//					"err", err)
+//			}
+//			if i > 5 {
+//				return
+//			}
+//			i++
+//			time.Sleep(20 * time.Millisecond)
+//		}
+//	}()
+//}
+
+// b reads from the receiver and writes to each sender
 func (t *MediaTrack) forwardRTPWorker() {
 	defer func() {
+		logger.GetLogger().Debugw("stopping forward RTP worker")
 		t.RemoveAllSubscribers()
 		// TODO: send unpublished events?
 		t.nackWorker.Stop()
 	}()
 
 	for pkt := range t.receiver.RTPChan() {
+		//logger.GetLogger().Debugw("read packet from remoteTrack",
+		//	"participant", t.participantId,
+		//	"track", t.ID())
 		// when track is muted, it's "disabled" on the client side, and will still be sending black frames
 		// when our metadata is updated as such, we shortcircuit forwarding of black frames
 		if t.muted {
 			continue
 		}
 
-		//logger.GetLogger().Debugw("read packet from remoteTrack",
-		//	"participantId", t.participantId,
-		//	"remoteTrack", t.remoteTrack.ID())
 		t.lock.RLock()
 		for dstId, dt := range t.downtracks {
+			//logger.GetLogger().Debugw("read packet from remoteTrack",
+			//	"srcParticipant", t.participantId,
+			//	"destParticipant", dstId,
+			//	"track", t.ID())
 			err := dt.WriteRTP(pkt)
 			if IsEOF(err) {
 				// this participant unsubscribed, remove it

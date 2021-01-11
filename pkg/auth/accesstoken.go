@@ -55,7 +55,7 @@ func (t *AccessToken) ToJWT() (string, error) {
 
 	validFor := defaultValidDuration
 	if t.validFor > 0 {
-		t.validFor = validFor
+		validFor = t.validFor
 	}
 
 	cl := jwt.Claims{

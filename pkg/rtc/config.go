@@ -11,12 +11,11 @@ import (
 type WebRTCConfig struct {
 	Configuration webrtc.Configuration
 	SettingEngine webrtc.SettingEngine
-
-	receiver ReceiverConfig
+	Receiver      ReceiverConfig
 }
 
 type ReceiverConfig struct {
-	maxBandwidth  uint64
+	maxBitrate    uint64
 	maxBufferTime int
 }
 
@@ -48,8 +47,8 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
-		receiver: ReceiverConfig{
-			maxBandwidth:  conf.MaxBandwidth,
+		Receiver: ReceiverConfig{
+			maxBitrate:    conf.MaxBitrate,
 			maxBufferTime: conf.MaxBufferTime,
 		},
 	}, nil

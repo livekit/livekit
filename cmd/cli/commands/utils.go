@@ -36,6 +36,10 @@ var (
 		EnvVars:  []string{"LK_API_SECRET"},
 		Required: true,
 	}
+	devFlag = &cli.BoolFlag{
+		Name:  "dev",
+		Usage: "enables dev mode, longer expiration for tokens",
+	}
 )
 
 func PrintJSON(obj interface{}) {
@@ -60,9 +64,14 @@ func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value
 		return
 	}
 
+	isDev := c.Bool("dev")
+
 	at := auth.NewAccessToken(apiKey, apiSecret).
 		AddGrant(grant).
-		SetIdentity(identity).
-		SetValidFor(time.Hour * 24)
+		SetIdentity(identity)
+	if isDev {
+		fmt.Println("creating dev token")
+		at.SetValidFor(time.Hour * 24 * 30)
+	}
 	return at.ToJWT()
 }

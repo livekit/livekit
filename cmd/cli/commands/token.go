@@ -35,6 +35,7 @@ var (
 					Aliases: []string{"r"},
 					Usage:   "name of the room to join, empty to allow joining all rooms",
 				},
+				devFlag,
 			},
 		},
 	}

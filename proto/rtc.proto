@@ -15,6 +15,8 @@ message SignalRequest {
     AddTrackRequest add_track = 4;
     MuteTrackRequest mute = 5;
     RemoveTrackRequest remove_track = 6;
+    // when client needs to negotiate
+    NegotiationRequest negotiate = 7;
   }
 }
 
@@ -31,15 +33,17 @@ message SignalResponse {
     // sent when participants in the room has changed
     ParticipantUpdate update = 5;
     // sent to the participant when their track has been published
-    TrackInfo track_published = 6;
+    TrackPublishedResponse track_published = 6;
+    // sent to participant when they should initiate negotiation
+    NegotiationResponse negotiate = 7;
   }
 }
 
 message AddTrackRequest {
-  string name = 1;
-  TrackType type = 2;
   // client ID of track, to match it when RTC track is received
-  string cid = 3;
+  string cid = 1;
+  string name = 2;
+  TrackType type = 3;
 }
 
 message TrickleRequest {
@@ -50,9 +54,13 @@ message RemoveTrackRequest {
   string sid = 1;
 }
 
-message SessionDescription {
-  string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
-  string sdp = 2;
+message MuteTrackRequest {
+  string sid = 1;
+  bool muted = 2;
+}
+
+message NegotiationRequest {
+  // empty
 }
 
 message JoinResponse {
@@ -61,10 +69,20 @@ message JoinResponse {
   repeated ParticipantInfo other_participants = 3;
 }
 
-message MuteTrackRequest {
-  string sid = 1;
-  bool muted = 2;
+message TrackPublishedResponse {
+  string cid = 1;
+  TrackInfo track = 2;
 }
+
+message NegotiationResponse {
+  // empty
+}
+
+message SessionDescription {
+  string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
+  string sdp = 2;
+}
+
 
 message ParticipantUpdate {
   repeated ParticipantInfo participants = 1;

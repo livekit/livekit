@@ -7,7 +7,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -30,10 +29,10 @@ type DataTrack struct {
 	subscribers map[string]*DownDataChannel
 }
 
-func NewDataTrack(participantId string, dc *webrtc.DataChannel) *DataTrack {
+func NewDataTrack(trackId, participantId string, dc *webrtc.DataChannel) *DataTrack {
 	t := &DataTrack{
 		//ctx:           context.Background(),
-		id:            utils.NewGuid(utils.TrackPrefix),
+		id:            trackId,
 		name:          dc.Label(),
 		participantId: participantId,
 		dataChannel:   dc,

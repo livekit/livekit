@@ -112,11 +112,14 @@ func joinRoom(c *cli.Context) error {
 	// add tracks if needed
 	audioFile := c.String("audio")
 	videoFile := c.String("video")
-	if audioFile != "" {
-		rc.AddTrack(audioFile, "audio", filepath.Base(audioFile))
-	}
-	if videoFile != "" {
-		rc.AddTrack(videoFile, "video", filepath.Base(videoFile))
+	rc.OnConnected = func() {
+		// add after connection, since we need proper publish track APIs
+		if audioFile != "" {
+			rc.AddTrack(audioFile, "audio", filepath.Base(audioFile))
+		}
+		if videoFile != "" {
+			rc.AddTrack(videoFile, "video", filepath.Base(videoFile))
+		}
 	}
 
 	// start loop to detect input

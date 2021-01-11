@@ -68,7 +68,8 @@ func (r *Room) Join(participant types.Participant) error {
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		log.Debugw("participant state changed", "state", p.State(), "participant", p.ID())
+		log.Debugw("participant state changed", "state", p.State(), "participant", p.ID(),
+			"oldState", oldState)
 		r.broadcastParticipantState(p)
 
 		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
@@ -140,10 +141,14 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// skip publishing participant
 			continue
 		}
-		if existingParticipant.State() != livekit.ParticipantInfo_JOINED {
+		if existingParticipant.State() != livekit.ParticipantInfo_JOINED && existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
 			// not fully joined. don't subscribe yet
 			continue
 		}
+		logger.GetLogger().Debugw("subscribing to new track",
+			"srcParticipant", participant.ID(),
+			"remoteTrack", track.ID(),
+			"dstParticipant", existingParticipant.ID())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.GetLogger().Errorw("could not subscribe to remoteTrack",
 				"srcParticipant", participant.ID(),

@@ -15,7 +15,7 @@ require (
 	github.com/manifoldco/promptui v0.8.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/pion/ion-log v1.0.0
-	github.com/pion/ion-sfu v1.7.2
+	github.com/pion/ion-sfu v1.7.7
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
 	github.com/pion/stun v0.3.5

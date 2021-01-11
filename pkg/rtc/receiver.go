@@ -23,7 +23,7 @@ type ReceiverImpl struct {
 	rtcpChan    chan []rtcp.Packet
 }
 
-func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, track *webrtc.TrackRemote) *ReceiverImpl {
+func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, config ReceiverConfig) *ReceiverImpl {
 	r := &ReceiverImpl{
 		rtpReceiver: rtpReceiver,
 		rtcpChan:    rtcpCh,
@@ -41,6 +41,11 @@ func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, tra
 
 	r.buffer.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
 		// TODO: figure out how to handle this
+	})
+
+	r.buffer.Bind(rtpReceiver.GetParameters(), buffer.Options{
+		BufferTime: config.maxBufferTime,
+		MaxBitRate: config.maxBitrate,
 	})
 
 	// received sender updates

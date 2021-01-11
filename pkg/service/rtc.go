@@ -85,7 +85,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "could not create peerConnection", err.Error())
 		return
 	}
-	participant, err := rtc.NewParticipant(pc, signalConn, pName)
+	participant, err := rtc.NewParticipant(pc, signalConn, pName, s.manager.Config().Receiver)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
 		return
@@ -149,6 +149,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 				return
 			}
+		case *livekit.SignalRequest_Negotiate:
+			participant.HandleClientNegotiation()
 		case *livekit.SignalRequest_Trickle:
 			if participant.State() == livekit.ParticipantInfo_JOINING {
 				log.Errorw("cannot trickle before peer offer", "participant", participant.ID())
@@ -185,7 +187,7 @@ func (s *RTCService) handleOffer(participant types.Participant, offer *livekit.S
 
 func (s *RTCService) handleTrickle(participant types.Participant, trickle *livekit.TrickleRequest) error {
 	candidateInit := rtc.FromProtoTrickle(trickle)
-	logger.GetLogger().Debugw("adding peer candidate", "participant", participant.ID())
+	//logger.GetLogger().Debugw("adding peer candidate", "participant", participant.ID())
 	if err := participant.AddICECandidate(candidateInit); err != nil {
 		return err
 	}
