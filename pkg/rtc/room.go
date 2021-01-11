@@ -141,7 +141,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// skip publishing participant
 			continue
 		}
-		if existingParticipant.State() != livekit.ParticipantInfo_JOINED && existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
+		if !existingParticipant.IsReady() {
 			// not fully joined. don't subscribe yet
 			continue
 		}

@@ -85,7 +85,7 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 		receiverConfig:     receiverConfig,
 		ctx:                ctx,
 		cancel:             cancel,
-		rtcpCh:             make(chan []rtcp.Packet, 10),
+		rtcpCh:             make(chan []rtcp.Packet, 50),
 		subscribedTracks:   make(map[string][]*sfu.DownTrack),
 		state:              livekit.ParticipantInfo_JOINING,
 		lock:               sync.RWMutex{},
@@ -133,11 +133,10 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 
 	// only set after answered
 	pc.OnNegotiationNeeded(func() {
-		if participant.state != livekit.ParticipantInfo_JOINED && participant.state != livekit.ParticipantInfo_ACTIVE {
+		if !participant.IsReady() {
 			// ignore negotiation requests before connected
 			return
 		}
-		logger.GetLogger().Debugw("negotiation needed", "participantId", participant.ID())
 		participant.scheduleNegotiate()
 	})
 
@@ -154,6 +153,10 @@ func (p *ParticipantImpl) Name() string {
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state
+}
+
+func (p *ParticipantImpl) IsReady() bool {
+	return p.state == livekit.ParticipantInfo_JOINED || p.state == livekit.ParticipantInfo_ACTIVE
 }
 
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
@@ -625,9 +628,9 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 func (p *ParticipantImpl) rtcpSendWorker() {
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
-		for _, pkt := range pkts {
-			logger.GetLogger().Debugw("writing RTCP", "packet", pkt)
-		}
+		//for _, pkt := range pkts {
+		//	logger.GetLogger().Debugw("writing RTCP", "packet", pkt)
+		//}
 		if err := p.peerConn.WriteRTCP(pkts); err != nil {
 			logger.GetLogger().Errorw("could not write RTCP to participant",
 				"participant", p.id,

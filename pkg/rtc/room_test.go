@@ -100,25 +100,24 @@ func TestRoomJoin(t *testing.T) {
 }
 
 func TestNewTrack(t *testing.T) {
-	t.Run("new track should be added to connected participants", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 4)
+	t.Run("new track should be added to ready participants", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 3)
 		participants := rm.GetParticipants()
 		p0 := participants[0].(*typesfakes.FakeParticipant)
-		p0.StateReturns(livekit.ParticipantInfo_JOINING)
+		p0.IsReadyReturns(false)
 		p1 := participants[1].(*typesfakes.FakeParticipant)
-		p1.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
-		p2 := participants[2].(*typesfakes.FakeParticipant)
-		p2.StateReturns(livekit.ParticipantInfo_JOINED)
-		p3 := participants[3].(*typesfakes.FakeParticipant)
+		p1.IsReadyReturns(true)
+
+		pub := participants[2].(*typesfakes.FakeParticipant)
 
 		// p3 adds track
 		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
-		trackCB := p3.OnTrackPublishedArgsForCall(0)
+		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		assert.NotNil(t, trackCB)
-		trackCB(p3, track)
+		trackCB(pub, track)
 		// only p2 should've been called
 		assert.Equal(t, 1, track.AddSubscriberCallCount())
-		assert.Equal(t, p2, track.AddSubscriberArgsForCall(0))
+		assert.Equal(t, p1, track.AddSubscriberArgsForCall(0))
 	})
 }
 

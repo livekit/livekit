@@ -262,14 +262,12 @@ func (t *MediaTrack) forwardRTPWorker() {
 				if delta < maxPLIFrequency {
 					continue
 				}
-				logger.GetLogger().Infow("keyframe required, sending PLI")
+				logger.GetLogger().Infow("keyframe required, sending PLI",
+					"srcParticipant", t.participantId)
 				rtcpPkts := []rtcp.Packet{
 					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.SSRC},
 				}
-				// queue up a PLI, but don't block channel
-				go func() {
-					t.rtcpCh <- rtcpPkts
-				}()
+				t.rtcpCh <- rtcpPkts
 				t.lastPLI = time.Now()
 			} else if err != nil {
 				logger.GetLogger().Warnw("could not forward packet to participant",

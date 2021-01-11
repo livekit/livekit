@@ -90,6 +90,16 @@ type FakeParticipant struct {
 	iDReturnsOnCall map[int]struct {
 		result1 string
 	}
+	IsReadyStub        func() bool
+	isReadyMutex       sync.RWMutex
+	isReadyArgsForCall []struct {
+	}
+	isReadyReturns struct {
+		result1 bool
+	}
+	isReadyReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	NameStub        func() string
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
@@ -631,6 +641,59 @@ func (fake *FakeParticipant) IDReturnsOnCall(i int, result1 string) {
 	}
 	fake.iDReturnsOnCall[i] = struct {
 		result1 string
+	}{result1}
+}
+
+func (fake *FakeParticipant) IsReady() bool {
+	fake.isReadyMutex.Lock()
+	ret, specificReturn := fake.isReadyReturnsOnCall[len(fake.isReadyArgsForCall)]
+	fake.isReadyArgsForCall = append(fake.isReadyArgsForCall, struct {
+	}{})
+	stub := fake.IsReadyStub
+	fakeReturns := fake.isReadyReturns
+	fake.recordInvocation("IsReady", []interface{}{})
+	fake.isReadyMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IsReadyCallCount() int {
+	fake.isReadyMutex.RLock()
+	defer fake.isReadyMutex.RUnlock()
+	return len(fake.isReadyArgsForCall)
+}
+
+func (fake *FakeParticipant) IsReadyCalls(stub func() bool) {
+	fake.isReadyMutex.Lock()
+	defer fake.isReadyMutex.Unlock()
+	fake.IsReadyStub = stub
+}
+
+func (fake *FakeParticipant) IsReadyReturns(result1 bool) {
+	fake.isReadyMutex.Lock()
+	defer fake.isReadyMutex.Unlock()
+	fake.IsReadyStub = nil
+	fake.isReadyReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
+	fake.isReadyMutex.Lock()
+	defer fake.isReadyMutex.Unlock()
+	fake.IsReadyStub = nil
+	if fake.isReadyReturnsOnCall == nil {
+		fake.isReadyReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isReadyReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -1341,6 +1404,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.isReadyMutex.RLock()
+	defer fake.isReadyMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
 	fake.onCloseMutex.RLock()

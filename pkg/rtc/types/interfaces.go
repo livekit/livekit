@@ -54,6 +54,7 @@ type Participant interface {
 	ID() string
 	Name() string
 	State() livekit.ParticipantInfo_State
+	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	RemoveTrack(sid string) error
