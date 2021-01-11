@@ -134,7 +134,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 				t.handleRTCP(outTrack, pkt)
 			})
 		}
-		//go t.scheduleDownTrackBindingReports(recv.Name())
+		go t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
 	})
 	outTrack.OnCloseHandler(func() {
 		t.lock.Lock()
@@ -187,43 +187,37 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.downtracks = make(map[string]types.DownTrack)
 }
 
-//func (t *MediaTrack) scheduleDownTrackBindingReports(streamId string) {
-//	var sd []rtcp.SourceDescriptionChunk
-//
-//	p.lock.RLock()
-//	dts := p.subscribedTracks[streamId]
-//	for _, dt := range dts {
-//		if !dt.IsBound() {
-//			continue
-//		}
-//		chunks := dt.CreateSourceDescriptionChunks()
-//		if chunks != nil {
-//			sd = append(sd, chunks...)
-//		}
-//	}
-//	p.lock.RUnlock()
-//
-//	pkts := []rtcp.Packet{
-//		&rtcp.SourceDescription{Chunks: sd},
-//	}
-//
-//	go func() {
-//		batch := pkts
-//		i := 0
-//		for {
-//			if err := p.peerConn.WriteRTCP(batch); err != nil {
-//				logger.GetLogger().Debugw("error sending track binding reports",
-//					"participant", p.id,
-//					"err", err)
-//			}
-//			if i > 5 {
-//				return
-//			}
-//			i++
-//			time.Sleep(20 * time.Millisecond)
-//		}
-//	}()
-//}
+func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan<- []rtcp.Packet) {
+	var sd []rtcp.SourceDescriptionChunk
+
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	dt := t.downtracks[participantId]
+	if !dt.IsBound() {
+		return
+	}
+	chunks := dt.CreateSourceDescriptionChunks()
+	if chunks != nil {
+		sd = append(sd, chunks...)
+	}
+
+	pkts := []rtcp.Packet{
+		&rtcp.SourceDescription{Chunks: sd},
+	}
+
+	go func() {
+		batch := pkts
+		i := 0
+		for {
+			rtcpCh <- batch
+			if i > 5 {
+				return
+			}
+			i++
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+}
 
 // b reads from the receiver and writes to each sender
 func (t *MediaTrack) forwardRTPWorker() {

@@ -10,14 +10,6 @@ var (
 	ErrKeysMissing = errors.New("missing API key or secret key")
 )
 
-////counterfeiter:generate . AccessToken
-//type AccessToken interface {
-//	SetExpiration(time.Duration) AccessToken
-//	Identity(string) AccessToken
-//	AddGrant(*VideoGrant) AccessToken
-//	ToJWT() (string, error)
-//}
-
 //counterfeiter:generate . TokenVerifier
 type TokenVerifier interface {
 	Identity() string

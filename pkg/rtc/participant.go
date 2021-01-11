@@ -159,6 +159,10 @@ func (p *ParticipantImpl) IsReady() bool {
 	return p.state == livekit.ParticipantInfo_JOINED || p.state == livekit.ParticipantInfo_ACTIVE
 }
 
+func (p *ParticipantImpl) RTCPChan() chan<- []rtcp.Packet {
+	return p.rtcpCh
+}
+
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:   p.id,
@@ -407,7 +411,7 @@ func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
 	p.subscribedTracks[streamId] = append(p.subscribedTracks[streamId], dt)
 	p.lock.Unlock()
 	//dt.OnBind(func() {
-	//	go p.scheduleDownTrackBindingReports(streamId)
+	//	go p.sendDownTrackBindingReports(streamId)
 	//})
 }
 

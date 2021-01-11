@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 )
 
@@ -12,6 +13,16 @@ type FakeDownTrack struct {
 	CloseStub        func()
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
+	}
+	CreateSourceDescriptionChunksStub        func() []rtcp.SourceDescriptionChunk
+	createSourceDescriptionChunksMutex       sync.RWMutex
+	createSourceDescriptionChunksArgsForCall []struct {
+	}
+	createSourceDescriptionChunksReturns struct {
+		result1 []rtcp.SourceDescriptionChunk
+	}
+	createSourceDescriptionChunksReturnsOnCall map[int]struct {
+		result1 []rtcp.SourceDescriptionChunk
 	}
 	GetNACKSeqNoStub        func([]uint16) []uint16
 	getNACKSeqNoMutex       sync.RWMutex
@@ -23,6 +34,16 @@ type FakeDownTrack struct {
 	}
 	getNACKSeqNoReturnsOnCall map[int]struct {
 		result1 []uint16
+	}
+	IsBoundStub        func() bool
+	isBoundMutex       sync.RWMutex
+	isBoundArgsForCall []struct {
+	}
+	isBoundReturns struct {
+		result1 bool
+	}
+	isBoundReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	LastSSRCStub        func() uint32
 	lastSSRCMutex       sync.RWMutex
@@ -113,6 +134,59 @@ func (fake *FakeDownTrack) CloseCalls(stub func()) {
 	fake.CloseStub = stub
 }
 
+func (fake *FakeDownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
+	fake.createSourceDescriptionChunksMutex.Lock()
+	ret, specificReturn := fake.createSourceDescriptionChunksReturnsOnCall[len(fake.createSourceDescriptionChunksArgsForCall)]
+	fake.createSourceDescriptionChunksArgsForCall = append(fake.createSourceDescriptionChunksArgsForCall, struct {
+	}{})
+	stub := fake.CreateSourceDescriptionChunksStub
+	fakeReturns := fake.createSourceDescriptionChunksReturns
+	fake.recordInvocation("CreateSourceDescriptionChunks", []interface{}{})
+	fake.createSourceDescriptionChunksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDownTrack) CreateSourceDescriptionChunksCallCount() int {
+	fake.createSourceDescriptionChunksMutex.RLock()
+	defer fake.createSourceDescriptionChunksMutex.RUnlock()
+	return len(fake.createSourceDescriptionChunksArgsForCall)
+}
+
+func (fake *FakeDownTrack) CreateSourceDescriptionChunksCalls(stub func() []rtcp.SourceDescriptionChunk) {
+	fake.createSourceDescriptionChunksMutex.Lock()
+	defer fake.createSourceDescriptionChunksMutex.Unlock()
+	fake.CreateSourceDescriptionChunksStub = stub
+}
+
+func (fake *FakeDownTrack) CreateSourceDescriptionChunksReturns(result1 []rtcp.SourceDescriptionChunk) {
+	fake.createSourceDescriptionChunksMutex.Lock()
+	defer fake.createSourceDescriptionChunksMutex.Unlock()
+	fake.CreateSourceDescriptionChunksStub = nil
+	fake.createSourceDescriptionChunksReturns = struct {
+		result1 []rtcp.SourceDescriptionChunk
+	}{result1}
+}
+
+func (fake *FakeDownTrack) CreateSourceDescriptionChunksReturnsOnCall(i int, result1 []rtcp.SourceDescriptionChunk) {
+	fake.createSourceDescriptionChunksMutex.Lock()
+	defer fake.createSourceDescriptionChunksMutex.Unlock()
+	fake.CreateSourceDescriptionChunksStub = nil
+	if fake.createSourceDescriptionChunksReturnsOnCall == nil {
+		fake.createSourceDescriptionChunksReturnsOnCall = make(map[int]struct {
+			result1 []rtcp.SourceDescriptionChunk
+		})
+	}
+	fake.createSourceDescriptionChunksReturnsOnCall[i] = struct {
+		result1 []rtcp.SourceDescriptionChunk
+	}{result1}
+}
+
 func (fake *FakeDownTrack) GetNACKSeqNo(arg1 []uint16) []uint16 {
 	var arg1Copy []uint16
 	if arg1 != nil {
@@ -176,6 +250,59 @@ func (fake *FakeDownTrack) GetNACKSeqNoReturnsOnCall(i int, result1 []uint16) {
 	}
 	fake.getNACKSeqNoReturnsOnCall[i] = struct {
 		result1 []uint16
+	}{result1}
+}
+
+func (fake *FakeDownTrack) IsBound() bool {
+	fake.isBoundMutex.Lock()
+	ret, specificReturn := fake.isBoundReturnsOnCall[len(fake.isBoundArgsForCall)]
+	fake.isBoundArgsForCall = append(fake.isBoundArgsForCall, struct {
+	}{})
+	stub := fake.IsBoundStub
+	fakeReturns := fake.isBoundReturns
+	fake.recordInvocation("IsBound", []interface{}{})
+	fake.isBoundMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDownTrack) IsBoundCallCount() int {
+	fake.isBoundMutex.RLock()
+	defer fake.isBoundMutex.RUnlock()
+	return len(fake.isBoundArgsForCall)
+}
+
+func (fake *FakeDownTrack) IsBoundCalls(stub func() bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = stub
+}
+
+func (fake *FakeDownTrack) IsBoundReturns(result1 bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = nil
+	fake.isBoundReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeDownTrack) IsBoundReturnsOnCall(i int, result1 bool) {
+	fake.isBoundMutex.Lock()
+	defer fake.isBoundMutex.Unlock()
+	fake.IsBoundStub = nil
+	if fake.isBoundReturnsOnCall == nil {
+		fake.isBoundReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isBoundReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -521,8 +648,12 @@ func (fake *FakeDownTrack) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.createSourceDescriptionChunksMutex.RLock()
+	defer fake.createSourceDescriptionChunksMutex.RUnlock()
 	fake.getNACKSeqNoMutex.RLock()
 	defer fake.getNACKSeqNoMutex.RUnlock()
+	fake.isBoundMutex.RLock()
+	defer fake.isBoundMutex.RUnlock()
 	fake.lastSSRCMutex.RLock()
 	defer fake.lastSSRCMutex.RUnlock()
 	fake.onBindMutex.RLock()

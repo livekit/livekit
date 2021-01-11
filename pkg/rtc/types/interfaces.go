@@ -56,6 +56,8 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
+	RTCPChan() chan<- []rtcp.Packet
+
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	RemoveTrack(sid string) error
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
@@ -112,6 +114,7 @@ type Receiver interface {
 //counterfeiter:generate . DownTrack
 type DownTrack interface {
 	WriteRTP(p rtp.Packet) error
+	IsBound() bool
 	Close()
 	OnCloseHandler(fn func())
 	OnBind(fn func())
@@ -120,6 +123,7 @@ type DownTrack interface {
 	SnOffset() uint16
 	TsOffset() uint32
 	GetNACKSeqNo(seqNo []uint16) []uint16
+	CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk
 }
 
 // interface for properties of webrtc.TrackRemote
