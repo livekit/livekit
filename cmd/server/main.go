@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -46,6 +48,14 @@ func main() {
 				Usage:   "API keys/secret pairs (key:secret, one per line)",
 				EnvVars: []string{"KEY_FILE"},
 			},
+			&cli.StringFlag{
+				Name:  "cpuprofile",
+				Usage: "write cpu profile to `file`",
+			},
+			&cli.StringFlag{
+				Name:  "memprofile",
+				Usage: "write memory profile to `file`",
+			},
 			&cli.BoolFlag{
 				Name:  "dev",
 				Usage: "when set, token validation will be disabled",
@@ -69,6 +79,8 @@ func main() {
 func startServer(c *cli.Context) error {
 	rand.Seed(time.Now().UnixNano())
 
+	cpuProfile := c.String("cpuprofile")
+	memProfile := c.String("memprofile")
 	conf, err := config.NewConfig(c.String("config"))
 	if err != nil {
 		return err
@@ -81,6 +93,31 @@ func startServer(c *cli.Context) error {
 		logger.InitDevelopment()
 	} else {
 		logger.InitProduction()
+	}
+
+	if cpuProfile != "" {
+		if f, err := os.Create(cpuProfile); err != nil {
+			return err
+		} else {
+			defer f.Close()
+			if err := pprof.StartCPUProfile(f); err != nil {
+				return err
+			}
+			defer pprof.StopCPUProfile()
+		}
+	}
+
+	if memProfile != "" {
+		if f, err := os.Create(memProfile); err != nil {
+			return err
+		} else {
+			defer func() {
+				// run memory profile at termination
+				runtime.GC()
+				pprof.WriteHeapProfile(f)
+				f.Close()
+			}()
+		}
 	}
 
 	// require a key provider
