@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -39,4 +41,32 @@ func TestIsReady(t *testing.T) {
 			assert.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+func TestTrackPublishEvents(t *testing.T) {
+	p := newParticipantForTest("test")
+	track := &typesfakes.FakePublishedTrack{}
+	track.IDReturns("id")
+	published := false
+	updated := false
+	p.OnTrackUpdated(func(p types.Participant, track types.PublishedTrack) {
+		updated = true
+	})
+	p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
+		published = true
+	})
+	p.handleTrackPublished(track)
+
+	assert.True(t, published)
+	assert.False(t, updated)
+	assert.Len(t, p.publishedTracks, 1)
+
+	track.OnCloseArgsForCall(0)()
+	assert.Len(t, p.publishedTracks, 0)
+	assert.True(t, updated)
+}
+
+func newParticipantForTest(name string) *ParticipantImpl {
+	p, _ := NewParticipant(&typesfakes.FakePeerConnection{}, &typesfakes.FakeSignalConnection{}, name, ReceiverConfig{})
+	return p
 }

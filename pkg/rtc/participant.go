@@ -535,7 +535,9 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
 		p.lock.Unlock()
-		p.onTrackUpdated(p, track)
+		if p.onTrackUpdated != nil {
+			p.onTrackUpdated(p, track)
+		}
 	})
 
 	if p.onTrackPublished != nil {
