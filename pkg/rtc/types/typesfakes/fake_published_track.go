@@ -60,6 +60,11 @@ type FakePublishedTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	OnCloseStub        func(func())
+	onCloseMutex       sync.RWMutex
+	onCloseArgsForCall []struct {
+		arg1 func()
+	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
@@ -67,11 +72,6 @@ type FakePublishedTrack struct {
 	RemoveSubscriberStub        func(string)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
-		arg1 string
-	}
-	SetNameStub        func(string)
-	setNameMutex       sync.RWMutex
-	setNameArgsForCall []struct {
 		arg1 string
 	}
 	StartStub        func()
@@ -355,6 +355,38 @@ func (fake *FakePublishedTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakePublishedTrack) OnClose(arg1 func()) {
+	fake.onCloseMutex.Lock()
+	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.OnCloseStub
+	fake.recordInvocation("OnClose", []interface{}{arg1})
+	fake.onCloseMutex.Unlock()
+	if stub != nil {
+		fake.OnCloseStub(arg1)
+	}
+}
+
+func (fake *FakePublishedTrack) OnCloseCallCount() int {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	return len(fake.onCloseArgsForCall)
+}
+
+func (fake *FakePublishedTrack) OnCloseCalls(stub func(func())) {
+	fake.onCloseMutex.Lock()
+	defer fake.onCloseMutex.Unlock()
+	fake.OnCloseStub = stub
+}
+
+func (fake *FakePublishedTrack) OnCloseArgsForCall(i int) func() {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	argsForCall := fake.onCloseArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakePublishedTrack) RemoveAllSubscribers() {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
@@ -411,38 +443,6 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakePublishedTrack) SetName(arg1 string) {
-	fake.setNameMutex.Lock()
-	fake.setNameArgsForCall = append(fake.setNameArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.SetNameStub
-	fake.recordInvocation("SetName", []interface{}{arg1})
-	fake.setNameMutex.Unlock()
-	if stub != nil {
-		fake.SetNameStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) SetNameCallCount() int {
-	fake.setNameMutex.RLock()
-	defer fake.setNameMutex.RUnlock()
-	return len(fake.setNameArgsForCall)
-}
-
-func (fake *FakePublishedTrack) SetNameCalls(stub func(string)) {
-	fake.setNameMutex.Lock()
-	defer fake.setNameMutex.Unlock()
-	fake.SetNameStub = stub
-}
-
-func (fake *FakePublishedTrack) SetNameArgsForCall(i int) string {
-	fake.setNameMutex.RLock()
-	defer fake.setNameMutex.RUnlock()
-	argsForCall := fake.setNameArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakePublishedTrack) Start() {
 	fake.startMutex.Lock()
 	fake.startArgsForCall = append(fake.startArgsForCall, struct {
@@ -480,12 +480,12 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
-	fake.setNameMutex.RLock()
-	defer fake.setNameMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

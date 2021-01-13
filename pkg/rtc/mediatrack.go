@@ -41,6 +41,7 @@ type MediaTrack struct {
 	streamID string
 	kind     livekit.TrackType
 	codec    webrtc.RTPCodecParameters
+	onClose  func()
 
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
@@ -97,6 +98,10 @@ func (t *MediaTrack) IsMuted() bool {
 	return t.muted
 }
 
+func (t *MediaTrack) OnClose(f func()) {
+	t.onClose = f
+}
+
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
 func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
@@ -138,10 +143,13 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		delete(t.downtracks, participant.ID())
 		t.lock.Unlock()
 
-		// ignore if the subscribing participant disconnected
-		if participant.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
+		// ignore if the subscribing participant is not connected
+		if participant.PeerConnection().ConnectionState() != webrtc.PeerConnectionStateConnected {
 			return
 		}
+
+		// if the source has been terminated, we'll need to terminate all of the downtracks
+		// however, if the dest participant has disconnected, then we can skip
 		sender := transceiver.Sender()
 		if sender != nil {
 			logger.GetLogger().Debugw("removing peerconnection track",
@@ -229,6 +237,10 @@ func (t *MediaTrack) forwardRTPWorker() {
 		t.RemoveAllSubscribers()
 		// TODO: send unpublished events?
 		t.nackWorker.Stop()
+
+		if t.onClose != nil {
+			t.onClose()
+		}
 	}()
 
 	for pkt := range t.receiver.RTPChan() {

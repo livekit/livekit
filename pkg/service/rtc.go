@@ -167,8 +167,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		case *livekit.SignalRequest_Mute:
 			participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
-		case *livekit.SignalRequest_RemoveTrack:
-			participant.RemoveTrack(msg.RemoveTrack.Sid)
 		}
 	}
 }

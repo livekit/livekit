@@ -24,6 +24,7 @@ type DataTrack struct {
 	lock          sync.RWMutex
 	once          sync.Once
 	msgChan       chan livekit.DataMessage
+	onClose       func()
 
 	// map of target participantId -> DownDataChannel
 	subscribers map[string]*DownDataChannel
@@ -44,6 +45,13 @@ func NewDataTrack(trackId, participantId string, dc *webrtc.DataChannel) *DataTr
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		dm := messageFromDataChannelMessage(msg)
 		t.msgChan <- dm
+	})
+
+	dc.OnClose(func() {
+		t.RemoveAllSubscribers()
+		if t.onClose != nil {
+			t.onClose()
+		}
 	})
 
 	return t
@@ -70,6 +78,10 @@ func (t *DataTrack) Name() string {
 // DataTrack cannot be muted
 func (t *DataTrack) IsMuted() bool {
 	return false
+}
+
+func (t *DataTrack) OnClose(f func()) {
+	t.onClose = f
 }
 
 func (t *DataTrack) AddSubscriber(participant types.Participant) error {
@@ -116,9 +128,6 @@ func (t *DataTrack) RemoveAllSubscribers() {
 
 func (t *DataTrack) forwardWorker() {
 	defer Recover()
-	defer func() {
-		t.RemoveAllSubscribers()
-	}()
 
 	for {
 		msg := <-t.msgChan

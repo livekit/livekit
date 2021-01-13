@@ -262,15 +262,6 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	})
 }
 
-func (p *ParticipantImpl) RemoveTrack(sid string) error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	// TODO: handle removal properly
-
-	return nil
-}
-
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
@@ -538,6 +529,14 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 	p.lock.Unlock()
 
 	track.Start()
+
+	track.OnClose(func() {
+		// cleanup
+		p.lock.Lock()
+		delete(p.publishedTracks, track.ID())
+		p.lock.Unlock()
+		p.onTrackUpdated(p, track)
+	})
 
 	if p.onTrackPublished != nil {
 		p.onTrackPublished(p, track)

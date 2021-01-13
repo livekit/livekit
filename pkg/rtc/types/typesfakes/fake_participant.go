@@ -167,17 +167,6 @@ type FakeParticipant struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
-	RemoveTrackStub        func(string) error
-	removeTrackMutex       sync.RWMutex
-	removeTrackArgsForCall []struct {
-		arg1 string
-	}
-	removeTrackReturns struct {
-		result1 error
-	}
-	removeTrackReturnsOnCall map[int]struct {
-		result1 error
-	}
 	SendJoinResponseStub        func(*livekit.RoomInfo, []types.Participant) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
@@ -1092,67 +1081,6 @@ func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) RemoveTrack(arg1 string) error {
-	fake.removeTrackMutex.Lock()
-	ret, specificReturn := fake.removeTrackReturnsOnCall[len(fake.removeTrackArgsForCall)]
-	fake.removeTrackArgsForCall = append(fake.removeTrackArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.RemoveTrackStub
-	fakeReturns := fake.removeTrackReturns
-	fake.recordInvocation("RemoveTrack", []interface{}{arg1})
-	fake.removeTrackMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) RemoveTrackCallCount() int {
-	fake.removeTrackMutex.RLock()
-	defer fake.removeTrackMutex.RUnlock()
-	return len(fake.removeTrackArgsForCall)
-}
-
-func (fake *FakeParticipant) RemoveTrackCalls(stub func(string) error) {
-	fake.removeTrackMutex.Lock()
-	defer fake.removeTrackMutex.Unlock()
-	fake.RemoveTrackStub = stub
-}
-
-func (fake *FakeParticipant) RemoveTrackArgsForCall(i int) string {
-	fake.removeTrackMutex.RLock()
-	defer fake.removeTrackMutex.RUnlock()
-	argsForCall := fake.removeTrackArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) RemoveTrackReturns(result1 error) {
-	fake.removeTrackMutex.Lock()
-	defer fake.removeTrackMutex.Unlock()
-	fake.RemoveTrackStub = nil
-	fake.removeTrackReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeParticipant) RemoveTrackReturnsOnCall(i int, result1 error) {
-	fake.removeTrackMutex.Lock()
-	defer fake.removeTrackMutex.Unlock()
-	fake.RemoveTrackStub = nil
-	if fake.removeTrackReturnsOnCall == nil {
-		fake.removeTrackReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.removeTrackReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.RoomInfo, arg2 []types.Participant) error {
 	var arg2Copy []types.Participant
 	if arg2 != nil {
@@ -1490,8 +1418,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.removeDownTrackMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
-	fake.removeTrackMutex.RLock()
-	defer fake.removeTrackMutex.RUnlock()
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()

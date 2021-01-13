@@ -59,7 +59,6 @@ type Participant interface {
 	RTCPChan() chan<- []rtcp.Packet
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
-	RemoveTrack(sid string) error
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit) error
@@ -100,6 +99,9 @@ type PublishedTrack interface {
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	RemoveAllSubscribers()
+
+	// callbacks
+	OnClose(func())
 }
 
 //counterfeiter:generate . Receiver

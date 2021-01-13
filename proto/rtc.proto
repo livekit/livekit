@@ -14,7 +14,6 @@ message SignalRequest {
     TrickleRequest trickle = 3;
     AddTrackRequest add_track = 4;
     MuteTrackRequest mute = 5;
-    RemoveTrackRequest remove_track = 6;
     // when client needs to negotiate
     NegotiationRequest negotiate = 7;
   }
@@ -48,10 +47,6 @@ message AddTrackRequest {
 
 message TrickleRequest {
   string candidateInit = 1;
-}
-
-message RemoveTrackRequest {
-  string sid = 1;
 }
 
 message MuteTrackRequest {

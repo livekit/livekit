@@ -80,12 +80,13 @@ func TestRoomJoin(t *testing.T) {
 		}
 	})
 
-	t.Run("participant removal is broadcasted to others", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, numParticipants)
+	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 1)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 
 		rm.RemoveParticipant(p.ID())
+		p.OnStateChangeArgsForCall(0)(p, livekit.ParticipantInfo_ACTIVE)
 		time.Sleep(10 * time.Millisecond)
 
 		for _, op := range participants {
