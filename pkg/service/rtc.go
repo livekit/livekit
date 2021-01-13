@@ -46,7 +46,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		claims := GetGrants(r.Context())
 		// require a claim
 		if claims == nil || claims.Video == nil {
-			writeJSONError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
+			handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
 		}
 		pName = claims.Identity
 	}
@@ -54,14 +54,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, err.Error())
+		handleError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	room, err := s.manager.GetRoomWithConstraint(roomId, onlyName)
 	if err != nil {
 		// TODO: return errors/status correctly
-		writeJSONError(w, http.StatusNotFound, err.Error())
+		handleError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -71,7 +71,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.GetLogger().Warnw("could not upgrade to WS",
 			"err", err,
 		)
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	conn.SetCloseHandler(func(code int, text string) error {
@@ -82,12 +82,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pc, err := rtc.NewPeerConnection(s.manager.Config())
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create peerConnection", err.Error())
+		handleError(w, http.StatusInternalServerError, "could not create peerConnection: "+err.Error())
 		return
 	}
 	participant, err := rtc.NewParticipant(pc, signalConn, pName, s.manager.Config().Receiver)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create participant", err.Error())
+		handleError(w, http.StatusInternalServerError, "could not create participant: "+err.Error())
 		return
 	}
 
@@ -98,7 +98,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := room.Join(participant); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not join room", err.Error())
+		handleError(w, http.StatusInternalServerError, "could not join room: "+err.Error())
 		return
 	}
 

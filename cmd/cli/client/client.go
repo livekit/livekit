@@ -3,6 +3,7 @@ package client
 import (
 	"container/ring"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -252,6 +253,20 @@ func (c *RTCClient) Run() error {
 		return err
 	}
 	return nil
+}
+
+func (c *RTCClient) WaitUntilConnected() error {
+	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("could not connect after timeout")
+		case <-time.After(10 * time.Millisecond):
+			if c.iceConnected {
+				return nil
+			}
+		}
+	}
 }
 
 func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {

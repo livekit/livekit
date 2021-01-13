@@ -9,6 +9,7 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/auth"
+	"github.com/livekit/livekit-server/pkg/logger"
 )
 
 const (
@@ -40,8 +41,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 	if authHeader != "" {
 		if !strings.HasPrefix(authHeader, bearerPrefix) {
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("invalid authorization header. Must start with " + bearerPrefix))
+			handleError(w, http.StatusUnauthorized, "invalid authorization header. Must start with "+bearerPrefix)
 			return
 		}
 
@@ -54,22 +54,19 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	if authToken != "" {
 		v, err := auth.ParseAPIToken(authToken)
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("invalid authorization token"))
+			handleError(w, http.StatusUnauthorized, "invalid authorization token")
 			return
 		}
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("invalid API key"))
+			handleError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
 
 		grants, err := v.Verify(secret)
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("invalid token: " + err.Error()))
+			handleError(w, http.StatusUnauthorized, "invalid token: "+err.Error())
 			return
 		}
 
@@ -129,4 +126,10 @@ func EnsureCreatePermission(ctx context.Context) error {
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())
+}
+
+func handleError(w http.ResponseWriter, status int, msg string) {
+	logger.GetLogger().Debugw("error handling request", "error", msg, "status", status)
+	w.WriteHeader(status)
+	w.Write([]byte(msg))
 }
