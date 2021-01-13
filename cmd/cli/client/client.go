@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
+	"github.com/thoas/go-funk"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -21,18 +24,19 @@ import (
 )
 
 type RTCClient struct {
-	conn             *websocket.Conn
-	PeerConn         *webrtc.PeerConnection
-	localTracks      []webrtc.TrackLocal
-	lock             sync.Mutex
-	ctx              context.Context
-	cancel           context.CancelFunc
-	connected        bool
-	iceConnected     bool
-	paused           bool
-	me               *webrtc.MediaEngine // optional, populated only when receiving tracks
-	receivers        []*rtc.ReceiverImpl
-	localParticipant *livekit.ParticipantInfo
+	conn               *websocket.Conn
+	PeerConn           *webrtc.PeerConnection
+	localTracks        []webrtc.TrackLocal
+	lock               sync.Mutex
+	ctx                context.Context
+	cancel             context.CancelFunc
+	connected          bool
+	iceConnected       bool
+	paused             bool
+	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
+	subscribedTracks   map[string]*webrtc.TrackRemote
+	localParticipant   *livekit.ParticipantInfo
+	remoteParticipants map[string]*livekit.ParticipantInfo
 
 	// pending actions to start after connected to peer
 	pendingCandidates   []*webrtc.ICECandidate
@@ -61,6 +65,17 @@ var (
 	}
 )
 
+func NewWebSocketConn(host, token string) (*websocket.Conn, error) {
+	u, err := url.Parse(host + "/rtc")
+	if err != nil {
+		return nil, err
+	}
+	requestHeader := make(http.Header)
+	requestHeader.Set("Authorization", "Bearer "+token)
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), requestHeader)
+	return conn, err
+}
+
 func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	// Create a new RTCPeerConnection
 	peerConn, err := webrtc.NewPeerConnection(rtcConf)
@@ -70,14 +85,16 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	logRing := ring.New(maxLogs)
 	c := &RTCClient{
-		conn:              conn,
-		lock:              sync.Mutex{},
-		pendingCandidates: make([]*webrtc.ICECandidate, 0),
-		localTracks:       make([]webrtc.TrackLocal, 0),
-		reader:            logRing,
-		writer:            logRing,
-		PeerConn:          peerConn,
-		me:                &webrtc.MediaEngine{},
+		conn:               conn,
+		lock:               sync.Mutex{},
+		pendingCandidates:  make([]*webrtc.ICECandidate, 0),
+		localTracks:        make([]webrtc.TrackLocal, 0),
+		subscribedTracks:   make(map[string]*webrtc.TrackRemote),
+		remoteParticipants: make(map[string]*livekit.ParticipantInfo),
+		reader:             logRing,
+		writer:             logRing,
+		PeerConn:           peerConn,
+		me:                 &webrtc.MediaEngine{},
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.me.RegisterDefaultCodecs()
@@ -102,7 +119,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		c.AppendLog("track received", "label", track.StreamID(), "id", track.ID())
-		go c.consumeReceiver(track)
+		go c.processTrack(track)
 	})
 
 	peerConn.OnNegotiationNeeded(func() {
@@ -168,6 +185,12 @@ func (c *RTCClient) Run() error {
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
+			c.lock.Lock()
+			for _, p := range msg.Join.OtherParticipants {
+				c.remoteParticipants[p.Sid] = p
+			}
+			c.lock.Unlock()
+
 			c.AppendLog("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
 			c.localParticipant = msg.Join.Participant
 			c.AppendLog("other participants", "count", len(msg.Join.OtherParticipants))
@@ -216,9 +239,12 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 		case *livekit.SignalResponse_Update:
+			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
+				c.remoteParticipants[p.Sid] = p
 				c.AppendLog("participant update", "id", p.Sid, "state", p.State.String())
 			}
+			c.lock.Unlock()
 		}
 	}
 
@@ -259,6 +285,14 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 	}
 }
 
+func (c *RTCClient) SubscribedTracks() map[string]*webrtc.TrackRemote {
+	return c.subscribedTracks
+}
+
+func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
+	return funk.Values(c.remoteParticipants).([]*livekit.ParticipantInfo)
+}
+
 func (c *RTCClient) Stop() {
 	c.conn.Close()
 	c.cancel()
@@ -270,12 +304,6 @@ func (c *RTCClient) PauseLogs() {
 
 func (c *RTCClient) ResumeLogs() {
 	c.paused = false
-}
-
-func (c *RTCClient) Receivers() []*rtc.ReceiverImpl {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	return append([]*rtc.ReceiverImpl{}, c.receivers...)
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
@@ -471,7 +499,7 @@ func (c *RTCClient) logLoop() {
 	}
 }
 
-func (c *RTCClient) consumeReceiver(track *webrtc.TrackRemote) {
+func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
 	peerId, trackId := rtc.UnpackTrackId(track.ID())
 	numBytes := 0

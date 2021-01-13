@@ -3,13 +3,12 @@
 //go:generate wire
 //+build !wireinject
 
-package main
+package service
 
 import (
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/node"
-	"github.com/livekit/livekit-server/pkg/service"
 )
 
 // Injectors from wire.go:
@@ -19,15 +18,15 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider) (*Livek
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := newManager(conf, nodeNode)
+	roomManager, err := newRoomManagerWithNode(conf, nodeNode)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := service.NewRoomService(conf, roomManager, nodeNode)
+	roomService, err := NewRoomService(conf, roomManager, nodeNode)
 	if err != nil {
 		return nil, err
 	}
-	rtcService := service.NewRTCService(conf, roomManager)
+	rtcService := NewRTCService(conf, roomManager)
 	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider)
 	if err != nil {
 		return nil, err

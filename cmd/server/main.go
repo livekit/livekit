@@ -2,31 +2,23 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"math/rand"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"github.com/urfave/negroni"
 
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/node"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 func main() {
@@ -127,7 +119,7 @@ func startServer(c *cli.Context) error {
 	service.AuthRequired = true
 	logger.GetLogger().Infow("auth enabled", "num_keys", keyProvider.NumKeys())
 
-	server, err := InitializeServer(conf, keyProvider)
+	server, err := service.InitializeServer(conf, keyProvider)
 	if err != nil {
 		return err
 	}
@@ -166,113 +158,6 @@ func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
 	}
 
 	return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
-}
-
-type LivekitServer struct {
-	config     *config.Config
-	roomServer livekit.TwirpServer
-	rtcService *service.RTCService
-	roomHttp   *http.Server
-	rtcHttp    *http.Server
-	running    bool
-	doneChan   chan bool
-}
-
-func NewLivekitServer(conf *config.Config,
-	roomService livekit.RoomService,
-	rtcService *service.RTCService,
-	keyProvider auth.KeyProvider) (s *LivekitServer, err error) {
-	s = &LivekitServer{
-		config:     conf,
-		roomServer: livekit.NewRoomServiceServer(roomService),
-		rtcService: rtcService,
-	}
-
-	middlewares := make([]negroni.Handler, 0)
-	if keyProvider != nil {
-		middlewares = append(middlewares, service.NewAPIKeyAuthMiddleware(keyProvider))
-	}
-
-	s.roomHttp = &http.Server{
-		Addr:    fmt.Sprintf(":%d", conf.APIPort),
-		Handler: configureMiddlewares(conf, s.roomServer, middlewares...),
-	}
-
-	rtcHandler := http.NewServeMux()
-	rtcHandler.Handle("/rtc", rtcService)
-	s.rtcHttp = &http.Server{
-		Addr:    fmt.Sprintf(":%d", conf.RTCPort),
-		Handler: configureMiddlewares(conf, rtcHandler, middlewares...),
-	}
-
-	return
-}
-
-func (s *LivekitServer) Start() error {
-	if s.running {
-		return errors.New("already running")
-	}
-	s.running = true
-	s.doneChan = make(chan bool, 1)
-
-	// ensure we could listen
-	roomLn, err := net.Listen("tcp", s.roomHttp.Addr)
-	if err != nil {
-		return err
-	}
-
-	rtcAddr := fmt.Sprintf(":%d", s.config.RTCPort)
-	rtcLn, err := net.Listen("tcp", rtcAddr)
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		logger.GetLogger().Infow("starting Room service", "address", s.roomHttp.Addr)
-		s.roomHttp.Serve(roomLn)
-	}()
-	go func() {
-		logger.GetLogger().Infow("starting RTC service", "address", rtcAddr)
-		s.rtcHttp.Serve(rtcLn)
-	}()
-
-	<-s.doneChan
-
-	// wait for shutdown
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		s.rtcHttp.Shutdown(ctx)
-	}()
-	go func() {
-		defer wg.Done()
-		s.roomHttp.Shutdown(ctx)
-	}()
-	wg.Wait()
-
-	return nil
-}
-
-func (s *LivekitServer) Stop() {
-	s.running = false
-
-	s.doneChan <- true
-}
-
-func configureMiddlewares(conf *config.Config, handler http.Handler, middlewares ...negroni.Handler) *negroni.Negroni {
-	n := negroni.New()
-	n.Use(negroni.NewRecovery())
-	for _, m := range middlewares {
-		n.Use(m)
-	}
-	n.UseHandler(handler)
-	return n
-}
-
-func newManager(conf *config.Config, localNode *node.Node) (*rtc.RoomManager, error) {
-	return rtc.NewRoomManager(conf.RTC, localNode.Ip)
 }
 
 func generateKeys(c *cli.Context) error {

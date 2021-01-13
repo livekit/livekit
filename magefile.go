@@ -29,7 +29,7 @@ var checksummer = NewChecksummer(".", goChecksumFile, ".go")
 
 func init() {
 	checksummer.IgnoredPaths = []string{
-		"cmd/server/wire_gen.go",
+		"pkg/service/wire_gen.go",
 		"pkg/rtc/types/typesfakes",
 	}
 }
@@ -163,7 +163,16 @@ func generateCmd() error {
 
 	cmd := exec.Command("go", "generate", "./cmd/...")
 	connectStd(cmd)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("go", "generate", "./pkg/service/...")
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // implicitly install deps

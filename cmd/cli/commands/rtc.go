@@ -4,14 +4,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
-	"github.com/gorilla/websocket"
 	"github.com/manifoldco/promptui"
 	"github.com/pion/webrtc/v3"
 	"github.com/urfave/cli/v2"
@@ -53,11 +50,6 @@ var (
 )
 
 func joinRoom(c *cli.Context) error {
-	u, err := url.Parse(c.String("host") + "/rtc")
-	if err != nil {
-		return err
-	}
-
 	name := c.String("name")
 	roomId := c.String("room")
 	token := c.String("token")
@@ -72,6 +64,7 @@ func joinRoom(c *cli.Context) error {
 			return fmt.Errorf("--name is required")
 		}
 		// token may be nil in dev mode
+		var err error
 		token, err = accessToken(c, &auth.VideoGrant{
 			RoomJoin: true,
 			Room:     roomId,
@@ -82,21 +75,10 @@ func joinRoom(c *cli.Context) error {
 	}
 
 	log := logger.GetLogger()
-	var requestHeader http.Header
-	if token != "" {
-		// set this as a header
-		requestHeader = make(http.Header)
-		requestHeader.Set("Authorization", "Bearer "+token)
-	} else {
-		// dev mode, will pass these as overrides
-		v := url.Values{}
-		v.Set("room", roomId)
-		v.Set("name", name)
-		u.RawQuery = v.Encode()
-	}
 
-	log.Infow("connecting to Websocket signal", "url", u.String())
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), requestHeader)
+	host := c.String("host")
+	log.Infow("connecting to Websocket signal", "host", host)
+	conn, err := client.NewWebSocketConn(host, token)
 	if err != nil {
 		return err
 	}
