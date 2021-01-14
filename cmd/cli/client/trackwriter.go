@@ -19,9 +19,11 @@ import (
 // makes it easier to debug and create RTP streams
 type TrackWriter struct {
 	ctx      context.Context
+	cancel   context.CancelFunc
 	track    *webrtc.TrackLocalStaticSample
 	filePath string
 	mime     string
+	done     chan bool
 
 	ogg       *oggreader.OggReader
 	ivfheader *ivfreader.IVFFileHeader
@@ -30,15 +32,23 @@ type TrackWriter struct {
 }
 
 func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, filePath string) *TrackWriter {
+	ctx, cancel := context.WithCancel(ctx)
 	return &TrackWriter{
 		ctx:      ctx,
+		cancel:   cancel,
 		track:    track,
 		filePath: filePath,
 		mime:     track.Codec().MimeType,
+		done:     make(chan bool),
 	}
 }
 
 func (w *TrackWriter) Start() error {
+	if w.filePath == "" {
+		go w.writeNull()
+		return nil
+	}
+
 	file, err := os.Open(w.filePath)
 	if err != nil {
 		return err
@@ -68,6 +78,23 @@ func (w *TrackWriter) Start() error {
 		go w.writeH264()
 	}
 	return nil
+}
+
+func (w *TrackWriter) Stop() {
+	w.cancel()
+}
+
+func (w *TrackWriter) writeNull() {
+	defer w.onWriteComplete()
+	sample := media.Sample{Data: []byte{0x0, 0xff, 0xff, 0xff, 0xff}, Duration: time.Second}
+	for {
+		select {
+		case <-time.After(20 * time.Millisecond):
+			w.track.WriteSample(sample)
+		case <-w.ctx.Done():
+			break
+		}
+	}
 }
 
 func (w *TrackWriter) writeOgg() {

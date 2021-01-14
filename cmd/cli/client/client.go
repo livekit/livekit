@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 )
 
 type RTCClient struct {
+	id                 string
 	conn               *websocket.Conn
 	PeerConn           *webrtc.PeerConnection
 	localTracks        []webrtc.TrackLocal
@@ -35,7 +35,7 @@ type RTCClient struct {
 	iceConnected       bool
 	paused             bool
 	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
-	subscribedTracks   map[string]*webrtc.TrackRemote
+	subscribedTracks   map[string][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
@@ -90,7 +90,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		lock:               sync.Mutex{},
 		pendingCandidates:  make([]*webrtc.ICECandidate, 0),
 		localTracks:        make([]webrtc.TrackLocal, 0),
-		subscribedTracks:   make(map[string]*webrtc.TrackRemote),
+		subscribedTracks:   make(map[string][]*webrtc.TrackRemote),
 		remoteParticipants: make(map[string]*livekit.ParticipantInfo),
 		reader:             logRing,
 		writer:             logRing,
@@ -158,6 +158,10 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	return c, nil
 }
 
+func (c *RTCClient) ID() string {
+	return c.id
+}
+
 // create an offer for the server
 func (c *RTCClient) Run() error {
 	go c.logLoop()
@@ -186,6 +190,8 @@ func (c *RTCClient) Run() error {
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
+			c.id = msg.Join.Participant.Sid
+
 			c.lock.Lock()
 			for _, p := range msg.Join.OtherParticipants {
 				c.remoteParticipants[p.Sid] = p
@@ -256,7 +262,7 @@ func (c *RTCClient) Run() error {
 }
 
 func (c *RTCClient) WaitUntilConnected() error {
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	for {
 		select {
 		case <-ctx.Done():
@@ -300,7 +306,7 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 	}
 }
 
-func (c *RTCClient) SubscribedTracks() map[string]*webrtc.TrackRemote {
+func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
 	return c.subscribedTracks
 }
 
@@ -309,6 +315,8 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 }
 
 func (c *RTCClient) Stop() {
+	c.connected = false
+	c.iceConnected = false
 	c.conn.Close()
 	c.cancel()
 }
@@ -340,11 +348,50 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 	})
 }
 
-func (c *RTCClient) AddTrack(path string, id string, label string) error {
+func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) (writer *TrackWriter, err error) {
+	trackType := livekit.TrackType_AUDIO
+	if track.Kind() == webrtc.RTPCodecTypeVideo {
+		trackType = livekit.TrackType_VIDEO
+	}
+
+	if err = c.SendAddTrack(track.ID(), track.StreamID(), trackType); err != nil {
+		return
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.localTracks = append(c.localTracks, track)
+
+	if _, err = c.PeerConn.AddTrack(track); err != nil {
+		return
+	}
+
+	writer = NewTrackWriter(c.ctx, track, path)
+
+	// write tracks only after ICE connectivity
+	if c.iceConnected {
+		err = writer.Start()
+	} else {
+		c.pendingTrackWriters = append(c.pendingTrackWriters, writer)
+	}
+
+	return
+}
+
+func (c *RTCClient) AddStaticTrack(mime string, id string, label string) (writer *TrackWriter, err error) {
+	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: mime}, id, label)
+	if err != nil {
+		return
+	}
+
+	return c.AddTrack(track, "")
+}
+
+func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *TrackWriter, err error) {
 	// determine file mime
 	mime, ok := extMimeMapping[filepath.Ext(path)]
 	if !ok {
-		return fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
+		return nil, fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
 	}
 
 	c.AppendLog("adding track",
@@ -357,37 +404,10 @@ func (c *RTCClient) AddTrack(path string, id string, label string) error {
 		label,
 	)
 	if err != nil {
-		return err
+		return
 	}
 
-	trackType := livekit.TrackType_AUDIO
-	if strings.HasPrefix(mime, "video") {
-		trackType = livekit.TrackType_VIDEO
-	}
-
-	if err := c.SendAddTrack(id, label, trackType); err != nil {
-		return err
-	}
-
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.localTracks = append(c.localTracks, track)
-
-	if _, err := c.PeerConn.AddTrack(track); err != nil {
-		return err
-	}
-
-	tw := NewTrackWriter(c.ctx, track, path)
-
-	// write tracks only after ICE connectivity
-	if c.iceConnected {
-		return tw.Start()
-	} else {
-		c.pendingTrackWriters = append(c.pendingTrackWriters, tw)
-		return nil
-	}
-
-	return nil
+	return c.AddTrack(track, path)
 }
 
 // send AddTrack command to server to initiate server-side negotiation
@@ -516,7 +536,17 @@ func (c *RTCClient) logLoop() {
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
-	peerId, trackId := rtc.UnpackTrackId(track.ID())
+	pId, trackId := rtc.UnpackTrackId(track.ID())
+	c.lock.Lock()
+	c.subscribedTracks[pId] = append(c.subscribedTracks[pId], track)
+	c.lock.Unlock()
+
+	defer func() {
+		c.lock.Lock()
+		c.subscribedTracks[pId] = funk.Without(c.subscribedTracks[pId], track).([]*webrtc.TrackRemote)
+		c.lock.Unlock()
+	}()
+
 	numBytes := 0
 	for {
 		pkt, _, err := track.ReadRTP()
@@ -532,8 +562,8 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		}
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
-			c.AppendLog("consumed from peer",
-				"track", trackId, "peer", peerId,
+			c.AppendLog("consumed from participant",
+				"track", trackId, "participant", pId,
 				"size", numBytes)
 			lastUpdate = time.Now()
 		}

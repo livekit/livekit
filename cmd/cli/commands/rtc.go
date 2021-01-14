@@ -97,10 +97,10 @@ func joinRoom(c *cli.Context) error {
 	rc.OnConnected = func() {
 		// add after connection, since we need proper publish track APIs
 		if audioFile != "" {
-			rc.AddTrack(audioFile, "audio", filepath.Base(audioFile))
+			rc.AddFileTrack(audioFile, "audio", filepath.Base(audioFile))
 		}
 		if videoFile != "" {
-			rc.AddTrack(videoFile, "video", filepath.Base(videoFile))
+			rc.AddFileTrack(videoFile, "video", filepath.Base(videoFile))
 		}
 	}
 
@@ -188,7 +188,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 	mediaPath = ExpandUser(mediaPath)
 
 	// TODO: see what the ID should be
-	err = rc.AddTrack(mediaPath, codecType.String(), filepath.Base(mediaPath))
+	_, err = rc.AddFileTrack(mediaPath, codecType.String(), filepath.Base(mediaPath))
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func handleAddMedia(rc *client.RTCClient, isAudio bool) error {
 
 	audioPath := mediaPath[0:len(mediaPath)-len(videoExt)] + ".ogg"
 	if _, err = os.Stat(audioPath); err == nil {
-		err = rc.AddTrack(audioPath, codecType.String(), filepath.Base(audioPath))
+		_, err = rc.AddFileTrack(audioPath, codecType.String(), filepath.Base(audioPath))
 		if err != nil {
 			fmt.Printf("added audio track: %s\n", audioPath)
 		}

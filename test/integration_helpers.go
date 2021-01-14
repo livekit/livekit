@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -53,6 +55,19 @@ func withTimeout(t *testing.T, f func() bool) {
 			}
 		}
 	}
+}
+
+func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
+	wg := sync.WaitGroup{}
+	for i := range clients {
+		c := clients[i]
+		wg.Add(1)
+		go func() {
+			assert.NoError(t, c.WaitUntilConnected())
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 func createServer() *service.LivekitServer {
@@ -119,7 +134,6 @@ func (p *StaticKeyProvider) NumKeys() int {
 
 func (p *StaticKeyProvider) GetSecret(key string) string {
 	if key == testApiKey {
-		logger.GetLogger().Debugf("returning secret: %s", testApiSecret)
 		return testApiSecret
 	}
 	return ""
