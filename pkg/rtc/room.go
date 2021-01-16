@@ -2,13 +2,11 @@ package rtc
 
 import (
 	"sync"
-	"time"
 
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -20,16 +18,10 @@ type Room struct {
 	participants map[string]types.Participant
 }
 
-func NewRoomForRequest(req *livekit.CreateRoomRequest, config *WebRTCConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
 	return &Room{
-		Room: livekit.Room{
-			Sid:             utils.NewGuid(utils.RoomPrefix),
-			Name:            req.Name,
-			EmptyTimeout:    req.EmptyTimeout,
-			MaxParticipants: req.MaxParticipants,
-			CreationTime:    time.Now().Unix(),
-		},
-		config:       *config,
+		Room:         *room,
+		config:       config,
 		lock:         sync.RWMutex{},
 		participants: make(map[string]types.Participant),
 	}
@@ -47,28 +39,14 @@ func (r *Room) GetParticipants() []types.Participant {
 	return funk.Values(r.participants).([]types.Participant)
 }
 
-func (r *Room) ToRoomInfo(node *livekit.Node) *livekit.RoomInfo {
-	ri := &livekit.RoomInfo{
-		Sid:          r.Sid,
-		Name:         r.Name,
-		CreationTime: r.CreationTime,
-	}
-	if node != nil {
-		ri.NodeIp = node.Ip
-	}
-	return ri
-}
-
 func (r *Room) Join(participant types.Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	log := logger.GetLogger()
-
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		log.Debugw("participant state changed", "state", p.State(), "participant", p.ID(),
+		logger.Debugw("participant state changed", "state", p.State(), "participant", p.ID(),
 			"oldState", oldState)
 		r.broadcastParticipantState(p)
 
@@ -81,7 +59,7 @@ func (r *Room) Join(participant types.Participant) error {
 				}
 				if err := op.AddSubscriber(p); err != nil {
 					// TODO: log error? or disconnect?
-					logger.GetLogger().Errorw("could not subscribe to participant",
+					logger.Errorw("could not subscribe to participant",
 						"dstParticipant", p.ID(),
 						"srcParticipant", op.ID())
 				}
@@ -92,7 +70,7 @@ func (r *Room) Join(participant types.Participant) error {
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 
-	log.Infow("new participant joined",
+	logger.Infow("new participant joined",
 		"id", participant.ID(),
 		"name", participant.Name(),
 		"roomId", r.Sid)
@@ -107,7 +85,7 @@ func (r *Room) Join(participant types.Participant) error {
 		}
 	}
 
-	return participant.SendJoinResponse(r.ToRoomInfo(nil), otherParticipants)
+	return participant.SendJoinResponse(&r.Room, otherParticipants)
 }
 
 func (r *Room) RemoveParticipant(id string) {
@@ -145,12 +123,12 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// not fully joined. don't subscribe yet
 			continue
 		}
-		logger.GetLogger().Debugw("subscribing to new track",
+		logger.Debugw("subscribing to new track",
 			"srcParticipant", participant.ID(),
 			"remoteTrack", track.ID(),
 			"dstParticipant", existingParticipant.ID())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
-			logger.GetLogger().Errorw("could not subscribe to remoteTrack",
+			logger.Errorw("could not subscribe to remoteTrack",
 				"srcParticipant", participant.ID(),
 				"remoteTrack", track.ID(),
 				"dstParticipant", existingParticipant.ID())
@@ -176,7 +154,7 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
-			logger.GetLogger().Errorw("could not send update to participant",
+			logger.Errorw("could not send update to participant",
 				"participant", p.ID(),
 				"err", err)
 		}

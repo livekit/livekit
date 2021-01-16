@@ -6,9 +6,8 @@ import (
 )
 
 type Config struct {
-	APIPort uint32    `yaml:"api_port"`
-	RTCPort uint32    `yaml:"rtc_port"`
-	RTC     RTCConfig `yaml:"rtc"`
+	Port uint32    `yaml:"port"`
+	RTC  RTCConfig `yaml:"rtc"`
 
 	// multi-node configuration,
 	MultiNode   bool `yaml:"multi_node"`
@@ -28,8 +27,7 @@ type RTCConfig struct {
 func NewConfig(confString string) (*Config, error) {
 	// start with defaults
 	conf := &Config{
-		APIPort: 7880,
-		RTCPort: 7881,
+		Port: 7880,
 		RTC: RTCConfig{
 			ICEPortRangeStart: 8000,
 			ICEPortRangeEnd:   10000,

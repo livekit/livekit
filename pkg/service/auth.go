@@ -21,7 +21,6 @@ const (
 
 var (
 	ErrPermissionDenied = errors.New("permissions denied")
-	AuthRequired        bool
 )
 
 // authentication middleware
@@ -91,9 +90,6 @@ func SetAuthorizationToken(r *http.Request, token string) {
 }
 
 func EnsureJoinPermission(ctx context.Context) (name string, err error) {
-	if !AuthRequired {
-		return "", nil
-	}
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil {
 		err = ErrPermissionDenied
@@ -109,9 +105,6 @@ func EnsureJoinPermission(ctx context.Context) (name string, err error) {
 }
 
 func EnsureCreatePermission(ctx context.Context) error {
-	if !AuthRequired {
-		return nil
-	}
 	claims := GetGrants(ctx)
 	if claims == nil {
 		return ErrPermissionDenied
@@ -123,13 +116,25 @@ func EnsureCreatePermission(ctx context.Context) error {
 	return ErrPermissionDenied
 }
 
+func EnsureListPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil {
+		return ErrPermissionDenied
+	}
+
+	if claims.Video.RoomList {
+		return nil
+	}
+	return ErrPermissionDenied
+}
+
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())
 }
 
 func handleError(w http.ResponseWriter, status int, msg string) {
-	logger.GetLogger().Debugw("error handling request", "error", msg, "status", status)
+	logger.Debugw("error handling request", "error", msg, "status", status)
 	w.WriteHeader(status)
 	w.Write([]byte(msg))
 }

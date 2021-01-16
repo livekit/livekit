@@ -1,11 +1,11 @@
-package node
+package routing
 
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
-	"github.com/google/wire"
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
 
@@ -13,13 +13,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
-
-var NodeSet = wire.NewSet(NewLocalNode)
-
-type Node struct {
-	livekit.Node
-	config *config.Config
-}
 
 type NodeStats struct {
 	NumRooms         int32
@@ -29,36 +22,37 @@ type NodeStats struct {
 	BytesPerMin      int64
 }
 
-func NewLocalNode(conf *config.Config) (*Node, error) {
-	n := &Node{
-		Node: livekit.Node{
-			Id:      utils.NewGuid(utils.NodePrefix),
-			RtcPort: conf.RTCPort,
-		},
-		config: conf,
-	}
-	if err := n.DiscoverNetworkInfo(); err != nil {
+type LocalNode *livekit.Node
+
+func NewLocalNode(conf *config.Config) (LocalNode, error) {
+	ip, err := GetLocalIP(conf.RTC.StunServers)
+	if err != nil {
 		return nil, err
 	}
-	return n, nil
+	return &livekit.Node{
+		Id:      utils.NewGuid(utils.NodePrefix),
+		Ip:      ip,
+		NumCpus: uint32(runtime.NumCPU()),
+	}, nil
 }
 
-func (n *Node) DiscoverNetworkInfo() error {
-	if len(n.config.RTC.StunServers) == 0 {
-		return errors.New("STUN servers are required but not defined")
+func GetLocalIP(stunServers []string) (string, error) {
+	if len(stunServers) == 0 {
+		return "", errors.New("STUN servers are required but not defined")
 	}
-	c, err := stun.Dial("udp4", n.config.RTC.StunServers[0])
+	c, err := stun.Dial("udp4", stunServers[0])
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer c.Close()
 
 	message, err := stun.Build(stun.TransactionID, stun.BindingRequest)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var stunErr error
+	var nodeIp string
 	err = c.Start(message, func(res stun.Event) {
 		if res.Error != nil {
 			stunErr = res.Error
@@ -72,28 +66,28 @@ func (n *Node) DiscoverNetworkInfo() error {
 		}
 		ip := xorAddr.IP.To4()
 		if ip != nil {
-			n.Ip = ip.String()
+			nodeIp = ip.String()
 		}
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for n.Ip == "" {
+	for nodeIp == "" {
 		select {
 		case <-ctx.Done():
 			msg := "could not determine public IP"
 			if stunErr != nil {
-				return errors.Wrap(stunErr, msg)
+				return "", errors.Wrap(stunErr, msg)
 			} else {
-				return fmt.Errorf(msg)
+				return "", fmt.Errorf(msg)
 			}
 		case <-time.After(100 * time.Millisecond):
 			continue
 		}
 	}
 
-	return nil
+	return nodeIp, nil
 }

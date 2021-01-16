@@ -31,11 +31,10 @@ var (
 			},
 		},
 		{
-			Name:   "get-room",
+			Name:   "list-rooms",
 			Before: createClient,
-			Action: getRoom,
+			Action: listRooms,
 			Flags: []cli.Flag{
-				roomFlag,
 				roomHostFlag,
 				apiKeyFlag,
 				secretFlag,
@@ -76,17 +75,15 @@ func createRoom(c *cli.Context) error {
 	return nil
 }
 
-func getRoom(c *cli.Context) error {
-	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomJoin: true})
-	roomId := c.String("room")
-	room, err := roomClient.GetRoom(ctx, &livekit.GetRoomRequest{
-		Room: roomId,
-	})
+func listRooms(c *cli.Context) error {
+	ctx := contextWithAccessToken(c, &auth.VideoGrant{RoomList: true})
+	res, err := roomClient.ListRooms(ctx, &livekit.ListRoomsRequest{})
 	if err != nil {
 		return err
 	}
-
-	PrintJSON(room)
+	for _, rm := range res.Rooms {
+		fmt.Printf("%s\t%s\n", rm.Sid, rm.Name)
+	}
 	return nil
 }
 
@@ -108,16 +105,16 @@ func contextWithAccessToken(c *cli.Context, grant *auth.VideoGrant) context.Cont
 	ctx := context.Background()
 	token, err := accessToken(c, grant, "")
 	if err != nil {
-		logger.GetLogger().Errorw("Could not get access token", "err", err)
+		logger.Errorw("Could not get access token", "err", err)
 	}
 	if token != "" {
 		header := make(http.Header)
 		header.Set("Authorization", "Bearer "+token)
 		if tctx, err := twirp.WithHTTPRequestHeaders(ctx, header); err == nil {
-			logger.GetLogger().Debugw("requesting with token")
+			logger.Debugw("requesting with token")
 			ctx = tctx
 		} else {
-			logger.GetLogger().Errorw("Error setting Twirp auth header", "err", err)
+			logger.Errorw("Error setting Twirp auth header", "err", err)
 		}
 	}
 	return ctx

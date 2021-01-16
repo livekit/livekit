@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -33,7 +34,7 @@ const (
 type ParticipantImpl struct {
 	id               string
 	peerConn         types.PeerConnection
-	sigConn          types.SignalConnection
+	responseSink     routing.MessageSink
 	receiverConfig   ReceiverConfig
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -69,19 +70,21 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	se.BufferFactory = bufferFactory.GetOrNew
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
-	return api.NewPeerConnection(conf.Configuration)
+	pc, err := api.NewPeerConnection(conf.Configuration)
+	return pc, err
 }
 
-func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name string, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
+func NewParticipant(participantId, name string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
+	// TODO: check to ensure params are valid, id and name can't be empty
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
-		id:                 utils.NewGuid(utils.ParticipantPrefix),
+		id:                 participantId,
 		name:               name,
 		peerConn:           pc,
-		sigConn:            sc,
+		responseSink:       rs,
 		receiverConfig:     receiverConfig,
 		ctx:                ctx,
 		cancel:             cancel,
@@ -96,7 +99,6 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 
-	log := logger.GetLogger()
 	pc.OnTrack(participant.onMediaTrack)
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -107,14 +109,14 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 		ci := c.ToJSON()
 
 		// write candidate
-		logger.GetLogger().Debugw("sending ice candidates")
-		err := sc.WriteResponse(&livekit.SignalResponse{
+		logger.Debugw("sending ice candidates")
+		err := rs.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: ToProtoTrickle(ci),
 			},
 		})
 		if err != nil {
-			log.Errorw("could not send trickle", "err", err)
+			logger.Errorw("could not send trickle", "err", err)
 		}
 
 		if participant.onICECandidate != nil {
@@ -123,7 +125,7 @@ func NewParticipant(pc types.PeerConnection, sc types.SignalConnection, name str
 	})
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		logger.GetLogger().Debugw("ICE connection state changed", "state", state.String())
+		logger.Debugw("ICE connection state changed", "state", state.String())
 		if state == webrtc.ICEConnectionStateConnected {
 			participant.updateState(livekit.ParticipantInfo_ACTIVE)
 		}
@@ -228,7 +230,7 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	}
 	p.negotiationCond.L.Unlock()
 
-	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
+	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
@@ -252,7 +254,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	}
 	p.pendingTracks[clientId] = ti
 
-	p.sigConn.WriteResponse(&livekit.SignalResponse{
+	p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
 				Cid:   clientId,
@@ -266,7 +268,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	logger.GetLogger().Debugw("setting remote answer")
+	logger.Debugw("setting remote answer")
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -288,7 +290,7 @@ func (p *ParticipantImpl) HandleClientNegotiation() {
 	}
 	p.negotiationState = negotiationStateClient
 	p.negotiationCond.L.Unlock()
-	p.sigConn.WriteResponse(&livekit.SignalResponse{
+	p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Negotiate{
 			Negotiate: &livekit.NegotiationResponse{},
 		},
@@ -329,7 +331,7 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	defer p.lock.RUnlock()
 
 	for _, track := range p.publishedTracks {
-		logger.GetLogger().Debugw("subscribing to remoteTrack",
+		logger.Debugw("subscribing to remoteTrack",
 			"srcParticipant", p.ID(),
 			"dstParticipant", op.ID(),
 			"remoteTrack", track.ID())
@@ -350,9 +352,9 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 }
 
 // signal connection methods
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.RoomInfo, otherParticipants []types.Participant) error {
+func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant) error {
 	// send Join response
-	return p.sigConn.WriteResponse(&livekit.SignalResponse{
+	return p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
@@ -364,7 +366,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.RoomInfo, otherPart
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
-	return p.sigConn.WriteResponse(&livekit.SignalResponse{
+	return p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
 				Participants: participants,
@@ -429,10 +431,10 @@ func (p *ParticipantImpl) negotiate() {
 	}
 	p.negotiationCond.L.Unlock()
 
-	logger.GetLogger().Debugw("starting negotiation", "participant", p.ID())
+	logger.Debugw("starting negotiation", "participant", p.ID())
 	offer, err := p.peerConn.CreateOffer(nil)
 	if err != nil {
-		logger.GetLogger().Errorw("could not create offer", "err", err)
+		logger.Errorw("could not create offer", "err", err)
 		return
 	}
 
@@ -444,18 +446,18 @@ func (p *ParticipantImpl) negotiate() {
 
 	err = p.peerConn.SetLocalDescription(offer)
 	if err != nil {
-		logger.GetLogger().Errorw("could not set local description", "err", err)
+		logger.Errorw("could not set local description", "err", err)
 		return
 	}
 
-	logger.GetLogger().Debugw("sending available offer to participant")
-	err = p.sigConn.WriteResponse(&livekit.SignalResponse{
+	logger.Debugw("sending available offer to participant")
+	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
 	if err != nil {
-		logger.GetLogger().Errorw("could not send offer to peer",
+		logger.Errorw("could not send offer to peer",
 			"err", err)
 	}
 }
@@ -477,7 +479,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	logger.GetLogger().Debugw("mediaTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
+	logger.Debugw("mediaTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
 
 	ti := p.popPendingTrack(track.ID())
 	if ti == nil {
@@ -496,7 +498,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	if dc.Label() == placeholderDataChannel {
 		return
 	}
-	logger.GetLogger().Debugw("dataChannel added", "participantId", p.ID(), "label", dc.Label())
+	logger.Debugw("dataChannel added", "participantId", p.ID(), "label", dc.Label())
 
 	// data channels have numeric ids, so we use its label to identify
 	ti := p.popPendingTrack(dc.Label())
@@ -515,7 +517,7 @@ func (p *ParticipantImpl) popPendingTrack(clientId string) *livekit.TrackInfo {
 	defer p.lock.Unlock()
 	ti := p.pendingTracks[clientId]
 	if ti == nil {
-		logger.GetLogger().Errorw("track info not published prior to track", "clientId", clientId)
+		logger.Errorw("track info not published prior to track", "clientId", clientId)
 	} else {
 		delete(p.pendingTracks, clientId)
 	}
@@ -584,7 +586,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 				if err == io.EOF || err == io.ErrClosedPipe {
 					return
 				}
-				logger.GetLogger().Errorw("could not send downtrack reports",
+				logger.Errorw("could not send downtrack reports",
 					"participant", p.id,
 					"err", err)
 			}
@@ -598,10 +600,10 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		//for _, pkt := range pkts {
-		//	logger.GetLogger().Debugw("writing RTCP", "packet", pkt)
+		//	logger.Debugw("writing RTCP", "packet", pkt)
 		//}
 		if err := p.peerConn.WriteRTCP(pkts); err != nil {
-			logger.GetLogger().Errorw("could not write RTCP to participant",
+			logger.Errorw("could not write RTCP to participant",
 				"participant", p.id,
 				"err", err)
 		}

@@ -152,13 +152,13 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		// however, if the dest participant has disconnected, then we can skip
 		sender := transceiver.Sender()
 		if sender != nil {
-			logger.GetLogger().Debugw("removing peerconnection track",
+			logger.Debugw("removing peerconnection track",
 				"track", t.id,
 				"srcParticipant", t.participantId,
 				"destParticipant", participant.ID())
 			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					logger.GetLogger().Warnw("could not remove remoteTrack from forwarder",
+					logger.Warnw("could not remove remoteTrack from forwarder",
 						"participant", participant.ID(),
 						"err", err)
 				}
@@ -188,7 +188,7 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
-	logger.GetLogger().Debugw("removing all subscribers", "track", t.id)
+	logger.Debugw("removing all subscribers", "track", t.id)
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	for _, dt := range t.downtracks {
@@ -244,7 +244,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 	}()
 
 	for pkt := range t.receiver.RTPChan() {
-		//logger.GetLogger().Debugw("read packet from remoteTrack",
+		//logger.Debugw("read packet from remoteTrack",
 		//	"participant", t.participantId,
 		//	"track", t.ID())
 		// when track is muted, it's "disabled" on the client side, and will still be sending black frames
@@ -255,7 +255,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 
 		t.lock.RLock()
 		for dstId, dt := range t.downtracks {
-			//logger.GetLogger().Debugw("read packet from remoteTrack",
+			//logger.Debugw("read packet from remoteTrack",
 			//	"srcParticipant", t.participantId,
 			//	"destParticipant", dstId,
 			//	"track", t.ID())
@@ -271,7 +271,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 				if delta < maxPLIFrequency {
 					continue
 				}
-				logger.GetLogger().Infow("keyframe required, sending PLI",
+				logger.Infow("keyframe required, sending PLI",
 					"srcParticipant", t.participantId)
 				rtcpPkts := []rtcp.Packet{
 					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.SSRC},
@@ -279,7 +279,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 				t.rtcpCh <- rtcpPkts
 				t.lastPLI = time.Now()
 			} else if err != nil {
-				logger.GetLogger().Warnw("could not forward packet to participant",
+				logger.Warnw("could not forward packet to participant",
 					"src", t.participantId,
 					"dest", dstId,
 					"remoteTrack", t.id,
@@ -294,7 +294,7 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
 	defer Recover()
 	pkts, err := rtcp.Unmarshal(rtcpBuf)
 	if err != nil {
-		logger.GetLogger().Warnw("could not decode RTCP packet", "err", err)
+		logger.Warnw("could not decode RTCP packet", "err", err)
 	}
 
 	var fwdPkts []rtcp.Packet
@@ -322,7 +322,7 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
 				//log.Tracef("Slow link for sender %s, fraction packet lost %.2f", f.track.peerID, float64(p.Reports[0].FractionLost)/256)
 			}
 		case *rtcp.TransportLayerNack:
-			logger.GetLogger().Debugw("forwarder got nack",
+			logger.Debugw("forwarder got nack",
 				"packet", p)
 			var nackedPackets []uint16
 			for _, pair := range p.Nacks {

@@ -24,7 +24,7 @@ var (
 	}
 	rtcHostFlag = &cli.StringFlag{
 		Name:  "host",
-		Value: "ws://localhost:7881",
+		Value: "ws://localhost:7880",
 	}
 	apiKeyFlag = &cli.StringFlag{
 		Name:     "api-key",

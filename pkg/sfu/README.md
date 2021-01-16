@@ -2,4 +2,4 @@ This package is largely files from the wonderful ion-sfu project.
 
 https://github.com/pion/ion-sfu
 
-It's duplicated here since we needed to access a private method in various helper classes
+It's duplicated here with modifications to reference only classes that we need

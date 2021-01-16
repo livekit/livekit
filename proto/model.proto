@@ -6,7 +6,7 @@ option go_package = "github.com/livekit/livekit-server/proto/livekit";
 message Node {
   string id = 1;
   string ip = 2;
-  uint32 rtc_port = 3;
+  uint32 num_cpus = 3;
   NodeStats stats = 4;
 }
 
@@ -22,13 +22,6 @@ message Room {
   uint32 empty_timeout = 3;
   uint32 max_participants = 4;
   int64 creation_time = 5;
-}
-
-message RoomInfo {
-  string sid = 1;
-  string name = 2;
-  string node_ip = 3;
-  int64 creation_time = 4;
 }
 
 message ParticipantInfo {

@@ -20,12 +20,6 @@ type WebsocketClient interface {
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
-//counterfeiter:generate . SignalConnection
-type SignalConnection interface {
-	ReadRequest() (*livekit.SignalRequest, error)
-	WriteResponse(*livekit.SignalResponse) error
-}
-
 //counterfeiter:generate . PeerConnection
 type PeerConnection interface {
 	OnICECandidate(f func(*webrtc.ICECandidate))
@@ -61,10 +55,11 @@ type Participant interface {
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
+	HandleClientNegotiation()
 	AddICECandidate(candidate webrtc.ICECandidateInit) error
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
-	SendJoinResponse(info *livekit.RoomInfo, otherParticipants []Participant) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []Participant) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SetTrackMuted(trackId string, muted bool)
 

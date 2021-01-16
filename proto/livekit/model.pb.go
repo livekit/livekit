@@ -127,7 +127,7 @@ func (x ParticipantInfo_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ParticipantInfo_State.Descriptor instead.
 func (ParticipantInfo_State) EnumDescriptor() ([]byte, []int) {
-	return file_model_proto_rawDescGZIP(), []int{4, 0}
+	return file_model_proto_rawDescGZIP(), []int{3, 0}
 }
 
 type Node struct {
@@ -137,7 +137,7 @@ type Node struct {
 
 	Id      string     `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Ip      string     `protobuf:"bytes,2,opt,name=ip,proto3" json:"ip,omitempty"`
-	RtcPort uint32     `protobuf:"varint,3,opt,name=rtc_port,json=rtcPort,proto3" json:"rtc_port,omitempty"`
+	NumCpus uint32     `protobuf:"varint,3,opt,name=num_cpus,json=numCpus,proto3" json:"num_cpus,omitempty"`
 	Stats   *NodeStats `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
 }
 
@@ -187,9 +187,9 @@ func (x *Node) GetIp() string {
 	return ""
 }
 
-func (x *Node) GetRtcPort() uint32 {
+func (x *Node) GetNumCpus() uint32 {
 	if x != nil {
-		return x.RtcPort
+		return x.NumCpus
 	}
 	return 0
 }
@@ -336,77 +336,6 @@ func (x *Room) GetCreationTime() int64 {
 	return 0
 }
 
-type RoomInfo struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Sid          string `protobuf:"bytes,1,opt,name=sid,proto3" json:"sid,omitempty"`
-	Name         string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	NodeIp       string `protobuf:"bytes,3,opt,name=node_ip,json=nodeIp,proto3" json:"node_ip,omitempty"`
-	CreationTime int64  `protobuf:"varint,4,opt,name=creation_time,json=creationTime,proto3" json:"creation_time,omitempty"`
-}
-
-func (x *RoomInfo) Reset() {
-	*x = RoomInfo{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_model_proto_msgTypes[3]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *RoomInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RoomInfo) ProtoMessage() {}
-
-func (x *RoomInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_model_proto_msgTypes[3]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RoomInfo.ProtoReflect.Descriptor instead.
-func (*RoomInfo) Descriptor() ([]byte, []int) {
-	return file_model_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *RoomInfo) GetSid() string {
-	if x != nil {
-		return x.Sid
-	}
-	return ""
-}
-
-func (x *RoomInfo) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *RoomInfo) GetNodeIp() string {
-	if x != nil {
-		return x.NodeIp
-	}
-	return ""
-}
-
-func (x *RoomInfo) GetCreationTime() int64 {
-	if x != nil {
-		return x.CreationTime
-	}
-	return 0
-}
-
 type ParticipantInfo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -421,7 +350,7 @@ type ParticipantInfo struct {
 func (x *ParticipantInfo) Reset() {
 	*x = ParticipantInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_model_proto_msgTypes[4]
+		mi := &file_model_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -434,7 +363,7 @@ func (x *ParticipantInfo) String() string {
 func (*ParticipantInfo) ProtoMessage() {}
 
 func (x *ParticipantInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_model_proto_msgTypes[4]
+	mi := &file_model_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,7 +376,7 @@ func (x *ParticipantInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParticipantInfo.ProtoReflect.Descriptor instead.
 func (*ParticipantInfo) Descriptor() ([]byte, []int) {
-	return file_model_proto_rawDescGZIP(), []int{4}
+	return file_model_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ParticipantInfo) GetSid() string {
@@ -493,7 +422,7 @@ type TrackInfo struct {
 func (x *TrackInfo) Reset() {
 	*x = TrackInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_model_proto_msgTypes[5]
+		mi := &file_model_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -506,7 +435,7 @@ func (x *TrackInfo) String() string {
 func (*TrackInfo) ProtoMessage() {}
 
 func (x *TrackInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_model_proto_msgTypes[5]
+	mi := &file_model_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +448,7 @@ func (x *TrackInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrackInfo.ProtoReflect.Descriptor instead.
 func (*TrackInfo) Descriptor() ([]byte, []int) {
-	return file_model_proto_rawDescGZIP(), []int{5}
+	return file_model_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *TrackInfo) GetSid() string {
@@ -564,7 +493,7 @@ type DataMessage struct {
 func (x *DataMessage) Reset() {
 	*x = DataMessage{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_model_proto_msgTypes[6]
+		mi := &file_model_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -577,7 +506,7 @@ func (x *DataMessage) String() string {
 func (*DataMessage) ProtoMessage() {}
 
 func (x *DataMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_model_proto_msgTypes[6]
+	mi := &file_model_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +519,7 @@ func (x *DataMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DataMessage.ProtoReflect.Descriptor instead.
 func (*DataMessage) Descriptor() ([]byte, []int) {
-	return file_model_proto_rawDescGZIP(), []int{6}
+	return file_model_proto_rawDescGZIP(), []int{5}
 }
 
 func (m *DataMessage) GetValue() isDataMessage_Value {
@@ -637,8 +566,8 @@ var file_model_proto_rawDesc = []byte{
 	0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x22, 0x6b, 0x0a, 0x04, 0x4e, 0x6f, 0x64, 0x65, 0x12, 0x0e,
 	0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x0e,
 	0x0a, 0x02, 0x69, 0x70, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x70, 0x12, 0x19,
-	0x0a, 0x08, 0x72, 0x74, 0x63, 0x5f, 0x70, 0x6f, 0x72, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d,
-	0x52, 0x07, 0x72, 0x74, 0x63, 0x50, 0x6f, 0x72, 0x74, 0x12, 0x28, 0x0a, 0x05, 0x73, 0x74, 0x61,
+	0x0a, 0x08, 0x6e, 0x75, 0x6d, 0x5f, 0x63, 0x70, 0x75, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d,
+	0x52, 0x07, 0x6e, 0x75, 0x6d, 0x43, 0x70, 0x75, 0x73, 0x12, 0x28, 0x0a, 0x05, 0x73, 0x74, 0x61,
 	0x74, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x6c, 0x69, 0x76, 0x65, 0x6b,
 	0x69, 0x74, 0x2e, 0x4e, 0x6f, 0x64, 0x65, 0x53, 0x74, 0x61, 0x74, 0x73, 0x52, 0x05, 0x73, 0x74,
 	0x61, 0x74, 0x73, 0x22, 0x49, 0x0a, 0x09, 0x4e, 0x6f, 0x64, 0x65, 0x53, 0x74, 0x61, 0x74, 0x73,
@@ -655,13 +584,6 @@ var file_model_proto_rawDesc = []byte{
 	0x69, 0x70, 0x61, 0x6e, 0x74, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x0f, 0x6d, 0x61,
 	0x78, 0x50, 0x61, 0x72, 0x74, 0x69, 0x63, 0x69, 0x70, 0x61, 0x6e, 0x74, 0x73, 0x12, 0x23, 0x0a,
 	0x0d, 0x63, 0x72, 0x65, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x18, 0x05,
-	0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x63, 0x72, 0x65, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x54, 0x69,
-	0x6d, 0x65, 0x22, 0x6e, 0x0a, 0x08, 0x52, 0x6f, 0x6f, 0x6d, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x10,
-	0x0a, 0x03, 0x73, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x73, 0x69, 0x64,
-	0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04,
-	0x6e, 0x61, 0x6d, 0x65, 0x12, 0x17, 0x0a, 0x07, 0x6e, 0x6f, 0x64, 0x65, 0x5f, 0x69, 0x70, 0x18,
-	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x6e, 0x6f, 0x64, 0x65, 0x49, 0x70, 0x12, 0x23, 0x0a,
-	0x0d, 0x63, 0x72, 0x65, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x18, 0x04,
 	0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x63, 0x72, 0x65, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x54, 0x69,
 	0x6d, 0x65, 0x22, 0xd9, 0x01, 0x0a, 0x0f, 0x50, 0x61, 0x72, 0x74, 0x69, 0x63, 0x69, 0x70, 0x61,
 	0x6e, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x10, 0x0a, 0x03, 0x73, 0x69, 0x64, 0x18, 0x01, 0x20,
@@ -710,22 +632,21 @@ func file_model_proto_rawDescGZIP() []byte {
 }
 
 var file_model_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_model_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_model_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_model_proto_goTypes = []interface{}{
 	(TrackType)(0),             // 0: livekit.TrackType
 	(ParticipantInfo_State)(0), // 1: livekit.ParticipantInfo.State
 	(*Node)(nil),               // 2: livekit.Node
 	(*NodeStats)(nil),          // 3: livekit.NodeStats
 	(*Room)(nil),               // 4: livekit.Room
-	(*RoomInfo)(nil),           // 5: livekit.RoomInfo
-	(*ParticipantInfo)(nil),    // 6: livekit.ParticipantInfo
-	(*TrackInfo)(nil),          // 7: livekit.TrackInfo
-	(*DataMessage)(nil),        // 8: livekit.DataMessage
+	(*ParticipantInfo)(nil),    // 5: livekit.ParticipantInfo
+	(*TrackInfo)(nil),          // 6: livekit.TrackInfo
+	(*DataMessage)(nil),        // 7: livekit.DataMessage
 }
 var file_model_proto_depIdxs = []int32{
 	3, // 0: livekit.Node.stats:type_name -> livekit.NodeStats
 	1, // 1: livekit.ParticipantInfo.state:type_name -> livekit.ParticipantInfo.State
-	7, // 2: livekit.ParticipantInfo.tracks:type_name -> livekit.TrackInfo
+	6, // 2: livekit.ParticipantInfo.tracks:type_name -> livekit.TrackInfo
 	0, // 3: livekit.TrackInfo.type:type_name -> livekit.TrackType
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
@@ -777,18 +698,6 @@ func file_model_proto_init() {
 			}
 		}
 		file_model_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RoomInfo); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_model_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ParticipantInfo); i {
 			case 0:
 				return &v.state
@@ -800,7 +709,7 @@ func file_model_proto_init() {
 				return nil
 			}
 		}
-		file_model_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+		file_model_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*TrackInfo); i {
 			case 0:
 				return &v.state
@@ -812,7 +721,7 @@ func file_model_proto_init() {
 				return nil
 			}
 		}
-		file_model_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+		file_model_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*DataMessage); i {
 			case 0:
 				return &v.state
@@ -825,7 +734,7 @@ func file_model_proto_init() {
 			}
 		}
 	}
-	file_model_proto_msgTypes[6].OneofWrappers = []interface{}{
+	file_model_proto_msgTypes[5].OneofWrappers = []interface{}{
 		(*DataMessage_Text)(nil),
 		(*DataMessage_Binary)(nil),
 	}
@@ -835,7 +744,7 @@ func file_model_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_model_proto_rawDesc,
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

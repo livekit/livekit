@@ -54,7 +54,7 @@ func (w *TrackWriter) Start() error {
 		return err
 	}
 
-	logger.GetLogger().Infow("starting track writer",
+	logger.Infow("starting track writer",
 		"track", w.track.ID(),
 		"mime", w.mime)
 	switch w.mime {
@@ -106,13 +106,13 @@ func (w *TrackWriter) writeOgg() {
 		}
 		pageData, pageHeader, err := w.ogg.ParseNextPage()
 		if err == io.EOF {
-			logger.GetLogger().Infow("all audio samples parsed and sent")
+			logger.Infow("all audio samples parsed and sent")
 			w.onWriteComplete()
 			return
 		}
 
 		if err != nil {
-			logger.GetLogger().Errorw("could not parse ogg page", "err", err)
+			logger.Errorw("could not parse ogg page", "err", err)
 			return
 		}
 
@@ -122,7 +122,7 @@ func (w *TrackWriter) writeOgg() {
 		sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
 
 		if err = w.track.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); err != nil {
-			logger.GetLogger().Errorw("could not write sample", "err", err)
+			logger.Errorw("could not write sample", "err", err)
 			return
 		}
 
@@ -140,19 +140,19 @@ func (w *TrackWriter) writeVP8() {
 		}
 		frame, _, err := w.ivf.ParseNextFrame()
 		if err == io.EOF {
-			logger.GetLogger().Infow("all video frames parsed and sent")
+			logger.Infow("all video frames parsed and sent")
 			w.onWriteComplete()
 			return
 		}
 
 		if err != nil {
-			logger.GetLogger().Errorw("could not parse VP8 frame", "err", err)
+			logger.Errorw("could not parse VP8 frame", "err", err)
 			return
 		}
 
 		time.Sleep(sleepTime)
 		if err = w.track.WriteSample(media.Sample{Data: frame, Duration: time.Second}); err != nil {
-			logger.GetLogger().Errorw("could not write sample", "err", err)
+			logger.Errorw("could not write sample", "err", err)
 			return
 		}
 	}

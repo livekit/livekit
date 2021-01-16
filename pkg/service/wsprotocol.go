@@ -1,4 +1,4 @@
-package rtc
+package service
 
 import (
 	"sync"
@@ -54,7 +54,7 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 			err := protojson.Unmarshal(payload, msg)
 			return msg, err
 		default:
-			logger.GetLogger().Debugw("unsupported message", "message", messageType)
+			logger.Debugw("unsupported message", "message", messageType)
 			return nil, nil
 		}
 	}

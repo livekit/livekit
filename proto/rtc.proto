@@ -59,7 +59,7 @@ message NegotiationRequest {
 }
 
 message JoinResponse {
-  RoomInfo room = 1;
+  Room room = 1;
   ParticipantInfo participant = 2;
   repeated ParticipantInfo other_participants = 3;
 }

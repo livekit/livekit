@@ -141,7 +141,7 @@ func (t *DataTrack) forwardWorker() {
 		for _, sub := range t.subscribers {
 			err := sub.SendMessage(msg)
 			if err != nil {
-				logger.GetLogger().Errorw("could not send data message",
+				logger.Errorw("could not send data message",
 					"err", err,
 					"source", t.participantId,
 					"dest", sub.participantId)

@@ -7,13 +7,15 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/node"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider,
+	roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
-		node.NodeSet,
 		ServiceSet,
+		rtc.RTCSet,
 	)
 	return &LivekitServer{}, nil
 }

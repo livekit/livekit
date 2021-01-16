@@ -168,7 +168,7 @@ func (c *RTCClient) Run() error {
 
 	c.conn.SetCloseHandler(func(code int, text string) error {
 		// when closed, stop connection
-		logger.GetLogger().Infow("connection closed", "code", code, "text", text)
+		logger.Infow("connection closed", "code", code, "text", text)
 		c.Stop()
 		return nil
 	})
@@ -519,7 +519,7 @@ func (c *RTCClient) logLoop() {
 		for !c.paused && c.reader != c.writer {
 			val, _ := c.reader.Value.(*logEntry)
 			if val != nil {
-				logger.GetLogger().Infow(val.msg, val.args...)
+				logger.Infow(val.msg, val.args...)
 			}
 			// advance reader until writer
 			c.reader = c.reader.Next()

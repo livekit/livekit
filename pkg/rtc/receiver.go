@@ -52,7 +52,7 @@ func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, tra
 	r.rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
-			logger.GetLogger().Warnw("could not unmarshal RTCP packet")
+			logger.Warnw("could not unmarshal RTCP packet")
 			return
 		}
 		for _, pkt := range pkts {

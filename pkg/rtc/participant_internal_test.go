@@ -5,8 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -67,6 +69,11 @@ func TestTrackPublishEvents(t *testing.T) {
 }
 
 func newParticipantForTest(name string) *ParticipantImpl {
-	p, _ := NewParticipant(&typesfakes.FakePeerConnection{}, &typesfakes.FakeSignalConnection{}, name, ReceiverConfig{})
+	p, _ := NewParticipant(
+		utils.NewGuid(utils.ParticipantPrefix),
+		name,
+		&typesfakes.FakePeerConnection{},
+		&routingfakes.FakeMessageSink{},
+		ReceiverConfig{})
 	return p
 }

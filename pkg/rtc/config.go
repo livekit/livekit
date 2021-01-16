@@ -19,7 +19,9 @@ type ReceiverConfig struct {
 	maxBufferTime int
 }
 
-func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, error) {
+type ExternalIP string
+
+func NewWebRTCConfig(conf *config.RTCConfig, externalIP ExternalIP) (*WebRTCConfig, error) {
 	c := webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
@@ -41,7 +43,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		},
 	}
 	if conf.UseExternalIP {
-		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
+		s.SetNAT1To1IPs([]string{string(externalIP)}, webrtc.ICECandidateTypeHost)
 	}
 
 	return &WebRTCConfig{

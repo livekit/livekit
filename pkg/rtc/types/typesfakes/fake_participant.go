@@ -81,6 +81,10 @@ type FakeParticipant struct {
 	handleAnswerReturnsOnCall map[int]struct {
 		result1 error
 	}
+	HandleClientNegotiationStub        func()
+	handleClientNegotiationMutex       sync.RWMutex
+	handleClientNegotiationArgsForCall []struct {
+	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -167,10 +171,10 @@ type FakeParticipant struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
-	SendJoinResponseStub        func(*livekit.RoomInfo, []types.Participant) error
+	SendJoinResponseStub        func(*livekit.Room, []types.Participant) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
-		arg1 *livekit.RoomInfo
+		arg1 *livekit.Room
 		arg2 []types.Participant
 	}
 	sendJoinResponseReturns struct {
@@ -589,6 +593,30 @@ func (fake *FakeParticipant) HandleAnswerReturnsOnCall(i int, result1 error) {
 	fake.handleAnswerReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeParticipant) HandleClientNegotiation() {
+	fake.handleClientNegotiationMutex.Lock()
+	fake.handleClientNegotiationArgsForCall = append(fake.handleClientNegotiationArgsForCall, struct {
+	}{})
+	stub := fake.HandleClientNegotiationStub
+	fake.recordInvocation("HandleClientNegotiation", []interface{}{})
+	fake.handleClientNegotiationMutex.Unlock()
+	if stub != nil {
+		fake.HandleClientNegotiationStub()
+	}
+}
+
+func (fake *FakeParticipant) HandleClientNegotiationCallCount() int {
+	fake.handleClientNegotiationMutex.RLock()
+	defer fake.handleClientNegotiationMutex.RUnlock()
+	return len(fake.handleClientNegotiationArgsForCall)
+}
+
+func (fake *FakeParticipant) HandleClientNegotiationCalls(stub func()) {
+	fake.handleClientNegotiationMutex.Lock()
+	defer fake.handleClientNegotiationMutex.Unlock()
+	fake.HandleClientNegotiationStub = stub
 }
 
 func (fake *FakeParticipant) ID() string {
@@ -1081,7 +1109,7 @@ func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.RoomInfo, arg2 []types.Participant) error {
+func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []types.Participant) error {
 	var arg2Copy []types.Participant
 	if arg2 != nil {
 		arg2Copy = make([]types.Participant, len(arg2))
@@ -1090,7 +1118,7 @@ func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.RoomInfo, arg2 []typ
 	fake.sendJoinResponseMutex.Lock()
 	ret, specificReturn := fake.sendJoinResponseReturnsOnCall[len(fake.sendJoinResponseArgsForCall)]
 	fake.sendJoinResponseArgsForCall = append(fake.sendJoinResponseArgsForCall, struct {
-		arg1 *livekit.RoomInfo
+		arg1 *livekit.Room
 		arg2 []types.Participant
 	}{arg1, arg2Copy})
 	stub := fake.SendJoinResponseStub
@@ -1112,13 +1140,13 @@ func (fake *FakeParticipant) SendJoinResponseCallCount() int {
 	return len(fake.sendJoinResponseArgsForCall)
 }
 
-func (fake *FakeParticipant) SendJoinResponseCalls(stub func(*livekit.RoomInfo, []types.Participant) error) {
+func (fake *FakeParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []types.Participant) error) {
 	fake.sendJoinResponseMutex.Lock()
 	defer fake.sendJoinResponseMutex.Unlock()
 	fake.SendJoinResponseStub = stub
 }
 
-func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) (*livekit.RoomInfo, []types.Participant) {
+func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []types.Participant) {
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	argsForCall := fake.sendJoinResponseArgsForCall[i]
@@ -1394,6 +1422,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
+	fake.handleClientNegotiationMutex.RLock()
+	defer fake.handleClientNegotiationMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isReadyMutex.RLock()

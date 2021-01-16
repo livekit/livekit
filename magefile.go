@@ -14,12 +14,12 @@ import (
 	"strings"
 
 	"github.com/magefile/mage/mg"
+	"github.com/magefile/mage/target"
 	log "github.com/pion/ion-log"
 )
 
 const (
-	protoChecksumFile = ".checksumproto"
-	goChecksumFile    = ".checksumgo"
+	goChecksumFile = ".checksumgo"
 )
 
 // Default target to run when none is specified
@@ -41,8 +41,15 @@ func Deps() error {
 
 // regenerate protobuf
 func Proto() error {
-	protoChecksummer := NewChecksummer("proto", protoChecksumFile, ".proto")
-	if !protoChecksummer.IsChanged() {
+	updated, err := target.Path("proto/livekit/model.pb.go",
+		"proto/model.proto",
+		"proto/room.proto",
+		"proto/rtc.proto",
+	)
+	if err != nil {
+		return err
+	}
+	if !updated {
 		return nil
 	}
 
@@ -92,13 +99,12 @@ func Proto() error {
 		return err
 	}
 
-	protoChecksummer.WriteChecksum()
 	return nil
 }
 
 // builds LiveKit server and cli
 func Build() error {
-	mg.Deps(Proto, generateCmd)
+	mg.Deps(Proto, generateWire)
 	if !checksummer.IsChanged() {
 		fmt.Println("up to date")
 		return nil
@@ -137,7 +143,6 @@ func Test() error {
 func Clean() {
 	fmt.Println("cleaning...")
 	os.RemoveAll("bin")
-	os.Remove(protoChecksumFile)
 	os.Remove(goChecksumFile)
 }
 
@@ -152,14 +157,14 @@ func Generate() error {
 	return cmd.Run()
 }
 
-// code generation for cmd subfolder. It doesn't regenerate test fixtures
-func generateCmd() error {
+// code generation for wiring
+func generateWire() error {
 	mg.Deps(installDeps)
 	if !checksummer.IsChanged() {
 		return nil
 	}
 
-	fmt.Println("generating...")
+	fmt.Println("wiring...")
 
 	cmd := exec.Command("go", "generate", "./cmd/...")
 	connectStd(cmd)
@@ -167,7 +172,12 @@ func generateCmd() error {
 		return err
 	}
 
-	cmd = exec.Command("go", "generate", "./pkg/service/...")
+	wire, err := getToolPath("wire")
+	if err != nil {
+		return err
+	}
+	cmd = exec.Command(wire)
+	cmd.Dir = "pkg/service"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

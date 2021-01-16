@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -43,12 +44,12 @@ func waitForServerToStart(s *service.LivekitServer) {
 	}
 }
 
-func withTimeout(t *testing.T, f func() bool) {
+func withTimeout(t *testing.T, description string, f func() bool) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second)
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatal("timed out")
+			t.Fatal("timed out: " + description)
 		case <-time.After(10 * time.Millisecond):
 			if f() {
 				return
@@ -76,19 +77,28 @@ func createServer() *service.LivekitServer {
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
-	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{})
+
+	currentNode, err := routing.NewLocalNode(serverConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	// local routing and store
+	router := routing.NewLocalRouter(currentNode)
+	roomStore := service.NewLocalRoomStore()
+	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{}, roomStore, router, currentNode)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
 
-	roomClient = livekit.NewRoomServiceJSONClient(fmt.Sprintf("http://localhost:%d", serverConfig.APIPort), &http.Client{})
+	roomClient = livekit.NewRoomServiceJSONClient(fmt.Sprintf("http://localhost:%d", serverConfig.Port), &http.Client{})
 	return s
 }
 
 // creates a client and runs against server
 func createClient(name string) *client.RTCClient {
 	token := joinToken(testRoom, name)
-	ws, err := client.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", serverConfig.RTCPort), token)
+	ws, err := client.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", serverConfig.Port), token)
 	if err != nil {
 		panic(err)
 	}

@@ -10,8 +10,8 @@ import "model.proto";
 service RoomService {
   // TODO: how do we secure room service?
   // should be accessible to only internal servers, not external
-  rpc CreateRoom(CreateRoomRequest) returns (RoomInfo);
-  rpc GetRoom(GetRoomRequest) returns (RoomInfo);
+  rpc CreateRoom(CreateRoomRequest) returns (Room);
+  rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
@@ -22,8 +22,11 @@ message CreateRoomRequest {
   uint32 max_participants = 3;
 }
 
-message GetRoomRequest {
-  string room = 1;
+message ListRoomsRequest {
+}
+
+message ListRoomsResponse {
+  repeated Room rooms = 1;
 }
 
 message DeleteRoomRequest {

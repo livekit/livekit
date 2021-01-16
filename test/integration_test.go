@@ -10,7 +10,6 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -20,7 +19,7 @@ func TestClientCouldConnect(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// ensure they both see each other
-	withTimeout(t, func() bool {
+	withTimeout(t, "c1 and c2 could connect", func() bool {
 		if len(c1.RemoteParticipants()) == 0 || len(c2.RemoteParticipants()) == 0 {
 			return false
 		}
@@ -45,7 +44,7 @@ func TestSinglePublisher(t *testing.T) {
 	// a new client joins and should get the initial stream
 	c3 := createClient("c3")
 
-	withTimeout(t, func() bool {
+	withTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
 		}
@@ -61,7 +60,7 @@ func TestSinglePublisher(t *testing.T) {
 
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
-	withTimeout(t, func() bool {
+	withTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c3.SubscribedTracks()) == 0 {
 			return false
 		}
@@ -76,7 +75,6 @@ func TestSinglePublisher(t *testing.T) {
 func TestMain(m *testing.M) {
 	logger.InitDevelopment()
 	s := createServer()
-	service.AuthRequired = true
 	go func() {
 		s.Start()
 	}()
@@ -86,7 +84,7 @@ func TestMain(m *testing.M) {
 	// create test room
 	token := createRoomToken()
 	header := make(http.Header)
-	logger.GetLogger().Debugw("auth token", "token", token)
+	logger.Debugw("auth token", "token", token)
 	header.Set("Authorization", "Bearer "+token)
 	tctx, err := twirp.WithHTTPRequestHeaders(context.Background(), header)
 	if err != nil {

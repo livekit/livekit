@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
@@ -116,10 +117,19 @@ func startServer(c *cli.Context) error {
 	if keyProvider, err = createKeyProvider(c.String("key-file"), c.String("keys")); err != nil {
 		return err
 	}
-	service.AuthRequired = true
-	logger.GetLogger().Infow("auth enabled", "num_keys", keyProvider.NumKeys())
+	logger.Infow("auth enabled", "num_keys", keyProvider.NumKeys())
 
-	server, err := service.InitializeServer(conf, keyProvider)
+	currentNode, err := routing.NewLocalNode(conf)
+	if err != nil {
+		return err
+	}
+
+	// local routing and store
+	router := routing.NewLocalRouter(currentNode)
+	roomStore := service.NewLocalRoomStore()
+
+	server, err := service.InitializeServer(conf, keyProvider,
+		roomStore, router, currentNode)
 	if err != nil {
 		return err
 	}
@@ -129,7 +139,7 @@ func startServer(c *cli.Context) error {
 
 	go func() {
 		sig := <-sigChan
-		logger.GetLogger().Infow("exit requested, shutting down", "signal", sig)
+		logger.Infow("exit requested, shutting down", "signal", sig)
 		server.Stop()
 	}()
 

@@ -74,10 +74,8 @@ func joinRoom(c *cli.Context) error {
 		}
 	}
 
-	log := logger.GetLogger()
-
 	host := c.String("host")
-	log.Infow("connecting to Websocket signal", "host", host)
+	logger.Infow("connecting to Websocket signal", "host", host)
 	conn, err := client.NewWebSocketConn(host, token)
 	if err != nil {
 		return err
@@ -118,7 +116,7 @@ func joinRoom(c *cli.Context) error {
 
 			err = handleCommand(rc)
 			if err != nil {
-				log.Errorw("could not handle command", "err", err)
+				logger.Errorw("could not handle command", "err", err)
 			}
 
 			rc.ResumeLogs()
@@ -221,7 +219,7 @@ func handleSignals(rc *client.RTCClient) {
 
 	go func() {
 		sig := <-sigChan
-		logger.GetLogger().Infow("exit requested, shutting down", "signal", sig)
+		logger.Infow("exit requested, shutting down", "signal", sig)
 		rc.Stop()
 	}()
 }

@@ -8,26 +8,26 @@ package service
 import (
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/node"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider) (*LivekitServer, error) {
-	nodeNode, err := node.NewLocalNode(conf)
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) (*LivekitServer, error) {
+	roomService, err := NewRoomService(roomStore)
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := newRoomManagerWithNode(conf, nodeNode)
+	rtcService := NewRTCService(conf, roomStore, router, currentNode)
+	rtcConfig := rtc.RTCConfigFromConfig(conf)
+	externalIP := externalIpFromNode(currentNode)
+	webRTCConfig, err := rtc.NewWebRTCConfig(rtcConfig, externalIP)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(conf, roomManager, nodeNode)
-	if err != nil {
-		return nil, err
-	}
-	rtcService := NewRTCService(conf, roomManager)
-	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider)
+	rtcRunner := NewRTCRunner(roomStore, router, currentNode, webRTCConfig)
+	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider, router, rtcRunner)
 	if err != nil {
 		return nil, err
 	}
