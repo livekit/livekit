@@ -5,9 +5,11 @@ go 1.15
 require (
 	github.com/bep/debounce v1.2.0
 	github.com/gammazero/workerpool v1.1.1
+	github.com/go-redis/redis/v8 v8.4.8
 	github.com/golang/protobuf v1.4.3
 	github.com/google/wire v0.4.0
 	github.com/gorilla/websocket v1.4.2
+	github.com/karlseguin/ccache/v2 v2.0.7
 	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/lytics/base62 v0.0.0-20180808010106-0ee4de5a5d6d

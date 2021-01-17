@@ -10,7 +10,6 @@
 
 # checksums of file tree
 .checksumgo
-proto/.checksumproto
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

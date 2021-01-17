@@ -3,19 +3,6 @@ syntax = "proto3";
 package livekit;
 option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
-message Node {
-  string id = 1;
-  string ip = 2;
-  uint32 num_cpus = 3;
-  NodeStats stats = 4;
-}
-
-message NodeStats {
-  int32 num_rooms = 1;
-  int32 num_clients = 2;
-}
-
-// internal type, for serialization with proto
 message Room {
   string sid = 1;
   string name = 2;
@@ -47,7 +34,6 @@ enum TrackType {
   DATA = 2;
 }
 
-// describing
 message TrackInfo {
   string sid = 1;
   TrackType type = 2;

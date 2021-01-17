@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -12,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/auth"
@@ -27,8 +30,12 @@ func main() {
 		Name: "livekit-server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "config",
-				Usage:   "path to LiveKit config",
+				Name:  "config",
+				Usage: "path to LiveKit config file",
+			},
+			&cli.StringFlag{
+				Name:    "config-body",
+				Usage:   "LiveKit config in YAML, usually used via environment var",
 				EnvVars: []string{"LIVEKIT_CONFIG"},
 			},
 			&cli.StringFlag{
@@ -74,7 +81,13 @@ func startServer(c *cli.Context) error {
 
 	cpuProfile := c.String("cpuprofile")
 	memProfile := c.String("memprofile")
-	conf, err := config.NewConfig(c.String("config"))
+
+	confString, err := getConfigString(c)
+	if err != nil {
+		return err
+	}
+
+	conf, err := config.NewConfig(confString)
 	if err != nil {
 		return err
 	}
@@ -125,8 +138,10 @@ func startServer(c *cli.Context) error {
 	}
 
 	// local routing and store
-	router := routing.NewLocalRouter(currentNode)
-	roomStore := service.NewLocalRoomStore()
+	router, roomStore, err := createRouterAndStore(conf, currentNode)
+	if err != nil {
+		return err
+	}
 
 	server, err := service.InitializeServer(conf, keyProvider,
 		roomStore, router, currentNode)
@@ -144,6 +159,26 @@ func startServer(c *cli.Context) error {
 	}()
 
 	return server.Start()
+}
+
+func createRouterAndStore(config *config.Config, node routing.LocalNode) (router routing.Router, store service.RoomStore, err error) {
+	if config.MultiNode {
+		rc := redis.NewClient(&redis.Options{
+			Addr:     config.Redis.Address,
+			Password: config.Redis.Password,
+		})
+		if err = rc.Ping(context.Background()).Err(); err != nil {
+			return
+		}
+
+		router = routing.NewRedisRouter(node, rc, false)
+		store = service.NewRedisRoomStore(rc)
+	} else {
+		// local routing and store
+		router = routing.NewLocalRouter(node)
+		store = service.NewLocalRoomStore()
+	}
+	return
 }
 
 func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
@@ -168,6 +203,21 @@ func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
 	}
 
 	return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+}
+
+func getConfigString(c *cli.Context) (string, error) {
+	configFile := c.String("config")
+	configBody := c.String("config-body")
+	if configBody == "" {
+		if configFile != "" {
+			content, err := ioutil.ReadFile(configFile)
+			if err != nil {
+				return "", err
+			}
+			configBody = string(content)
+		}
+	}
+	return configBody, nil
 }
 
 func generateKeys(c *cli.Context) error {

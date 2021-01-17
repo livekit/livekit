@@ -61,7 +61,7 @@ func (r *RTCRunner) StartSession(roomName, participantId, participantName string
 	}
 
 	// register participant to be on this server
-	if err = r.router.SetRTCNode(participantId, r.currentNode.Id); err != nil {
+	if err = r.router.SetParticipantRTCNode(participantId, r.currentNode.Id); err != nil {
 		logger.Errorw("could not set RTC node", "error", err)
 		return
 	}

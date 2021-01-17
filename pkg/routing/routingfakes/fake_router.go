@@ -35,37 +35,40 @@ type FakeRouter struct {
 		result1 string
 		result2 error
 	}
-	GetRequestSinkStub        func(string) routing.MessageSink
+	GetRequestSinkStub        func(string) (routing.MessageSink, error)
 	getRequestSinkMutex       sync.RWMutex
 	getRequestSinkArgsForCall []struct {
 		arg1 string
 	}
 	getRequestSinkReturns struct {
 		result1 routing.MessageSink
+		result2 error
 	}
 	getRequestSinkReturnsOnCall map[int]struct {
 		result1 routing.MessageSink
+		result2 error
 	}
-	GetResponseSourceStub        func(string) routing.MessageSource
+	GetResponseSourceStub        func(string) (routing.MessageSource, error)
 	getResponseSourceMutex       sync.RWMutex
 	getResponseSourceArgsForCall []struct {
 		arg1 string
 	}
 	getResponseSourceReturns struct {
 		result1 routing.MessageSource
+		result2 error
 	}
 	getResponseSourceReturnsOnCall map[int]struct {
 		result1 routing.MessageSource
+		result2 error
 	}
 	OnNewParticipantStub        func(routing.ParticipantCallback)
 	onNewParticipantMutex       sync.RWMutex
 	onNewParticipantArgsForCall []struct {
 		arg1 routing.ParticipantCallback
 	}
-	RegisterNodeStub        func(*livekit.Node) error
+	RegisterNodeStub        func() error
 	registerNodeMutex       sync.RWMutex
 	registerNodeArgsForCall []struct {
-		arg1 *livekit.Node
 	}
 	registerNodeReturns struct {
 		result1 error
@@ -73,16 +76,16 @@ type FakeRouter struct {
 	registerNodeReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SetRTCNodeStub        func(string, string) error
-	setRTCNodeMutex       sync.RWMutex
-	setRTCNodeArgsForCall []struct {
+	SetParticipantRTCNodeStub        func(string, string) error
+	setParticipantRTCNodeMutex       sync.RWMutex
+	setParticipantRTCNodeArgsForCall []struct {
 		arg1 string
 		arg2 string
 	}
-	setRTCNodeReturns struct {
+	setParticipantRTCNodeReturns struct {
 		result1 error
 	}
-	setRTCNodeReturnsOnCall map[int]struct {
+	setParticipantRTCNodeReturnsOnCall map[int]struct {
 		result1 error
 	}
 	StartStub        func() error
@@ -95,13 +98,12 @@ type FakeRouter struct {
 	startReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StartParticipantStub        func(string, string, string, string) error
+	StartParticipantStub        func(string, string, string) error
 	startParticipantMutex       sync.RWMutex
 	startParticipantArgsForCall []struct {
 		arg1 string
 		arg2 string
 		arg3 string
-		arg4 string
 	}
 	startParticipantReturns struct {
 		result1 error
@@ -112,6 +114,16 @@ type FakeRouter struct {
 	StopStub        func()
 	stopMutex       sync.RWMutex
 	stopArgsForCall []struct {
+	}
+	UnregisterNodeStub        func() error
+	unregisterNodeMutex       sync.RWMutex
+	unregisterNodeArgsForCall []struct {
+	}
+	unregisterNodeReturns struct {
+		result1 error
+	}
+	unregisterNodeReturnsOnCall map[int]struct {
+		result1 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -245,7 +257,7 @@ func (fake *FakeRouter) GetNodeIdForRoomReturnsOnCall(i int, result1 string, res
 	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetRequestSink(arg1 string) routing.MessageSink {
+func (fake *FakeRouter) GetRequestSink(arg1 string) (routing.MessageSink, error) {
 	fake.getRequestSinkMutex.Lock()
 	ret, specificReturn := fake.getRequestSinkReturnsOnCall[len(fake.getRequestSinkArgsForCall)]
 	fake.getRequestSinkArgsForCall = append(fake.getRequestSinkArgsForCall, struct {
@@ -259,9 +271,9 @@ func (fake *FakeRouter) GetRequestSink(arg1 string) routing.MessageSink {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeRouter) GetRequestSinkCallCount() int {
@@ -270,7 +282,7 @@ func (fake *FakeRouter) GetRequestSinkCallCount() int {
 	return len(fake.getRequestSinkArgsForCall)
 }
 
-func (fake *FakeRouter) GetRequestSinkCalls(stub func(string) routing.MessageSink) {
+func (fake *FakeRouter) GetRequestSinkCalls(stub func(string) (routing.MessageSink, error)) {
 	fake.getRequestSinkMutex.Lock()
 	defer fake.getRequestSinkMutex.Unlock()
 	fake.GetRequestSinkStub = stub
@@ -283,30 +295,33 @@ func (fake *FakeRouter) GetRequestSinkArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeRouter) GetRequestSinkReturns(result1 routing.MessageSink) {
+func (fake *FakeRouter) GetRequestSinkReturns(result1 routing.MessageSink, result2 error) {
 	fake.getRequestSinkMutex.Lock()
 	defer fake.getRequestSinkMutex.Unlock()
 	fake.GetRequestSinkStub = nil
 	fake.getRequestSinkReturns = struct {
 		result1 routing.MessageSink
-	}{result1}
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetRequestSinkReturnsOnCall(i int, result1 routing.MessageSink) {
+func (fake *FakeRouter) GetRequestSinkReturnsOnCall(i int, result1 routing.MessageSink, result2 error) {
 	fake.getRequestSinkMutex.Lock()
 	defer fake.getRequestSinkMutex.Unlock()
 	fake.GetRequestSinkStub = nil
 	if fake.getRequestSinkReturnsOnCall == nil {
 		fake.getRequestSinkReturnsOnCall = make(map[int]struct {
 			result1 routing.MessageSink
+			result2 error
 		})
 	}
 	fake.getRequestSinkReturnsOnCall[i] = struct {
 		result1 routing.MessageSink
-	}{result1}
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetResponseSource(arg1 string) routing.MessageSource {
+func (fake *FakeRouter) GetResponseSource(arg1 string) (routing.MessageSource, error) {
 	fake.getResponseSourceMutex.Lock()
 	ret, specificReturn := fake.getResponseSourceReturnsOnCall[len(fake.getResponseSourceArgsForCall)]
 	fake.getResponseSourceArgsForCall = append(fake.getResponseSourceArgsForCall, struct {
@@ -320,9 +335,9 @@ func (fake *FakeRouter) GetResponseSource(arg1 string) routing.MessageSource {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeRouter) GetResponseSourceCallCount() int {
@@ -331,7 +346,7 @@ func (fake *FakeRouter) GetResponseSourceCallCount() int {
 	return len(fake.getResponseSourceArgsForCall)
 }
 
-func (fake *FakeRouter) GetResponseSourceCalls(stub func(string) routing.MessageSource) {
+func (fake *FakeRouter) GetResponseSourceCalls(stub func(string) (routing.MessageSource, error)) {
 	fake.getResponseSourceMutex.Lock()
 	defer fake.getResponseSourceMutex.Unlock()
 	fake.GetResponseSourceStub = stub
@@ -344,27 +359,30 @@ func (fake *FakeRouter) GetResponseSourceArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeRouter) GetResponseSourceReturns(result1 routing.MessageSource) {
+func (fake *FakeRouter) GetResponseSourceReturns(result1 routing.MessageSource, result2 error) {
 	fake.getResponseSourceMutex.Lock()
 	defer fake.getResponseSourceMutex.Unlock()
 	fake.GetResponseSourceStub = nil
 	fake.getResponseSourceReturns = struct {
 		result1 routing.MessageSource
-	}{result1}
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetResponseSourceReturnsOnCall(i int, result1 routing.MessageSource) {
+func (fake *FakeRouter) GetResponseSourceReturnsOnCall(i int, result1 routing.MessageSource, result2 error) {
 	fake.getResponseSourceMutex.Lock()
 	defer fake.getResponseSourceMutex.Unlock()
 	fake.GetResponseSourceStub = nil
 	if fake.getResponseSourceReturnsOnCall == nil {
 		fake.getResponseSourceReturnsOnCall = make(map[int]struct {
 			result1 routing.MessageSource
+			result2 error
 		})
 	}
 	fake.getResponseSourceReturnsOnCall[i] = struct {
 		result1 routing.MessageSource
-	}{result1}
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeRouter) OnNewParticipant(arg1 routing.ParticipantCallback) {
@@ -399,18 +417,17 @@ func (fake *FakeRouter) OnNewParticipantArgsForCall(i int) routing.ParticipantCa
 	return argsForCall.arg1
 }
 
-func (fake *FakeRouter) RegisterNode(arg1 *livekit.Node) error {
+func (fake *FakeRouter) RegisterNode() error {
 	fake.registerNodeMutex.Lock()
 	ret, specificReturn := fake.registerNodeReturnsOnCall[len(fake.registerNodeArgsForCall)]
 	fake.registerNodeArgsForCall = append(fake.registerNodeArgsForCall, struct {
-		arg1 *livekit.Node
-	}{arg1})
+	}{})
 	stub := fake.RegisterNodeStub
 	fakeReturns := fake.registerNodeReturns
-	fake.recordInvocation("RegisterNode", []interface{}{arg1})
+	fake.recordInvocation("RegisterNode", []interface{}{})
 	fake.registerNodeMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub()
 	}
 	if specificReturn {
 		return ret.result1
@@ -424,17 +441,10 @@ func (fake *FakeRouter) RegisterNodeCallCount() int {
 	return len(fake.registerNodeArgsForCall)
 }
 
-func (fake *FakeRouter) RegisterNodeCalls(stub func(*livekit.Node) error) {
+func (fake *FakeRouter) RegisterNodeCalls(stub func() error) {
 	fake.registerNodeMutex.Lock()
 	defer fake.registerNodeMutex.Unlock()
 	fake.RegisterNodeStub = stub
-}
-
-func (fake *FakeRouter) RegisterNodeArgsForCall(i int) *livekit.Node {
-	fake.registerNodeMutex.RLock()
-	defer fake.registerNodeMutex.RUnlock()
-	argsForCall := fake.registerNodeArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeRouter) RegisterNodeReturns(result1 error) {
@@ -460,17 +470,17 @@ func (fake *FakeRouter) RegisterNodeReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) SetRTCNode(arg1 string, arg2 string) error {
-	fake.setRTCNodeMutex.Lock()
-	ret, specificReturn := fake.setRTCNodeReturnsOnCall[len(fake.setRTCNodeArgsForCall)]
-	fake.setRTCNodeArgsForCall = append(fake.setRTCNodeArgsForCall, struct {
+func (fake *FakeRouter) SetParticipantRTCNode(arg1 string, arg2 string) error {
+	fake.setParticipantRTCNodeMutex.Lock()
+	ret, specificReturn := fake.setParticipantRTCNodeReturnsOnCall[len(fake.setParticipantRTCNodeArgsForCall)]
+	fake.setParticipantRTCNodeArgsForCall = append(fake.setParticipantRTCNodeArgsForCall, struct {
 		arg1 string
 		arg2 string
 	}{arg1, arg2})
-	stub := fake.SetRTCNodeStub
-	fakeReturns := fake.setRTCNodeReturns
-	fake.recordInvocation("SetRTCNode", []interface{}{arg1, arg2})
-	fake.setRTCNodeMutex.Unlock()
+	stub := fake.SetParticipantRTCNodeStub
+	fakeReturns := fake.setParticipantRTCNodeReturns
+	fake.recordInvocation("SetParticipantRTCNode", []interface{}{arg1, arg2})
+	fake.setParticipantRTCNodeMutex.Unlock()
 	if stub != nil {
 		return stub(arg1, arg2)
 	}
@@ -480,44 +490,44 @@ func (fake *FakeRouter) SetRTCNode(arg1 string, arg2 string) error {
 	return fakeReturns.result1
 }
 
-func (fake *FakeRouter) SetRTCNodeCallCount() int {
-	fake.setRTCNodeMutex.RLock()
-	defer fake.setRTCNodeMutex.RUnlock()
-	return len(fake.setRTCNodeArgsForCall)
+func (fake *FakeRouter) SetParticipantRTCNodeCallCount() int {
+	fake.setParticipantRTCNodeMutex.RLock()
+	defer fake.setParticipantRTCNodeMutex.RUnlock()
+	return len(fake.setParticipantRTCNodeArgsForCall)
 }
 
-func (fake *FakeRouter) SetRTCNodeCalls(stub func(string, string) error) {
-	fake.setRTCNodeMutex.Lock()
-	defer fake.setRTCNodeMutex.Unlock()
-	fake.SetRTCNodeStub = stub
+func (fake *FakeRouter) SetParticipantRTCNodeCalls(stub func(string, string) error) {
+	fake.setParticipantRTCNodeMutex.Lock()
+	defer fake.setParticipantRTCNodeMutex.Unlock()
+	fake.SetParticipantRTCNodeStub = stub
 }
 
-func (fake *FakeRouter) SetRTCNodeArgsForCall(i int) (string, string) {
-	fake.setRTCNodeMutex.RLock()
-	defer fake.setRTCNodeMutex.RUnlock()
-	argsForCall := fake.setRTCNodeArgsForCall[i]
+func (fake *FakeRouter) SetParticipantRTCNodeArgsForCall(i int) (string, string) {
+	fake.setParticipantRTCNodeMutex.RLock()
+	defer fake.setParticipantRTCNodeMutex.RUnlock()
+	argsForCall := fake.setParticipantRTCNodeArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeRouter) SetRTCNodeReturns(result1 error) {
-	fake.setRTCNodeMutex.Lock()
-	defer fake.setRTCNodeMutex.Unlock()
-	fake.SetRTCNodeStub = nil
-	fake.setRTCNodeReturns = struct {
+func (fake *FakeRouter) SetParticipantRTCNodeReturns(result1 error) {
+	fake.setParticipantRTCNodeMutex.Lock()
+	defer fake.setParticipantRTCNodeMutex.Unlock()
+	fake.SetParticipantRTCNodeStub = nil
+	fake.setParticipantRTCNodeReturns = struct {
 		result1 error
 	}{result1}
 }
 
-func (fake *FakeRouter) SetRTCNodeReturnsOnCall(i int, result1 error) {
-	fake.setRTCNodeMutex.Lock()
-	defer fake.setRTCNodeMutex.Unlock()
-	fake.SetRTCNodeStub = nil
-	if fake.setRTCNodeReturnsOnCall == nil {
-		fake.setRTCNodeReturnsOnCall = make(map[int]struct {
+func (fake *FakeRouter) SetParticipantRTCNodeReturnsOnCall(i int, result1 error) {
+	fake.setParticipantRTCNodeMutex.Lock()
+	defer fake.setParticipantRTCNodeMutex.Unlock()
+	fake.SetParticipantRTCNodeStub = nil
+	if fake.setParticipantRTCNodeReturnsOnCall == nil {
+		fake.setParticipantRTCNodeReturnsOnCall = make(map[int]struct {
 			result1 error
 		})
 	}
-	fake.setRTCNodeReturnsOnCall[i] = struct {
+	fake.setParticipantRTCNodeReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -575,21 +585,20 @@ func (fake *FakeRouter) StartReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) StartParticipant(arg1 string, arg2 string, arg3 string, arg4 string) error {
+func (fake *FakeRouter) StartParticipant(arg1 string, arg2 string, arg3 string) error {
 	fake.startParticipantMutex.Lock()
 	ret, specificReturn := fake.startParticipantReturnsOnCall[len(fake.startParticipantArgsForCall)]
 	fake.startParticipantArgsForCall = append(fake.startParticipantArgsForCall, struct {
 		arg1 string
 		arg2 string
 		arg3 string
-		arg4 string
-	}{arg1, arg2, arg3, arg4})
+	}{arg1, arg2, arg3})
 	stub := fake.StartParticipantStub
 	fakeReturns := fake.startParticipantReturns
-	fake.recordInvocation("StartParticipant", []interface{}{arg1, arg2, arg3, arg4})
+	fake.recordInvocation("StartParticipant", []interface{}{arg1, arg2, arg3})
 	fake.startParticipantMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -603,17 +612,17 @@ func (fake *FakeRouter) StartParticipantCallCount() int {
 	return len(fake.startParticipantArgsForCall)
 }
 
-func (fake *FakeRouter) StartParticipantCalls(stub func(string, string, string, string) error) {
+func (fake *FakeRouter) StartParticipantCalls(stub func(string, string, string) error) {
 	fake.startParticipantMutex.Lock()
 	defer fake.startParticipantMutex.Unlock()
 	fake.StartParticipantStub = stub
 }
 
-func (fake *FakeRouter) StartParticipantArgsForCall(i int) (string, string, string, string) {
+func (fake *FakeRouter) StartParticipantArgsForCall(i int) (string, string, string) {
 	fake.startParticipantMutex.RLock()
 	defer fake.startParticipantMutex.RUnlock()
 	argsForCall := fake.startParticipantArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeRouter) StartParticipantReturns(result1 error) {
@@ -663,6 +672,59 @@ func (fake *FakeRouter) StopCalls(stub func()) {
 	fake.StopStub = stub
 }
 
+func (fake *FakeRouter) UnregisterNode() error {
+	fake.unregisterNodeMutex.Lock()
+	ret, specificReturn := fake.unregisterNodeReturnsOnCall[len(fake.unregisterNodeArgsForCall)]
+	fake.unregisterNodeArgsForCall = append(fake.unregisterNodeArgsForCall, struct {
+	}{})
+	stub := fake.UnregisterNodeStub
+	fakeReturns := fake.unregisterNodeReturns
+	fake.recordInvocation("UnregisterNode", []interface{}{})
+	fake.unregisterNodeMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) UnregisterNodeCallCount() int {
+	fake.unregisterNodeMutex.RLock()
+	defer fake.unregisterNodeMutex.RUnlock()
+	return len(fake.unregisterNodeArgsForCall)
+}
+
+func (fake *FakeRouter) UnregisterNodeCalls(stub func() error) {
+	fake.unregisterNodeMutex.Lock()
+	defer fake.unregisterNodeMutex.Unlock()
+	fake.UnregisterNodeStub = stub
+}
+
+func (fake *FakeRouter) UnregisterNodeReturns(result1 error) {
+	fake.unregisterNodeMutex.Lock()
+	defer fake.unregisterNodeMutex.Unlock()
+	fake.UnregisterNodeStub = nil
+	fake.unregisterNodeReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) UnregisterNodeReturnsOnCall(i int, result1 error) {
+	fake.unregisterNodeMutex.Lock()
+	defer fake.unregisterNodeMutex.Unlock()
+	fake.UnregisterNodeStub = nil
+	if fake.unregisterNodeReturnsOnCall == nil {
+		fake.unregisterNodeReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.unregisterNodeReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -678,14 +740,16 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.onNewParticipantMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
-	fake.setRTCNodeMutex.RLock()
-	defer fake.setRTCNodeMutex.RUnlock()
+	fake.setParticipantRTCNodeMutex.RLock()
+	defer fake.setParticipantRTCNodeMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	fake.startParticipantMutex.RLock()
 	defer fake.startParticipantMutex.RUnlock()
 	fake.stopMutex.RLock()
 	defer fake.stopMutex.RUnlock()
+	fake.unregisterNodeMutex.RLock()
+	defer fake.unregisterNodeMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

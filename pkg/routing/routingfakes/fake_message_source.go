@@ -5,26 +5,27 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type FakeMessageSource struct {
-	ReadMessageStub        func() (interface{}, error)
+	ReadMessageStub        func() (protoreflect.ProtoMessage, error)
 	readMessageMutex       sync.RWMutex
 	readMessageArgsForCall []struct {
 	}
 	readMessageReturns struct {
-		result1 interface{}
+		result1 protoreflect.ProtoMessage
 		result2 error
 	}
 	readMessageReturnsOnCall map[int]struct {
-		result1 interface{}
+		result1 protoreflect.ProtoMessage
 		result2 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeMessageSource) ReadMessage() (interface{}, error) {
+func (fake *FakeMessageSource) ReadMessage() (protoreflect.ProtoMessage, error) {
 	fake.readMessageMutex.Lock()
 	ret, specificReturn := fake.readMessageReturnsOnCall[len(fake.readMessageArgsForCall)]
 	fake.readMessageArgsForCall = append(fake.readMessageArgsForCall, struct {
@@ -48,34 +49,34 @@ func (fake *FakeMessageSource) ReadMessageCallCount() int {
 	return len(fake.readMessageArgsForCall)
 }
 
-func (fake *FakeMessageSource) ReadMessageCalls(stub func() (interface{}, error)) {
+func (fake *FakeMessageSource) ReadMessageCalls(stub func() (protoreflect.ProtoMessage, error)) {
 	fake.readMessageMutex.Lock()
 	defer fake.readMessageMutex.Unlock()
 	fake.ReadMessageStub = stub
 }
 
-func (fake *FakeMessageSource) ReadMessageReturns(result1 interface{}, result2 error) {
+func (fake *FakeMessageSource) ReadMessageReturns(result1 protoreflect.ProtoMessage, result2 error) {
 	fake.readMessageMutex.Lock()
 	defer fake.readMessageMutex.Unlock()
 	fake.ReadMessageStub = nil
 	fake.readMessageReturns = struct {
-		result1 interface{}
+		result1 protoreflect.ProtoMessage
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeMessageSource) ReadMessageReturnsOnCall(i int, result1 interface{}, result2 error) {
+func (fake *FakeMessageSource) ReadMessageReturnsOnCall(i int, result1 protoreflect.ProtoMessage, result2 error) {
 	fake.readMessageMutex.Lock()
 	defer fake.readMessageMutex.Unlock()
 	fake.ReadMessageStub = nil
 	if fake.readMessageReturnsOnCall == nil {
 		fake.readMessageReturnsOnCall = make(map[int]struct {
-			result1 interface{}
+			result1 protoreflect.ProtoMessage
 			result2 error
 		})
 	}
 	fake.readMessageReturnsOnCall[i] = struct {
-		result1 interface{}
+		result1 protoreflect.ProtoMessage
 		result2 error
 	}{result1, result2}
 }

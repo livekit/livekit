@@ -15,9 +15,6 @@ type LocalRoomStore struct {
 	// map of roomName => roomId
 	roomIds map[string]string
 	lock    sync.RWMutex
-	//CreateRoom(room *livekit.Room) error
-	//GetRoom(idOrName string) (*livekit.Room, error)
-	//DeleteRoom(idOrName string) error
 }
 
 func NewLocalRoomStore() *LocalRoomStore {

@@ -1,6 +1,8 @@
 package routing
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -9,13 +11,14 @@ import (
 // routes signaling message
 //counterfeiter:generate . MessageSink
 type MessageSink interface {
-	WriteMessage(msg interface{}) error
+	WriteMessage(msg proto.Message) error
 	Close()
+	OnClose(f func())
 }
 
 //counterfeiter:generate . MessageSource
 type MessageSource interface {
-	ReadMessage() (interface{}, error)
+	ReadMessage() (proto.Message, error)
 }
 
 type ParticipantCallback func(roomId, participantId, participantName string, requestSource MessageSource, responseSink MessageSink)
@@ -23,14 +26,15 @@ type ParticipantCallback func(roomId, participantId, participantName string, req
 //counterfeiter:generate . Router
 type Router interface {
 	GetNodeIdForRoom(roomName string) (string, error)
-	RegisterNode(node *livekit.Node) error
+	RegisterNode() error
+	UnregisterNode() error
 	GetNode(nodeId string) (*livekit.Node, error)
 
-	StartParticipant(roomName, participantId, participantName, nodeId string) error
-	SetRTCNode(participantId, nodeId string) error
+	SetParticipantRTCNode(participantId, nodeId string) error
 	// functions for websocket handler
-	GetRequestSink(participantId string) MessageSink
-	GetResponseSource(participantId string) MessageSource
+	GetRequestSink(participantId string) (MessageSink, error)
+	GetResponseSource(participantId string) (MessageSource, error)
+	StartParticipant(roomName, participantId, participantName string) error
 
 	OnNewParticipant(callback ParticipantCallback)
 	Start() error

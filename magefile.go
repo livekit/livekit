@@ -45,6 +45,7 @@ func Proto() error {
 		"proto/model.proto",
 		"proto/room.proto",
 		"proto/rtc.proto",
+		"proto/internal.proto",
 	)
 	if err != nil {
 		return err
@@ -79,7 +80,6 @@ func Proto() error {
 		"--plugin=twirp="+twirp_path,
 		"-I=proto",
 		"proto/room.proto",
-		"proto/model.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
@@ -93,6 +93,8 @@ func Proto() error {
 		"--plugin=go="+protoc_go_path,
 		"-I=proto",
 		"proto/rtc.proto",
+		"proto/internal.proto",
+		"proto/model.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {

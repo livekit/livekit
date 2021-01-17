@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type FakeMessageSink struct {
@@ -12,10 +13,15 @@ type FakeMessageSink struct {
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 	}
-	WriteMessageStub        func(interface{}) error
+	OnCloseStub        func(func())
+	onCloseMutex       sync.RWMutex
+	onCloseArgsForCall []struct {
+		arg1 func()
+	}
+	WriteMessageStub        func(protoreflect.ProtoMessage) error
 	writeMessageMutex       sync.RWMutex
 	writeMessageArgsForCall []struct {
-		arg1 interface{}
+		arg1 protoreflect.ProtoMessage
 	}
 	writeMessageReturns struct {
 		result1 error
@@ -51,11 +57,43 @@ func (fake *FakeMessageSink) CloseCalls(stub func()) {
 	fake.CloseStub = stub
 }
 
-func (fake *FakeMessageSink) WriteMessage(arg1 interface{}) error {
+func (fake *FakeMessageSink) OnClose(arg1 func()) {
+	fake.onCloseMutex.Lock()
+	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.OnCloseStub
+	fake.recordInvocation("OnClose", []interface{}{arg1})
+	fake.onCloseMutex.Unlock()
+	if stub != nil {
+		fake.OnCloseStub(arg1)
+	}
+}
+
+func (fake *FakeMessageSink) OnCloseCallCount() int {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	return len(fake.onCloseArgsForCall)
+}
+
+func (fake *FakeMessageSink) OnCloseCalls(stub func(func())) {
+	fake.onCloseMutex.Lock()
+	defer fake.onCloseMutex.Unlock()
+	fake.OnCloseStub = stub
+}
+
+func (fake *FakeMessageSink) OnCloseArgsForCall(i int) func() {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	argsForCall := fake.onCloseArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMessageSink) WriteMessage(arg1 protoreflect.ProtoMessage) error {
 	fake.writeMessageMutex.Lock()
 	ret, specificReturn := fake.writeMessageReturnsOnCall[len(fake.writeMessageArgsForCall)]
 	fake.writeMessageArgsForCall = append(fake.writeMessageArgsForCall, struct {
-		arg1 interface{}
+		arg1 protoreflect.ProtoMessage
 	}{arg1})
 	stub := fake.WriteMessageStub
 	fakeReturns := fake.writeMessageReturns
@@ -76,13 +114,13 @@ func (fake *FakeMessageSink) WriteMessageCallCount() int {
 	return len(fake.writeMessageArgsForCall)
 }
 
-func (fake *FakeMessageSink) WriteMessageCalls(stub func(interface{}) error) {
+func (fake *FakeMessageSink) WriteMessageCalls(stub func(protoreflect.ProtoMessage) error) {
 	fake.writeMessageMutex.Lock()
 	defer fake.writeMessageMutex.Unlock()
 	fake.WriteMessageStub = stub
 }
 
-func (fake *FakeMessageSink) WriteMessageArgsForCall(i int) interface{} {
+func (fake *FakeMessageSink) WriteMessageArgsForCall(i int) protoreflect.ProtoMessage {
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	argsForCall := fake.writeMessageArgsForCall[i]
@@ -117,6 +155,8 @@ func (fake *FakeMessageSink) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

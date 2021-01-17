@@ -18,13 +18,14 @@ import (
 )
 
 type LivekitServer struct {
-	config     *config.Config
-	roomServer livekit.TwirpServer
-	rtcService *RTCService
-	httpServer *http.Server
-	router     routing.Router
-	running    bool
-	doneChan   chan bool
+	config      *config.Config
+	roomServer  livekit.TwirpServer
+	rtcService  *RTCService
+	httpServer  *http.Server
+	router      routing.Router
+	currentNode routing.LocalNode
+	running     bool
+	doneChan    chan bool
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -33,12 +34,14 @@ func NewLivekitServer(conf *config.Config,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	runner *RTCRunner,
+	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:     conf,
-		roomServer: livekit.NewRoomServiceServer(roomService),
-		rtcService: rtcService,
-		router:     router,
+		config:      conf,
+		roomServer:  livekit.NewRoomServiceServer(roomService),
+		rtcService:  rtcService,
+		router:      router,
+		currentNode: currentNode,
 	}
 
 	middlewares := []negroni.Handler{
@@ -73,6 +76,11 @@ func (s *LivekitServer) Start() error {
 		return errors.New("already running")
 	}
 
+	if err := s.router.RegisterNode(); err != nil {
+		return err
+	}
+	defer s.router.UnregisterNode()
+
 	if err := s.router.Start(); err != nil {
 		return err
 	}
@@ -86,7 +94,8 @@ func (s *LivekitServer) Start() error {
 	}
 
 	go func() {
-		logger.Infow("starting LiveKit server", "address", s.httpServer.Addr)
+		logger.Infow("starting LiveKit server", "address", s.httpServer.Addr,
+			"nodeId", s.currentNode.Id)
 		s.httpServer.Serve(ln)
 	}()
 

@@ -79,9 +79,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sigConn := NewWSSignalConnection(conn)
 
 	participantId := utils.NewGuid(utils.ParticipantPrefix)
-	err = s.router.StartParticipant(roomName, participantId, pName, s.currentNode.Id)
+	err = s.router.StartParticipant(roomName, participantId, pName)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not set signal node: "+err.Error())
+		return
 	}
 
 	logger.Infow("new client connected",
@@ -90,8 +91,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"name", pName,
 	)
 
-	reqSink := s.router.GetRequestSink(participantId)
-	resSource := s.router.GetResponseSource(participantId)
+	reqSink, err := s.router.GetRequestSink(participantId)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not get request sink"+err.Error())
+		return
+	}
+	resSource, err := s.router.GetResponseSource(participantId)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
+		return
+	}
 
 	go func() {
 		for {
