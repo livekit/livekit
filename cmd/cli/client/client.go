@@ -72,9 +72,13 @@ func NewWebSocketConn(host, token string) (*websocket.Conn, error) {
 		return nil, err
 	}
 	requestHeader := make(http.Header)
-	requestHeader.Set("Authorization", "Bearer "+token)
+	SetAuthorizationToken(requestHeader, token)
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), requestHeader)
 	return conn, err
+}
+
+func SetAuthorizationToken(header http.Header, token string) {
+	header.Set("Authorization", "Bearer "+token)
 }
 
 func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {

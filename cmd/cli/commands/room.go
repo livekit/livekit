@@ -8,6 +8,7 @@ import (
 	"github.com/twitchtv/twirp"
 	"github.com/urfave/cli/v2"
 
+	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -109,7 +110,7 @@ func contextWithAccessToken(c *cli.Context, grant *auth.VideoGrant) context.Cont
 	}
 	if token != "" {
 		header := make(http.Header)
-		header.Set("Authorization", "Bearer "+token)
+		client.SetAuthorizationToken(header, token)
 		if tctx, err := twirp.WithHTTPRequestHeaders(ctx, header); err == nil {
 			logger.Debugw("requesting with token")
 			ctx = tctx

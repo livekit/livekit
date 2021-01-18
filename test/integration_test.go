@@ -1,21 +1,15 @@
 package test
 
 import (
-	"context"
-	"net/http"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/twitchtv/twirp"
-
-	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 func TestClientCouldConnect(t *testing.T) {
-	c1 := createClient("c1")
-	c2 := createClient("c2")
+	c1 := createRTCClient("c1")
+	c2 := createRTCClient("c2")
 	waitUntilConnected(t, c1, c2)
 
 	// ensure they both see each other
@@ -29,8 +23,8 @@ func TestClientCouldConnect(t *testing.T) {
 }
 
 func TestSinglePublisher(t *testing.T) {
-	c1 := createClient("c1")
-	c2 := createClient("c2")
+	c1 := createRTCClient("c1")
+	c2 := createRTCClient("c2")
 	waitUntilConnected(t, c1, c2)
 
 	// publish a track and ensure clients receive it ok
@@ -42,7 +36,7 @@ func TestSinglePublisher(t *testing.T) {
 	defer t2.Stop()
 
 	// a new client joins and should get the initial stream
-	c3 := createClient("c3")
+	c3 := createRTCClient("c3")
 
 	withTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
@@ -73,31 +67,10 @@ func TestSinglePublisher(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	logger.InitDevelopment("")
-	s := createServer()
-	go func() {
-		s.Start()
-	}()
-
-	waitForServerToStart(s)
-
-	// create test room
-	token := createRoomToken()
-	header := make(http.Header)
-	logger.Debugw("auth token", "token", token)
-	header.Set("Authorization", "Bearer "+token)
-	tctx, err := twirp.WithHTTPRequestHeaders(context.Background(), header)
-	if err != nil {
-		panic(err)
-	}
-	_, err = roomClient.CreateRoom(tctx, &livekit.CreateRoomRequest{Name: testRoom})
-	if err != nil {
-		panic(err)
-	}
+	s := setupSingleNodeTest(testRoom)
 
 	code := m.Run()
 
-	roomClient.DeleteRoom(tctx, &livekit.DeleteRoomRequest{Room: testRoom})
-	s.Stop()
+	teardownTest(s, testRoom)
 	os.Exit(code)
 }

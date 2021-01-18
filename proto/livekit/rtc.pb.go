@@ -126,7 +126,7 @@ type isSignalRequest_Message interface {
 }
 
 type SignalRequest_Offer struct {
-	// participant joining initially
+	// participant joining initially, and during negotiations
 	Offer *SessionDescription `protobuf:"bytes,1,opt,name=offer,proto3,oneof"`
 }
 

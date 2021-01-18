@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/auth"
@@ -163,11 +163,13 @@ func startServer(c *cli.Context) error {
 
 func createRouterAndStore(config *config.Config, node routing.LocalNode) (router routing.Router, store service.RoomStore, err error) {
 	if config.MultiNode {
+		logger.Infow("using multi-node routing via redis", "address", config.Redis.Address)
 		rc := redis.NewClient(&redis.Options{
 			Addr:     config.Redis.Address,
 			Password: config.Redis.Password,
 		})
 		if err = rc.Ping(context.Background()).Err(); err != nil {
+			err = errors.Wrap(err, "unable to connect to redis")
 			return
 		}
 
@@ -175,6 +177,7 @@ func createRouterAndStore(config *config.Config, node routing.LocalNode) (router
 		store = service.NewRedisRoomStore(rc)
 	} else {
 		// local routing and store
+		logger.Infow("using single-node routing")
 		router = routing.NewLocalRouter(node)
 		store = service.NewLocalRoomStore()
 	}
