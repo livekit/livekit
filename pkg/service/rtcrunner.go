@@ -11,9 +11,8 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-// RTC runner manages the lifecycles of a WebRTC connection
+// RTC runner manages the lifecycles of all WebRTC connections
 // it creates a new goroutine for each participant it manages.
-
 type RTCRunner struct {
 	lock         sync.RWMutex
 	roomProvider RoomStore
@@ -106,12 +105,16 @@ func (r *RTCRunner) sessionWorker(room *rtc.Room, participant types.Participant,
 		)
 		// remove peer from room when participant leaves room
 		room.RemoveParticipant(participant.ID())
+
+		// TODO: notify router to cleanup?
 	}()
 	defer rtc.Recover()
 
 	for {
 		obj, err := requestSource.ReadMessage()
 		if err == io.EOF {
+			// TODO: when request is EOF, we might be better off requesting a new connection and waiting
+			// RTC connection terminating should be the only case that we exit
 			return
 		}
 

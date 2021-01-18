@@ -25,8 +25,12 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeIdForRoom(roomName string) (string, error) {
+func (r *LocalRouter) GetNodeForRoom(roomName string) (string, error) {
 	return r.currentNode.Id, nil
+}
+
+func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
+	return nil
 }
 
 func (r *LocalRouter) RegisterNode() error {
@@ -42,6 +46,12 @@ func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
 		return r.currentNode, nil
 	}
 	return nil, ErrNotFound
+}
+
+func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
+	return []*livekit.Node{
+		r.currentNode,
+	}, nil
 }
 
 func (r *LocalRouter) StartParticipant(roomName, participantId, participantName string) error {

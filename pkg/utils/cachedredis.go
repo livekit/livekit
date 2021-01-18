@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/karlseguin/ccache/v2"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -34,7 +35,7 @@ func (r *CachedRedis) CachedHGet(key, hashKey string) (string, error) {
 	}
 	val, err := r.rc.HGet(r.ctx, key, hashKey).Result()
 	if err != nil {
-		return "", err
+		return "", errors.Wrapf(err, "could not hget %s[%s]", key, hashKey)
 	}
 	r.cache.Set(key, val, defaultCacheTTL)
 	return val, nil
@@ -47,7 +48,7 @@ func (r *CachedRedis) CachedGet(key string) (string, error) {
 	}
 	val, err := r.rc.Get(r.ctx, key).Result()
 	if err != nil {
-		return "", err
+		return "", errors.Wrapf(err, "could not get %s", key)
 	}
 
 	r.cache.Set(key, val, defaultCacheTTL)

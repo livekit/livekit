@@ -10,7 +10,7 @@ type FileBasedKeyProvider struct {
 	keys map[string]string
 }
 
-func NewFileBasedKeyProvider(r io.Reader) (p *FileBasedKeyProvider, err error) {
+func NewFileBasedKeyProviderFromReader(r io.Reader) (p *FileBasedKeyProvider, err error) {
 	keys := make(map[string]string)
 	decoder := yaml.NewDecoder(r)
 	if err = decoder.Decode(&keys); err != nil {
@@ -21,6 +21,12 @@ func NewFileBasedKeyProvider(r io.Reader) (p *FileBasedKeyProvider, err error) {
 	}
 
 	return
+}
+
+func NewFileBasedKeyProviderFromMap(keys map[string]string) *FileBasedKeyProvider {
+	return &FileBasedKeyProvider{
+		keys: keys,
+	}
 }
 
 func (p *FileBasedKeyProvider) GetSecret(key string) string {

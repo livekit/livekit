@@ -73,7 +73,7 @@ func TestSinglePublisher(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	logger.InitDevelopment()
+	logger.InitDevelopment("")
 	s := createServer()
 	go func() {
 		s.Start()

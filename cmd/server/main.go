@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,14 +38,13 @@ func main() {
 				EnvVars: []string{"LIVEKIT_CONFIG"},
 			},
 			&cli.StringFlag{
-				Name:    "key-file",
-				Usage:   "path to file that contains API keys/secrets",
-				EnvVars: []string{"KEY_FILE"},
+				Name:  "key-file",
+				Usage: "path to file that contains API keys/secrets",
 			},
 			&cli.StringFlag{
 				Name:    "keys",
 				Usage:   "API keys/secret pairs (key:secret, one per line)",
-				EnvVars: []string{"KEY_FILE"},
+				EnvVars: []string{"LIVEKIT_KEYS"},
 			},
 			&cli.StringFlag{
 				Name:  "cpuprofile",
@@ -58,7 +56,7 @@ func main() {
 			},
 			&cli.BoolFlag{
 				Name:  "dev",
-				Usage: "when set, token validation will be disabled",
+				Usage: "sets log-level to debug, and console formatter",
 			},
 		},
 		Action: startServer,
@@ -92,13 +90,14 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	conf.UpdateFromCLI(c)
-	var keyProvider auth.KeyProvider
+	if err = conf.UpdateFromCLI(c); err != nil {
+		return err
+	}
 
 	if conf.Development {
-		logger.InitDevelopment()
+		logger.InitDevelopment(conf.LogLevel)
 	} else {
-		logger.InitProduction()
+		logger.InitProduction(conf.LogLevel)
 	}
 
 	if cpuProfile != "" {
@@ -127,10 +126,11 @@ func startServer(c *cli.Context) error {
 	}
 
 	// require a key provider
-	if keyProvider, err = createKeyProvider(c.String("key-file"), c.String("keys")); err != nil {
+	keyProvider, err := createKeyProvider(conf)
+	if err != nil {
 		return err
 	}
-	logger.Infow("auth enabled", "num_keys", keyProvider.NumKeys())
+	logger.Infow("configured key provider", "num_keys", keyProvider.NumKeys())
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -181,25 +181,24 @@ func createRouterAndStore(config *config.Config, node routing.LocalNode) (router
 	return
 }
 
-func createKeyProvider(keyFile, keys string) (auth.KeyProvider, error) {
+func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 	// prefer keyfile if set
-	if keyFile != "" {
-		if st, err := os.Stat(keyFile); err != nil {
+	if conf.KeyFile != "" {
+		if st, err := os.Stat(conf.KeyFile); err != nil {
 			return nil, err
 		} else if st.Mode().Perm() != 0600 {
 			return nil, fmt.Errorf("key file must have permission set to 600")
 		}
-		f, err := os.Open(keyFile)
+		f, err := os.Open(conf.KeyFile)
 		if err != nil {
 			return nil, err
 		}
 		defer f.Close()
-		return auth.NewFileBasedKeyProvider(f)
+		return auth.NewFileBasedKeyProviderFromReader(f)
 	}
 
-	if keys != "" {
-		r := bytes.NewReader([]byte(keys))
-		return auth.NewFileBasedKeyProvider(r)
+	if conf.Keys != nil {
+		return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 	}
 
 	return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")

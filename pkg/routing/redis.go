@@ -68,8 +68,15 @@ type RedisSink struct {
 	rc            *redis.Client
 	nodeId        string
 	participantId string
-	channel       string
 	onClose       func()
+}
+
+func NewRedisSink(rc *redis.Client, nodeId, participantId string) *RedisSink {
+	return &RedisSink{
+		rc:            rc,
+		nodeId:        nodeId,
+		participantId: participantId,
+	}
 }
 
 func (s *RedisSink) WriteMessage(msg proto.Message) error {

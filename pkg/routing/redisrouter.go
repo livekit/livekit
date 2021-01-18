@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -34,6 +35,7 @@ func NewRedisRouter(currentNode LocalNode, rc *redis.Client, useLocal bool) *Red
 		LocalRouter: *NewLocalRouter(currentNode),
 		useLocal:    useLocal,
 		rc:          rc,
+		redisSinks:  make(map[string]*RedisSink),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	rr.cr = utils.NewCachedRedis(rr.ctx, rr.rc)
@@ -46,7 +48,10 @@ func (r *RedisRouter) RegisterNode() error {
 		return err
 	}
 	r.cr.ExpireHash(NodesKey, r.currentNode.Id)
-	return r.rc.HSet(r.ctx, NodesKey, data).Err()
+	if err := r.rc.HSet(r.ctx, NodesKey, r.currentNode.Id, data).Err(); err != nil {
+		return errors.Wrap(err, "could not register node")
+	}
+	return nil
 }
 
 func (r *RedisRouter) UnregisterNode() error {
@@ -54,8 +59,17 @@ func (r *RedisRouter) UnregisterNode() error {
 	return nil
 }
 
-func (r *RedisRouter) GetNodeIdForRoom(roomName string) (string, error) {
-	return r.cr.CachedHGet(NodeRoomKey, roomName)
+func (r *RedisRouter) GetNodeForRoom(roomName string) (string, error) {
+	val, err := r.cr.CachedHGet(NodeRoomKey, roomName)
+	if err != nil {
+		err = errors.Wrap(err, "could not get node for room")
+	}
+	return val, err
+}
+
+func (r *RedisRouter) SetNodeForRoom(roomName string, nodeId string) error {
+	// TODO: how do we clear this periodically to remove old rooms?
+	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
 }
 
 func (r *RedisRouter) GetNode(nodeId string) (*livekit.Node, error) {
@@ -70,9 +84,29 @@ func (r *RedisRouter) GetNode(nodeId string) (*livekit.Node, error) {
 	return &n, nil
 }
 
+func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
+	items, err := r.rc.HVals(r.ctx, NodesKey).Result()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not list nodes")
+	}
+	nodes := make([]*livekit.Node, 0, len(items))
+	for _, item := range items {
+		n := livekit.Node{}
+		if err := proto.Unmarshal([]byte(item), &n); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, &n)
+	}
+	return nodes, nil
+}
+
 func (r *RedisRouter) SetParticipantRTCNode(participantId, nodeId string) error {
 	r.cr.Expire(participantRTCKey(participantId))
-	return r.rc.Set(r.ctx, participantRTCKey(participantId), nodeId, 0).Err()
+	err := r.rc.Set(r.ctx, participantRTCKey(participantId), nodeId, 0).Err()
+	if err != nil {
+		err = errors.Wrap(err, "could not set rtc node")
+	}
+	return err
 }
 
 // for a local router, sink and source are pointing to the same spot
@@ -107,9 +141,10 @@ func (r *RedisRouter) GetResponseSource(participantId string) (MessageSource, er
 	return source, nil
 }
 
+// StartParticipant always called on the signal node
 func (r *RedisRouter) StartParticipant(roomName, participantId, participantName string) error {
 	// find the node where the room is hosted at
-	rtcNode, err := r.GetNodeIdForRoom(roomName)
+	rtcNode, err := r.GetNodeForRoom(roomName)
 	if err != nil {
 		return err
 	}
@@ -121,6 +156,11 @@ func (r *RedisRouter) StartParticipant(roomName, participantId, participantName 
 
 	if r.useLocal {
 		return r.LocalRouter.StartParticipant(roomName, participantId, participantId)
+	}
+
+	err = r.setParticipantSignalNode(participantId, r.currentNode.Id)
+	if err != nil {
+		return err
 	}
 
 	// find signal node to send responses back
@@ -152,6 +192,14 @@ func (r *RedisRouter) Stop() {
 	r.cancel()
 }
 
+func (r *RedisRouter) setParticipantSignalNode(participantId, nodeId string) error {
+	r.cr.Expire(participantSignalKey(participantId))
+	if err := r.rc.Set(r.ctx, participantSignalKey(participantId), nodeId, 0).Err(); err != nil {
+		return errors.Wrap(err, "could not set signal node")
+	}
+	return nil
+}
+
 func (r *RedisRouter) getOrCreateRedisSink(nodeId string, participantId string) *RedisSink {
 	r.lock.RLock()
 	sink := r.redisSinks[participantId]
@@ -161,12 +209,7 @@ func (r *RedisRouter) getOrCreateRedisSink(nodeId string, participantId string) 
 		return sink
 	}
 
-	sink = &RedisSink{
-		rc:            r.rc,
-		nodeId:        nodeId,
-		participantId: participantId,
-		channel:       nodeChannel(nodeId),
-	}
+	sink = NewRedisSink(r.rc, nodeId, participantId)
 	sink.OnClose(func() {
 		r.lock.Lock()
 		delete(r.redisSinks, participantId)
@@ -175,7 +218,7 @@ func (r *RedisRouter) getOrCreateRedisSink(nodeId string, participantId string) 
 	r.lock.Lock()
 	r.redisSinks[participantId] = sink
 	r.lock.Unlock()
-	return nil
+	return sink
 }
 
 func (r *RedisRouter) getParticipantRTCNode(participantId string) (string, error) {
@@ -235,7 +278,7 @@ func (r *RedisRouter) subscribeWorker() {
 
 		case *livekit.RouterMessage_EndSession:
 			signalNode, err := r.getParticipantRTCNode(pId)
-			if err == nil {
+			if err != nil {
 				logger.Errorw("could not get participant RTC node",
 					"error", err)
 				continue

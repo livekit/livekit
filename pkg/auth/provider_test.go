@@ -31,7 +31,7 @@ func TestFileBasedKeyProvider(t *testing.T) {
 
 	r, err := os.Open(f.Name())
 	defer r.Close()
-	p, err := auth.NewFileBasedKeyProvider(r)
+	p, err := auth.NewFileBasedKeyProviderFromReader(r)
 	assert.NoError(t, err)
 
 	for key, val := range keys {

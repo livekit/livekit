@@ -22,16 +22,16 @@ type FakeRouter struct {
 		result1 *livekit.Node
 		result2 error
 	}
-	GetNodeIdForRoomStub        func(string) (string, error)
-	getNodeIdForRoomMutex       sync.RWMutex
-	getNodeIdForRoomArgsForCall []struct {
+	GetNodeForRoomStub        func(string) (string, error)
+	getNodeForRoomMutex       sync.RWMutex
+	getNodeForRoomArgsForCall []struct {
 		arg1 string
 	}
-	getNodeIdForRoomReturns struct {
+	getNodeForRoomReturns struct {
 		result1 string
 		result2 error
 	}
-	getNodeIdForRoomReturnsOnCall map[int]struct {
+	getNodeForRoomReturnsOnCall map[int]struct {
 		result1 string
 		result2 error
 	}
@@ -61,6 +61,18 @@ type FakeRouter struct {
 		result1 routing.MessageSource
 		result2 error
 	}
+	ListNodesStub        func() ([]*livekit.Node, error)
+	listNodesMutex       sync.RWMutex
+	listNodesArgsForCall []struct {
+	}
+	listNodesReturns struct {
+		result1 []*livekit.Node
+		result2 error
+	}
+	listNodesReturnsOnCall map[int]struct {
+		result1 []*livekit.Node
+		result2 error
+	}
 	OnNewParticipantStub        func(routing.ParticipantCallback)
 	onNewParticipantMutex       sync.RWMutex
 	onNewParticipantArgsForCall []struct {
@@ -74,6 +86,18 @@ type FakeRouter struct {
 		result1 error
 	}
 	registerNodeReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SetNodeForRoomStub        func(string, string) error
+	setNodeForRoomMutex       sync.RWMutex
+	setNodeForRoomArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	setNodeForRoomReturns struct {
+		result1 error
+	}
+	setNodeForRoomReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SetParticipantRTCNodeStub        func(string, string) error
@@ -193,16 +217,16 @@ func (fake *FakeRouter) GetNodeReturnsOnCall(i int, result1 *livekit.Node, resul
 	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetNodeIdForRoom(arg1 string) (string, error) {
-	fake.getNodeIdForRoomMutex.Lock()
-	ret, specificReturn := fake.getNodeIdForRoomReturnsOnCall[len(fake.getNodeIdForRoomArgsForCall)]
-	fake.getNodeIdForRoomArgsForCall = append(fake.getNodeIdForRoomArgsForCall, struct {
+func (fake *FakeRouter) GetNodeForRoom(arg1 string) (string, error) {
+	fake.getNodeForRoomMutex.Lock()
+	ret, specificReturn := fake.getNodeForRoomReturnsOnCall[len(fake.getNodeForRoomArgsForCall)]
+	fake.getNodeForRoomArgsForCall = append(fake.getNodeForRoomArgsForCall, struct {
 		arg1 string
 	}{arg1})
-	stub := fake.GetNodeIdForRoomStub
-	fakeReturns := fake.getNodeIdForRoomReturns
-	fake.recordInvocation("GetNodeIdForRoom", []interface{}{arg1})
-	fake.getNodeIdForRoomMutex.Unlock()
+	stub := fake.GetNodeForRoomStub
+	fakeReturns := fake.getNodeForRoomReturns
+	fake.recordInvocation("GetNodeForRoom", []interface{}{arg1})
+	fake.getNodeForRoomMutex.Unlock()
 	if stub != nil {
 		return stub(arg1)
 	}
@@ -212,46 +236,46 @@ func (fake *FakeRouter) GetNodeIdForRoom(arg1 string) (string, error) {
 	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *FakeRouter) GetNodeIdForRoomCallCount() int {
-	fake.getNodeIdForRoomMutex.RLock()
-	defer fake.getNodeIdForRoomMutex.RUnlock()
-	return len(fake.getNodeIdForRoomArgsForCall)
+func (fake *FakeRouter) GetNodeForRoomCallCount() int {
+	fake.getNodeForRoomMutex.RLock()
+	defer fake.getNodeForRoomMutex.RUnlock()
+	return len(fake.getNodeForRoomArgsForCall)
 }
 
-func (fake *FakeRouter) GetNodeIdForRoomCalls(stub func(string) (string, error)) {
-	fake.getNodeIdForRoomMutex.Lock()
-	defer fake.getNodeIdForRoomMutex.Unlock()
-	fake.GetNodeIdForRoomStub = stub
+func (fake *FakeRouter) GetNodeForRoomCalls(stub func(string) (string, error)) {
+	fake.getNodeForRoomMutex.Lock()
+	defer fake.getNodeForRoomMutex.Unlock()
+	fake.GetNodeForRoomStub = stub
 }
 
-func (fake *FakeRouter) GetNodeIdForRoomArgsForCall(i int) string {
-	fake.getNodeIdForRoomMutex.RLock()
-	defer fake.getNodeIdForRoomMutex.RUnlock()
-	argsForCall := fake.getNodeIdForRoomArgsForCall[i]
+func (fake *FakeRouter) GetNodeForRoomArgsForCall(i int) string {
+	fake.getNodeForRoomMutex.RLock()
+	defer fake.getNodeForRoomMutex.RUnlock()
+	argsForCall := fake.getNodeForRoomArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeRouter) GetNodeIdForRoomReturns(result1 string, result2 error) {
-	fake.getNodeIdForRoomMutex.Lock()
-	defer fake.getNodeIdForRoomMutex.Unlock()
-	fake.GetNodeIdForRoomStub = nil
-	fake.getNodeIdForRoomReturns = struct {
+func (fake *FakeRouter) GetNodeForRoomReturns(result1 string, result2 error) {
+	fake.getNodeForRoomMutex.Lock()
+	defer fake.getNodeForRoomMutex.Unlock()
+	fake.GetNodeForRoomStub = nil
+	fake.getNodeForRoomReturns = struct {
 		result1 string
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *FakeRouter) GetNodeIdForRoomReturnsOnCall(i int, result1 string, result2 error) {
-	fake.getNodeIdForRoomMutex.Lock()
-	defer fake.getNodeIdForRoomMutex.Unlock()
-	fake.GetNodeIdForRoomStub = nil
-	if fake.getNodeIdForRoomReturnsOnCall == nil {
-		fake.getNodeIdForRoomReturnsOnCall = make(map[int]struct {
+func (fake *FakeRouter) GetNodeForRoomReturnsOnCall(i int, result1 string, result2 error) {
+	fake.getNodeForRoomMutex.Lock()
+	defer fake.getNodeForRoomMutex.Unlock()
+	fake.GetNodeForRoomStub = nil
+	if fake.getNodeForRoomReturnsOnCall == nil {
+		fake.getNodeForRoomReturnsOnCall = make(map[int]struct {
 			result1 string
 			result2 error
 		})
 	}
-	fake.getNodeIdForRoomReturnsOnCall[i] = struct {
+	fake.getNodeForRoomReturnsOnCall[i] = struct {
 		result1 string
 		result2 error
 	}{result1, result2}
@@ -385,6 +409,62 @@ func (fake *FakeRouter) GetResponseSourceReturnsOnCall(i int, result1 routing.Me
 	}{result1, result2}
 }
 
+func (fake *FakeRouter) ListNodes() ([]*livekit.Node, error) {
+	fake.listNodesMutex.Lock()
+	ret, specificReturn := fake.listNodesReturnsOnCall[len(fake.listNodesArgsForCall)]
+	fake.listNodesArgsForCall = append(fake.listNodesArgsForCall, struct {
+	}{})
+	stub := fake.ListNodesStub
+	fakeReturns := fake.listNodesReturns
+	fake.recordInvocation("ListNodes", []interface{}{})
+	fake.listNodesMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeRouter) ListNodesCallCount() int {
+	fake.listNodesMutex.RLock()
+	defer fake.listNodesMutex.RUnlock()
+	return len(fake.listNodesArgsForCall)
+}
+
+func (fake *FakeRouter) ListNodesCalls(stub func() ([]*livekit.Node, error)) {
+	fake.listNodesMutex.Lock()
+	defer fake.listNodesMutex.Unlock()
+	fake.ListNodesStub = stub
+}
+
+func (fake *FakeRouter) ListNodesReturns(result1 []*livekit.Node, result2 error) {
+	fake.listNodesMutex.Lock()
+	defer fake.listNodesMutex.Unlock()
+	fake.ListNodesStub = nil
+	fake.listNodesReturns = struct {
+		result1 []*livekit.Node
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRouter) ListNodesReturnsOnCall(i int, result1 []*livekit.Node, result2 error) {
+	fake.listNodesMutex.Lock()
+	defer fake.listNodesMutex.Unlock()
+	fake.ListNodesStub = nil
+	if fake.listNodesReturnsOnCall == nil {
+		fake.listNodesReturnsOnCall = make(map[int]struct {
+			result1 []*livekit.Node
+			result2 error
+		})
+	}
+	fake.listNodesReturnsOnCall[i] = struct {
+		result1 []*livekit.Node
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeRouter) OnNewParticipant(arg1 routing.ParticipantCallback) {
 	fake.onNewParticipantMutex.Lock()
 	fake.onNewParticipantArgsForCall = append(fake.onNewParticipantArgsForCall, struct {
@@ -466,6 +546,68 @@ func (fake *FakeRouter) RegisterNodeReturnsOnCall(i int, result1 error) {
 		})
 	}
 	fake.registerNodeReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) SetNodeForRoom(arg1 string, arg2 string) error {
+	fake.setNodeForRoomMutex.Lock()
+	ret, specificReturn := fake.setNodeForRoomReturnsOnCall[len(fake.setNodeForRoomArgsForCall)]
+	fake.setNodeForRoomArgsForCall = append(fake.setNodeForRoomArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.SetNodeForRoomStub
+	fakeReturns := fake.setNodeForRoomReturns
+	fake.recordInvocation("SetNodeForRoom", []interface{}{arg1, arg2})
+	fake.setNodeForRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) SetNodeForRoomCallCount() int {
+	fake.setNodeForRoomMutex.RLock()
+	defer fake.setNodeForRoomMutex.RUnlock()
+	return len(fake.setNodeForRoomArgsForCall)
+}
+
+func (fake *FakeRouter) SetNodeForRoomCalls(stub func(string, string) error) {
+	fake.setNodeForRoomMutex.Lock()
+	defer fake.setNodeForRoomMutex.Unlock()
+	fake.SetNodeForRoomStub = stub
+}
+
+func (fake *FakeRouter) SetNodeForRoomArgsForCall(i int) (string, string) {
+	fake.setNodeForRoomMutex.RLock()
+	defer fake.setNodeForRoomMutex.RUnlock()
+	argsForCall := fake.setNodeForRoomArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRouter) SetNodeForRoomReturns(result1 error) {
+	fake.setNodeForRoomMutex.Lock()
+	defer fake.setNodeForRoomMutex.Unlock()
+	fake.SetNodeForRoomStub = nil
+	fake.setNodeForRoomReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) SetNodeForRoomReturnsOnCall(i int, result1 error) {
+	fake.setNodeForRoomMutex.Lock()
+	defer fake.setNodeForRoomMutex.Unlock()
+	fake.SetNodeForRoomStub = nil
+	if fake.setNodeForRoomReturnsOnCall == nil {
+		fake.setNodeForRoomReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setNodeForRoomReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -730,16 +872,20 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.getNodeMutex.RLock()
 	defer fake.getNodeMutex.RUnlock()
-	fake.getNodeIdForRoomMutex.RLock()
-	defer fake.getNodeIdForRoomMutex.RUnlock()
+	fake.getNodeForRoomMutex.RLock()
+	defer fake.getNodeForRoomMutex.RUnlock()
 	fake.getRequestSinkMutex.RLock()
 	defer fake.getRequestSinkMutex.RUnlock()
 	fake.getResponseSourceMutex.RLock()
 	defer fake.getResponseSourceMutex.RUnlock()
+	fake.listNodesMutex.RLock()
+	defer fake.listNodesMutex.RUnlock()
 	fake.onNewParticipantMutex.RLock()
 	defer fake.onNewParticipantMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
+	fake.setNodeForRoomMutex.RLock()
+	defer fake.setNodeForRoomMutex.RUnlock()
 	fake.setParticipantRTCNodeMutex.RLock()
 	defer fake.setParticipantRTCNodeMutex.RUnlock()
 	fake.startMutex.RLock()

@@ -81,7 +81,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	participantId := utils.NewGuid(utils.ParticipantPrefix)
 	err = s.router.StartParticipant(roomName, participantId, pName)
 	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not set signal node: "+err.Error())
+		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
 

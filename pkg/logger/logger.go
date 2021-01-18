@@ -2,30 +2,38 @@ package logger
 
 import (
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
-	logger     *zap.SugaredLogger
-	zapOptions = []zap.Option{
-		zap.AddCallerSkip(1),
-	}
+	logger *zap.SugaredLogger
 )
 
 func getLogger() *zap.SugaredLogger {
 	if logger == nil {
-		InitDevelopment()
+		InitDevelopment("")
 	}
 	return logger
 }
 
-func InitProduction() {
-	l, _ := zap.NewProduction(zapOptions...)
+func initLogger(config zap.Config, level string) {
+	if level != "" {
+		lvl := zapcore.Level(0)
+		if err := lvl.UnmarshalText([]byte(level)); err == nil {
+			config.Level = zap.NewAtomicLevelAt(lvl)
+		}
+	}
+	l, _ := config.Build(zap.AddCallerSkip(1))
 	logger = l.Sugar()
 }
 
-func InitDevelopment() {
-	l, _ := zap.NewDevelopment(zapOptions...)
-	logger = l.Sugar()
+func InitProduction(logLevel string) {
+	initLogger(zap.NewProductionConfig(), logLevel)
+
+}
+
+func InitDevelopment(logLevel string) {
+	initLogger(zap.NewDevelopmentConfig(), logLevel)
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {

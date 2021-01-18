@@ -20,7 +20,7 @@ func main() {
 	app.Commands = append(app.Commands, commands.RTCCommands...)
 	app.Commands = append(app.Commands, commands.TokenCommands...)
 
-	logger.InitDevelopment()
+	logger.InitDevelopment("")
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
 	}

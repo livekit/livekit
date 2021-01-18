@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -13,11 +15,13 @@ import (
 // A rooms service that supports a single node
 type RoomService struct {
 	roomProvider RoomStore
+	router       routing.Router
 }
 
-func NewRoomService(rp RoomStore) (svc *RoomService, err error) {
+func NewRoomService(rp RoomStore, router routing.Router) (svc *RoomService, err error) {
 	svc = &RoomService{
 		roomProvider: rp,
+		router:       router,
 	}
 
 	return
@@ -37,6 +41,22 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	}
 	err = s.roomProvider.CreateRoom(rm)
 	if err != nil {
+		return
+	}
+
+	// allocate room to a node
+	nodes, err := s.router.ListNodes()
+	if err != nil {
+		return
+	}
+
+	if len(nodes) == 0 {
+		return nil, ErrNoRegisteredNodes
+	}
+
+	idx := funk.RandomInt(0, len(nodes))
+	node := nodes[idx]
+	if err = s.router.SetNodeForRoom(req.Name, node.Id); err != nil {
 		return
 	}
 

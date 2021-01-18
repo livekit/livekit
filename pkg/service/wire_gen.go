@@ -15,7 +15,7 @@ import (
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) (*LivekitServer, error) {
-	roomService, err := NewRoomService(roomStore)
+	roomService, err := NewRoomService(roomStore, router)
 	if err != nil {
 		return nil, err
 	}

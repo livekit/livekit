@@ -25,12 +25,15 @@ type ParticipantCallback func(roomId, participantId, participantName string, req
 
 //counterfeiter:generate . Router
 type Router interface {
-	GetNodeIdForRoom(roomName string) (string, error)
+	GetNodeForRoom(roomName string) (string, error)
+	SetNodeForRoom(roomName string, nodeId string) error
 	RegisterNode() error
 	UnregisterNode() error
 	GetNode(nodeId string) (*livekit.Node, error)
+	ListNodes() ([]*livekit.Node, error)
 
 	SetParticipantRTCNode(participantId, nodeId string) error
+
 	// functions for websocket handler
 	GetRequestSink(participantId string) (MessageSink, error)
 	GetResponseSource(participantId string) (MessageSource, error)

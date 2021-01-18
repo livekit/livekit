@@ -16,6 +16,7 @@ require (
 	github.com/magefile/mage v1.10.0
 	github.com/manifoldco/promptui v0.8.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
+	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pion/ion-log v1.0.0
 	github.com/pion/ion-sfu v1.7.7
 	github.com/pion/rtcp v1.2.6

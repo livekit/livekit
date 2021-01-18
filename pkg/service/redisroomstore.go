@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -24,7 +25,8 @@ type RedisRoomStore struct {
 
 func NewRedisRoomStore(rc *redis.Client) *RedisRoomStore {
 	return &RedisRoomStore{
-		rc: rc,
+		ctx: context.Background(),
+		rc:  rc,
 	}
 }
 
@@ -38,7 +40,10 @@ func (p *RedisRoomStore) CreateRoom(room *livekit.Room) error {
 	if err != nil {
 		return err
 	}
-	return p.rc.HSet(p.ctx, RoomsKey, room.Name, data).Err()
+	if err := p.rc.HSet(p.ctx, RoomsKey, room.Name, data).Err(); err != nil {
+		return errors.Wrap(err, "could not create room")
+	}
+	return nil
 }
 
 func (p *RedisRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
@@ -68,7 +73,7 @@ func (p *RedisRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
 func (p *RedisRoomStore) ListRooms() ([]*livekit.Room, error) {
 	items, err := p.rc.HVals(p.ctx, RoomsKey).Result()
 	if err != nil && err != redis.Nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get rooms")
 	}
 
 	rooms := make([]*livekit.Room, 0, len(items))

@@ -1,14 +1,20 @@
 package config
 
 import (
+	"os"
+
+	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Port  uint32      `yaml:"port"`
-	RTC   RTCConfig   `yaml:"rtc"`
-	Redis RedisConfig `yaml:"redis"`
+	Port     uint32            `yaml:"port"`
+	RTC      RTCConfig         `yaml:"rtc"`
+	Redis    RedisConfig       `yaml:"redis"`
+	KeyFile  string            `yaml:"key_file"`
+	Keys     map[string]string `yaml:"keys"`
+	LogLevel string            `yaml:"log_level"`
 
 	// multi-node configuration,
 	MultiNode   bool `yaml:"multi_node"`
@@ -51,8 +57,25 @@ func NewConfig(confString string) (*Config, error) {
 	return conf, nil
 }
 
-func (conf *Config) UpdateFromCLI(c *cli.Context) {
+func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 	if c.IsSet("dev") {
 		conf.Development = c.Bool("dev")
 	}
+	if c.IsSet("key-file") {
+		conf.KeyFile = c.String("file")
+	}
+	if c.IsSet("keys") {
+		conf.Keys = make(map[string]string)
+		if err := yaml.Unmarshal([]byte(c.String("keys")), conf.Keys); err != nil {
+			return err
+		}
+	}
+
+	// expand env vars in filenames
+	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
+	if err != nil {
+		return err
+	}
+	conf.KeyFile = file
+	return nil
 }
