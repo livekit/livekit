@@ -62,7 +62,7 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 		conf.Development = c.Bool("dev")
 	}
 	if c.IsSet("key-file") {
-		conf.KeyFile = c.String("file")
+		conf.KeyFile = c.String("key-file")
 	}
 	if c.IsSet("keys") {
 		conf.Keys = make(map[string]string)
