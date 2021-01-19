@@ -144,7 +144,7 @@ func startServer(c *cli.Context) error {
 	}
 
 	server, err := service.InitializeServer(conf, keyProvider,
-		roomStore, router, currentNode)
+		roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@ var ServiceSet = wire.NewSet(
 	NewRoomService,
 	NewRTCService,
 	NewLivekitServer,
-	NewRTCRunner,
+	NewRoomManager,
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 	externalIpFromNode,
 )

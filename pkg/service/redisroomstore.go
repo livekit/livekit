@@ -35,16 +35,17 @@ func (p *RedisRoomStore) CreateRoom(room *livekit.Room) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
-	err := p.rc.HSet(p.ctx, RoomIdMap, room.Sid, room.Name).Err()
-	if err != nil {
-		return errors.Wrap(err, "could not create room")
-	}
 
 	data, err := proto.Marshal(room)
 	if err != nil {
 		return err
 	}
-	if err := p.rc.HSet(p.ctx, RoomsKey, room.Name, data).Err(); err != nil {
+
+	pp := p.rc.Pipeline()
+	pp.HSet(p.ctx, RoomIdMap, room.Sid, room.Name)
+	pp.HSet(p.ctx, RoomsKey, room.Name, data)
+
+	if _, err = pp.Exec(p.ctx); err != nil {
 		return errors.Wrap(err, "could not create room")
 	}
 	return nil
@@ -101,10 +102,10 @@ func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
 		return err
 	}
 
-	err = p.rc.HDel(p.ctx, RoomIdMap, room.Sid).Err()
-	err2 := p.rc.HDel(p.ctx, RoomsKey, room.Name).Err()
-	if err == nil {
-		err = err2
-	}
+	pp := p.rc.Pipeline()
+	pp.HDel(p.ctx, RoomIdMap, room.Sid)
+	pp.HDel(p.ctx, RoomsKey, room.Name)
+
+	_, err = pp.Exec(p.ctx)
 	return err
 }

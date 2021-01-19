@@ -9,6 +9,17 @@ import (
 )
 
 type FakeRouter struct {
+	ClearRoomStateStub        func(string) error
+	clearRoomStateMutex       sync.RWMutex
+	clearRoomStateArgsForCall []struct {
+		arg1 string
+	}
+	clearRoomStateReturns struct {
+		result1 error
+	}
+	clearRoomStateReturnsOnCall map[int]struct {
+		result1 error
+	}
 	GetNodeStub        func(string) (*livekit.Node, error)
 	getNodeMutex       sync.RWMutex
 	getNodeArgsForCall []struct {
@@ -151,6 +162,67 @@ type FakeRouter struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeRouter) ClearRoomState(arg1 string) error {
+	fake.clearRoomStateMutex.Lock()
+	ret, specificReturn := fake.clearRoomStateReturnsOnCall[len(fake.clearRoomStateArgsForCall)]
+	fake.clearRoomStateArgsForCall = append(fake.clearRoomStateArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.ClearRoomStateStub
+	fakeReturns := fake.clearRoomStateReturns
+	fake.recordInvocation("ClearRoomState", []interface{}{arg1})
+	fake.clearRoomStateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) ClearRoomStateCallCount() int {
+	fake.clearRoomStateMutex.RLock()
+	defer fake.clearRoomStateMutex.RUnlock()
+	return len(fake.clearRoomStateArgsForCall)
+}
+
+func (fake *FakeRouter) ClearRoomStateCalls(stub func(string) error) {
+	fake.clearRoomStateMutex.Lock()
+	defer fake.clearRoomStateMutex.Unlock()
+	fake.ClearRoomStateStub = stub
+}
+
+func (fake *FakeRouter) ClearRoomStateArgsForCall(i int) string {
+	fake.clearRoomStateMutex.RLock()
+	defer fake.clearRoomStateMutex.RUnlock()
+	argsForCall := fake.clearRoomStateArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRouter) ClearRoomStateReturns(result1 error) {
+	fake.clearRoomStateMutex.Lock()
+	defer fake.clearRoomStateMutex.Unlock()
+	fake.ClearRoomStateStub = nil
+	fake.clearRoomStateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) ClearRoomStateReturnsOnCall(i int, result1 error) {
+	fake.clearRoomStateMutex.Lock()
+	defer fake.clearRoomStateMutex.Unlock()
+	fake.ClearRoomStateStub = nil
+	if fake.clearRoomStateReturnsOnCall == nil {
+		fake.clearRoomStateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.clearRoomStateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeRouter) GetNode(arg1 string) (*livekit.Node, error) {
@@ -870,6 +942,8 @@ func (fake *FakeRouter) UnregisterNodeReturnsOnCall(i int, result1 error) {
 func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.clearRoomStateMutex.RLock()
+	defer fake.clearRoomStateMutex.RUnlock()
 	fake.getNodeMutex.RLock()
 	defer fake.getNodeMutex.RUnlock()
 	fake.getNodeForRoomMutex.RLock()

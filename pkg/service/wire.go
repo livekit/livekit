@@ -12,7 +12,8 @@ import (
 )
 
 func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider,
-	roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) (*LivekitServer, error) {
+	roomStore RoomStore, router routing.Router, currentNode routing.LocalNode,
+	selector routing.NodeSelector) (*LivekitServer, error) {
 	wire.Build(
 		ServiceSet,
 		rtc.RTCSet,

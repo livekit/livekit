@@ -128,8 +128,14 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		logger.Debugw("ICE connection state changed", "state", state.String())
 		if state == webrtc.ICEConnectionStateConnected {
 			participant.updateState(livekit.ParticipantInfo_ACTIVE)
+		} else if state == webrtc.ICEConnectionStateDisconnected {
+			go participant.Close()
 		}
 	})
+
+	//pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+	//	logger.Debugw("PeerConnection state changed", "state", state.String())
+	//})
 
 	pc.OnDataChannel(participant.onDataChannel)
 
@@ -320,6 +326,7 @@ func (p *ParticipantImpl) Close() error {
 	}
 	close(p.rtcpCh)
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
+	p.responseSink.Close()
 	if p.onClose != nil {
 		p.onClose(p)
 	}
@@ -470,7 +477,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 	oldState := p.state
 	p.state = state
-
+	logger.Debugw("updating participant state", "state", state.String())
 	if p.onStateChange != nil {
 		go func() {
 			defer Recover()

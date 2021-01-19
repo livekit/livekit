@@ -17,10 +17,12 @@ import (
 const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
+	statsUpdateInterval   = 10 * time.Second
 )
 
-// TODO: need to implement redis key cleanup, for when clients disconnect and such
-
+// RedisRouter uses Redis pub/sub to route signaling messages across different nodes
+// It relies on the RTC node to be the primary driver of the participant connection.
+// Because
 type RedisRouter struct {
 	LocalRouter
 	useLocal bool
@@ -72,8 +74,14 @@ func (r *RedisRouter) GetNodeForRoom(roomName string) (string, error) {
 }
 
 func (r *RedisRouter) SetNodeForRoom(roomName string, nodeId string) error {
-	// TODO: how do we clear this periodically to remove old rooms?
 	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
+}
+
+func (r *RedisRouter) ClearRoomState(roomName string) error {
+	if err := r.rc.HDel(r.ctx, NodeRoomKey, roomName).Err(); err != nil {
+		return errors.Wrap(err, "could not clear room state")
+	}
+	return nil
 }
 
 func (r *RedisRouter) GetNode(nodeId string) (*livekit.Node, error) {
@@ -242,7 +250,7 @@ func (r *RedisRouter) getParticipantSignalNode(participantId string) (nodeId str
 func (r *RedisRouter) statsWorker() {
 	for r.ctx.Err() == nil {
 		// update every 10 seconds
-		<-time.After(10 * time.Second)
+		<-time.After(statsUpdateInterval)
 		r.currentNode.Stats.UpdatedAt = time.Now().Unix()
 		if err := r.RegisterNode(); err != nil {
 			logger.Errorw("could not update node", "error", err)

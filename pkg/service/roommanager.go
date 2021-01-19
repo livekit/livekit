@@ -3,38 +3,124 @@ package service
 import (
 	"io"
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-// RTC runner manages the lifecycles of all WebRTC connections
-// it creates a new goroutine for each participant it manages.
-type RTCRunner struct {
-	lock         sync.RWMutex
-	roomProvider RoomStore
-	currentNode  routing.LocalNode
-	router       routing.Router
-	config       *rtc.WebRTCConfig
-	rooms        map[string]*rtc.Room
+const (
+	roomPurgeSeconds = 24 * 60 * 60
+)
+
+// RoomManager manages rooms and its interaction with participants.
+// It's responsible for creating, deleting rooms, as well as running sessions for participants
+type RoomManager struct {
+	lock        sync.RWMutex
+	roomStore   RoomStore
+	selector    routing.NodeSelector
+	router      routing.Router
+	currentNode routing.LocalNode
+	config      *rtc.WebRTCConfig
+	rooms       map[string]*rtc.Room
 }
 
-func NewRTCRunner(rp RoomStore, router routing.Router, currentNode routing.LocalNode, config *rtc.WebRTCConfig) *RTCRunner {
-	return &RTCRunner{
-		lock:         sync.RWMutex{},
-		roomProvider: rp,
-		config:       config,
-		router:       router,
-		currentNode:  currentNode,
-		rooms:        make(map[string]*rtc.Room),
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig) *RoomManager {
+	return &RoomManager{
+		lock:        sync.RWMutex{},
+		roomStore:   rp,
+		config:      config,
+		router:      router,
+		selector:    selector,
+		currentNode: currentNode,
+		rooms:       make(map[string]*rtc.Room),
 	}
 }
 
+// CreateRoom creates a new room from a request and allocates it to a node to handle
+// it'll also monitor its state, and cleans it up when appropriate
+func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
+	rm := &livekit.Room{
+		Sid:             utils.NewGuid(utils.RoomPrefix),
+		Name:            req.Name,
+		EmptyTimeout:    req.EmptyTimeout,
+		MaxParticipants: req.MaxParticipants,
+		CreationTime:    time.Now().Unix(),
+	}
+	if err := r.roomStore.CreateRoom(rm); err != nil {
+		return nil, err
+	}
+
+	// allocate room to a node
+	nodes, err := r.router.ListNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	node, err := r.selector.SelectNode(nodes, rm)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = r.router.SetNodeForRoom(req.Name, node.Id); err != nil {
+		return nil, err
+	}
+
+	return rm, nil
+}
+
+// DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
+func (r *RoomManager) DeleteRoom(roomName string) error {
+	r.lock.Lock()
+	delete(r.rooms, roomName)
+	r.lock.Unlock()
+
+	var err, err2 error
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	// clear routing information
+	go func() {
+		defer wg.Done()
+		err = r.router.ClearRoomState(roomName)
+	}()
+	// also delete room from db
+	go func() {
+		defer wg.Done()
+		err2 = r.roomStore.DeleteRoom(roomName)
+	}()
+
+	if err != nil {
+		err = err2
+	}
+
+	return err
+}
+
+// clean up after old rooms that have been around for awhile
+func (r *RoomManager) Cleanup() error {
+	// cleanup rooms that have been left for over a day
+	rooms, err := r.roomStore.ListRooms()
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	for _, room := range rooms {
+		if (now - room.CreationTime) > roomPurgeSeconds {
+			if err := r.DeleteRoom(room.Name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // starts WebRTC session when a new participant is connected
-func (r *RTCRunner) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
@@ -74,7 +160,8 @@ func (r *RTCRunner) StartSession(roomName, participantId, participantName string
 	go r.sessionWorker(room, participant, requestSource)
 }
 
-func (r *RTCRunner) getOrCreateRoom(roomName string) (*rtc.Room, error) {
+// create the actual room object
+func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
@@ -84,18 +171,14 @@ func (r *RTCRunner) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	}
 
 	// create new room, get details first
-	ri, err := r.roomProvider.GetRoom(roomName)
+	ri, err := r.roomStore.GetRoom(roomName)
 	if err != nil {
 		return nil, err
 	}
 
 	room = rtc.NewRoom(ri, *r.config)
 	room.OnClose(func() {
-		r.lock.Lock()
-		delete(r.rooms, roomName)
-		r.lock.Unlock()
-		// also delete room from db
-		if err := r.roomProvider.DeleteRoom(roomName); err != nil {
+		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", "error", err)
 		}
 	})
@@ -106,7 +189,7 @@ func (r *RTCRunner) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	return room, nil
 }
 
-func (r *RTCRunner) sessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
+func (r *RoomManager) sessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
 			"participant", participant.Name(),

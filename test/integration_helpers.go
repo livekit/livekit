@@ -146,7 +146,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	// local routing and store
 	router := routing.NewLocalRouter(currentNode)
 	roomStore := service.NewLocalRoomStore()
-	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{}, roomStore, router, currentNode)
+	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -180,7 +180,7 @@ func createMultiNodeServer() *service.LivekitServer {
 
 	router := routing.NewRedisRouter(currentNode, rc, false)
 	roomStore := service.NewRedisRoomStore(rc)
-	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{}, roomStore, router, currentNode)
+	s, err := service.InitializeServer(serverConfig, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}

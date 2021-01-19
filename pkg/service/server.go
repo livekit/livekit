@@ -33,7 +33,7 @@ func NewLivekitServer(conf *config.Config,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
-	runner *RTCRunner,
+	roomManager *RoomManager,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
@@ -61,8 +61,11 @@ func NewLivekitServer(conf *config.Config,
 		Handler: configureMiddlewares(mux, middlewares...),
 	}
 
-	// hook up router to the RTC Runner
-	router.OnNewParticipant(runner.StartSession)
+	// hook up router to the RoomManager
+	router.OnNewParticipant(roomManager.StartSession)
+
+	// clean up old rooms on startup
+	err = roomManager.Cleanup()
 
 	return
 }

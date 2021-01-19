@@ -14,20 +14,20 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) (*LivekitServer, error) {
-	roomService, err := NewRoomService(roomStore, router)
-	if err != nil {
-		return nil, err
-	}
-	rtcService := NewRTCService(conf, roomStore, router, currentNode)
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
 	rtcConfig := rtc.RTCConfigFromConfig(conf)
 	externalIP := externalIpFromNode(currentNode)
 	webRTCConfig, err := rtc.NewWebRTCConfig(rtcConfig, externalIP)
 	if err != nil {
 		return nil, err
 	}
-	rtcRunner := NewRTCRunner(roomStore, router, currentNode, webRTCConfig)
-	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider, router, rtcRunner, currentNode)
+	roomManager := NewRoomManager(roomStore, router, currentNode, selector, webRTCConfig)
+	roomService, err := NewRoomService(roomManager)
+	if err != nil {
+		return nil, err
+	}
+	rtcService := NewRTCService(conf, roomStore, router, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider, router, roomManager, currentNode)
 	if err != nil {
 		return nil, err
 	}

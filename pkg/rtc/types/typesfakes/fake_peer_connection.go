@@ -95,6 +95,11 @@ type FakePeerConnection struct {
 		result1 webrtc.SessionDescription
 		result2 error
 	}
+	OnConnectionStateChangeStub        func(func(webrtc.PeerConnectionState))
+	onConnectionStateChangeMutex       sync.RWMutex
+	onConnectionStateChangeArgsForCall []struct {
+		arg1 func(webrtc.PeerConnectionState)
+	}
 	OnDataChannelStub        func(func(d *webrtc.DataChannel))
 	onDataChannelMutex       sync.RWMutex
 	onDataChannelArgsForCall []struct {
@@ -603,6 +608,38 @@ func (fake *FakePeerConnection) CreateOfferReturnsOnCall(i int, result1 webrtc.S
 	}{result1, result2}
 }
 
+func (fake *FakePeerConnection) OnConnectionStateChange(arg1 func(webrtc.PeerConnectionState)) {
+	fake.onConnectionStateChangeMutex.Lock()
+	fake.onConnectionStateChangeArgsForCall = append(fake.onConnectionStateChangeArgsForCall, struct {
+		arg1 func(webrtc.PeerConnectionState)
+	}{arg1})
+	stub := fake.OnConnectionStateChangeStub
+	fake.recordInvocation("OnConnectionStateChange", []interface{}{arg1})
+	fake.onConnectionStateChangeMutex.Unlock()
+	if stub != nil {
+		fake.OnConnectionStateChangeStub(arg1)
+	}
+}
+
+func (fake *FakePeerConnection) OnConnectionStateChangeCallCount() int {
+	fake.onConnectionStateChangeMutex.RLock()
+	defer fake.onConnectionStateChangeMutex.RUnlock()
+	return len(fake.onConnectionStateChangeArgsForCall)
+}
+
+func (fake *FakePeerConnection) OnConnectionStateChangeCalls(stub func(func(webrtc.PeerConnectionState))) {
+	fake.onConnectionStateChangeMutex.Lock()
+	defer fake.onConnectionStateChangeMutex.Unlock()
+	fake.OnConnectionStateChangeStub = stub
+}
+
+func (fake *FakePeerConnection) OnConnectionStateChangeArgsForCall(i int) func(webrtc.PeerConnectionState) {
+	fake.onConnectionStateChangeMutex.RLock()
+	defer fake.onConnectionStateChangeMutex.RUnlock()
+	argsForCall := fake.onConnectionStateChangeArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakePeerConnection) OnDataChannel(arg1 func(d *webrtc.DataChannel)) {
 	fake.onDataChannelMutex.Lock()
 	fake.onDataChannelArgsForCall = append(fake.onDataChannelArgsForCall, struct {
@@ -1082,6 +1119,8 @@ func (fake *FakePeerConnection) Invocations() map[string][][]interface{} {
 	defer fake.createDataChannelMutex.RUnlock()
 	fake.createOfferMutex.RLock()
 	defer fake.createOfferMutex.RUnlock()
+	fake.onConnectionStateChangeMutex.RLock()
+	defer fake.onConnectionStateChangeMutex.RUnlock()
 	fake.onDataChannelMutex.RLock()
 	defer fake.onDataChannelMutex.RUnlock()
 	fake.onICECandidateMutex.RLock()

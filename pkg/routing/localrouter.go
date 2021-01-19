@@ -33,6 +33,11 @@ func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
 	return nil
 }
 
+func (r *LocalRouter) ClearRoomState(roomName string) error {
+	// do nothing
+	return nil
+}
+
 func (r *LocalRouter) RegisterNode() error {
 	return nil
 }
@@ -105,11 +110,11 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 	}
 
 	mc = NewMessageChannel()
-	mc.onClose = func() {
+	mc.OnClose(func() {
 		r.lock.Lock()
 		delete(target, participantId)
 		r.lock.Unlock()
-	}
+	})
 	r.lock.Lock()
 	target[participantId] = mc
 	r.lock.Unlock()
