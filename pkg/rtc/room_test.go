@@ -13,6 +13,7 @@ import (
 
 const (
 	numParticipants = 3
+	defaultDelay    = 10 * time.Millisecond
 )
 
 func TestRoomJoin(t *testing.T) {
@@ -61,7 +62,7 @@ func TestRoomJoin(t *testing.T) {
 
 		rm.RemoveParticipant(p.ID())
 		p.OnStateChangeArgsForCall(0)(p, livekit.ParticipantInfo_ACTIVE)
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(defaultDelay)
 
 		for _, op := range participants {
 			if op == p {
@@ -71,6 +72,58 @@ func TestRoomJoin(t *testing.T) {
 			fakeP := op.(*typesfakes.FakeParticipant)
 			assert.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
 		}
+	})
+
+	t.Run("cannot exceed max participants", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 1)
+		rm.MaxParticipants = 1
+		p := newMockParticipant("second")
+
+		err := rm.Join(p)
+		assert.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
+	})
+}
+
+func TestRoomClosure(t *testing.T) {
+	t.Run("room closes after participant leaves", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 1)
+		isClosed := false
+		rm.OnClose(func() {
+			isClosed = true
+		})
+		p := rm.GetParticipants()[0]
+		rm.RemoveParticipant(p.ID())
+
+		time.Sleep(defaultDelay)
+
+		assert.Len(t, rm.GetParticipants(), 0)
+		assert.True(t, isClosed)
+
+		assert.Equal(t, rtc.ErrRoomClosed, rm.Join(p))
+	})
+
+	t.Run("room does not close before empty timeout", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 0)
+		isClosed := false
+		rm.OnClose(func() {
+			isClosed = true
+		})
+
+		rm.CloseIfEmpty()
+		assert.False(t, isClosed)
+	})
+
+	t.Run("room closes after empty timeout", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 0)
+		isClosed := false
+		rm.OnClose(func() {
+			isClosed = true
+		})
+		rm.EmptyTimeout = 1
+
+		time.Sleep(1010 * time.Millisecond)
+		rm.CloseIfEmpty()
+		assert.True(t, isClosed)
 	})
 }
 

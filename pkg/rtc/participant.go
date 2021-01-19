@@ -172,9 +172,11 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		State: p.state,
 	}
 
+	p.lock.RLock()
 	for _, t := range p.publishedTracks {
 		info.Tracks = append(info.Tracks, ToProtoTrack(t))
 	}
+	p.lock.RUnlock()
 	return info
 }
 

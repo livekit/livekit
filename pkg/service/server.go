@@ -103,6 +103,10 @@ func (s *LivekitServer) Start() error {
 
 	<-s.doneChan
 
+	if err := s.router.UnregisterNode(); err != nil {
+		logger.Errorw("could not unregister node", "error", err)
+	}
+
 	// wait for shutdown
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	s.httpServer.Shutdown(ctx)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
@@ -31,9 +32,12 @@ func NewRedisRoomStore(rc *redis.Client) *RedisRoomStore {
 }
 
 func (p *RedisRoomStore) CreateRoom(room *livekit.Room) error {
+	if room.CreationTime == 0 {
+		room.CreationTime = time.Now().Unix()
+	}
 	err := p.rc.HSet(p.ctx, RoomIdMap, room.Sid, room.Name).Err()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "could not create room")
 	}
 
 	data, err := proto.Marshal(room)

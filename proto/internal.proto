@@ -14,8 +14,14 @@ message Node {
 }
 
 message NodeStats {
-  int32 num_rooms = 1;
-  int32 num_clients = 2;
+  // when server was started
+  int64 started_at = 1;
+  // when server last reported its status
+  int64 updated_at = 2;
+  uint32 num_rooms = 3;
+  uint32 num_clients = 4;
+  uint32 num_tracks_in = 5;
+  uint32 num_tracks_out = 6;
 }
 
 // message for a node through the router

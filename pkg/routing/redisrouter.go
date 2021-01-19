@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -14,7 +15,8 @@ import (
 )
 
 const (
-	defaultCacheTTL = time.Minute
+	// expire participant mappings after a day
+	participantMappingTTL = 24 * time.Hour
 )
 
 // TODO: need to implement redis key cleanup, for when clients disconnect and such
@@ -25,6 +27,7 @@ type RedisRouter struct {
 	rc       *redis.Client
 	cr       *utils.CachedRedis
 	ctx      context.Context
+	once     sync.Once
 
 	redisSinks map[string]*RedisSink
 	cancel     func()
@@ -35,6 +38,7 @@ func NewRedisRouter(currentNode LocalNode, rc *redis.Client, useLocal bool) *Red
 		LocalRouter: *NewLocalRouter(currentNode),
 		useLocal:    useLocal,
 		rc:          rc,
+		once:        sync.Once{},
 		redisSinks:  make(map[string]*RedisSink),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
@@ -55,8 +59,8 @@ func (r *RedisRouter) RegisterNode() error {
 }
 
 func (r *RedisRouter) UnregisterNode() error {
-	r.rc.HDel(r.ctx, NodesKey, r.currentNode.Id)
-	return nil
+	// could be called after Stop(), so we'd want to use an unrelated context
+	return r.rc.HDel(context.Background(), NodesKey, r.currentNode.Id).Err()
 }
 
 func (r *RedisRouter) GetNodeForRoom(roomName string) (string, error) {
@@ -102,7 +106,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 
 func (r *RedisRouter) SetParticipantRTCNode(participantId, nodeId string) error {
 	r.cr.Expire(participantRTCKey(participantId))
-	err := r.rc.Set(r.ctx, participantRTCKey(participantId), nodeId, 0).Err()
+	err := r.rc.Set(r.ctx, participantRTCKey(participantId), nodeId, participantMappingTTL).Err()
 	if err != nil {
 		err = errors.Wrap(err, "could not set rtc node")
 	}
@@ -173,18 +177,23 @@ func (r *RedisRouter) StartParticipant(roomName, participantId, participantName 
 	if r.onNewParticipant == nil {
 		return ErrHandlerNotDefined
 	}
+
+	resSink := r.getOrCreateRedisSink(signalNode, participantId)
 	r.onNewParticipant(
 		roomName,
 		participantId,
 		participantName,
 		r.getOrCreateMessageChannel(r.requestChannels, participantId),
-		r.getOrCreateRedisSink(signalNode, participantId),
+		resSink,
 	)
 	return nil
 }
 
 func (r *RedisRouter) Start() error {
-	go r.subscribeWorker()
+	r.once.Do(func() {
+		go r.statsWorker()
+		go r.subscribeWorker()
+	})
 	return nil
 }
 
@@ -194,7 +203,7 @@ func (r *RedisRouter) Stop() {
 
 func (r *RedisRouter) setParticipantSignalNode(participantId, nodeId string) error {
 	r.cr.Expire(participantSignalKey(participantId))
-	if err := r.rc.Set(r.ctx, participantSignalKey(participantId), nodeId, 0).Err(); err != nil {
+	if err := r.rc.Set(r.ctx, participantSignalKey(participantId), nodeId, participantMappingTTL).Err(); err != nil {
 		return errors.Wrap(err, "could not set signal node")
 	}
 	return nil
@@ -227,6 +236,18 @@ func (r *RedisRouter) getParticipantRTCNode(participantId string) (string, error
 
 func (r *RedisRouter) getParticipantSignalNode(participantId string) (nodeId string, err error) {
 	return r.cr.CachedGet(participantSignalKey(participantId))
+}
+
+// update node stats and cleanup
+func (r *RedisRouter) statsWorker() {
+	for r.ctx.Err() == nil {
+		// update every 10 seconds
+		<-time.After(10 * time.Second)
+		r.currentNode.Stats.UpdatedAt = time.Now().Unix()
+		if err := r.RegisterNode(); err != nil {
+			logger.Errorw("could not update node", "error", err)
+		}
+	}
 }
 
 func (r *RedisRouter) subscribeWorker() {

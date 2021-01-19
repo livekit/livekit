@@ -2,6 +2,7 @@ package service
 
 import (
 	"sync"
+	"time"
 
 	"github.com/thoas/go-funk"
 
@@ -26,6 +27,9 @@ func NewLocalRoomStore() *LocalRoomStore {
 }
 
 func (p *LocalRoomStore) CreateRoom(room *livekit.Room) error {
+	if room.CreationTime == 0 {
+		room.CreationTime = time.Now().Unix()
+	}
 	p.lock.Lock()
 	p.rooms[room.Sid] = room
 	p.roomIds[room.Name] = room.Sid

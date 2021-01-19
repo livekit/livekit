@@ -35,6 +35,10 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 		Id:      fmt.Sprintf("%s%16.16X", utils.NodePrefix, macUint64()),
 		Ip:      ip,
 		NumCpus: uint32(runtime.NumCPU()),
+		Stats: &livekit.NodeStats{
+			StartedAt: time.Now().Unix(),
+			UpdatedAt: time.Now().Unix(),
+		},
 	}, nil
 }
 

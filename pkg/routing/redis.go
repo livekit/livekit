@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"sync"
 
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
@@ -68,6 +69,7 @@ type RedisSink struct {
 	rc            *redis.Client
 	nodeId        string
 	participantId string
+	once          sync.Once
 	onClose       func()
 }
 
@@ -75,6 +77,7 @@ func NewRedisSink(rc *redis.Client, nodeId, participantId string) *RedisSink {
 	return &RedisSink{
 		rc:            rc,
 		nodeId:        nodeId,
+		once:          sync.Once{},
 		participantId: participantId,
 	}
 }
@@ -84,10 +87,12 @@ func (s *RedisSink) WriteMessage(msg proto.Message) error {
 }
 
 func (s *RedisSink) Close() {
-	publishRouterMessage(s.rc, s.nodeId, s.participantId, &livekit.EndSession{})
-	if s.onClose != nil {
-		s.onClose()
-	}
+	s.once.Do(func() {
+		publishRouterMessage(s.rc, s.nodeId, s.participantId, &livekit.EndSession{})
+		if s.onClose != nil {
+			s.onClose()
+		}
+	})
 }
 
 func (s *RedisSink) OnClose(f func()) {

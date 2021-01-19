@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"time"
 
 	"github.com/thoas/go-funk"
 
@@ -16,6 +17,9 @@ type Room struct {
 	lock   sync.RWMutex
 	// map of participantId -> Participant
 	participants map[string]types.Participant
+	hasJoined    bool
+	isClosed     bool
+	onClose      func()
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
@@ -40,8 +44,18 @@ func (r *Room) GetParticipants() []types.Participant {
 }
 
 func (r *Room) Join(participant types.Participant) error {
+	if r.isClosed {
+		return ErrRoomClosed
+	}
+
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	if r.MaxParticipants > 0 && int(r.MaxParticipants) == len(r.participants) {
+		return ErrMaxParticipantsExceeded
+	}
+
+	r.hasJoined = true
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
@@ -102,6 +116,36 @@ func (r *Room) RemoveParticipant(id string) {
 	}
 
 	delete(r.participants, id)
+
+	go r.CloseIfEmpty()
+}
+
+// Close the room if all participants had left, or it's still empty past timeout
+func (r *Room) CloseIfEmpty() {
+	if r.isClosed {
+		return
+	}
+
+	r.lock.RLock()
+	numParticipants := len(r.participants)
+	r.lock.RUnlock()
+
+	if numParticipants > 0 {
+		return
+	}
+
+	elapsed := uint32(time.Now().Unix() - r.CreationTime)
+	logger.Infow("comparing elapsed", "elapsed", elapsed, "timeout", r.EmptyTimeout)
+	if r.hasJoined || (r.EmptyTimeout > 0 && elapsed >= r.EmptyTimeout) {
+		r.isClosed = true
+		if r.onClose != nil {
+			r.onClose()
+		}
+	}
+}
+
+func (r *Room) OnClose(f func()) {
+	r.onClose = f
 }
 
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it

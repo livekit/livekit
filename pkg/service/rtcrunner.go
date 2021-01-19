@@ -90,6 +90,15 @@ func (r *RTCRunner) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	}
 
 	room = rtc.NewRoom(ri, *r.config)
+	room.OnClose(func() {
+		r.lock.Lock()
+		delete(r.rooms, roomName)
+		r.lock.Unlock()
+		// also delete room from db
+		if err := r.roomProvider.DeleteRoom(roomName); err != nil {
+			logger.Errorw("could not delete room", "error", err)
+		}
+	})
 	r.lock.Lock()
 	r.rooms[roomName] = room
 	r.lock.Unlock()
