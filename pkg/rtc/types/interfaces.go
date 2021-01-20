@@ -24,7 +24,7 @@ type WebsocketClient interface {
 type PeerConnection interface {
 	OnICECandidate(f func(*webrtc.ICECandidate))
 	OnICEConnectionStateChange(func(webrtc.ICEConnectionState))
-	OnConnectionStateChange(f func(webrtc.PeerConnectionState))
+	//OnConnectionStateChange(f func(webrtc.PeerConnectionState))
 	OnTrack(f func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
 	OnDataChannel(func(d *webrtc.DataChannel))
 	OnNegotiationNeeded(f func())

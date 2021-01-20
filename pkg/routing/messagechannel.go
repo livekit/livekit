@@ -1,8 +1,6 @@
 package routing
 
 import (
-	"io"
-
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,13 +24,8 @@ func (m *MessageChannel) WriteMessage(msg proto.Message) error {
 	return nil
 }
 
-func (m *MessageChannel) ReadMessage() (proto.Message, error) {
-	msg := <-m.msgChan
-	// channel closed
-	if msg == nil {
-		return nil, io.EOF
-	}
-	return msg, nil
+func (m *MessageChannel) ReadChan() <-chan proto.Message {
+	return m.msgChan
 }
 
 func (m *MessageChannel) Close() {

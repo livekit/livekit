@@ -80,6 +80,9 @@ func (r *Room) Join(participant types.Participant) error {
 			}
 			// start the workers once connectivity is established
 			p.Start()
+		} else if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+			// remove participant from room
+			go r.RemoveParticipant(p.ID())
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)

@@ -133,10 +133,6 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		}
 	})
 
-	//pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-	//	logger.Debugw("PeerConnection state changed", "state", state.String())
-	//})
-
 	pc.OnDataChannel(participant.onDataChannel)
 
 	// only set after answered

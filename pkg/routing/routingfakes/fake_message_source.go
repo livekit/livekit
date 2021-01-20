@@ -9,83 +9,78 @@ import (
 )
 
 type FakeMessageSource struct {
-	ReadMessageStub        func() (protoreflect.ProtoMessage, error)
-	readMessageMutex       sync.RWMutex
-	readMessageArgsForCall []struct {
+	ReadChanStub        func() <-chan protoreflect.ProtoMessage
+	readChanMutex       sync.RWMutex
+	readChanArgsForCall []struct {
 	}
-	readMessageReturns struct {
-		result1 protoreflect.ProtoMessage
-		result2 error
+	readChanReturns struct {
+		result1 <-chan protoreflect.ProtoMessage
 	}
-	readMessageReturnsOnCall map[int]struct {
-		result1 protoreflect.ProtoMessage
-		result2 error
+	readChanReturnsOnCall map[int]struct {
+		result1 <-chan protoreflect.ProtoMessage
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeMessageSource) ReadMessage() (protoreflect.ProtoMessage, error) {
-	fake.readMessageMutex.Lock()
-	ret, specificReturn := fake.readMessageReturnsOnCall[len(fake.readMessageArgsForCall)]
-	fake.readMessageArgsForCall = append(fake.readMessageArgsForCall, struct {
+func (fake *FakeMessageSource) ReadChan() <-chan protoreflect.ProtoMessage {
+	fake.readChanMutex.Lock()
+	ret, specificReturn := fake.readChanReturnsOnCall[len(fake.readChanArgsForCall)]
+	fake.readChanArgsForCall = append(fake.readChanArgsForCall, struct {
 	}{})
-	stub := fake.ReadMessageStub
-	fakeReturns := fake.readMessageReturns
-	fake.recordInvocation("ReadMessage", []interface{}{})
-	fake.readMessageMutex.Unlock()
+	stub := fake.ReadChanStub
+	fakeReturns := fake.readChanReturns
+	fake.recordInvocation("ReadChan", []interface{}{})
+	fake.readChanMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1
 }
 
-func (fake *FakeMessageSource) ReadMessageCallCount() int {
-	fake.readMessageMutex.RLock()
-	defer fake.readMessageMutex.RUnlock()
-	return len(fake.readMessageArgsForCall)
+func (fake *FakeMessageSource) ReadChanCallCount() int {
+	fake.readChanMutex.RLock()
+	defer fake.readChanMutex.RUnlock()
+	return len(fake.readChanArgsForCall)
 }
 
-func (fake *FakeMessageSource) ReadMessageCalls(stub func() (protoreflect.ProtoMessage, error)) {
-	fake.readMessageMutex.Lock()
-	defer fake.readMessageMutex.Unlock()
-	fake.ReadMessageStub = stub
+func (fake *FakeMessageSource) ReadChanCalls(stub func() <-chan protoreflect.ProtoMessage) {
+	fake.readChanMutex.Lock()
+	defer fake.readChanMutex.Unlock()
+	fake.ReadChanStub = stub
 }
 
-func (fake *FakeMessageSource) ReadMessageReturns(result1 protoreflect.ProtoMessage, result2 error) {
-	fake.readMessageMutex.Lock()
-	defer fake.readMessageMutex.Unlock()
-	fake.ReadMessageStub = nil
-	fake.readMessageReturns = struct {
-		result1 protoreflect.ProtoMessage
-		result2 error
-	}{result1, result2}
+func (fake *FakeMessageSource) ReadChanReturns(result1 <-chan protoreflect.ProtoMessage) {
+	fake.readChanMutex.Lock()
+	defer fake.readChanMutex.Unlock()
+	fake.ReadChanStub = nil
+	fake.readChanReturns = struct {
+		result1 <-chan protoreflect.ProtoMessage
+	}{result1}
 }
 
-func (fake *FakeMessageSource) ReadMessageReturnsOnCall(i int, result1 protoreflect.ProtoMessage, result2 error) {
-	fake.readMessageMutex.Lock()
-	defer fake.readMessageMutex.Unlock()
-	fake.ReadMessageStub = nil
-	if fake.readMessageReturnsOnCall == nil {
-		fake.readMessageReturnsOnCall = make(map[int]struct {
-			result1 protoreflect.ProtoMessage
-			result2 error
+func (fake *FakeMessageSource) ReadChanReturnsOnCall(i int, result1 <-chan protoreflect.ProtoMessage) {
+	fake.readChanMutex.Lock()
+	defer fake.readChanMutex.Unlock()
+	fake.ReadChanStub = nil
+	if fake.readChanReturnsOnCall == nil {
+		fake.readChanReturnsOnCall = make(map[int]struct {
+			result1 <-chan protoreflect.ProtoMessage
 		})
 	}
-	fake.readMessageReturnsOnCall[i] = struct {
-		result1 protoreflect.ProtoMessage
-		result2 error
-	}{result1, result2}
+	fake.readChanReturnsOnCall[i] = struct {
+		result1 <-chan protoreflect.ProtoMessage
+	}{result1}
 }
 
 func (fake *FakeMessageSource) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.readMessageMutex.RLock()
-	defer fake.readMessageMutex.RUnlock()
+	fake.readChanMutex.RLock()
+	defer fake.readChanMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

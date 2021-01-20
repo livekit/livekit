@@ -19,7 +19,8 @@ type MessageSink interface {
 
 //counterfeiter:generate . MessageSource
 type MessageSource interface {
-	ReadMessage() (proto.Message, error)
+	// source exposes a one way channel to make it easier to use with select
+	ReadChan() <-chan proto.Message
 }
 
 type ParticipantCallback func(roomId, participantId, participantName string, requestSource MessageSource, responseSink MessageSink)
@@ -48,7 +49,7 @@ type Router interface {
 }
 
 // NodeSelector selects an appropriate node to run the current session
-//counterfeiter:generate . NodeBalancer
+//counterfeiter:generate . NodeSelector
 type NodeSelector interface {
 	SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error)
 }

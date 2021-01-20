@@ -1,7 +1,6 @@
 package service
 
 import (
-	"io"
 	"sync"
 	"time"
 
@@ -157,7 +156,7 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 		return
 	}
 
-	go r.sessionWorker(room, participant, requestSource)
+	go r.rtcSessionWorker(room, participant, requestSource)
 }
 
 // create the actual room object
@@ -189,73 +188,73 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	return room, nil
 }
 
-func (r *RoomManager) sessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
+// manages a RTC session for a participant, runs on the RTC node
+func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
 			"participant", participant.Name(),
 			"room", room.Name,
 		)
-		// remove peer from room when participant leaves room
-		room.RemoveParticipant(participant.ID())
-
-		// TODO: notify router to cleanup?
 	}()
 	defer rtc.Recover()
-
 	for {
-		obj, err := requestSource.ReadMessage()
-		if err == io.EOF {
-			// TODO: when request is EOF, we might be better off requesting a new connection and waiting
-			// RTC connection terminating should be the only case that we exit
-			return
-		}
-
-		req := obj.(*livekit.SignalRequest)
-
-		switch msg := req.Message.(type) {
-		case *livekit.SignalRequest_Offer:
-			_, err := participant.Answer(rtc.FromProtoSessionDescription(msg.Offer))
-			if err != nil {
-				logger.Errorw("could not handle join", "err", err, "participant", participant.ID())
+		select {
+		case <-time.After(time.Millisecond * 100):
+			// periodic check to ensure participant didn't become disconnected
+			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
 				return
 			}
-		case *livekit.SignalRequest_AddTrack:
-			logger.Debugw("publishing track", "participant", participant.ID(),
-				"track", msg.AddTrack.Cid)
-			participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
-		case *livekit.SignalRequest_Answer:
-			if participant.State() == livekit.ParticipantInfo_JOINING {
-				logger.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
-				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
-				return
-			}
-			sd := rtc.FromProtoSessionDescription(msg.Answer)
-			err = participant.HandleAnswer(sd)
-			if err != nil {
-				logger.Errorw("could not handle answer", "participant", participant.ID(), "err", err)
-				//conn.WriteJSON(
-				//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
-				return
-			}
-		case *livekit.SignalRequest_Negotiate:
-			participant.HandleClientNegotiation()
-		case *livekit.SignalRequest_Trickle:
-			if participant.State() == livekit.ParticipantInfo_JOINING {
-				logger.Errorw("cannot trickle before peer offer", "participant", participant.ID())
-				//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
+		case obj := <-requestSource.ReadChan():
+			if obj == nil {
 				return
 			}
 
-			candidateInit := rtc.FromProtoTrickle(msg.Trickle)
-			//logger.Debugw("adding peer candidate", "participant", participant.ID())
-			if err := participant.AddICECandidate(candidateInit); err != nil {
-				logger.Errorw("could not handle trickle", "participant", participant.ID(), "err", err)
-				//conn.WriteJSON(
-				//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
-				return
+			req := obj.(*livekit.SignalRequest)
+
+			switch msg := req.Message.(type) {
+			case *livekit.SignalRequest_Offer:
+				_, err := participant.Answer(rtc.FromProtoSessionDescription(msg.Offer))
+				if err != nil {
+					logger.Errorw("could not handle join", "err", err, "participant", participant.ID())
+					return
+				}
+			case *livekit.SignalRequest_AddTrack:
+				logger.Debugw("publishing track", "participant", participant.ID(),
+					"track", msg.AddTrack.Cid)
+				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
+			case *livekit.SignalRequest_Answer:
+				if participant.State() == livekit.ParticipantInfo_JOINING {
+					logger.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
+					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
+					return
+				}
+				sd := rtc.FromProtoSessionDescription(msg.Answer)
+				if err := participant.HandleAnswer(sd); err != nil {
+					logger.Errorw("could not handle answer", "participant", participant.ID(), "err", err)
+					//conn.WriteJSON(
+					//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
+					return
+				}
+			case *livekit.SignalRequest_Negotiate:
+				participant.HandleClientNegotiation()
+			case *livekit.SignalRequest_Trickle:
+				if participant.State() == livekit.ParticipantInfo_JOINING {
+					logger.Errorw("cannot trickle before peer offer", "participant", participant.ID())
+					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
+					return
+				}
+
+				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
+				//logger.Debugw("adding peer candidate", "participant", participant.ID())
+				if err := participant.AddICECandidate(candidateInit); err != nil {
+					logger.Errorw("could not handle trickle", "participant", participant.ID(), "err", err)
+					//conn.WriteJSON(
+					//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
+					return
+				}
+			case *livekit.SignalRequest_Mute:
+				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 			}
-		case *livekit.SignalRequest_Mute:
-			participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 		}
 	}
 }

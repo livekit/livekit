@@ -101,30 +101,38 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
 		return
 	}
+	done := make(chan bool, 1)
+	defer func() {
+		logger.Infow("WS connection closed", "participant", pName)
+		reqSink.Close()
+		close(done)
+	}()
 
+	// handle responses
 	go func() {
 		for {
-			msg, err := resSource.ReadMessage()
-			if err == io.EOF {
+			select {
+			case <-done:
 				return
-			}
-			res, ok := msg.(*livekit.SignalResponse)
-			if !ok {
-				logger.Errorw("unexpected message type", "type", fmt.Sprintf("%T", msg))
-				continue
-			}
+			case msg := <-resSource.ReadChan():
+				if msg == nil {
+					return
+				}
+				res, ok := msg.(*livekit.SignalResponse)
+				if !ok {
+					logger.Errorw("unexpected message type", "type", fmt.Sprintf("%T", msg))
+					continue
+				}
 
-			if err = sigConn.WriteResponse(res); err != nil {
-				logger.Warnw("error writing to websocket", "error", err)
-				return
+				if err = sigConn.WriteResponse(res); err != nil {
+					logger.Warnw("error writing to websocket", "error", err)
+					return
+				}
 			}
 		}
 	}()
 
-	defer func() {
-		logger.Infow("WS connection closed", "participant", pName)
-		reqSink.Close()
-	}()
+	// handle incoming requests from websocket
 	for {
 		req, err := sigConn.ReadRequest()
 		// normal closure
