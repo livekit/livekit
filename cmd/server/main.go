@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/version"
 )
 
 func main() {
@@ -67,6 +68,7 @@ func main() {
 				Action: generateKeys,
 			},
 		},
+		Version: version.Version,
 	}
 
 	if err := app.Run(os.Args); err != nil {

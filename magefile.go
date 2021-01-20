@@ -7,15 +7,16 @@ import (
 	"fmt"
 	"go/build"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/livekit/livekit-server/version"
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/target"
-	log "github.com/pion/ion-log"
 )
 
 const (
@@ -131,6 +132,17 @@ func Build() error {
 	}
 
 	checksummer.WriteChecksum()
+	return nil
+}
+
+// builds docker image for LiveKit server
+func BuildDocker() error {
+	mg.Deps(Proto, generateWire)
+	cmd := exec.Command("docker", "build", ".", "-t", "livekit/livekit:v"+version.Version)
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -296,7 +308,7 @@ func NewChecksummer(dir string, checksumfile string, exts ...string) *Checksumme
 func (c *Checksummer) IsChanged() bool {
 	// default changed
 	if err := c.computeChecksum(); err != nil {
-		log.Errorf("could not compute checksum: %v", err)
+		log.Println("could not compute checksum", err)
 		return true
 	}
 	// read
