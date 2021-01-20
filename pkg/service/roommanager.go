@@ -54,18 +54,21 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 		return nil, err
 	}
 
-	// allocate room to a node
-	nodes, err := r.router.ListNodes()
-	if err != nil {
-		return nil, err
+	if req.NodeId == "" {
+		// select a node for room
+		nodes, err := r.router.ListNodes()
+		if err != nil {
+			return nil, err
+		}
+
+		node, err := r.selector.SelectNode(nodes, rm)
+		if err != nil {
+			return nil, err
+		}
+		req.NodeId = node.Id
 	}
 
-	node, err := r.selector.SelectNode(nodes, rm)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = r.router.SetNodeForRoom(req.Name, node.Id); err != nil {
+	if err := r.router.SetNodeForRoom(req.Name, req.NodeId); err != nil {
 		return nil, err
 	}
 

@@ -134,7 +134,16 @@ func Build() error {
 	return nil
 }
 
+// run unit tests, skipping integration
 func Test() error {
+	mg.Deps(Proto)
+	cmd := exec.Command("go", "test", "-short", "./...")
+	connectStd(cmd)
+	return cmd.Run()
+}
+
+// run all thests including integration
+func TestAll() error {
 	mg.Deps(Proto)
 	cmd := exec.Command("go", "test", "./...")
 	connectStd(cmd)

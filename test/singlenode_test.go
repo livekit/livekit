@@ -1,15 +1,23 @@
 package test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestClientCouldConnect(t *testing.T) {
-	c1 := createRTCClient("c1")
-	c2 := createRTCClient("c2")
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	s := setupSingleNodeTest(testRoom)
+	defer func() {
+		teardownTest(s, testRoom)
+	}()
+
+	c1 := createRTCClient("c1", defaultServerPort)
+	c2 := createRTCClient("c2", defaultServerPort)
 	waitUntilConnected(t, c1, c2)
 
 	// ensure they both see each other
@@ -23,8 +31,17 @@ func TestClientCouldConnect(t *testing.T) {
 }
 
 func TestSinglePublisher(t *testing.T) {
-	c1 := createRTCClient("c1")
-	c2 := createRTCClient("c2")
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	s := setupSingleNodeTest(testRoom)
+	defer func() {
+		teardownTest(s, testRoom)
+	}()
+
+	c1 := createRTCClient("c1", defaultServerPort)
+	c2 := createRTCClient("c2", defaultServerPort)
 	waitUntilConnected(t, c1, c2)
 
 	// publish a track and ensure clients receive it ok
@@ -36,7 +53,7 @@ func TestSinglePublisher(t *testing.T) {
 	defer t2.Stop()
 
 	// a new client joins and should get the initial stream
-	c3 := createRTCClient("c3")
+	c3 := createRTCClient("c3", defaultServerPort)
 
 	withTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
@@ -64,13 +81,4 @@ func TestSinglePublisher(t *testing.T) {
 		}
 		return true
 	})
-}
-
-func TestMain(m *testing.M) {
-	s := setupSingleNodeTest(testRoom)
-
-	code := m.Run()
-
-	teardownTest(s, testRoom)
-	os.Exit(code)
 }

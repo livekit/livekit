@@ -322,6 +322,7 @@ func (c *RTCClient) Stop() {
 	c.connected = false
 	c.iceConnected = false
 	c.conn.Close()
+	c.PeerConn.Close()
 	c.cancel()
 }
 
