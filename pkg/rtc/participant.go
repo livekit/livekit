@@ -322,6 +322,10 @@ func (p *ParticipantImpl) Close() error {
 	}
 	close(p.rtcpCh)
 	p.onICECandidate = nil
+	p.peerConn.OnDataChannel(nil)
+	p.peerConn.OnICECandidate(nil)
+	p.peerConn.OnNegotiationNeeded(nil)
+	p.peerConn.OnTrack(nil)
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.responseSink.Close()
 	if p.onClose != nil {

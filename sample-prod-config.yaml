@@ -1,0 +1,6 @@
+port: 7880
+redis:
+  address: redis.host:6379
+multi_node: true
+keys:
+  key1: secret1

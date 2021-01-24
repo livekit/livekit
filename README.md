@@ -1,4 +1,4 @@
-# livekit-server
+# LiveKit - Open source, distributed video/audio rooms based on WebRTC
 
 ## Building
 
@@ -8,8 +8,8 @@ Run `./bootstrap.sh` to install mage, then `mage` to build the project
 
 ## Creating API keys
 
-LiveKit utilizes JWT based access tokens to ensure secure access to the APIs and Rooms.
-Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens.
+LiveKit utilizes JWT based access tokens for authentication to all of its APIs.
+Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens. For more, see [Authentication](docs/authentication.md).
 
 Generate API key/secret pairs with:
 
@@ -21,24 +21,34 @@ Store the generate keys in a YAML file like:
 
 ```yaml
 APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
-...
 ```
 
-## Starting the server
+## Running the server
 
-With the key file ready, you can start LiveKit with
+LiveKit server is a distributed service that is architected for scale. It's self-encapsulated in a single binary, and horizontally scalable by adding more instances. In a production setup, the only external dependency is Redis. LiveKit uses Redis to store room & participant information, and utilizes its pub/sub functionality to coordinate activity between instances.
+
+### Running for development
+
+In development mode, LiveKit has no external dependencies. With the key file ready, you can start LiveKit with
 
 ```
-./bin/livekit-server --key-file <path/to/keyfile>
+./bin/livekit-server --key-file <path/to/keyfile> --dev
 ```
+
+the `--dev` flag turns on log verbosity to make it easier for local debugging/development
+
+### Running for production
+
+TBD
 
 ## CLI
 
 The CLI provides a few tools that makes working with LiveKit easier:
-* Room creation/deletion/etc
-* Access token creation
-* Joining room as a participant
-* Publishing files as tracks to a room
+
+- Room creation/deletion/etc
+- Access token creation
+- Joining room as a participant
+- Publishing files as tracks to a room
 
 ### Setting API key and secret
 
@@ -58,8 +68,10 @@ export LK_API_SECRET=<secret>
 ### Creating a participant token
 
 ```
-./bin/livekit-cli create-token --join --r myroom --p <participant name>
+./bin/livekit-cli create-token --join --r myroom --dev --p <participant name>
 ```
+
+`--dev` creates a development token that doesn't expire for a year
 
 ### Joining a participant
 
@@ -70,8 +82,9 @@ export LK_API_SECRET=<secret>
 ### Publishing static files as tracks
 
 To use the publish client, download the following files to your computer:
-* [happier.ivf](https://www.dropbox.com/s/4ze93d6070s0qj7/happier.ivf?dl=0) - audio track in VP8
-* [happier.ogg](https://www.dropbox.com/s/istrnolnh7avftq/happier.ogg?dl=0) - audio track in ogg
+
+- [happier.ivf](https://www.dropbox.com/s/4ze93d6070s0qj7/happier.ivf?dl=0) - video track in VP8
+- [happier.ogg](https://www.dropbox.com/s/istrnolnh7avftq/happier.ogg?dl=0) - audio track in ogg
 
 Join as a publishing participant
 
@@ -81,20 +94,10 @@ Join as a publishing participant
 
 That's it, join the room with another participant and see it receiving those tracks
 
-## Protocol
+## APIs & Protocol
 
-LiveKit provides room based audio/video/data channels based on WebRTC.
-It provides a set of APIs to manipulate rooms, as well as its own signaling protocol to exchange room and participant information.
+`livekit-server` provides two primary services, a `Room` service that allows for room creation & management, and `RTC` service to handle real time communications.
 
-Room APIs are defined in room.proto, it's fairly straight forward with typical CRUD APIs. Room APIs are HTTP, built with Twirp and follows [its the conventions](https://twitchtv.github.io/twirp/docs/routing.html).
+Room APIs are defined in [room.proto](proto/room.proto), it's fairly straight forward with typical CRUD APIs. Room APIs are in HTTP, built with Twirp and follows [its the conventions](https://twitchtv.github.io/twirp/docs/routing.html).
 
-The RTC service provides the signaling and everything else when the client interacts with the room. RTC service requires bidirectional
-communication between the client and server, and exchanges messages via WebSocket. Messages are encoded in either JSON or binary protobuf,
-see `rtc.proto` for the message structure. 
-
-The flow for interaction is:
-1. Establish WebSocket to ws://<host>:<port>/rtc
-1. Server will send back a `SignalResponse` with a `join` response. It'll include the new participant's details, and what other participants are in the room
-1. Client sends a `SignalRequest` with an WebRTC `offer`
-1. Server will send back a `SignalResponse` with an `answer`
-1. Client and server will exchange ice candidates via `trickle` in the request & responses
+The RTC service provides the signaling and everything else when the client interacts with the room. See [RTC Protocol](docs/protocol.md).

@@ -19,7 +19,17 @@ When the WebSocket connection is established, server will first provide informat
 
 Negotiation is use to describe the offer/answer process in WebRTC. After the initial offer/answer process to establish the connection, negotiations are needed whenever track changes are made to the current session. Because WebRTC is a peer to peer protocol, negotiations can be initiated by either party as needed.
 
-This creates a synchronization headache, as if both sides are initiating negotiations at the exact same time, it creates a race condition in which the peers would receive unexpected responses from the other side. This is called [glare](https://tools.ietf.org/agenda/82/slides/rtcweb-10.pdf).
+### Server initiated negotiations
+
+LiveKit server will need to negotiate the connection with each participant when the participant subscribes to new tracks.
+
+1. server sends an `offer` to client
+2. client calls `setRemoteDescription`, and create an `answer` for the server
+3. server receives answer and concludes the negotiation cycle
+
+### Client initiated negotiations
+
+Because each of the peers could initiate a negotiation at any point, this creates a synchronization headache. Depending on timing, there could be a race condition in which the peers would receive unexpected responses from the other side. This is called [glare](https://tools.ietf.org/agenda/82/slides/rtcweb-10.pdf).
 
 In LiveKit, we've added a layer of synchronization so that negotiations are more deterministic. The server is the authority determining who should be issuing offers in a negotiation cycle. When the client wants to issue an offer to the server, it needs to follow this flow.
 
