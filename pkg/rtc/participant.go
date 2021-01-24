@@ -321,6 +321,7 @@ func (p *ParticipantImpl) Close() error {
 		return p.ctx.Err()
 	}
 	close(p.rtcpCh)
+	p.onICECandidate = nil
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.responseSink.Close()
 	if p.onClose != nil {

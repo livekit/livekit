@@ -1,9 +1,9 @@
 package auth
 
 type VideoGrant struct {
-	RoomCreate bool   `json:"room_create,omitempty"`
-	RoomJoin   bool   `json:"room_join,omitempty"`
-	RoomList   bool   `json:"room_list,omitempty"`
+	RoomCreate bool   `json:"roomCreate,omitempty"`
+	RoomJoin   bool   `json:"roomJoin,omitempty"`
+	RoomList   bool   `json:"roomList,omitempty"`
 	Room       string `json:"room,omitempty"`
 }
 

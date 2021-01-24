@@ -2,11 +2,12 @@ package routing
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-// a router of messages
+// a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
 	currentNode LocalNode
 	lock        sync.RWMutex
@@ -68,7 +69,9 @@ func (r *LocalRouter) StartParticipant(roomName, participantId, participantName 
 		roomName,
 		participantId,
 		participantName,
+		// request source
 		r.getOrCreateMessageChannel(r.requestChannels, participantId),
+		// response sink
 		r.getOrCreateMessageChannel(r.responseChannels, participantId),
 	)
 	return nil
@@ -93,11 +96,20 @@ func (r *LocalRouter) OnNewParticipant(callback ParticipantCallback) {
 }
 
 func (r *LocalRouter) Start() error {
+	go r.statsWorker()
 	// on local routers, Start doesn't do anything, websocket connections initiate the connections
 	return nil
 }
 
 func (r *LocalRouter) Stop() {
+}
+
+func (r *LocalRouter) statsWorker() {
+	for {
+		// update every 10 seconds
+		<-time.After(statsUpdateInterval)
+		r.currentNode.Stats.UpdatedAt = time.Now().Unix()
+	}
 }
 
 func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, participantId string) *MessageChannel {

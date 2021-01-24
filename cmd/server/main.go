@@ -35,7 +35,7 @@ func main() {
 			},
 			&cli.StringFlag{
 				Name:    "config-body",
-				Usage:   "LiveKit config in YAML, usually used via environment var",
+				Usage:   "LiveKit config in YAML, typically passed in as an environment var in a container",
 				EnvVars: []string{"LIVEKIT_CONFIG"},
 			},
 			&cli.StringFlag{

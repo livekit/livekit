@@ -157,6 +157,10 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 				"srcParticipant", t.participantId,
 				"destParticipant", participant.ID())
 			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
+				if err == webrtc.ErrConnectionClosed {
+					// participant closing, can skip removing downtracks
+					return
+				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					logger.Warnw("could not remove remoteTrack from forwarder",
 						"participant", participant.ID(),
