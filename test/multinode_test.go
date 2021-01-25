@@ -15,6 +15,7 @@ import (
 func TestMultiNodeRouting(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
+		return
 	}
 
 	s1, s2 := setupMultiNodeTest()
@@ -67,4 +68,19 @@ func TestMultiNodeRouting(t *testing.T) {
 
 	assert.Equal(t, redis.Nil, rc.HGet(ctx, routing.NodeRoomKey, testRoom).Err())
 	assert.Equal(t, redis.Nil, rc.HGet(ctx, service.RoomIdMap, testRoom).Err())
+}
+
+func TestConnectWithoutCreation(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	s1, s2 := setupMultiNodeTest()
+	defer s1.Stop()
+	defer s2.Stop()
+
+	c1 := createRTCClient("c1", defaultServerPort)
+	waitUntilConnected(t, c1)
+
+	c1.Stop()
 }

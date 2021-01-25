@@ -9,6 +9,7 @@ import (
 func TestClientCouldConnect(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
+		return
 	}
 
 	s := setupSingleNodeTest(testRoom)
@@ -33,6 +34,7 @@ func TestClientCouldConnect(t *testing.T) {
 func TestSinglePublisher(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
+		return
 	}
 
 	s := setupSingleNodeTest(testRoom)

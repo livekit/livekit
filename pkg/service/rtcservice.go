@@ -18,16 +18,16 @@ import (
 
 type RTCService struct {
 	router      routing.Router
-	roomStore   RoomStore
+	roomManager *RoomManager
 	upgrader    websocket.Upgrader
 	currentNode routing.LocalNode
 	isDev       bool
 }
 
-func NewRTCService(conf *config.Config, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomManager, router routing.Router, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:      router,
-		roomStore:   roomStore,
+		roomManager: roomManager,
 		upgrader:    websocket.Upgrader{},
 		currentNode: currentNode,
 		isDev:       conf.Development,
@@ -60,13 +60,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		roomName = onlyName
 	}
 
-	rm, err := s.roomStore.GetRoom(roomName)
-	if err != nil {
-		handleError(w, http.StatusNotFound, err.Error())
-		return
+	rm, err := s.roomManager.roomStore.GetRoom(roomName)
+	if err == ErrRoomNotFound {
+		rm, err = s.roomManager.CreateRoom(&livekit.CreateRoomRequest{Name: roomName})
 	}
 
-	// TODO: assign room to a node if for some reasons node isn't available
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)

@@ -64,13 +64,12 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 	if c.IsSet("key-file") {
 		conf.KeyFile = c.String("key-file")
 	}
-	if c.IsSet("keys") {
-		conf.Keys = make(map[string]string)
-		if err := yaml.Unmarshal([]byte(c.String("keys")), conf.Keys); err != nil {
-			return err
-		}
+	if c.IsSet("redis-host") {
+		conf.Redis.Address = c.String("redis-host")
 	}
-
+	if c.IsSet("redis-password") {
+		conf.Redis.Password = c.String("redis-password")
+	}
 	// expand env vars in filenames
 	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
 	if err != nil {
