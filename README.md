@@ -59,7 +59,7 @@ export LK_API_KEY=<key>
 export LK_API_SECRET=<secret>
 ```
 
-### Creating a room
+### Creating a room (optional)
 
 ```
 ./bin/livekit-cli create-room --name myroom
