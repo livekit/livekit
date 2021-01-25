@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"context"
 	"io"
 	"sync"
 	"time"
@@ -31,7 +30,6 @@ var (
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements the PublishedTrack interface
 type MediaTrack struct {
-	ctx           context.Context
 	id            string
 	participantId string
 	muted         bool
@@ -57,7 +55,6 @@ type MediaTrack struct {
 
 func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
 	t := &MediaTrack{
-		ctx:           context.Background(),
 		id:            trackId,
 		participantId: pId,
 		ssrc:          track.SSRC(),
@@ -331,6 +328,10 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
 			var nackedPackets []uint16
 			for _, pair := range p.Nacks {
 				nackedPackets = append(nackedPackets, dt.GetNACKSeqNo(pair.PacketList())...)
+			}
+
+			if t.nackWorker.Stopped() {
+				return
 			}
 			t.nackWorker.Submit(func() {
 				pktBuf := packetFactory.Get().([]byte)
