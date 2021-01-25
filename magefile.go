@@ -136,9 +136,9 @@ func Build() error {
 }
 
 // builds docker image for LiveKit server
-func BuildDocker() error {
+func Docker() error {
 	mg.Deps(Proto, generateWire)
-	cmd := exec.Command("docker", "build", ".", "-t", "livekit/livekit:v"+version.Version)
+	cmd := exec.Command("docker", "build", ".", "-t", "livekit/livekit-server:v"+version.Version)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

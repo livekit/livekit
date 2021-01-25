@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultValidDuration = 10 * time.Minute
+	defaultValidDuration = 6 * time.Hour
 )
 
 // Signer that produces token signed with API key and secret
