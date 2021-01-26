@@ -43,6 +43,11 @@ func main() {
 				Usage: "path to file that contains API keys/secrets",
 			},
 			&cli.StringFlag{
+				Name:    "keys",
+				Usage:   "api keys (key: secret\\n)",
+				EnvVars: []string{"LIVEKIT_KEYS"},
+			},
+			&cli.StringFlag{
 				Name:    "redis-host",
 				Usage:   "host (incl. port) to redis server",
 				EnvVars: []string{"REDIS_HOST"},

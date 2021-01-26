@@ -28,12 +28,12 @@ var (
 	}
 	apiKeyFlag = &cli.StringFlag{
 		Name:     "api-key",
-		EnvVars:  []string{"LK_API_KEY"},
+		EnvVars:  []string{"LIVEKIT_API_KEY"},
 		Required: true,
 	}
 	secretFlag = &cli.StringFlag{
 		Name:     "api-secret",
-		EnvVars:  []string{"LK_API_SECRET"},
+		EnvVars:  []string{"LIVEKIT_API_SECRET"},
 		Required: true,
 	}
 	devFlag = &cli.BoolFlag{
