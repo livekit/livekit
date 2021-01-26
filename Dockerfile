@@ -18,7 +18,7 @@ COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o livekit-server ./cmd/server
 
-FROM scratch
+FROM alpine
 
 COPY --from=builder /workspace/livekit-server /livekit-server
 
