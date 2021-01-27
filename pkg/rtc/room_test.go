@@ -56,22 +56,27 @@ func TestRoomJoin(t *testing.T) {
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 1)
+		rm := newRoomWithParticipants(t, numParticipants)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
+		disconnectedParticipant := participants[1].(*typesfakes.FakeParticipant)
+		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
 		rm.RemoveParticipant(p.ID())
 		p.OnStateChangeArgsForCall(0)(p, livekit.ParticipantInfo_ACTIVE)
 		time.Sleep(defaultDelay)
 
+		numUpdates := 0
 		for _, op := range participants {
-			if op == p {
+			if op == p || op == disconnectedParticipant {
 				assert.Zero(t, p.SendParticipantUpdateCallCount())
 				continue
 			}
 			fakeP := op.(*typesfakes.FakeParticipant)
 			assert.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
+			numUpdates += 1
 		}
+		assert.Equal(t, numParticipants-2, numUpdates)
 	})
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {

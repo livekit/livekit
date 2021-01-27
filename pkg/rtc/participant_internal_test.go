@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
@@ -66,6 +67,26 @@ func TestTrackPublishEvents(t *testing.T) {
 	track.OnCloseArgsForCall(0)()
 	assert.Len(t, p.publishedTracks, 0)
 	assert.True(t, updated)
+}
+
+// after disconnection, things should continue to function and not panic
+func TestDisconnectTiming(t *testing.T) {
+	t.Run("negotiate doesn't fail after channel closed", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		msg := routing.NewMessageChannel()
+		p.responseSink = msg
+		go func() {
+			for msg := range msg.ReadChan() {
+				t.Log("received message from chan", msg)
+			}
+		}()
+		track := &typesfakes.FakePublishedTrack{}
+		p.handleTrackPublished(track)
+
+		// close channel and then try to negotiate
+		msg.Close()
+		p.negotiate()
+	})
 }
 
 func newParticipantForTest(name string) *ParticipantImpl {
