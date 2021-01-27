@@ -1,0 +1,58 @@
+version: "3.6"
+services:
+  livekit_server:
+    build:
+      dockerfile: Dockerfile
+      context: ./
+    restart: always
+    container_name: livekit_server
+    hostname: livekit
+    entrypoint: ["/livekit-server"]
+    volumes:
+      - ./config.yaml:/workspace/config.yaml
+    environment:
+      LIVEKIT_API_KEY: "livekit"
+      LIVEKIT_API_SECRET: "livekit"
+      REDIS_HOST: "redis:6379"
+      REDIS_PASSWORD: ""
+    entrypoint: ["/livekit-server", "--config", /workspace/config.yaml]
+    networks:
+      - default
+    expose:
+      - 7880
+    ports:
+      - "7880:7880"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:6.0.9
+    container_name: redis
+    hostname: redis
+    expose:
+      - 6379
+    ports:
+      - 6380:6379
+      - 6379:6379
+    networks:
+      - default
+
+  redis_commander:
+    image: "rediscommander/redis-commander"
+    restart: always
+    depends_on:
+      - redis
+    environment:
+    - REDIS_HOST=redis
+    ports:
+      - "8085:8081"
+    networks:
+      - default
+
+volumes:
+  db_data:
+
+
+networks:
+  default:
+    name: livekit_network
