@@ -14,3 +14,11 @@ To speed up the build, you can run a parallel build first (optional):
 $ docker-compose build --parallel
 $ docker-compose up
 ```
+
+The services will be available on these ports:
+
+| Service Name     | Port |
+| ---------------- | ---- |
+| `livekit-server` | 7880 |
+| `redis`          | 6379 |
+
