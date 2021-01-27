@@ -150,12 +150,6 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 		return
 	}
 
-	// register participant to be on this server
-	if err = r.router.SetParticipantRTCNode(participantId, r.currentNode.Id); err != nil {
-		logger.Errorw("could not set RTC node", "error", err)
-		return
-	}
-
 	// join room
 	if err := room.Join(participant); err != nil {
 		logger.Errorw("could not join room", "error", err)

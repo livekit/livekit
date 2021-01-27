@@ -71,7 +71,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	participantId := utils.NewGuid(utils.ParticipantPrefix)
-	err = s.router.StartParticipant(roomName, participantId, pName)
+	err = s.router.StartParticipantSignal(roomName, participantId, pName)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
@@ -109,6 +109,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"room", rm.Sid,
 		"roomName", rm.Name,
 		"name", pName,
+		"resSource", fmt.Sprintf("%p", resSource),
 	)
 
 	// handle responses

@@ -27,8 +27,13 @@ const (
 	testRoom          = "mytestroom"
 	defaultServerPort = 7880
 	secondServerPort  = 7881
-	nodeId1           = "integration-test-1"
-	nodeId2           = "integration-test-2"
+	nodeId1           = "node-1"
+	nodeId2           = "node-2"
+
+	connectTimeout = 10 * time.Second
+	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
+	// let connection timeout happen
+	//connectTimeout = 5000 * time.Second
 )
 
 var (
@@ -82,7 +87,7 @@ func contextWithCreateRoomToken() context.Context {
 
 func waitForServerToStart(s *service.LivekitServer) {
 	// wait till ready
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,7 +101,7 @@ func waitForServerToStart(s *service.LivekitServer) {
 }
 
 func withTimeout(t *testing.T, description string, f func() bool) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
 	for {
 		select {
 		case <-ctx.Done():
@@ -117,7 +122,7 @@ func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
 		go func() {
 			defer wg.Done()
 			if !assert.NoError(t, c.WaitUntilConnected()) {
-				t.Fatal("one or more clients could not connect")
+				t.Fatal("client could not connect", c.ID())
 			}
 		}()
 	}
@@ -170,7 +175,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 		panic(err)
 	}
 
-	router := routing.NewRedisRouter(currentNode, rc, false)
+	router := routing.NewRedisRouter(currentNode, rc)
 	roomStore := service.NewRedisRoomStore(rc)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {

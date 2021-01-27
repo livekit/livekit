@@ -10,7 +10,7 @@ import (
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
 	currentNode LocalNode
-	lock        sync.RWMutex
+	lock        sync.Mutex
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
@@ -20,7 +20,6 @@ type LocalRouter struct {
 func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	return &LocalRouter{
 		currentNode:      currentNode,
-		lock:             sync.RWMutex{},
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
 	}
@@ -60,7 +59,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipant(roomName, participantId, participantName string) error {
+func (r *LocalRouter) StartParticipantSignal(roomName, participantId, participantName string) error {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		return ErrHandlerNotDefined
@@ -77,11 +76,6 @@ func (r *LocalRouter) StartParticipant(roomName, participantId, participantName 
 	return nil
 }
 
-func (r *LocalRouter) SetParticipantRTCNode(participantId, nodeId string) error {
-	// nothing to be done
-	return nil
-}
-
 // for a local router, sink and source are pointing to the same spot
 func (r *LocalRouter) GetRequestSink(participantId string) (MessageSink, error) {
 	return r.getOrCreateMessageChannel(r.requestChannels, participantId), nil
@@ -91,7 +85,7 @@ func (r *LocalRouter) GetResponseSource(participantId string) (MessageSource, er
 	return r.getOrCreateMessageChannel(r.responseChannels, participantId), nil
 }
 
-func (r *LocalRouter) OnNewParticipant(callback ParticipantCallback) {
+func (r *LocalRouter) OnNewParticipantRTC(callback ParticipantCallback) {
 	r.onNewParticipant = callback
 }
 
@@ -113,9 +107,9 @@ func (r *LocalRouter) statsWorker() {
 }
 
 func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, participantId string) *MessageChannel {
-	r.lock.RLock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	mc := target[participantId]
-	r.lock.RUnlock()
 
 	if mc != nil {
 		return mc
@@ -127,9 +121,7 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 		delete(target, participantId)
 		r.lock.Unlock()
 	})
-	r.lock.Lock()
 	target[participantId] = mc
-	r.lock.Unlock()
 
 	return mc
 }
