@@ -2,3 +2,5 @@ port: 7880
 multi_node: false
 keys:
   test: test123
+
+log_level: debug
