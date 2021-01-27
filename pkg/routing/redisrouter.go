@@ -161,12 +161,7 @@ func (r *RedisRouter) StartParticipant(roomName, participantId, participantName 
 		return err
 	}
 
-	// StartParticipant should only be called on the current node
-	if rtcNode != r.currentNode.Id {
-		return ErrIncorrectNodeForRoom
-	}
-
-	if r.useLocal {
+	if r.useLocal && rtcNode == r.currentNode.Id {
 		return r.LocalRouter.StartParticipant(roomName, participantId, participantId)
 	}
 
@@ -282,7 +277,6 @@ func (r *RedisRouter) subscribeWorker() {
 			continue
 		}
 
-		logger.Debugw("received redis message", "message", msg, "node", r.currentNode.Id)
 		rm := livekit.RouterMessage{}
 		err = proto.Unmarshal([]byte(msg.Payload), &rm)
 		pId := rm.ParticipantId

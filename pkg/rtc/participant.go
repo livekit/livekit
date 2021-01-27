@@ -109,7 +109,7 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		ci := c.ToJSON()
 
 		// write candidate
-		logger.Debugw("sending ice candidates")
+		//logger.Debugw("sending ice candidates")
 		err := rs.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: ToProtoTrickle(ci),

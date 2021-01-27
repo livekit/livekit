@@ -115,10 +115,10 @@ func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
 		c := clients[i]
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			if !assert.NoError(t, c.WaitUntilConnected()) {
 				t.Fatal("one or more clients could not connect")
 			}
-			wg.Done()
 		}()
 	}
 	wg.Wait()
