@@ -9,7 +9,7 @@ services:
     hostname: livekit
     entrypoint: ["/livekit-server"]
     volumes:
-      - ./sample-prod-config.yaml:/workspace/config.yaml
+      - ./config.yaml:/workspace/config.yaml
     environment:
       LIVEKIT_API_KEY: "livekit"
       LIVEKIT_API_SECRET: "livekit"

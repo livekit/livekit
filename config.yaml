@@ -1,4 +1,4 @@
 port: 7880
-multi_node: true
+multi_node: false
 keys:
   test: test123
