@@ -8,12 +8,14 @@ services:
     container_name: livekit_server
     hostname: livekit
     entrypoint: ["/livekit-server"]
+    volumes:
+      - ./sample-prod-config.yaml:/workspace/config.yaml
     environment:
       LIVEKIT_API_KEY: "livekit"
       LIVEKIT_API_SECRET: "livekit"
-      LIVEKIT_KEYS: ""
       REDIS_HOST: "redis:6379"
       REDIS_PASSWORD: ""
+    entrypoint: ["/livekit-server", "--config", /workspace/config.yaml]
     networks:
       - default
     expose:
