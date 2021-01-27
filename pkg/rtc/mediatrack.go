@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -42,7 +43,7 @@ type MediaTrack struct {
 	onClose  func()
 
 	// channel to send RTCP packets to the source
-	rtcpCh chan []rtcp.Packet
+	rtcpCh *utils.CalmChannel
 	lock   sync.RWMutex
 	once   sync.Once
 	// map of target participantId -> DownTrack
@@ -53,7 +54,7 @@ type MediaTrack struct {
 	lastPLI time.Time
 }
 
-func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
+func NewMediaTrack(trackId string, pId string, rtcpCh *utils.CalmChannel, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
 	t := &MediaTrack{
 		id:            trackId,
 		participantId: pId,
@@ -198,7 +199,7 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.downtracks = make(map[string]types.DownTrack)
 }
 
-func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan<- []rtcp.Packet) {
+func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh *utils.CalmChannel) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	t.lock.RLock()
@@ -221,7 +222,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 		batch := pkts
 		i := 0
 		for {
-			rtcpCh <- batch
+			rtcpCh.Write(batch)
 			if i > 5 {
 				return
 			}
@@ -277,7 +278,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 				rtcpPkts := []rtcp.Packet{
 					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.SSRC},
 				}
-				t.rtcpCh <- rtcpPkts
+				t.rtcpCh.Write(rtcpPkts)
 				t.lastPLI = time.Now()
 			} else if err != nil {
 				logger.Warnw("could not forward packet to participant",
@@ -351,6 +352,6 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
 	}
 
 	if len(fwdPkts) > 0 {
-		t.rtcpCh <- fwdPkts
+		t.rtcpCh.Write(fwdPkts)
 	}
 }

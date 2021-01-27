@@ -64,7 +64,12 @@ func TestMissingKeyFrames(t *testing.T) {
 		time.Sleep(testWaitDuration)
 
 		select {
-		case pkts := <-mt.rtcpCh:
+		case o := <-mt.rtcpCh.ReadChan():
+			if o == nil {
+				return
+			}
+			pkts, ok := o.([]rtcp.Packet)
+			assert.True(t, ok)
 			assert.Len(t, pkts, 1, "a single RTCP packet should be returned")
 			assert.IsType(t, &rtcp.PictureLossIndication{}, pkts[0])
 		default:
@@ -87,7 +92,7 @@ func newMediaTrackWithReceiver() *MediaTrack {
 		muted:         false,
 		kind:          livekit.TrackType_VIDEO,
 		codec:         webrtc.RTPCodecParameters{},
-		rtcpCh:        make(chan []rtcp.Packet, 5),
+		rtcpCh:        utils.NewCalmChannel(5),
 		lock:          sync.RWMutex{},
 		once:          sync.Once{},
 		downtracks:    map[string]types.DownTrack{},

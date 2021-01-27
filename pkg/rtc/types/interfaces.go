@@ -8,6 +8,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -51,7 +52,7 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
-	RTCPChan() chan<- []rtcp.Packet
+	RTCPChan() *utils.CalmChannel
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)

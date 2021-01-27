@@ -261,18 +261,28 @@ func (r *RedisRouter) statsWorker() {
 func (r *RedisRouter) subscribeWorker() {
 	sub := r.rc.Subscribe(redisCtx, nodeChannel(r.currentNode.Id))
 
+	defer func() {
+		logger.Debugw("finishing redis subscribeWorker", "node", r.currentNode.Id)
+	}()
+	logger.Debugw("starting redis subscribeWorker", "node", r.currentNode.Id)
 	for r.ctx.Err() == nil {
 		obj, err := sub.Receive(r.ctx)
 		if err != nil {
+			logger.Warnw("error receiving redis message", "error", err)
 			// TODO: retry? ignore? at a minimum need to sleep here to retry
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(time.Second)
 			continue
 		}
+		if obj == nil {
+			return
+		}
+
 		msg, ok := obj.(*redis.Message)
 		if !ok {
 			continue
 		}
 
+		logger.Debugw("received redis message", "message", msg, "node", r.currentNode.Id)
 		rm := livekit.RouterMessage{}
 		err = proto.Unmarshal([]byte(msg.Payload), &rm)
 		pId := rm.ParticipantId

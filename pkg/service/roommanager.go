@@ -200,6 +200,8 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 		)
 	}()
 	defer rtc.Recover()
+
+	logger.Debugw("starting RTC session", "node", r.currentNode.Id)
 	for {
 		select {
 		case <-time.After(time.Millisecond * 100):
