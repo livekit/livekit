@@ -7,6 +7,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -20,10 +21,10 @@ type ReceiverImpl struct {
 	track       *webrtc.TrackRemote
 	buffer      *buffer.Buffer
 	rtcpReader  *buffer.RTCPReader
-	rtcpChan    chan []rtcp.Packet
+	rtcpChan    *utils.CalmChannel
 }
 
-func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, config ReceiverConfig) *ReceiverImpl {
+func NewReceiver(rtcpCh *utils.CalmChannel, rtpReceiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, config ReceiverConfig) *ReceiverImpl {
 	r := &ReceiverImpl{
 		rtpReceiver: rtpReceiver,
 		rtcpChan:    rtcpCh,
@@ -34,8 +35,10 @@ func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, tra
 
 	// when we have feedback for the sender, send through the rtcp channel
 	r.buffer.OnFeedback(func(fb []rtcp.Packet) {
+		RecoverSilent()
+		// rtcpChan could be closed
 		if r.rtcpChan != nil {
-			r.rtcpChan <- fb
+			r.rtcpChan.Write(fb)
 		}
 	})
 
@@ -66,6 +69,14 @@ func NewReceiver(rtcpCh chan []rtcp.Packet, rtpReceiver *webrtc.RTPReceiver, tra
 	})
 
 	return r
+}
+
+func (r *ReceiverImpl) Close() {
+	r.rtcpChan = nil
+	r.buffer.OnFeedback(nil)
+	r.buffer.Close()
+	r.rtpReceiver.Stop()
+	r.rtcpReader.Close()
 }
 
 // PacketBuffer interface, retrieves a packet from buffer and deserializes

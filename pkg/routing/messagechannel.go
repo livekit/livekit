@@ -2,11 +2,13 @@ package routing
 
 import (
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 type MessageChannel struct {
 	msgChan  chan proto.Message
-	isClosed bool
+	isClosed utils.AtomicFlag
 	onClose  func()
 }
 
@@ -22,7 +24,7 @@ func (m *MessageChannel) OnClose(f func()) {
 }
 
 func (m *MessageChannel) WriteMessage(msg proto.Message) error {
-	if m.isClosed {
+	if m.isClosed.Get() {
 		return ErrChannelClosed
 	}
 	m.msgChan <- msg
@@ -34,7 +36,9 @@ func (m *MessageChannel) ReadChan() <-chan proto.Message {
 }
 
 func (m *MessageChannel) Close() {
-	m.isClosed = true
+	if !m.isClosed.TrySet(true) {
+		return
+	}
 	close(m.msgChan)
 	if m.onClose != nil {
 		m.onClose()

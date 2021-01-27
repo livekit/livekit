@@ -185,7 +185,7 @@ func createRouterAndStore(config *config.Config, node routing.LocalNode) (router
 			return
 		}
 
-		router = routing.NewRedisRouter(node, rc, false)
+		router = routing.NewRedisRouter(node, rc)
 		store = service.NewRedisRoomStore(rc)
 	} else {
 		// local routing and store

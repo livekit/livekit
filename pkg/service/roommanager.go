@@ -54,7 +54,8 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 		return nil, err
 	}
 
-	if req.NodeId == "" {
+	nodeId := req.NodeId
+	if nodeId == "" {
 		// select a node for room
 		nodes, err := r.router.ListNodes()
 		if err != nil {
@@ -65,10 +66,11 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 		if err != nil {
 			return nil, err
 		}
-		req.NodeId = node.Id
+		nodeId = node.Id
 	}
 
-	if err := r.router.SetNodeForRoom(req.Name, req.NodeId); err != nil {
+	logger.Debugw("selected node for room", "room", rm.Name, "node", nodeId)
+	if err := r.router.SetNodeForRoom(req.Name, nodeId); err != nil {
 		return nil, err
 	}
 
@@ -131,6 +133,7 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 
 	logger.Debugw("starting RTC session",
 		"room", roomName,
+		"node", r.currentNode.Id,
 		"participant", participantName,
 		"num_participants", len(room.GetParticipants()),
 	)
@@ -144,12 +147,6 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 	participant, err := rtc.NewParticipant(participantId, participantName, pc, responseSink, r.config.Receiver)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
-		return
-	}
-
-	// register participant to be on this server
-	if err = r.router.SetParticipantRTCNode(participantId, r.currentNode.Id); err != nil {
-		logger.Errorw("could not set RTC node", "error", err)
 		return
 	}
 
@@ -200,6 +197,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 		)
 	}()
 	defer rtc.Recover()
+
 	for {
 		select {
 		case <-time.After(time.Millisecond * 100):

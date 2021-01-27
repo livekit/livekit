@@ -70,6 +70,30 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	participantId := utils.NewGuid(utils.ParticipantPrefix)
+	err = s.router.StartParticipantSignal(roomName, participantId, pName)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
+		return
+	}
+	reqSink, err := s.router.GetRequestSink(participantId)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not get request sink"+err.Error())
+		return
+	}
+	done := make(chan bool, 1)
+	defer func() {
+		logger.Infow("WS connection closed", "participant", pName)
+		reqSink.Close()
+		close(done)
+	}()
+
+	resSource, err := s.router.GetResponseSource(participantId)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
+		return
+	}
+
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -79,38 +103,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	sigConn := NewWSSignalConnection(conn)
-
-	participantId := utils.NewGuid(utils.ParticipantPrefix)
-	err = s.router.StartParticipant(roomName, participantId, pName)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
-		return
-	}
 
 	logger.Infow("new client connected",
 		"room", rm.Sid,
 		"roomName", rm.Name,
 		"name", pName,
+		"resSource", fmt.Sprintf("%p", resSource),
 	)
-
-	reqSink, err := s.router.GetRequestSink(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get request sink"+err.Error())
-		return
-	}
-	resSource, err := s.router.GetResponseSource(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
-		return
-	}
-	done := make(chan bool, 1)
-	defer func() {
-		logger.Infow("WS connection closed", "participant", pName)
-		reqSink.Close()
-		close(done)
-	}()
 
 	// handle responses
 	go func() {

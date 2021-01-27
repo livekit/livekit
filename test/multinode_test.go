@@ -31,13 +31,15 @@ func TestMultiNodeRouting(t *testing.T) {
 
 	// one node connecting to node 1, and another connecting to node 2
 	c1 := createRTCClient("c1", defaultServerPort)
-	c2 := createRTCClient("c2", defaultServerPort)
+	c2 := createRTCClient("c2", secondServerPort)
 	waitUntilConnected(t, c1, c2)
 
 	// c1 publishing, and c2 receiving
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
 	assert.NoError(t, err)
-	defer t1.Stop()
+	if t1 != nil {
+		defer t1.Stop()
+	}
 
 	withTimeout(t, "c2 should receive one track", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {

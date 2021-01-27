@@ -6,8 +6,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
-	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 )
 
@@ -150,15 +150,15 @@ type FakeParticipant struct {
 	peerConnectionReturnsOnCall map[int]struct {
 		result1 types.PeerConnection
 	}
-	RTCPChanStub        func() chan<- []rtcp.Packet
+	RTCPChanStub        func() *utils.CalmChannel
 	rTCPChanMutex       sync.RWMutex
 	rTCPChanArgsForCall []struct {
 	}
 	rTCPChanReturns struct {
-		result1 chan<- []rtcp.Packet
+		result1 *utils.CalmChannel
 	}
 	rTCPChanReturnsOnCall map[int]struct {
-		result1 chan<- []rtcp.Packet
+		result1 *utils.CalmChannel
 	}
 	RemoveDownTrackStub        func(string, *sfu.DownTrack)
 	removeDownTrackMutex       sync.RWMutex
@@ -991,7 +991,7 @@ func (fake *FakeParticipant) PeerConnectionReturnsOnCall(i int, result1 types.Pe
 	}{result1}
 }
 
-func (fake *FakeParticipant) RTCPChan() chan<- []rtcp.Packet {
+func (fake *FakeParticipant) RTCPChan() *utils.CalmChannel {
 	fake.rTCPChanMutex.Lock()
 	ret, specificReturn := fake.rTCPChanReturnsOnCall[len(fake.rTCPChanArgsForCall)]
 	fake.rTCPChanArgsForCall = append(fake.rTCPChanArgsForCall, struct {
@@ -1015,32 +1015,32 @@ func (fake *FakeParticipant) RTCPChanCallCount() int {
 	return len(fake.rTCPChanArgsForCall)
 }
 
-func (fake *FakeParticipant) RTCPChanCalls(stub func() chan<- []rtcp.Packet) {
+func (fake *FakeParticipant) RTCPChanCalls(stub func() *utils.CalmChannel) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = stub
 }
 
-func (fake *FakeParticipant) RTCPChanReturns(result1 chan<- []rtcp.Packet) {
+func (fake *FakeParticipant) RTCPChanReturns(result1 *utils.CalmChannel) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = nil
 	fake.rTCPChanReturns = struct {
-		result1 chan<- []rtcp.Packet
+		result1 *utils.CalmChannel
 	}{result1}
 }
 
-func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 chan<- []rtcp.Packet) {
+func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 *utils.CalmChannel) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = nil
 	if fake.rTCPChanReturnsOnCall == nil {
 		fake.rTCPChanReturnsOnCall = make(map[int]struct {
-			result1 chan<- []rtcp.Packet
+			result1 *utils.CalmChannel
 		})
 	}
 	fake.rTCPChanReturnsOnCall[i] = struct {
-		result1 chan<- []rtcp.Packet
+		result1 *utils.CalmChannel
 	}{result1}
 }
 

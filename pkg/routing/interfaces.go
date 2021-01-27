@@ -36,14 +36,14 @@ type Router interface {
 	GetNode(nodeId string) (*livekit.Node, error)
 	ListNodes() ([]*livekit.Node, error)
 
-	SetParticipantRTCNode(participantId, nodeId string) error
-
 	// functions for websocket handler
 	GetRequestSink(participantId string) (MessageSink, error)
 	GetResponseSource(participantId string) (MessageSource, error)
-	StartParticipant(roomName, participantId, participantName string) error
+	// participant signal connection is ready to start
+	StartParticipantSignal(roomName, participantId, participantName string) error
 
-	OnNewParticipant(callback ParticipantCallback)
+	// when a new participant's RTC connection is ready to start
+	OnNewParticipantRTC(callback ParticipantCallback)
 	Start() error
 	Stop()
 }

@@ -41,7 +41,7 @@ type ParticipantImpl struct {
 	mediaEngine      *webrtc.MediaEngine
 	name             string
 	state            livekit.ParticipantInfo_State
-	rtcpCh           chan []rtcp.Packet
+	rtcpCh           *utils.CalmChannel
 	subscribedTracks map[string][]*sfu.DownTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
@@ -88,7 +88,7 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		receiverConfig:     receiverConfig,
 		ctx:                ctx,
 		cancel:             cancel,
-		rtcpCh:             make(chan []rtcp.Packet, 50),
+		rtcpCh:             utils.NewCalmChannel(50),
 		subscribedTracks:   make(map[string][]*sfu.DownTrack),
 		state:              livekit.ParticipantInfo_JOINING,
 		lock:               sync.RWMutex{},
@@ -109,7 +109,7 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		ci := c.ToJSON()
 
 		// write candidate
-		logger.Debugw("sending ice candidates")
+		//logger.Debugw("sending ice candidates")
 		err := rs.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Trickle{
 				Trickle: ToProtoTrickle(ci),
@@ -163,7 +163,7 @@ func (p *ParticipantImpl) IsReady() bool {
 	return p.state == livekit.ParticipantInfo_JOINED || p.state == livekit.ParticipantInfo_ACTIVE
 }
 
-func (p *ParticipantImpl) RTCPChan() chan<- []rtcp.Packet {
+func (p *ParticipantImpl) RTCPChan() *utils.CalmChannel {
 	return p.rtcpCh
 }
 
@@ -331,8 +331,9 @@ func (p *ParticipantImpl) Close() error {
 		p.onClose(p)
 	}
 	p.cancel()
-	close(p.rtcpCh)
-	return p.peerConn.Close()
+	p.peerConn.Close()
+	p.rtcpCh.Close()
+	return nil
 }
 
 // Subscribes otherPeer to all of the publishedTracks
@@ -482,7 +483,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 	oldState := p.state
 	p.state = state
-	logger.Debugw("updating participant state", "state", state.String())
+	logger.Debugw("updating participant state", "state", state.String(), "participant", p.ID())
 	if p.onStateChange != nil {
 		go func() {
 			defer Recover()
@@ -612,7 +613,14 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
 	// read from rtcpChan
-	for pkts := range p.rtcpCh {
+	for o := range p.rtcpCh.ReadChan() {
+		if o == nil {
+			return
+		}
+		pkts, ok := o.([]rtcp.Packet)
+		if !ok {
+			logger.Errorw("unexpected obj from rtcpCh", "object", o)
+		}
 		//for _, pkt := range pkts {
 		//	logger.Debugw("writing RTCP", "packet", pkt)
 		//}
