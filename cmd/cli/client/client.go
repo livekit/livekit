@@ -1,7 +1,6 @@
 package client
 
 import (
-	"container/ring"
 	"context"
 	"errors"
 	"fmt"
@@ -24,29 +23,29 @@ import (
 )
 
 type RTCClient struct {
-	id                 string
-	conn               *websocket.Conn
-	PeerConn           *webrtc.PeerConnection
-	localTracks        []webrtc.TrackLocal
+	id       string
+	conn     *websocket.Conn
+	PeerConn *webrtc.PeerConnection
+	// sid => track
+	localTracks        map[string]webrtc.TrackLocal
 	lock               sync.Mutex
+	wsLock             sync.Mutex
 	ctx                context.Context
 	cancel             context.CancelFunc
 	connected          bool
 	iceConnected       bool
-	paused             bool
 	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
 	subscribedTracks   map[string][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
+	// tracks waiting to be acked, cid => trackInfo
+	pendingPublishedTracks map[string]*livekit.TrackInfo
+
 	// pending actions to start after connected to peer
 	pendingCandidates   []*webrtc.ICECandidate
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
-
-	// navigate log ring buffer. saving the last N entries
-	writer *ring.Ring
-	reader *ring.Ring
 }
 
 var (
@@ -58,7 +57,6 @@ var (
 			},
 		},
 	}
-	maxLogs        = 256
 	extMimeMapping = map[string]string{
 		".ivf":  webrtc.MimeTypeVP8,
 		".h264": webrtc.MimeTypeH264,
@@ -88,18 +86,15 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		return nil, err
 	}
 
-	logRing := ring.New(maxLogs)
 	c := &RTCClient{
-		conn:               conn,
-		lock:               sync.Mutex{},
-		pendingCandidates:  make([]*webrtc.ICECandidate, 0),
-		localTracks:        make([]webrtc.TrackLocal, 0),
-		subscribedTracks:   make(map[string][]*webrtc.TrackRemote),
-		remoteParticipants: make(map[string]*livekit.ParticipantInfo),
-		reader:             logRing,
-		writer:             logRing,
-		PeerConn:           peerConn,
-		me:                 &webrtc.MediaEngine{},
+		conn:                   conn,
+		pendingCandidates:      make([]*webrtc.ICECandidate, 0),
+		localTracks:            make(map[string]webrtc.TrackLocal),
+		pendingPublishedTracks: make(map[string]*livekit.TrackInfo),
+		subscribedTracks:       make(map[string][]*webrtc.TrackRemote),
+		remoteParticipants:     make(map[string]*livekit.ParticipantInfo),
+		PeerConn:               peerConn,
+		me:                     &webrtc.MediaEngine{},
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.me.RegisterDefaultCodecs()
@@ -118,12 +113,12 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 		// send it through
 		if err := c.SendIceCandidate(ic); err != nil {
-			c.AppendLog("failed to send ice candidate", "err", err)
+			logger.Debugw("failed to send ice candidate", "err", err)
 		}
 	})
 
 	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		c.AppendLog("track received", "label", track.StreamID(), "id", track.ID())
+		logger.Debugw("track received", "label", track.StreamID(), "id", track.ID())
 		go c.processTrack(track)
 	})
 
@@ -138,14 +133,15 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	peerConn.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		c.AppendLog("ICE state has changed", "state", connectionState.String())
+		logger.Debugw("ICE state has changed", "state", connectionState.String(),
+			"participant", c.localParticipant.Sid)
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			// flush peers
 			c.lock.Lock()
 			defer c.lock.Unlock()
 			for _, tw := range c.pendingTrackWriters {
 				if err := tw.Start(); err != nil {
-					c.AppendLog("track writer error", "err", err)
+					logger.Debugw("track writer error", "err", err)
 				}
 			}
 
@@ -168,8 +164,6 @@ func (c *RTCClient) ID() string {
 
 // create an offer for the server
 func (c *RTCClient) Run() error {
-	go c.logLoop()
-
 	c.conn.SetCloseHandler(func(code int, text string) error {
 		// when closed, stop connection
 		logger.Infow("connection closed", "code", code, "text", text)
@@ -183,7 +177,7 @@ func (c *RTCClient) Run() error {
 		return err
 	}
 	dc.OnOpen(func() {
-		c.AppendLog("data channel open")
+		logger.Debugw("data channel open")
 	})
 
 	// run the session
@@ -202,9 +196,9 @@ func (c *RTCClient) Run() error {
 			}
 			c.lock.Unlock()
 
-			c.AppendLog("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
+			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
 			c.localParticipant = msg.Join.Participant
-			c.AppendLog("other participants", "count", len(msg.Join.OtherParticipants))
+			logger.Debugw("other participants", "count", len(msg.Join.OtherParticipants))
 
 			// Create an offer to send to the other process
 			offer, err := c.PeerConn.CreateOffer(nil)
@@ -212,7 +206,7 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 
-			c.AppendLog("created offer", "offer", offer.SDP)
+			logger.Debugw("created offer", "offer", offer.SDP)
 
 			// Sets the LocalDescription, and starts our UDP listeners
 			// Note: this will start the gathering of ICE candidates
@@ -226,7 +220,7 @@ func (c *RTCClient) Run() error {
 					Offer: rtc.ToProtoSessionDescription(offer),
 				},
 			}
-			c.AppendLog("connecting to remote...")
+			logger.Debugw("connecting to remote...")
 			if err = c.SendRequest(req); err != nil {
 				return err
 			}
@@ -235,7 +229,7 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Answer:
 			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
 		case *livekit.SignalResponse_Offer:
-			c.AppendLog("received server offer",
+			logger.Debugw("received server offer",
 				"type", msg.Offer.Type)
 			desc := rtc.FromProtoSessionDescription(msg.Offer)
 			if err := c.handleOffer(desc); err != nil {
@@ -245,7 +239,6 @@ func (c *RTCClient) Run() error {
 			c.negotiate()
 		case *livekit.SignalResponse_Trickle:
 			candidateInit := rtc.FromProtoTrickle(msg.Trickle)
-			c.AppendLog("adding remote candidate", "candidate", candidateInit.Candidate)
 			if err := c.PeerConn.AddICECandidate(candidateInit); err != nil {
 				return err
 			}
@@ -253,8 +246,14 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				c.remoteParticipants[p.Sid] = p
-				c.AppendLog("participant update", "id", p.Sid, "state", p.State.String())
+				logger.Debugw("participant update", "id", p.Sid, "state", p.State.String())
 			}
+			c.lock.Unlock()
+		case *livekit.SignalResponse_TrackPublished:
+			logger.Debugw("track published", "track", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
+				"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
+			c.lock.Lock()
+			c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
 			c.lock.Unlock()
 		}
 	}
@@ -326,28 +325,19 @@ func (c *RTCClient) Stop() {
 	c.cancel()
 }
 
-func (c *RTCClient) PauseLogs() {
-	c.paused = true
-}
-
-func (c *RTCClient) ResumeLogs() {
-	c.paused = false
-}
-
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 	payload, err := protojson.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
+	c.wsLock.Lock()
+	defer c.wsLock.Unlock()
 	return c.conn.WriteMessage(websocket.TextMessage, payload)
 }
 
 func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
 	candInit := ic.ToJSON()
-	c.AppendLog("sending trickle candidate", "candidate", candInit.Candidate)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
 			Trickle: rtc.ToProtoTrickle(candInit),
@@ -365,9 +355,30 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 		return
 	}
 
+	// wait till track published message is received
+	timeout := time.After(5 * time.Second)
+	var ti *livekit.TrackInfo
+	for {
+		select {
+		case <-timeout:
+			return nil, errors.New("could not publish track after timeout")
+		default:
+			c.lock.Lock()
+			ti = c.pendingPublishedTracks[track.ID()]
+			c.lock.Unlock()
+			if ti != nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if ti != nil {
+			break
+		}
+	}
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.localTracks = append(c.localTracks, track)
+	c.localTracks[ti.Sid] = track
 
 	if _, err = c.PeerConn.AddTrack(track); err != nil {
 		return
@@ -401,7 +412,7 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 		return nil, fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
 	}
 
-	c.AppendLog("adding track",
+	logger.Debugw("adding track",
 		"mime", mime,
 	)
 
@@ -447,7 +458,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	}
 
 	// send remote an answer
-	c.AppendLog("sending answer")
+	logger.Debugw("sending answer")
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Answer{
 			Answer: rtc.ToProtoSessionDescription(answer),
@@ -456,7 +467,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 }
 
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
-	c.AppendLog("handling server answer")
+	logger.Debugw("handling server answer")
 	// remote answered the offer, establish connection
 	err := c.PeerConn.SetRemoteDescription(desc)
 	if err != nil {
@@ -478,7 +489,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 }
 
 func (c *RTCClient) requestNegotiation() error {
-	c.AppendLog("requesting negotiation")
+	logger.Debugw("requesting negotiation")
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Negotiate{
 			Negotiate: &livekit.NegotiationRequest{},
@@ -487,7 +498,7 @@ func (c *RTCClient) requestNegotiation() error {
 }
 
 func (c *RTCClient) negotiate() error {
-	c.AppendLog("starting negotiation")
+	logger.Debugw("starting negotiation")
 	offer, err := c.PeerConn.CreateOffer(nil)
 	if err != nil {
 		return err
@@ -507,38 +518,6 @@ func (c *RTCClient) negotiate() error {
 type logEntry struct {
 	msg  string
 	args []interface{}
-}
-
-func (c *RTCClient) AppendLog(msg string, args ...interface{}) {
-	entry := &logEntry{
-		msg:  msg,
-		args: args,
-	}
-
-	// not locking this, log loss ok in multithreaded env
-	writer := c.writer
-	writer.Value = entry
-	c.writer = writer.Next()
-}
-
-func (c *RTCClient) logLoop() {
-	for {
-		for !c.paused && c.reader != c.writer {
-			val, _ := c.reader.Value.(*logEntry)
-			if val != nil {
-				logger.Infow(val.msg, val.args...)
-			}
-			// advance reader until writer
-			c.reader = c.reader.Next()
-		}
-
-		// sleep or abort
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
 }
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
@@ -564,12 +543,12 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			break
 		}
 		if err != nil {
-			c.AppendLog("error reading RTP", "err", err)
+			logger.Debugw("error reading RTP", "err", err)
 			continue
 		}
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
-			c.AppendLog("consumed from participant",
+			logger.Debugw("consumed from participant",
 				"track", trackId, "participant", pId,
 				"size", numBytes)
 			lastUpdate = time.Now()
