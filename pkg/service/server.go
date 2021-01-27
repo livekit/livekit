@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/proto/livekit"
+	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
@@ -98,7 +99,8 @@ func (s *LivekitServer) Start() error {
 
 	go func() {
 		logger.Infow("starting LiveKit server", "address", s.httpServer.Addr,
-			"nodeId", s.currentNode.Id)
+			"nodeId", s.currentNode.Id,
+			"version", version.Version)
 		s.httpServer.Serve(ln)
 	}()
 
