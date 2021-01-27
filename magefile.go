@@ -157,7 +157,7 @@ func Test() error {
 // run all thests including integration
 func TestAll() error {
 	mg.Deps(Proto)
-	cmd := exec.Command("go", "test", "./...")
+	cmd := exec.Command("go", "test", "./...", "-count=1")
 	connectStd(cmd)
 	return cmd.Run()
 }

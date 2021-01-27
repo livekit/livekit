@@ -335,6 +335,8 @@ func (c *RTCClient) ResumeLogs() {
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	payload, err := protojson.Marshal(msg)
 	if err != nil {
 		return err

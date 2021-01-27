@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -83,7 +82,6 @@ func newMediaTrackWithReceiver() *MediaTrack {
 		},
 	}
 	return &MediaTrack{
-		ctx:           context.Background(),
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: "PAtest",
 		muted:         false,

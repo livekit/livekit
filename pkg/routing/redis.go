@@ -69,6 +69,7 @@ type RedisSink struct {
 	rc            *redis.Client
 	nodeId        string
 	participantId string
+	isClosed      bool
 	once          sync.Once
 	onClose       func()
 }
@@ -83,12 +84,16 @@ func NewRedisSink(rc *redis.Client, nodeId, participantId string) *RedisSink {
 }
 
 func (s *RedisSink) WriteMessage(msg proto.Message) error {
+	if s.isClosed {
+		return ErrChannelClosed
+	}
 	return publishRouterMessage(s.rc, s.nodeId, s.participantId, msg)
 }
 
 func (s *RedisSink) Close() {
 	s.once.Do(func() {
 		publishRouterMessage(s.rc, s.nodeId, s.participantId, &livekit.EndSession{})
+		s.isClosed = true
 		if s.onClose != nil {
 			s.onClose()
 		}

@@ -121,7 +121,7 @@ func (r *RoomManager) Cleanup() error {
 	return nil
 }
 
-// starts WebRTC session when a new participant is connected
+// starts WebRTC session when a new participant is connected, takes place on RTC node
 func (r *RoomManager) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {

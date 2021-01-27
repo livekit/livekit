@@ -320,7 +320,6 @@ func (p *ParticipantImpl) Close() error {
 	if p.ctx.Err() != nil {
 		return p.ctx.Err()
 	}
-	close(p.rtcpCh)
 	p.onICECandidate = nil
 	p.peerConn.OnDataChannel(nil)
 	p.peerConn.OnICECandidate(nil)
@@ -332,6 +331,7 @@ func (p *ParticipantImpl) Close() error {
 		p.onClose(p)
 	}
 	p.cancel()
+	close(p.rtcpCh)
 	return p.peerConn.Close()
 }
 
@@ -434,6 +434,10 @@ func (p *ParticipantImpl) scheduleNegotiate() {
 
 // initiates server-driven negotiation by creating an offer
 func (p *ParticipantImpl) negotiate() {
+	if p.state == livekit.ParticipantInfo_DISCONNECTED {
+		// skip when disconnected
+		return
+	}
 	p.negotiationCond.L.Lock()
 	for p.negotiationState != negotiationStateNone {
 		p.negotiationCond.Wait()

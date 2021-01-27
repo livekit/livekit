@@ -194,8 +194,8 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 
 	updates := ToProtoParticipants([]types.Participant{p})
 	for _, op := range r.participants {
-		// skip itself
-		if p.ID() == op.ID() {
+		// skip itself && closed participants
+		if p.ID() == op.ID() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
 		}
 
