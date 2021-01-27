@@ -7,7 +7,6 @@ services:
     restart: always
     container_name: livekit_server
     hostname: livekit
-    entrypoint: ["/livekit-server"]
     volumes:
       - ./config.yaml:/workspace/config.yaml
     environment:
@@ -20,6 +19,7 @@ services:
       - default
     expose:
       - 7880
+      - 8000-10000
     ports:
       - "7880:7880"
     depends_on:
