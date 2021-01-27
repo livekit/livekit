@@ -46,27 +46,55 @@ func TestIsReady(t *testing.T) {
 	}
 }
 
-func TestTrackPublishEvents(t *testing.T) {
-	p := newParticipantForTest("test")
-	track := &typesfakes.FakePublishedTrack{}
-	track.IDReturns("id")
-	published := false
-	updated := false
-	p.OnTrackUpdated(func(p types.Participant, track types.PublishedTrack) {
-		updated = true
-	})
-	p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
-		published = true
-	})
-	p.handleTrackPublished(track)
+func TestTrackPublishing(t *testing.T) {
+	t.Run("should send the correct events", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		track := &typesfakes.FakePublishedTrack{}
+		track.IDReturns("id")
+		published := false
+		updated := false
+		p.OnTrackUpdated(func(p types.Participant, track types.PublishedTrack) {
+			updated = true
+		})
+		p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
+			published = true
+		})
+		p.handleTrackPublished(track)
 
-	assert.True(t, published)
-	assert.False(t, updated)
-	assert.Len(t, p.publishedTracks, 1)
+		assert.True(t, published)
+		assert.False(t, updated)
+		assert.Len(t, p.publishedTracks, 1)
 
-	track.OnCloseArgsForCall(0)()
-	assert.Len(t, p.publishedTracks, 0)
-	assert.True(t, updated)
+		track.OnCloseArgsForCall(0)()
+		assert.Len(t, p.publishedTracks, 0)
+		assert.True(t, updated)
+	})
+
+	t.Run("sends back trackPublished event", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		//track := &typesfakes.FakePublishedTrack{}
+		//track.IDReturns("id")
+		sink := p.responseSink.(*routingfakes.FakeMessageSink)
+		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
+		assert.Equal(t, 1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		assert.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		published := res.Message.(*livekit.SignalResponse_TrackPublished).TrackPublished
+		assert.Equal(t, "cid", published.Cid)
+		assert.Equal(t, "webcam", published.Track.Name)
+		assert.Equal(t, livekit.TrackType_VIDEO, published.Track.Type)
+	})
+
+	t.Run("should not allow adding of duplicate tracks", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		//track := &typesfakes.FakePublishedTrack{}
+		//track.IDReturns("id")
+		sink := p.responseSink.(*routingfakes.FakeMessageSink)
+		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
+		p.AddTrack("cid", "duplicate", livekit.TrackType_AUDIO)
+
+		assert.Equal(t, 1, sink.WriteMessageCallCount())
+	})
 }
 
 // after disconnection, things should continue to function and not panic

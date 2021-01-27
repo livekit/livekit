@@ -251,6 +251,11 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	// if track is already published, reject
+	if p.pendingTracks[clientId] != nil {
+		return
+	}
+
 	ti := &livekit.TrackInfo{
 		Type: trackType,
 		Name: name,
