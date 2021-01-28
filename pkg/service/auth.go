@@ -9,7 +9,6 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/auth"
-	"github.com/livekit/livekit-server/pkg/logger"
 )
 
 const (
@@ -131,10 +130,4 @@ func EnsureListPermission(ctx context.Context) error {
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())
-}
-
-func handleError(w http.ResponseWriter, status int, msg string) {
-	logger.Debugw("error handling request", "error", msg, "status", status)
-	w.WriteHeader(status)
-	w.Write([]byte(msg))
 }

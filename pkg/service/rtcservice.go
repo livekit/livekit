@@ -12,7 +12,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -63,14 +62,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rm, err := s.roomManager.roomStore.GetRoom(roomName)
 	if err == ErrRoomNotFound {
 		rm, err = s.roomManager.CreateRoom(&livekit.CreateRoomRequest{Name: roomName})
-	}
-
-	if err != nil {
+	} else if err != nil {
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	participantId := utils.NewGuid(utils.ParticipantPrefix)
+	participantId, err := s.roomManager.roomStore.GetParticipantId(roomName, pName)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, "could not get participant ID: "+err.Error())
+		return
+	}
+
 	err = s.router.StartParticipantSignal(roomName, participantId, pName)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
