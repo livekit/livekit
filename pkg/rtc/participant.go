@@ -382,6 +382,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
+
 	return p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
