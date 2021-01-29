@@ -41,7 +41,7 @@ func TestForwardRTP(t *testing.T) {
 
 	t.Run("muted tracks do not forward data", func(t *testing.T) {
 		mt := newMediaTrackWithReceiver()
-		mt.muted = true
+		mt.muted.TrySet(true)
 
 		dt := &typesfakes.FakeDownTrack{}
 		mt.downtracks["test"] = dt
@@ -89,7 +89,6 @@ func newMediaTrackWithReceiver() *MediaTrack {
 	return &MediaTrack{
 		id:            utils.NewGuid(utils.TrackPrefix),
 		participantId: "PAtest",
-		muted:         false,
 		kind:          livekit.TrackType_VIDEO,
 		codec:         webrtc.RTPCodecParameters{},
 		rtcpCh:        utils.NewCalmChannel(5),

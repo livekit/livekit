@@ -38,9 +38,8 @@ func TestIsReady(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.state.String(), func(t *testing.T) {
-			p := &ParticipantImpl{
-				state: test.state,
-			}
+			p := &ParticipantImpl{}
+			p.state.Store(test.state)
 			assert.Equal(t, test.ready, p.IsReady())
 		})
 	}

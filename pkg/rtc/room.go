@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -18,7 +19,7 @@ type Room struct {
 	// map of participantId -> Participant
 	participants map[string]types.Participant
 	hasJoined    bool
-	isClosed     bool
+	isClosed     utils.AtomicFlag
 	onClose      func()
 }
 
@@ -44,7 +45,7 @@ func (r *Room) GetParticipants() []types.Participant {
 }
 
 func (r *Room) Join(participant types.Participant) error {
-	if r.isClosed {
+	if r.isClosed.Get() {
 		return ErrRoomClosed
 	}
 
@@ -125,7 +126,7 @@ func (r *Room) RemoveParticipant(id string) {
 
 // Close the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
-	if r.isClosed {
+	if r.isClosed.Get() {
 		return
 	}
 
@@ -140,8 +141,7 @@ func (r *Room) CloseIfEmpty() {
 	elapsed := uint32(time.Now().Unix() - r.CreationTime)
 	logger.Infow("comparing elapsed", "elapsed", elapsed, "timeout", r.EmptyTimeout)
 	if r.hasJoined || (r.EmptyTimeout > 0 && elapsed >= r.EmptyTimeout) {
-		r.isClosed = true
-		if r.onClose != nil {
+		if r.isClosed.TrySet(true) && r.onClose != nil {
 			r.onClose()
 		}
 	}
