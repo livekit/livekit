@@ -562,7 +562,8 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
 		p.lock.Unlock()
-		if p.onTrackUpdated != nil {
+		// only send this when client is in a ready state
+		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
 	})
