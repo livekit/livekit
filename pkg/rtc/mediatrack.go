@@ -33,7 +33,7 @@ var (
 type MediaTrack struct {
 	id            string
 	participantId string
-	muted         bool
+	muted         utils.AtomicFlag
 
 	ssrc     webrtc.SSRC
 	name     string
@@ -93,7 +93,7 @@ func (t *MediaTrack) Name() string {
 }
 
 func (t *MediaTrack) IsMuted() bool {
-	return t.muted
+	return t.muted.Get()
 }
 
 func (t *MediaTrack) OnClose(f func()) {
@@ -251,7 +251,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 		//	"track", t.ID())
 		// when track is muted, it's "disabled" on the client side, and will still be sending black frames
 		// when our metadata is updated as such, we shortcircuit forwarding of black frames
-		if t.muted {
+		if t.muted.Get() {
 			continue
 		}
 

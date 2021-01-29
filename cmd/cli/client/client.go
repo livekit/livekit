@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -32,8 +33,8 @@ type RTCClient struct {
 	wsLock             sync.Mutex
 	ctx                context.Context
 	cancel             context.CancelFunc
-	connected          bool
-	iceConnected       bool
+	connected          utils.AtomicFlag
+	iceConnected       utils.AtomicFlag
 	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
 	subscribedTracks   map[string][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
@@ -103,7 +104,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 			return
 		}
 
-		if !c.connected {
+		if !c.connected.Get() {
 			c.lock.Lock()
 			defer c.lock.Unlock()
 			// not connected, save to pending
@@ -123,7 +124,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	peerConn.OnNegotiationNeeded(func() {
-		if !c.iceConnected {
+		if !c.iceConnected.Get() {
 			return
 		}
 		c.requestNegotiation()
@@ -145,9 +146,9 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 				}
 			}
 
-			initialConnect := !c.iceConnected
+			initialConnect := !c.iceConnected.Get()
 			c.pendingTrackWriters = nil
-			c.iceConnected = true
+			c.iceConnected.TrySet(true)
 
 			if initialConnect && c.OnConnected != nil {
 				go c.OnConnected()
@@ -271,7 +272,7 @@ func (c *RTCClient) WaitUntilConnected() error {
 		case <-ctx.Done():
 			return errors.New("could not connect after timeout")
 		case <-time.After(10 * time.Millisecond):
-			if c.iceConnected {
+			if c.iceConnected.Get() {
 				return nil
 			}
 		}
@@ -318,8 +319,8 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 }
 
 func (c *RTCClient) Stop() {
-	c.connected = false
-	c.iceConnected = false
+	c.connected.TrySet(false)
+	c.iceConnected.TrySet(false)
 	c.conn.Close()
 	c.PeerConn.Close()
 	c.cancel()
@@ -387,7 +388,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	writer = NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
-	if c.iceConnected {
+	if c.iceConnected.Get() {
 		err = writer.Start()
 	} else {
 		c.pendingTrackWriters = append(c.pendingTrackWriters, writer)
@@ -474,17 +475,18 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 		return err
 	}
 
-	if !c.connected {
-		c.connected = true
-
-		// add all the pending items
-		c.lock.Lock()
-		for _, ic := range c.pendingCandidates {
-			c.SendIceCandidate(ic)
-		}
-		c.pendingCandidates = nil
-		c.lock.Unlock()
+	if !c.connected.TrySet(true) {
+		// already connected
+		return nil
 	}
+
+	// add all the pending items
+	c.lock.Lock()
+	for _, ic := range c.pendingCandidates {
+		c.SendIceCandidate(ic)
+	}
+	c.pendingCandidates = nil
+	c.lock.Unlock()
 	return nil
 }
 

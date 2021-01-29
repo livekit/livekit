@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bep/debounce"
@@ -40,7 +41,7 @@ type ParticipantImpl struct {
 	cancel           context.CancelFunc
 	mediaEngine      *webrtc.MediaEngine
 	name             string
-	state            livekit.ParticipantInfo_State
+	state            atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh           *utils.CalmChannel
 	subscribedTracks map[string][]*sfu.DownTrack
 	// publishedTracks that participant is publishing
@@ -90,7 +91,6 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		cancel:             cancel,
 		rtcpCh:             utils.NewCalmChannel(50),
 		subscribedTracks:   make(map[string][]*sfu.DownTrack),
-		state:              livekit.ParticipantInfo_JOINING,
 		lock:               sync.RWMutex{},
 		negotiationCond:    sync.NewCond(&sync.Mutex{}),
 		publishedTracks:    make(map[string]types.PublishedTrack, 0),
@@ -98,6 +98,7 @@ func NewParticipant(participantId, name string, pc types.PeerConnection, rs rout
 		mediaEngine:        me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
+	participant.state.Store(livekit.ParticipantInfo_JOINING)
 
 	pc.OnTrack(participant.onMediaTrack)
 
@@ -156,11 +157,12 @@ func (p *ParticipantImpl) Name() string {
 }
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
-	return p.state
+	return p.state.Load().(livekit.ParticipantInfo_State)
 }
 
 func (p *ParticipantImpl) IsReady() bool {
-	return p.state == livekit.ParticipantInfo_JOINED || p.state == livekit.ParticipantInfo_ACTIVE
+	state := p.State()
+	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
 func (p *ParticipantImpl) RTCPChan() *utils.CalmChannel {
@@ -171,7 +173,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:   p.id,
 		Name:  p.name,
-		State: p.state,
+		State: p.State(),
 	}
 
 	p.lock.RLock()
@@ -205,7 +207,7 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 
 // Answer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
-	if p.state != livekit.ParticipantInfo_JOINING && p.negotiationState != negotiationStateClient {
+	if p.State() != livekit.ParticipantInfo_JOINING && p.negotiationState != negotiationStateClient {
 		// not in a valid state to continue
 		err = ErrUnexpectedNegotiation
 		return
@@ -240,7 +242,7 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 		},
 	})
 
-	if p.state == livekit.ParticipantInfo_JOINING {
+	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
 	return
@@ -323,14 +325,15 @@ func (p *ParticipantImpl) Start() {
 
 func (p *ParticipantImpl) Close() error {
 	if p.ctx.Err() != nil {
-		return p.ctx.Err()
+		// already closed
+		return nil
 	}
+	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.onICECandidate = nil
 	p.peerConn.OnDataChannel(nil)
 	p.peerConn.OnICECandidate(nil)
 	p.peerConn.OnNegotiationNeeded(nil)
 	p.peerConn.OnTrack(nil)
-	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.responseSink.Close()
 	if p.onClose != nil {
 		p.onClose(p)
@@ -382,6 +385,9 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
+	if !p.IsReady() {
+		return nil
+	}
 	return p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
@@ -402,8 +408,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 
 	switch t := track.(type) {
 	case *MediaTrack:
-		updated = t.muted != muted
-		t.muted = muted
+		updated = t.muted.TrySet(muted)
 	}
 
 	if updated && p.onTrackUpdated != nil {
@@ -440,7 +445,7 @@ func (p *ParticipantImpl) scheduleNegotiate() {
 
 // initiates server-driven negotiation by creating an offer
 func (p *ParticipantImpl) negotiate() {
-	if p.state == livekit.ParticipantInfo_DISCONNECTED {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		// skip when disconnected
 		return
 	}
@@ -483,11 +488,11 @@ func (p *ParticipantImpl) negotiate() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	if state == p.state {
+	oldState := p.State()
+	if state == oldState {
 		return
 	}
-	oldState := p.state
-	p.state = state
+	p.state.Store(state)
 	logger.Debugw("updating participant state", "state", state.String(), "participant", p.ID())
 	if p.onStateChange != nil {
 		go func() {
