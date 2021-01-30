@@ -161,7 +161,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Port = port
-	conf.MultiNode = true
+	conf.Redis.Address = "localhost:6379"
 
 	currentNode, err := routing.NewLocalNode(conf)
 	currentNode.Id = nodeId

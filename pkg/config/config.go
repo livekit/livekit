@@ -16,8 +16,6 @@ type Config struct {
 	Keys     map[string]string `yaml:"keys"`
 	LogLevel string            `yaml:"log_level"`
 
-	// multi-node configuration,
-	MultiNode   bool `yaml:"multi_node"`
 	Development bool `yaml:"development"`
 }
 
@@ -47,15 +45,17 @@ func NewConfig(confString string) (*Config, error) {
 				"stun.l.google.com:19302",
 			},
 		},
-		Redis: RedisConfig{
-			Address: "localhost:6379",
-		},
-		Keys: map[string]string{},
+		Redis: RedisConfig{},
+		Keys:  map[string]string{},
 	}
 	if confString != "" {
 		yaml.Unmarshal([]byte(confString), conf)
 	}
 	return conf, nil
+}
+
+func (conf *Config) HasRedis() bool {
+	return conf.Redis.Address != ""
 }
 
 func (conf *Config) UpdateFromCLI(c *cli.Context) error {
@@ -82,6 +82,7 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 		return err
 	}
 	conf.KeyFile = file
+
 	return nil
 }
 

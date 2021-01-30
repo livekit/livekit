@@ -174,7 +174,7 @@ func startServer(c *cli.Context) error {
 }
 
 func createRouterAndStore(config *config.Config, node routing.LocalNode) (router routing.Router, store service.RoomStore, err error) {
-	if config.MultiNode {
+	if config.HasRedis() {
 		logger.Infow("using multi-node routing via redis", "address", config.Redis.Address)
 		rc := redis.NewClient(&redis.Options{
 			Addr:     config.Redis.Address,
