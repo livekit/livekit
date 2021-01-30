@@ -40,7 +40,7 @@ type ParticipantImpl struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	mediaEngine      *webrtc.MediaEngine
-	name             string
+	identity         string
 	state            atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh           *utils.CalmChannel
 	subscribedTracks map[string][]*sfu.DownTrack
@@ -75,15 +75,15 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	return pc, err
 }
 
-func NewParticipant(participantId, name string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
-	// TODO: check to ensure params are valid, id and name can't be empty
+func NewParticipant(participantId, identity string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
+	// TODO: check to ensure params are valid, id and identity can't be empty
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
 		id:                 participantId,
-		name:               name,
+		identity:           identity,
 		peerConn:           pc,
 		responseSink:       rs,
 		receiverConfig:     receiverConfig,
@@ -152,8 +152,8 @@ func (p *ParticipantImpl) ID() string {
 	return p.id
 }
 
-func (p *ParticipantImpl) Name() string {
-	return p.name
+func (p *ParticipantImpl) Identity() string {
+	return p.identity
 }
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
@@ -171,9 +171,9 @@ func (p *ParticipantImpl) RTCPChan() *utils.CalmChannel {
 
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
-		Sid:   p.id,
-		Name:  p.name,
-		State: p.State(),
+		Sid:      p.id,
+		Identity: p.identity,
+		State:    p.State(),
 	}
 
 	p.lock.RLock()

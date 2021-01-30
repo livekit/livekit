@@ -156,7 +156,7 @@ func TestNewTrack(t *testing.T) {
 
 func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
 	rm := rtc.NewRoom(
-		&livekit.Room{Name: "name"},
+		&livekit.Room{Name: "identity"},
 		rtc.WebRTCConfig{},
 	)
 	for i := 0; i < num; i++ {

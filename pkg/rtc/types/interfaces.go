@@ -48,7 +48,7 @@ type PeerConnection interface {
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
-	Name() string
+	Identity() string
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo

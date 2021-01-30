@@ -90,7 +90,7 @@ func (r *Room) Join(participant types.Participant) error {
 
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
-		"name", participant.Name(),
+		"identity", participant.Identity(),
 		"roomId", r.Sid)
 
 	r.participants[participant.ID()] = participant

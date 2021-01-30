@@ -192,7 +192,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
-			"participant", participant.Name(),
+			"participant", participant.Identity(),
 			"room", room.Name,
 		)
 	}()

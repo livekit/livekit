@@ -95,6 +95,16 @@ type FakeParticipant struct {
 	iDReturnsOnCall map[int]struct {
 		result1 string
 	}
+	IdentityStub        func() string
+	identityMutex       sync.RWMutex
+	identityArgsForCall []struct {
+	}
+	identityReturns struct {
+		result1 string
+	}
+	identityReturnsOnCall map[int]struct {
+		result1 string
+	}
 	IsReadyStub        func() bool
 	isReadyMutex       sync.RWMutex
 	isReadyArgsForCall []struct {
@@ -104,16 +114,6 @@ type FakeParticipant struct {
 	}
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
-	}
-	NameStub        func() string
-	nameMutex       sync.RWMutex
-	nameArgsForCall []struct {
-	}
-	nameReturns struct {
-		result1 string
-	}
-	nameReturnsOnCall map[int]struct {
-		result1 string
 	}
 	OnCloseStub        func(func(types.Participant))
 	onCloseMutex       sync.RWMutex
@@ -672,6 +672,59 @@ func (fake *FakeParticipant) IDReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) Identity() string {
+	fake.identityMutex.Lock()
+	ret, specificReturn := fake.identityReturnsOnCall[len(fake.identityArgsForCall)]
+	fake.identityArgsForCall = append(fake.identityArgsForCall, struct {
+	}{})
+	stub := fake.IdentityStub
+	fakeReturns := fake.identityReturns
+	fake.recordInvocation("Identity", []interface{}{})
+	fake.identityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IdentityCallCount() int {
+	fake.identityMutex.RLock()
+	defer fake.identityMutex.RUnlock()
+	return len(fake.identityArgsForCall)
+}
+
+func (fake *FakeParticipant) IdentityCalls(stub func() string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = stub
+}
+
+func (fake *FakeParticipant) IdentityReturns(result1 string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = nil
+	fake.identityReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = nil
+	if fake.identityReturnsOnCall == nil {
+		fake.identityReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.identityReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeParticipant) IsReady() bool {
 	fake.isReadyMutex.Lock()
 	ret, specificReturn := fake.isReadyReturnsOnCall[len(fake.isReadyArgsForCall)]
@@ -722,59 +775,6 @@ func (fake *FakeParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}
 	fake.isReadyReturnsOnCall[i] = struct {
 		result1 bool
-	}{result1}
-}
-
-func (fake *FakeParticipant) Name() string {
-	fake.nameMutex.Lock()
-	ret, specificReturn := fake.nameReturnsOnCall[len(fake.nameArgsForCall)]
-	fake.nameArgsForCall = append(fake.nameArgsForCall, struct {
-	}{})
-	stub := fake.NameStub
-	fakeReturns := fake.nameReturns
-	fake.recordInvocation("Name", []interface{}{})
-	fake.nameMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) NameCallCount() int {
-	fake.nameMutex.RLock()
-	defer fake.nameMutex.RUnlock()
-	return len(fake.nameArgsForCall)
-}
-
-func (fake *FakeParticipant) NameCalls(stub func() string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = stub
-}
-
-func (fake *FakeParticipant) NameReturns(result1 string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = nil
-	fake.nameReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *FakeParticipant) NameReturnsOnCall(i int, result1 string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = nil
-	if fake.nameReturnsOnCall == nil {
-		fake.nameReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.nameReturnsOnCall[i] = struct {
-		result1 string
 	}{result1}
 }
 
@@ -1426,10 +1426,10 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleClientNegotiationMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.identityMutex.RLock()
+	defer fake.identityMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
-	fake.nameMutex.RLock()
-	defer fake.nameMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	fake.onICECandidateMutex.RLock()
