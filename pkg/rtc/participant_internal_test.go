@@ -48,6 +48,7 @@ func TestIsReady(t *testing.T) {
 func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
+		p.state.Store(livekit.ParticipantInfo_ACTIVE)
 		track := &typesfakes.FakePublishedTrack{}
 		track.IDReturns("id")
 		published := false

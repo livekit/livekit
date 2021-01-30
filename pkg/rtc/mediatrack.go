@@ -127,7 +127,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	}
 
 	outTrack.SetTransceiver(transceiver)
-	// TODO: when outtrack is bound, start loop to send reports
+	// when outtrack is bound, start loop to send reports
 	outTrack.OnBind(func() {
 		if rr := bufferFactory.GetOrNew(packetio.RTCPBufferPacket, outTrack.SSRC()).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
