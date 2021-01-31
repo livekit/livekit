@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thoas/go-funk"
+
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -98,6 +100,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 		err2 = r.roomStore.DeleteRoom(roomName)
 	}()
 
+	wg.Wait()
 	if err != nil {
 		err = err2
 	}
@@ -106,7 +109,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 }
 
 // clean up after old rooms that have been around for awhile
-func (r *RoomManager) Cleanup() error {
+func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	rooms, err := r.roomStore.ListRooms()
 	if err != nil {
@@ -122,6 +125,16 @@ func (r *RoomManager) Cleanup() error {
 		}
 	}
 	return nil
+}
+
+func (r *RoomManager) CloseIdleRooms() {
+	r.lock.RLock()
+	rooms := funk.Values(r.rooms).([]*rtc.Room)
+	r.lock.RUnlock()
+
+	for _, room := range rooms {
+		room.CloseIfEmpty()
+	}
 }
 
 // starts WebRTC session when a new participant is connected, takes place on RTC node

@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thoas/go-funk"
@@ -12,24 +13,38 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+const (
+	DefaultEmptyTimeout = 5 * 60 // 5 mins
+)
+
 type Room struct {
 	livekit.Room
 	config WebRTCConfig
 	lock   sync.RWMutex
 	// map of identity -> Participant
 	participants map[string]types.Participant
-	hasJoined    bool
-	isClosed     utils.AtomicFlag
-	onClose      func()
+	// time the first participant joined the room
+	joinedAt atomic.Value
+	// time that the last participant left the room
+	leftAt   atomic.Value
+	isClosed utils.AtomicFlag
+	onClose  func()
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
-	return &Room{
+	r := &Room{
 		Room:         *room,
 		config:       config,
 		lock:         sync.RWMutex{},
 		participants: make(map[string]types.Participant),
 	}
+	if r.EmptyTimeout == 0 {
+		r.EmptyTimeout = DefaultEmptyTimeout
+	}
+	if r.CreationTime == 0 {
+		r.CreationTime = time.Now().Unix()
+	}
+	return r
 }
 
 func (r *Room) GetParticipant(identity string) types.Participant {
@@ -44,6 +59,22 @@ func (r *Room) GetParticipants() []types.Participant {
 	return funk.Values(r.participants).([]types.Participant)
 }
 
+func (r *Room) FirstJoinedAt() int64 {
+	j := r.joinedAt.Load()
+	if t, ok := j.(int64); ok {
+		return t
+	}
+	return 0
+}
+
+func (r *Room) LastLeftAt() int64 {
+	l := r.leftAt.Load()
+	if t, ok := l.(int64); ok {
+		return t
+	}
+	return 0
+}
+
 func (r *Room) Join(participant types.Participant) error {
 	if r.isClosed.Get() {
 		return ErrRoomClosed
@@ -54,14 +85,15 @@ func (r *Room) Join(participant types.Participant) error {
 
 	if r.participants[participant.Identity()] != nil {
 		return ErrAlreadyJoined
-
 	}
 
 	if r.MaxParticipants > 0 && int(r.MaxParticipants) == len(r.participants) {
 		return ErrMaxParticipantsExceeded
 	}
 
-	r.hasJoined = true
+	if r.FirstJoinedAt() == 0 {
+		r.joinedAt.Store(time.Now().Unix())
+	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
@@ -126,7 +158,9 @@ func (r *Room) RemoveParticipant(identity string) {
 
 	delete(r.participants, identity)
 
-	go r.CloseIfEmpty()
+	if len(r.participants) == 0 {
+		r.leftAt.Store(time.Now().Unix())
+	}
 }
 
 // Close the room if all participants had left, or it's still empty past timeout
@@ -143,8 +177,14 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	elapsed := uint32(time.Now().Unix() - r.CreationTime)
-	if r.hasJoined || (r.EmptyTimeout > 0 && elapsed >= r.EmptyTimeout) {
+	var elapsed int64
+	if r.FirstJoinedAt() > 0 {
+		// compute elasped from last departure
+		elapsed = time.Now().Unix() - r.LastLeftAt()
+	} else {
+		elapsed = time.Now().Unix() - r.CreationTime
+	}
+	if elapsed >= int64(r.EmptyTimeout) {
 		r.Close()
 	}
 }

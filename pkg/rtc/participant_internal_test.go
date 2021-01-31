@@ -12,6 +12,8 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+//func Test
+
 func TestIsReady(t *testing.T) {
 	tests := []struct {
 		state livekit.ParticipantInfo_State

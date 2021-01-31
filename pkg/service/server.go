@@ -14,6 +14,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 	"github.com/livekit/livekit-server/version"
 )
@@ -24,8 +25,9 @@ type LivekitServer struct {
 	rtcService  *RTCService
 	httpServer  *http.Server
 	router      routing.Router
+	roomManager *RoomManager
 	currentNode routing.LocalNode
-	running     bool
+	running     utils.AtomicFlag
 	doneChan    chan bool
 }
 
@@ -42,6 +44,7 @@ func NewLivekitServer(conf *config.Config,
 		roomServer:  livekit.NewRoomServiceServer(roomService),
 		rtcService:  rtcService,
 		router:      router,
+		roomManager: roomManager,
 		currentNode: currentNode,
 	}
 
@@ -66,17 +69,17 @@ func NewLivekitServer(conf *config.Config,
 	router.OnNewParticipantRTC(roomManager.StartSession)
 
 	// clean up old rooms on startup
-	err = roomManager.Cleanup()
+	err = roomManager.CleanupRooms()
 
 	return
 }
 
 func (s *LivekitServer) IsRunning() bool {
-	return s.running
+	return s.running.Get()
 }
 
 func (s *LivekitServer) Start() error {
-	if s.running {
+	if s.running.Get() {
 		return errors.New("already running")
 	}
 
@@ -104,7 +107,9 @@ func (s *LivekitServer) Start() error {
 		s.httpServer.Serve(ln)
 	}()
 
-	s.running = true
+	go s.backgroundWorker()
+
+	s.running.TrySet(true)
 
 	<-s.doneChan
 
@@ -120,9 +125,23 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop() {
-	s.running = false
-	s.router.Stop()
-	s.doneChan <- true
+	if s.running.TrySet(false) {
+		s.router.Stop()
+		close(s.doneChan)
+	}
+}
+
+// worker to perform periodic tasks per node
+func (s *LivekitServer) backgroundWorker() {
+	roomTicker := time.NewTicker(30 * time.Second)
+	for {
+		select {
+		case <-s.doneChan:
+			return
+		case <-roomTicker.C:
+			s.roomManager.CloseIdleRooms()
+		}
+	}
 }
 
 func configureMiddlewares(handler http.Handler, middlewares ...negroni.Handler) *negroni.Negroni {
