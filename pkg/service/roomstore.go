@@ -14,6 +14,4 @@ type RoomStore interface {
 	GetRoom(idOrName string) (*livekit.Room, error)
 	ListRooms() ([]*livekit.Room, error)
 	DeleteRoom(idOrName string) error
-	// returns the current participant id in room, or create new one
-	GetParticipantId(room, name string) (string, error)
 }

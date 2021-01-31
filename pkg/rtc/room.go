@@ -16,7 +16,7 @@ type Room struct {
 	livekit.Room
 	config WebRTCConfig
 	lock   sync.RWMutex
-	// map of participantId -> Participant
+	// map of identity -> Participant
 	participants map[string]types.Participant
 	hasJoined    bool
 	isClosed     utils.AtomicFlag
@@ -32,10 +32,10 @@ func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
 	}
 }
 
-func (r *Room) GetParticipant(id string) types.Participant {
+func (r *Room) GetParticipant(identity string) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return r.participants[id]
+	return r.participants[identity]
 }
 
 func (r *Room) GetParticipants() []types.Participant {
@@ -51,6 +51,11 @@ func (r *Room) Join(participant types.Participant) error {
 
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	if r.participants[participant.Identity()] != nil {
+		return ErrAlreadyJoined
+
+	}
 
 	if r.MaxParticipants > 0 && int(r.MaxParticipants) == len(r.participants) {
 		return ErrMaxParticipantsExceeded
@@ -75,15 +80,15 @@ func (r *Room) Join(participant types.Participant) error {
 				if err := op.AddSubscriber(p); err != nil {
 					// TODO: log error? or disconnect?
 					logger.Errorw("could not subscribe to participant",
-						"dstParticipant", p.ID(),
-						"srcParticipant", op.ID())
+						"dest", p.Identity(),
+						"source", op.Identity())
 				}
 			}
 			// start the workers once connectivity is established
 			p.Start()
 		} else if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.ID())
+			go r.RemoveParticipant(p.Identity())
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
@@ -93,7 +98,7 @@ func (r *Room) Join(participant types.Participant) error {
 		"identity", participant.Identity(),
 		"roomId", r.Sid)
 
-	r.participants[participant.ID()] = participant
+	r.participants[participant.Identity()] = participant
 
 	// gather other participants and send join response
 	otherParticipants := make([]types.Participant, 0, len(r.participants))
@@ -106,11 +111,11 @@ func (r *Room) Join(participant types.Participant) error {
 	return participant.SendJoinResponse(&r.Room, otherParticipants)
 }
 
-func (r *Room) RemoveParticipant(id string) {
+func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if p, ok := r.participants[id]; ok {
+	if p, ok := r.participants[identity]; ok {
 		// avoid blocking lock
 		go func() {
 			Recover()
@@ -119,7 +124,7 @@ func (r *Room) RemoveParticipant(id string) {
 		}()
 	}
 
-	delete(r.participants, id)
+	delete(r.participants, identity)
 
 	go r.CloseIfEmpty()
 }
@@ -139,11 +144,15 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	elapsed := uint32(time.Now().Unix() - r.CreationTime)
-	logger.Infow("comparing elapsed", "elapsed", elapsed, "timeout", r.EmptyTimeout)
 	if r.hasJoined || (r.EmptyTimeout > 0 && elapsed >= r.EmptyTimeout) {
-		if r.isClosed.TrySet(true) && r.onClose != nil {
-			r.onClose()
-		}
+		r.Close()
+	}
+}
+
+func (r *Room) Close() {
+	logger.Infow("closing room", "room", r.Sid, "name", r.Name)
+	if r.isClosed.TrySet(true) && r.onClose != nil {
+		r.onClose()
 	}
 }
 
@@ -171,14 +180,14 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			continue
 		}
 		logger.Debugw("subscribing to new track",
-			"srcParticipant", participant.ID(),
+			"source", participant.Identity(),
 			"remoteTrack", track.ID(),
-			"dstParticipant", existingParticipant.ID())
+			"dest", existingParticipant.Identity())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.Errorw("could not subscribe to remoteTrack",
-				"srcParticipant", participant.ID(),
+				"source", participant.Identity(),
 				"remoteTrack", track.ID(),
-				"dstParticipant", existingParticipant.ID())
+				"dest", existingParticipant.Identity())
 		}
 	}
 }
@@ -202,7 +211,7 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			logger.Errorw("could not send update to participant",
-				"participant", p.ID(),
+				"participant", p.Identity(),
 				"err", err)
 		}
 	}

@@ -75,14 +75,14 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 	return pc, err
 }
 
-func NewParticipant(participantId, identity string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
+func NewParticipant(identity string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
-		id:                 participantId,
+		id:                 utils.NewGuid(utils.ParticipantPrefix),
 		identity:           identity,
 		peerConn:           pc,
 		responseSink:       rs,
@@ -182,6 +182,14 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	}
 	p.lock.RUnlock()
 	return info
+}
+
+func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
+	return p.responseSink
+}
+
+func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
+	p.responseSink = sink
 }
 
 // callbacks for clients

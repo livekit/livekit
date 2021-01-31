@@ -79,6 +79,7 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) DeleteRoom(roomName string) error {
+	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
@@ -124,17 +125,34 @@ func (r *RoomManager) Cleanup() error {
 }
 
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, identity string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
 		return
 	}
 
+	// Use existing peer connection if it's already connected, perhaps from a different signal connection
+	participant := room.GetParticipant(identity)
+	if participant != nil {
+		logger.Debugw("resuming RTC session",
+			"room", roomName,
+			"node", r.currentNode.Id,
+			"participant", identity,
+		)
+		// close previous sink, and link to new one
+		prevSink := participant.GetResponseSink()
+		if prevSink != nil {
+			prevSink.Close()
+		}
+		participant.SetResponseSink(responseSink)
+		return
+	}
+
 	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"node", r.currentNode.Id,
-		"participant", participantName,
+		"participant", identity,
 		"num_participants", len(room.GetParticipants()),
 	)
 
@@ -144,7 +162,7 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 		return
 	}
 
-	participant, err := rtc.NewParticipant(participantId, participantName, pc, responseSink, r.config.Receiver)
+	participant, err = rtc.NewParticipant(identity, pc, responseSink, r.config.Receiver)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return

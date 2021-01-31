@@ -1,6 +1,7 @@
 package rtc_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestRoomJoin(t *testing.T) {
 		disconnectedParticipant := participants[1].(*typesfakes.FakeParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
-		rm.RemoveParticipant(p.ID())
+		rm.RemoveParticipant(p.Identity())
 		p.OnStateChangeArgsForCall(0)(p, livekit.ParticipantInfo_ACTIVE)
 		time.Sleep(defaultDelay)
 
@@ -97,7 +98,7 @@ func TestRoomClosure(t *testing.T) {
 			isClosed = true
 		})
 		p := rm.GetParticipants()[0]
-		rm.RemoveParticipant(p.ID())
+		rm.RemoveParticipant(p.Identity())
 
 		time.Sleep(defaultDelay)
 
@@ -155,12 +156,14 @@ func TestNewTrack(t *testing.T) {
 }
 
 func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
+
 	rm := rtc.NewRoom(
-		&livekit.Room{Name: "identity"},
+		&livekit.Room{Name: "room"},
 		rtc.WebRTCConfig{},
 	)
 	for i := 0; i < num; i++ {
-		participant := newMockParticipant("")
+		identity := fmt.Sprintf("p%d", i)
+		participant := newMockParticipant(identity)
 		err := rm.Join(participant)
 		assert.NoError(t, err)
 		//rm.participants[participant.ID()] = participant

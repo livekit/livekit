@@ -7,6 +7,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -53,6 +54,8 @@ type Participant interface {
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
 	RTCPChan() *utils.CalmChannel
+	GetResponseSink() routing.MessageSink
+	SetResponseSink(sink routing.MessageSink)
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)

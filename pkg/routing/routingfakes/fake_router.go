@@ -46,32 +46,6 @@ type FakeRouter struct {
 		result1 string
 		result2 error
 	}
-	GetRequestSinkStub        func(string) (routing.MessageSink, error)
-	getRequestSinkMutex       sync.RWMutex
-	getRequestSinkArgsForCall []struct {
-		arg1 string
-	}
-	getRequestSinkReturns struct {
-		result1 routing.MessageSink
-		result2 error
-	}
-	getRequestSinkReturnsOnCall map[int]struct {
-		result1 routing.MessageSink
-		result2 error
-	}
-	GetResponseSourceStub        func(string) (routing.MessageSource, error)
-	getResponseSourceMutex       sync.RWMutex
-	getResponseSourceArgsForCall []struct {
-		arg1 string
-	}
-	getResponseSourceReturns struct {
-		result1 routing.MessageSource
-		result2 error
-	}
-	getResponseSourceReturnsOnCall map[int]struct {
-		result1 routing.MessageSource
-		result2 error
-	}
 	ListNodesStub        func() ([]*livekit.Node, error)
 	listNodesMutex       sync.RWMutex
 	listNodesArgsForCall []struct {
@@ -121,18 +95,21 @@ type FakeRouter struct {
 	startReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StartParticipantSignalStub        func(string, string, string) error
+	StartParticipantSignalStub        func(string, string) (routing.MessageSink, routing.MessageSource, error)
 	startParticipantSignalMutex       sync.RWMutex
 	startParticipantSignalArgsForCall []struct {
 		arg1 string
 		arg2 string
-		arg3 string
 	}
 	startParticipantSignalReturns struct {
-		result1 error
+		result1 routing.MessageSink
+		result2 routing.MessageSource
+		result3 error
 	}
 	startParticipantSignalReturnsOnCall map[int]struct {
-		result1 error
+		result1 routing.MessageSink
+		result2 routing.MessageSource
+		result3 error
 	}
 	StopStub        func()
 	stopMutex       sync.RWMutex
@@ -337,134 +314,6 @@ func (fake *FakeRouter) GetNodeForRoomReturnsOnCall(i int, result1 string, resul
 	}
 	fake.getNodeForRoomReturnsOnCall[i] = struct {
 		result1 string
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRouter) GetRequestSink(arg1 string) (routing.MessageSink, error) {
-	fake.getRequestSinkMutex.Lock()
-	ret, specificReturn := fake.getRequestSinkReturnsOnCall[len(fake.getRequestSinkArgsForCall)]
-	fake.getRequestSinkArgsForCall = append(fake.getRequestSinkArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.GetRequestSinkStub
-	fakeReturns := fake.getRequestSinkReturns
-	fake.recordInvocation("GetRequestSink", []interface{}{arg1})
-	fake.getRequestSinkMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeRouter) GetRequestSinkCallCount() int {
-	fake.getRequestSinkMutex.RLock()
-	defer fake.getRequestSinkMutex.RUnlock()
-	return len(fake.getRequestSinkArgsForCall)
-}
-
-func (fake *FakeRouter) GetRequestSinkCalls(stub func(string) (routing.MessageSink, error)) {
-	fake.getRequestSinkMutex.Lock()
-	defer fake.getRequestSinkMutex.Unlock()
-	fake.GetRequestSinkStub = stub
-}
-
-func (fake *FakeRouter) GetRequestSinkArgsForCall(i int) string {
-	fake.getRequestSinkMutex.RLock()
-	defer fake.getRequestSinkMutex.RUnlock()
-	argsForCall := fake.getRequestSinkArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRouter) GetRequestSinkReturns(result1 routing.MessageSink, result2 error) {
-	fake.getRequestSinkMutex.Lock()
-	defer fake.getRequestSinkMutex.Unlock()
-	fake.GetRequestSinkStub = nil
-	fake.getRequestSinkReturns = struct {
-		result1 routing.MessageSink
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRouter) GetRequestSinkReturnsOnCall(i int, result1 routing.MessageSink, result2 error) {
-	fake.getRequestSinkMutex.Lock()
-	defer fake.getRequestSinkMutex.Unlock()
-	fake.GetRequestSinkStub = nil
-	if fake.getRequestSinkReturnsOnCall == nil {
-		fake.getRequestSinkReturnsOnCall = make(map[int]struct {
-			result1 routing.MessageSink
-			result2 error
-		})
-	}
-	fake.getRequestSinkReturnsOnCall[i] = struct {
-		result1 routing.MessageSink
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRouter) GetResponseSource(arg1 string) (routing.MessageSource, error) {
-	fake.getResponseSourceMutex.Lock()
-	ret, specificReturn := fake.getResponseSourceReturnsOnCall[len(fake.getResponseSourceArgsForCall)]
-	fake.getResponseSourceArgsForCall = append(fake.getResponseSourceArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.GetResponseSourceStub
-	fakeReturns := fake.getResponseSourceReturns
-	fake.recordInvocation("GetResponseSource", []interface{}{arg1})
-	fake.getResponseSourceMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeRouter) GetResponseSourceCallCount() int {
-	fake.getResponseSourceMutex.RLock()
-	defer fake.getResponseSourceMutex.RUnlock()
-	return len(fake.getResponseSourceArgsForCall)
-}
-
-func (fake *FakeRouter) GetResponseSourceCalls(stub func(string) (routing.MessageSource, error)) {
-	fake.getResponseSourceMutex.Lock()
-	defer fake.getResponseSourceMutex.Unlock()
-	fake.GetResponseSourceStub = stub
-}
-
-func (fake *FakeRouter) GetResponseSourceArgsForCall(i int) string {
-	fake.getResponseSourceMutex.RLock()
-	defer fake.getResponseSourceMutex.RUnlock()
-	argsForCall := fake.getResponseSourceArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRouter) GetResponseSourceReturns(result1 routing.MessageSource, result2 error) {
-	fake.getResponseSourceMutex.Lock()
-	defer fake.getResponseSourceMutex.Unlock()
-	fake.GetResponseSourceStub = nil
-	fake.getResponseSourceReturns = struct {
-		result1 routing.MessageSource
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRouter) GetResponseSourceReturnsOnCall(i int, result1 routing.MessageSource, result2 error) {
-	fake.getResponseSourceMutex.Lock()
-	defer fake.getResponseSourceMutex.Unlock()
-	fake.GetResponseSourceStub = nil
-	if fake.getResponseSourceReturnsOnCall == nil {
-		fake.getResponseSourceReturnsOnCall = make(map[int]struct {
-			result1 routing.MessageSource
-			result2 error
-		})
-	}
-	fake.getResponseSourceReturnsOnCall[i] = struct {
-		result1 routing.MessageSource
 		result2 error
 	}{result1, result2}
 }
@@ -725,25 +574,24 @@ func (fake *FakeRouter) StartReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) StartParticipantSignal(arg1 string, arg2 string, arg3 string) error {
+func (fake *FakeRouter) StartParticipantSignal(arg1 string, arg2 string) (routing.MessageSink, routing.MessageSource, error) {
 	fake.startParticipantSignalMutex.Lock()
 	ret, specificReturn := fake.startParticipantSignalReturnsOnCall[len(fake.startParticipantSignalArgsForCall)]
 	fake.startParticipantSignalArgsForCall = append(fake.startParticipantSignalArgsForCall, struct {
 		arg1 string
 		arg2 string
-		arg3 string
-	}{arg1, arg2, arg3})
+	}{arg1, arg2})
 	stub := fake.StartParticipantSignalStub
 	fakeReturns := fake.startParticipantSignalReturns
-	fake.recordInvocation("StartParticipantSignal", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("StartParticipantSignal", []interface{}{arg1, arg2})
 	fake.startParticipantSignalMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2, ret.result3
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
 }
 
 func (fake *FakeRouter) StartParticipantSignalCallCount() int {
@@ -752,40 +600,46 @@ func (fake *FakeRouter) StartParticipantSignalCallCount() int {
 	return len(fake.startParticipantSignalArgsForCall)
 }
 
-func (fake *FakeRouter) StartParticipantSignalCalls(stub func(string, string, string) error) {
+func (fake *FakeRouter) StartParticipantSignalCalls(stub func(string, string) (routing.MessageSink, routing.MessageSource, error)) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = stub
 }
 
-func (fake *FakeRouter) StartParticipantSignalArgsForCall(i int) (string, string, string) {
+func (fake *FakeRouter) StartParticipantSignalArgsForCall(i int) (string, string) {
 	fake.startParticipantSignalMutex.RLock()
 	defer fake.startParticipantSignalMutex.RUnlock()
 	argsForCall := fake.startParticipantSignalArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturns(result1 error) {
+func (fake *FakeRouter) StartParticipantSignalReturns(result1 routing.MessageSink, result2 routing.MessageSource, result3 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	fake.startParticipantSignalReturns = struct {
-		result1 error
-	}{result1}
+		result1 routing.MessageSink
+		result2 routing.MessageSource
+		result3 error
+	}{result1, result2, result3}
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 error) {
+func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 routing.MessageSink, result2 routing.MessageSource, result3 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	if fake.startParticipantSignalReturnsOnCall == nil {
 		fake.startParticipantSignalReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 routing.MessageSink
+			result2 routing.MessageSource
+			result3 error
 		})
 	}
 	fake.startParticipantSignalReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 routing.MessageSink
+		result2 routing.MessageSource
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeRouter) Stop() {
@@ -874,10 +728,6 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.getNodeMutex.RUnlock()
 	fake.getNodeForRoomMutex.RLock()
 	defer fake.getNodeForRoomMutex.RUnlock()
-	fake.getRequestSinkMutex.RLock()
-	defer fake.getRequestSinkMutex.RUnlock()
-	fake.getResponseSourceMutex.RLock()
-	defer fake.getResponseSourceMutex.RUnlock()
 	fake.listNodesMutex.RLock()
 	defer fake.listNodesMutex.RUnlock()
 	fake.onNewParticipantRTCMutex.RLock()

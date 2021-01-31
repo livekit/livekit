@@ -8,7 +8,6 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -18,12 +17,12 @@ const (
 
 	// hash of room_id => room name
 	RoomIdMap = "room_id_map"
-
-	// hash of participant_name => participant_id
-	// a key for each room, with expiration
-	RoomParticipantMapPrefix = "participant_map:room:"
-
-	participantMappingTTL = 24 * time.Hour
+	//
+	//// hash of participant_name => participant_id
+	//// a key for each room, with expiration
+	//RoomParticipantMapPrefix = "participant_map:room:"
+	//
+	//participantMappingTTL = 24 * time.Hour
 )
 
 type RedisRoomStore struct {
@@ -112,26 +111,7 @@ func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
 	pp := p.rc.Pipeline()
 	pp.HDel(p.ctx, RoomIdMap, room.Sid)
 	pp.HDel(p.ctx, RoomsKey, room.Name)
-	pp.HDel(p.ctx, RoomParticipantMapPrefix+room.Name)
 
 	_, err = pp.Exec(p.ctx)
 	return err
-}
-
-func (p *RedisRoomStore) GetParticipantId(room, name string) (string, error) {
-	key := RoomParticipantMapPrefix + room
-
-	pId, err := p.rc.HGet(p.ctx, key, name).Result()
-	if err == redis.Nil {
-		// create
-		pId = utils.NewGuid(utils.ParticipantPrefix)
-		pp := p.rc.Pipeline()
-		pp.HSet(p.ctx, key, name, pId)
-		pp.Expire(p.ctx, key, participantMappingTTL)
-		_, err = pp.Exec(p.ctx)
-	} else if err != nil {
-		return "", err
-	}
-
-	return pId, err
 }

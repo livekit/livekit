@@ -9,7 +9,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -117,10 +116,9 @@ func TestDisconnectTiming(t *testing.T) {
 	})
 }
 
-func newParticipantForTest(name string) *ParticipantImpl {
+func newParticipantForTest(identity string) *ParticipantImpl {
 	p, _ := NewParticipant(
-		utils.NewGuid(utils.ParticipantPrefix),
-		name,
+		identity,
 		&typesfakes.FakePeerConnection{},
 		&routingfakes.FakeMessageSink{},
 		ReceiverConfig{})

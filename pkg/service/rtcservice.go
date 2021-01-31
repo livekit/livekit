@@ -48,7 +48,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if claims == nil || claims.Video == nil {
 		handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
 	}
-	pName := claims.Identity
+	identity := claims.Identity
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
@@ -67,34 +67,20 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participantId, err := s.roomManager.roomStore.GetParticipantId(roomName, pName)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get participant ID: "+err.Error())
-		return
-	}
-
-	err = s.router.StartParticipantSignal(roomName, participantId, pName)
+	// this needs to be started first *before* using router functions on this node
+	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
-	reqSink, err := s.router.GetRequestSink(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get request sink"+err.Error())
-		return
-	}
+	logger.Debugw("started participant signal", "sink", reqSink, "source", resSource)
+
 	done := make(chan bool, 1)
 	defer func() {
-		logger.Infow("WS connection closed", "participant", pName)
+		logger.Infow("WS connection closed", "participant", identity)
 		reqSink.Close()
 		close(done)
 	}()
-
-	resSource, err := s.router.GetResponseSource(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
-		return
-	}
 
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
@@ -110,12 +96,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Infow("new client connected",
 		"room", rm.Sid,
 		"roomName", rm.Name,
-		"name", pName,
-		"resSource", fmt.Sprintf("%p", resSource),
+		"name", identity,
 	)
 
 	// handle responses
 	go func() {
+		defer func() {
+			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
+			// we would terminate the signal connection as well
+			conn.Close()
+		}()
+		defer rtc.Recover()
 		for {
 			select {
 			case <-done:
