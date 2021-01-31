@@ -59,7 +59,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(roomName, identity string) (reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(roomName, identity string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		return nil, nil, ErrHandlerNotDefined
@@ -73,6 +73,7 @@ func (r *LocalRouter) StartParticipantSignal(roomName, identity string) (reqSink
 	r.onNewParticipant(
 		roomName,
 		identity,
+		reconnect,
 		// request source
 		reqChan,
 		// response sink

@@ -125,28 +125,34 @@ func (r *RoomManager) Cleanup() error {
 }
 
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, identity string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, identity string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
 		return
 	}
 
-	// Use existing peer connection if it's already connected, perhaps from a different signal connection
 	participant := room.GetParticipant(identity)
 	if participant != nil {
-		logger.Debugw("resuming RTC session",
-			"room", roomName,
-			"node", r.currentNode.Id,
-			"participant", identity,
-		)
-		// close previous sink, and link to new one
-		prevSink := participant.GetResponseSink()
-		if prevSink != nil {
-			prevSink.Close()
+		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
+		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
+		if reconnect {
+			logger.Debugw("resuming RTC session",
+				"room", roomName,
+				"node", r.currentNode.Id,
+				"participant", identity,
+			)
+			// close previous sink, and link to new one
+			prevSink := participant.GetResponseSink()
+			if prevSink != nil {
+				prevSink.Close()
+			}
+			participant.SetResponseSink(responseSink)
+			return
+		} else {
+			// we need to clean up the existing participant, so a new one can join
+			room.RemoveParticipant(participant.Identity())
 		}
-		participant.SetResponseSink(responseSink)
-		return
 	}
 
 	logger.Debugw("starting RTC session",

@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"context"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -37,8 +36,7 @@ type ParticipantImpl struct {
 	peerConn         types.PeerConnection
 	responseSink     routing.MessageSink
 	receiverConfig   ReceiverConfig
-	ctx              context.Context
-	cancel           context.CancelFunc
+	isClosed         utils.AtomicFlag
 	mediaEngine      *webrtc.MediaEngine
 	identity         string
 	state            atomic.Value // livekit.ParticipantInfo_State
@@ -80,15 +78,12 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 	me := &webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
 
-	ctx, cancel := context.WithCancel(context.Background())
 	participant := &ParticipantImpl{
 		id:                 utils.NewGuid(utils.ParticipantPrefix),
 		identity:           identity,
 		peerConn:           pc,
 		responseSink:       rs,
 		receiverConfig:     receiverConfig,
-		ctx:                ctx,
-		cancel:             cancel,
 		rtcpCh:             utils.NewCalmChannel(50),
 		subscribedTracks:   make(map[string][]*sfu.DownTrack),
 		lock:               sync.RWMutex{},
@@ -215,6 +210,7 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 
 // Answer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+	logger.Debugw("answering", "state", p.State().String())
 	if p.State() != livekit.ParticipantInfo_JOINING && p.negotiationState != negotiationStateClient {
 		// not in a valid state to continue
 		err = ErrUnexpectedNegotiation
@@ -332,7 +328,7 @@ func (p *ParticipantImpl) Start() {
 }
 
 func (p *ParticipantImpl) Close() error {
-	if p.ctx.Err() != nil {
+	if !p.isClosed.TrySet(true) {
 		// already closed
 		return nil
 	}
@@ -346,7 +342,6 @@ func (p *ParticipantImpl) Close() error {
 	if p.onClose != nil {
 		p.onClose(p)
 	}
-	p.cancel()
 	p.peerConn.Close()
 	p.rtcpCh.Close()
 	return nil

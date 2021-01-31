@@ -115,7 +115,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(roomName, identity string) (reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(roomName, identity string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(roomName)
 	if err != nil {
@@ -139,6 +139,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity string) (reqSink
 		Identity: identity,
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId: connectionId,
+		Reconnect:    reconnect,
 	})
 	if err != nil {
 		return
@@ -177,11 +178,24 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		return ErrHandlerNotDefined
 	}
 
+	if !ss.Reconnect {
+		// when it's not reconnecting, we do not want to re-use the same response sink
+		// the previous rtc worker thread is still consuming off of it.
+		// we'll want to sever the connection and switch to the new one
+		r.lock.Lock()
+		requestChan, ok := r.requestChannels[participantKey]
+		r.lock.Unlock()
+		if ok {
+			requestChan.Close()
+		}
+	}
+
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
 	resSink := r.getOrCreateSignalSink(signalNode, ss.ConnectionId)
 	r.onNewParticipant(
 		ss.RoomName,
 		ss.Identity,
+		ss.Reconnect,
 		reqChan,
 		resSink,
 	)
@@ -317,17 +331,17 @@ func (r *RedisRouter) signalWorker() {
 			}
 
 		case *livekit.SignalNodeMessage_EndSession:
-			signalNode, err := r.getParticipantSignalNode(connectionId)
+			//signalNode, err := r.getParticipantSignalNode(connectionId)
 			if err != nil {
 				logger.Errorw("could not get participant RTC node",
 					"error", err)
 				continue
 			}
 			// EndSession can only be initiated on an RTC node, is handled on the signal node
-			if signalNode == r.currentNode.Id {
-				resSink := r.getOrCreateMessageChannel(r.responseChannels, connectionId)
-				resSink.Close()
-			}
+			//if signalNode == r.currentNode.Id {
+			resSink := r.getOrCreateMessageChannel(r.responseChannels, connectionId)
+			resSink.Close()
+			//}
 		}
 	}
 }
@@ -363,8 +377,6 @@ func (r *RedisRouter) rtcWorker() {
 
 		switch rmb := rm.Message.(type) {
 		case *livekit.RTCNodeMessage_StartSession:
-			logger.Debugw("received router startSession", "node", r.currentNode.Id,
-				"participant", pKey)
 			// RTC session should start on this node
 			err = r.startParticipantRTC(rmb.StartSession, pKey)
 			if err != nil {
@@ -372,9 +384,8 @@ func (r *RedisRouter) rtcWorker() {
 			}
 
 		case *livekit.RTCNodeMessage_Request:
-			// in the event the current node is an RTC node, push to request channels
-			reqSink := r.getOrCreateMessageChannel(r.requestChannels, pKey)
-			err = reqSink.WriteMessage(rmb.Request)
+			requestChan := r.getOrCreateMessageChannel(r.requestChannels, pKey)
+			err = requestChan.WriteMessage(rmb.Request)
 			if err != nil {
 				logger.Errorw("could not write to request channel",
 					"participant", pKey,

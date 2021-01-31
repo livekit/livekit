@@ -43,6 +43,8 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomName := r.FormValue("room")
+	reconnectParam := r.FormValue("reconnect")
+	isReconnect := reconnectParam == "1" || reconnectParam == "true"
 	claims := GetGrants(r.Context())
 	// require a claim
 	if claims == nil || claims.Video == nil {
@@ -68,12 +70,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// this needs to be started first *before* using router functions on this node
-	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity)
+	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, isReconnect)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
-	logger.Debugw("started participant signal", "sink", reqSink, "source", resSource)
 
 	done := make(chan bool, 1)
 	defer func() {
@@ -93,7 +94,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sigConn := NewWSSignalConnection(conn)
 
-	logger.Infow("new client connected",
+	logger.Infow("new client WS connected",
 		"room", rm.Sid,
 		"roomName", rm.Name,
 		"name", identity,
