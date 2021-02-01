@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -151,14 +150,6 @@ type errStruct struct {
 	StatusCode int    `json:"statusCode"`
 	Error      string `json:"error"`
 	Message    string `json:"message,omitempty"`
-}
-
-func writeJSONError(w http.ResponseWriter, code int, error ...string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-
-	json.NewEncoder(w).Encode(jsonError(code, error...))
 }
 
 func jsonError(code int, error ...string) errStruct {

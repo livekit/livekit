@@ -98,13 +98,13 @@ func (r *Room) Join(participant types.Participant) error {
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		logger.Debugw("participant state changed", "state", p.State(), "participant", p.ID(),
+		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
 			"oldState", oldState)
 		r.broadcastParticipantState(p)
 
 		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
 			// subscribe participant to existing publishedTracks
-			for _, op := range r.participants {
+			for _, op := range r.GetParticipants() {
 				if p.ID() == op.ID() {
 					// don't send to itself
 					continue

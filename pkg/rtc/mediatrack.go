@@ -153,7 +153,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 			logger.Debugw("removing peerconnection track",
 				"track", t.id,
 				"srcParticipant", t.participantId,
-				"destParticipant", participant.ID())
+				"destParticipant", participant.Identity())
 			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
 				if err == webrtc.ErrConnectionClosed {
 					// participant closing, can skip removing downtracks

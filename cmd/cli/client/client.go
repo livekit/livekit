@@ -197,7 +197,7 @@ func (c *RTCClient) Run() error {
 			}
 			c.lock.Unlock()
 
-			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
+			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Identity)
 			c.localParticipant = msg.Join.Participant
 			logger.Debugw("other participants", "count", len(msg.Join.OtherParticipants))
 
@@ -247,7 +247,7 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				c.remoteParticipants[p.Sid] = p
-				logger.Debugw("participant update", "id", p.Sid, "state", p.State.String())
+				logger.Debugw("participant update", "id", p.Identity, "state", p.State.String())
 			}
 			c.lock.Unlock()
 		case *livekit.SignalResponse_TrackPublished:

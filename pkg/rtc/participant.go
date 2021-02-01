@@ -354,8 +354,8 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 
 	for _, track := range p.publishedTracks {
 		logger.Debugw("subscribing to remoteTrack",
-			"srcParticipant", p.ID(),
-			"dstParticipant", op.ID(),
+			"srcParticipant", p.Identity(),
+			"dstParticipant", op.Identity(),
 			"remoteTrack", track.ID())
 		if err := track.AddSubscriber(op); err != nil {
 			return err
@@ -496,7 +496,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 	p.state.Store(state)
-	logger.Debugw("updating participant state", "state", state.String(), "participant", p.ID())
+	logger.Debugw("updating participant state", "state", state.String(), "participant", p.Identity())
 	if p.onStateChange != nil {
 		go func() {
 			defer Recover()
@@ -507,7 +507,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	logger.Debugw("mediaTrack added", "participantId", p.ID(), "remoteTrack", track.ID())
+	logger.Debugw("mediaTrack added", "participant", p.Identity(), "remoteTrack", track.ID())
 
 	ti := p.popPendingTrack(track.ID())
 	if ti == nil {
@@ -526,7 +526,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	if dc.Label() == placeholderDataChannel {
 		return
 	}
-	logger.Debugw("dataChannel added", "participantId", p.ID(), "label", dc.Label())
+	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
 
 	// data channels have numeric ids, so we use its label to identify
 	ti := p.popPendingTrack(dc.Label())
@@ -616,7 +616,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 					return
 				}
 				logger.Errorw("could not send downtrack reports",
-					"participant", p.id,
+					"participant", p.Identity(),
 					"err", err)
 			}
 			pkts = pkts[:0]
@@ -640,7 +640,7 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		//}
 		if err := p.peerConn.WriteRTCP(pkts); err != nil {
 			logger.Errorw("could not write RTCP to participant",
-				"participant", p.id,
+				"participant", p.Identity(),
 				"err", err)
 		}
 	}
