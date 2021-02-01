@@ -17,5 +17,6 @@ type RoomStore interface {
 
 	PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error
 	GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
+	ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error)
 	DeleteParticipant(roomName, identity string) error
 }

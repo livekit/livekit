@@ -102,16 +102,23 @@ func (p *RedisRoomStore) ListRooms() ([]*livekit.Room, error) {
 
 func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
 	room, err := p.GetRoom(idOrName)
+	var sid, name string
+
 	if err == ErrRoomNotFound {
-		return nil
-	} else if err != nil {
+		// try to clean up as best as we could
+		sid = idOrName
+		name = idOrName
+	} else if err == nil {
+		sid = room.Sid
+		name = room.Name
+	} else {
 		return err
 	}
 
 	pp := p.rc.Pipeline()
-	pp.HDel(p.ctx, RoomIdMap, room.Sid)
-	pp.HDel(p.ctx, RoomsKey, room.Name)
-	pp.Del(p.ctx, RoomParticipantsPrefix+room.Name)
+	pp.HDel(p.ctx, RoomIdMap, sid)
+	pp.HDel(p.ctx, RoomsKey, name)
+	pp.Del(p.ctx, RoomParticipantsPrefix+name)
 
 	_, err = pp.Exec(p.ctx)
 	return err
@@ -142,6 +149,26 @@ func (p *RedisRoomStore) GetParticipant(roomName, identity string) (*livekit.Par
 		return nil, err
 	}
 	return &pi, nil
+}
+
+func (p *RedisRoomStore) ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error) {
+	key := RoomParticipantsPrefix + roomName
+	items, err := p.rc.HVals(p.ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	participants := make([]*livekit.ParticipantInfo, 0, len(items))
+	for _, item := range items {
+		pi := livekit.ParticipantInfo{}
+		if err := proto.Unmarshal([]byte(item), &pi); err != nil {
+			return nil, err
+		}
+		participants = append(participants, &pi)
+	}
+	return participants, nil
 }
 
 func (p *RedisRoomStore) DeleteParticipant(roomName, identity string) error {

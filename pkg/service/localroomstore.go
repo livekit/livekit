@@ -105,6 +105,22 @@ func (p *LocalRoomStore) GetParticipant(roomName, identity string) (*livekit.Par
 	return participant, nil
 }
 
+func (p *LocalRoomStore) ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	roomParticipants := p.participants[roomName]
+	if roomParticipants == nil {
+		// empty array
+		return nil, nil
+	}
+
+	items := funk.Values(roomParticipants).([]*livekit.ParticipantInfo)
+	// TODO: should short this to something reasonable
+
+	return items, nil
+}
+
 func (p *LocalRoomStore) DeleteParticipant(roomName, identity string) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
