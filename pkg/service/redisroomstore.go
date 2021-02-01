@@ -17,12 +17,12 @@ const (
 
 	// hash of room_id => room name
 	RoomIdMap = "room_id_map"
-	//
-	//// hash of participant_name => participant_id
-	//// a key for each room, with expiration
-	//RoomParticipantMapPrefix = "participant_map:room:"
-	//
-	//participantMappingTTL = 24 * time.Hour
+
+	// hash of participant_name => ParticipantInfo
+	// a key for each room, with expiration
+	RoomParticipantsPrefix = "room_participants:"
+
+	participantMappingTTL = 24 * time.Hour
 )
 
 type RedisRoomStore struct {
@@ -111,7 +111,41 @@ func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
 	pp := p.rc.Pipeline()
 	pp.HDel(p.ctx, RoomIdMap, room.Sid)
 	pp.HDel(p.ctx, RoomsKey, room.Name)
+	pp.Del(p.ctx, RoomParticipantsPrefix+room.Name)
 
 	_, err = pp.Exec(p.ctx)
 	return err
+}
+
+func (p *RedisRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
+	key := RoomParticipantsPrefix + roomName
+
+	data, err := proto.Marshal(participant)
+	if err != nil {
+		return err
+	}
+
+	return p.rc.HSet(p.ctx, key, participant.Identity, data).Err()
+}
+
+func (p *RedisRoomStore) GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
+	key := RoomParticipantsPrefix + roomName
+	data, err := p.rc.HGet(p.ctx, key, identity).Result()
+	if err == redis.Nil {
+		return nil, ErrParticipantNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	pi := livekit.ParticipantInfo{}
+	if err := proto.Unmarshal([]byte(data), &pi); err != nil {
+		return nil, err
+	}
+	return &pi, nil
+}
+
+func (p *RedisRoomStore) DeleteParticipant(roomName, identity string) error {
+	key := RoomParticipantsPrefix + roomName
+
+	return p.rc.HDel(p.ctx, key, identity).Err()
 }
