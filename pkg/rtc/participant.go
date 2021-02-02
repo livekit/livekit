@@ -134,6 +134,7 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 
 	// only set after answered
 	pc.OnNegotiationNeeded(func() {
+		logger.Debugw("negotiation needed", "participant", participant.Identity())
 		if !participant.IsReady() {
 			// ignore negotiation requests before connected
 			return
@@ -462,6 +463,8 @@ func (p *ParticipantImpl) negotiate() {
 		// skip when disconnected
 		return
 	}
+
+	logger.Debugw("starting server negotiation", "participant", p.Identity())
 	p.negotiationCond.L.Lock()
 	for p.negotiationState != negotiationStateNone {
 		p.negotiationCond.Wait()
@@ -469,7 +472,6 @@ func (p *ParticipantImpl) negotiate() {
 	}
 	p.negotiationCond.L.Unlock()
 
-	logger.Debugw("starting server negotiation", "participant", p.Identity())
 	offer, err := p.peerConn.CreateOffer(nil)
 	if err != nil {
 		logger.Errorw("could not create offer", "err", err)

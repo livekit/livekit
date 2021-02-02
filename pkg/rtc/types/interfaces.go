@@ -114,6 +114,7 @@ type Receiver interface {
 // using this interface to make testing more practical
 //counterfeiter:generate . DownTrack
 type DownTrack interface {
+	ID() string
 	WriteRTP(p rtp.Packet) error
 	IsBound() bool
 	Close()

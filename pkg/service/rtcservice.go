@@ -26,7 +26,12 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 	s := &RTCService{
 		router:      router,
 		roomManager: roomManager,
-		upgrader:    websocket.Upgrader{},
+		upgrader:    websocket.Upgrader{
+			// increase buffer size to avoid errors such as
+			// read: connection reset by peer
+			//ReadBufferSize:  10240,
+			//WriteBufferSize: 10240,
+		},
 		currentNode: currentNode,
 		isDev:       conf.Development,
 	}
