@@ -257,7 +257,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
-				logger.Debugw("publishing track", "participant", participant.ID(),
+				logger.Debugw("add track request", "participant", participant.Identity(),
 					"track", msg.AddTrack.Cid)
 				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
 			case *livekit.SignalRequest_Answer:

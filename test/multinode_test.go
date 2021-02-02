@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -13,6 +14,9 @@ func TestMultiNodeRouting(t *testing.T) {
 		t.SkipNow()
 		return
 	}
+
+	logger.Infow("---Starting TestMultiNodeRouting---")
+	defer logger.Infow("---Finishing TestMultiNodeRouting---")
 
 	s1, s2 := setupMultiNodeTest()
 	defer s1.Stop()
@@ -76,6 +80,9 @@ func TestConnectWithoutCreation(t *testing.T) {
 		t.SkipNow()
 		return
 	}
+	logger.Infow("---Starting TestConnectWithoutCreation---")
+	defer logger.Infow("---Finishing TestConnectWithoutCreation---")
+
 	s1, s2 := setupMultiNodeTest()
 	defer s1.Stop()
 	defer s2.Stop()
@@ -84,4 +91,22 @@ func TestConnectWithoutCreation(t *testing.T) {
 	waitUntilConnected(t, c1)
 
 	c1.Stop()
+}
+
+// testing multiple scenarios  rooms
+func TestMultinodeScenarios(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	logger.Infow("---Starting TestScenarios---")
+	defer logger.Infow("---Finishing TestScenarios---")
+
+	s1, s2 := setupMultiNodeTest()
+
+	scenarioPublishingUponJoining(t, defaultServerPort, secondServerPort)
+
+	defer s1.Stop()
+	defer s2.Stop()
 }

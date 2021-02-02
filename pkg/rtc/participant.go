@@ -10,6 +10,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
+	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -121,7 +122,7 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 	})
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		logger.Debugw("ICE connection state changed", "state", state.String())
+		//logger.Debugw("ICE connection state changed", "state", state.String())
 		if state == webrtc.ICEConnectionStateConnected {
 			participant.updateState(livekit.ParticipantInfo_ACTIVE)
 		} else if state == webrtc.ICEConnectionStateDisconnected {
@@ -210,12 +211,14 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 
 // Answer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
-	logger.Debugw("answering", "state", p.State().String())
 	if p.State() != livekit.ParticipantInfo_JOINING && p.negotiationState != negotiationStateClient {
 		// not in a valid state to continue
 		err = ErrUnexpectedNegotiation
 		return
 	}
+
+	logger.Debugw("answering client offer", "state", p.State().String(),
+		"participant", p.Identity())
 
 	if err = p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return
@@ -283,7 +286,8 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	logger.Debugw("setting remote answer")
+	logger.Debugw("setting participant answer",
+		"participant", p.Identity())
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -298,6 +302,8 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 
 // client requested negotiation, when it's able to, send a signal to let it
 func (p *ParticipantImpl) HandleClientNegotiation() {
+	logger.Debugw("participant requested negotiation",
+		"participant", p.Identity())
 	// wait until client is able to request negotiation
 	p.negotiationCond.L.Lock()
 	for p.negotiationState != negotiationStateNone {
@@ -305,6 +311,9 @@ func (p *ParticipantImpl) HandleClientNegotiation() {
 	}
 	p.negotiationState = negotiationStateClient
 	p.negotiationCond.L.Unlock()
+
+	logger.Debugw("allowing participant to negotiate",
+		"participant", p.Identity())
 	p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Negotiate{
 			Negotiate: &livekit.NegotiationResponse{},
@@ -350,13 +359,14 @@ func (p *ParticipantImpl) Close() error {
 // Subscribes otherPeer to all of the publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	p.lock.RLock()
+	tracks := funk.Values(p.publishedTracks).([]types.PublishedTrack)
 	defer p.lock.RUnlock()
 
-	for _, track := range p.publishedTracks {
-		logger.Debugw("subscribing to remoteTrack",
-			"srcParticipant", p.Identity(),
-			"dstParticipant", op.Identity(),
-			"remoteTrack", track.ID())
+	logger.Debugw("subscribing new participant to tracks",
+		"srcParticipant", p.Identity(),
+		"dstParticipant", op.Identity())
+
+	for _, track := range tracks {
 		if err := track.AddSubscriber(op); err != nil {
 			return err
 		}
@@ -459,7 +469,7 @@ func (p *ParticipantImpl) negotiate() {
 	}
 	p.negotiationCond.L.Unlock()
 
-	logger.Debugw("starting negotiation", "participant", p.ID())
+	logger.Debugw("starting server negotiation", "participant", p.Identity())
 	offer, err := p.peerConn.CreateOffer(nil)
 	if err != nil {
 		logger.Errorw("could not create offer", "err", err)
@@ -478,7 +488,8 @@ func (p *ParticipantImpl) negotiate() {
 		return
 	}
 
-	logger.Debugw("sending available offer to participant")
+	logger.Debugw("sending offer to participant",
+		"participant", p.Identity())
 	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),

@@ -30,6 +30,7 @@ const (
 	nodeId1           = "node-1"
 	nodeId2           = "node-2"
 
+	syncDelay      = 100 * time.Millisecond
 	connectTimeout = 10 * time.Second
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
 	// let connection timeout happen
@@ -40,8 +41,11 @@ var (
 	roomClient livekit.RoomService
 )
 
-func setupSingleNodeTest(roomName string) *service.LivekitServer {
+func init() {
 	logger.InitDevelopment("")
+}
+
+func setupSingleNodeTest(roomName string) *service.LivekitServer {
 	s := createSingleNodeServer()
 	go func() {
 		s.Start()
@@ -58,7 +62,6 @@ func setupSingleNodeTest(roomName string) *service.LivekitServer {
 }
 
 func setupMultiNodeTest() (*service.LivekitServer, *service.LivekitServer) {
-	logger.InitDevelopment("")
 	s1 := createMultiNodeServer(nodeId1, defaultServerPort)
 	s2 := createMultiNodeServer(nodeId2, secondServerPort)
 	go s1.Start()
@@ -100,21 +103,23 @@ func waitForServerToStart(s *service.LivekitServer) {
 	}
 }
 
-func withTimeout(t *testing.T, description string, f func() bool) {
+func withTimeout(t *testing.T, description string, f func() bool) bool {
 	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
 	for {
 		select {
 		case <-ctx.Done():
 			t.Fatal("timed out: " + description)
+			return false
 		case <-time.After(10 * time.Millisecond):
 			if f() {
-				return
+				return true
 			}
 		}
 	}
 }
 
 func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
+	logger.Infow("waiting for clients to become connected")
 	wg := sync.WaitGroup{}
 	for i := range clients {
 		c := clients[i]
@@ -230,6 +235,18 @@ func createRoomToken() string {
 		panic(err)
 	}
 	return t
+}
+
+func stopWriters(writers ...*client.TrackWriter) {
+	for _, w := range writers {
+		w.Stop()
+	}
+}
+
+func stopClients(clients ...*client.RTCClient) {
+	for _, c := range clients {
+		c.Stop()
+	}
 }
 
 type StaticKeyProvider struct {
