@@ -4,6 +4,7 @@ package typesfakes
 import (
 	"sync"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -70,6 +71,16 @@ type FakeParticipant struct {
 	closeReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetResponseSinkStub        func() routing.MessageSink
+	getResponseSinkMutex       sync.RWMutex
+	getResponseSinkArgsForCall []struct {
+	}
+	getResponseSinkReturns struct {
+		result1 routing.MessageSink
+	}
+	getResponseSinkReturnsOnCall map[int]struct {
+		result1 routing.MessageSink
+	}
 	HandleAnswerStub        func(webrtc.SessionDescription) error
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
@@ -95,6 +106,16 @@ type FakeParticipant struct {
 	iDReturnsOnCall map[int]struct {
 		result1 string
 	}
+	IdentityStub        func() string
+	identityMutex       sync.RWMutex
+	identityArgsForCall []struct {
+	}
+	identityReturns struct {
+		result1 string
+	}
+	identityReturnsOnCall map[int]struct {
+		result1 string
+	}
 	IsReadyStub        func() bool
 	isReadyMutex       sync.RWMutex
 	isReadyArgsForCall []struct {
@@ -104,16 +125,6 @@ type FakeParticipant struct {
 	}
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
-	}
-	NameStub        func() string
-	nameMutex       sync.RWMutex
-	nameArgsForCall []struct {
-	}
-	nameReturns struct {
-		result1 string
-	}
-	nameReturnsOnCall map[int]struct {
-		result1 string
 	}
 	OnCloseStub        func(func(types.Participant))
 	onCloseMutex       sync.RWMutex
@@ -193,6 +204,11 @@ type FakeParticipant struct {
 	}
 	sendParticipantUpdateReturnsOnCall map[int]struct {
 		result1 error
+	}
+	SetResponseSinkStub        func(routing.MessageSink)
+	setResponseSinkMutex       sync.RWMutex
+	setResponseSinkArgsForCall []struct {
+		arg1 routing.MessageSink
 	}
 	SetTrackMutedStub        func(string, bool)
 	setTrackMutedMutex       sync.RWMutex
@@ -534,6 +550,59 @@ func (fake *FakeParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) GetResponseSink() routing.MessageSink {
+	fake.getResponseSinkMutex.Lock()
+	ret, specificReturn := fake.getResponseSinkReturnsOnCall[len(fake.getResponseSinkArgsForCall)]
+	fake.getResponseSinkArgsForCall = append(fake.getResponseSinkArgsForCall, struct {
+	}{})
+	stub := fake.GetResponseSinkStub
+	fakeReturns := fake.getResponseSinkReturns
+	fake.recordInvocation("GetResponseSink", []interface{}{})
+	fake.getResponseSinkMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetResponseSinkCallCount() int {
+	fake.getResponseSinkMutex.RLock()
+	defer fake.getResponseSinkMutex.RUnlock()
+	return len(fake.getResponseSinkArgsForCall)
+}
+
+func (fake *FakeParticipant) GetResponseSinkCalls(stub func() routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = stub
+}
+
+func (fake *FakeParticipant) GetResponseSinkReturns(result1 routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = nil
+	fake.getResponseSinkReturns = struct {
+		result1 routing.MessageSink
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetResponseSinkReturnsOnCall(i int, result1 routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = nil
+	if fake.getResponseSinkReturnsOnCall == nil {
+		fake.getResponseSinkReturnsOnCall = make(map[int]struct {
+			result1 routing.MessageSink
+		})
+	}
+	fake.getResponseSinkReturnsOnCall[i] = struct {
+		result1 routing.MessageSink
+	}{result1}
+}
+
 func (fake *FakeParticipant) HandleAnswer(arg1 webrtc.SessionDescription) error {
 	fake.handleAnswerMutex.Lock()
 	ret, specificReturn := fake.handleAnswerReturnsOnCall[len(fake.handleAnswerArgsForCall)]
@@ -672,6 +741,59 @@ func (fake *FakeParticipant) IDReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) Identity() string {
+	fake.identityMutex.Lock()
+	ret, specificReturn := fake.identityReturnsOnCall[len(fake.identityArgsForCall)]
+	fake.identityArgsForCall = append(fake.identityArgsForCall, struct {
+	}{})
+	stub := fake.IdentityStub
+	fakeReturns := fake.identityReturns
+	fake.recordInvocation("Identity", []interface{}{})
+	fake.identityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IdentityCallCount() int {
+	fake.identityMutex.RLock()
+	defer fake.identityMutex.RUnlock()
+	return len(fake.identityArgsForCall)
+}
+
+func (fake *FakeParticipant) IdentityCalls(stub func() string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = stub
+}
+
+func (fake *FakeParticipant) IdentityReturns(result1 string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = nil
+	fake.identityReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 string) {
+	fake.identityMutex.Lock()
+	defer fake.identityMutex.Unlock()
+	fake.IdentityStub = nil
+	if fake.identityReturnsOnCall == nil {
+		fake.identityReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.identityReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeParticipant) IsReady() bool {
 	fake.isReadyMutex.Lock()
 	ret, specificReturn := fake.isReadyReturnsOnCall[len(fake.isReadyArgsForCall)]
@@ -722,59 +844,6 @@ func (fake *FakeParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}
 	fake.isReadyReturnsOnCall[i] = struct {
 		result1 bool
-	}{result1}
-}
-
-func (fake *FakeParticipant) Name() string {
-	fake.nameMutex.Lock()
-	ret, specificReturn := fake.nameReturnsOnCall[len(fake.nameArgsForCall)]
-	fake.nameArgsForCall = append(fake.nameArgsForCall, struct {
-	}{})
-	stub := fake.NameStub
-	fakeReturns := fake.nameReturns
-	fake.recordInvocation("Name", []interface{}{})
-	fake.nameMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) NameCallCount() int {
-	fake.nameMutex.RLock()
-	defer fake.nameMutex.RUnlock()
-	return len(fake.nameArgsForCall)
-}
-
-func (fake *FakeParticipant) NameCalls(stub func() string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = stub
-}
-
-func (fake *FakeParticipant) NameReturns(result1 string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = nil
-	fake.nameReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *FakeParticipant) NameReturnsOnCall(i int, result1 string) {
-	fake.nameMutex.Lock()
-	defer fake.nameMutex.Unlock()
-	fake.NameStub = nil
-	if fake.nameReturnsOnCall == nil {
-		fake.nameReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.nameReturnsOnCall[i] = struct {
-		result1 string
 	}{result1}
 }
 
@@ -1242,6 +1311,38 @@ func (fake *FakeParticipant) SendParticipantUpdateReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
+func (fake *FakeParticipant) SetResponseSink(arg1 routing.MessageSink) {
+	fake.setResponseSinkMutex.Lock()
+	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
+		arg1 routing.MessageSink
+	}{arg1})
+	stub := fake.SetResponseSinkStub
+	fake.recordInvocation("SetResponseSink", []interface{}{arg1})
+	fake.setResponseSinkMutex.Unlock()
+	if stub != nil {
+		fake.SetResponseSinkStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) SetResponseSinkCallCount() int {
+	fake.setResponseSinkMutex.RLock()
+	defer fake.setResponseSinkMutex.RUnlock()
+	return len(fake.setResponseSinkArgsForCall)
+}
+
+func (fake *FakeParticipant) SetResponseSinkCalls(stub func(routing.MessageSink)) {
+	fake.setResponseSinkMutex.Lock()
+	defer fake.setResponseSinkMutex.Unlock()
+	fake.SetResponseSinkStub = stub
+}
+
+func (fake *FakeParticipant) SetResponseSinkArgsForCall(i int) routing.MessageSink {
+	fake.setResponseSinkMutex.RLock()
+	defer fake.setResponseSinkMutex.RUnlock()
+	argsForCall := fake.setResponseSinkArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) SetTrackMuted(arg1 string, arg2 bool) {
 	fake.setTrackMutedMutex.Lock()
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
@@ -1420,16 +1521,18 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.answerMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.getResponseSinkMutex.RLock()
+	defer fake.getResponseSinkMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleClientNegotiationMutex.RLock()
 	defer fake.handleClientNegotiationMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.identityMutex.RLock()
+	defer fake.identityMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
-	fake.nameMutex.RLock()
-	defer fake.nameMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	fake.onICECandidateMutex.RLock()
@@ -1452,6 +1555,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
+	fake.setResponseSinkMutex.RLock()
+	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	fake.startMutex.RLock()

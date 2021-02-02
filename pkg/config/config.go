@@ -16,8 +16,6 @@ type Config struct {
 	Keys     map[string]string `yaml:"keys"`
 	LogLevel string            `yaml:"log_level"`
 
-	// multi-node configuration,
-	MultiNode   bool `yaml:"multi_node"`
 	Development bool `yaml:"development"`
 }
 
@@ -47,14 +45,17 @@ func NewConfig(confString string) (*Config, error) {
 				"stun.l.google.com:19302",
 			},
 		},
-		Redis: RedisConfig{
-			Address: "localhost:6379",
-		},
+		Redis: RedisConfig{},
+		Keys:  map[string]string{},
 	}
 	if confString != "" {
 		yaml.Unmarshal([]byte(confString), conf)
 	}
 	return conf, nil
+}
+
+func (conf *Config) HasRedis() bool {
+	return conf.Redis.Address != ""
 }
 
 func (conf *Config) UpdateFromCLI(c *cli.Context) error {
@@ -65,8 +66,7 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 		conf.KeyFile = c.String("key-file")
 	}
 	if c.IsSet("keys") {
-		keys := []byte(c.String("keys"))
-		if err := yaml.Unmarshal(keys, &conf.Keys); err != nil {
+		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
 			return err
 		}
 	}
@@ -82,5 +82,22 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 		return err
 	}
 	conf.KeyFile = file
+
+	return nil
+}
+
+func (conf *Config) unmarshalKeys(keys string) error {
+	temp := make(map[string]interface{})
+	if err := yaml.Unmarshal([]byte(keys), temp); err != nil {
+		return err
+	}
+
+	conf.Keys = make(map[string]string, len(temp))
+
+	for key, val := range temp {
+		if secret, ok := val.(string); ok {
+			conf.Keys[key] = secret
+		}
+	}
 	return nil
 }

@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thoas/go-funk"
@@ -12,36 +13,66 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
+const (
+	DefaultEmptyTimeout = 5 * 60 // 5 mins
+)
+
 type Room struct {
 	livekit.Room
 	config WebRTCConfig
 	lock   sync.RWMutex
-	// map of participantId -> Participant
+	// map of identity -> Participant
 	participants map[string]types.Participant
-	hasJoined    bool
-	isClosed     utils.AtomicFlag
-	onClose      func()
+	// time the first participant joined the room
+	joinedAt atomic.Value
+	// time that the last participant left the room
+	leftAt   atomic.Value
+	isClosed utils.AtomicFlag
+	onClose  func()
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
-	return &Room{
+	r := &Room{
 		Room:         *room,
 		config:       config,
 		lock:         sync.RWMutex{},
 		participants: make(map[string]types.Participant),
 	}
+	if r.EmptyTimeout == 0 {
+		r.EmptyTimeout = DefaultEmptyTimeout
+	}
+	if r.CreationTime == 0 {
+		r.CreationTime = time.Now().Unix()
+	}
+	return r
 }
 
-func (r *Room) GetParticipant(id string) types.Participant {
+func (r *Room) GetParticipant(identity string) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return r.participants[id]
+	return r.participants[identity]
 }
 
 func (r *Room) GetParticipants() []types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return funk.Values(r.participants).([]types.Participant)
+}
+
+func (r *Room) FirstJoinedAt() int64 {
+	j := r.joinedAt.Load()
+	if t, ok := j.(int64); ok {
+		return t
+	}
+	return 0
+}
+
+func (r *Room) LastLeftAt() int64 {
+	l := r.leftAt.Load()
+	if t, ok := l.(int64); ok {
+		return t
+	}
+	return 0
 }
 
 func (r *Room) Join(participant types.Participant) error {
@@ -52,22 +83,28 @@ func (r *Room) Join(participant types.Participant) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	if r.participants[participant.Identity()] != nil {
+		return ErrAlreadyJoined
+	}
+
 	if r.MaxParticipants > 0 && int(r.MaxParticipants) == len(r.participants) {
 		return ErrMaxParticipantsExceeded
 	}
 
-	r.hasJoined = true
+	if r.FirstJoinedAt() == 0 {
+		r.joinedAt.Store(time.Now().Unix())
+	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		logger.Debugw("participant state changed", "state", p.State(), "participant", p.ID(),
+		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
 			"oldState", oldState)
 		r.broadcastParticipantState(p)
 
 		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
 			// subscribe participant to existing publishedTracks
-			for _, op := range r.participants {
+			for _, op := range r.GetParticipants() {
 				if p.ID() == op.ID() {
 					// don't send to itself
 					continue
@@ -75,25 +112,25 @@ func (r *Room) Join(participant types.Participant) error {
 				if err := op.AddSubscriber(p); err != nil {
 					// TODO: log error? or disconnect?
 					logger.Errorw("could not subscribe to participant",
-						"dstParticipant", p.ID(),
-						"srcParticipant", op.ID())
+						"dest", p.Identity(),
+						"source", op.Identity())
 				}
 			}
 			// start the workers once connectivity is established
 			p.Start()
 		} else if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.ID())
+			go r.RemoveParticipant(p.Identity())
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
-		"name", participant.Name(),
+		"identity", participant.Identity(),
 		"roomId", r.Sid)
 
-	r.participants[participant.ID()] = participant
+	r.participants[participant.Identity()] = participant
 
 	// gather other participants and send join response
 	otherParticipants := make([]types.Participant, 0, len(r.participants))
@@ -106,11 +143,11 @@ func (r *Room) Join(participant types.Participant) error {
 	return participant.SendJoinResponse(&r.Room, otherParticipants)
 }
 
-func (r *Room) RemoveParticipant(id string) {
+func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if p, ok := r.participants[id]; ok {
+	if p, ok := r.participants[identity]; ok {
 		// avoid blocking lock
 		go func() {
 			Recover()
@@ -119,9 +156,11 @@ func (r *Room) RemoveParticipant(id string) {
 		}()
 	}
 
-	delete(r.participants, id)
+	delete(r.participants, identity)
 
-	go r.CloseIfEmpty()
+	if len(r.participants) == 0 {
+		r.leftAt.Store(time.Now().Unix())
+	}
 }
 
 // Close the room if all participants had left, or it's still empty past timeout
@@ -138,12 +177,22 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	elapsed := uint32(time.Now().Unix() - r.CreationTime)
-	logger.Infow("comparing elapsed", "elapsed", elapsed, "timeout", r.EmptyTimeout)
-	if r.hasJoined || (r.EmptyTimeout > 0 && elapsed >= r.EmptyTimeout) {
-		if r.isClosed.TrySet(true) && r.onClose != nil {
-			r.onClose()
-		}
+	var elapsed int64
+	if r.FirstJoinedAt() > 0 {
+		// compute elasped from last departure
+		elapsed = time.Now().Unix() - r.LastLeftAt()
+	} else {
+		elapsed = time.Now().Unix() - r.CreationTime
+	}
+	if elapsed >= int64(r.EmptyTimeout) {
+		r.Close()
+	}
+}
+
+func (r *Room) Close() {
+	logger.Infow("closing room", "room", r.Sid, "name", r.Name)
+	if r.isClosed.TrySet(true) && r.onClose != nil {
+		r.onClose()
 	}
 }
 
@@ -171,14 +220,14 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			continue
 		}
 		logger.Debugw("subscribing to new track",
-			"srcParticipant", participant.ID(),
+			"source", participant.Identity(),
 			"remoteTrack", track.ID(),
-			"dstParticipant", existingParticipant.ID())
+			"dest", existingParticipant.Identity())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.Errorw("could not subscribe to remoteTrack",
-				"srcParticipant", participant.ID(),
+				"source", participant.Identity(),
 				"remoteTrack", track.ID(),
-				"dstParticipant", existingParticipant.ID())
+				"dest", existingParticipant.Identity())
 		}
 	}
 }
@@ -202,7 +251,7 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			logger.Errorw("could not send update to participant",
-				"participant", p.ID(),
+				"participant", p.Identity(),
 				"err", err)
 		}
 	}

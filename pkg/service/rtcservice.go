@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,7 +26,12 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 	s := &RTCService{
 		router:      router,
 		roomManager: roomManager,
-		upgrader:    websocket.Upgrader{},
+		upgrader:    websocket.Upgrader{
+			// increase buffer size to avoid errors such as
+			// read: connection reset by peer
+			//ReadBufferSize:  10240,
+			//WriteBufferSize: 10240,
+		},
 		currentNode: currentNode,
 		isDev:       conf.Development,
 	}
@@ -43,12 +47,14 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomName := r.FormValue("room")
+	reconnectParam := r.FormValue("reconnect")
+	isReconnect := reconnectParam == "1" || reconnectParam == "true"
 	claims := GetGrants(r.Context())
 	// require a claim
 	if claims == nil || claims.Video == nil {
 		handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
 	}
-	pName := claims.Identity
+	identity := claims.Identity
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
@@ -67,34 +73,19 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participantId, err := s.roomManager.roomStore.GetParticipantId(roomName, pName)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get participant ID: "+err.Error())
-		return
-	}
-
-	err = s.router.StartParticipantSignal(roomName, participantId, pName)
+	// this needs to be started first *before* using router functions on this node
+	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, isReconnect)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
-	reqSink, err := s.router.GetRequestSink(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get request sink"+err.Error())
-		return
-	}
+
 	done := make(chan bool, 1)
 	defer func() {
-		logger.Infow("WS connection closed", "participant", pName)
+		logger.Infow("WS connection closed", "participant", identity)
 		reqSink.Close()
 		close(done)
 	}()
-
-	resSource, err := s.router.GetResponseSource(participantId)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, "could not get response source"+err.Error())
-		return
-	}
 
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
@@ -107,15 +98,20 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sigConn := NewWSSignalConnection(conn)
 
-	logger.Infow("new client connected",
+	logger.Infow("new client WS connected",
 		"room", rm.Sid,
 		"roomName", rm.Name,
-		"name", pName,
-		"resSource", fmt.Sprintf("%p", resSource),
+		"name", identity,
 	)
 
 	// handle responses
 	go func() {
+		defer func() {
+			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
+			// we would terminate the signal connection as well
+			conn.Close()
+		}()
+		defer rtc.Recover()
 		for {
 			select {
 			case <-done:
@@ -159,14 +155,6 @@ type errStruct struct {
 	StatusCode int    `json:"statusCode"`
 	Error      string `json:"error"`
 	Message    string `json:"message,omitempty"`
-}
-
-func writeJSONError(w http.ResponseWriter, code int, error ...string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-
-	json.NewEncoder(w).Encode(jsonError(code, error...))
 }
 
 func jsonError(code int, error ...string) errStruct {

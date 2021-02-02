@@ -25,6 +25,7 @@ import (
 
 type RTCClient struct {
 	id       string
+	identity string
 	conn     *websocket.Conn
 	PeerConn *webrtc.PeerConnection
 	// sid => track
@@ -173,13 +174,10 @@ func (c *RTCClient) Run() error {
 	})
 
 	// create a data channel, in order to work
-	dc, err := c.PeerConn.CreateDataChannel("_private", nil)
+	_, err := c.PeerConn.CreateDataChannel("_private", nil)
 	if err != nil {
 		return err
 	}
-	dc.OnOpen(func() {
-		logger.Debugw("data channel open")
-	})
 
 	// run the session
 	for {
@@ -190,6 +188,7 @@ func (c *RTCClient) Run() error {
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
 			c.id = msg.Join.Participant.Sid
+			c.identity = msg.Join.Participant.Identity
 
 			c.lock.Lock()
 			for _, p := range msg.Join.OtherParticipants {
@@ -197,7 +196,7 @@ func (c *RTCClient) Run() error {
 			}
 			c.lock.Unlock()
 
-			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Sid)
+			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Identity)
 			c.localParticipant = msg.Join.Participant
 			logger.Debugw("other participants", "count", len(msg.Join.OtherParticipants))
 
@@ -247,7 +246,7 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				c.remoteParticipants[p.Sid] = p
-				logger.Debugw("participant update", "id", p.Sid, "state", p.State.String())
+				logger.Debugw("participant update", "id", p.Identity, "state", p.State.String())
 			}
 			c.lock.Unlock()
 		case *livekit.SignalResponse_TrackPublished:
@@ -310,6 +309,7 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 	}
 }
 
+// TODO: this function is not thread safe, need to cleanup
 func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
 	return c.subscribedTracks
 }
@@ -515,11 +515,6 @@ func (c *RTCClient) negotiate() error {
 			Offer: rtc.ToProtoSessionDescription(offer),
 		},
 	})
-}
-
-type logEntry struct {
-	msg  string
-	args []interface{}
 }
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {

@@ -7,6 +7,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -48,11 +49,13 @@ type PeerConnection interface {
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
-	Name() string
+	Identity() string
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
 	RTCPChan() *utils.CalmChannel
+	GetResponseSink() routing.MessageSink
+	SetResponseSink(sink routing.MessageSink)
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
@@ -111,6 +114,7 @@ type Receiver interface {
 // using this interface to make testing more practical
 //counterfeiter:generate . DownTrack
 type DownTrack interface {
+	ID() string
 	WriteRTP(p rtp.Packet) error
 	IsBound() bool
 	Close()

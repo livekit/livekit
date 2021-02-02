@@ -103,6 +103,18 @@ func (t *MediaTrack) OnClose(f func()) {
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
 func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
+	t.lock.RLock()
+	existingDt := t.downtracks[participant.ID()]
+	t.lock.RUnlock()
+
+	// don't subscribe to the same track multiple times
+	if existingDt != nil {
+		logger.Warnw("participant already subscribed to track",
+			"participant", participant.Identity(),
+			"track", existingDt.ID())
+		return nil
+	}
+
 	codec := t.codec
 	// pack ID to identify all publishedTracks
 	packedId := PackTrackId(t.participantId, t.id)
@@ -127,11 +139,11 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	}
 
 	outTrack.SetTransceiver(transceiver)
-	// TODO: when outtrack is bound, start loop to send reports
+	// when outtrack is bound, start loop to send reports
 	outTrack.OnBind(func() {
 		if rr := bufferFactory.GetOrNew(packetio.RTCPBufferPacket, outTrack.SSRC()).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
-				t.handleRTCP(outTrack, pkt)
+				t.handleRTCP(outTrack, participant.Identity(), pkt)
 			})
 		}
 		t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
@@ -152,8 +164,8 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		if sender != nil {
 			logger.Debugw("removing peerconnection track",
 				"track", t.id,
-				"srcParticipant", t.participantId,
-				"destParticipant", participant.ID())
+				"participantId", t.participantId,
+				"destParticipant", participant.Identity())
 			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
 				if err == webrtc.ErrConnectionClosed {
 					// participant closing, can skip removing downtracks
@@ -161,7 +173,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					logger.Warnw("could not remove remoteTrack from forwarder",
-						"participant", participant.ID(),
+						"participant", participant.Identity(),
 						"err", err)
 				}
 			}
@@ -292,7 +304,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 	}
 }
 
-func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
+func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, identity string, rtcpBuf []byte) {
 	defer Recover()
 	pkts, err := rtcp.Unmarshal(rtcpBuf)
 	if err != nil {
@@ -325,6 +337,7 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, rtcpBuf []byte) {
 			}
 		case *rtcp.TransportLayerNack:
 			logger.Debugw("forwarder got nack",
+				"participant", identity,
 				"packet", p)
 			var nackedPackets []uint16
 			for _, pair := range p.Nacks {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/thoas/go-funk"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -16,17 +15,14 @@ type LocalRoomStore struct {
 	rooms map[string]*livekit.Room
 	// map of roomName => roomId
 	roomIds map[string]string
-	// map of roomName => { participantName: participantId }
-	participantIds map[string]map[string]string
-	lock           sync.RWMutex
+	lock    sync.RWMutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
-		rooms:          make(map[string]*livekit.Room),
-		roomIds:        make(map[string]string),
-		participantIds: make(map[string]map[string]string),
-		lock:           sync.RWMutex{},
+		rooms:   make(map[string]*livekit.Room),
+		roomIds: make(map[string]string),
+		lock:    sync.RWMutex{},
 	}
 }
 
@@ -76,23 +72,4 @@ func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
 	delete(p.rooms, room.Sid)
 	delete(p.roomIds, room.Name)
 	return nil
-}
-
-func (p *LocalRoomStore) GetParticipantId(room, name string) (string, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	roomParticipantIds := p.participantIds[room]
-	if roomParticipantIds == nil {
-		p.participantIds[room] = make(map[string]string)
-		roomParticipantIds = p.participantIds[room]
-	}
-
-	pId := roomParticipantIds[name]
-	if pId == "" {
-		pId = utils.NewGuid(utils.ParticipantPrefix)
-		roomParticipantIds[name] = pId
-	}
-
-	return pId, nil
 }

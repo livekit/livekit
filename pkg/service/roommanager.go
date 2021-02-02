@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thoas/go-funk"
+
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -79,6 +81,7 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) DeleteRoom(roomName string) error {
+	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
@@ -97,6 +100,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 		err2 = r.roomStore.DeleteRoom(roomName)
 	}()
 
+	wg.Wait()
 	if err != nil {
 		err = err2
 	}
@@ -105,7 +109,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 }
 
 // clean up after old rooms that have been around for awhile
-func (r *RoomManager) Cleanup() error {
+func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	rooms, err := r.roomStore.ListRooms()
 	if err != nil {
@@ -123,18 +127,51 @@ func (r *RoomManager) Cleanup() error {
 	return nil
 }
 
+func (r *RoomManager) CloseIdleRooms() {
+	r.lock.RLock()
+	rooms := funk.Values(r.rooms).([]*rtc.Room)
+	r.lock.RUnlock()
+
+	for _, room := range rooms {
+		room.CloseIfEmpty()
+	}
+}
+
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, identity string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
 		return
 	}
 
+	participant := room.GetParticipant(identity)
+	if participant != nil {
+		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
+		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
+		if reconnect {
+			logger.Debugw("resuming RTC session",
+				"room", roomName,
+				"node", r.currentNode.Id,
+				"participant", identity,
+			)
+			// close previous sink, and link to new one
+			prevSink := participant.GetResponseSink()
+			if prevSink != nil {
+				prevSink.Close()
+			}
+			participant.SetResponseSink(responseSink)
+			return
+		} else {
+			// we need to clean up the existing participant, so a new one can join
+			room.RemoveParticipant(participant.Identity())
+		}
+	}
+
 	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"node", r.currentNode.Id,
-		"participant", participantName,
+		"participant", identity,
 		"num_participants", len(room.GetParticipants()),
 	)
 
@@ -144,7 +181,7 @@ func (r *RoomManager) StartSession(roomName, participantId, participantName stri
 		return
 	}
 
-	participant, err := rtc.NewParticipant(participantId, participantName, pc, responseSink, r.config.Receiver)
+	participant, err = rtc.NewParticipant(identity, pc, responseSink, r.config.Receiver)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -192,7 +229,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
-			"participant", participant.Name(),
+			"participant", participant.Identity(),
 			"room", room.Name,
 		)
 	}()
@@ -220,7 +257,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
-				logger.Debugw("publishing track", "participant", participant.ID(),
+				logger.Debugw("add track request", "participant", participant.Identity(),
 					"track", msg.AddTrack.Cid)
 				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
 			case *livekit.SignalRequest_Answer:

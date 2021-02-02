@@ -59,30 +59,27 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(roomName, participantId, participantName string) error {
+func (r *LocalRouter) StartParticipantSignal(roomName, identity string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
-		return ErrHandlerNotDefined
+		return nil, nil, ErrHandlerNotDefined
 	}
+
+	// index channels by roomName | identity
+	key := participantKey(roomName, identity)
+	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
+	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
+
 	r.onNewParticipant(
 		roomName,
-		participantId,
-		participantName,
+		identity,
+		reconnect,
 		// request source
-		r.getOrCreateMessageChannel(r.requestChannels, participantId),
+		reqChan,
 		// response sink
-		r.getOrCreateMessageChannel(r.responseChannels, participantId),
+		resChan,
 	)
-	return nil
-}
-
-// for a local router, sink and source are pointing to the same spot
-func (r *LocalRouter) GetRequestSink(participantId string) (MessageSink, error) {
-	return r.getOrCreateMessageChannel(r.requestChannels, participantId), nil
-}
-
-func (r *LocalRouter) GetResponseSource(participantId string) (MessageSource, error) {
-	return r.getOrCreateMessageChannel(r.responseChannels, participantId), nil
+	return reqChan, resChan, nil
 }
 
 func (r *LocalRouter) OnNewParticipantRTC(callback ParticipantCallback) {
@@ -106,10 +103,10 @@ func (r *LocalRouter) statsWorker() {
 	}
 }
 
-func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, participantId string) *MessageChannel {
+func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	mc := target[participantId]
+	mc := target[key]
 
 	if mc != nil {
 		return mc
@@ -118,10 +115,10 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 	mc = NewMessageChannel()
 	mc.OnClose(func() {
 		r.lock.Lock()
-		delete(target, participantId)
+		delete(target, key)
 		r.lock.Unlock()
 	})
-	target[participantId] = mc
+	target[key] = mc
 
 	return mc
 }

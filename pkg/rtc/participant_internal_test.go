@@ -9,9 +9,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
+
+//func Test
 
 func TestIsReady(t *testing.T) {
 	tests := []struct {
@@ -48,6 +49,7 @@ func TestIsReady(t *testing.T) {
 func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
+		p.state.Store(livekit.ParticipantInfo_ACTIVE)
 		track := &typesfakes.FakePublishedTrack{}
 		track.IDReturns("id")
 		published := false
@@ -116,10 +118,9 @@ func TestDisconnectTiming(t *testing.T) {
 	})
 }
 
-func newParticipantForTest(name string) *ParticipantImpl {
+func newParticipantForTest(identity string) *ParticipantImpl {
 	p, _ := NewParticipant(
-		utils.NewGuid(utils.ParticipantPrefix),
-		name,
+		identity,
 		&typesfakes.FakePeerConnection{},
 		&routingfakes.FakeMessageSink{},
 		ReceiverConfig{})

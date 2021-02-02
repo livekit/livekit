@@ -6,10 +6,10 @@ import (
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
-func newMockParticipant(name string) *typesfakes.FakeParticipant {
+func newMockParticipant(identity string) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
 	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
-	p.NameReturns(name)
+	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 
 	return p

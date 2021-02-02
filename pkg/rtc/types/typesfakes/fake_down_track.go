@@ -35,6 +35,16 @@ type FakeDownTrack struct {
 	getNACKSeqNoReturnsOnCall map[int]struct {
 		result1 []uint16
 	}
+	IDStub        func() string
+	iDMutex       sync.RWMutex
+	iDArgsForCall []struct {
+	}
+	iDReturns struct {
+		result1 string
+	}
+	iDReturnsOnCall map[int]struct {
+		result1 string
+	}
 	IsBoundStub        func() bool
 	isBoundMutex       sync.RWMutex
 	isBoundArgsForCall []struct {
@@ -250,6 +260,59 @@ func (fake *FakeDownTrack) GetNACKSeqNoReturnsOnCall(i int, result1 []uint16) {
 	}
 	fake.getNACKSeqNoReturnsOnCall[i] = struct {
 		result1 []uint16
+	}{result1}
+}
+
+func (fake *FakeDownTrack) ID() string {
+	fake.iDMutex.Lock()
+	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
+	fake.iDArgsForCall = append(fake.iDArgsForCall, struct {
+	}{})
+	stub := fake.IDStub
+	fakeReturns := fake.iDReturns
+	fake.recordInvocation("ID", []interface{}{})
+	fake.iDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDownTrack) IDCallCount() int {
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
+	return len(fake.iDArgsForCall)
+}
+
+func (fake *FakeDownTrack) IDCalls(stub func() string) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = stub
+}
+
+func (fake *FakeDownTrack) IDReturns(result1 string) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	fake.iDReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeDownTrack) IDReturnsOnCall(i int, result1 string) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	if fake.iDReturnsOnCall == nil {
+		fake.iDReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.iDReturnsOnCall[i] = struct {
+		result1 string
 	}{result1}
 }
 
@@ -652,6 +715,8 @@ func (fake *FakeDownTrack) Invocations() map[string][][]interface{} {
 	defer fake.createSourceDescriptionChunksMutex.RUnlock()
 	fake.getNACKSeqNoMutex.RLock()
 	defer fake.getNACKSeqNoMutex.RUnlock()
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
 	fake.isBoundMutex.RLock()
 	defer fake.isBoundMutex.RUnlock()
 	fake.lastSSRCMutex.RLock()
