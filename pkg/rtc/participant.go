@@ -219,7 +219,9 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	}
 
 	logger.Debugw("answering client offer", "state", p.State().String(),
-		"participant", p.Identity())
+		"participant", p.Identity(),
+		//"sdp", sdp.SDP,
+	)
 
 	if err = p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return
@@ -244,6 +246,10 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	}
 	p.negotiationCond.L.Unlock()
 
+	logger.Debugw("sending to client answer",
+		"participant", p.Identity(),
+	//"sdp", sdp.SDP,
+	)
 	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -288,7 +294,9 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 		return ErrUnexpectedOffer
 	}
 	logger.Debugw("setting participant answer",
-		"participant", p.Identity())
+		"participant", p.Identity(),
+	//"sdp", sdp.SDP,
+	)
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -491,7 +499,9 @@ func (p *ParticipantImpl) negotiate() {
 	}
 
 	logger.Debugw("sending offer to participant",
-		"participant", p.Identity())
+		"participant", p.Identity(),
+		//"sdp", offer.SDP,
+	)
 	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
@@ -522,7 +532,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	logger.Debugw("mediaTrack added", "participant", p.Identity(), "remoteTrack", track.ID())
 
-	ti := p.popPendingTrack(track.ID())
+	ti := p.popPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 	if ti == nil {
 		return
 	}
@@ -542,7 +552,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
 
 	// data channels have numeric ids, so we use its label to identify
-	ti := p.popPendingTrack(dc.Label())
+	ti := p.popPendingTrack(dc.Label(), livekit.TrackType_DATA)
 	if ti == nil {
 		return
 	}
@@ -553,10 +563,24 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	p.handleTrackPublished(dt)
 }
 
-func (p *ParticipantImpl) popPendingTrack(clientId string) *livekit.TrackInfo {
+func (p *ParticipantImpl) popPendingTrack(clientId string, kind livekit.TrackType) *livekit.TrackInfo {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	ti := p.pendingTracks[clientId]
+
+	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
+	// change after being added to PeerConnection
+	if ti == nil {
+		for cid, info := range p.pendingTracks {
+			if info.Type == kind {
+				ti = info
+				clientId = cid
+				break
+			}
+		}
+	}
+
+	// if still not found, we are done
 	if ti == nil {
 		logger.Errorw("track info not published prior to track", "clientId", clientId)
 	} else {

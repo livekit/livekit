@@ -104,6 +104,7 @@ func waitForServerToStart(s *service.LivekitServer) {
 }
 
 func withTimeout(t *testing.T, description string, f func() bool) bool {
+	logger.Infow(description)
 	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
 	for {
 		select {

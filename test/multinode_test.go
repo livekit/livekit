@@ -94,19 +94,34 @@ func TestConnectWithoutCreation(t *testing.T) {
 }
 
 // testing multiple scenarios  rooms
-func TestMultinodeScenarios(t *testing.T) {
+func TestMultinodePublishingUponJoining(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	logger.Infow("---Starting TestScenarios---")
-	defer logger.Infow("---Finishing TestScenarios---")
+	logger.Infow("---Starting TestMultinodePublishingUponJoining---")
+	defer logger.Infow("---Finishing TestMultinodePublishingUponJoining---")
 
 	s1, s2 := setupMultiNodeTest()
-
-	scenarioPublishingUponJoining(t, defaultServerPort, secondServerPort)
-
 	defer s1.Stop()
 	defer s2.Stop()
+
+	scenarioPublishingUponJoining(t, defaultServerPort, secondServerPort)
+}
+
+func TestMultinodeReceiveBeforePublish(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	logger.Infow("---Starting TestMultinodeReceiveBeforePublish---")
+	defer logger.Infow("---Finishing TestMultinodeReceiveBeforePublish---")
+
+	s1, s2 := setupMultiNodeTest()
+	defer s1.Stop()
+	defer s2.Stop()
+
+	scenarioReceiveBeforePublish(t)
 }
