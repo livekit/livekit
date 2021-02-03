@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
+	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/assert"
 
@@ -26,7 +26,7 @@ func TestForwardRTP(t *testing.T) {
 	t.Run("ensure that forwarders are getting packets", func(t *testing.T) {
 		mt := newMediaTrackWithReceiver()
 		receiver := mt.receiver.(*typesfakes.FakeReceiver)
-		packet := rtp.Packet{}
+		packet := buffer.ExtPacket{}
 		receiver.RTPChanReturns(packetGenerator(packet))
 
 		dt := &typesfakes.FakeDownTrack{}
@@ -36,7 +36,7 @@ func TestForwardRTP(t *testing.T) {
 		time.Sleep(testWaitDuration)
 
 		assert.Equal(t, 1, dt.WriteRTPCallCount(), "WriteRTP wasn't called on Forwarder")
-		assert.EqualValues(t, packet, dt.WriteRTPArgsForCall(0))
+		assert.EqualValues(t, packet.Packet, dt.WriteRTPArgsForCall(0))
 	})
 
 	t.Run("muted tracks do not forward data", func(t *testing.T) {
@@ -80,9 +80,9 @@ func TestMissingKeyFrames(t *testing.T) {
 
 // returns a receiver that reads a packet then returns EOF
 func newMediaTrackWithReceiver() *MediaTrack {
-	packet := rtp.Packet{}
+	packet := buffer.ExtPacket{}
 	receiver := &typesfakes.FakeReceiver{
-		RTPChanStub: func() <-chan rtp.Packet {
+		RTPChanStub: func() <-chan buffer.ExtPacket {
 			return packetGenerator(packet)
 		},
 	}
@@ -100,8 +100,8 @@ func newMediaTrackWithReceiver() *MediaTrack {
 	}
 }
 
-func packetGenerator(packets ...rtp.Packet) <-chan rtp.Packet {
-	pc := make(chan rtp.Packet)
+func packetGenerator(packets ...buffer.ExtPacket) <-chan buffer.ExtPacket {
+	pc := make(chan buffer.ExtPacket)
 	go func() {
 		defer close(pc)
 		for _, p := range packets {

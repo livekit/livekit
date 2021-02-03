@@ -273,7 +273,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 			//	"srcParticipant", t.participantId,
 			//	"destParticipant", dstId,
 			//	"track", t.ID())
-			err := dt.WriteRTP(pkt)
+			err := dt.WriteRTP(pkt.Packet)
 			if IsEOF(err) {
 				// this participant unsubscribed, remove it
 				t.RemoveSubscriber(dstId)
@@ -288,7 +288,7 @@ func (t *MediaTrack) forwardRTPWorker() {
 				logger.Infow("keyframe required, sending PLI",
 					"srcParticipant", t.participantId)
 				rtcpPkts := []rtcp.Packet{
-					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.SSRC},
+					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.Packet.SSRC},
 				}
 				t.rtcpCh.Write(rtcpPkts)
 				t.lastPLI = time.Now()

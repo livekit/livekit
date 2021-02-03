@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/rtp"
 )
 
@@ -24,15 +25,15 @@ type FakeReceiver struct {
 		result1 rtp.Packet
 		result2 error
 	}
-	RTPChanStub        func() <-chan rtp.Packet
+	RTPChanStub        func() <-chan buffer.ExtPacket
 	rTPChanMutex       sync.RWMutex
 	rTPChanArgsForCall []struct {
 	}
 	rTPChanReturns struct {
-		result1 <-chan rtp.Packet
+		result1 <-chan buffer.ExtPacket
 	}
 	rTPChanReturnsOnCall map[int]struct {
-		result1 <-chan rtp.Packet
+		result1 <-chan buffer.ExtPacket
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -109,7 +110,7 @@ func (fake *FakeReceiver) GetBufferedPacketReturnsOnCall(i int, result1 rtp.Pack
 	}{result1, result2}
 }
 
-func (fake *FakeReceiver) RTPChan() <-chan rtp.Packet {
+func (fake *FakeReceiver) RTPChan() <-chan buffer.ExtPacket {
 	fake.rTPChanMutex.Lock()
 	ret, specificReturn := fake.rTPChanReturnsOnCall[len(fake.rTPChanArgsForCall)]
 	fake.rTPChanArgsForCall = append(fake.rTPChanArgsForCall, struct {
@@ -133,32 +134,32 @@ func (fake *FakeReceiver) RTPChanCallCount() int {
 	return len(fake.rTPChanArgsForCall)
 }
 
-func (fake *FakeReceiver) RTPChanCalls(stub func() <-chan rtp.Packet) {
+func (fake *FakeReceiver) RTPChanCalls(stub func() <-chan buffer.ExtPacket) {
 	fake.rTPChanMutex.Lock()
 	defer fake.rTPChanMutex.Unlock()
 	fake.RTPChanStub = stub
 }
 
-func (fake *FakeReceiver) RTPChanReturns(result1 <-chan rtp.Packet) {
+func (fake *FakeReceiver) RTPChanReturns(result1 <-chan buffer.ExtPacket) {
 	fake.rTPChanMutex.Lock()
 	defer fake.rTPChanMutex.Unlock()
 	fake.RTPChanStub = nil
 	fake.rTPChanReturns = struct {
-		result1 <-chan rtp.Packet
+		result1 <-chan buffer.ExtPacket
 	}{result1}
 }
 
-func (fake *FakeReceiver) RTPChanReturnsOnCall(i int, result1 <-chan rtp.Packet) {
+func (fake *FakeReceiver) RTPChanReturnsOnCall(i int, result1 <-chan buffer.ExtPacket) {
 	fake.rTPChanMutex.Lock()
 	defer fake.rTPChanMutex.Unlock()
 	fake.RTPChanStub = nil
 	if fake.rTPChanReturnsOnCall == nil {
 		fake.rTPChanReturnsOnCall = make(map[int]struct {
-			result1 <-chan rtp.Packet
+			result1 <-chan buffer.ExtPacket
 		})
 	}
 	fake.rTPChanReturnsOnCall[i] = struct {
-		result1 <-chan rtp.Packet
+		result1 <-chan buffer.ExtPacket
 	}{result1}
 }
 

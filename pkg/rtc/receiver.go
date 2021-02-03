@@ -94,6 +94,6 @@ func (r *ReceiverImpl) GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint
 	return
 }
 
-func (r *ReceiverImpl) RTPChan() <-chan rtp.Packet {
+func (r *ReceiverImpl) RTPChan() <-chan buffer.ExtPacket {
 	return r.buffer.PacketChan()
 }

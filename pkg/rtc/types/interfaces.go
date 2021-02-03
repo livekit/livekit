@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
@@ -106,7 +107,7 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . Receiver
 type Receiver interface {
-	RTPChan() <-chan rtp.Packet
+	RTPChan() <-chan buffer.ExtPacket
 	GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint16) (rtp.Packet, error)
 }
 
