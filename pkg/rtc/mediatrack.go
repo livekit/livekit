@@ -132,7 +132,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	}
 
 	transceiver, err := participant.PeerConnection().AddTransceiverFromTrack(outTrack, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
+		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
 		return err
@@ -354,6 +354,7 @@ func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, identity string, rtcpBuf []by
 					if err == io.EOF {
 						break
 					} else if err != nil {
+						logger.Warnw("error getting buffered packet", "error", err)
 						continue
 					}
 					// what about handling write errors such as no packet found
