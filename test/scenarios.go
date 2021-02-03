@@ -69,7 +69,6 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	logger.Infow("waiting for reconnected c2 tracks to publish")
 	success = withTimeout(t, "new c2 tracks should be published again", func() bool {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c2.ID()]) != 2 {
@@ -83,6 +82,34 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	if !success {
 		t.FailNow()
 	}
+}
+
+func scenarioReceiveBeforePublish(t *testing.T) {
+	c1 := createRTCClient("rbp_1", defaultServerPort)
+	c2 := createRTCClient("rbp_2", defaultServerPort)
+
+	waitUntilConnected(t, c1, c2)
+	defer stopClients(c1, c2)
+
+	// c1 publishes
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+
+	// c2 should see some bytes flowing through
+	success := withTimeout(t, "waiting to receive bytes on c2", func() bool {
+		return c2.BytesReceived() > 20
+	})
+	if !success {
+		t.FailNow()
+	}
+
+	// now publish on C2
+	writers = publishTracksForClients(t, c2)
+	defer stopWriters(writers...)
+
+	success = withTimeout(t, "waiting to receive c2 tracks on c1", func() bool {
+		return len(c1.SubscribedTracks()[c2.ID()]) == 2
+	})
 }
 
 // websocket reconnects

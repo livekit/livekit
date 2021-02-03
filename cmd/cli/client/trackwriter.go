@@ -86,7 +86,7 @@ func (w *TrackWriter) Stop() {
 
 func (w *TrackWriter) writeNull() {
 	defer w.onWriteComplete()
-	sample := media.Sample{Data: []byte{0x0, 0xff, 0xff, 0xff, 0xff}, Duration: time.Second}
+	sample := media.Sample{Data: []byte{0x0, 0xff, 0xff, 0xff, 0xff}, Duration: 30 * time.Millisecond}
 	for {
 		select {
 		case <-time.After(20 * time.Millisecond):

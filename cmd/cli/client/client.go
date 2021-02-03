@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/thoas/go-funk"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -48,6 +50,10 @@ type RTCClient struct {
 	pendingCandidates   []*webrtc.ICECandidate
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
+
+	// map of track Id and last packet
+	lastPackets   map[string]*rtp.Packet
+	bytesReceived map[string]uint64
 }
 
 var (
@@ -97,6 +103,8 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		remoteParticipants:     make(map[string]*livekit.ParticipantInfo),
 		PeerConn:               peerConn,
 		me:                     &webrtc.MediaEngine{},
+		lastPackets:            make(map[string]*rtp.Packet),
+		bytesReceived:          make(map[string]uint64),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.me.RegisterDefaultCodecs()
@@ -543,6 +551,10 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			logger.Debugw("error reading RTP", "err", err)
 			continue
 		}
+		c.lock.Lock()
+		c.lastPackets[pId] = pkt
+		c.bytesReceived[pId] += uint64(pkt.MarshalSize())
+		c.lock.Unlock()
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
 			logger.Debugw("consumed from participant",
@@ -551,4 +563,30 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			lastUpdate = time.Now()
 		}
 	}
+}
+
+func (c *RTCClient) BytesReceived() uint64 {
+	var total uint64
+	c.lock.Lock()
+	for _, size := range c.bytesReceived {
+		total += size
+	}
+	c.lock.Unlock()
+	return total
+}
+
+func (c *RTCClient) SendNacks(count int) {
+	var packets []rtcp.Packet
+	c.lock.Lock()
+	for _, pkt := range c.lastPackets {
+		seqs := make([]uint16, 0, count)
+		for i := 0; i < count; i++ {
+			seqs = append(seqs, pkt.SequenceNumber-uint16(i))
+		}
+		packets = append(packets, &rtcp.TransportLayerNack{
+			MediaSSRC: pkt.SSRC,
+			Nacks:     rtcp.NackPairsFromSequenceNumbers(seqs),
+		})
+	}
+	c.lock.Unlock()
 }
