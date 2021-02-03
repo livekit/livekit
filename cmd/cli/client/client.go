@@ -589,4 +589,6 @@ func (c *RTCClient) SendNacks(count int) {
 		})
 	}
 	c.lock.Unlock()
+
+	c.PeerConn.WriteRTCP(packets)
 }

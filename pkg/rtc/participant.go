@@ -532,7 +532,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	logger.Debugw("mediaTrack added", "participant", p.Identity(), "remoteTrack", track.ID())
 
-	ti := p.popPendingTrack(track.ID())
+	ti := p.popPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 	if ti == nil {
 		return
 	}
@@ -552,7 +552,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
 
 	// data channels have numeric ids, so we use its label to identify
-	ti := p.popPendingTrack(dc.Label())
+	ti := p.popPendingTrack(dc.Label(), livekit.TrackType_DATA)
 	if ti == nil {
 		return
 	}
@@ -563,10 +563,24 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	p.handleTrackPublished(dt)
 }
 
-func (p *ParticipantImpl) popPendingTrack(clientId string) *livekit.TrackInfo {
+func (p *ParticipantImpl) popPendingTrack(clientId string, kind livekit.TrackType) *livekit.TrackInfo {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	ti := p.pendingTracks[clientId]
+
+	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
+	// change after being added to PeerConnection
+	if ti == nil {
+		for cid, info := range p.pendingTracks {
+			if info.Type == kind {
+				ti = info
+				clientId = cid
+				break
+			}
+		}
+	}
+
+	// if still not found, we are done
 	if ti == nil {
 		logger.Errorw("track info not published prior to track", "clientId", clientId)
 	} else {
