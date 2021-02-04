@@ -76,8 +76,8 @@ func TestRoomJoin(t *testing.T) {
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
 		assert.NotNil(t, stateChangeCB)
-		p.StateReturns(livekit.ParticipantInfo_JOINED)
-		stateChangeCB(p, livekit.ParticipantInfo_JOINING)
+		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
 
 		// it should become a subscriber when connectivity changes
 		for _, op := range rm.GetParticipants() {
@@ -176,9 +176,9 @@ func TestNewTrack(t *testing.T) {
 		rm := newRoomWithParticipants(t, 3)
 		participants := rm.GetParticipants()
 		p0 := participants[0].(*typesfakes.FakeParticipant)
-		p0.IsReadyReturns(false)
+		p0.StateReturns(livekit.ParticipantInfo_JOINED)
 		p1 := participants[1].(*typesfakes.FakeParticipant)
-		p1.IsReadyReturns(true)
+		p1.StateReturns(livekit.ParticipantInfo_ACTIVE)
 
 		pub := participants[2].(*typesfakes.FakeParticipant)
 

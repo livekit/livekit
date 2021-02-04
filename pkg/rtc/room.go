@@ -102,7 +102,7 @@ func (r *Room) Join(participant types.Participant) error {
 			"oldState", oldState)
 		r.broadcastParticipantState(p)
 
-		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
+		if p.State() == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing publishedTracks
 			for _, op := range r.GetParticipants() {
 				if p.ID() == op.ID() {
@@ -215,7 +215,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// skip publishing participant
 			continue
 		}
-		if !existingParticipant.IsReady() {
+		if existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
 			// not fully joined. don't subscribe yet
 			continue
 		}

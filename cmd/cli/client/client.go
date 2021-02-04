@@ -27,7 +27,6 @@ import (
 
 type RTCClient struct {
 	id       string
-	identity string
 	conn     *websocket.Conn
 	PeerConn *webrtc.PeerConnection
 	// sid => track
@@ -144,7 +143,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	peerConn.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		logger.Debugw("ICE state has changed", "state", connectionState.String(),
-			"participant", c.localParticipant.Sid)
+			"participant", c.localParticipant.Identity)
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			// flush peers
 			c.lock.Lock()
@@ -195,8 +194,8 @@ func (c *RTCClient) Run() error {
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
+			c.localParticipant = msg.Join.Participant
 			c.id = msg.Join.Participant.Sid
-			c.identity = msg.Join.Participant.Identity
 
 			c.lock.Lock()
 			for _, p := range msg.Join.OtherParticipants {
@@ -205,7 +204,6 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 
 			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Identity)
-			c.localParticipant = msg.Join.Participant
 			logger.Debugw("other participants", "count", len(msg.Join.OtherParticipants))
 
 			// Create an offer to send to the other process
@@ -214,7 +212,7 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 
-			logger.Debugw("created offer", "offer", offer.SDP)
+			logger.Debugw("created offer", "participant", c.localParticipant.Identity)
 
 			// Sets the LocalDescription, and starts our UDP listeners
 			// Note: this will start the gathering of ICE candidates
@@ -228,7 +226,6 @@ func (c *RTCClient) Run() error {
 					Offer: rtc.ToProtoSessionDescription(offer),
 				},
 			}
-			logger.Debugw("connecting to remote...")
 			if err = c.SendRequest(req); err != nil {
 				return err
 			}
@@ -254,7 +251,6 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				c.remoteParticipants[p.Sid] = p
-				logger.Debugw("participant update", "id", p.Identity, "state", p.State.String())
 			}
 			c.lock.Unlock()
 		case *livekit.SignalResponse_TrackPublished:
@@ -277,7 +273,11 @@ func (c *RTCClient) WaitUntilConnected() error {
 	for {
 		select {
 		case <-ctx.Done():
-			return errors.New("could not connect after timeout")
+			id := c.ID()
+			if c.localParticipant != nil {
+				id = c.localParticipant.Identity
+			}
+			return fmt.Errorf("%s could not connect after timeout", id)
 		case <-time.After(10 * time.Millisecond):
 			if c.iceConnected.Get() {
 				return nil
@@ -476,7 +476,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 }
 
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
-	logger.Debugw("handling server answer")
+	logger.Debugw("handling server answer", "participant", c.localParticipant.Identity)
 	// remote answered the offer, establish connection
 	err := c.PeerConn.SetRemoteDescription(desc)
 	if err != nil {

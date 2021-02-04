@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/stretchr/testify/assert"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
@@ -122,17 +121,28 @@ func withTimeout(t *testing.T, description string, f func() bool) bool {
 func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
 	logger.Infow("waiting for clients to become connected")
 	wg := sync.WaitGroup{}
+	errChan := make(chan error, len(clients))
 	for i := range clients {
 		c := clients[i]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if !assert.NoError(t, c.WaitUntilConnected()) {
-				t.Fatal("client could not connect", c.ID())
+			err := c.WaitUntilConnected()
+			if err != nil {
+				errChan <- err
 			}
 		}()
 	}
 	wg.Wait()
+	close(errChan)
+	hasError := false
+	for err := range errChan {
+		t.Fatal(err)
+		hasError = true
+	}
+	if hasError {
+		t.FailNow()
+	}
 }
 
 func createSingleNodeServer() *service.LivekitServer {

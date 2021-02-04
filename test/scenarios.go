@@ -1,7 +1,6 @@
 package test
 
 import (
-	"math/rand"
 	"testing"
 	"time"
 
@@ -13,9 +12,11 @@ import (
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
 func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
-	c1 := createRTCClient("puj_1", ports[rand.Intn(len(ports))])
-	c2 := createRTCClient("puj_2", ports[rand.Intn(len(ports))])
-	c3 := createRTCClient("puj_3", ports[rand.Intn(len(ports))])
+	firstPort := ports[0]
+	lastPort := ports[len(ports)-1]
+	c1 := createRTCClient("puj_1", firstPort)
+	c2 := createRTCClient("puj_2", lastPort)
+	c3 := createRTCClient("puj_3", firstPort)
 	defer stopClients(c1, c2, c3)
 
 	waitUntilConnected(t, c1, c2, c3)
@@ -63,7 +64,8 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	}
 
 	logger.Infow("c2 reconnecting")
-	c2 = createRTCClient("puj_2", ports[rand.Intn(len(ports))])
+	// connect to a diff port
+	c2 = createRTCClient("puj_2", firstPort)
 	defer c2.Stop()
 	waitUntilConnected(t, c2)
 	writers = publishTracksForClients(t, c2)
