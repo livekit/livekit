@@ -21,7 +21,7 @@ require (
 	github.com/pion/rtp v1.6.2
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.12.2
-	github.com/pion/webrtc/v3 v3.0.4
+	github.com/pion/webrtc/v3 v3.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
 	github.com/thoas/go-funk v0.7.0
@@ -35,3 +35,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
+
+replace github.com/pion/ion-sfu => github.com/davidzhao/ion-sfu v1.8.3-0.20210205014052-b5e378606cec

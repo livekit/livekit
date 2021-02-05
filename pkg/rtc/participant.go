@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -15,7 +16,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -41,7 +41,7 @@ type ParticipantImpl struct {
 	mediaEngine      *webrtc.MediaEngine
 	identity         string
 	state            atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh           *utils.CalmChannel
+	rtcpCh           chan []rtcp.Packet
 	subscribedTracks map[string][]*sfu.DownTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
@@ -85,7 +85,7 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 		peerConn:           pc,
 		responseSink:       rs,
 		receiverConfig:     receiverConfig,
-		rtcpCh:             utils.NewCalmChannel(50),
+		rtcpCh:             make(chan []rtcp.Packet, 50),
 		subscribedTracks:   make(map[string][]*sfu.DownTrack),
 		lock:               sync.RWMutex{},
 		negotiationCond:    sync.NewCond(&sync.Mutex{}),
@@ -162,7 +162,7 @@ func (p *ParticipantImpl) IsReady() bool {
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
-func (p *ParticipantImpl) RTCPChan() *utils.CalmChannel {
+func (p *ParticipantImpl) RTCPChan() chan []rtcp.Packet {
 	return p.rtcpCh
 }
 
@@ -361,7 +361,7 @@ func (p *ParticipantImpl) Close() error {
 		p.onClose(p)
 	}
 	p.peerConn.Close()
-	p.rtcpCh.Close()
+	close(p.rtcpCh)
 	return nil
 }
 
@@ -538,11 +538,28 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	// create ReceiverImpl
-	receiver := NewReceiver(p.rtcpCh, rtpReceiver, track, p.receiverConfig)
-	mt := NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, receiver)
-	mt.name = ti.Name
+	//receiver := NewReceiver(p.rtcpCh, rtpReceiver, track, p.receiverConfig)
 
-	p.handleTrackPublished(mt)
+	// use existing mediatrack to handle simulcast
+	p.lock.RLock()
+	ptrack := p.publishedTracks[ti.Sid]
+	p.lock.RUnlock()
+
+	var mt *MediaTrack
+	var newTrack bool
+	if trk, ok := ptrack.(*MediaTrack); ok {
+		mt = trk
+	} else {
+		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, p.receiverConfig, track)
+		mt.name = ti.Name
+		newTrack = true
+	}
+
+	mt.AddReceiver(rtpReceiver, track)
+
+	if newTrack {
+		p.handleTrackPublished(mt)
+	}
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -625,14 +642,13 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		p.lock.RLock()
 		for _, dts := range p.subscribedTracks {
 			for _, dt := range dts {
-				if !dt.IsBound() {
+				sr := dt.CreateSenderReport()
+				chunks := dt.CreateSourceDescriptionChunks()
+				if sr == nil || chunks == nil {
 					continue
 				}
 				pkts = append(pkts, dt.CreateSenderReport())
-				chunks := dt.CreateSourceDescriptionChunks()
-				if chunks != nil {
-					sd = append(sd, chunks...)
-				}
+				sd = append(sd, chunks...)
 			}
 		}
 		p.lock.RUnlock()
@@ -664,13 +680,9 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
 	// read from rtcpChan
-	for o := range p.rtcpCh.ReadChan() {
-		if o == nil {
+	for pkts := range p.rtcpCh {
+		if pkts == nil {
 			return
-		}
-		pkts, ok := o.([]rtcp.Packet)
-		if !ok {
-			logger.Errorw("unexpected obj from rtcpCh", "object", o)
 		}
 		//for _, pkt := range pkts {
 		//	logger.Debugw("writing RTCP", "packet", pkt)

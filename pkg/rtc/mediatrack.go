@@ -1,20 +1,18 @@
 package rtc
 
 import (
-	"io"
 	"sync"
 	"time"
 
-	"github.com/gammazero/workerpool"
 	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
-	"github.com/pion/transport/packetio"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -40,21 +38,21 @@ type MediaTrack struct {
 	streamID string
 	kind     livekit.TrackType
 	codec    webrtc.RTPCodecParameters
+	conf     ReceiverConfig
 	onClose  func()
 
 	// channel to send RTCP packets to the source
-	rtcpCh *utils.CalmChannel
+	rtcpCh chan []rtcp.Packet
 	lock   sync.RWMutex
-	once   sync.Once
 	// map of target participantId -> DownTrack
-	downtracks map[string]types.DownTrack
-	receiver   types.Receiver
-	nackWorker *workerpool.WorkerPool
+	downtracks map[string]*sfu.DownTrack
+	twcc       *twcc.Responder
+	receiver   sfu.Receiver
 	//lastNack   int64
 	lastPLI time.Time
 }
 
-func NewMediaTrack(trackId string, pId string, rtcpCh *utils.CalmChannel, track *webrtc.TrackRemote, receiver types.Receiver) *MediaTrack {
+func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, conf ReceiverConfig, track *webrtc.TrackRemote) *MediaTrack {
 	t := &MediaTrack{
 		id:            trackId,
 		participantId: pId,
@@ -62,22 +60,16 @@ func NewMediaTrack(trackId string, pId string, rtcpCh *utils.CalmChannel, track 
 		streamID:      track.StreamID(),
 		kind:          ToProtoTrackKind(track.Kind()),
 		codec:         track.Codec(),
+		conf:          conf,
 		rtcpCh:        rtcpCh,
 		lock:          sync.RWMutex{},
-		once:          sync.Once{},
-		downtracks:    make(map[string]types.DownTrack),
-		receiver:      receiver,
-		nackWorker:    workerpool.New(1),
+		downtracks:    make(map[string]*sfu.DownTrack),
 	}
 
 	return t
 }
 
 func (t *MediaTrack) Start() {
-	t.once.Do(func() {
-		// start worker
-		go t.forwardRTPWorker()
-	})
 }
 
 func (t *MediaTrack) ID() string {
@@ -94,6 +86,18 @@ func (t *MediaTrack) Name() string {
 
 func (t *MediaTrack) IsMuted() bool {
 	return t.muted.Get()
+}
+
+func (t *MediaTrack) SetMuted(muted bool) {
+	if !t.muted.TrySet(muted) {
+		return
+	}
+	// mute all of the downtracks
+	t.lock.RLock()
+	for _, dt := range t.downtracks {
+		dt.Mute(muted)
+	}
+	t.lock.RUnlock()
 }
 
 func (t *MediaTrack) OnClose(f func()) {
@@ -116,78 +120,140 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	}
 
 	codec := t.codec
-	// pack ID to identify all publishedTracks
-	packedId := PackTrackId(t.participantId, t.id)
 
 	// using DownTrack from ion-sfu
-	outTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
+	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
 		MimeType:     codec.MimeType,
 		ClockRate:    codec.ClockRate,
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, packedId, t.streamID)
+	}, t.receiver, t.participantId)
 	if err != nil {
 		return err
 	}
 
-	transceiver, err := participant.PeerConnection().AddTransceiverFromTrack(outTrack, webrtc.RTPTransceiverInit{
+	transceiver, err := participant.PeerConnection().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
 		return err
 	}
 
-	outTrack.SetTransceiver(transceiver)
+	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
-	outTrack.OnBind(func() {
-		if rr := bufferFactory.GetOrNew(packetio.RTCPBufferPacket, outTrack.SSRC()).(*buffer.RTCPReader); rr != nil {
-			rr.OnPacket(func(pkt []byte) {
-				t.handleRTCP(outTrack, participant.Identity(), pkt)
-			})
-		}
+	downTrack.OnBind(func() {
 		t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
 	})
-	outTrack.OnCloseHandler(func() {
+	downTrack.OnCloseHandler(func() {
 		t.lock.Lock()
 		delete(t.downtracks, participant.ID())
 		t.lock.Unlock()
 
 		// ignore if the subscribing participant is not connected
-		if participant.PeerConnection().ConnectionState() != webrtc.PeerConnectionStateConnected {
+		if participant.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
 
 		// if the source has been terminated, we'll need to terminate all of the downtracks
 		// however, if the dest participant has disconnected, then we can skip
 		sender := transceiver.Sender()
-		if sender != nil {
-			logger.Debugw("removing peerconnection track",
-				"track", t.id,
-				"participantId", t.participantId,
-				"destParticipant", participant.Identity())
-			if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
-				if err == webrtc.ErrConnectionClosed {
-					// participant closing, can skip removing downtracks
-					return
-				}
-				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					logger.Warnw("could not remove remoteTrack from forwarder",
-						"participant", participant.Identity(),
-						"err", err)
-				}
+		if sender == nil {
+			return
+		}
+		logger.Debugw("removing peerconnection track",
+			"track", t.id,
+			"participantId", t.participantId,
+			"destParticipant", participant.Identity())
+		if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
+			if err == webrtc.ErrConnectionClosed {
+				// participant closing, can skip removing downtracks
+				return
+			}
+			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+				logger.Warnw("could not remove remoteTrack from forwarder",
+					"participant", participant.Identity(),
+					"err", err)
 			}
 		}
 
-		participant.RemoveDownTrack(t.streamID, outTrack)
+		participant.RemoveDownTrack(t.streamID, downTrack)
 	})
-	participant.AddDownTrack(t.streamID, outTrack)
 
 	t.lock.Lock()
-	defer t.lock.Unlock()
-	t.downtracks[participant.ID()] = outTrack
+	downTrack.Mute(t.muted.Get())
+	t.downtracks[participant.ID()] = downTrack
+	t.lock.Unlock()
+
+	participant.AddDownTrack(t.streamID, downTrack)
+	t.receiver.AddDownTrack(downTrack, true)
 
 	return nil
+}
+
+// adds a new RTP receiver to the track, returns true if this is a new track
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote) {
+	//rid := track.RID()
+
+	buff, rtcpReader := bufferFactory.GetBufferPair(uint32(track.SSRC()))
+	buff.OnFeedback(func(fb []rtcp.Packet) {
+		t.rtcpCh <- fb
+	})
+
+	if t.Kind() == livekit.TrackType_AUDIO {
+		// TODO: audio level stuff
+	} else if t.Kind() == livekit.TrackType_VIDEO {
+		if t.twcc == nil {
+			t.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
+			t.twcc.OnFeedback(func(p rtcp.RawPacket) {
+				t.rtcpCh <- []rtcp.Packet{&p}
+			})
+		}
+		buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
+			t.twcc.Push(sn, timeNS, marker)
+		})
+	}
+
+	rtcpReader.OnPacket(func(bytes []byte) {
+		pkts, err := rtcp.Unmarshal(bytes)
+		if err != nil {
+			logger.Errorw("could not unmarshal RTCP", "error", err)
+			return
+		}
+
+		for _, pkt := range pkts {
+			switch pkt := pkt.(type) {
+			case *rtcp.SourceDescription:
+			// do nothing for now
+			case *rtcp.SenderReport:
+				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+			}
+		}
+	})
+
+	if t.receiver == nil {
+		// pack ID to identify all publishedTracks
+		packedId := PackTrackId(t.participantId, track.ID())
+		t.lock.Lock()
+		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), packedId)
+		t.lock.Unlock()
+		t.receiver.SetRTCPCh(t.rtcpCh)
+		t.receiver.OnCloseHandler(func() {
+			// source track closed
+			if t.Kind() == livekit.TrackType_AUDIO {
+				// TODO: remove audio level observer
+			}
+			t.lock.Lock()
+			t.receiver = nil
+			t.lock.Unlock()
+		})
+	}
+	t.receiver.AddUpTrack(track, buff)
+
+	buff.Bind(receiver.GetParameters(), buffer.Options{
+		BufferTime: t.conf.maxBufferTime,
+		MaxBitRate: t.conf.maxBitrate,
+	})
 }
 
 // removes peer from subscription
@@ -208,19 +274,20 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	for _, dt := range t.downtracks {
 		go dt.Close()
 	}
-	t.downtracks = make(map[string]types.DownTrack)
+	t.downtracks = make(map[string]*sfu.DownTrack)
 }
 
-func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh *utils.CalmChannel) {
+func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan []rtcp.Packet) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	t.lock.RLock()
 	dt := t.downtracks[participantId]
 	t.lock.RUnlock()
-	if !dt.IsBound() {
+
+	chunks := dt.CreateSourceDescriptionChunks()
+	if chunks == nil {
 		return
 	}
-	chunks := dt.CreateSourceDescriptionChunks()
 	if chunks != nil {
 		sd = append(sd, chunks...)
 	}
@@ -234,7 +301,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh *u
 		batch := pkts
 		i := 0
 		for {
-			rtcpCh.Write(batch)
+			rtcpCh <- batch
 			if i > 5 {
 				return
 			}
@@ -242,130 +309,4 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh *u
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
-}
-
-// b reads from the receiver and writes to each sender
-func (t *MediaTrack) forwardRTPWorker() {
-	defer Recover()
-	defer func() {
-		t.RemoveAllSubscribers()
-		// TODO: send unpublished events?
-		t.nackWorker.Stop()
-
-		if t.onClose != nil {
-			t.onClose()
-		}
-	}()
-
-	for pkt := range t.receiver.RTPChan() {
-		//logger.Debugw("read packet from remoteTrack",
-		//	"participant", t.participantId,
-		//	"track", t.ID())
-		// when track is muted, it's "disabled" on the client side, and will still be sending black frames
-		// when our metadata is updated as such, we shortcircuit forwarding of black frames
-		if t.muted.Get() {
-			continue
-		}
-
-		t.lock.RLock()
-		for dstId, dt := range t.downtracks {
-			//logger.Debugw("read packet from remoteTrack",
-			//	"srcParticipant", t.participantId,
-			//	"destParticipant", dstId,
-			//	"track", t.ID())
-			err := dt.WriteRTP(pkt.Packet)
-			if IsEOF(err) {
-				// this participant unsubscribed, remove it
-				t.RemoveSubscriber(dstId)
-				continue
-			}
-
-			if err == sfu.ErrRequiresKeyFrame {
-				delta := time.Now().Sub(t.lastPLI)
-				if delta < maxPLIFrequency {
-					continue
-				}
-				logger.Infow("keyframe required, sending PLI",
-					"srcParticipant", t.participantId)
-				rtcpPkts := []rtcp.Packet{
-					&rtcp.PictureLossIndication{SenderSSRC: uint32(t.ssrc), MediaSSRC: pkt.Packet.SSRC},
-				}
-				t.rtcpCh.Write(rtcpPkts)
-				t.lastPLI = time.Now()
-			} else if err != nil {
-				logger.Warnw("could not forward packet to participant",
-					"src", t.participantId,
-					"dest", dstId,
-					"remoteTrack", t.id,
-					"err", err)
-			}
-		}
-		t.lock.RUnlock()
-	}
-}
-
-func (t *MediaTrack) handleRTCP(dt *sfu.DownTrack, identity string, rtcpBuf []byte) {
-	defer Recover()
-	pkts, err := rtcp.Unmarshal(rtcpBuf)
-	if err != nil {
-		logger.Warnw("could not decode RTCP packet", "err", err)
-	}
-
-	var fwdPkts []rtcp.Packet
-	// sufficient to send this only once
-	pliOnce := true
-	firOnce := true
-	for _, pkt := range pkts {
-		switch p := pkt.(type) {
-		case *rtcp.PictureLossIndication:
-			if pliOnce {
-				p.MediaSSRC = dt.LastSSRC()
-				p.SenderSSRC = dt.SSRC()
-				fwdPkts = append(fwdPkts, p)
-				pliOnce = false
-			}
-		case *rtcp.FullIntraRequest:
-			if firOnce {
-				p.MediaSSRC = dt.LastSSRC()
-				p.SenderSSRC = dt.SSRC()
-				fwdPkts = append(fwdPkts, p)
-				firOnce = false
-			}
-		case *rtcp.ReceiverReport:
-			if len(p.Reports) > 0 && p.Reports[0].FractionLost > 25 {
-				//log.Tracef("Slow link for sender %s, fraction packet lost %.2f", f.track.peerID, float64(p.Reports[0].FractionLost)/256)
-			}
-		case *rtcp.TransportLayerNack:
-			logger.Debugw("forwarder got nack",
-				"participant", identity,
-				"packet", p)
-			var nackedPackets []uint16
-			for _, pair := range p.Nacks {
-				nackedPackets = append(nackedPackets, dt.GetNACKSeqNo(pair.PacketList())...)
-			}
-
-			if t.nackWorker.Stopped() {
-				return
-			}
-			t.nackWorker.Submit(func() {
-				pktBuf := packetFactory.Get().([]byte)
-				for _, sn := range nackedPackets {
-					pkt, err := t.receiver.GetBufferedPacket(pktBuf, sn, dt.SnOffset())
-					if err == io.EOF {
-						break
-					} else if err != nil {
-						logger.Warnw("error getting buffered packet", "error", err)
-						continue
-					}
-					// what about handling write errors such as no packet found
-					dt.WriteRTP(pkt)
-				}
-				packetFactory.Put(pktBuf)
-			})
-		}
-	}
-
-	if len(fwdPkts) > 0 {
-		t.rtcpCh.Write(fwdPkts)
-	}
 }

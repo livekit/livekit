@@ -4,13 +4,12 @@ import (
 	"time"
 
 	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -54,7 +53,7 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
-	RTCPChan() *utils.CalmChannel
+	RTCPChan() chan []rtcp.Packet
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 
@@ -97,6 +96,7 @@ type PublishedTrack interface {
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool
+	SetMuted(muted bool)
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	RemoveAllSubscribers()
