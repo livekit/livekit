@@ -143,6 +143,7 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
+		downTrack.Mute(t.muted.Get())
 		t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
 	})
 	downTrack.OnCloseHandler(func() {
@@ -181,7 +182,6 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	})
 
 	t.lock.Lock()
-	downTrack.Mute(t.muted.Get())
 	t.downtracks[participant.ID()] = downTrack
 	t.lock.Unlock()
 
