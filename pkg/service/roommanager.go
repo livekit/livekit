@@ -253,7 +253,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			case *livekit.SignalRequest_Offer:
 				_, err := participant.Answer(rtc.FromProtoSessionDescription(msg.Offer))
 				if err != nil {
-					logger.Errorw("could not handle join", "err", err, "participant", participant.ID())
+					logger.Errorw("could not handle offer", "err", err, "participant", participant.Identity())
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
@@ -262,13 +262,13 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
 			case *livekit.SignalRequest_Answer:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
+					logger.Errorw("cannot negotiate before peer offer", "participant", participant.Identity())
 					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 					return
 				}
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
 				if err := participant.HandleAnswer(sd); err != nil {
-					logger.Errorw("could not handle answer", "participant", participant.ID(), "err", err)
+					logger.Errorw("could not handle answer", "participant", participant.Identity(), "err", err)
 					//conn.WriteJSON(
 					//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 					return
@@ -277,7 +277,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				participant.HandleClientNegotiation()
 			case *livekit.SignalRequest_Trickle:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot trickle before peer offer", "participant", participant.ID())
+					logger.Errorw("cannot trickle before offer", "participant", participant.Identity())
 					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 					return
 				}
@@ -285,7 +285,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
 				if err := participant.AddICECandidate(candidateInit); err != nil {
-					logger.Errorw("could not handle trickle", "participant", participant.ID(), "err", err)
+					logger.Errorw("could not handle trickle", "participant", participant.Identity(), "err", err)
 					//conn.WriteJSON(
 					//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 					return

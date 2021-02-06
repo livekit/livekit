@@ -127,7 +127,8 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	peerConn.OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		logger.Debugw("track received", "label", track.StreamID(), "id", track.ID())
+		logger.Debugw("track received", "label", track.StreamID(), "id", track.ID(),
+			"participant", c.localParticipant.Identity)
 		go c.processTrack(track)
 	})
 
@@ -499,7 +500,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 }
 
 func (c *RTCClient) requestNegotiation() error {
-	logger.Debugw("requesting negotiation")
+	logger.Debugw("requesting negotiation", "participant", c.localParticipant.Identity)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Negotiate{
 			Negotiate: &livekit.NegotiationRequest{},
@@ -508,7 +509,7 @@ func (c *RTCClient) requestNegotiation() error {
 }
 
 func (c *RTCClient) negotiate() error {
-	logger.Debugw("starting negotiation")
+	logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
 	offer, err := c.PeerConn.CreateOffer(nil)
 	if err != nil {
 		return err

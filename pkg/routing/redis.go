@@ -58,6 +58,9 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 	if err != nil {
 		return err
 	}
+
+	//logger.Debugw("publishing to", "rtcChannel", rtcNodeChannel(nodeId),
+	//	"message", rm.Message)
 	return rc.Publish(redisCtx, rtcNodeChannel(nodeId), data).Err()
 }
 

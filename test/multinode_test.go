@@ -15,7 +15,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultiNodeRouting---")
+	logger.Infow("\n\n---Starting TestMultiNodeRouting---")
 	defer logger.Infow("---Finishing TestMultiNodeRouting---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -24,8 +24,7 @@ func TestMultiNodeRouting(t *testing.T) {
 
 	// creating room on node 1
 	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
-		Name:   testRoom,
-		NodeId: nodeId1,
+		Name: testRoom,
 	})
 	assert.NoError(t, err)
 
@@ -80,7 +79,7 @@ func TestConnectWithoutCreation(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	logger.Infow("---Starting TestConnectWithoutCreation---")
+	logger.Infow("\n\n---Starting TestConnectWithoutCreation---")
 	defer logger.Infow("---Finishing TestConnectWithoutCreation---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -100,7 +99,7 @@ func TestMultinodePublishingUponJoining(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultinodePublishingUponJoining---")
+	logger.Infow("\n\n---Starting TestMultinodePublishingUponJoining---")
 	defer logger.Infow("---Finishing TestMultinodePublishingUponJoining---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -116,7 +115,7 @@ func TestMultinodeReceiveBeforePublish(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultinodeReceiveBeforePublish---")
+	logger.Infow("\n\n---Starting TestMultinodeReceiveBeforePublish---")
 	defer logger.Infow("---Finishing TestMultinodeReceiveBeforePublish---")
 
 	s1, s2 := setupMultiNodeTest()

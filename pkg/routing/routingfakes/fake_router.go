@@ -73,6 +73,16 @@ type FakeRouter struct {
 	registerNodeReturnsOnCall map[int]struct {
 		result1 error
 	}
+	RemoveDeadNodesStub        func() error
+	removeDeadNodesMutex       sync.RWMutex
+	removeDeadNodesArgsForCall []struct {
+	}
+	removeDeadNodesReturns struct {
+		result1 error
+	}
+	removeDeadNodesReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SetNodeForRoomStub        func(string, string) error
 	setNodeForRoomMutex       sync.RWMutex
 	setNodeForRoomArgsForCall []struct {
@@ -460,6 +470,59 @@ func (fake *FakeRouter) RegisterNodeReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeRouter) RemoveDeadNodes() error {
+	fake.removeDeadNodesMutex.Lock()
+	ret, specificReturn := fake.removeDeadNodesReturnsOnCall[len(fake.removeDeadNodesArgsForCall)]
+	fake.removeDeadNodesArgsForCall = append(fake.removeDeadNodesArgsForCall, struct {
+	}{})
+	stub := fake.RemoveDeadNodesStub
+	fakeReturns := fake.removeDeadNodesReturns
+	fake.recordInvocation("RemoveDeadNodes", []interface{}{})
+	fake.removeDeadNodesMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) RemoveDeadNodesCallCount() int {
+	fake.removeDeadNodesMutex.RLock()
+	defer fake.removeDeadNodesMutex.RUnlock()
+	return len(fake.removeDeadNodesArgsForCall)
+}
+
+func (fake *FakeRouter) RemoveDeadNodesCalls(stub func() error) {
+	fake.removeDeadNodesMutex.Lock()
+	defer fake.removeDeadNodesMutex.Unlock()
+	fake.RemoveDeadNodesStub = stub
+}
+
+func (fake *FakeRouter) RemoveDeadNodesReturns(result1 error) {
+	fake.removeDeadNodesMutex.Lock()
+	defer fake.removeDeadNodesMutex.Unlock()
+	fake.RemoveDeadNodesStub = nil
+	fake.removeDeadNodesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) RemoveDeadNodesReturnsOnCall(i int, result1 error) {
+	fake.removeDeadNodesMutex.Lock()
+	defer fake.removeDeadNodesMutex.Unlock()
+	fake.RemoveDeadNodesStub = nil
+	if fake.removeDeadNodesReturnsOnCall == nil {
+		fake.removeDeadNodesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.removeDeadNodesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRouter) SetNodeForRoom(arg1 string, arg2 string) error {
 	fake.setNodeForRoomMutex.Lock()
 	ret, specificReturn := fake.setNodeForRoomReturnsOnCall[len(fake.setNodeForRoomArgsForCall)]
@@ -736,6 +799,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.onNewParticipantRTCMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
+	fake.removeDeadNodesMutex.RLock()
+	defer fake.removeDeadNodesMutex.RUnlock()
 	fake.setNodeForRoomMutex.RLock()
 	defer fake.setNodeForRoomMutex.RUnlock()
 	fake.startMutex.RLock()

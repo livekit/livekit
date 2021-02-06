@@ -69,7 +69,12 @@ func NewLivekitServer(conf *config.Config,
 	router.OnNewParticipantRTC(roomManager.StartSession)
 
 	// clean up old rooms on startup
-	err = roomManager.CleanupRooms()
+	if err = roomManager.CleanupRooms(); err != nil {
+		return
+	}
+	if err = router.RemoveDeadNodes(); err != nil {
+		return
+	}
 
 	return
 }

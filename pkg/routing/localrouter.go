@@ -46,6 +46,10 @@ func (r *LocalRouter) UnregisterNode() error {
 	return nil
 }
 
+func (r *LocalRouter) RemoveDeadNodes() error {
+	return nil
+}
+
 func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
 	if nodeId == r.currentNode.Id {
 		return r.currentNode, nil

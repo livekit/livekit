@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -61,8 +62,8 @@ func setupSingleNodeTest(roomName string) *service.LivekitServer {
 }
 
 func setupMultiNodeTest() (*service.LivekitServer, *service.LivekitServer) {
-	s1 := createMultiNodeServer(nodeId1, defaultServerPort)
-	s2 := createMultiNodeServer(nodeId2, secondServerPort)
+	s1 := createMultiNodeServer(utils.NewGuid(nodeId1), defaultServerPort)
+	s2 := createMultiNodeServer(utils.NewGuid(nodeId2), secondServerPort)
 	go s1.Start()
 	go s2.Start()
 
@@ -153,7 +154,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 
 	currentNode, err := routing.NewLocalNode(conf)
-	currentNode.Id = nodeId1
+	currentNode.Id = utils.NewGuid(nodeId1)
 	if err != nil {
 		panic(err)
 	}
@@ -161,6 +162,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	// local routing and store
 	router := routing.NewLocalRouter(currentNode)
 	roomStore := service.NewLocalRoomStore()
+	roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
@@ -190,9 +192,13 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	if err = rc.Ping(context.Background()).Err(); err != nil {
 		panic(err)
 	}
+	if err = rc.Del(context.Background(), routing.NodesKey).Err(); err != nil {
+		panic(err)
+	}
 
 	router := routing.NewRedisRouter(currentNode, rc)
 	roomStore := service.NewRedisRoomStore(rc)
+	roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))

@@ -123,7 +123,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
-					logger.Errorw("unexpected message type", "type", fmt.Sprintf("%T", msg))
+					logger.Errorw("unexpected message type",
+						"type", fmt.Sprintf("%T", msg),
+						"participant", identity)
 					continue
 				}
 

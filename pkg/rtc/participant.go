@@ -113,7 +113,8 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 			},
 		})
 		if err != nil {
-			logger.Errorw("could not send trickle", "err", err)
+			logger.Errorw("could not send trickle", "err", err,
+				"participant", identity)
 		}
 
 		if participant.onICECandidate != nil {
@@ -246,7 +247,7 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	}
 	p.negotiationCond.L.Unlock()
 
-	logger.Debugw("sending to client answer",
+	logger.Debugw("sending answer to client",
 		"participant", p.Identity(),
 	//"sdp", sdp.SDP,
 	)
@@ -279,7 +280,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	}
 	p.pendingTracks[clientId] = ti
 
-	p.responseSink.WriteMessage(&livekit.SignalResponse{
+	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
 				Cid:   clientId,
@@ -287,6 +288,10 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 			},
 		},
 	})
+	if err != nil {
+		logger.Errorw("could not write message", "error", err,
+			"participant", p.identity)
+	}
 }
 
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
@@ -323,11 +328,15 @@ func (p *ParticipantImpl) HandleClientNegotiation() {
 
 	logger.Debugw("allowing participant to negotiate",
 		"participant", p.Identity())
-	p.responseSink.WriteMessage(&livekit.SignalResponse{
+	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Negotiate{
 			Negotiate: &livekit.NegotiationResponse{},
 		},
 	})
+	if err != nil {
+		logger.Errorw("could not write message", "error", err,
+			"participant", p.identity)
+	}
 }
 
 // AddICECandidate adds candidates for remote peer
@@ -369,11 +378,16 @@ func (p *ParticipantImpl) Close() error {
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	p.lock.RLock()
 	tracks := funk.Values(p.publishedTracks).([]types.PublishedTrack)
-	defer p.lock.RUnlock()
+	p.lock.RUnlock()
+
+	if len(tracks) == 0 {
+		return nil
+	}
 
 	logger.Debugw("subscribing new participant to tracks",
 		"srcParticipant", p.Identity(),
-		"dstParticipant", op.Identity())
+		"newParticipant", op.Identity(),
+		"numTracks", len(tracks))
 
 	for _, track := range tracks {
 		if err := track.AddSubscriber(op); err != nil {
@@ -472,13 +486,13 @@ func (p *ParticipantImpl) negotiate() {
 		return
 	}
 
-	logger.Debugw("starting server negotiation", "participant", p.Identity())
 	p.negotiationCond.L.Lock()
 	for p.negotiationState != negotiationStateNone {
 		p.negotiationCond.Wait()
-		p.negotiationState = negotiationStateServer
 	}
+	p.negotiationState = negotiationStateServer
 	p.negotiationCond.L.Unlock()
+	logger.Debugw("starting server negotiation", "participant", p.Identity())
 
 	offer, err := p.peerConn.CreateOffer(nil)
 	if err != nil {
@@ -508,8 +522,9 @@ func (p *ParticipantImpl) negotiate() {
 		},
 	})
 	if err != nil {
-		logger.Errorw("could not send offer to peer",
-			"err", err)
+		logger.Errorw("could not send offer to participant",
+			"err", err,
+			"participant", p.identity)
 	}
 }
 
