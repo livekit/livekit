@@ -34,3 +34,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
 
+replace github.com/pion/ion-sfu => github.com/pion/ion-sfu v1.8.4-0.20210205220645-c9ec7ad1db86
