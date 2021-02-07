@@ -244,14 +244,14 @@ type FakeParticipant struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeParticipant) AddDownTrack(arg1 string, arg2 *sfu.DownTrack) {
+func (fake *FakeParticipant) AddSubscribedTrack(arg1 string, arg2 *sfu.DownTrack) {
 	fake.addDownTrackMutex.Lock()
 	fake.addDownTrackArgsForCall = append(fake.addDownTrackArgsForCall, struct {
 		arg1 string
 		arg2 *sfu.DownTrack
 	}{arg1, arg2})
 	stub := fake.AddDownTrackStub
-	fake.recordInvocation("AddDownTrack", []interface{}{arg1, arg2})
+	fake.recordInvocation("AddSubscribedTrack", []interface{}{arg1, arg2})
 	fake.addDownTrackMutex.Unlock()
 	if stub != nil {
 		fake.AddDownTrackStub(arg1, arg2)
@@ -1120,7 +1120,7 @@ func (fake *FakeParticipant) RemoveDownTrack(arg1 string, arg2 *sfu.DownTrack) {
 		arg2 *sfu.DownTrack
 	}{arg1, arg2})
 	stub := fake.RemoveDownTrackStub
-	fake.recordInvocation("RemoveDownTrack", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1, arg2})
 	fake.removeDownTrackMutex.Unlock()
 	if stub != nil {
 		fake.RemoveDownTrackStub(arg1, arg2)

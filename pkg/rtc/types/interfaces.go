@@ -3,10 +3,8 @@ package types
 import (
 	"time"
 
-	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -82,8 +80,8 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
-	AddDownTrack(streamId string, dt *sfu.DownTrack)
-	RemoveDownTrack(streamId string, dt *sfu.DownTrack)
+	AddSubscribedTrack(participantId string, st SubscribedTrack)
+	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
 	PeerConnection() PeerConnection
 }
 
@@ -105,28 +103,13 @@ type PublishedTrack interface {
 	OnClose(func())
 }
 
-//counterfeiter:generate . Receiver
-type Receiver interface {
-	RTPChan() <-chan buffer.ExtPacket
-	GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint16) (rtp.Packet, error)
-}
-
-// DownTrack publishes data to a target participant
-// using this interface to make testing more practical
-//counterfeiter:generate . DownTrack
-type DownTrack interface {
-	ID() string
-	WriteRTP(p rtp.Packet) error
-	IsBound() bool
-	Close()
-	OnCloseHandler(fn func())
-	OnBind(fn func())
-	SSRC() uint32
-	LastSSRC() uint32
-	SnOffset() uint16
-	TsOffset() uint32
-	GetNACKSeqNo(seqNo []uint16) []uint16
-	CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk
+//counterfeiter:generate . SubscribedTrack
+type SubscribedTrack interface {
+	DownTrack() *sfu.DownTrack
+	IsMuted() bool
+	SetMuted(muted bool)
+	SetPublisherMuted(muted bool)
+	Resync()
 }
 
 // interface for properties of webrtc.TrackRemote

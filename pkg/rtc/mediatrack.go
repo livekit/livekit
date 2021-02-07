@@ -21,7 +21,6 @@ var (
 	maxPLIFrequency = 1 * time.Second
 	feedbackTypes   = []webrtc.RTCPFeedback{
 		{webrtc.TypeRTCPFBGoogREMB, ""},
-		{webrtc.TypeRTCPFBTransportCC, ""},
 		{webrtc.TypeRTCPFBNACK, ""},
 		{webrtc.TypeRTCPFBNACK, "pli"}}
 )
@@ -44,26 +43,26 @@ type MediaTrack struct {
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
 	lock   sync.RWMutex
-	// map of target participantId -> DownTrack
-	downtracks map[string]*sfu.DownTrack
-	twcc       *twcc.Responder
-	receiver   sfu.Receiver
+	// map of target participantId -> *SubscribedTrack
+	subscribedTracks map[string]*SubscribedTrack
+	twcc             *twcc.Responder
+	receiver         sfu.Receiver
 	//lastNack   int64
 	lastPLI time.Time
 }
 
 func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, conf ReceiverConfig, track *webrtc.TrackRemote) *MediaTrack {
 	t := &MediaTrack{
-		id:            trackId,
-		participantId: pId,
-		ssrc:          track.SSRC(),
-		streamID:      track.StreamID(),
-		kind:          ToProtoTrackKind(track.Kind()),
-		codec:         track.Codec(),
-		conf:          conf,
-		rtcpCh:        rtcpCh,
-		lock:          sync.RWMutex{},
-		downtracks:    make(map[string]*sfu.DownTrack),
+		id:               trackId,
+		participantId:    pId,
+		ssrc:             track.SSRC(),
+		streamID:         track.StreamID(),
+		kind:             ToProtoTrackKind(track.Kind()),
+		codec:            track.Codec(),
+		conf:             conf,
+		rtcpCh:           rtcpCh,
+		lock:             sync.RWMutex{},
+		subscribedTracks: make(map[string]*SubscribedTrack),
 	}
 
 	return t
@@ -89,13 +88,13 @@ func (t *MediaTrack) IsMuted() bool {
 }
 
 func (t *MediaTrack) SetMuted(muted bool) {
-	if !t.muted.TrySet(muted) {
-		return
-	}
-	// mute all of the downtracks
+	t.muted.TrySet(muted)
+
+	// mute all of the subscribedtracks
 	t.lock.RLock()
-	for _, dt := range t.downtracks {
-		dt.Mute(muted)
+	for id, st := range t.subscribedTracks {
+		logger.Debugw("setting muted", "dstParticipant", id, "muted", muted, "track", t.ID())
+		st.SetPublisherMuted(muted)
 	}
 	t.lock.RUnlock()
 }
@@ -106,20 +105,20 @@ func (t *MediaTrack) OnClose(f func()) {
 
 // subscribes participant to current remoteTrack
 // creates and add necessary forwarders and starts them
-func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
-	t.lock.RLock()
-	existingDt := t.downtracks[participant.ID()]
-	t.lock.RUnlock()
+func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	existingSt := t.subscribedTracks[sub.ID()]
 
 	// don't subscribe to the same track multiple times
-	if existingDt != nil {
+	if existingSt != nil {
 		logger.Warnw("participant already subscribed to track",
-			"participant", participant.Identity(),
-			"track", existingDt.ID())
+			"sub", sub.Identity(),
+			"track", t.ID())
 		return nil
 	}
 
-	codec := t.codec
+	codec := t.receiver.Codec()
 
 	// using DownTrack from ion-sfu
 	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
@@ -128,12 +127,13 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, t.receiver, t.participantId)
+	}, t.receiver, sub.ID())
 	if err != nil {
 		return err
 	}
+	subTrack := NewSubscribedTrack(downTrack)
 
-	transceiver, err := participant.PeerConnection().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
+	transceiver, err := sub.PeerConnection().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendrecv,
 	})
 	if err != nil {
@@ -143,21 +143,21 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
-		downTrack.Mute(t.muted.Get())
-		t.sendDownTrackBindingReports(participant.ID(), participant.RTCPChan())
+		subTrack.SetPublisherMuted(t.IsMuted())
+		t.sendDownTrackBindingReports(sub.ID(), sub.RTCPChan())
 	})
 	downTrack.OnCloseHandler(func() {
 		t.lock.Lock()
-		delete(t.downtracks, participant.ID())
+		delete(t.subscribedTracks, sub.ID())
 		t.lock.Unlock()
 
-		// ignore if the subscribing participant is not connected
-		if participant.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
+		// ignore if the subscribing sub is not connected
+		if sub.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
 
-		// if the source has been terminated, we'll need to terminate all of the downtracks
-		// however, if the dest participant has disconnected, then we can skip
+		// if the source has been terminated, we'll need to terminate all of the subscribedtracks
+		// however, if the dest sub has disconnected, then we can skip
 		sender := transceiver.Sender()
 		if sender == nil {
 			return
@@ -165,27 +165,25 @@ func (t *MediaTrack) AddSubscriber(participant types.Participant) error {
 		logger.Debugw("removing peerconnection track",
 			"track", t.id,
 			"participantId", t.participantId,
-			"destParticipant", participant.Identity())
-		if err := participant.PeerConnection().RemoveTrack(sender); err != nil {
+			"destParticipant", sub.Identity())
+		if err := sub.PeerConnection().RemoveTrack(sender); err != nil {
 			if err == webrtc.ErrConnectionClosed {
-				// participant closing, can skip removing downtracks
+				// sub closing, can skip removing subscribedtracks
 				return
 			}
 			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 				logger.Warnw("could not remove remoteTrack from forwarder",
-					"participant", participant.Identity(),
+					"sub", sub.Identity(),
 					"err", err)
 			}
 		}
 
-		participant.RemoveDownTrack(t.streamID, downTrack)
+		sub.RemoveSubscribedTrack(t.participantId, subTrack)
 	})
 
-	t.lock.Lock()
-	t.downtracks[participant.ID()] = downTrack
-	t.lock.Unlock()
+	t.subscribedTracks[sub.ID()] = subTrack
 
-	participant.AddDownTrack(t.streamID, downTrack)
+	sub.AddSubscribedTrack(t.participantId, subTrack)
 	t.receiver.AddDownTrack(downTrack, true)
 
 	return nil
@@ -203,14 +201,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	if t.Kind() == livekit.TrackType_AUDIO {
 		// TODO: audio level stuff
 	} else if t.Kind() == livekit.TrackType_VIDEO {
-		if t.twcc == nil {
-			t.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
-			t.twcc.OnFeedback(func(p rtcp.RawPacket) {
-				t.rtcpCh <- []rtcp.Packet{&p}
-			})
-		}
+		//if t.twcc == nil {
+		//	t.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
+		//	t.twcc.OnFeedback(func(p rtcp.RawPacket) {
+		//		t.rtcpCh <- []rtcp.Packet{&p}
+		//	})
+		//}
 		buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
-			t.twcc.Push(sn, timeNS, marker)
+			//t.twcc.Push(sn, timeNS, marker)
 		})
 	}
 
@@ -231,21 +229,21 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	if t.receiver == nil {
 		// pack ID to identify all publishedTracks
 		packedId := PackTrackId(t.participantId, track.ID())
-		t.lock.Lock()
 		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), packedId)
-		t.lock.Unlock()
 		t.receiver.SetRTCPCh(t.rtcpCh)
 		t.receiver.OnCloseHandler(func() {
+			t.lock.Lock()
+			defer t.lock.Unlock()
 			// source track closed
 			if t.Kind() == livekit.TrackType_AUDIO {
 				// TODO: remove audio level observer
 			}
-			t.lock.Lock()
 			t.receiver = nil
-			t.lock.Unlock()
 		})
 	}
 	t.receiver.AddUpTrack(track, buff)
@@ -262,8 +260,8 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if dt := t.downtracks[participantId]; dt != nil {
-		go dt.Close()
+	if subTrack := t.subscribedTracks[participantId]; subTrack != nil {
+		go subTrack.DownTrack().Close()
 	}
 }
 
@@ -271,20 +269,24 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	logger.Debugw("removing all subscribers", "track", t.id)
 	t.lock.RLock()
 	defer t.lock.RUnlock()
-	for _, dt := range t.downtracks {
-		go dt.Close()
+	for _, subTrack := range t.subscribedTracks {
+		go subTrack.DownTrack().Close()
 	}
-	t.downtracks = make(map[string]*sfu.DownTrack)
+	t.subscribedTracks = make(map[string]*SubscribedTrack)
 }
 
 func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan []rtcp.Packet) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	t.lock.RLock()
-	dt := t.downtracks[participantId]
+	subTrack := t.subscribedTracks[participantId]
 	t.lock.RUnlock()
 
-	chunks := dt.CreateSourceDescriptionChunks()
+	if subTrack == nil {
+		return
+	}
+
+	chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
 	if chunks == nil {
 		return
 	}

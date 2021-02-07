@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -33,16 +32,17 @@ const (
 )
 
 type ParticipantImpl struct {
-	id               string
-	peerConn         types.PeerConnection
-	responseSink     routing.MessageSink
-	receiverConfig   ReceiverConfig
-	isClosed         utils.AtomicFlag
-	mediaEngine      *webrtc.MediaEngine
-	identity         string
-	state            atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh           chan []rtcp.Packet
-	subscribedTracks map[string][]*sfu.DownTrack
+	id             string
+	peerConn       types.PeerConnection
+	responseSink   routing.MessageSink
+	receiverConfig ReceiverConfig
+	isClosed       utils.AtomicFlag
+	mediaEngine    *webrtc.MediaEngine
+	identity       string
+	state          atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh         chan []rtcp.Packet
+	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
+	subscribedTracks map[string][]types.SubscribedTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
@@ -64,8 +64,10 @@ type ParticipantImpl struct {
 }
 
 func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
-	me := &webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
+	me, err := createMediaEngine()
+	if err != nil {
+		return nil, err
+	}
 	se := conf.SettingEngine
 	se.BufferFactory = bufferFactory.GetOrNew
 
@@ -76,8 +78,6 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 
 func NewParticipant(identity string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
-	me := &webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
 
 	participant := &ParticipantImpl{
 		id:                 utils.NewGuid(utils.ParticipantPrefix),
@@ -86,12 +86,11 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 		responseSink:       rs,
 		receiverConfig:     receiverConfig,
 		rtcpCh:             make(chan []rtcp.Packet, 50),
-		subscribedTracks:   make(map[string][]*sfu.DownTrack),
+		subscribedTracks:   make(map[string][]types.SubscribedTrack),
 		lock:               sync.RWMutex{},
 		negotiationCond:    sync.NewCond(&sync.Mutex{}),
 		publishedTracks:    make(map[string]types.PublishedTrack, 0),
 		pendingTracks:      make(map[string]*livekit.TrackInfo),
-		mediaEngine:        me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 	participant.state.Store(livekit.ParticipantInfo_JOINING)
@@ -249,7 +248,7 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 
 	logger.Debugw("sending answer to client",
 		"participant", p.Identity(),
-	//"sdp", sdp.SDP,
+		//"sdp", sdp.SDP,
 	)
 	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -300,7 +299,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	}
 	logger.Debugw("setting participant answer",
 		"participant", p.Identity(),
-	//"sdp", sdp.SDP,
+		//"sdp", sdp.SDP,
 	)
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
@@ -456,23 +455,22 @@ func (p *ParticipantImpl) PeerConnection() types.PeerConnection {
 	return p.peerConn
 }
 
-func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
+// add a track to the participant's subscribed list
+func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
+	logger.Debugw("added subscribedTrack", "srcParticipant", pubId,
+		"participant", p.Identity())
 	p.lock.Lock()
-	p.subscribedTracks[streamId] = append(p.subscribedTracks[streamId], dt)
+	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
+// remove a track to the participant's subscribed list
+func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
+	logger.Debugw("removed subscribedTrack", "srcParticipant", pubId,
+		"participant", p.Identity())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	tracks := p.subscribedTracks[streamId]
-	newTracks := make([]*sfu.DownTrack, 0, len(tracks))
-	for _, track := range tracks {
-		if track != dt {
-			newTracks = append(newTracks, track)
-		}
-	}
-	p.subscribedTracks[streamId] = newTracks
+	p.subscribedTracks[pubId] = funk.Without(p.subscribedTracks[pubId], subTrack).([]types.SubscribedTrack)
 }
 
 func (p *ParticipantImpl) scheduleNegotiate() {
@@ -563,6 +561,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	var mt *MediaTrack
 	var newTrack bool
 	if trk, ok := ptrack.(*MediaTrack); ok {
+		logger.Debugw("using existing mediatrack, simulcast", "rid", track.RID())
 		mt = trk
 	} else {
 		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, p.receiverConfig, track)
@@ -574,6 +573,16 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	if newTrack {
 		p.handleTrackPublished(mt)
+	}
+
+	// TODO: video tracks the current participant is subscribed to tends to freeze when the participant adds tracks
+	// to get around this, we'll trigger a resync on all tracks it's subscribed to
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, tracks := range p.subscribedTracks {
+		for _, subTrack := range tracks {
+			subTrack.Resync()
+		}
 	}
 }
 
@@ -655,14 +664,14 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		var pkts []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
-		for _, dts := range p.subscribedTracks {
-			for _, dt := range dts {
-				sr := dt.CreateSenderReport()
-				chunks := dt.CreateSourceDescriptionChunks()
+		for _, tracks := range p.subscribedTracks {
+			for _, subTrack := range tracks {
+				sr := subTrack.DownTrack().CreateSenderReport()
+				chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
 				if sr == nil || chunks == nil {
 					continue
 				}
-				pkts = append(pkts, dt.CreateSenderReport())
+				pkts = append(pkts, sr)
 				sd = append(sd, chunks...)
 			}
 		}

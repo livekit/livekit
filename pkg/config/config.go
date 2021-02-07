@@ -25,7 +25,7 @@ type RTCConfig struct {
 	StunServers       []string `yaml:"stun_servers"`
 	UseExternalIP     bool     `yaml:"use_external_ip"`
 
-	MaxBitrate    uint64 `yaml:"max_bandwidth"`
+	MaxBitrate    uint64 `yaml:"max_bitrate"`
 	MaxBufferTime int    `yaml:"max_buffer_time"`
 }
 
@@ -44,6 +44,7 @@ func NewConfig(confString string) (*Config, error) {
 			StunServers: []string{
 				"stun.l.google.com:19302",
 			},
+			MaxBitrate: 2 * 1024 * 1024, // 3 mbps
 		},
 		Redis: RedisConfig{},
 		Keys:  map[string]string{},
