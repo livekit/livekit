@@ -80,6 +80,10 @@ func (t *DataTrack) IsMuted() bool {
 	return false
 }
 
+func (t *DataTrack) SetMuted(muted bool) {
+
+}
+
 func (t *DataTrack) OnClose(f func()) {
 	t.onClose = f
 }

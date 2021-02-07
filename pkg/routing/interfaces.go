@@ -33,6 +33,7 @@ type Router interface {
 	ClearRoomState(roomName string) error
 	RegisterNode() error
 	UnregisterNode() error
+	RemoveDeadNodes() error
 	GetNode(nodeId string) (*livekit.Node, error)
 	ListNodes() ([]*livekit.Node, error)
 

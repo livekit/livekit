@@ -6,19 +6,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
+	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 )
 
 type FakeParticipant struct {
-	AddDownTrackStub        func(string, *sfu.DownTrack)
-	addDownTrackMutex       sync.RWMutex
-	addDownTrackArgsForCall []struct {
-		arg1 string
-		arg2 *sfu.DownTrack
-	}
 	AddICECandidateStub        func(webrtc.ICECandidateInit) error
 	addICECandidateMutex       sync.RWMutex
 	addICECandidateArgsForCall []struct {
@@ -29,6 +22,12 @@ type FakeParticipant struct {
 	}
 	addICECandidateReturnsOnCall map[int]struct {
 		result1 error
+	}
+	AddSubscribedTrackStub        func(string, types.SubscribedTrack)
+	addSubscribedTrackMutex       sync.RWMutex
+	addSubscribedTrackArgsForCall []struct {
+		arg1 string
+		arg2 types.SubscribedTrack
 	}
 	AddSubscriberStub        func(types.Participant) error
 	addSubscriberMutex       sync.RWMutex
@@ -161,21 +160,21 @@ type FakeParticipant struct {
 	peerConnectionReturnsOnCall map[int]struct {
 		result1 types.PeerConnection
 	}
-	RTCPChanStub        func() *utils.CalmChannel
+	RTCPChanStub        func() chan []rtcp.Packet
 	rTCPChanMutex       sync.RWMutex
 	rTCPChanArgsForCall []struct {
 	}
 	rTCPChanReturns struct {
-		result1 *utils.CalmChannel
+		result1 chan []rtcp.Packet
 	}
 	rTCPChanReturnsOnCall map[int]struct {
-		result1 *utils.CalmChannel
+		result1 chan []rtcp.Packet
 	}
-	RemoveDownTrackStub        func(string, *sfu.DownTrack)
-	removeDownTrackMutex       sync.RWMutex
-	removeDownTrackArgsForCall []struct {
+	RemoveSubscribedTrackStub        func(string, types.SubscribedTrack)
+	removeSubscribedTrackMutex       sync.RWMutex
+	removeSubscribedTrackArgsForCall []struct {
 		arg1 string
-		arg2 *sfu.DownTrack
+		arg2 types.SubscribedTrack
 	}
 	RemoveSubscriberStub        func(string)
 	removeSubscriberMutex       sync.RWMutex
@@ -244,39 +243,6 @@ type FakeParticipant struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeParticipant) AddDownTrack(arg1 string, arg2 *sfu.DownTrack) {
-	fake.addDownTrackMutex.Lock()
-	fake.addDownTrackArgsForCall = append(fake.addDownTrackArgsForCall, struct {
-		arg1 string
-		arg2 *sfu.DownTrack
-	}{arg1, arg2})
-	stub := fake.AddDownTrackStub
-	fake.recordInvocation("AddDownTrack", []interface{}{arg1, arg2})
-	fake.addDownTrackMutex.Unlock()
-	if stub != nil {
-		fake.AddDownTrackStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeParticipant) AddDownTrackCallCount() int {
-	fake.addDownTrackMutex.RLock()
-	defer fake.addDownTrackMutex.RUnlock()
-	return len(fake.addDownTrackArgsForCall)
-}
-
-func (fake *FakeParticipant) AddDownTrackCalls(stub func(string, *sfu.DownTrack)) {
-	fake.addDownTrackMutex.Lock()
-	defer fake.addDownTrackMutex.Unlock()
-	fake.AddDownTrackStub = stub
-}
-
-func (fake *FakeParticipant) AddDownTrackArgsForCall(i int) (string, *sfu.DownTrack) {
-	fake.addDownTrackMutex.RLock()
-	defer fake.addDownTrackMutex.RUnlock()
-	argsForCall := fake.addDownTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
 func (fake *FakeParticipant) AddICECandidate(arg1 webrtc.ICECandidateInit) error {
 	fake.addICECandidateMutex.Lock()
 	ret, specificReturn := fake.addICECandidateReturnsOnCall[len(fake.addICECandidateArgsForCall)]
@@ -336,6 +302,39 @@ func (fake *FakeParticipant) AddICECandidateReturnsOnCall(i int, result1 error) 
 	fake.addICECandidateReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeParticipant) AddSubscribedTrack(arg1 string, arg2 types.SubscribedTrack) {
+	fake.addSubscribedTrackMutex.Lock()
+	fake.addSubscribedTrackArgsForCall = append(fake.addSubscribedTrackArgsForCall, struct {
+		arg1 string
+		arg2 types.SubscribedTrack
+	}{arg1, arg2})
+	stub := fake.AddSubscribedTrackStub
+	fake.recordInvocation("AddSubscribedTrack", []interface{}{arg1, arg2})
+	fake.addSubscribedTrackMutex.Unlock()
+	if stub != nil {
+		fake.AddSubscribedTrackStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackCallCount() int {
+	fake.addSubscribedTrackMutex.RLock()
+	defer fake.addSubscribedTrackMutex.RUnlock()
+	return len(fake.addSubscribedTrackArgsForCall)
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackCalls(stub func(string, types.SubscribedTrack)) {
+	fake.addSubscribedTrackMutex.Lock()
+	defer fake.addSubscribedTrackMutex.Unlock()
+	fake.AddSubscribedTrackStub = stub
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackArgsForCall(i int) (string, types.SubscribedTrack) {
+	fake.addSubscribedTrackMutex.RLock()
+	defer fake.addSubscribedTrackMutex.RUnlock()
+	argsForCall := fake.addSubscribedTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant) error {
@@ -1060,7 +1059,7 @@ func (fake *FakeParticipant) PeerConnectionReturnsOnCall(i int, result1 types.Pe
 	}{result1}
 }
 
-func (fake *FakeParticipant) RTCPChan() *utils.CalmChannel {
+func (fake *FakeParticipant) RTCPChan() chan []rtcp.Packet {
 	fake.rTCPChanMutex.Lock()
 	ret, specificReturn := fake.rTCPChanReturnsOnCall[len(fake.rTCPChanArgsForCall)]
 	fake.rTCPChanArgsForCall = append(fake.rTCPChanArgsForCall, struct {
@@ -1084,65 +1083,65 @@ func (fake *FakeParticipant) RTCPChanCallCount() int {
 	return len(fake.rTCPChanArgsForCall)
 }
 
-func (fake *FakeParticipant) RTCPChanCalls(stub func() *utils.CalmChannel) {
+func (fake *FakeParticipant) RTCPChanCalls(stub func() chan []rtcp.Packet) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = stub
 }
 
-func (fake *FakeParticipant) RTCPChanReturns(result1 *utils.CalmChannel) {
+func (fake *FakeParticipant) RTCPChanReturns(result1 chan []rtcp.Packet) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = nil
 	fake.rTCPChanReturns = struct {
-		result1 *utils.CalmChannel
+		result1 chan []rtcp.Packet
 	}{result1}
 }
 
-func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 *utils.CalmChannel) {
+func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 chan []rtcp.Packet) {
 	fake.rTCPChanMutex.Lock()
 	defer fake.rTCPChanMutex.Unlock()
 	fake.RTCPChanStub = nil
 	if fake.rTCPChanReturnsOnCall == nil {
 		fake.rTCPChanReturnsOnCall = make(map[int]struct {
-			result1 *utils.CalmChannel
+			result1 chan []rtcp.Packet
 		})
 	}
 	fake.rTCPChanReturnsOnCall[i] = struct {
-		result1 *utils.CalmChannel
+		result1 chan []rtcp.Packet
 	}{result1}
 }
 
-func (fake *FakeParticipant) RemoveDownTrack(arg1 string, arg2 *sfu.DownTrack) {
-	fake.removeDownTrackMutex.Lock()
-	fake.removeDownTrackArgsForCall = append(fake.removeDownTrackArgsForCall, struct {
+func (fake *FakeParticipant) RemoveSubscribedTrack(arg1 string, arg2 types.SubscribedTrack) {
+	fake.removeSubscribedTrackMutex.Lock()
+	fake.removeSubscribedTrackArgsForCall = append(fake.removeSubscribedTrackArgsForCall, struct {
 		arg1 string
-		arg2 *sfu.DownTrack
+		arg2 types.SubscribedTrack
 	}{arg1, arg2})
-	stub := fake.RemoveDownTrackStub
-	fake.recordInvocation("RemoveDownTrack", []interface{}{arg1, arg2})
-	fake.removeDownTrackMutex.Unlock()
+	stub := fake.RemoveSubscribedTrackStub
+	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1, arg2})
+	fake.removeSubscribedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemoveDownTrackStub(arg1, arg2)
+		fake.RemoveSubscribedTrackStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeParticipant) RemoveDownTrackCallCount() int {
-	fake.removeDownTrackMutex.RLock()
-	defer fake.removeDownTrackMutex.RUnlock()
-	return len(fake.removeDownTrackArgsForCall)
+func (fake *FakeParticipant) RemoveSubscribedTrackCallCount() int {
+	fake.removeSubscribedTrackMutex.RLock()
+	defer fake.removeSubscribedTrackMutex.RUnlock()
+	return len(fake.removeSubscribedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) RemoveDownTrackCalls(stub func(string, *sfu.DownTrack)) {
-	fake.removeDownTrackMutex.Lock()
-	defer fake.removeDownTrackMutex.Unlock()
-	fake.RemoveDownTrackStub = stub
+func (fake *FakeParticipant) RemoveSubscribedTrackCalls(stub func(string, types.SubscribedTrack)) {
+	fake.removeSubscribedTrackMutex.Lock()
+	defer fake.removeSubscribedTrackMutex.Unlock()
+	fake.RemoveSubscribedTrackStub = stub
 }
 
-func (fake *FakeParticipant) RemoveDownTrackArgsForCall(i int) (string, *sfu.DownTrack) {
-	fake.removeDownTrackMutex.RLock()
-	defer fake.removeDownTrackMutex.RUnlock()
-	argsForCall := fake.removeDownTrackArgsForCall[i]
+func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) (string, types.SubscribedTrack) {
+	fake.removeSubscribedTrackMutex.RLock()
+	defer fake.removeSubscribedTrackMutex.RUnlock()
+	argsForCall := fake.removeSubscribedTrackArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -1509,10 +1508,10 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.addDownTrackMutex.RLock()
-	defer fake.addDownTrackMutex.RUnlock()
 	fake.addICECandidateMutex.RLock()
 	defer fake.addICECandidateMutex.RUnlock()
+	fake.addSubscribedTrackMutex.RLock()
+	defer fake.addSubscribedTrackMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.addTrackMutex.RLock()
@@ -1547,8 +1546,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.peerConnectionMutex.RUnlock()
 	fake.rTCPChanMutex.RLock()
 	defer fake.rTCPChanMutex.RUnlock()
-	fake.removeDownTrackMutex.RLock()
-	defer fake.removeDownTrackMutex.RUnlock()
+	fake.removeSubscribedTrackMutex.RLock()
+	defer fake.removeSubscribedTrackMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.sendJoinResponseMutex.RLock()

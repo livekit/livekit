@@ -14,7 +14,7 @@ func TestIsAvailable(t *testing.T) {
 	t.Run("still available", func(t *testing.T) {
 		n := &livekit.Node{
 			Stats: &livekit.NodeStats{
-				UpdatedAt: time.Now().Unix() - 10,
+				UpdatedAt: time.Now().Unix() - 3,
 			},
 		}
 		assert.True(t, routing.IsAvailable(n))

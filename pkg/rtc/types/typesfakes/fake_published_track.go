@@ -74,6 +74,11 @@ type FakePublishedTrack struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
+	SetMutedStub        func(bool)
+	setMutedMutex       sync.RWMutex
+	setMutedArgsForCall []struct {
+		arg1 bool
+	}
 	StartStub        func()
 	startMutex       sync.RWMutex
 	startArgsForCall []struct {
@@ -443,6 +448,38 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
+func (fake *FakePublishedTrack) SetMuted(arg1 bool) {
+	fake.setMutedMutex.Lock()
+	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetMutedStub
+	fake.recordInvocation("SetMuted", []interface{}{arg1})
+	fake.setMutedMutex.Unlock()
+	if stub != nil {
+		fake.SetMutedStub(arg1)
+	}
+}
+
+func (fake *FakePublishedTrack) SetMutedCallCount() int {
+	fake.setMutedMutex.RLock()
+	defer fake.setMutedMutex.RUnlock()
+	return len(fake.setMutedArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SetMutedCalls(stub func(bool)) {
+	fake.setMutedMutex.Lock()
+	defer fake.setMutedMutex.Unlock()
+	fake.SetMutedStub = stub
+}
+
+func (fake *FakePublishedTrack) SetMutedArgsForCall(i int) bool {
+	fake.setMutedMutex.RLock()
+	defer fake.setMutedMutex.RUnlock()
+	argsForCall := fake.setMutedArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakePublishedTrack) Start() {
 	fake.startMutex.Lock()
 	fake.startArgsForCall = append(fake.startArgsForCall, struct {
@@ -486,6 +523,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.setMutedMutex.RLock()
+	defer fake.setMutedMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

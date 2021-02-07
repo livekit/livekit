@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -33,16 +32,17 @@ const (
 )
 
 type ParticipantImpl struct {
-	id               string
-	peerConn         types.PeerConnection
-	responseSink     routing.MessageSink
-	receiverConfig   ReceiverConfig
-	isClosed         utils.AtomicFlag
-	mediaEngine      *webrtc.MediaEngine
-	identity         string
-	state            atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh           *utils.CalmChannel
-	subscribedTracks map[string][]*sfu.DownTrack
+	id             string
+	peerConn       types.PeerConnection
+	responseSink   routing.MessageSink
+	receiverConfig ReceiverConfig
+	isClosed       utils.AtomicFlag
+	mediaEngine    *webrtc.MediaEngine
+	identity       string
+	state          atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh         chan []rtcp.Packet
+	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
+	subscribedTracks map[string][]types.SubscribedTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
@@ -64,8 +64,10 @@ type ParticipantImpl struct {
 }
 
 func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
-	me := &webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
+	me, err := createMediaEngine()
+	if err != nil {
+		return nil, err
+	}
 	se := conf.SettingEngine
 	se.BufferFactory = bufferFactory.GetOrNew
 
@@ -76,8 +78,6 @@ func NewPeerConnection(conf *WebRTCConfig) (*webrtc.PeerConnection, error) {
 
 func NewParticipant(identity string, pc types.PeerConnection, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
-	me := &webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
 
 	participant := &ParticipantImpl{
 		id:                 utils.NewGuid(utils.ParticipantPrefix),
@@ -85,13 +85,12 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 		peerConn:           pc,
 		responseSink:       rs,
 		receiverConfig:     receiverConfig,
-		rtcpCh:             utils.NewCalmChannel(50),
-		subscribedTracks:   make(map[string][]*sfu.DownTrack),
+		rtcpCh:             make(chan []rtcp.Packet, 50),
+		subscribedTracks:   make(map[string][]types.SubscribedTrack),
 		lock:               sync.RWMutex{},
 		negotiationCond:    sync.NewCond(&sync.Mutex{}),
 		publishedTracks:    make(map[string]types.PublishedTrack, 0),
 		pendingTracks:      make(map[string]*livekit.TrackInfo),
-		mediaEngine:        me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 	participant.state.Store(livekit.ParticipantInfo_JOINING)
@@ -113,7 +112,8 @@ func NewParticipant(identity string, pc types.PeerConnection, rs routing.Message
 			},
 		})
 		if err != nil {
-			logger.Errorw("could not send trickle", "err", err)
+			logger.Errorw("could not send trickle", "err", err,
+				"participant", identity)
 		}
 
 		if participant.onICECandidate != nil {
@@ -162,7 +162,7 @@ func (p *ParticipantImpl) IsReady() bool {
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
-func (p *ParticipantImpl) RTCPChan() *utils.CalmChannel {
+func (p *ParticipantImpl) RTCPChan() chan []rtcp.Packet {
 	return p.rtcpCh
 }
 
@@ -246,9 +246,9 @@ func (p *ParticipantImpl) Answer(sdp webrtc.SessionDescription) (answer webrtc.S
 	}
 	p.negotiationCond.L.Unlock()
 
-	logger.Debugw("sending to client answer",
+	logger.Debugw("sending answer to client",
 		"participant", p.Identity(),
-	//"sdp", sdp.SDP,
+		//"sdp", sdp.SDP,
 	)
 	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -279,7 +279,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	}
 	p.pendingTracks[clientId] = ti
 
-	p.responseSink.WriteMessage(&livekit.SignalResponse{
+	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
 				Cid:   clientId,
@@ -287,6 +287,10 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 			},
 		},
 	})
+	if err != nil {
+		logger.Errorw("could not write message", "error", err,
+			"participant", p.identity)
+	}
 }
 
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
@@ -295,7 +299,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	}
 	logger.Debugw("setting participant answer",
 		"participant", p.Identity(),
-	//"sdp", sdp.SDP,
+		//"sdp", sdp.SDP,
 	)
 	if err := p.peerConn.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
@@ -323,11 +327,15 @@ func (p *ParticipantImpl) HandleClientNegotiation() {
 
 	logger.Debugw("allowing participant to negotiate",
 		"participant", p.Identity())
-	p.responseSink.WriteMessage(&livekit.SignalResponse{
+	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Negotiate{
 			Negotiate: &livekit.NegotiationResponse{},
 		},
 	})
+	if err != nil {
+		logger.Errorw("could not write message", "error", err,
+			"participant", p.identity)
+	}
 }
 
 // AddICECandidate adds candidates for remote peer
@@ -361,7 +369,7 @@ func (p *ParticipantImpl) Close() error {
 		p.onClose(p)
 	}
 	p.peerConn.Close()
-	p.rtcpCh.Close()
+	close(p.rtcpCh)
 	return nil
 }
 
@@ -369,11 +377,16 @@ func (p *ParticipantImpl) Close() error {
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	p.lock.RLock()
 	tracks := funk.Values(p.publishedTracks).([]types.PublishedTrack)
-	defer p.lock.RUnlock()
+	p.lock.RUnlock()
+
+	if len(tracks) == 0 {
+		return nil
+	}
 
 	logger.Debugw("subscribing new participant to tracks",
 		"srcParticipant", p.Identity(),
-		"dstParticipant", op.Identity())
+		"newParticipant", op.Identity(),
+		"numTracks", len(tracks))
 
 	for _, track := range tracks {
 		if err := track.AddSubscriber(op); err != nil {
@@ -442,23 +455,28 @@ func (p *ParticipantImpl) PeerConnection() types.PeerConnection {
 	return p.peerConn
 }
 
-func (p *ParticipantImpl) AddDownTrack(streamId string, dt *sfu.DownTrack) {
+// add a track to the participant's subscribed list
+func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
+	logger.Debugw("added subscribedTrack", "srcParticipant", pubId,
+		"participant", p.Identity())
 	p.lock.Lock()
-	p.subscribedTracks[streamId] = append(p.subscribedTracks[streamId], dt)
+	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) RemoveDownTrack(streamId string, dt *sfu.DownTrack) {
+// remove a track to the participant's subscribed list
+func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
+	logger.Debugw("removed subscribedTrack", "srcParticipant", pubId,
+		"participant", p.Identity())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	tracks := p.subscribedTracks[streamId]
-	newTracks := make([]*sfu.DownTrack, 0, len(tracks))
-	for _, track := range tracks {
-		if track != dt {
-			newTracks = append(newTracks, track)
+	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks[pubId]))
+	for _, tr := range p.subscribedTracks[pubId] {
+		if tr != subTrack {
+			tracks = append(tracks, tr)
 		}
 	}
-	p.subscribedTracks[streamId] = newTracks
+	p.subscribedTracks[pubId] = tracks
 }
 
 func (p *ParticipantImpl) scheduleNegotiate() {
@@ -472,13 +490,13 @@ func (p *ParticipantImpl) negotiate() {
 		return
 	}
 
-	logger.Debugw("starting server negotiation", "participant", p.Identity())
 	p.negotiationCond.L.Lock()
 	for p.negotiationState != negotiationStateNone {
 		p.negotiationCond.Wait()
-		p.negotiationState = negotiationStateServer
 	}
+	p.negotiationState = negotiationStateServer
 	p.negotiationCond.L.Unlock()
+	logger.Debugw("starting server negotiation", "participant", p.Identity())
 
 	offer, err := p.peerConn.CreateOffer(nil)
 	if err != nil {
@@ -508,8 +526,9 @@ func (p *ParticipantImpl) negotiate() {
 		},
 	})
 	if err != nil {
-		logger.Errorw("could not send offer to peer",
-			"err", err)
+		logger.Errorw("could not send offer to participant",
+			"err", err,
+			"participant", p.identity)
 	}
 }
 
@@ -538,11 +557,39 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	// create ReceiverImpl
-	receiver := NewReceiver(p.rtcpCh, rtpReceiver, track, p.receiverConfig)
-	mt := NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, receiver)
-	mt.name = ti.Name
+	//receiver := NewReceiver(p.rtcpCh, rtpReceiver, track, p.receiverConfig)
 
-	p.handleTrackPublished(mt)
+	// use existing mediatrack to handle simulcast
+	p.lock.RLock()
+	ptrack := p.publishedTracks[ti.Sid]
+	p.lock.RUnlock()
+
+	var mt *MediaTrack
+	var newTrack bool
+	if trk, ok := ptrack.(*MediaTrack); ok {
+		logger.Debugw("using existing mediatrack, simulcast", "rid", track.RID())
+		mt = trk
+	} else {
+		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, p.receiverConfig, track)
+		mt.name = ti.Name
+		newTrack = true
+	}
+
+	mt.AddReceiver(rtpReceiver, track)
+
+	if newTrack {
+		p.handleTrackPublished(mt)
+	}
+
+	// TODO: video tracks the current participant is subscribed to tends to freeze when the participant adds tracks
+	// to get around this, we'll trigger a resync on all tracks it's subscribed to
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, tracks := range p.subscribedTracks {
+		for _, subTrack := range tracks {
+			subTrack.Resync()
+		}
+	}
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -623,16 +670,15 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		var pkts []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
-		for _, dts := range p.subscribedTracks {
-			for _, dt := range dts {
-				if !dt.IsBound() {
+		for _, tracks := range p.subscribedTracks {
+			for _, subTrack := range tracks {
+				sr := subTrack.DownTrack().CreateSenderReport()
+				chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
+				if sr == nil || chunks == nil {
 					continue
 				}
-				pkts = append(pkts, dt.CreateSenderReport())
-				chunks := dt.CreateSourceDescriptionChunks()
-				if chunks != nil {
-					sd = append(sd, chunks...)
-				}
+				pkts = append(pkts, sr)
+				sd = append(sd, chunks...)
 			}
 		}
 		p.lock.RUnlock()
@@ -664,13 +710,9 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
 	// read from rtcpChan
-	for o := range p.rtcpCh.ReadChan() {
-		if o == nil {
+	for pkts := range p.rtcpCh {
+		if pkts == nil {
 			return
-		}
-		pkts, ok := o.([]rtcp.Packet)
-		if !ok {
-			logger.Errorw("unexpected obj from rtcpCh", "object", o)
 		}
 		//for _, pkt := range pkts {
 		//	logger.Debugw("writing RTCP", "packet", pkt)
