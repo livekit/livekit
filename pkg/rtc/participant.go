@@ -470,7 +470,13 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.Sub
 		"participant", p.Identity())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	p.subscribedTracks[pubId] = funk.Without(p.subscribedTracks[pubId], subTrack).([]types.SubscribedTrack)
+	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks[pubId]))
+	for _, tr := range p.subscribedTracks[pubId] {
+		if tr != subTrack {
+			tracks = append(tracks, tr)
+		}
+	}
+	p.subscribedTracks[pubId] = tracks
 }
 
 func (p *ParticipantImpl) scheduleNegotiate() {
