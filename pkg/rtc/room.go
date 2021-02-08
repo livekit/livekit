@@ -146,17 +146,18 @@ func (r *Room) Join(participant types.Participant) error {
 func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-
-	if p, ok := r.participants[identity]; ok {
-		// avoid blocking lock
-		go func() {
-			Recover()
-			// also stop connection if needed
-			p.Close()
-		}()
+	p, ok := r.participants[identity]
+	if !ok {
+		return
 	}
-
 	delete(r.participants, identity)
+
+	p.OnTrackUpdated(nil)
+	p.OnTrackPublished(nil)
+	p.OnStateChange(nil)
+
+	// close participant as well
+	go p.Close()
 
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())

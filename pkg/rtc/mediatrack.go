@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -118,6 +119,11 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		return nil
 	}
 
+	if t.receiver == nil {
+		// cannot add, no receiver
+		return errors.New("cannot subscribe without a receiver in place")
+	}
+
 	codec := t.receiver.Codec()
 
 	// using DownTrack from ion-sfu
@@ -192,15 +198,16 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 // adds a new RTP receiver to the track, returns true if this is a new track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote) {
 	//rid := track.RID()
-
 	buff, rtcpReader := bufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
+		// feedback for the source RTCP
 		t.rtcpCh <- fb
 	})
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		// TODO: audio level stuff
 	} else if t.Kind() == livekit.TrackType_VIDEO {
+		// TODO: handle twcc
 		//if t.twcc == nil {
 		//	t.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
 		//	t.twcc.OnFeedback(func(p rtcp.RawPacket) {
@@ -238,12 +245,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.receiver.SetRTCPCh(t.rtcpCh)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()
-			defer t.lock.Unlock()
 			// source track closed
 			if t.Kind() == livekit.TrackType_AUDIO {
 				// TODO: remove audio level observer
 			}
 			t.receiver = nil
+			onclose := t.onClose
+			t.lock.Unlock()
+			t.RemoveAllSubscribers()
+			if onclose != nil {
+				onclose()
+			}
 		})
 	}
 	t.receiver.AddUpTrack(track, buff)

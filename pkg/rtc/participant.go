@@ -581,15 +581,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		p.handleTrackPublished(mt)
 	}
 
-	// TODO: video tracks the current participant is subscribed to tends to freeze when the participant adds tracks
-	// to get around this, we'll trigger a resync on all tracks it's subscribed to
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	for _, tracks := range p.subscribedTracks {
-		for _, subTrack := range tracks {
-			subTrack.Resync()
-		}
-	}
+	p.resyncSubscriptions()
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -653,10 +645,24 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
+		track.OnClose(nil)
+		go p.resyncSubscriptions()
 	})
 
 	if p.onTrackPublished != nil {
 		p.onTrackPublished(p, track)
+	}
+}
+
+func (p *ParticipantImpl) resyncSubscriptions() {
+	// TODO: video tracks the current participant is subscribed to tends to freeze when the participant adds/removes tracks
+	// to get around this, we'll trigger a resync on all tracks it's subscribed to
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, tracks := range p.subscribedTracks {
+		for _, subTrack := range tracks {
+			subTrack.Resync()
+		}
 	}
 }
 
