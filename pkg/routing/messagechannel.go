@@ -15,7 +15,7 @@ type MessageChannel struct {
 func NewMessageChannel() *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
-		msgChan: make(chan proto.Message, 2),
+		msgChan: make(chan proto.Message, 10),
 	}
 }
 
@@ -27,8 +27,15 @@ func (m *MessageChannel) WriteMessage(msg proto.Message) error {
 	if m.isClosed.Get() {
 		return ErrChannelClosed
 	}
-	m.msgChan <- msg
-	return nil
+
+	select {
+	case m.msgChan <- msg:
+		// published
+		return nil
+	default:
+		// channel is full
+		return ErrChannelFull
+	}
 }
 
 func (m *MessageChannel) ReadChan() <-chan proto.Message {

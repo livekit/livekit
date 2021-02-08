@@ -351,21 +351,27 @@ func (r *RedisRouter) redisWorker() {
 func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 	connectionId := sm.ConnectionId
 
+	r.lock.Lock()
+	resSink := r.responseChannels[connectionId]
+	r.lock.Unlock()
+
+	// if a client closed the channel, then sent more messages after that,
+	if resSink == nil {
+		return nil
+	}
+
 	switch rmb := sm.Message.(type) {
 	case *livekit.SignalNodeMessage_Response:
 		//logger.Debugw("forwarding signal message",
 		//	"connectionId", connectionId,
 		//	"type", fmt.Sprintf("%T", rmb.Response.Message))
-		// in the event the current node is an Signal node, push to response channels
-		resSink := r.getOrCreateMessageChannel(r.responseChannels, connectionId)
 		if err := resSink.WriteMessage(rmb.Response); err != nil {
 			return err
 		}
 
 	case *livekit.SignalNodeMessage_EndSession:
-		logger.Debugw("received EndSession, closing signal connection",
-			"connectionId", connectionId)
-		resSink := r.getOrCreateMessageChannel(r.responseChannels, connectionId)
+		//logger.Debugw("received EndSession, closing signal connection",
+		//	"connectionId", connectionId)
 		resSink.Close()
 	}
 	return nil
@@ -382,7 +388,9 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 
 	case *livekit.RTCNodeMessage_Request:
-		requestChan := r.getOrCreateMessageChannel(r.requestChannels, pKey)
+		r.lock.Lock()
+		requestChan := r.requestChannels[pKey]
+		r.lock.Unlock()
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
 		}

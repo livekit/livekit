@@ -9,4 +9,5 @@ var (
 	ErrIncorrectRTCNode     = errors.New("current node isn't the RTC node for the room")
 	errInvalidRouterMessage = errors.New("invalid router message")
 	ErrChannelClosed        = errors.New("channel closed")
+	ErrChannelFull          = errors.New("channel is full")
 )
