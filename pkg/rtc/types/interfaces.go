@@ -109,7 +109,6 @@ type SubscribedTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 	SetPublisherMuted(muted bool)
-	Resync()
 }
 
 // interface for properties of webrtc.TrackRemote

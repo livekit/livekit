@@ -29,10 +29,6 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ResyncStub        func()
-	resyncMutex       sync.RWMutex
-	resyncArgsForCall []struct {
-	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
@@ -153,30 +149,6 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) Resync() {
-	fake.resyncMutex.Lock()
-	fake.resyncArgsForCall = append(fake.resyncArgsForCall, struct {
-	}{})
-	stub := fake.ResyncStub
-	fake.recordInvocation("Resync", []interface{}{})
-	fake.resyncMutex.Unlock()
-	if stub != nil {
-		fake.ResyncStub()
-	}
-}
-
-func (fake *FakeSubscribedTrack) ResyncCallCount() int {
-	fake.resyncMutex.RLock()
-	defer fake.resyncMutex.RUnlock()
-	return len(fake.resyncArgsForCall)
-}
-
-func (fake *FakeSubscribedTrack) ResyncCalls(stub func()) {
-	fake.resyncMutex.Lock()
-	defer fake.resyncMutex.Unlock()
-	fake.ResyncStub = stub
-}
-
 func (fake *FakeSubscribedTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -248,8 +220,6 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.downTrackMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
-	fake.resyncMutex.RLock()
-	defer fake.resyncMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()

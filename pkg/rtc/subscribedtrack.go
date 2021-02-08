@@ -38,14 +38,6 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.updateDownTrackMute()
 }
 
-// cause downtrack to resync and request a keyframe
-// this is sort of a hack to prevent a subscriber from having tracks freeze on the client due to missing
-// keyframes
-func (t *SubscribedTrack) Resync() {
-	t.dt.Mute(true)
-	t.updateDownTrackMute()
-}
-
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
 	t.dt.Mute(muted)

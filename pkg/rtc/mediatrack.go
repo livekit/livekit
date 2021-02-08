@@ -137,6 +137,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
+	downTrack.SetBufferFactory(bufferFactory)
 	subTrack := NewSubscribedTrack(downTrack)
 
 	transceiver, err := sub.PeerConnection().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
