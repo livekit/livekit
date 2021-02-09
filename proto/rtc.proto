@@ -13,9 +13,12 @@ message SignalRequest {
     SessionDescription answer = 2;
     TrickleRequest trickle = 3;
     AddTrackRequest add_track = 4;
+    // mute the participant's own tracks
     MuteTrackRequest mute = 5;
     // when client needs to negotiate
     NegotiationRequest negotiate = 7;
+    // mute a track client is subscribed to
+    MuteTrackRequest mute_subscribed = 8;
   }
 }
 
@@ -77,7 +80,6 @@ message SessionDescription {
   string type = 1; // "answer" | "offer" | "pranswer" | "rollback"
   string sdp = 2;
 }
-
 
 message ParticipantUpdate {
   repeated ParticipantInfo participants = 1;

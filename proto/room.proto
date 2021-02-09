@@ -21,8 +21,8 @@ service RoomService {
   // removes a participant from room, requires RoomAdmin
   rpc RemoveParticipant(RoomParticipantIdentity) returns (RemoveParticipantResponse);
 
-  // mute tracks, requires RoomAdmin
-  rpc MuteTrack(MuteRoomTrackRequest) returns (MuteRoomTrackResponse);
+  // mute/unmute a participant, requires RoomAdmin
+  rpc MutePublishedTrack(MuteRoomTrackRequest) returns (MuteRoomTrackResponse);
 }
 
 message CreateRoomRequest {
