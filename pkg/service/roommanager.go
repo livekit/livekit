@@ -321,11 +321,11 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 
 	switch rm := msg.Message.(type) {
 	case *livekit.RTCNodeMessage_RemoveParticipant:
-		room.RemoveParticipant(identity)
 		logger.Infow("removing participant", "room", roomName, "participant", identity)
+		room.RemoveParticipant(identity)
 	case *livekit.RTCNodeMessage_MuteTrack:
-		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
 		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
 			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
+		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
 	}
 }

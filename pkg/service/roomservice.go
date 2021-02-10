@@ -139,9 +139,12 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	// find the track
 	track := funk.Find(participant.Tracks, func(t *livekit.TrackInfo) bool {
 		return t.Sid == req.TrackSid
-	}).(*livekit.TrackInfo)
+	})
+	if track == nil {
+		return nil, twirp.NotFoundError(ErrTrackNotFound.Error())
+	}
 	res = &livekit.MuteRoomTrackResponse{
-		Track: track,
+		Track: track.(*livekit.TrackInfo),
 	}
 	return
 }

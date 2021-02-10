@@ -447,16 +447,17 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	defer p.lock.RUnlock()
 	track := p.publishedTracks[trackId]
 	if track == nil {
+		logger.Warnw("could not locate track", "track", trackId)
 		return
 	}
-	updated := false
+	currentMuted := track.IsMuted()
+	track.SetMuted(muted)
 
-	switch t := track.(type) {
-	case *MediaTrack:
-		updated = t.muted.TrySet(muted)
-	}
-
-	if updated && p.onTrackUpdated != nil {
+	if currentMuted != track.IsMuted() && p.onTrackUpdated != nil {
+		logger.Debugw("mute status changed",
+			"participant", p.identity,
+			"track", trackId,
+			"muted", track.IsMuted())
 		p.onTrackUpdated(p, track)
 	}
 }

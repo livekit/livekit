@@ -264,6 +264,9 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 
 func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 	r.broadcastParticipantState(p)
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
 }
 
 // broadcast an update about participant p
