@@ -14,7 +14,9 @@ type LocalRouter struct {
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
-	onNewParticipant ParticipantCallback
+
+	onNewParticipant NewParticipantCallback
+	onRTCMessage     RTCMessageCallback
 }
 
 func NewLocalRouter(currentNode LocalNode) *LocalRouter {
@@ -86,8 +88,20 @@ func (r *LocalRouter) StartParticipantSignal(roomName, identity string, reconnec
 	return reqChan, resChan, nil
 }
 
-func (r *LocalRouter) OnNewParticipantRTC(callback ParticipantCallback) {
+func (r *LocalRouter) SendRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) error {
+	if r.onRTCMessage == nil {
+		return nil
+	}
+	go r.onRTCMessage(roomName, identity, msg)
+	return nil
+}
+
+func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {
 	r.onNewParticipant = callback
+}
+
+func (r *LocalRouter) OnRTCMessage(callback RTCMessageCallback) {
+	r.onRTCMessage = callback
 }
 
 func (r *LocalRouter) Start() error {

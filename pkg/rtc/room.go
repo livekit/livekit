@@ -28,7 +28,9 @@ type Room struct {
 	// time that the last participant left the room
 	leftAt   atomic.Value
 	isClosed utils.AtomicFlag
-	onClose  func()
+
+	onParticipantChanged func(p types.Participant)
+	onClose              func()
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
@@ -100,6 +102,9 @@ func (r *Room) Join(participant types.Participant) error {
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
 		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
 			"oldState", oldState)
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(participant)
+		}
 		r.broadcastParticipantState(p)
 
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
@@ -140,27 +145,43 @@ func (r *Room) Join(participant types.Participant) error {
 		}
 	}
 
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(participant)
+	}
+
 	return participant.SendJoinResponse(&r.Room, otherParticipants)
 }
 
 func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
-	defer r.lock.Unlock()
 	p, ok := r.participants[identity]
+	if ok {
+		delete(r.participants, identity)
+	}
+	r.lock.Unlock()
 	if !ok {
 		return
 	}
-	delete(r.participants, identity)
+
+	// send broadcast only if it's not already closed
+	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
 
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
 	p.OnStateChange(nil)
 
 	// close participant as well
-	go p.Close()
+	p.Close()
 
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
+	}
+
+	if sendUpdates {
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(p)
+		}
+		go r.broadcastParticipantState(p)
 	}
 }
 
@@ -201,6 +222,10 @@ func (r *Room) OnClose(f func()) {
 	r.onClose = f
 }
 
+func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
+	r.onParticipantChanged = f
+}
+
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
@@ -231,10 +256,17 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 				"dest", existingParticipant.Identity())
 		}
 	}
+
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(participant)
+	}
 }
 
 func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 	r.broadcastParticipantState(p)
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
 }
 
 // broadcast an update about participant p

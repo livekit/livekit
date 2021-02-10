@@ -15,8 +15,9 @@ import (
 
 var (
 	roomFlag = &cli.StringFlag{
-		Name:  "room",
-		Usage: "name or id of the room",
+		Name:     "room",
+		Usage:    "name or id of the room",
+		Required: true,
 	}
 	roomHostFlag = &cli.StringFlag{
 		Name:  "host",
@@ -34,6 +35,11 @@ var (
 	secretFlag = &cli.StringFlag{
 		Name:     "api-secret",
 		EnvVars:  []string{"LIVEKIT_API_SECRET"},
+		Required: true,
+	}
+	identityFlag = &cli.StringFlag{
+		Name:     "identity",
+		Usage:    "identity of participant",
 		Required: true,
 	}
 	devFlag = &cli.BoolFlag{

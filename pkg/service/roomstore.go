@@ -14,4 +14,9 @@ type RoomStore interface {
 	GetRoom(idOrName string) (*livekit.Room, error)
 	ListRooms() ([]*livekit.Room, error)
 	DeleteRoom(idOrName string) error
+
+	PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error
+	GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
+	ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error)
+	DeleteParticipant(roomName, identity string) error
 }

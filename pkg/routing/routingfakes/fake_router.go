@@ -58,10 +58,15 @@ type FakeRouter struct {
 		result1 []*livekit.Node
 		result2 error
 	}
-	OnNewParticipantRTCStub        func(routing.ParticipantCallback)
+	OnNewParticipantRTCStub        func(routing.NewParticipantCallback)
 	onNewParticipantRTCMutex       sync.RWMutex
 	onNewParticipantRTCArgsForCall []struct {
-		arg1 routing.ParticipantCallback
+		arg1 routing.NewParticipantCallback
+	}
+	OnRTCMessageStub        func(routing.RTCMessageCallback)
+	onRTCMessageMutex       sync.RWMutex
+	onRTCMessageArgsForCall []struct {
+		arg1 routing.RTCMessageCallback
 	}
 	RegisterNodeStub        func() error
 	registerNodeMutex       sync.RWMutex
@@ -81,6 +86,19 @@ type FakeRouter struct {
 		result1 error
 	}
 	removeDeadNodesReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendRTCMessageStub        func(string, string, *livekit.RTCNodeMessage) error
+	sendRTCMessageMutex       sync.RWMutex
+	sendRTCMessageArgsForCall []struct {
+		arg1 string
+		arg2 string
+		arg3 *livekit.RTCNodeMessage
+	}
+	sendRTCMessageReturns struct {
+		result1 error
+	}
+	sendRTCMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SetNodeForRoomStub        func(string, string) error
@@ -385,10 +403,10 @@ func (fake *FakeRouter) ListNodesReturnsOnCall(i int, result1 []*livekit.Node, r
 	}{result1, result2}
 }
 
-func (fake *FakeRouter) OnNewParticipantRTC(arg1 routing.ParticipantCallback) {
+func (fake *FakeRouter) OnNewParticipantRTC(arg1 routing.NewParticipantCallback) {
 	fake.onNewParticipantRTCMutex.Lock()
 	fake.onNewParticipantRTCArgsForCall = append(fake.onNewParticipantRTCArgsForCall, struct {
-		arg1 routing.ParticipantCallback
+		arg1 routing.NewParticipantCallback
 	}{arg1})
 	stub := fake.OnNewParticipantRTCStub
 	fake.recordInvocation("OnNewParticipantRTC", []interface{}{arg1})
@@ -404,16 +422,48 @@ func (fake *FakeRouter) OnNewParticipantRTCCallCount() int {
 	return len(fake.onNewParticipantRTCArgsForCall)
 }
 
-func (fake *FakeRouter) OnNewParticipantRTCCalls(stub func(routing.ParticipantCallback)) {
+func (fake *FakeRouter) OnNewParticipantRTCCalls(stub func(routing.NewParticipantCallback)) {
 	fake.onNewParticipantRTCMutex.Lock()
 	defer fake.onNewParticipantRTCMutex.Unlock()
 	fake.OnNewParticipantRTCStub = stub
 }
 
-func (fake *FakeRouter) OnNewParticipantRTCArgsForCall(i int) routing.ParticipantCallback {
+func (fake *FakeRouter) OnNewParticipantRTCArgsForCall(i int) routing.NewParticipantCallback {
 	fake.onNewParticipantRTCMutex.RLock()
 	defer fake.onNewParticipantRTCMutex.RUnlock()
 	argsForCall := fake.onNewParticipantRTCArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRouter) OnRTCMessage(arg1 routing.RTCMessageCallback) {
+	fake.onRTCMessageMutex.Lock()
+	fake.onRTCMessageArgsForCall = append(fake.onRTCMessageArgsForCall, struct {
+		arg1 routing.RTCMessageCallback
+	}{arg1})
+	stub := fake.OnRTCMessageStub
+	fake.recordInvocation("OnRTCMessage", []interface{}{arg1})
+	fake.onRTCMessageMutex.Unlock()
+	if stub != nil {
+		fake.OnRTCMessageStub(arg1)
+	}
+}
+
+func (fake *FakeRouter) OnRTCMessageCallCount() int {
+	fake.onRTCMessageMutex.RLock()
+	defer fake.onRTCMessageMutex.RUnlock()
+	return len(fake.onRTCMessageArgsForCall)
+}
+
+func (fake *FakeRouter) OnRTCMessageCalls(stub func(routing.RTCMessageCallback)) {
+	fake.onRTCMessageMutex.Lock()
+	defer fake.onRTCMessageMutex.Unlock()
+	fake.OnRTCMessageStub = stub
+}
+
+func (fake *FakeRouter) OnRTCMessageArgsForCall(i int) routing.RTCMessageCallback {
+	fake.onRTCMessageMutex.RLock()
+	defer fake.onRTCMessageMutex.RUnlock()
+	argsForCall := fake.onRTCMessageArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -519,6 +569,69 @@ func (fake *FakeRouter) RemoveDeadNodesReturnsOnCall(i int, result1 error) {
 		})
 	}
 	fake.removeDeadNodesReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) SendRTCMessage(arg1 string, arg2 string, arg3 *livekit.RTCNodeMessage) error {
+	fake.sendRTCMessageMutex.Lock()
+	ret, specificReturn := fake.sendRTCMessageReturnsOnCall[len(fake.sendRTCMessageArgsForCall)]
+	fake.sendRTCMessageArgsForCall = append(fake.sendRTCMessageArgsForCall, struct {
+		arg1 string
+		arg2 string
+		arg3 *livekit.RTCNodeMessage
+	}{arg1, arg2, arg3})
+	stub := fake.SendRTCMessageStub
+	fakeReturns := fake.sendRTCMessageReturns
+	fake.recordInvocation("SendRTCMessage", []interface{}{arg1, arg2, arg3})
+	fake.sendRTCMessageMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) SendRTCMessageCallCount() int {
+	fake.sendRTCMessageMutex.RLock()
+	defer fake.sendRTCMessageMutex.RUnlock()
+	return len(fake.sendRTCMessageArgsForCall)
+}
+
+func (fake *FakeRouter) SendRTCMessageCalls(stub func(string, string, *livekit.RTCNodeMessage) error) {
+	fake.sendRTCMessageMutex.Lock()
+	defer fake.sendRTCMessageMutex.Unlock()
+	fake.SendRTCMessageStub = stub
+}
+
+func (fake *FakeRouter) SendRTCMessageArgsForCall(i int) (string, string, *livekit.RTCNodeMessage) {
+	fake.sendRTCMessageMutex.RLock()
+	defer fake.sendRTCMessageMutex.RUnlock()
+	argsForCall := fake.sendRTCMessageArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRouter) SendRTCMessageReturns(result1 error) {
+	fake.sendRTCMessageMutex.Lock()
+	defer fake.sendRTCMessageMutex.Unlock()
+	fake.SendRTCMessageStub = nil
+	fake.sendRTCMessageReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) SendRTCMessageReturnsOnCall(i int, result1 error) {
+	fake.sendRTCMessageMutex.Lock()
+	defer fake.sendRTCMessageMutex.Unlock()
+	fake.SendRTCMessageStub = nil
+	if fake.sendRTCMessageReturnsOnCall == nil {
+		fake.sendRTCMessageReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendRTCMessageReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -797,10 +910,14 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.listNodesMutex.RUnlock()
 	fake.onNewParticipantRTCMutex.RLock()
 	defer fake.onNewParticipantRTCMutex.RUnlock()
+	fake.onRTCMessageMutex.RLock()
+	defer fake.onRTCMessageMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
 	fake.removeDeadNodesMutex.RLock()
 	defer fake.removeDeadNodesMutex.RUnlock()
+	fake.sendRTCMessageMutex.RLock()
+	defer fake.sendRTCMessageMutex.RUnlock()
 	fake.setNodeForRoomMutex.RLock()
 	defer fake.setNodeForRoomMutex.RUnlock()
 	fake.startMutex.RLock()

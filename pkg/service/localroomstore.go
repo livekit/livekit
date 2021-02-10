@@ -15,14 +15,17 @@ type LocalRoomStore struct {
 	rooms map[string]*livekit.Room
 	// map of roomName => roomId
 	roomIds map[string]string
-	lock    sync.RWMutex
+	// map of roomName => { identity: participant }
+	participants map[string]map[string]*livekit.ParticipantInfo
+	lock         sync.RWMutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
-		rooms:   make(map[string]*livekit.Room),
-		roomIds: make(map[string]string),
-		lock:    sync.RWMutex{},
+		rooms:        make(map[string]*livekit.Room),
+		roomIds:      make(map[string]string),
+		participants: make(map[string]map[string]*livekit.ParticipantInfo),
+		lock:         sync.RWMutex{},
 	}
 }
 
@@ -69,7 +72,62 @@ func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	delete(p.rooms, room.Sid)
+	delete(p.participants, room.Name)
 	delete(p.roomIds, room.Name)
+	delete(p.rooms, room.Sid)
+	return nil
+}
+
+func (p *LocalRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	roomParticipants := p.participants[roomName]
+	if roomParticipants == nil {
+		roomParticipants = make(map[string]*livekit.ParticipantInfo)
+		p.participants[roomName] = roomParticipants
+	}
+	roomParticipants[participant.Identity] = participant
+	return nil
+}
+
+func (p *LocalRoomStore) GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	roomParticipants := p.participants[roomName]
+	if roomParticipants == nil {
+		return nil, ErrParticipantNotFound
+	}
+	participant := roomParticipants[identity]
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+	return participant, nil
+}
+
+func (p *LocalRoomStore) ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	roomParticipants := p.participants[roomName]
+	if roomParticipants == nil {
+		// empty array
+		return nil, nil
+	}
+
+	items := funk.Values(roomParticipants).([]*livekit.ParticipantInfo)
+	// TODO: should short this to something reasonable
+
+	return items, nil
+}
+
+func (p *LocalRoomStore) DeleteParticipant(roomName, identity string) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	roomParticipants := p.participants[roomName]
+	if roomParticipants != nil {
+		delete(roomParticipants, identity)
+	}
 	return nil
 }

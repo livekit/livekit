@@ -51,6 +51,9 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 		rm.Message = &livekit.RTCNodeMessage_Request{
 			Request: o,
 		}
+	case *livekit.RTCNodeMessage:
+		rm = o
+		rm.ParticipantKey = participantKey
 	default:
 		return errInvalidRouterMessage
 	}
