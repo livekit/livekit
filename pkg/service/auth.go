@@ -103,6 +103,19 @@ func EnsureJoinPermission(ctx context.Context) (name string, err error) {
 	return
 }
 
+func EnsureAdminPermission(ctx context.Context, room string) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.Video == nil {
+		return ErrPermissionDenied
+	}
+
+	if !claims.Video.RoomAdmin || room != claims.Video.Room {
+		return ErrPermissionDenied
+	}
+
+	return nil
+}
+
 func EnsureCreatePermission(ctx context.Context) error {
 	claims := GetGrants(ctx)
 	if claims == nil {

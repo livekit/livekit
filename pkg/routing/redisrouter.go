@@ -162,6 +162,18 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity string, reconnec
 	return sink, resChan, nil
 }
 
+func (r *RedisRouter) SendRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) error {
+	pkey := participantKey(roomName, identity)
+	rtcNode, err := r.getParticipantRTCNode(pkey)
+	if err != nil {
+		return err
+	}
+
+	rtcSink := r.getOrCreateRTCSink(rtcNode, pkey)
+
+	return rtcSink.WriteMessage(msg)
+}
+
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(ss.RoomName)
@@ -393,6 +405,16 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		r.lock.Unlock()
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
+		}
+
+	default:
+		// route it to handler
+		if r.onRTCMessage != nil {
+			roomName, identity, err := parseParticipantKey(pKey)
+			if err != nil {
+				return err
+			}
+			r.onRTCMessage(roomName, identity, rm)
 		}
 	}
 	return nil

@@ -358,6 +358,16 @@ func (p *ParticipantImpl) Close() error {
 		// already closed
 		return nil
 	}
+
+	// remove all downtracks
+	p.lock.Lock()
+	for _, t := range p.publishedTracks {
+		// skip updates
+		t.OnClose(nil)
+		t.RemoveAllSubscribers()
+	}
+	p.lock.Unlock()
+
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.onICECandidate = nil
 	p.peerConn.OnDataChannel(nil)

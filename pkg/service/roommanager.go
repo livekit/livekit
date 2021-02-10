@@ -218,6 +218,13 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 			logger.Errorw("could not delete room", "error", err)
 		}
 	})
+	room.OnParticipantChanged(func(p types.Participant) {
+		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+			r.roomStore.DeleteParticipant(roomName, p.Identity())
+		} else {
+			r.roomStore.PersistParticipant(roomName, p.ToProto())
+		}
+	})
 	r.lock.Lock()
 	r.rooms[roomName] = room
 	r.lock.Unlock()
@@ -294,5 +301,31 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 			}
 		}
+	}
+}
+
+func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) {
+	r.lock.RLock()
+	room := r.rooms[roomName]
+	r.lock.RUnlock()
+
+	if room == nil {
+		logger.Warnw("Could not find room", "room", roomName)
+		return
+	}
+
+	participant := room.GetParticipant(identity)
+	if participant == nil {
+		return
+	}
+
+	switch rm := msg.Message.(type) {
+	case *livekit.RTCNodeMessage_RemoveParticipant:
+		room.RemoveParticipant(identity)
+		logger.Infow("removing participant", "room", roomName, "participant", identity)
+	case *livekit.RTCNodeMessage_MuteTrack:
+		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
+		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
+			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 	}
 }

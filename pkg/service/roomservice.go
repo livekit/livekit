@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -66,17 +67,81 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	if err != nil {
+		return
+	}
+
+	res = &livekit.ListParticipantsResponse{
+		Participants: participants,
+	}
 	return
 }
 
 func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.ParticipantInfo, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	if err != nil {
+		return
+	}
+
+	res = participant
 	return
 }
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.RemoveParticipantResponse, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	if err != nil {
+		return
+	}
+
+	err = s.roomManager.router.SendRTCMessage(req.Room, participant.Identity, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_RemoveParticipant{
+			RemoveParticipant: req,
+		},
+	})
+
+	res = &livekit.RemoveParticipantResponse{}
 	return
 }
 
-func (s *RoomService) MuteTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (res *livekit.MuteRoomTrackResponse, err error) {
+func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (res *livekit.MuteRoomTrackResponse, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	if err != nil {
+		return
+	}
+
+	err = s.roomManager.router.SendRTCMessage(req.Room, participant.Identity, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_MuteTrack{
+			MuteTrack: req,
+		},
+	})
+
+	if err != nil {
+		return
+	}
+
+	// find the track
+	track := funk.Find(participant.Tracks, func(t *livekit.TrackInfo) bool {
+		return t.Sid == req.TrackSid
+	}).(*livekit.TrackInfo)
+	res = &livekit.MuteRoomTrackResponse{
+		Track: track,
+	}
 	return
 }

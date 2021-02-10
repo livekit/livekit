@@ -66,8 +66,9 @@ message RemoveParticipantResponse {
 
 message MuteRoomTrackRequest {
   string room = 1;
-  string track_sid = 2;
-  bool muted = 3;
+  string identity = 2;
+  string track_sid = 3;
+  bool muted = 4;
 }
 
 message MuteRoomTrackResponse {
