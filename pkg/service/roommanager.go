@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -138,7 +139,7 @@ func (r *RoomManager) CloseIdleRooms() {
 }
 
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, identity string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
@@ -161,6 +162,7 @@ func (r *RoomManager) StartSession(roomName, identity string, reconnect bool, re
 				prevSink.Close()
 			}
 			participant.SetResponseSink(responseSink)
+
 			return
 		} else {
 			// we need to clean up the existing participant, so a new one can join
@@ -185,6 +187,12 @@ func (r *RoomManager) StartSession(roomName, identity string, reconnect bool, re
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
+	}
+	if metadata != "" {
+		var md map[string]interface{}
+		if err := json.Unmarshal([]byte(metadata), &md); err == nil {
+			participant.SetMetadata(md)
+		}
 	}
 
 	// join room

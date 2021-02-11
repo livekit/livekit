@@ -63,7 +63,7 @@ func joinRoom(c *cli.Context) error {
 		token, err = accessToken(c, &auth.VideoGrant{
 			RoomJoin: true,
 			Room:     roomId,
-		}, identity)
+		}, identity).ToJWT()
 		if err != nil {
 			return err
 		}

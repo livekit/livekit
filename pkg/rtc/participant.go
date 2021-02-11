@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"encoding/json"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -39,8 +40,10 @@ type ParticipantImpl struct {
 	isClosed       utils.AtomicFlag
 	mediaEngine    *webrtc.MediaEngine
 	identity       string
-	state          atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh         chan []rtcp.Packet
+	// JSON encoded metadata to pass to clients
+	metadata string
+	state    atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh   chan []rtcp.Packet
 	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
 	subscribedTracks map[string][]types.SubscribedTrack
 	// publishedTracks that participant is publishing
@@ -162,6 +165,22 @@ func (p *ParticipantImpl) IsReady() bool {
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
+// attach metadata to the participant
+func (p *ParticipantImpl) SetMetadata(metadata map[string]interface{}) error {
+	if metadata == nil {
+		p.metadata = ""
+		return nil
+	}
+
+	if data, err := json.Marshal(metadata); err != nil {
+		return err
+	} else {
+		p.metadata = string(data)
+	}
+
+	return nil
+}
+
 func (p *ParticipantImpl) RTCPChan() chan []rtcp.Packet {
 	return p.rtcpCh
 }
@@ -170,6 +189,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      p.id,
 		Identity: p.identity,
+		Metadata: p.metadata,
 		State:    p.State(),
 	}
 
@@ -433,6 +453,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	if !p.IsReady() {
 		return nil
 	}
+
 	return p.responseSink.WriteMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{

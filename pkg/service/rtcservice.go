@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,8 +74,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var metadata string
+	if claims.Metadata != nil {
+		if data, err := json.Marshal(claims.Metadata); err != nil {
+			logger.Warnw("unable to encode metadata", "error", err)
+		} else {
+			metadata = string(data)
+		}
+	}
+
 	// this needs to be started first *before* using router functions on this node
-	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, isReconnect)
+	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, metadata, isReconnect)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
