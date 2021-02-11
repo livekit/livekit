@@ -75,6 +75,8 @@ github.com/davidzhao/ion-sfu v1.8.3-0.20210205220645-c9ec7ad1db86 h1:POGjEQ8fyEQ
 github.com/davidzhao/ion-sfu v1.8.3-0.20210205220645-c9ec7ad1db86/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
 github.com/davidzhao/ion-sfu v1.8.3-0.20210208065837-f6e01b2d7aeb h1:zrB9w2vGSzorwRYykHFMeMshWjMx/WU7J0T20Ta5WGo=
 github.com/davidzhao/ion-sfu v1.8.3-0.20210208065837-f6e01b2d7aeb/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
+github.com/davidzhao/ion-sfu v1.8.3-0.20210210013206-35f12bdbf9b8 h1:sPXPUZJ1Z52SFbTP6VFxEhfzbPaKGiB7koN0W664yqk=
+github.com/davidzhao/ion-sfu v1.8.3-0.20210210013206-35f12bdbf9b8/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
 github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f/go.mod h1:xH/i4TFMt8koVQZ6WFms69WAsDWr2XsYL3Hkl7jkoLE=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible h1:7qlOGliEKZXTDg6OTjfoBKDXWrumCAMpl/TFQ4/5kLM=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
@@ -335,6 +337,8 @@ github.com/pion/ion-sfu v1.8.3 h1:ZPmNgBRvrrYY5POjRYglCrradFMw/SBLPh0WXJYPm8E=
 github.com/pion/ion-sfu v1.8.3/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
 github.com/pion/ion-sfu v1.8.4-0.20210205220645-c9ec7ad1db86 h1:HfWQIv0mJ5MYbKLaWlQ3nG/ToRTE96dpBmts97nra5o=
 github.com/pion/ion-sfu v1.8.4-0.20210205220645-c9ec7ad1db86/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
+github.com/pion/ion-sfu v1.9.0 h1:3bgaTS1AyGvBmrU8R8nt/qQRguhOv3aGgaTEKUFAoUQ=
+github.com/pion/ion-sfu v1.9.0/go.mod h1:MKDh4JSLpBA/hFeYAYALb6nYpe6Ruknd3pmxPMbdpM8=
 github.com/pion/logging v0.2.2 h1:M9+AIj/+pxNsDfAT64+MAVgJO0rsyLnoJKCqf//DoeY=
 github.com/pion/logging v0.2.2/go.mod h1:k0/tDVsRCX2Mb2ZEmTqNa7CWsQPc+YYCB7Q+5pahoms=
 github.com/pion/mdns v0.0.4 h1:O4vvVqr4DGX63vzmO6Fw9vpy3lfztVWHGCQfyw0ZLSY=

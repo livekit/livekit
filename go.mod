@@ -14,7 +14,7 @@ require (
 	github.com/magefile/mage v1.10.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pion/ion-sfu v1.8.3
+	github.com/pion/ion-sfu v1.9.0
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v3 v3.0.4
@@ -34,4 +34,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
 
-replace github.com/pion/ion-sfu => github.com/davidzhao/ion-sfu v1.8.3-0.20210208065837-f6e01b2d7aeb
+replace github.com/pion/ion-sfu => github.com/davidzhao/ion-sfu v1.8.3-0.20210210013206-35f12bdbf9b8
