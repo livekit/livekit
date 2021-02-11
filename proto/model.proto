@@ -26,6 +26,7 @@ message ParticipantInfo {
   string identity = 2;
   State state = 3;
   repeated TrackInfo tracks = 4;
+  string metadata = 5;
 }
 
 enum TrackType {

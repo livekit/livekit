@@ -62,12 +62,12 @@ func ExpandUser(p string) string {
 	return p
 }
 
-func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value string, err error) {
+func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) *auth.AccessToken {
 	apiKey := c.String("api-key")
 	apiSecret := c.String("api-secret")
 	if apiKey == "" && apiSecret == "" {
 		// not provided, don't sign request
-		return
+		return nil
 	}
 
 	isDev := c.Bool("dev")
@@ -79,5 +79,5 @@ func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value
 		fmt.Println("creating dev token")
 		at.SetValidFor(time.Hour * 24 * 30)
 	}
-	return at.ToJWT()
+	return at
 }

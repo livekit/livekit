@@ -181,7 +181,7 @@ func (r *Room) RemoveParticipant(identity string) {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(p)
 		}
-		go r.broadcastParticipantState(p)
+		r.broadcastParticipantState(p)
 	}
 }
 

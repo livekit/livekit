@@ -9,6 +9,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
@@ -93,14 +94,19 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, numParticipants)
+		var changedParticipant types.Participant
+		rm.OnParticipantChanged(func(participant types.Participant) {
+			changedParticipant = participant
+		})
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		disconnectedParticipant := participants[1].(*typesfakes.FakeParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
 		rm.RemoveParticipant(p.Identity())
-		p.OnStateChangeArgsForCall(0)(p, livekit.ParticipantInfo_ACTIVE)
 		time.Sleep(defaultDelay)
+
+		assert.Equal(t, p, changedParticipant)
 
 		numUpdates := 0
 		for _, op := range participants {

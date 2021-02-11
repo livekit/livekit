@@ -127,7 +127,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(roomName, identity string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(roomName)
 	if err != nil {
@@ -149,6 +149,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity string, reconnec
 	err = sink.WriteMessage(&livekit.StartSession{
 		RoomName: roomName,
 		Identity: identity,
+		Metadata: metadata,
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId: connectionId,
 		Reconnect:    reconnect,
@@ -219,6 +220,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	r.onNewParticipant(
 		ss.RoomName,
 		ss.Identity,
+		ss.Metadata,
 		ss.Reconnect,
 		reqChan,
 		resSink,

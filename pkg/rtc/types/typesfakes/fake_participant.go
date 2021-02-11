@@ -204,6 +204,17 @@ type FakeParticipant struct {
 	sendParticipantUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SetMetadataStub        func(map[string]interface{}) error
+	setMetadataMutex       sync.RWMutex
+	setMetadataArgsForCall []struct {
+		arg1 map[string]interface{}
+	}
+	setMetadataReturns struct {
+		result1 error
+	}
+	setMetadataReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SetResponseSinkStub        func(routing.MessageSink)
 	setResponseSinkMutex       sync.RWMutex
 	setResponseSinkArgsForCall []struct {
@@ -1310,6 +1321,67 @@ func (fake *FakeParticipant) SendParticipantUpdateReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
+func (fake *FakeParticipant) SetMetadata(arg1 map[string]interface{}) error {
+	fake.setMetadataMutex.Lock()
+	ret, specificReturn := fake.setMetadataReturnsOnCall[len(fake.setMetadataArgsForCall)]
+	fake.setMetadataArgsForCall = append(fake.setMetadataArgsForCall, struct {
+		arg1 map[string]interface{}
+	}{arg1})
+	stub := fake.SetMetadataStub
+	fakeReturns := fake.setMetadataReturns
+	fake.recordInvocation("SetMetadata", []interface{}{arg1})
+	fake.setMetadataMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SetMetadataCallCount() int {
+	fake.setMetadataMutex.RLock()
+	defer fake.setMetadataMutex.RUnlock()
+	return len(fake.setMetadataArgsForCall)
+}
+
+func (fake *FakeParticipant) SetMetadataCalls(stub func(map[string]interface{}) error) {
+	fake.setMetadataMutex.Lock()
+	defer fake.setMetadataMutex.Unlock()
+	fake.SetMetadataStub = stub
+}
+
+func (fake *FakeParticipant) SetMetadataArgsForCall(i int) map[string]interface{} {
+	fake.setMetadataMutex.RLock()
+	defer fake.setMetadataMutex.RUnlock()
+	argsForCall := fake.setMetadataArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SetMetadataReturns(result1 error) {
+	fake.setMetadataMutex.Lock()
+	defer fake.setMetadataMutex.Unlock()
+	fake.SetMetadataStub = nil
+	fake.setMetadataReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SetMetadataReturnsOnCall(i int, result1 error) {
+	fake.setMetadataMutex.Lock()
+	defer fake.setMetadataMutex.Unlock()
+	fake.SetMetadataStub = nil
+	if fake.setMetadataReturnsOnCall == nil {
+		fake.setMetadataReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.setMetadataReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) SetResponseSink(arg1 routing.MessageSink) {
 	fake.setResponseSinkMutex.Lock()
 	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
@@ -1554,6 +1626,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
+	fake.setMetadataMutex.RLock()
+	defer fake.setMetadataMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()

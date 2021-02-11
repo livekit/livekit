@@ -52,6 +52,7 @@ type Participant interface {
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
 	RTCPChan() chan []rtcp.Packet
+	SetMetadata(metadata map[string]interface{}) error
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 

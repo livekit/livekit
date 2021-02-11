@@ -230,7 +230,7 @@ func muteTrack(c *cli.Context) error {
 
 func contextWithAccessToken(c *cli.Context, grant *auth.VideoGrant) context.Context {
 	ctx := context.Background()
-	token, err := accessToken(c, grant, "")
+	token, err := accessToken(c, grant, "").ToJWT()
 	if err != nil {
 		logger.Errorw("Could not get access token", "err", err)
 	}
