@@ -7,18 +7,16 @@ import "model.proto";
 
 message SignalRequest {
   oneof message {
-    // participant joining initially, and during negotiations
+    // initial join exchange, for publisher
     SessionDescription offer = 1;
-    // participant responding to server-issued offers
+    // participant answering publisher offer
     SessionDescription answer = 2;
     TrickleRequest trickle = 3;
     AddTrackRequest add_track = 4;
     // mute the participant's own tracks
     MuteTrackRequest mute = 5;
-    // when client needs to negotiate
-    NegotiationRequest negotiate = 7;
     // mute a track client is subscribed to
-    MuteTrackRequest mute_subscribed = 8;
+    MuteTrackRequest mute_subscribed = 6;
   }
 }
 
@@ -26,9 +24,9 @@ message SignalResponse {
   oneof message {
     // sent when join is accepted
     JoinResponse join = 1;
-    // sent when offer is answered
+    // sent when server answers publisher
     SessionDescription answer = 2;
-    // sent when server needs to negotiate, always offer
+    // sent when server is sending subscriber an offer
     SessionDescription offer = 3;
     // sent when an ICE candidate is available
     TrickleRequest trickle = 4;
@@ -36,9 +34,12 @@ message SignalResponse {
     ParticipantUpdate update = 5;
     // sent to the participant when their track has been published
     TrackPublishedResponse track_published = 6;
-    // sent to participant when they should initiate negotiation
-    NegotiationResponse negotiate = 7;
   }
+}
+
+enum SignalTarget {
+  PUBLISHER = 0;
+  SUBSCRIBER = 1;
 }
 
 message AddTrackRequest {
@@ -50,6 +51,7 @@ message AddTrackRequest {
 
 message TrickleRequest {
   string candidateInit = 1;
+  SignalTarget target = 2;
 }
 
 message MuteTrackRequest {
@@ -65,15 +67,12 @@ message JoinResponse {
   Room room = 1;
   ParticipantInfo participant = 2;
   repeated ParticipantInfo other_participants = 3;
+  string server_version = 4;
 }
 
 message TrackPublishedResponse {
   string cid = 1;
   TrackInfo track = 2;
-}
-
-message NegotiationResponse {
-  // empty
 }
 
 message SessionDescription {
