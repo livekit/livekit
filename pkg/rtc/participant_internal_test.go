@@ -121,7 +121,7 @@ func TestDisconnectTiming(t *testing.T) {
 func newParticipantForTest(identity string) *ParticipantImpl {
 	p, _ := NewParticipant(
 		identity,
-		&typesfakes.FakePeerConnection{},
+		&WebRTCConfig{},
 		&routingfakes.FakeMessageSink{},
 		ReceiverConfig{})
 	return p

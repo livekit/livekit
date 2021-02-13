@@ -90,7 +90,7 @@ func (t *DataTrack) OnClose(f func()) {
 
 func (t *DataTrack) AddSubscriber(participant types.Participant) error {
 	label := PackDataTrackLabel(t.participantId, t.ID(), t.dataChannel.Label())
-	downChannel, err := participant.PeerConnection().CreateDataChannel(label, t.dataChannelOptions())
+	downChannel, err := participant.SubscriberPC().CreateDataChannel(label, t.dataChannelOptions())
 	if err != nil {
 		return err
 	}

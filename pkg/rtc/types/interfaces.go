@@ -20,30 +20,6 @@ type WebsocketClient interface {
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
-//counterfeiter:generate . PeerConnection
-type PeerConnection interface {
-	OnICECandidate(f func(*webrtc.ICECandidate))
-	OnICEConnectionStateChange(func(webrtc.ICEConnectionState))
-	//OnConnectionStateChange(f func(webrtc.PeerConnectionState))
-	OnTrack(f func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
-	OnDataChannel(func(d *webrtc.DataChannel))
-	OnNegotiationNeeded(f func())
-	Close() error
-	SetRemoteDescription(desc webrtc.SessionDescription) error
-	SetLocalDescription(desc webrtc.SessionDescription) error
-	CreateOffer(options *webrtc.OfferOptions) (webrtc.SessionDescription, error)
-	CreateAnswer(options *webrtc.AnswerOptions) (webrtc.SessionDescription, error)
-	AddICECandidate(candidate webrtc.ICECandidateInit) error
-	WriteRTCP(pkts []rtcp.Packet) error
-	// used by datatrack
-	CreateDataChannel(label string, options *webrtc.DataChannelInit) (*webrtc.DataChannel, error)
-	// used by mediatrack
-	AddTransceiverFromTrack(track webrtc.TrackLocal, init ...webrtc.RtpTransceiverInit) (*webrtc.RTPTransceiver, error)
-	ConnectionState() webrtc.PeerConnectionState
-	SignalingState() webrtc.SignalingState
-	RemoveTrack(sender *webrtc.RTPSender) error
-}
-
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
@@ -55,12 +31,12 @@ type Participant interface {
 	SetMetadata(metadata map[string]interface{}) error
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
+	SubscriberMediaEngine() *webrtc.MediaEngine
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
-	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
+	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
-	HandleClientNegotiation()
-	AddICECandidate(candidate webrtc.ICECandidateInit) error
+	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant) error
@@ -71,8 +47,6 @@ type Participant interface {
 	Close() error
 
 	// callbacks
-	// OnICECandidate - ice candidate discovered for local peer
-	OnICECandidate(func(c *webrtc.ICECandidateInit))
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
@@ -83,7 +57,7 @@ type Participant interface {
 	// package methods
 	AddSubscribedTrack(participantId string, st SubscribedTrack)
 	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
-	PeerConnection() PeerConnection
+	SubscriberPC() *webrtc.PeerConnection
 }
 
 // PublishedTrack is the main interface representing a track published to the room

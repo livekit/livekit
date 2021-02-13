@@ -325,6 +325,8 @@ github.com/pion/datachannel v1.4.21 h1:3ZvhNyfmxsAqltQrApLPQMhSFNA+aT87RqyCq4OXm
 github.com/pion/datachannel v1.4.21/go.mod h1:oiNyP4gHx2DIwRzX/MFyH0Rz/Gz05OgBlayAI2hAWjg=
 github.com/pion/dtls/v2 v2.0.4 h1:WuUcqi6oYMu/noNTz92QrF1DaFj4eXbhQ6dzaaAwOiI=
 github.com/pion/dtls/v2 v2.0.4/go.mod h1:qAkFscX0ZHoI1E07RfYPoRw3manThveu+mlTDdOxoGI=
+github.com/pion/dtls/v2 v2.0.5 h1:jgQJRK2IJ9eWQAcUEZN4M0tnCi5X/cERnxH9J8qOjR0=
+github.com/pion/dtls/v2 v2.0.5/go.mod h1:QuDII+8FVvk9Dp5t5vYIMTo7hh7uBkra+8QIm7QGm10=
 github.com/pion/ice/v2 v2.0.14 h1:FxXxauyykf89SWAtkQCfnHkno6G8+bhRkNguSh9zU+4=
 github.com/pion/ice/v2 v2.0.14/go.mod h1:wqaUbOq5ObDNU5ox1hRsEst0rWfsKuH1zXjQFEWiZwM=
 github.com/pion/ice/v2 v2.0.15 h1:KZrwa2ciL9od8+TUVJiYTNsCW9J5lktBjGwW1MacEnQ=
@@ -375,6 +377,8 @@ github.com/pion/webrtc/v3 v3.0.4 h1:Tiw3H9fpfcwkvaxonB+Gv1DG9tmgYBQaM1vBagDHP40=
 github.com/pion/webrtc/v3 v3.0.4/go.mod h1:1TmFSLpPYFTFXFHPtoq9eGP1ASTa9LC6FBh7sUY8cd4=
 github.com/pion/webrtc/v3 v3.0.5 h1:utennp7RwX+2mtyMzoOXE03IUIckiHBigjarRJZ2DqY=
 github.com/pion/webrtc/v3 v3.0.5/go.mod h1:/EDCREM8y+JrJSkoCRHpoz//qtuBCOYV4E96vEK3bz0=
+github.com/pion/webrtc/v3 v3.0.8 h1:Dgu/NZ6QAIvoNZU3qk/B35iPPx6TVHP506FfCE4SXCA=
+github.com/pion/webrtc/v3 v3.0.8/go.mod h1:C5uzSMa9sGCtfVPLA+pB0eWoW/exZ0OV0KW7JJbkvp0=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

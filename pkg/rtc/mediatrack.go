@@ -125,6 +125,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 
 	codec := t.receiver.Codec()
+	if err := sub.SubscriberMediaEngine().RegisterCodec(codec, t.receiver.Kind()); err != nil {
+		return err
+	}
 
 	// using DownTrack from ion-sfu
 	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
@@ -140,8 +143,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.SetBufferFactory(bufferFactory)
 	subTrack := NewSubscribedTrack(downTrack)
 
-	transceiver, err := sub.PeerConnection().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendrecv,
+	transceiver, err := sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
 	})
 	if err != nil {
 		return err
@@ -159,7 +162,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		t.lock.Unlock()
 
 		// ignore if the subscribing sub is not connected
-		if sub.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateClosed {
+		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
 
@@ -173,7 +176,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			"track", t.id,
 			"participantId", t.participantId,
 			"destParticipant", sub.Identity())
-		if err := sub.PeerConnection().RemoveTrack(sender); err != nil {
+		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
 			if err == webrtc.ErrConnectionClosed {
 				// sub closing, can skip removing subscribedtracks
 				return
@@ -197,7 +200,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 }
 
 // adds a new RTP receiver to the track, returns true if this is a new track
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote) {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	//rid := track.RID()
 	buff, rtcpReader := bufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
@@ -208,16 +211,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	if t.Kind() == livekit.TrackType_AUDIO {
 		// TODO: audio level stuff
 	} else if t.Kind() == livekit.TrackType_VIDEO {
-		// TODO: handle twcc
-		//if t.twcc == nil {
-		//	t.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
-		//	t.twcc.OnFeedback(func(p rtcp.RawPacket) {
-		//		t.rtcpCh <- []rtcp.Packet{&p}
-		//	})
-		//}
-		buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
-			//t.twcc.Push(sn, timeNS, marker)
-		})
+		if twcc != nil {
+			buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
+				twcc.Push(sn, timeNS, marker)
+			})
+		}
 	}
 
 	rtcpReader.OnPacket(func(bytes []byte) {
