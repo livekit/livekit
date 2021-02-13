@@ -239,8 +239,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 	if t.receiver == nil {
 		// pack ID to identify all publishedTracks
-		packedId := PackTrackId(t.participantId, t.ID())
-		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), packedId)
+		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), t.ID(), t.participantId)
 		t.receiver.SetRTCPCh(t.rtcpCh)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()

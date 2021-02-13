@@ -8,16 +8,22 @@ import (
 
 type WrappedReceiver struct {
 	sfu.Receiver
-	trackId string
+	trackId  string
+	streamId string
 }
 
-func NewWrappedReceiver(receiver sfu.Receiver, trackId string) WrappedReceiver {
+func NewWrappedReceiver(receiver sfu.Receiver, trackId string, streamId string) WrappedReceiver {
 	return WrappedReceiver{
 		Receiver: receiver,
 		trackId:  trackId,
+		streamId: streamId,
 	}
 }
 
 func (r WrappedReceiver) TrackID() string {
 	return r.trackId
+}
+
+func (r WrappedReceiver) StreamID() string {
+	return r.streamId
 }
