@@ -46,8 +46,6 @@ type RTCClient struct {
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
 
-	// pending actions to start after connected to peer
-	pendingCandidates   []*webrtc.ICECandidate
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
 
@@ -92,7 +90,6 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 
 	c := &RTCClient{
 		conn:                   conn,
-		pendingCandidates:      make([]*webrtc.ICECandidate, 0),
 		localTracks:            make(map[string]webrtc.TrackLocal),
 		pendingPublishedTracks: make(map[string]*livekit.TrackInfo),
 		subscribedTracks:       make(map[string][]*webrtc.TrackRemote),
@@ -110,7 +107,8 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.subscriber, err = rtc.NewPCTransport(livekit.SignalTarget_SUBSCRIBER, &conf)
+	// intentionally use publisher transport to have codecs pre-registered
+	c.subscriber, err = rtc.NewPCTransport(livekit.SignalTarget_PUBLISHER, &conf)
 	if err != nil {
 		return nil, err
 	}
@@ -119,14 +117,13 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		if ic == nil {
 			return
 		}
-		c.SendIceCandidate(ic)
+		c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
-
 	c.subscriber.PeerConnection().OnICECandidate(func(ic *webrtc.ICECandidate) {
 		if ic == nil {
 			return
 		}
-		c.SendIceCandidate(ic)
+		c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
 
 	c.subscriber.PeerConnection().OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
@@ -215,7 +212,10 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 
-			logger.Debugw("created offer", "participant", c.localParticipant.Identity)
+			logger.Debugw("created offer",
+				"participant", c.localParticipant.Identity,
+				//"sdp", offer.SDP,
+			)
 
 			// Sets the LocalDescription, and starts our UDP listeners
 			// Note: this will start the gathering of ICE candidates
@@ -235,10 +235,14 @@ func (c *RTCClient) Run() error {
 
 			defer c.Stop()
 		case *livekit.SignalResponse_Answer:
+			//logger.Debugw("received server answer",
+			//	"participant", c.localParticipant.Identity,
+			//	"answer", msg.Answer.Sdp)
 			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
 		case *livekit.SignalResponse_Offer:
-			logger.Debugw("received server offer",
-				"type", msg.Offer.Type)
+			//logger.Debugw("received server offer",
+			//	"participant", c.localParticipant.Identity,
+			//	"sdp", msg.Offer.Sdp)
 			desc := rtc.FromProtoSessionDescription(msg.Offer)
 			if err := c.handleOffer(desc); err != nil {
 				return err
@@ -352,11 +356,12 @@ func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
 	return c.conn.WriteMessage(websocket.TextMessage, payload)
 }
 
-func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate) error {
-	candInit := ic.ToJSON()
+func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
+	trickle := rtc.ToProtoTrickle(ic.ToJSON())
+	trickle.Target = target
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
-			Trickle: rtc.ToProtoTrickle(candInit),
+			Trickle: trickle,
 		},
 	})
 }
@@ -474,7 +479,10 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	}
 
 	// send remote an answer
-	logger.Debugw("sending answer")
+	logger.Debugw("sending subscriber answer",
+		"participant", c.localParticipant.Identity,
+		//"sdp", answer,
+	)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Answer{
 			Answer: rtc.ToProtoSessionDescription(answer),
@@ -482,6 +490,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	})
 }
 
+// the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 	logger.Debugw("handling server answer", "participant", c.localParticipant.Identity)
 	// remote answered the offer, establish connection
@@ -494,14 +503,6 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 		// already connected
 		return nil
 	}
-
-	// add all the pending items
-	c.lock.Lock()
-	for _, ic := range c.pendingCandidates {
-		c.SendIceCandidate(ic)
-	}
-	c.pendingCandidates = nil
-	c.lock.Unlock()
 	return nil
 }
 

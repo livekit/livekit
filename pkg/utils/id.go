@@ -13,5 +13,5 @@ const (
 )
 
 func NewGuid(prefix string) string {
-	return prefix + shortuuid.New()
+	return prefix + shortuuid.New()[:12]
 }

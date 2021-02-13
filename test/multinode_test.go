@@ -32,6 +32,7 @@ func TestMultiNodeRouting(t *testing.T) {
 	c1 := createRTCClient("c1", defaultServerPort)
 	c2 := createRTCClient("c2", secondServerPort)
 	waitUntilConnected(t, c1, c2)
+	defer stopClients(c1, c2)
 
 	// c1 publishing, and c2 receiving
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -53,9 +54,6 @@ func TestMultiNodeRouting(t *testing.T) {
 		assert.Equal(t, "webcam", tr1.StreamID())
 		return true
 	})
-
-	c1.Stop()
-	c2.Stop()
 
 	// TODO: delete room explicitly and ensure it's closed
 	//
