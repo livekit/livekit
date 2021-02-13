@@ -6,11 +6,10 @@ import (
 )
 
 const (
-	repairedRTP  = "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
 	frameMarking = "urn:ietf:params:rtp-hdrext:framemarking"
 )
 
-func createMediaEngine() (*webrtc.MediaEngine, error) {
+func createPubMediaEngine() (*webrtc.MediaEngine, error) {
 	me := &webrtc.MediaEngine{}
 	if err := me.RegisterCodec(webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil},
@@ -21,7 +20,7 @@ func createMediaEngine() (*webrtc.MediaEngine, error) {
 
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
 		{webrtc.TypeRTCPFBGoogREMB, ""},
-		//{webrtc.TypeRTCPFBCCM, "fir"},
+		{webrtc.TypeRTCPFBCCM, "fir"},
 		{webrtc.TypeRTCPFBNACK, ""},
 		{webrtc.TypeRTCPFBNACK, "pli"}}
 	for _, codec := range []webrtc.RTPCodecParameters{
@@ -66,8 +65,7 @@ func createMediaEngine() (*webrtc.MediaEngine, error) {
 	for _, extension := range []string{
 		sdp.SDESMidURI,
 		sdp.SDESRTPStreamIDURI,
-		repairedRTP,
-		//sdp.TransportCCURI,
+		sdp.TransportCCURI,
 		frameMarking,
 	} {
 		if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: extension}, webrtc.RTPCodecTypeVideo); err != nil {
@@ -84,5 +82,10 @@ func createMediaEngine() (*webrtc.MediaEngine, error) {
 		}
 	}
 
+	return me, nil
+}
+
+func createSubMediaEngine() (*webrtc.MediaEngine, error) {
+	me := &webrtc.MediaEngine{}
 	return me, nil
 }

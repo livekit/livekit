@@ -177,13 +177,7 @@ func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnec
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	pc, err := rtc.NewPeerConnection(r.config)
-	if err != nil {
-		logger.Errorw("could not create peerConnection", "error", err)
-		return
-	}
-
-	participant, err = rtc.NewParticipant(identity, pc, responseSink, r.config.Receiver)
+	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.config.Receiver)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -266,7 +260,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 
 			switch msg := req.Message.(type) {
 			case *livekit.SignalRequest_Offer:
-				_, err := participant.Answer(rtc.FromProtoSessionDescription(msg.Offer))
+				_, err := participant.HandleOffer(rtc.FromProtoSessionDescription(msg.Offer))
 				if err != nil {
 					logger.Errorw("could not handle offer", "err", err, "participant", participant.Identity())
 					return
@@ -288,8 +282,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 					return
 				}
-			case *livekit.SignalRequest_Negotiate:
-				participant.HandleClientNegotiation()
 			case *livekit.SignalRequest_Trickle:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
 					logger.Errorw("cannot trickle before offer", "participant", participant.Identity())
@@ -299,7 +291,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 
 				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
-				if err := participant.AddICECandidate(candidateInit); err != nil {
+				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
 					logger.Errorw("could not handle trickle", "participant", participant.Identity(), "err", err)
 					//conn.WriteJSON(
 					//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
