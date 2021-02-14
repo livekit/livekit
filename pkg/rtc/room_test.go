@@ -213,6 +213,20 @@ func TestActiveSpeakers(t *testing.T) {
 		assert.Zero(t, p.SendActiveSpeakersCallCount())
 	})
 
+	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 2)
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+		p2 := participants[1].(*typesfakes.FakeParticipant)
+		p.GetAudioLevelReturns(10, true)
+		p2.GetAudioLevelReturns(20, true)
+
+		speakers := rm.GetActiveSpeakers()
+		assert.Len(t, speakers, 2)
+		assert.Equal(t, p.ID(), speakers[0].Sid)
+		assert.Equal(t, p2.ID(), speakers[1].Sid)
+	})
+
 	t.Run("participants are getting updates when active", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, 2)
 		participants := rm.GetParticipants()
