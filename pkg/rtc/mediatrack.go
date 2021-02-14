@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -33,13 +34,14 @@ type MediaTrack struct {
 	participantId string
 	muted         utils.AtomicFlag
 
-	ssrc     webrtc.SSRC
-	name     string
-	streamID string
-	kind     livekit.TrackType
-	codec    webrtc.RTPCodecParameters
-	conf     ReceiverConfig
-	onClose  func()
+	ssrc         webrtc.SSRC
+	name         string
+	streamID     string
+	kind         livekit.TrackType
+	codec        webrtc.RTPCodecParameters
+	receiverConf ReceiverConfig
+	audioConf    config.AudioConfig
+	onClose      func()
 
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
@@ -47,12 +49,13 @@ type MediaTrack struct {
 	// map of target participantId -> *SubscribedTrack
 	subscribedTracks map[string]*SubscribedTrack
 	twcc             *twcc.Responder
+	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
 	//lastNack   int64
 	lastPLI time.Time
 }
 
-func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, conf ReceiverConfig, track *webrtc.TrackRemote) *MediaTrack {
+func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, rc ReceiverConfig, ac config.AudioConfig) *MediaTrack {
 	t := &MediaTrack{
 		id:               trackId,
 		participantId:    pId,
@@ -60,7 +63,8 @@ func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, conf R
 		streamID:         track.StreamID(),
 		kind:             ToProtoTrackKind(track.Kind()),
 		codec:            track.Codec(),
-		conf:             conf,
+		receiverConf:     rc,
+		audioConf:        ac,
 		rtcpCh:           rtcpCh,
 		lock:             sync.RWMutex{},
 		subscribedTracks: make(map[string]*SubscribedTrack),
@@ -209,7 +213,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 
 	if t.Kind() == livekit.TrackType_AUDIO {
-		// TODO: audio level stuff
+		t.audioLevel = NewAudioLevel(t.audioConf.ActiveLevel, t.audioConf.MinPercentile)
+		buff.OnAudioLevel(func(level uint8) {
+			t.audioLevel.Observe(level)
+		})
 	} else if t.Kind() == livekit.TrackType_VIDEO {
 		if twcc != nil {
 			buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
@@ -259,8 +266,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.receiver.AddUpTrack(track, buff)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
-		BufferTime: t.conf.maxBufferTime,
-		MaxBitRate: t.conf.maxBitrate,
+		BufferTime: t.receiverConf.maxBufferTime,
+		MaxBitRate: t.receiverConf.maxBitrate,
 	})
 }
 

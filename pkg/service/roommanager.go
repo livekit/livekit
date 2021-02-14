@@ -7,6 +7,7 @@ import (
 
 	"github.com/thoas/go-funk"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -28,14 +29,16 @@ type RoomManager struct {
 	router      routing.Router
 	currentNode routing.LocalNode
 	config      *rtc.WebRTCConfig
+	audioConfig config.AudioConfig
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig) *RoomManager {
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig, ac config.AudioConfig) *RoomManager {
 	return &RoomManager{
 		lock:        sync.RWMutex{},
 		roomStore:   rp,
 		config:      config,
+		audioConfig: ac,
 		router:      router,
 		selector:    selector,
 		currentNode: currentNode,
@@ -177,7 +180,7 @@ func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnec
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.config.Receiver)
+	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.config.Receiver, r.audioConfig)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -214,7 +217,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		return nil, err
 	}
 
-	room = rtc.NewRoom(ri, *r.config)
+	room = rtc.NewRoom(ri, *r.config, r.audioConfig.UpdateInterval)
 	room.OnClose(func() {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", "error", err)
