@@ -55,6 +55,7 @@ func NewConfig(confString string) (*Config, error) {
 			ICEPortRangeEnd:   10000,
 			StunServers: []string{
 				"stun.l.google.com:19302",
+				"stun1.l.google.com:19302",
 			},
 			MaxBitrate: 3 * 1024 * 1024, // 3 mbps
 		},

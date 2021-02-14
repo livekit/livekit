@@ -80,13 +80,13 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
 			Sid:    p.ID(),
-			Level:  uint32(level),
+			Level:  convertAudioLevel(level),
 			Active: active,
 		})
 	}
 
 	sort.Slice(speakers, func(i, j int) bool {
-		return speakers[i].Level < speakers[j].Level
+		return speakers[i].Level > speakers[j].Level
 	})
 	return speakers
 }

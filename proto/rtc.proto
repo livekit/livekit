@@ -92,8 +92,8 @@ message ActiveSpeakerUpdate {
 
 message SpeakerInfo {
   string sid = 1;
-  // audio level, 0-127, 0 is loudest
-  uint32 level = 2;
+  // audio level, 0-1.0, 1 is loudest
+  float level = 2;
   // true if speaker is currently active
   bool active = 3;
 }
