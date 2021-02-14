@@ -12,6 +12,7 @@ type Config struct {
 	Port     uint32            `yaml:"port"`
 	RTC      RTCConfig         `yaml:"rtc"`
 	Redis    RedisConfig       `yaml:"redis"`
+	Audio    AudioConfig       `yaml:"audio"`
 	KeyFile  string            `yaml:"key_file"`
 	Keys     map[string]string `yaml:"keys"`
 	LogLevel string            `yaml:"log_level"`
@@ -25,8 +26,19 @@ type RTCConfig struct {
 	StunServers       []string `yaml:"stun_servers"`
 	UseExternalIP     bool     `yaml:"use_external_ip"`
 
+	// Max bitrate for REMB
 	MaxBitrate    uint64 `yaml:"max_bitrate"`
 	MaxBufferTime int    `yaml:"max_buffer_time"`
+}
+
+type AudioConfig struct {
+	// minimum level to be considered active, 0-127, where 0 is loudest
+	ActiveLevel uint8 `yaml:"active_level"`
+	// percentile to measure, a participant is considered active if it has exceeded the ActiveLevel more than
+	// MinPercentile% of the time
+	MinPercentile uint8 `yaml:"min_percentile"`
+	// interval to update clients, in ms
+	UpdateInterval uint32 `yaml:"update_interval"`
 }
 
 type RedisConfig struct {
@@ -44,7 +56,12 @@ func NewConfig(confString string) (*Config, error) {
 			StunServers: []string{
 				"stun.l.google.com:19302",
 			},
-			MaxBitrate: 2 * 1024 * 1024, // 3 mbps
+			MaxBitrate: 3 * 1024 * 1024, // 3 mbps
+		},
+		Audio: AudioConfig{
+			ActiveLevel:    40,
+			MinPercentile:  20,
+			UpdateInterval: 1000,
 		},
 		Redis: RedisConfig{},
 		Keys:  map[string]string{},
@@ -101,4 +118,8 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+func GetAudioConfig(conf *Config) AudioConfig {
+	return conf.Audio
 }

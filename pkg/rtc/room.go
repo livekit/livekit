@@ -1,11 +1,10 @@
 package rtc
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -29,16 +28,21 @@ type Room struct {
 	leftAt   atomic.Value
 	isClosed utils.AtomicFlag
 
+	// for active speaker updates
+	audioUpdateInterval uint32
+	lastActiveSpeakers  []*livekit.SpeakerInfo
+
 	onParticipantChanged func(p types.Participant)
 	onClose              func()
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioUpdateInterval uint32) *Room {
 	r := &Room{
-		Room:         *room,
-		config:       config,
-		lock:         sync.RWMutex{},
-		participants: make(map[string]types.Participant),
+		Room:                *room,
+		config:              config,
+		audioUpdateInterval: audioUpdateInterval,
+		lock:                sync.RWMutex{},
+		participants:        make(map[string]types.Participant),
 	}
 	if r.EmptyTimeout == 0 {
 		r.EmptyTimeout = DefaultEmptyTimeout
@@ -46,6 +50,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
 	if r.CreationTime == 0 {
 		r.CreationTime = time.Now().Unix()
 	}
+	go r.audioUpdateWorker()
 	return r
 }
 
@@ -58,7 +63,32 @@ func (r *Room) GetParticipant(identity string) types.Participant {
 func (r *Room) GetParticipants() []types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return funk.Values(r.participants).([]types.Participant)
+	participants := make([]types.Participant, 0, len(r.participants))
+	for _, p := range r.participants {
+		participants = append(participants, p)
+	}
+	return participants
+}
+
+func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
+	participants := r.GetParticipants()
+	speakers := make([]*livekit.SpeakerInfo, 0, len(participants))
+	for _, p := range participants {
+		level, active := p.GetAudioLevel()
+		if !active {
+			continue
+		}
+		speakers = append(speakers, &livekit.SpeakerInfo{
+			Sid:    p.ID(),
+			Level:  uint32(level),
+			Active: active,
+		})
+	}
+
+	sort.Slice(speakers, func(i, j int) bool {
+		return speakers[i].Level < speakers[j].Level
+	})
+	return speakers
 }
 
 func (r *Room) FirstJoinedAt() int64 {
@@ -271,11 +301,9 @@ func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	updates := ToProtoParticipants([]types.Participant{p})
-	for _, op := range r.participants {
+	participants := r.GetParticipants()
+	for _, op := range participants {
 		// skip itself && closed participants
 		if p.ID() == op.ID() || op.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
@@ -287,5 +315,37 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 				"participant", p.Identity(),
 				"err", err)
 		}
+	}
+}
+
+func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
+	for _, p := range r.GetParticipants() {
+		p.SendActiveSpeakers(speakers)
+	}
+}
+
+func (r *Room) audioUpdateWorker() {
+	for {
+		if r.isClosed.Get() {
+			return
+		}
+
+		speakers := r.GetActiveSpeakers()
+
+		// see if an update is needed
+		if len(speakers) == len(r.lastActiveSpeakers) {
+			for i, speaker := range speakers {
+				if speaker.Sid != r.lastActiveSpeakers[i].Sid {
+					r.sendSpeakerUpdates(speakers)
+					break
+				}
+			}
+		} else {
+			r.sendSpeakerUpdates(speakers)
+		}
+
+		r.lastActiveSpeakers = speakers
+
+		time.Sleep(time.Duration(r.audioUpdateInterval) * time.Millisecond)
 	}
 }

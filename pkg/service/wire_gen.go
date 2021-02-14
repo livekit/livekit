@@ -21,7 +21,8 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomSto
 	if err != nil {
 		return nil, err
 	}
-	roomManager := NewRoomManager(roomStore, router, currentNode, selector, webRTCConfig)
+	audioConfig := config.GetAudioConfig(conf)
+	roomManager := NewRoomManager(roomStore, router, currentNode, selector, webRTCConfig, audioConfig)
 	roomService, err := NewRoomService(roomManager)
 	if err != nil {
 		return nil, err

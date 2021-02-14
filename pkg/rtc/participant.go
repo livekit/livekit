@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -32,6 +33,7 @@ type ParticipantImpl struct {
 	subscriber     *PCTransport
 	responseSink   routing.MessageSink
 	receiverConfig ReceiverConfig
+	audioConfig    config.AudioConfig
 	isClosed       utils.AtomicFlag
 	identity       string
 	// JSON encoded metadata to pass to clients
@@ -58,14 +60,15 @@ type ParticipantImpl struct {
 	onClose          func(types.Participant)
 }
 
-func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, receiverConfig ReceiverConfig) (*ParticipantImpl, error) {
+func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, rc ReceiverConfig, ac config.AudioConfig) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
 		id:               utils.NewGuid(utils.ParticipantPrefix),
 		identity:         identity,
 		responseSink:     rs,
-		receiverConfig:   receiverConfig,
+		receiverConfig:   rc,
+		audioConfig:      ac,
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		lock:             sync.RWMutex{},
@@ -392,6 +395,20 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	})
 }
 
+func (p *ParticipantImpl) SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error {
+	if !p.IsReady() {
+		return nil
+	}
+
+	return p.responseSink.WriteMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Speaker{
+			Speaker: &livekit.ActiveSpeakerUpdate{
+				Speakers: speakers,
+			},
+		},
+	})
+}
+
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -410,6 +427,27 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 			"muted", track.IsMuted())
 		p.onTrackUpdated(p, track)
 	}
+}
+
+func (p *ParticipantImpl) GetAudioLevel() (level uint8, noisy bool) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	level = silentAudioLevel
+	for _, pt := range p.publishedTracks {
+		if mt, ok := pt.(*MediaTrack); ok {
+			if mt.audioLevel == nil {
+				continue
+			}
+			tl, tn := mt.audioLevel.GetLevel()
+			if tn {
+				noisy = true
+				if tl < level {
+					level = tl
+				}
+			}
+		}
+	}
+	return
 }
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
@@ -529,7 +567,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		logger.Debugw("using existing mediatrack, simulcast", "rid", track.RID())
 		mt = trk
 	} else {
-		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, p.receiverConfig, track)
+		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, p.receiverConfig, p.audioConfig)
 		mt.name = ti.Name
 		newTrack = true
 	}

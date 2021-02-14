@@ -41,7 +41,9 @@ type Participant interface {
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error
 	SetTrackMuted(trackId string, muted bool)
+	GetAudioLevel() (level uint8, noisy bool)
 
 	Start()
 	Close() error

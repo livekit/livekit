@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	numParticipants = 3
-	defaultDelay    = 10 * time.Millisecond
+	numParticipants     = 3
+	defaultDelay        = 10 * time.Millisecond
+	audioUpdateInterval = 25
 )
 
 func init() {
@@ -199,17 +200,64 @@ func TestNewTrack(t *testing.T) {
 	})
 }
 
+func TestActiveSpeakers(t *testing.T) {
+	t.Parallel()
+	audioUpdateDuration := (audioUpdateInterval + 2) * time.Millisecond
+	t.Run("participant should not be getting audio updates", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 1)
+		p := rm.GetParticipants()[0].(*typesfakes.FakeParticipant)
+		assert.Empty(t, rm.GetActiveSpeakers())
+
+		time.Sleep(audioUpdateDuration)
+
+		assert.Zero(t, p.SendActiveSpeakersCallCount())
+	})
+
+	t.Run("participants are getting updates when active", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, 2)
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+		time.Sleep(time.Millisecond) // let the first update cycle run
+		p.GetAudioLevelReturns(30, true)
+
+		speakers := rm.GetActiveSpeakers()
+		assert.NotEmpty(t, speakers)
+		assert.Equal(t, p.ID(), speakers[0].Sid)
+
+		time.Sleep(audioUpdateDuration)
+
+		// everyone should've received updates
+		for _, op := range participants {
+			op := op.(*typesfakes.FakeParticipant)
+			assert.Equal(t, 1, op.SendActiveSpeakersCallCount())
+		}
+
+		// after another cycle, we are not getting any new updates since unchanged
+		time.Sleep(audioUpdateDuration)
+		for _, op := range participants {
+			op := op.(*typesfakes.FakeParticipant)
+			assert.Equal(t, 1, op.SendActiveSpeakersCallCount())
+		}
+
+		// no longer speaking, send update with empty items
+		p.GetAudioLevelReturns(127, false)
+		time.Sleep(audioUpdateDuration)
+		assert.Equal(t, 2, p.SendActiveSpeakersCallCount())
+		assert.Empty(t, p.SendActiveSpeakersArgsForCall(1))
+	})
+}
+
 func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
 	rm := rtc.NewRoom(
 		&livekit.Room{Name: "room"},
 		rtc.WebRTCConfig{},
+		audioUpdateInterval,
 	)
 	for i := 0; i < num; i++ {
 		identity := fmt.Sprintf("p%d", i)
 		participant := newMockParticipant(identity)
 		err := rm.Join(participant)
 		assert.NoError(t, err)
-		//rm.participants[participant.ID()] = participant
 	}
 	return rm
 }

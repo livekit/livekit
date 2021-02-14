@@ -34,6 +34,8 @@ message SignalResponse {
     ParticipantUpdate update = 5;
     // sent to the participant when their track has been published
     TrackPublishedResponse track_published = 6;
+    // list of active speakers
+    ActiveSpeakerUpdate speaker = 7;
   }
 }
 
@@ -82,4 +84,16 @@ message SessionDescription {
 
 message ParticipantUpdate {
   repeated ParticipantInfo participants = 1;
+}
+
+message ActiveSpeakerUpdate {
+  repeated SpeakerInfo speakers = 1;
+}
+
+message SpeakerInfo {
+  string sid = 1;
+  // audio level, 0-127, 0 is loudest
+  uint32 level = 2;
+  // true if speaker is currently active
+  bool active = 3;
 }

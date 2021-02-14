@@ -6,6 +6,7 @@ import (
 	"github.com/google/wire"
 	"go.uber.org/zap"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -17,6 +18,7 @@ var ServiceSet = wire.NewSet(
 	NewRTCService,
 	NewLivekitServer,
 	NewRoomManager,
+	config.GetAudioConfig,
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 	externalIpFromNode,
 )
