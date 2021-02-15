@@ -89,6 +89,13 @@ func (t *DataTrack) OnClose(f func()) {
 }
 
 func (t *DataTrack) AddSubscriber(participant types.Participant) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if t.subscribers[participant.ID()] != nil {
+		return nil
+	}
+
 	label := PackDataTrackLabel(t.participantId, t.ID(), t.dataChannel.Label())
 	downChannel, err := participant.SubscriberPC().CreateDataChannel(label, t.dataChannelOptions())
 	if err != nil {
@@ -100,9 +107,7 @@ func (t *DataTrack) AddSubscriber(participant types.Participant) error {
 		dataChannel:   downChannel,
 	}
 
-	t.lock.Lock()
 	t.subscribers[participant.ID()] = sub
-	t.lock.Unlock()
 
 	downChannel.OnClose(func() {
 		t.RemoveSubscriber(sub.participantId)

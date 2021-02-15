@@ -215,6 +215,33 @@ func (r *Room) RemoveParticipant(identity string) {
 	}
 }
 
+func (r *Room) UpdateSubscriptions(participant types.Participant, subscription *livekit.UpdateSubscription) error {
+	// find all matching tracks
+	var tracks []types.PublishedTrack
+	participants := r.GetParticipants()
+	for _, p := range participants {
+		for _, sid := range subscription.TrackSids {
+			for _, track := range p.GetPublishedTracks() {
+				if sid == track.ID() {
+					tracks = append(tracks, track)
+				}
+			}
+		}
+	}
+
+	// handle subscription changes
+	for _, track := range tracks {
+		if subscription.Subscribe {
+			if err := track.AddSubscriber(participant); err != nil {
+				return err
+			}
+		} else {
+			track.RemoveSubscriber(participant.ID())
+		}
+	}
+	return nil
+}
+
 // Close the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
 	if r.isClosed.Get() {

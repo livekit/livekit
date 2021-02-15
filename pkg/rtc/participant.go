@@ -265,6 +265,12 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	})
 }
 
+func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
+	p.lock.RUnlock()
+	defer p.lock.RUnlock()
+	return funk.Values(p.publishedTracks).([]types.PublishedTrack)
+}
+
 // handles a client answer response, with subscriber PC, server initiates the offer
 // and client answers
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
@@ -453,6 +459,12 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, noisy bool) {
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
+}
+
+func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return funk.Values(p.subscribedTracks).([]types.SubscribedTrack)
 }
 
 // add a track to the participant's subscribed list
