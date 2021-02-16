@@ -1,11 +1,10 @@
 package rtc
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -28,15 +27,22 @@ type Room struct {
 	// time that the last participant left the room
 	leftAt   atomic.Value
 	isClosed utils.AtomicFlag
-	onClose  func()
+
+	// for active speaker updates
+	audioUpdateInterval uint32
+	lastActiveSpeakers  []*livekit.SpeakerInfo
+
+	onParticipantChanged func(p types.Participant)
+	onClose              func()
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioUpdateInterval uint32) *Room {
 	r := &Room{
-		Room:         *room,
-		config:       config,
-		lock:         sync.RWMutex{},
-		participants: make(map[string]types.Participant),
+		Room:                *room,
+		config:              config,
+		audioUpdateInterval: audioUpdateInterval,
+		lock:                sync.RWMutex{},
+		participants:        make(map[string]types.Participant),
 	}
 	if r.EmptyTimeout == 0 {
 		r.EmptyTimeout = DefaultEmptyTimeout
@@ -44,6 +50,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig) *Room {
 	if r.CreationTime == 0 {
 		r.CreationTime = time.Now().Unix()
 	}
+	go r.audioUpdateWorker()
 	return r
 }
 
@@ -56,7 +63,32 @@ func (r *Room) GetParticipant(identity string) types.Participant {
 func (r *Room) GetParticipants() []types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
-	return funk.Values(r.participants).([]types.Participant)
+	participants := make([]types.Participant, 0, len(r.participants))
+	for _, p := range r.participants {
+		participants = append(participants, p)
+	}
+	return participants
+}
+
+func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
+	participants := r.GetParticipants()
+	speakers := make([]*livekit.SpeakerInfo, 0, len(participants))
+	for _, p := range participants {
+		level, active := p.GetAudioLevel()
+		if !active {
+			continue
+		}
+		speakers = append(speakers, &livekit.SpeakerInfo{
+			Sid:    p.ID(),
+			Level:  convertAudioLevel(level),
+			Active: active,
+		})
+	}
+
+	sort.Slice(speakers, func(i, j int) bool {
+		return speakers[i].Level > speakers[j].Level
+	})
+	return speakers
 }
 
 func (r *Room) FirstJoinedAt() int64 {
@@ -100,9 +132,12 @@ func (r *Room) Join(participant types.Participant) error {
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
 		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
 			"oldState", oldState)
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(participant)
+		}
 		r.broadcastParticipantState(p)
 
-		if oldState == livekit.ParticipantInfo_JOINING && p.State() == livekit.ParticipantInfo_JOINED {
+		if p.State() == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing publishedTracks
 			for _, op := range r.GetParticipants() {
 				if p.ID() == op.ID() {
@@ -140,26 +175,43 @@ func (r *Room) Join(participant types.Participant) error {
 		}
 	}
 
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(participant)
+	}
+
 	return participant.SendJoinResponse(&r.Room, otherParticipants)
 }
 
 func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if p, ok := r.participants[identity]; ok {
-		// avoid blocking lock
-		go func() {
-			Recover()
-			// also stop connection if needed
-			p.Close()
-		}()
+	p, ok := r.participants[identity]
+	if ok {
+		delete(r.participants, identity)
+	}
+	r.lock.Unlock()
+	if !ok {
+		return
 	}
 
-	delete(r.participants, identity)
+	// send broadcast only if it's not already closed
+	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
+
+	p.OnTrackUpdated(nil)
+	p.OnTrackPublished(nil)
+	p.OnStateChange(nil)
+
+	// close participant as well
+	p.Close()
 
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
+	}
+
+	if sendUpdates {
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(p)
+		}
+		r.broadcastParticipantState(p)
 	}
 }
 
@@ -200,6 +252,10 @@ func (r *Room) OnClose(f func()) {
 	r.onClose = f
 }
 
+func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
+	r.onParticipantChanged = f
+}
+
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
@@ -215,7 +271,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// skip publishing participant
 			continue
 		}
-		if !existingParticipant.IsReady() {
+		if existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
 			// not fully joined. don't subscribe yet
 			continue
 		}
@@ -230,19 +286,24 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 				"dest", existingParticipant.Identity())
 		}
 	}
+
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(participant)
+	}
 }
 
 func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 	r.broadcastParticipantState(p)
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
 }
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	updates := ToProtoParticipants([]types.Participant{p})
-	for _, op := range r.participants {
+	participants := r.GetParticipants()
+	for _, op := range participants {
 		// skip itself && closed participants
 		if p.ID() == op.ID() || op.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
@@ -254,5 +315,37 @@ func (r *Room) broadcastParticipantState(p types.Participant) {
 				"participant", p.Identity(),
 				"err", err)
 		}
+	}
+}
+
+func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
+	for _, p := range r.GetParticipants() {
+		p.SendActiveSpeakers(speakers)
+	}
+}
+
+func (r *Room) audioUpdateWorker() {
+	for {
+		if r.isClosed.Get() {
+			return
+		}
+
+		speakers := r.GetActiveSpeakers()
+
+		// see if an update is needed
+		if len(speakers) == len(r.lastActiveSpeakers) {
+			for i, speaker := range speakers {
+				if speaker.Sid != r.lastActiveSpeakers[i].Sid {
+					r.sendSpeakerUpdates(speakers)
+					break
+				}
+			}
+		} else {
+			r.sendSpeakerUpdates(speakers)
+		}
+
+		r.lastActiveSpeakers = speakers
+
+		time.Sleep(time.Duration(r.audioUpdateInterval) * time.Millisecond)
 	}
 }

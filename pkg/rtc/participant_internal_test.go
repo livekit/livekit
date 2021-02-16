@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -121,8 +122,9 @@ func TestDisconnectTiming(t *testing.T) {
 func newParticipantForTest(identity string) *ParticipantImpl {
 	p, _ := NewParticipant(
 		identity,
-		&typesfakes.FakePeerConnection{},
+		&WebRTCConfig{},
 		&routingfakes.FakeMessageSink{},
-		ReceiverConfig{})
+		ReceiverConfig{},
+		config.AudioConfig{})
 	return p
 }

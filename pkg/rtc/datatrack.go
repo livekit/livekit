@@ -80,13 +80,17 @@ func (t *DataTrack) IsMuted() bool {
 	return false
 }
 
+func (t *DataTrack) SetMuted(muted bool) {
+
+}
+
 func (t *DataTrack) OnClose(f func()) {
 	t.onClose = f
 }
 
 func (t *DataTrack) AddSubscriber(participant types.Participant) error {
 	label := PackDataTrackLabel(t.participantId, t.ID(), t.dataChannel.Label())
-	downChannel, err := participant.PeerConnection().CreateDataChannel(label, t.dataChannelOptions())
+	downChannel, err := participant.SubscriberPC().CreateDataChannel(label, t.dataChannelOptions())
 	if err != nil {
 		return err
 	}

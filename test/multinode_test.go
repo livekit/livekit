@@ -15,7 +15,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultiNodeRouting---")
+	logger.Infow("\n\n---Starting TestMultiNodeRouting---")
 	defer logger.Infow("---Finishing TestMultiNodeRouting---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -24,8 +24,7 @@ func TestMultiNodeRouting(t *testing.T) {
 
 	// creating room on node 1
 	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
-		Name:   testRoom,
-		NodeId: nodeId1,
+		Name: testRoom,
 	})
 	assert.NoError(t, err)
 
@@ -33,6 +32,7 @@ func TestMultiNodeRouting(t *testing.T) {
 	c1 := createRTCClient("c1", defaultServerPort)
 	c2 := createRTCClient("c2", secondServerPort)
 	waitUntilConnected(t, c1, c2)
+	defer stopClients(c1, c2)
 
 	// c1 publishing, and c2 receiving
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -51,12 +51,9 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		assert.Equal(t, "webcam", tr1.StreamID())
+		assert.Equal(t, c1.ID(), tr1.StreamID())
 		return true
 	})
-
-	c1.Stop()
-	c2.Stop()
 
 	// TODO: delete room explicitly and ensure it's closed
 	//
@@ -80,7 +77,7 @@ func TestConnectWithoutCreation(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	logger.Infow("---Starting TestConnectWithoutCreation---")
+	logger.Infow("\n\n---Starting TestConnectWithoutCreation---")
 	defer logger.Infow("---Finishing TestConnectWithoutCreation---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -100,7 +97,7 @@ func TestMultinodePublishingUponJoining(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultinodePublishingUponJoining---")
+	logger.Infow("\n\n---Starting TestMultinodePublishingUponJoining---")
 	defer logger.Infow("---Finishing TestMultinodePublishingUponJoining---")
 
 	s1, s2 := setupMultiNodeTest()
@@ -116,7 +113,7 @@ func TestMultinodeReceiveBeforePublish(t *testing.T) {
 		return
 	}
 
-	logger.Infow("---Starting TestMultinodeReceiveBeforePublish---")
+	logger.Infow("\n\n---Starting TestMultinodeReceiveBeforePublish---")
 	defer logger.Infow("---Finishing TestMultinodeReceiveBeforePublish---")
 
 	s1, s2 := setupMultiNodeTest()

@@ -3,13 +3,11 @@ package types
 import (
 	"time"
 
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -22,30 +20,6 @@ type WebsocketClient interface {
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
-//counterfeiter:generate . PeerConnection
-type PeerConnection interface {
-	OnICECandidate(f func(*webrtc.ICECandidate))
-	OnICEConnectionStateChange(func(webrtc.ICEConnectionState))
-	//OnConnectionStateChange(f func(webrtc.PeerConnectionState))
-	OnTrack(f func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
-	OnDataChannel(func(d *webrtc.DataChannel))
-	OnNegotiationNeeded(f func())
-	Close() error
-	SetRemoteDescription(desc webrtc.SessionDescription) error
-	SetLocalDescription(desc webrtc.SessionDescription) error
-	CreateOffer(options *webrtc.OfferOptions) (webrtc.SessionDescription, error)
-	CreateAnswer(options *webrtc.AnswerOptions) (webrtc.SessionDescription, error)
-	AddICECandidate(candidate webrtc.ICECandidateInit) error
-	WriteRTCP(pkts []rtcp.Packet) error
-	// used by datatrack
-	CreateDataChannel(label string, options *webrtc.DataChannelInit) (*webrtc.DataChannel, error)
-	// used by mediatrack
-	AddTransceiverFromTrack(track webrtc.TrackLocal, init ...webrtc.RtpTransceiverInit) (*webrtc.RTPTransceiver, error)
-	ConnectionState() webrtc.PeerConnectionState
-	SignalingState() webrtc.SignalingState
-	RemoveTrack(sender *webrtc.RTPSender) error
-}
-
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
@@ -53,27 +27,28 @@ type Participant interface {
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	ToProto() *livekit.ParticipantInfo
-	RTCPChan() *utils.CalmChannel
+	RTCPChan() chan []rtcp.Packet
+	SetMetadata(metadata map[string]interface{}) error
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
+	SubscriberMediaEngine() *webrtc.MediaEngine
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
-	Answer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
+	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
-	HandleClientNegotiation()
-	AddICECandidate(candidate webrtc.ICECandidateInit) error
+	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error
 	SetTrackMuted(trackId string, muted bool)
+	GetAudioLevel() (level uint8, noisy bool)
 
 	Start()
 	Close() error
 
 	// callbacks
-	// OnICECandidate - ice candidate discovered for local peer
-	OnICECandidate(func(c *webrtc.ICECandidateInit))
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
@@ -82,9 +57,9 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
-	AddDownTrack(streamId string, dt *sfu.DownTrack)
-	RemoveDownTrack(streamId string, dt *sfu.DownTrack)
-	PeerConnection() PeerConnection
+	AddSubscribedTrack(participantId string, st SubscribedTrack)
+	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
+	SubscriberPC() *webrtc.PeerConnection
 }
 
 // PublishedTrack is the main interface representing a track published to the room
@@ -96,6 +71,7 @@ type PublishedTrack interface {
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool
+	SetMuted(muted bool)
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	RemoveAllSubscribers()
@@ -104,28 +80,12 @@ type PublishedTrack interface {
 	OnClose(func())
 }
 
-//counterfeiter:generate . Receiver
-type Receiver interface {
-	RTPChan() <-chan rtp.Packet
-	GetBufferedPacket(pktBuf []byte, sn uint16, snOffset uint16) (rtp.Packet, error)
-}
-
-// DownTrack publishes data to a target participant
-// using this interface to make testing more practical
-//counterfeiter:generate . DownTrack
-type DownTrack interface {
-	ID() string
-	WriteRTP(p rtp.Packet) error
-	IsBound() bool
-	Close()
-	OnCloseHandler(fn func())
-	OnBind(fn func())
-	SSRC() uint32
-	LastSSRC() uint32
-	SnOffset() uint16
-	TsOffset() uint32
-	GetNACKSeqNo(seqNo []uint16) []uint16
-	CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk
+//counterfeiter:generate . SubscribedTrack
+type SubscribedTrack interface {
+	DownTrack() *sfu.DownTrack
+	IsMuted() bool
+	SetMuted(muted bool)
+	SetPublisherMuted(muted bool)
 }
 
 // interface for properties of webrtc.TrackRemote

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/urfave/cli/v2"
@@ -25,6 +26,10 @@ var (
 					Name:  "create",
 					Usage: "enable token to be used to create rooms",
 				},
+				&cli.BoolFlag{
+					Name:  "admin",
+					Usage: "enable token to be used to manage a room",
+				},
 				&cli.StringFlag{
 					Name:    "participant",
 					Aliases: []string{"p"},
@@ -34,6 +39,10 @@ var (
 					Name:    "room",
 					Aliases: []string{"r"},
 					Usage:   "name of the room to join, empty to allow joining all rooms",
+				},
+				&cli.StringFlag{
+					Name:  "metadata",
+					Usage: "JSON metadata to encode in the token, will be passed to participant",
 				},
 				devFlag,
 			},
@@ -46,6 +55,8 @@ func createToken(c *cli.Context) error {
 		return fmt.Errorf("api-key and api-secret are required")
 	}
 	p := c.String("participant") // required only for join
+	room := c.String("room")
+	metadata := c.String("metadata")
 
 	grant := &auth.VideoGrant{}
 	if c.Bool("create") {
@@ -53,21 +64,31 @@ func createToken(c *cli.Context) error {
 	}
 	if c.Bool("join") {
 		grant.RoomJoin = true
-
-		if room := c.String("room"); room != "" {
-			grant.Room = room
-		}
-
+		grant.Room = room
 		if p == "" {
 			return fmt.Errorf("participant name is required")
 		}
 	}
-
-	if !grant.RoomJoin && !grant.RoomCreate {
-		return fmt.Errorf("one of --join or --create is required")
+	if c.Bool("admin") {
+		grant.RoomAdmin = true
+		grant.Room = room
 	}
 
-	token, err := accessToken(c, grant, p)
+	if !grant.RoomJoin && !grant.RoomCreate && !grant.RoomAdmin {
+		return fmt.Errorf("one of --join, --create, or --admin is required")
+	}
+
+	at := accessToken(c, grant, p)
+
+	if metadata != "" {
+		var md map[string]interface{}
+		if err := json.Unmarshal([]byte(metadata), &md); err != nil {
+			return err
+		}
+		at.SetMetadata(md)
+	}
+
+	token, err := at.ToJWT()
 	if err != nil {
 		return err
 	}

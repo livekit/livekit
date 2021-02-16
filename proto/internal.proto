@@ -5,6 +5,7 @@ option go_package = "github.com/livekit/livekit-server/proto/livekit";
 
 // internal protos, not exposed to clients
 import "rtc.proto";
+import "room.proto";
 
 message Node {
   string id = 1;
@@ -30,6 +31,9 @@ message RTCNodeMessage {
   oneof message {
     StartSession start_session = 2;
     SignalRequest request = 3;
+    // internal messages
+    RoomParticipantIdentity remove_participant = 4;
+    MuteRoomTrackRequest mute_track = 5;
   }
 }
 
@@ -48,7 +52,13 @@ message StartSession {
   string connection_id = 3;
   // if a client is reconnecting (i.e. resume instead of restart)
   bool reconnect = 4;
+  // metadata to pass to participant
+  string metadata = 5;
 }
 
 message EndSession {
+}
+
+message RemoveParticipant {
+  string participant_id = 1;
 }
