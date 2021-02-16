@@ -106,7 +106,12 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return
 	}
 
-	err = s.roomManager.router.SendRTCMessage(req.Room, participant.Identity, &livekit.RTCNodeMessage{
+	rtcSink, err := s.roomManager.router.CreateRTCSink(req.Room, participant.Identity)
+	if err != nil {
+		return
+	}
+	defer rtcSink.Close()
+	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
 		},
@@ -126,7 +131,12 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return
 	}
 
-	err = s.roomManager.router.SendRTCMessage(req.Room, participant.Identity, &livekit.RTCNodeMessage{
+	rtcSink, err := s.roomManager.router.CreateRTCSink(req.Room, participant.Identity)
+	if err != nil {
+		return
+	}
+	defer rtcSink.Close()
+	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},

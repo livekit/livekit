@@ -8,6 +8,7 @@ import (
 	"github.com/bep/debounce"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -111,6 +112,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	state := t.negotiationState.Load().(int)
 	t.negotiationState.Store(negotiationStateNone)
 	if state == negotiationStateServer && t.onNegotiation != nil {
+		logger.Debugw("negotiating again")
 		// need to negotiate again
 		t.negotiate()
 	}
@@ -126,14 +128,14 @@ func (t *PCTransport) negotiate() {
 	t.debouncedNegotiate(func() {
 		state := t.negotiationState.Load().(int)
 		// when there's an ongoing negotiation, let it finish and not disrupt its state
-		if state != negotiationStateNone {
+		if state == negotiationStateClient {
+			logger.Debugw("skipping negotiation, trying again later")
 			t.negotiationState.Store(negotiationStateServer)
 			return
 		}
 
 		if t.onNegotiation != nil {
 			t.onNegotiation()
-
 			// indicate waiting for client
 			t.negotiationState.Store(negotiationStateClient)
 		}
