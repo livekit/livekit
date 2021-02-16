@@ -51,7 +51,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		assert.Equal(t, "webcam", tr1.StreamID())
+		assert.Equal(t, c1.ID(), tr1.StreamID())
 		return true
 	})
 

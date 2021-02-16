@@ -127,19 +127,12 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	c.subscriber.PeerConnection().OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		logger.Debugw("track received", "label", track.StreamID(), "id", track.ID(),
-			"participant", c.localParticipant.Identity)
 		go c.processTrack(track)
 	})
 	c.subscriber.PeerConnection().OnDataChannel(func(channel *webrtc.DataChannel) {
 	})
 
-	c.publisher.OnNegotiationNeeded(func() {
-		if !c.iceConnected.Get() {
-			return
-		}
-		c.negotiate()
-	})
+	c.publisher.OnNegotiationNeeded(c.negotiate)
 
 	c.publisher.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		logger.Debugw("ICE state has changed", "state", connectionState.String(),
@@ -329,7 +322,14 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 
 // TODO: this function is not thread safe, need to cleanup
 func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
-	return c.subscribedTracks
+	// create a copy of this
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	tracks := make(map[string][]*webrtc.TrackRemote, len(c.subscribedTracks))
+	for key, val := range c.subscribedTracks {
+		tracks[key] = val
+	}
+	return tracks
 }
 
 func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
@@ -433,7 +433,7 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 		return nil, fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
 	}
 
-	logger.Debugw("adding track",
+	logger.Debugw("adding file track",
 		"mime", mime,
 	)
 
@@ -506,18 +506,18 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 	return nil
 }
 
-func (c *RTCClient) negotiate() error {
+func (c *RTCClient) negotiate() {
 	logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
 	offer, err := c.publisher.PeerConnection().CreateOffer(nil)
 	if err != nil {
-		return err
+		return
 	}
 
 	if err := c.publisher.PeerConnection().SetLocalDescription(offer); err != nil {
-		return err
+		return
 	}
 
-	return c.SendRequest(&livekit.SignalRequest{
+	c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{
 			Offer: rtc.ToProtoSessionDescription(offer),
 		},
@@ -526,10 +526,16 @@ func (c *RTCClient) negotiate() error {
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
-	pId, trackId := rtc.UnpackTrackId(track.ID())
+	pId := track.StreamID()
+	trackId := track.ID()
 	c.lock.Lock()
 	c.subscribedTracks[pId] = append(c.subscribedTracks[pId], track)
 	c.lock.Unlock()
+
+	logger.Debugw("client added track", "participant", c.localParticipant.Identity,
+		"source", pId,
+		"track", trackId,
+	)
 
 	defer func() {
 		c.lock.Lock()

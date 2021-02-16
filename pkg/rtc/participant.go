@@ -496,6 +496,7 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 // initiates server-driven negotiation by creating an offer
 func (p *ParticipantImpl) negotiate() {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		logger.Debugw("skipping server negotiation", "participant", p.Identity())
 		// skip when disconnected
 		return
 	}
