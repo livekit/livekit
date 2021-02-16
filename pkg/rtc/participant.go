@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -225,7 +226,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		"participant", p.Identity(),
 		//"sdp", sdp.SDP,
 	)
-	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
+	p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
@@ -254,7 +255,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	}
 	p.pendingTracks[clientId] = ti
 
-	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
+	p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
 				Cid:   clientId,
@@ -262,10 +263,6 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 			},
 		},
 	})
-	if err != nil {
-		logger.Errorw("could not write message", "error", err,
-			"participant", p.identity)
-	}
 }
 
 // handles a client answer response, with subscriber PC, server initiates the offer
@@ -324,9 +321,13 @@ func (p *ParticipantImpl) Close() error {
 	p.subscriber.pc.OnNegotiationNeeded(nil)
 	p.subscriber.pc.OnTrack(nil)
 	p.publisher.pc.OnICECandidate(nil)
+	// ensure this is synchronized
+	p.lock.RLock()
 	p.responseSink.Close()
-	if p.onClose != nil {
-		p.onClose(p)
+	onClose := p.onClose
+	p.lock.RUnlock()
+	if onClose != nil {
+		onClose(p)
 	}
 	p.publisher.Close()
 	p.subscriber.Close()
@@ -369,7 +370,7 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 // signal connection methods
 func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant) error {
 	// send Join response
-	return p.responseSink.WriteMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
@@ -386,7 +387,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 		return nil
 	}
 
-	return p.responseSink.WriteMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
 				Participants: participants,
@@ -400,7 +401,7 @@ func (p *ParticipantImpl) SendActiveSpeakers(speakers []*livekit.SpeakerInfo) er
 		return nil
 	}
 
-	return p.responseSink.WriteMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Speaker{
 			Speaker: &livekit.ActiveSpeakerUpdate{
 				Speakers: speakers,
@@ -485,15 +486,11 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 	//logger.Debugw("sending ice candidates")
 	trickle := ToProtoTrickle(ci)
 	trickle.Target = target
-	err := p.responseSink.WriteMessage(&livekit.SignalResponse{
+	p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{
 			Trickle: trickle,
 		},
 	})
-	if err != nil {
-		logger.Errorw("could not send trickle", "err", err,
-			"participant", p.identity)
-	}
 }
 
 // initiates server-driven negotiation by creating an offer
@@ -521,16 +518,12 @@ func (p *ParticipantImpl) negotiate() {
 		"participant", p.Identity(),
 		//"sdp", offer.SDP,
 	)
-	err = p.responseSink.WriteMessage(&livekit.SignalResponse{
+
+	p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
-	if err != nil {
-		logger.Errorw("could not send offer to participant",
-			"err", err,
-			"participant", p.identity)
-	}
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
@@ -546,6 +539,23 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 			p.onStateChange(p, oldState)
 		}()
 	}
+}
+
+func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		return nil
+	}
+	sink := p.responseSink
+	err := sink.WriteMessage(msg)
+	if err != nil {
+		logger.Warnw("could not send message to participant",
+			"error", err,
+			"id", p.ID(),
+			"participant", p.identity,
+			"message", fmt.Sprintf("%T", msg.Message))
+		return err
+	}
+	return nil
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room

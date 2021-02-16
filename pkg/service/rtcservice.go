@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 
@@ -84,15 +85,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// this needs to be started first *before* using router functions on this node
-	reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, metadata, isReconnect)
+	connId, reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, metadata, isReconnect)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
 
 	done := make(chan bool, 1)
+	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		logger.Infow("WS connection closed", "participant", identity)
+		logger.Infow("WS connection closed", "participant", identity, "connectionId", connId)
 		reqSink.Close()
 		close(done)
 	}()
@@ -109,6 +111,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sigConn := NewWSSignalConnection(conn)
 
 	logger.Infow("new client WS connected",
+		"connectionId", connId,
 		"room", rm.Sid,
 		"roomName", rm.Name,
 		"name", identity,
@@ -128,14 +131,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-resSource.ReadChan():
 				if msg == nil {
-					logger.Errorw("source closed connection", "participant", identity)
+					logger.Infow("source closed connection", "participant", identity,
+						"connectionId", connId)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
 					logger.Errorw("unexpected message type",
 						"type", fmt.Sprintf("%T", msg),
-						"participant", identity)
+						"participant", identity,
+						"connectionId", connId)
 					continue
 				}
 
@@ -151,15 +156,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		req, err := sigConn.ReadRequest()
 		// normal closure
-		if err == io.EOF || websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-			return
-		} else if err != nil {
-			logger.Errorw("error reading from websocket", "error", err)
-			return
+		if err != nil {
+			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") || websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				return
+			} else {
+				logger.Errorw("error reading from websocket", "error", err)
+				return
+			}
 		}
-
-		if err = reqSink.WriteMessage(req); err != nil {
-			logger.Warnw("error writing to request sink", "error", err)
+		if err := reqSink.WriteMessage(req); err != nil {
+			logger.Warnw("error writing to request sink", "error", err,
+				"participant", identity, "connectionId", connId)
 		}
 	}
 }

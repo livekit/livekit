@@ -28,8 +28,6 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted utils.AtomicFlag
 
-	// map of participantKey => RTCNodeSink
-	rtcSinks map[string]*RTCNodeSink
 	// map of connectionId => SignalNodeSink
 	signalSinks map[string]*SignalNodeSink
 
@@ -41,7 +39,6 @@ func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: *NewLocalRouter(currentNode),
 		rc:          rc,
-		rtcSinks:    make(map[string]*RTCNodeSink),
 		signalSinks: make(map[string]*SignalNodeSink),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
@@ -127,7 +124,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(roomName)
 	if err != nil {
@@ -135,7 +132,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 	}
 
 	// create a new connection id
-	connectionId := utils.NewGuid("CO_")
+	connectionId = utils.NewGuid("CO_")
 	pKey := participantKey(roomName, identity)
 
 	// map signal & rtc nodes
@@ -143,7 +140,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 		return
 	}
 
-	sink := r.getOrCreateRTCSink(rtcNode, pKey)
+	sink := NewRTCNodeSink(r.rc, rtcNode, pKey)
 
 	// sends a message to start session
 	err = sink.WriteMessage(&livekit.StartSession{
@@ -160,19 +157,17 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 
 	// index by connectionId, since there may be multiple connections for the participant
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, connectionId)
-	return sink, resChan, nil
+	return connectionId, sink, resChan, nil
 }
 
-func (r *RedisRouter) SendRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {
 	pkey := participantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	rtcSink := r.getOrCreateRTCSink(rtcNode, pkey)
-
-	return rtcSink.WriteMessage(msg)
+	return NewRTCNodeSink(r.rc, rtcNode, pkey), nil
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
@@ -216,7 +211,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
-	resSink := r.getOrCreateSignalSink(signalNode, ss.ConnectionId)
+	resSink := NewSignalNodeSink(r.rc, signalNode, ss.ConnectionId)
 	r.onNewParticipant(
 		ss.RoomName,
 		ss.Identity,
@@ -259,44 +254,6 @@ func (r *RedisRouter) setParticipantSignalNode(connectionId, nodeId string) erro
 		return errors.Wrap(err, "could not set signal node")
 	}
 	return nil
-}
-
-func (r *RedisRouter) getOrCreateRTCSink(nodeId string, participantKey string) *RTCNodeSink {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	sink := r.rtcSinks[participantKey]
-
-	if sink != nil {
-		return sink
-	}
-
-	sink = NewRTCNodeSink(r.rc, nodeId, participantKey)
-	sink.OnClose(func() {
-		r.lock.Lock()
-		delete(r.rtcSinks, participantKey)
-		r.lock.Unlock()
-	})
-	r.rtcSinks[participantKey] = sink
-	return sink
-}
-
-func (r *RedisRouter) getOrCreateSignalSink(nodeId string, connectionId string) *SignalNodeSink {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	sink := r.signalSinks[connectionId]
-
-	if sink != nil {
-		return sink
-	}
-
-	sink = NewSignalNodeSink(r.rc, nodeId, connectionId)
-	sink.OnClose(func() {
-		r.lock.Lock()
-		delete(r.signalSinks, connectionId)
-		r.lock.Unlock()
-	})
-	r.signalSinks[connectionId] = sink
-	return sink
 }
 
 func (r *RedisRouter) getParticipantRTCNode(participantKey string) (string, error) {

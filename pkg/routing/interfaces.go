@@ -39,9 +39,10 @@ type Router interface {
 	ListNodes() ([]*livekit.Node, error)
 
 	// participant signal connection is ready to start
-	StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
+
 	// sends a message to RTC node
-	SendRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) error
+	CreateRTCSink(roomName, identity string) (MessageSink, error)
 
 	// when a new participant's RTC connection is ready to start
 	OnNewParticipantRTC(callback NewParticipantCallback)
