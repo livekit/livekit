@@ -573,9 +573,13 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	logger.Debugw("mediaTrack added", "participant", p.Identity(), "remoteTrack", track.ID())
+	logger.Debugw("mediaTrack added",
+		"participant", p.Identity(),
+		"remoteTrack", track.ID(),
+		"rid", track.RID())
 
-	ti := p.popPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+	// delete pending track if it's not simulcasting
+	ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), track.RID() == "")
 	if ti == nil {
 		return
 	}
@@ -587,7 +591,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	var mt *MediaTrack
 	var newTrack bool
 	if trk, ok := ptrack.(*MediaTrack); ok {
-		logger.Debugw("using existing mediatrack, simulcast", "rid", track.RID())
 		mt = trk
 	} else {
 		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, p.receiverConfig, p.audioConfig)
@@ -616,7 +619,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
 
 	// data channels have numeric ids, so we use its label to identify
-	ti := p.popPendingTrack(dc.Label(), livekit.TrackType_DATA)
+	ti := p.getPendingTrack(dc.Label(), livekit.TrackType_DATA, true)
 	if ti == nil {
 		return
 	}
@@ -627,7 +630,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	p.handleTrackPublished(dt)
 }
 
-func (p *ParticipantImpl) popPendingTrack(clientId string, kind livekit.TrackType) *livekit.TrackInfo {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, deleteAfter bool) *livekit.TrackInfo {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	ti := p.pendingTracks[clientId]
@@ -647,7 +650,7 @@ func (p *ParticipantImpl) popPendingTrack(clientId string, kind livekit.TrackTyp
 	// if still not found, we are done
 	if ti == nil {
 		logger.Errorw("track info not published prior to track", "clientId", clientId)
-	} else {
+	} else if deleteAfter {
 		delete(p.pendingTracks, clientId)
 	}
 	return ti
