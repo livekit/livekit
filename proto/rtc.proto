@@ -15,8 +15,10 @@ message SignalRequest {
     AddTrackRequest add_track = 4;
     // mute the participant's own tracks
     MuteTrackRequest mute = 5;
-    // mute a track client is subscribed to
-    MuteTrackRequest mute_subscribed = 6;
+    // Subscribe or unsubscribe from tracks
+    UpdateSubscription subscription = 6;
+    // Update settings of subscribed tracks
+    UpdateTrackSettings track_setting = 7;
   }
 }
 
@@ -96,4 +98,23 @@ message SpeakerInfo {
   float level = 2;
   // true if speaker is currently active
   bool active = 3;
+}
+
+enum VideoQuality {
+  LOW = 0;
+  MEDIUM = 1;
+  HIGH = 2;
+}
+
+message UpdateSubscription {
+  repeated string track_sids = 1;
+  bool subscribe = 2;
+  bool mute = 3;
+  VideoQuality quality = 4;
+}
+
+message UpdateTrackSettings {
+  repeated string track_sids = 1;
+  bool mute = 3;
+  VideoQuality quality = 4;
 }

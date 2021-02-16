@@ -70,6 +70,16 @@ type FakeParticipant struct {
 		result1 uint8
 		result2 bool
 	}
+	GetPublishedTracksStub        func() []types.PublishedTrack
+	getPublishedTracksMutex       sync.RWMutex
+	getPublishedTracksArgsForCall []struct {
+	}
+	getPublishedTracksReturns struct {
+		result1 []types.PublishedTrack
+	}
+	getPublishedTracksReturnsOnCall map[int]struct {
+		result1 []types.PublishedTrack
+	}
 	GetResponseSinkStub        func() routing.MessageSink
 	getResponseSinkMutex       sync.RWMutex
 	getResponseSinkArgsForCall []struct {
@@ -79,6 +89,16 @@ type FakeParticipant struct {
 	}
 	getResponseSinkReturnsOnCall map[int]struct {
 		result1 routing.MessageSink
+	}
+	GetSubscribedTracksStub        func() []types.SubscribedTrack
+	getSubscribedTracksMutex       sync.RWMutex
+	getSubscribedTracksArgsForCall []struct {
+	}
+	getSubscribedTracksReturns struct {
+		result1 []types.SubscribedTrack
+	}
+	getSubscribedTracksReturnsOnCall map[int]struct {
+		result1 []types.SubscribedTrack
 	}
 	HandleAnswerStub        func(webrtc.SessionDescription) error
 	handleAnswerMutex       sync.RWMutex
@@ -578,6 +598,59 @@ func (fake *FakeParticipant) GetAudioLevelReturnsOnCall(i int, result1 uint8, re
 	}{result1, result2}
 }
 
+func (fake *FakeParticipant) GetPublishedTracks() []types.PublishedTrack {
+	fake.getPublishedTracksMutex.Lock()
+	ret, specificReturn := fake.getPublishedTracksReturnsOnCall[len(fake.getPublishedTracksArgsForCall)]
+	fake.getPublishedTracksArgsForCall = append(fake.getPublishedTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetPublishedTracksStub
+	fakeReturns := fake.getPublishedTracksReturns
+	fake.recordInvocation("GetPublishedTracks", []interface{}{})
+	fake.getPublishedTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetPublishedTracksCallCount() int {
+	fake.getPublishedTracksMutex.RLock()
+	defer fake.getPublishedTracksMutex.RUnlock()
+	return len(fake.getPublishedTracksArgsForCall)
+}
+
+func (fake *FakeParticipant) GetPublishedTracksCalls(stub func() []types.PublishedTrack) {
+	fake.getPublishedTracksMutex.Lock()
+	defer fake.getPublishedTracksMutex.Unlock()
+	fake.GetPublishedTracksStub = stub
+}
+
+func (fake *FakeParticipant) GetPublishedTracksReturns(result1 []types.PublishedTrack) {
+	fake.getPublishedTracksMutex.Lock()
+	defer fake.getPublishedTracksMutex.Unlock()
+	fake.GetPublishedTracksStub = nil
+	fake.getPublishedTracksReturns = struct {
+		result1 []types.PublishedTrack
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []types.PublishedTrack) {
+	fake.getPublishedTracksMutex.Lock()
+	defer fake.getPublishedTracksMutex.Unlock()
+	fake.GetPublishedTracksStub = nil
+	if fake.getPublishedTracksReturnsOnCall == nil {
+		fake.getPublishedTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.PublishedTrack
+		})
+	}
+	fake.getPublishedTracksReturnsOnCall[i] = struct {
+		result1 []types.PublishedTrack
+	}{result1}
+}
+
 func (fake *FakeParticipant) GetResponseSink() routing.MessageSink {
 	fake.getResponseSinkMutex.Lock()
 	ret, specificReturn := fake.getResponseSinkReturnsOnCall[len(fake.getResponseSinkArgsForCall)]
@@ -628,6 +701,59 @@ func (fake *FakeParticipant) GetResponseSinkReturnsOnCall(i int, result1 routing
 	}
 	fake.getResponseSinkReturnsOnCall[i] = struct {
 		result1 routing.MessageSink
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetSubscribedTracks() []types.SubscribedTrack {
+	fake.getSubscribedTracksMutex.Lock()
+	ret, specificReturn := fake.getSubscribedTracksReturnsOnCall[len(fake.getSubscribedTracksArgsForCall)]
+	fake.getSubscribedTracksArgsForCall = append(fake.getSubscribedTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetSubscribedTracksStub
+	fakeReturns := fake.getSubscribedTracksReturns
+	fake.recordInvocation("GetSubscribedTracks", []interface{}{})
+	fake.getSubscribedTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetSubscribedTracksCallCount() int {
+	fake.getSubscribedTracksMutex.RLock()
+	defer fake.getSubscribedTracksMutex.RUnlock()
+	return len(fake.getSubscribedTracksArgsForCall)
+}
+
+func (fake *FakeParticipant) GetSubscribedTracksCalls(stub func() []types.SubscribedTrack) {
+	fake.getSubscribedTracksMutex.Lock()
+	defer fake.getSubscribedTracksMutex.Unlock()
+	fake.GetSubscribedTracksStub = stub
+}
+
+func (fake *FakeParticipant) GetSubscribedTracksReturns(result1 []types.SubscribedTrack) {
+	fake.getSubscribedTracksMutex.Lock()
+	defer fake.getSubscribedTracksMutex.Unlock()
+	fake.GetSubscribedTracksStub = nil
+	fake.getSubscribedTracksReturns = struct {
+		result1 []types.SubscribedTrack
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetSubscribedTracksReturnsOnCall(i int, result1 []types.SubscribedTrack) {
+	fake.getSubscribedTracksMutex.Lock()
+	defer fake.getSubscribedTracksMutex.Unlock()
+	fake.GetSubscribedTracksStub = nil
+	if fake.getSubscribedTracksReturnsOnCall == nil {
+		fake.getSubscribedTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.SubscribedTrack
+		})
+	}
+	fake.getSubscribedTracksReturnsOnCall[i] = struct {
+		result1 []types.SubscribedTrack
 	}{result1}
 }
 
@@ -1737,8 +1863,12 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
+	fake.getPublishedTracksMutex.RLock()
+	defer fake.getPublishedTracksMutex.RUnlock()
 	fake.getResponseSinkMutex.RLock()
 	defer fake.getResponseSinkMutex.RUnlock()
+	fake.getSubscribedTracksMutex.RLock()
+	defer fake.getSubscribedTracksMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleOfferMutex.RLock()

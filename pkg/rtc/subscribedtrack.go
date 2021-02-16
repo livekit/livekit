@@ -2,8 +2,10 @@ package rtc
 
 import (
 	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 type SubscribedTrack struct {
@@ -16,6 +18,10 @@ func NewSubscribedTrack(dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
 		dt: dt,
 	}
+}
+
+func (t *SubscribedTrack) ID() string {
+	return t.dt.ID()
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
@@ -36,6 +42,12 @@ func (t *SubscribedTrack) SetMuted(muted bool) {
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.pubMuted.TrySet(muted)
 	t.updateDownTrackMute()
+}
+
+func (t *SubscribedTrack) SetVideoQuality(quality livekit.VideoQuality) {
+	if t.dt.Kind() == webrtc.RTPCodecTypeVideo {
+		t.dt.SwitchSpatialLayer(int64(quality), true)
+	}
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {

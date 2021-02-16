@@ -34,6 +34,8 @@ type Participant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
+	GetPublishedTracks() []PublishedTrack
+	GetSubscribedTracks() []SubscribedTrack
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
@@ -82,9 +84,11 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
+	ID() string
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
 	SetMuted(muted bool)
+	SetVideoQuality(quality livekit.VideoQuality)
 	SetPublisherMuted(muted bool)
 }
 
