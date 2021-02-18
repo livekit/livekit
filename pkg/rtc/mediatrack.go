@@ -117,9 +117,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	// don't subscribe to the same track multiple times
 	if existingSt != nil {
-		logger.Warnw("participant already subscribed to track",
-			"sub", sub.Identity(),
-			"track", t.ID())
 		return nil
 	}
 

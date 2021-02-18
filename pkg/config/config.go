@@ -61,8 +61,8 @@ func NewConfig(confString string) (*Config, error) {
 		},
 		Audio: AudioConfig{
 			ActiveLevel:    40,
-			MinPercentile:  20,
-			UpdateInterval: 1000,
+			MinPercentile:  15,
+			UpdateInterval: 500,
 		},
 		Redis: RedisConfig{},
 		Keys:  map[string]string{},

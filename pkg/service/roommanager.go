@@ -302,6 +302,18 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				}
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
+			case *livekit.SignalRequest_Subscription:
+				room.UpdateSubscriptions(participant, msg.Subscription)
+			case *livekit.SignalRequest_TrackSetting:
+				for _, subTrack := range participant.GetSubscribedTracks() {
+					for _, sid := range msg.TrackSetting.TrackSids {
+						if subTrack.ID() != sid {
+							continue
+						}
+						subTrack.SetMuted(msg.TrackSetting.Mute)
+						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
+					}
+				}
 			}
 		}
 	}

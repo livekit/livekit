@@ -157,7 +157,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req, err := sigConn.ReadRequest()
 		// normal closure
 		if err != nil {
-			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") || websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
+				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 				return
 			} else {
 				logger.Errorw("error reading from websocket", "error", err)

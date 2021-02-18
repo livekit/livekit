@@ -6,7 +6,7 @@ import (
 
 const (
 	// number of samples to compute moving average over
-	averageSamples   = 40
+	averageSamples   = 30
 	silentAudioLevel = uint8(127)
 )
 
