@@ -9,9 +9,10 @@ import (
 )
 
 const (
+	samplesPerBatch    = 30
 	defaultActiveLevel = 30
 	// requires two noisy samples to count
-	defaultPercentile = 5
+	defaultPercentile = 10
 )
 
 func TestAudioLevel(t *testing.T) {
@@ -20,7 +21,7 @@ func TestAudioLevel(t *testing.T) {
 		_, noisy := a.GetLevel()
 		assert.False(t, noisy)
 
-		observeSamples(a, 35, 5)
+		observeSamples(a, 28, 5)
 		_, noisy = a.GetLevel()
 		assert.False(t, noisy)
 	})
@@ -36,7 +37,7 @@ func TestAudioLevel(t *testing.T) {
 	t.Run("not noisy when less than percentile samples are above threshold", func(t *testing.T) {
 		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile)
 
-		observeSamples(a, 35, 39)
+		observeSamples(a, 35, samplesPerBatch-1)
 		observeSamples(a, 25, 1)
 		observeSamples(a, 35, 1)
 
@@ -47,8 +48,8 @@ func TestAudioLevel(t *testing.T) {
 	t.Run("noisy when higher than percentile samples are above threshold", func(t *testing.T) {
 		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile)
 
-		observeSamples(a, 35, 37)
-		observeSamples(a, 25, 1)
+		observeSamples(a, 35, samplesPerBatch-4)
+		observeSamples(a, 25, 2)
 		observeSamples(a, 29, 2)
 
 		level, noisy := a.GetLevel()
