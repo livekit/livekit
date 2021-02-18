@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"time"
 
@@ -31,8 +32,12 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
 	return &livekit.Node{
-		Id:      fmt.Sprintf("%s%16.16X", utils.NodePrefix, macUint64()),
+		Id:      fmt.Sprintf("%s%s", utils.NodePrefix, utils.HashedID(hostname)[:8]),
 		Ip:      ip,
 		NumCpus: uint32(runtime.NumCPU()),
 		Stats: &livekit.NodeStats{
