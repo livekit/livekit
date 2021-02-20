@@ -170,22 +170,3 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
-type errStruct struct {
-	StatusCode int    `json:"statusCode"`
-	Error      string `json:"error"`
-	Message    string `json:"message,omitempty"`
-}
-
-func jsonError(code int, error ...string) errStruct {
-	es := errStruct{
-		StatusCode: code,
-	}
-	if len(error) > 0 {
-		es.Error = error[0]
-	}
-	if len(error) > 1 {
-		es.Message = error[1]
-	}
-	return es
-}

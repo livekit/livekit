@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/bep/debounce v1.2.0
+	github.com/fatih/hclfmt v0.0.0-20181010234132-374cd0fd2a55 // indirect
 	github.com/go-redis/redis/v8 v8.4.8
 	github.com/golang/protobuf v1.4.3
 	github.com/google/wire v0.4.0

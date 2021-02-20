@@ -51,8 +51,8 @@ func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		Port: 7880,
 		RTC: RTCConfig{
-			ICEPortRangeStart: 8000,
-			ICEPortRangeEnd:   10000,
+			ICEPortRangeStart: 9000,
+			ICEPortRangeEnd:   9200,
 			StunServers: []string{
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",
