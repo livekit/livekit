@@ -67,10 +67,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		roomName = onlyName
 	}
 
-	rm, err := s.roomManager.roomStore.GetRoom(roomName)
-	if err == ErrRoomNotFound {
-		rm, err = s.roomManager.CreateRoom(&livekit.CreateRoomRequest{Name: roomName})
-	} else if err != nil {
+	// create room if it doesn't exist, also assigns an RTC node for the room
+	rm, err := s.roomManager.CreateRoom(&livekit.CreateRoomRequest{Name: roomName})
+	if err != nil {
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

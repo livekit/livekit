@@ -2,6 +2,7 @@ package test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -54,22 +55,6 @@ func TestMultiNodeRouting(t *testing.T) {
 		assert.Equal(t, c1.ID(), tr1.StreamID())
 		return true
 	})
-
-	// TODO: delete room explicitly and ensure it's closed
-	//
-	//// ensure that room is closed
-	//
-	//rc := redisClient()
-	//ctx := context.Background()
-	//withTimeout(t, "room should be closed", func() bool {
-	//	if rc.HGet(ctx, service.RoomsKey, testRoom).Err() == nil {
-	//		return false
-	//	}
-	//	return true
-	//})
-	//
-	//assert.Equal(t, redis.Nil, rc.HGet(ctx, routing.NodeRoomKey, testRoom).Err())
-	//assert.Equal(t, redis.Nil, rc.HGet(ctx, service.RoomIdMap, testRoom).Err())
 }
 
 func TestConnectWithoutCreation(t *testing.T) {
@@ -121,4 +106,41 @@ func TestMultinodeReceiveBeforePublish(t *testing.T) {
 	defer s2.Stop()
 
 	scenarioReceiveBeforePublish(t)
+}
+
+// reconnecting to the same room, after one of the servers has gone away
+func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	logger.Infow("\n\n---Starting TestMultiNodeRouting---")
+	defer logger.Infow("---Finishing TestMultiNodeRouting---")
+
+	s1, s2 := setupMultiNodeTest()
+	defer s1.Stop()
+	defer s2.Stop()
+
+	// creating room on node 1
+	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
+		Name:   testRoom,
+		NodeId: s2.Node().Id,
+	})
+	assert.NoError(t, err)
+
+	// one node connecting to node 1, and another connecting to node 2
+	c1 := createRTCClient("c1", defaultServerPort)
+	c2 := createRTCClient("c2", secondServerPort)
+
+	waitUntilConnected(t, c1, c2)
+	stopClients(c1, c2)
+
+	// stop s2, and connect to room again
+	s2.Stop()
+
+	time.Sleep(syncDelay)
+
+	c3 := createRTCClient("c3", defaultServerPort)
+	waitUntilConnected(t, c3)
 }

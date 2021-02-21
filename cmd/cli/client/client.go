@@ -507,7 +507,10 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 }
 
 func (c *RTCClient) negotiate() {
-	logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
+	if c.localParticipant != nil {
+		logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
+	}
+
 	offer, err := c.publisher.PeerConnection().CreateOffer(nil)
 	if err != nil {
 		return

@@ -80,6 +80,10 @@ func NewLivekitServer(conf *config.Config,
 	return
 }
 
+func (s *LivekitServer) Node() *livekit.Node {
+	return s.currentNode
+}
+
 func (s *LivekitServer) IsRunning() bool {
 	return s.running.Get()
 }
