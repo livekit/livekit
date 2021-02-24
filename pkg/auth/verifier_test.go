@@ -9,7 +9,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/auth"
 )
 
-func TestAPIVerifier(t *testing.T) {
+func TestVerifier(t *testing.T) {
 	apiKey := "APID3B67uxk4Nj2GKiRPibAZ9"
 	secret := "YHC-CUhbQhGeVCaYgn1BNA++"
 	accessToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDg5MzAzMDgsImlzcyI6IkFQSUQzQjY3dXhrNE5qMkdLaVJQaWJBWjkiLCJuYmYiOjE2MDg5MjY3MDgsInJvb21fam9pbiI6dHJ1ZSwicm9vbV9zaWQiOiJteWlkIiwic3ViIjoiQVBJRDNCNjd1eGs0TmoyR0tpUlBpYkFaOSJ9.cmHEBq0MLyRqphmVLM2cLXg5ao5Sro7am8yXhcYKcwE"
@@ -49,5 +49,29 @@ func TestAPIVerifier(t *testing.T) {
 		decoded, err := v.Verify(secret)
 		assert.NoError(t, err)
 		assert.Equal(t, &claim, decoded.Video)
+	})
+
+	t.Run("ensure metadata can be passed through", func(t *testing.T) {
+		metadata := map[string]interface{}{
+			"user":   "value",
+			"number": float64(3),
+		}
+		at := auth.NewAccessToken(apiKey, secret).
+			AddGrant(&auth.VideoGrant{
+				RoomAdmin: true,
+				Room:      "myroom",
+			}).
+			SetMetadata(metadata)
+
+		authToken, err := at.ToJWT()
+		assert.NoError(t, err)
+
+		v, err := auth.ParseAPIToken(authToken)
+		assert.NoError(t, err)
+
+		decoded, err := v.Verify(secret)
+		assert.NoError(t, err)
+
+		assert.EqualValues(t, metadata, decoded.Metadata)
 	})
 }

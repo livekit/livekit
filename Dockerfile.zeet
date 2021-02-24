@@ -1,4 +1,4 @@
-FROM golang:1.16-alpine as builder
+FROM golang:alpine as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -22,5 +22,7 @@ FROM alpine
 
 COPY --from=builder /workspace/livekit-server /livekit-server
 
+COPY sample-prod-config.yaml /workspace/config.yaml
+
 # Run the binary.
-ENTRYPOINT ["/livekit-server"]
+ENTRYPOINT ["/livekit-server", "--config", "/workspace/config.yaml"]

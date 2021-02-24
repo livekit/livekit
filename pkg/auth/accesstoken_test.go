@@ -12,7 +12,9 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
-func TestAPIIssuer(t *testing.T) {
+func TestAccessToken(t *testing.T) {
+	t.Parallel()
+
 	t.Run("keys must be set", func(t *testing.T) {
 		token := auth.NewAccessToken("", "")
 		_, err := token.ToJWT()

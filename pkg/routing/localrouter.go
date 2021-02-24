@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -14,7 +16,12 @@ type LocalRouter struct {
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
-	onNewParticipant ParticipantCallback
+	isStarted        utils.AtomicFlag
+
+	rtcMessageChan *MessageChannel
+
+	onNewParticipant NewParticipantCallback
+	onRTCMessage     RTCMessageCallback
 }
 
 func NewLocalRouter(currentNode LocalNode) *LocalRouter {
@@ -22,11 +29,12 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 		currentNode:      currentNode,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
+		rtcMessageChan:   NewMessageChannel(),
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(roomName string) (string, error) {
-	return r.currentNode.Id, nil
+func (r *LocalRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+	return r.currentNode, nil
 }
 
 func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
@@ -46,6 +54,10 @@ func (r *LocalRouter) UnregisterNode() error {
 	return nil
 }
 
+func (r *LocalRouter) RemoveDeadNodes() error {
+	return nil
+}
+
 func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
 	if nodeId == r.currentNode.Id {
 		return r.currentNode, nil
@@ -59,57 +71,108 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(roomName, participantId, participantName string) error {
+func (r *LocalRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
-		return ErrHandlerNotDefined
+		err = ErrHandlerNotDefined
+		return
 	}
+
+	// index channels by roomName | identity
+	key := participantKey(roomName, identity)
+	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
+	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
+
 	r.onNewParticipant(
 		roomName,
-		participantId,
-		participantName,
+		identity,
+		metadata,
+		reconnect,
 		// request source
-		r.getOrCreateMessageChannel(r.requestChannels, participantId),
+		reqChan,
 		// response sink
-		r.getOrCreateMessageChannel(r.responseChannels, participantId),
+		resChan,
 	)
-	return nil
+	return identity, reqChan, resChan, nil
 }
 
-// for a local router, sink and source are pointing to the same spot
-func (r *LocalRouter) GetRequestSink(participantId string) (MessageSink, error) {
-	return r.getOrCreateMessageChannel(r.requestChannels, participantId), nil
+func (r *LocalRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {
+	if r.rtcMessageChan.isClosed.Get() {
+		// create a new one
+		r.rtcMessageChan = NewMessageChannel()
+	}
+	return r.rtcMessageChan, nil
 }
 
-func (r *LocalRouter) GetResponseSource(participantId string) (MessageSource, error) {
-	return r.getOrCreateMessageChannel(r.responseChannels, participantId), nil
-}
-
-func (r *LocalRouter) OnNewParticipantRTC(callback ParticipantCallback) {
+func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {
 	r.onNewParticipant = callback
 }
 
+func (r *LocalRouter) OnRTCMessage(callback RTCMessageCallback) {
+	r.onRTCMessage = callback
+}
+
 func (r *LocalRouter) Start() error {
+	if !r.isStarted.TrySet(true) {
+		return nil
+	}
 	go r.statsWorker()
 	// on local routers, Start doesn't do anything, websocket connections initiate the connections
+	go r.rtcMessageWorker()
 	return nil
 }
 
 func (r *LocalRouter) Stop() {
+
+	r.rtcMessageChan.Close()
 }
 
 func (r *LocalRouter) statsWorker() {
 	for {
+		if !r.isStarted.Get() {
+			return
+		}
 		// update every 10 seconds
 		<-time.After(statsUpdateInterval)
 		r.currentNode.Stats.UpdatedAt = time.Now().Unix()
 	}
 }
 
-func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, participantId string) *MessageChannel {
+func (r *LocalRouter) rtcMessageWorker() {
+	// is a new channel available? if so swap to that one
+	if !r.isStarted.Get() {
+		return
+	}
+
+	// start a new worker after this finished
+	defer func() {
+		go r.rtcMessageWorker()
+	}()
+
+	if r.rtcMessageChan.isClosed.Get() {
+		// sleep and retry
+		time.Sleep(time.Second)
+	}
+
+	// consume messages from
+	for msg := range r.rtcMessageChan.ReadChan() {
+		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
+			room, identity, err := parseParticipantKey(rtcMsg.ParticipantKey)
+			if err != nil {
+				logger.Errorw("could not process RTC message", "error", err)
+				continue
+			}
+			if r.onRTCMessage != nil {
+				r.onRTCMessage(room, identity, rtcMsg)
+			}
+		}
+	}
+}
+
+func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChannel, key string) *MessageChannel {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	mc := target[participantId]
+	mc := target[key]
 
 	if mc != nil {
 		return mc
@@ -118,10 +181,10 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 	mc = NewMessageChannel()
 	mc.OnClose(func() {
 		r.lock.Lock()
-		delete(target, participantId)
+		delete(target, key)
 		r.lock.Unlock()
 	})
-	target[participantId] = mc
+	target[key] = mc
 
 	return mc
 }

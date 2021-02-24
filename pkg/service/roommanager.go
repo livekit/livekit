@@ -1,9 +1,13 @@
 package service
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
+	"github.com/thoas/go-funk"
+
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -25,14 +29,16 @@ type RoomManager struct {
 	router      routing.Router
 	currentNode routing.LocalNode
 	config      *rtc.WebRTCConfig
+	audioConfig config.AudioConfig
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig) *RoomManager {
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig, ac config.AudioConfig) *RoomManager {
 	return &RoomManager{
 		lock:        sync.RWMutex{},
 		roomStore:   rp,
 		config:      config,
+		audioConfig: ac,
 		router:      router,
 		selector:    selector,
 		currentNode: currentNode,
@@ -43,17 +49,40 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
 func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	rm := &livekit.Room{
-		Sid:             utils.NewGuid(utils.RoomPrefix),
-		Name:            req.Name,
-		EmptyTimeout:    req.EmptyTimeout,
-		MaxParticipants: req.MaxParticipants,
-		CreationTime:    time.Now().Unix(),
+	// find existing room and update it
+	rm, err := r.roomStore.GetRoom(req.Name)
+	if err == ErrRoomNotFound {
+		rm = &livekit.Room{
+			Sid:          utils.NewGuid(utils.RoomPrefix),
+			Name:         req.Name,
+			CreationTime: time.Now().Unix(),
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	if req.EmptyTimeout > 0 {
+		rm.EmptyTimeout = req.EmptyTimeout
+	}
+	if req.MaxParticipants > 0 {
+		rm.MaxParticipants = req.MaxParticipants
 	}
 	if err := r.roomStore.CreateRoom(rm); err != nil {
 		return nil, err
 	}
 
+	// Is that node still available?
+	node, err := r.router.GetNodeForRoom(rm.Name)
+	if err != routing.ErrNotFound && err != nil {
+		return nil, err
+	}
+
+	// keep it on that node
+	if err == nil && routing.IsAvailable(node) {
+		return rm, nil
+	}
+
+	// select a new node
 	nodeId := req.NodeId
 	if nodeId == "" {
 		// select a node for room
@@ -79,6 +108,7 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) DeleteRoom(roomName string) error {
+	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
@@ -97,6 +127,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 		err2 = r.roomStore.DeleteRoom(roomName)
 	}()
 
+	wg.Wait()
 	if err != nil {
 		err = err2
 	}
@@ -105,7 +136,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 }
 
 // clean up after old rooms that have been around for awhile
-func (r *RoomManager) Cleanup() error {
+func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	rooms, err := r.roomStore.ListRooms()
 	if err != nil {
@@ -123,31 +154,65 @@ func (r *RoomManager) Cleanup() error {
 	return nil
 }
 
+func (r *RoomManager) CloseIdleRooms() {
+	r.lock.RLock()
+	rooms := funk.Values(r.rooms).([]*rtc.Room)
+	r.lock.RUnlock()
+
+	for _, room := range rooms {
+		room.CloseIfEmpty()
+	}
+}
+
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, participantId, participantName string, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
 		return
 	}
 
+	participant := room.GetParticipant(identity)
+	if participant != nil {
+		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
+		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
+		if reconnect {
+			logger.Debugw("resuming RTC session",
+				"room", roomName,
+				"node", r.currentNode.Id,
+				"participant", identity,
+			)
+			// close previous sink, and link to new one
+			prevSink := participant.GetResponseSink()
+			if prevSink != nil {
+				prevSink.Close()
+			}
+			participant.SetResponseSink(responseSink)
+
+			return
+		} else {
+			// we need to clean up the existing participant, so a new one can join
+			room.RemoveParticipant(participant.Identity())
+		}
+	}
+
 	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"node", r.currentNode.Id,
-		"participant", participantName,
+		"participant", identity,
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	pc, err := rtc.NewPeerConnection(r.config)
-	if err != nil {
-		logger.Errorw("could not create peerConnection", "error", err)
-		return
-	}
-
-	participant, err := rtc.NewParticipant(participantId, participantName, pc, responseSink, r.config.Receiver)
+	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.config.Receiver, r.audioConfig)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
+	}
+	if metadata != "" {
+		var md map[string]interface{}
+		if err := json.Unmarshal([]byte(metadata), &md); err == nil {
+			participant.SetMetadata(md)
+		}
 	}
 
 	// join room
@@ -175,10 +240,17 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		return nil, err
 	}
 
-	room = rtc.NewRoom(ri, *r.config)
+	room = rtc.NewRoom(ri, *r.config, r.audioConfig.UpdateInterval)
 	room.OnClose(func() {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", "error", err)
+		}
+	})
+	room.OnParticipantChanged(func(p types.Participant) {
+		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+			r.roomStore.DeleteParticipant(roomName, p.Identity())
+		} else {
+			r.roomStore.PersistParticipant(roomName, p.ToProto())
 		}
 	})
 	r.lock.Lock()
@@ -192,7 +264,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
-			"participant", participant.Name(),
+			"participant", participant.Identity(),
 			"room", room.Name,
 		)
 	}()
@@ -214,48 +286,84 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 
 			switch msg := req.Message.(type) {
 			case *livekit.SignalRequest_Offer:
-				_, err := participant.Answer(rtc.FromProtoSessionDescription(msg.Offer))
+				_, err := participant.HandleOffer(rtc.FromProtoSessionDescription(msg.Offer))
 				if err != nil {
-					logger.Errorw("could not handle join", "err", err, "participant", participant.ID())
+					logger.Errorw("could not handle offer", "err", err, "participant", participant.Identity())
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
-				logger.Debugw("publishing track", "participant", participant.ID(),
+				logger.Debugw("add track request", "participant", participant.Identity(),
 					"track", msg.AddTrack.Cid)
 				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
 			case *livekit.SignalRequest_Answer:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot negotiate before peer offer", "participant", participant.ID())
+					logger.Errorw("cannot negotiate before peer offer", "participant", participant.Identity())
 					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 					return
 				}
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
 				if err := participant.HandleAnswer(sd); err != nil {
-					logger.Errorw("could not handle answer", "participant", participant.ID(), "err", err)
+					logger.Errorw("could not handle answer", "participant", participant.Identity(), "err", err)
 					//conn.WriteJSON(
 					//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
 					return
 				}
-			case *livekit.SignalRequest_Negotiate:
-				participant.HandleClientNegotiation()
 			case *livekit.SignalRequest_Trickle:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot trickle before peer offer", "participant", participant.ID())
+					logger.Errorw("cannot trickle before offer", "participant", participant.Identity())
 					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
 					return
 				}
 
 				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
-				if err := participant.AddICECandidate(candidateInit); err != nil {
-					logger.Errorw("could not handle trickle", "participant", participant.ID(), "err", err)
+				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
+					logger.Errorw("could not handle trickle", "participant", participant.Identity(), "err", err)
 					//conn.WriteJSON(
 					//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
 					return
 				}
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
+			case *livekit.SignalRequest_Subscription:
+				room.UpdateSubscriptions(participant, msg.Subscription)
+			case *livekit.SignalRequest_TrackSetting:
+				for _, subTrack := range participant.GetSubscribedTracks() {
+					for _, sid := range msg.TrackSetting.TrackSids {
+						if subTrack.ID() != sid {
+							continue
+						}
+						subTrack.SetMuted(msg.TrackSetting.Mute)
+						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
+					}
+				}
 			}
 		}
+	}
+}
+
+func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) {
+	r.lock.RLock()
+	room := r.rooms[roomName]
+	r.lock.RUnlock()
+
+	if room == nil {
+		logger.Warnw("Could not find room", "room", roomName)
+		return
+	}
+
+	participant := room.GetParticipant(identity)
+	if participant == nil {
+		return
+	}
+
+	switch rm := msg.Message.(type) {
+	case *livekit.RTCNodeMessage_RemoveParticipant:
+		logger.Infow("removing participant", "room", roomName, "participant", identity)
+		room.RemoveParticipant(identity)
+	case *livekit.RTCNodeMessage_MuteTrack:
+		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
+			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
+		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
 	}
 }

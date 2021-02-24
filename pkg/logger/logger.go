@@ -29,7 +29,6 @@ func initLogger(config zap.Config, level string) {
 
 func InitProduction(logLevel string) {
 	initLogger(zap.NewProductionConfig(), logLevel)
-
 }
 
 func InitDevelopment(logLevel string) {
@@ -37,21 +36,36 @@ func InitDevelopment(logLevel string) {
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {
-	getLogger().Debugw(msg, keysAndValues...)
+	if logger == nil {
+		return
+	}
+	logger.Debugw(msg, keysAndValues...)
 }
 
 func Infow(msg string, keysAndValues ...interface{}) {
-	getLogger().Infow(msg, keysAndValues...)
+	if logger == nil {
+		return
+	}
+	logger.Infow(msg, keysAndValues...)
 }
 
 func Warnw(msg string, keysAndValues ...interface{}) {
-	getLogger().Warnw(msg, keysAndValues...)
+	if logger == nil {
+		return
+	}
+	logger.Warnw(msg, keysAndValues...)
 }
 
 func Errorw(msg string, keysAndValues ...interface{}) {
-	getLogger().Errorw(msg, keysAndValues...)
+	if logger == nil {
+		return
+	}
+	logger.Errorw(msg, keysAndValues...)
 }
 
 func Desugar() *zap.Logger {
-	return getLogger().Desugar()
+	if logger == nil {
+		getLogger()
+	}
+	return logger.Desugar()
 }

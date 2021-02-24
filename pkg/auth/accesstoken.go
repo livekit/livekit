@@ -13,11 +13,12 @@ const (
 
 // Signer that produces token signed with API key and secret
 type AccessToken struct {
-	apiKey   string
-	secret   string
-	identity string
-	grant    *VideoGrant
-	validFor time.Duration
+	apiKey     string
+	secret     string
+	identity   string
+	videoGrant *VideoGrant
+	metadata   map[string]interface{}
+	validFor   time.Duration
 }
 
 func NewAccessToken(key string, secret string) *AccessToken {
@@ -38,7 +39,12 @@ func (t *AccessToken) SetValidFor(duration time.Duration) *AccessToken {
 }
 
 func (t *AccessToken) AddGrant(grant *VideoGrant) *AccessToken {
-	t.grant = grant
+	t.videoGrant = grant
+	return t
+}
+
+func (t *AccessToken) SetMetadata(md map[string]interface{}) *AccessToken {
+	t.metadata = md
 	return t
 }
 
@@ -65,8 +71,11 @@ func (t *AccessToken) ToJWT() (string, error) {
 		ID:        t.identity,
 	}
 	grants := &ClaimGrants{}
-	if t.grant != nil {
-		grants.Video = t.grant
+	if t.videoGrant != nil {
+		grants.Video = t.videoGrant
+	}
+	if t.metadata != nil {
+		grants.Metadata = t.metadata
 	}
 	return jwt.Signed(sig).Claims(cl).Claims(grants).CompactSerialize()
 }

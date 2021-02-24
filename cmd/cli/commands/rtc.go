@@ -20,15 +20,14 @@ var (
 			Name:   "join",
 			Action: joinRoom,
 			Flags: []cli.Flag{
-				roomFlag,
 				rtcHostFlag,
 				&cli.StringFlag{
 					Name:  "token",
-					Usage: "access token, not required in dev mode. if passed in, ignores --api-key, --api-secret, and --name",
+					Usage: "access token, not required in dev mode. if passed in, ignores --api-key, --api-secret, and --identity",
 				},
 				&cli.StringFlag{
-					Name:  "name",
-					Usage: "name of participant",
+					Name:  "identity",
+					Usage: "identity of the participant, required if token isn't passed in",
 				},
 				&cli.StringFlag{
 					Name:  "audio",
@@ -46,7 +45,7 @@ var (
 )
 
 func joinRoom(c *cli.Context) error {
-	name := c.String("name")
+	identity := c.String("identity")
 	roomId := c.String("room")
 	token := c.String("token")
 
@@ -56,15 +55,15 @@ func joinRoom(c *cli.Context) error {
 		if roomId == "" {
 			return fmt.Errorf("--room is required")
 		}
-		if name == "" {
-			return fmt.Errorf("--name is required")
+		if identity == "" {
+			return fmt.Errorf("--identity is required")
 		}
 		// token may be nil in dev mode
 		var err error
 		token, err = accessToken(c, &auth.VideoGrant{
 			RoomJoin: true,
 			Room:     roomId,
-		}, name)
+		}, identity).ToJWT()
 		if err != nil {
 			return err
 		}

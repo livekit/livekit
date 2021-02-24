@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/stretchr/testify/assert"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
@@ -18,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -30,6 +30,7 @@ const (
 	nodeId1           = "node-1"
 	nodeId2           = "node-2"
 
+	syncDelay      = 100 * time.Millisecond
 	connectTimeout = 10 * time.Second
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
 	// let connection timeout happen
@@ -40,8 +41,11 @@ var (
 	roomClient livekit.RoomService
 )
 
-func setupSingleNodeTest(roomName string) *service.LivekitServer {
+func init() {
 	logger.InitDevelopment("")
+}
+
+func setupSingleNodeTest(roomName string) *service.LivekitServer {
 	s := createSingleNodeServer()
 	go func() {
 		s.Start()
@@ -58,9 +62,8 @@ func setupSingleNodeTest(roomName string) *service.LivekitServer {
 }
 
 func setupMultiNodeTest() (*service.LivekitServer, *service.LivekitServer) {
-	logger.InitDevelopment("")
-	s1 := createMultiNodeServer(nodeId1, defaultServerPort)
-	s2 := createMultiNodeServer(nodeId2, secondServerPort)
+	s1 := createMultiNodeServer(utils.NewGuid(nodeId1), defaultServerPort)
+	s2 := createMultiNodeServer(utils.NewGuid(nodeId2), secondServerPort)
 	go s1.Start()
 	go s2.Start()
 
@@ -100,33 +103,47 @@ func waitForServerToStart(s *service.LivekitServer) {
 	}
 }
 
-func withTimeout(t *testing.T, description string, f func() bool) {
+func withTimeout(t *testing.T, description string, f func() bool) bool {
+	logger.Infow(description)
 	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
 	for {
 		select {
 		case <-ctx.Done():
 			t.Fatal("timed out: " + description)
+			return false
 		case <-time.After(10 * time.Millisecond):
 			if f() {
-				return
+				return true
 			}
 		}
 	}
 }
 
 func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
+	logger.Infow("waiting for clients to become connected")
 	wg := sync.WaitGroup{}
+	errChan := make(chan error, len(clients))
 	for i := range clients {
 		c := clients[i]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if !assert.NoError(t, c.WaitUntilConnected()) {
-				t.Fatal("client could not connect", c.ID())
+			err := c.WaitUntilConnected()
+			if err != nil {
+				errChan <- err
 			}
 		}()
 	}
 	wg.Wait()
+	close(errChan)
+	hasError := false
+	for err := range errChan {
+		t.Fatal(err)
+		hasError = true
+	}
+	if hasError {
+		t.FailNow()
+	}
 }
 
 func createSingleNodeServer() *service.LivekitServer {
@@ -137,7 +154,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 
 	currentNode, err := routing.NewLocalNode(conf)
-	currentNode.Id = nodeId1
+	currentNode.Id = utils.NewGuid(nodeId1)
 	if err != nil {
 		panic(err)
 	}
@@ -145,6 +162,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	// local routing and store
 	router := routing.NewLocalRouter(currentNode)
 	roomStore := service.NewLocalRoomStore()
+	roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
@@ -161,7 +179,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Port = port
-	conf.MultiNode = true
+	conf.Redis.Address = "localhost:6379"
 
 	currentNode, err := routing.NewLocalNode(conf)
 	currentNode.Id = nodeId
@@ -174,9 +192,13 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	if err = rc.Ping(context.Background()).Err(); err != nil {
 		panic(err)
 	}
+	if err = rc.Del(context.Background(), routing.NodesKey).Err(); err != nil {
+		panic(err)
+	}
 
 	router := routing.NewRedisRouter(currentNode, rc)
 	roomStore := service.NewRedisRoomStore(rc)
+	roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
@@ -230,6 +252,18 @@ func createRoomToken() string {
 		panic(err)
 	}
 	return t
+}
+
+func stopWriters(writers ...*client.TrackWriter) {
+	for _, w := range writers {
+		w.Stop()
+	}
+}
+
+func stopClients(clients ...*client.RTCClient) {
+	for _, c := range clients {
+		c.Stop()
+	}
 }
 
 type StaticKeyProvider struct {

@@ -10,25 +10,25 @@ var (
 )
 
 type AtomicFlag struct {
-	val uint32
+	val int32
 }
 
 // set flag to value if existing flag is different, otherwise return
 func (b *AtomicFlag) TrySet(bVal bool) bool {
-	var v uint32
+	var v int32
 	if bVal {
 		v = 1
 	}
-	old := b.val
-	// value is the same, nochanges
-	if old == v {
+	prev := atomic.SwapInt32(&b.val, v)
+	// already set. unsuccessful
+	if prev == v {
 		return false
 	}
-	return atomic.CompareAndSwapUint32(&b.val, old, v)
+	return true
 }
 
 func (b *AtomicFlag) Get() bool {
-	return b.val == 1
+	return atomic.LoadInt32(&b.val) == 1
 }
 
 // a channel that ignores writes when it closes instead of panic

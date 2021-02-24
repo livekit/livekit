@@ -15,8 +15,9 @@ import (
 
 var (
 	roomFlag = &cli.StringFlag{
-		Name:  "room",
-		Usage: "name or id of the room",
+		Name:     "room",
+		Usage:    "name or id of the room",
+		Required: true,
 	}
 	roomHostFlag = &cli.StringFlag{
 		Name:  "host",
@@ -34,6 +35,11 @@ var (
 	secretFlag = &cli.StringFlag{
 		Name:     "api-secret",
 		EnvVars:  []string{"LIVEKIT_API_SECRET"},
+		Required: true,
+	}
+	identityFlag = &cli.StringFlag{
+		Name:     "identity",
+		Usage:    "identity of participant",
 		Required: true,
 	}
 	devFlag = &cli.BoolFlag{
@@ -56,12 +62,12 @@ func ExpandUser(p string) string {
 	return p
 }
 
-func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value string, err error) {
+func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) *auth.AccessToken {
 	apiKey := c.String("api-key")
 	apiSecret := c.String("api-secret")
 	if apiKey == "" && apiSecret == "" {
 		// not provided, don't sign request
-		return
+		return nil
 	}
 
 	isDev := c.Bool("dev")
@@ -73,5 +79,5 @@ func accessToken(c *cli.Context, grant *auth.VideoGrant, identity string) (value
 		fmt.Println("creating dev token")
 		at.SetValidFor(time.Hour * 24 * 30)
 	}
-	return at.ToJWT()
+	return at
 }
