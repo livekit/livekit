@@ -16,6 +16,8 @@ resource "aws_lb" "main" {
   subnets = var.subnet_ids
 }
 
+// TODO: HTTPS
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"

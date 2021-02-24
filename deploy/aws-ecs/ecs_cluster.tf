@@ -19,7 +19,7 @@ module "app_ecs_cluster" {
 
   vpc_id           = var.vpc_id
   subnet_ids       = var.subnet_ids
-  security_group_ids = [aws_security_group.main.id]
+  security_group_ids = concat(var.security_groups, [aws_security_group.main.id])
   desired_capacity = var.nodes
   max_size         = var.max_nodes
   min_size         = var.min_nodes

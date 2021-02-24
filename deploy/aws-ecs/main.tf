@@ -32,6 +32,10 @@ variable "max_nodes" {
   type = number
 }
 
+variable "region" {
+  type = string
+}
+
 # target CPU utilization
 variable "target_cluster_utilization" {
   type = number
@@ -43,9 +47,22 @@ variable "vpc_id" {
   type = string
 }
 
-# launch in the following subnet ids, when blank, uses all public subnets in the VPC
+# launch in the following subnet ids
 variable "subnet_ids" {
   type = list(string)
+}
+
+# additional security groups to associate with
+# i.e. security group of the Redis instance
+variable "security_groups" {
+  type = list(string)
+  default = []
+}
+
+# livekit config
+variable "http_port" {
+  type = number
+  default = 7880
 }
 
 variable "udp_port_start" {
@@ -55,15 +72,18 @@ variable "udp_port_start" {
 
 variable "udp_port_end" {
   type = number
-  default = 9200
+  default = 9100
 }
 
-// variable "ami_id" {
-//   type = string
-//   // Amazon Linux 2 AMI, for us-east-1
-//   default = "ami-08a29dcf20b8fea61"
-// }
+variable "api_keys" {
+  type = map(string)
+}
 
-output "lb_host" {
+variable "redis_address" {
+  type = string
+  default = ""
+}
+
+output "livekit_lb" {
   value = aws_lb.main.dns_name
 }

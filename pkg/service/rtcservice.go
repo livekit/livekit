@@ -55,6 +55,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// require a claim
 	if claims == nil || claims.Video == nil {
 		handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
+		return
 	}
 	identity := claims.Identity
 

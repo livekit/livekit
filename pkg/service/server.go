@@ -59,6 +59,7 @@ func NewLivekitServer(conf *config.Config,
 	mux := http.NewServeMux()
 	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
 	mux.Handle("/rtc", rtcService)
+	mux.HandleFunc("/", s.healthCheck)
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.Port),
@@ -139,6 +140,10 @@ func (s *LivekitServer) Stop() {
 		s.router.Stop()
 		close(s.doneChan)
 	}
+}
+
+func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 // worker to perform periodic tasks per node

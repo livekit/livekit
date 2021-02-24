@@ -1,6 +1,6 @@
 resource "aws_ecs_task_definition" "livekit" {
   family = "service"
-  container_definitions = file("livekit.json")
+  container_definitions = jsonencode(local.task_config)
   network_mode = "host"
   execution_role_arn = aws_iam_role.ecs_role.arn
 }
@@ -27,10 +27,16 @@ resource "aws_ecs_service" "livekit" {
   load_balancer {
     target_group_arn = aws_lb_target_group.main.arn
     container_name = "livekit"
-    container_port = 7800
+    container_port = var.http_port
   }
 
   // lifecycle {
   //   ignore_changes = [desired_count]
   // }
+}
+
+resource "aws_cloudwatch_log_group" "livekit" {
+  name = "livekit"
+
+  retention_in_days = 7
 }
