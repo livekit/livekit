@@ -29,7 +29,7 @@ type RTCMessageCallback func(roomName, identity string, msg *livekit.RTCNodeMess
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
 type Router interface {
-	GetNodeForRoom(roomName string) (string, error)
+	GetNodeForRoom(roomName string) (*livekit.Node, error)
 	SetNodeForRoom(roomName string, nodeId string) error
 	ClearRoomState(roomName string) error
 	RegisterNode() error

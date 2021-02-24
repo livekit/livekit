@@ -49,17 +49,40 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
 func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	rm := &livekit.Room{
-		Sid:             utils.NewGuid(utils.RoomPrefix),
-		Name:            req.Name,
-		EmptyTimeout:    req.EmptyTimeout,
-		MaxParticipants: req.MaxParticipants,
-		CreationTime:    time.Now().Unix(),
+	// find existing room and update it
+	rm, err := r.roomStore.GetRoom(req.Name)
+	if err == ErrRoomNotFound {
+		rm = &livekit.Room{
+			Sid:          utils.NewGuid(utils.RoomPrefix),
+			Name:         req.Name,
+			CreationTime: time.Now().Unix(),
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	if req.EmptyTimeout > 0 {
+		rm.EmptyTimeout = req.EmptyTimeout
+	}
+	if req.MaxParticipants > 0 {
+		rm.MaxParticipants = req.MaxParticipants
 	}
 	if err := r.roomStore.CreateRoom(rm); err != nil {
 		return nil, err
 	}
 
+	// Is that node still available?
+	node, err := r.router.GetNodeForRoom(rm.Name)
+	if err != routing.ErrNotFound && err != nil {
+		return nil, err
+	}
+
+	// keep it on that node
+	if err == nil && routing.IsAvailable(node) {
+		return rm, nil
+	}
+
+	// select a new node
 	nodeId := req.NodeId
 	if nodeId == "" {
 		// select a node for room

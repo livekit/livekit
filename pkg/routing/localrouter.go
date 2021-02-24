@@ -33,8 +33,8 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(roomName string) (string, error) {
-	return r.currentNode.Id, nil
+func (r *LocalRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+	return r.currentNode, nil
 }
 
 func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {

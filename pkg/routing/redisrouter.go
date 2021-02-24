@@ -76,12 +76,15 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *RedisRouter) GetNodeForRoom(roomName string) (string, error) {
-	val, err := r.rc.HGet(r.ctx, NodeRoomKey, roomName).Result()
-	if err != nil {
-		err = errors.Wrap(err, "could not get node for room")
+func (r *RedisRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+	nodeId, err := r.rc.HGet(r.ctx, NodeRoomKey, roomName).Result()
+	if err == redis.Nil {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, errors.Wrap(err, "could not get node for room")
 	}
-	return val, err
+
+	return r.GetNode(nodeId)
 }
 
 func (r *RedisRouter) SetNodeForRoom(roomName string, nodeId string) error {
@@ -97,7 +100,9 @@ func (r *RedisRouter) ClearRoomState(roomName string) error {
 
 func (r *RedisRouter) GetNode(nodeId string) (*livekit.Node, error) {
 	data, err := r.rc.HGet(r.ctx, NodesKey, nodeId).Result()
-	if err != nil {
+	if err == redis.Nil {
+		return nil, ErrNotFound
+	} else if err != nil {
 		return nil, err
 	}
 	n := livekit.Node{}
@@ -140,7 +145,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 		return
 	}
 
-	sink := NewRTCNodeSink(r.rc, rtcNode, pKey)
+	sink := NewRTCNodeSink(r.rc, rtcNode.Id, pKey)
 
 	// sends a message to start session
 	err = sink.WriteMessage(&livekit.StartSession{
@@ -177,13 +182,13 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		return err
 	}
 
-	if rtcNode != r.currentNode.Id {
+	if rtcNode.Id != r.currentNode.Id {
 		logger.Errorw("called participant on incorrect node",
 			"rtcNode", rtcNode, "currentNode", r.currentNode.Id)
 		return ErrIncorrectRTCNode
 	}
 
-	if err := r.setParticipantRTCNode(participantKey, rtcNode); err != nil {
+	if err := r.setParticipantRTCNode(participantKey, rtcNode.Id); err != nil {
 		return err
 	}
 
@@ -238,6 +243,7 @@ func (r *RedisRouter) Stop() {
 	}
 	logger.Debugw("stopping RedisRouter")
 	r.pubsub.Close()
+	r.UnregisterNode()
 	r.cancel()
 }
 
