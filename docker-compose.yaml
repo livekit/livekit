@@ -8,7 +8,7 @@ services:
     container_name: livekit_server
     hostname: livekit
     volumes:
-      - ./config.yaml:/workspace/config.yaml
+      - ./sample-prod-config.yaml:/workspace/config.yaml
     environment:
       LIVEKIT_API_KEY: "livekit"
       LIVEKIT_API_SECRET: "livekit"
@@ -37,17 +37,9 @@ services:
     networks:
       - default
 
-  redis_commander:
-    image: "rediscommander/redis-commander"
-
-    restart: always
-    environment:
-    - REDIS_HOSTS=local:redis:6379
-    ports:
-      - "8081:8081"
-
 volumes:
   db_data:
+
 
 networks:
   default:
