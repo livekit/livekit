@@ -60,6 +60,11 @@ variable "security_groups" {
 }
 
 # livekit config
+variable "livekit_version" {
+  type = string
+  default = "latest"
+}
+
 variable "http_port" {
   type = number
   default = 7880

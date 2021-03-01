@@ -21,6 +21,7 @@ import (
 
 const (
 	goChecksumFile = ".checksumgo"
+	imageName      = "livekit/livekit-server"
 )
 
 // Default target to run when none is specified
@@ -141,7 +142,32 @@ func Build() error {
 // builds docker image for LiveKit server
 func Docker() error {
 	mg.Deps(Proto, generateWire)
-	cmd := exec.Command("docker", "build", ".", "-t", "livekit/livekit-server:v"+version.Version)
+	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func PublishDocker() error {
+	mg.Deps(Docker)
+
+	versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
+	cmd := exec.Command("docker", "push", versionImg)
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	latestImg := imageName + ":latest"
+	cmd = exec.Command("docker", "tag", versionImg, latestImg)
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("docker", "push", latestImg)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

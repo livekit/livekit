@@ -24,7 +24,7 @@ locals {
 
   task_config = [{
     name = "livekit"
-    image = "livekit/livekit-server:networktest"
+    image = "livekit/livekit-server:${var.livekit_version}"
     cpu = 1024
     memory = 1024
     essential = true
