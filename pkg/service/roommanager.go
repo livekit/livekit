@@ -33,17 +33,22 @@ type RoomManager struct {
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *rtc.WebRTCConfig, ac config.AudioConfig) *RoomManager {
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *config.Config) (*RoomManager, error) {
+	rtcConf, err := rtc.NewWebRTCConfig(&config.RTC, currentNode.Ip)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RoomManager{
 		lock:        sync.RWMutex{},
 		roomStore:   rp,
-		config:      config,
-		audioConfig: ac,
+		config:      rtcConf,
+		audioConfig: config.Audio,
 		router:      router,
 		selector:    selector,
 		currentNode: currentNode,
 		rooms:       make(map[string]*rtc.Room),
-	}
+	}, nil
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
@@ -203,7 +208,7 @@ func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnec
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.config.Receiver, r.audioConfig)
+	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.audioConfig)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return

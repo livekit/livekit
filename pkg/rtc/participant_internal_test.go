@@ -120,11 +120,12 @@ func TestDisconnectTiming(t *testing.T) {
 }
 
 func newParticipantForTest(identity string) *ParticipantImpl {
+	conf, _ := config.NewConfig("")
+	rtcConf, _ := NewWebRTCConfig(&conf.RTC, "")
 	p, _ := NewParticipant(
 		identity,
-		&WebRTCConfig{},
+		rtcConf,
 		&routingfakes.FakeMessageSink{},
-		ReceiverConfig{},
 		config.AudioConfig{})
 	return p
 }

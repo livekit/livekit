@@ -29,19 +29,20 @@ const (
 )
 
 type ParticipantImpl struct {
-	id             string
-	publisher      *PCTransport
-	subscriber     *PCTransport
-	responseSink   routing.MessageSink
-	receiverConfig ReceiverConfig
-	audioConfig    config.AudioConfig
-	isClosed       utils.AtomicFlag
-	identity       string
+	id           string
+	publisher    *PCTransport
+	subscriber   *PCTransport
+	responseSink routing.MessageSink
+	audioConfig  config.AudioConfig
+	isClosed     utils.AtomicFlag
+	conf         *WebRTCConfig
+	identity     string
 	// JSON encoded metadata to pass to clients
 	metadata string
 	state    atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh   chan []rtcp.Packet
 
+	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
 	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
@@ -61,15 +62,15 @@ type ParticipantImpl struct {
 	onClose          func(types.Participant)
 }
 
-func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, rc ReceiverConfig, ac config.AudioConfig) (*ParticipantImpl, error) {
+func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, ac config.AudioConfig) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
 		id:               utils.NewGuid(utils.ParticipantPrefix),
 		identity:         identity,
 		responseSink:     rs,
-		receiverConfig:   rc,
 		audioConfig:      ac,
+		conf:             conf,
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		lock:             sync.RWMutex{},
@@ -593,7 +594,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	if trk, ok := ptrack.(*MediaTrack); ok {
 		mt = trk
 	} else {
-		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, p.receiverConfig, p.audioConfig)
+		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, p.conf.BufferFactory, p.conf.Receiver, p.audioConfig)
 		mt.name = ti.Name
 		newTrack = true
 	}

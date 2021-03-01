@@ -8,8 +8,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/proto/livekit"
 )
 
@@ -20,13 +18,7 @@ var ServiceSet = wire.NewSet(
 	NewRoomManager,
 	config.GetAudioConfig,
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
-	externalIpFromNode,
 )
-
-// helper to construct RTCConfig
-func externalIpFromNode(currentNode routing.LocalNode) rtc.ExternalIP {
-	return rtc.ExternalIP(currentNode.Ip)
-}
 
 func handleError(w http.ResponseWriter, status int, msg string) {
 	l := logger.Desugar().WithOptions(zap.AddCallerSkip(1))

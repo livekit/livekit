@@ -3,6 +3,7 @@ package rtc
 import (
 	"fmt"
 
+	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -12,16 +13,16 @@ type WebRTCConfig struct {
 	Configuration webrtc.Configuration
 	SettingEngine webrtc.SettingEngine
 	Receiver      ReceiverConfig
+	BufferFactory *buffer.Factory
 }
 
 type ReceiverConfig struct {
-	maxBitrate    uint64
-	maxBufferTime int
+	packetBufferSize int
+	maxBitrate       uint64
+	maxBufferTime    int
 }
 
-type ExternalIP string
-
-func NewWebRTCConfig(conf *config.RTCConfig, externalIP ExternalIP) (*WebRTCConfig, error) {
+func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, error) {
 	c := webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
@@ -42,16 +43,24 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP ExternalIP) (*WebRTCConf
 			URLs: iceUrls,
 		},
 	}
-	if conf.UseExternalIP {
-		s.SetNAT1To1IPs([]string{string(externalIP)}, webrtc.ICECandidateTypeHost)
+	if conf.UseExternalIP && externalIP != "" {
+		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
+
+	if conf.PacketBufferSize == 0 {
+		conf.PacketBufferSize = 500
+	}
+	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize)
+	s.BufferFactory = bufferFactory.GetOrNew
 
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
+		BufferFactory: bufferFactory,
 		Receiver: ReceiverConfig{
-			maxBitrate:    conf.MaxBitrate,
-			maxBufferTime: conf.MaxBufferTime,
+			packetBufferSize: conf.PacketBufferSize,
+			maxBitrate:       conf.MaxBitrate,
+			maxBufferTime:    conf.MaxBufferTime,
 		},
 	}, nil
 }

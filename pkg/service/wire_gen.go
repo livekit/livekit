@@ -9,20 +9,15 @@ import (
 	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
-	rtcConfig := rtc.RTCConfigFromConfig(conf)
-	externalIP := externalIpFromNode(currentNode)
-	webRTCConfig, err := rtc.NewWebRTCConfig(rtcConfig, externalIP)
+	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, conf)
 	if err != nil {
 		return nil, err
 	}
-	audioConfig := config.GetAudioConfig(conf)
-	roomManager := NewRoomManager(roomStore, router, currentNode, selector, webRTCConfig, audioConfig)
 	roomService, err := NewRoomService(roomManager)
 	if err != nil {
 		return nil, err

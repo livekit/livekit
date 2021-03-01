@@ -33,14 +33,15 @@ type MediaTrack struct {
 	participantId string
 	muted         utils.AtomicFlag
 
-	ssrc         webrtc.SSRC
-	name         string
-	streamID     string
-	kind         livekit.TrackType
-	codec        webrtc.RTPCodecParameters
-	receiverConf ReceiverConfig
-	audioConf    config.AudioConfig
-	onClose      func()
+	ssrc          webrtc.SSRC
+	name          string
+	streamID      string
+	kind          livekit.TrackType
+	codec         webrtc.RTPCodecParameters
+	bufferFactory *buffer.Factory
+	receiverConf  ReceiverConfig
+	audioConf     config.AudioConfig
+	onClose       func()
 
 	// channel to send RTCP packets to the source
 	rtcpCh chan []rtcp.Packet
@@ -54,7 +55,7 @@ type MediaTrack struct {
 	lastPLI time.Time
 }
 
-func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, rc ReceiverConfig, ac config.AudioConfig) *MediaTrack {
+func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, bufferFactory *buffer.Factory, rc ReceiverConfig, ac config.AudioConfig) *MediaTrack {
 	t := &MediaTrack{
 		id:               trackId,
 		participantId:    pId,
@@ -62,6 +63,7 @@ func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track 
 		streamID:         track.StreamID(),
 		kind:             ToProtoTrackKind(track.Kind()),
 		codec:            track.Codec(),
+		bufferFactory:    bufferFactory,
 		receiverConf:     rc,
 		audioConf:        ac,
 		rtcpCh:           rtcpCh,
@@ -136,11 +138,10 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, t.receiver, sub.ID())
+	}, t.receiver, t.bufferFactory, sub.ID(), t.receiverConf.packetBufferSize)
 	if err != nil {
 		return err
 	}
-	downTrack.SetBufferFactory(bufferFactory)
 	subTrack := NewSubscribedTrack(downTrack)
 
 	transceiver, err := sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
@@ -205,7 +206,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 
 	//rid := track.RID()
-	buff, rtcpReader := bufferFactory.GetBufferPair(uint32(track.SSRC()))
+	buff, rtcpReader := t.bufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
 		// feedback for the source RTCP
 		t.rtcpCh <- fb
@@ -258,7 +259,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.receiver.AddUpTrack(track, buff)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
-		BufferTime: t.receiverConf.maxBufferTime,
 		MaxBitRate: t.receiverConf.maxBitrate,
 	})
 }

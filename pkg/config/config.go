@@ -26,6 +26,9 @@ type RTCConfig struct {
 	StunServers       []string `yaml:"stun_servers"`
 	UseExternalIP     bool     `yaml:"use_external_ip"`
 
+	// Number of packets to buffer for NACK
+	PacketBufferSize int `yaml:"packet_buffer_size"`
+
 	// Max bitrate for REMB
 	MaxBitrate    uint64 `yaml:"max_bitrate"`
 	MaxBufferTime int    `yaml:"max_buffer_time"`
@@ -51,6 +54,7 @@ func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		Port: 7880,
 		RTC: RTCConfig{
+			UseExternalIP:     true,
 			ICEPortRangeStart: 9000,
 			ICEPortRangeEnd:   9200,
 			StunServers: []string{

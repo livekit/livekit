@@ -5,11 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/google/wire"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/zap"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/proto/livekit"
@@ -18,15 +16,6 @@ import (
 const (
 	trackIdSeparator = "|"
 )
-
-var RTCSet = wire.NewSet(
-	NewWebRTCConfig,
-	RTCConfigFromConfig,
-)
-
-func RTCConfigFromConfig(conf *config.Config) *config.RTCConfig {
-	return &conf.RTC
-}
 
 func UnpackTrackId(packed string) (peerId string, trackId string) {
 	parts := strings.Split(packed, trackIdSeparator)

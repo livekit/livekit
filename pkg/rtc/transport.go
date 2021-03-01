@@ -50,7 +50,6 @@ func newPeerConnection(target livekit.SignalTarget, conf *WebRTCConfig) (*webrtc
 	}
 	se := conf.SettingEngine
 	se.DisableMediaEngineCopy(true)
-	se.BufferFactory = bufferFactory.GetOrNew
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
 	pc, err := api.NewPeerConnection(conf.Configuration)
