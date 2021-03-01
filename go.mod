@@ -12,7 +12,7 @@ require (
 	github.com/karlseguin/ccache/v2 v2.0.7
 	github.com/lithammer/shortuuid/v3 v3.0.4
 	github.com/lytics/base62 v0.0.0-20180808010106-0ee4de5a5d6d
-	github.com/magefile/mage v1.10.0
+	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pion/ion-sfu v1.9.0
@@ -35,4 +35,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
 
-replace github.com/pion/ion-sfu => github.com/davidzhao/ion-sfu v1.8.3-0.20210221051003-77fda1d89698
+replace github.com/pion/ion-sfu => github.com/davidzhao/ion-sfu v1.8.3-0.20210301061808-6b1f502b192b

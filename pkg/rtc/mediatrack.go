@@ -20,8 +20,7 @@ import (
 )
 
 var (
-	maxPLIFrequency = 1 * time.Second
-	feedbackTypes   = []webrtc.RTCPFeedback{
+	feedbackTypes = []webrtc.RTCPFeedback{
 		{webrtc.TypeRTCPFBGoogREMB, ""},
 		{webrtc.TypeRTCPFBNACK, ""},
 		{webrtc.TypeRTCPFBNACK, "pli"}}
@@ -155,7 +154,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
 		subTrack.SetPublisherMuted(t.IsMuted())
-		t.sendDownTrackBindingReports(sub.ID(), sub.RTCPChan())
+		go t.sendDownTrackBindingReports(sub.ID(), sub.RTCPChan())
 	})
 	downTrack.OnCloseHandler(func() {
 		t.lock.Lock()
@@ -202,6 +201,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 // adds a new RTP receiver to the track, returns true if this is a new track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	//rid := track.RID()
 	buff, rtcpReader := bufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
@@ -239,18 +241,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
-	t.lock.Lock()
-	defer t.lock.Unlock()
 	if t.receiver == nil {
-		// pack ID to identify all publishedTracks
 		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), t.ID(), t.participantId)
 		t.receiver.SetRTCPCh(t.rtcpCh)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()
-			// source track closed
-			if t.Kind() == livekit.TrackType_AUDIO {
-				// TODO: remove audio level observer
-			}
 			t.receiver = nil
 			onclose := t.onClose
 			t.lock.Unlock()
@@ -289,6 +284,8 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.subscribedTracks = make(map[string]*SubscribedTrack)
 }
 
+// TODO: send for all downtracks from the source participant
+// https://tools.ietf.org/html/rfc7941
 func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan []rtcp.Packet) {
 	var sd []rtcp.SourceDescriptionChunk
 

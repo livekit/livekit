@@ -70,6 +70,9 @@ func Proto() error {
 		return err
 	}
 	twirp_path, err := getToolPath("protoc-gen-twirp")
+	if err != nil {
+		return err
+	}
 
 	// generate model and room
 	cmd := exec.Command(protoc,
@@ -117,14 +120,14 @@ func Build() error {
 	if err := os.MkdirAll("bin", 0755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-i", "-o", "../../bin/livekit-server")
+	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-server")
 	cmd.Dir = "cmd/server"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
-	cmd = exec.Command("go", "build", "-i", "-o", "../../bin/livekit-cli")
+	cmd = exec.Command("go", "build", "-o", "../../bin/livekit-cli")
 	cmd.Dir = "cmd/cli"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
@@ -222,7 +225,6 @@ func installTools(force bool) error {
 		"google.golang.org/protobuf/cmd/protoc-gen-go",
 		"github.com/twitchtv/twirp/protoc-gen-twirp",
 		"github.com/google/wire/cmd/wire",
-		"github.com/golang/mock/mockgen",
 	}
 	for _, t := range tools {
 		if err := installTool(t, force); err != nil {

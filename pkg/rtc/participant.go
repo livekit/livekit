@@ -25,7 +25,7 @@ import (
 
 const (
 	placeholderDataChannel = "_private"
-	sdBatchSize            = 20
+	sdBatchSize            = 15
 )
 
 type ParticipantImpl struct {

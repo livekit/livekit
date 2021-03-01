@@ -1,6 +1,7 @@
 FROM golang:1.16-alpine as builder
 
 WORKDIR /workspace
+
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
