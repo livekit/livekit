@@ -15,7 +15,7 @@ type MessageChannel struct {
 func NewMessageChannel() *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
-		msgChan: make(chan proto.Message, 10),
+		msgChan: make(chan proto.Message, 200),
 	}
 }
 

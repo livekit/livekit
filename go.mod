@@ -33,3 +33,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
+
+replace github.com/pion/webrtc/v3 => github.com/davidzhao/webrtc/v3 v3.0.4-0.20210302085821-b36691daec46
