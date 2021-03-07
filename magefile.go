@@ -211,7 +211,7 @@ func Generate() error {
 
 // code generation for wiring
 func generateWire() error {
-	mg.Deps(installDeps)
+	mg.Deps(installDeps, Proto)
 	if !checksummer.IsChanged() {
 		return nil
 	}
