@@ -23,7 +23,11 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomSto
 		return nil, err
 	}
 	rtcService := NewRTCService(conf, roomStore, roomManager, router, currentNode)
-	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider, router, roomManager, currentNode)
+	server, err := NewTurnServer(conf, roomStore, currentNode)
+	if err != nil {
+		return nil, err
+	}
+	livekitServer, err := NewLivekitServer(conf, roomService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

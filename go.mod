@@ -19,6 +19,7 @@ require (
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
+	github.com/pion/turn/v2 v2.0.5
 	github.com/pion/webrtc/v3 v3.0.13
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0

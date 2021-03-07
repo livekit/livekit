@@ -13,6 +13,7 @@ type Config struct {
 	RTC      RTCConfig         `yaml:"rtc"`
 	Redis    RedisConfig       `yaml:"redis"`
 	Audio    AudioConfig       `yaml:"audio"`
+	TURN     TURNConfig        `yaml:"turn"`
 	KeyFile  string            `yaml:"key_file"`
 	Keys     map[string]string `yaml:"keys"`
 	LogLevel string            `yaml:"log_level"`
@@ -49,6 +50,13 @@ type RedisConfig struct {
 	Password string `yaml:"password"`
 }
 
+type TURNConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	ListenPort     int    `yaml:"listen_port"`
+	PortRangeStart uint16 `yaml:"port_range_start"`
+	PortRangeEnd   uint16 `yaml:"port_range_end"`
+}
+
 func NewConfig(confString string) (*Config, error) {
 	// start with defaults
 	conf := &Config{
@@ -56,7 +64,7 @@ func NewConfig(confString string) (*Config, error) {
 		RTC: RTCConfig{
 			UseExternalIP:     true,
 			ICEPortRangeStart: 9000,
-			ICEPortRangeEnd:   9200,
+			ICEPortRangeEnd:   11000,
 			StunServers: []string{
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",
@@ -69,7 +77,13 @@ func NewConfig(confString string) (*Config, error) {
 			UpdateInterval: 500,
 		},
 		Redis: RedisConfig{},
-		Keys:  map[string]string{},
+		TURN: TURNConfig{
+			Enabled:        false,
+			ListenPort:     3478,
+			PortRangeStart: 12000,
+			PortRangeEnd:   16000,
+		},
+		Keys: map[string]string{},
 	}
 	if confString != "" {
 		yaml.Unmarshal([]byte(confString), conf)

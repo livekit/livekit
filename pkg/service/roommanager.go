@@ -61,6 +61,7 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 			Sid:          utils.NewGuid(utils.RoomPrefix),
 			Name:         req.Name,
 			CreationTime: time.Now().Unix(),
+			TurnPassword: utils.RandomSecret(),
 		}
 	} else if err != nil {
 		return nil, err

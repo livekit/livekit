@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -76,6 +77,11 @@ func main() {
 				Name:   "generate-keys",
 				Usage:  "generates a pair of API & secret keys",
 				Action: generateKeys,
+			},
+			{
+				Name:   "ports",
+				Usage:  "print ports that server is configured to use",
+				Action: printPorts,
 			},
 		},
 		Version: version.Version,
@@ -239,5 +245,40 @@ func generateKeys(c *cli.Context) error {
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)
 	fmt.Println("Secret Key: ", secret)
+	return nil
+}
+
+func printPorts(c *cli.Context) error {
+	confString, err := getConfigString(c)
+	if err != nil {
+		return err
+	}
+
+	conf, err := config.NewConfig(confString)
+	if err != nil {
+		return err
+	}
+
+	udpPorts := make([]string, 0)
+	tcpPorts := make([]string, 0)
+
+	tcpPorts = append(tcpPorts, strconv.Itoa(int(conf.Port)))
+	udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.RTC.ICEPortRangeStart, conf.RTC.ICEPortRangeEnd))
+
+	if conf.TURN.Enabled {
+		udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.TURN.PortRangeStart, conf.TURN.PortRangeEnd))
+		udpPorts = append(udpPorts, strconv.Itoa(conf.TURN.ListenPort))
+		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.ListenPort))
+	}
+
+	fmt.Println("TCP Ports")
+	for _, p := range tcpPorts {
+		fmt.Println(p)
+	}
+
+	fmt.Println("UDP Ports")
+	for _, p := range udpPorts {
+		fmt.Println(p)
+	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pion/turn/v2"
 	"github.com/urfave/negroni"
 
 	"github.com/livekit/livekit-server/pkg/auth"
@@ -26,6 +27,7 @@ type LivekitServer struct {
 	httpServer  *http.Server
 	router      routing.Router
 	roomManager *RoomManager
+	turnServer  *turn.Server
 	currentNode routing.LocalNode
 	running     utils.AtomicFlag
 	doneChan    chan bool
@@ -37,6 +39,7 @@ func NewLivekitServer(conf *config.Config,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
+	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
@@ -45,6 +48,8 @@ func NewLivekitServer(conf *config.Config,
 		rtcService:  rtcService,
 		router:      router,
 		roomManager: roomManager,
+		// turn server starts automatically
+		turnServer:  turnServer,
 		currentNode: currentNode,
 	}
 
@@ -131,6 +136,10 @@ func (s *LivekitServer) Start() error {
 	// wait for shutdown
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	s.httpServer.Shutdown(ctx)
+
+	if s.turnServer != nil {
+		s.turnServer.Close()
+	}
 
 	return nil
 }

@@ -9,6 +9,7 @@ message Room {
   uint32 empty_timeout = 3;
   uint32 max_participants = 4;
   int64 creation_time = 5;
+  string turn_password = 6;
 }
 
 message ParticipantInfo {
