@@ -16,6 +16,32 @@ resource "aws_security_group" "main" {
   }
 
   ingress {
+    description = "UDP port for TURN"
+    from_port   = var.turn_port_start
+    to_port     = var.turn_port_end
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  // for TURN server
+  ingress {
+    description = "TURN TCP"
+    from_port   = var.turn_tcp_port
+    to_port     = var.turn_tcp_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  // for TURN server
+  ingress {
+    description = "TURN UDP"
+    from_port   = var.turn_udp_port
+    to_port     = var.turn_udp_port
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     description = "internal traffic"
     from_port   = 0
     to_port     = 0

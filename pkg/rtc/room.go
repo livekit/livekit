@@ -18,8 +18,9 @@ const (
 
 type Room struct {
 	livekit.Room
-	config WebRTCConfig
-	lock   sync.RWMutex
+	config     WebRTCConfig
+	iceServers []*livekit.ICEServer
+	lock       sync.RWMutex
 	// map of identity -> Participant
 	participants map[string]types.Participant
 	// time the first participant joined the room
@@ -36,10 +37,11 @@ type Room struct {
 	onClose              func()
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioUpdateInterval uint32) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioUpdateInterval uint32) *Room {
 	r := &Room{
 		Room:                *room,
 		config:              config,
+		iceServers:          iceServers,
 		audioUpdateInterval: audioUpdateInterval,
 		lock:                sync.RWMutex{},
 		participants:        make(map[string]types.Participant),
@@ -179,7 +181,7 @@ func (r *Room) Join(participant types.Participant) error {
 		r.onParticipantChanged(participant)
 	}
 
-	return participant.SendJoinResponse(&r.Room, otherParticipants)
+	return participant.SendJoinResponse(&r.Room, otherParticipants, r.iceServers)
 }
 
 func (r *Room) RemoveParticipant(identity string) {

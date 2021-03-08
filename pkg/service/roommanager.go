@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -28,13 +29,13 @@ type RoomManager struct {
 	selector    routing.NodeSelector
 	router      routing.Router
 	currentNode routing.LocalNode
-	config      *rtc.WebRTCConfig
-	audioConfig config.AudioConfig
+	rtcConfig   *rtc.WebRTCConfig
+	config      *config.Config
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, config *config.Config) (*RoomManager, error) {
-	rtcConf, err := rtc.NewWebRTCConfig(&config.RTC, currentNode.Ip)
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, conf *config.Config) (*RoomManager, error) {
+	rtcConf, err := rtc.NewWebRTCConfig(&conf.RTC, currentNode.Ip)
 	if err != nil {
 		return nil, err
 	}
@@ -42,8 +43,8 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 	return &RoomManager{
 		lock:        sync.RWMutex{},
 		roomStore:   rp,
-		config:      rtcConf,
-		audioConfig: config.Audio,
+		rtcConfig:   rtcConf,
+		config:      conf,
 		router:      router,
 		selector:    selector,
 		currentNode: currentNode,
@@ -209,7 +210,7 @@ func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnec
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	participant, err = rtc.NewParticipant(identity, r.config, responseSink, r.audioConfig)
+	participant, err = rtc.NewParticipant(identity, r.rtcConfig, responseSink, r.config.Audio)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -246,7 +247,8 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		return nil, err
 	}
 
-	room = rtc.NewRoom(ri, *r.config, r.audioConfig.UpdateInterval)
+	// construct ice servers
+	room = rtc.NewRoom(ri, *r.rtcConfig, r.iceServersForRoom(ri), r.config.Audio.UpdateInterval)
 	room.OnClose(func() {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", "error", err)
@@ -372,4 +374,32 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
 	}
+}
+
+func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
+	var iceServers []*livekit.ICEServer
+
+	if len(r.rtcConfig.Configuration.ICEServers) > 0 {
+		iceServers = append(iceServers, &livekit.ICEServer{
+			Urls: r.rtcConfig.Configuration.ICEServers[0].URLs,
+		})
+	}
+	if r.config.TURN.Enabled {
+		if r.config.TURN.TCPPort > 0 {
+			iceServers = append(iceServers, &livekit.ICEServer{
+				Urls:       []string{fmt.Sprintf("turn:%s:%d?transport=tcp", r.currentNode.Ip, r.config.TURN.TCPPort)},
+				Username:   ri.Name,
+				Credential: ri.TurnPassword,
+			})
+		}
+
+		if r.config.TURN.UDPPort > 0 {
+			iceServers = append(iceServers, &livekit.ICEServer{
+				Urls:       []string{fmt.Sprintf("turn:%s:%d?transport=udp", r.currentNode.Ip, r.config.TURN.UDPPort)},
+				Username:   ri.Name,
+				Credential: ri.TurnPassword,
+			})
+		}
+	}
+	return iceServers
 }

@@ -38,5 +38,16 @@ api_keys = {
   "key" = "secret"
 }
 
-udp_port_start = 9000
-udp_port_end = 9100
+# UDP port range for WebRTC, uncomment to override
+// udp_port_start = 9000
+// udp_port_end = 11000
+
+# Use embedded TURN server, defaults true
+// turn_enabled = true
+// turn_tcp_port = 3478
+// turn_udp_port = 3479
+
+# UDP port range for embedded TURN server
+// turn_port_start = 11001
+// turn_port_end = 13000
+

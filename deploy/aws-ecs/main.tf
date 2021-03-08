@@ -77,7 +77,7 @@ variable "udp_port_start" {
 
 variable "udp_port_end" {
   type = number
-  default = 9100
+  default = 11000
 }
 
 variable "api_keys" {
@@ -87,6 +87,31 @@ variable "api_keys" {
 variable "redis_address" {
   type = string
   default = ""
+}
+
+variable "turn_enabled" {
+  type = bool
+  default = true
+}
+
+variable "turn_tcp_port" {
+  type = number
+  default = 3478
+}
+
+variable "turn_udp_port" {
+  type = number
+  default = 3479
+}
+
+variable "turn_port_start" {
+  type = number
+  default = 12000
+}
+
+variable "turn_port_end" {
+  type = number
+  default = 14000
 }
 
 output "livekit_lb" {

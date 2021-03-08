@@ -28,42 +28,47 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 		AuthHandler: newTurnAuthHandler(roomStore),
 	}
 
-	tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.ListenPort))
-	if err != nil {
-		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-	}
-	serverConfig.ListenerConfigs = []turn.ListenerConfig{
-		{
-			Listener: tcpListener,
-			RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-				RelayAddress: net.ParseIP(node.Ip),
-				Address:      "0.0.0.0",
-				MinPort:      turnConf.PortRangeStart,
-				MaxPort:      turnConf.PortRangeEnd,
-				MaxRetries:   allocateRetries,
+	if turnConf.TCPPort > 0 {
+		tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TCPPort))
+		if err != nil {
+			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+		}
+		serverConfig.ListenerConfigs = []turn.ListenerConfig{
+			{
+				Listener: tcpListener,
+				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+					RelayAddress: net.ParseIP(node.Ip),
+					Address:      "0.0.0.0",
+					MinPort:      turnConf.PortRangeStart,
+					MaxPort:      turnConf.PortRangeEnd,
+					MaxRetries:   allocateRetries,
+				},
 			},
-		},
+		}
 	}
 
-	udpListener, err := net.ListenPacket("udp4", "0.0.0.0:"+strconv.Itoa(turnConf.ListenPort))
-	if err != nil {
-		return nil, errors.Wrap(err, "could not listen on TURN UDP port")
-	}
-	serverConfig.PacketConnConfigs = []turn.PacketConnConfig{
-		{
-			PacketConn: udpListener,
-			RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-				RelayAddress: net.ParseIP(node.Ip), // Claim that we are listening on IP passed by user (This should be your Public IP)
-				Address:      "0.0.0.0",            // But actually be listening on every interface
-				MinPort:      turnConf.PortRangeStart,
-				MaxPort:      turnConf.PortRangeEnd,
-				MaxRetries:   allocateRetries,
+	if turnConf.UDPPort > 0 {
+		udpListener, err := net.ListenPacket("udp4", "0.0.0.0:"+strconv.Itoa(turnConf.UDPPort))
+		if err != nil {
+			return nil, errors.Wrap(err, "could not listen on TURN UDP port")
+		}
+		serverConfig.PacketConnConfigs = []turn.PacketConnConfig{
+			{
+				PacketConn: udpListener,
+				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+					RelayAddress: net.ParseIP(node.Ip), // Claim that we are listening on IP passed by user (This should be your Public IP)
+					Address:      "0.0.0.0",            // But actually be listening on every interface
+					MinPort:      turnConf.PortRangeStart,
+					MaxPort:      turnConf.PortRangeEnd,
+					MaxRetries:   allocateRetries,
+				},
 			},
-		},
+		}
 	}
 
 	logger.Infow("Starting TURN server",
-		"port", turnConf.ListenPort,
+		"TCP port", turnConf.TCPPort,
+		"UDP port", turnConf.UDPPort,
 		"portRange", fmt.Sprintf("%d-%d", turnConf.PortRangeStart, turnConf.PortRangeEnd))
 	return turn.NewServer(serverConfig)
 }

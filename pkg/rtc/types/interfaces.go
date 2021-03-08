@@ -41,7 +41,7 @@ type Participant interface {
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant) error
 	RemoveSubscriber(peerId string)
-	SendJoinResponse(info *livekit.Room, otherParticipants []Participant) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []Participant, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error
 	SetTrackMuted(trackId string, muted bool)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -62,10 +63,11 @@ func TestRoomJoin(t *testing.T) {
 		rm.Join(pNew)
 
 		// expect new participant to get a JoinReply
-		info, participants := pNew.SendJoinResponseArgsForCall(0)
+		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
 		assert.Equal(t, info.Sid, rm.Sid)
 		assert.Len(t, participants, numParticipants)
 		assert.Len(t, rm.GetParticipants(), numParticipants+1)
+		require.NotEmpty(t, iceServers)
 	})
 
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
@@ -265,6 +267,13 @@ func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
 	rm := rtc.NewRoom(
 		&livekit.Room{Name: "room"},
 		rtc.WebRTCConfig{},
+		[]*livekit.ICEServer{
+			{
+				Urls: []string{
+					"stun:stun.l.google.com:19302",
+				},
+			},
+		},
 		audioUpdateInterval,
 	)
 	for i := 0; i < num; i++ {

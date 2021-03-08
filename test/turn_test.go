@@ -47,15 +47,15 @@ func TestTurnServer(t *testing.T) {
 	require.NoError(t, roomStore.CreateRoom(rm))
 
 	turnConf := &turn.ClientConfig{
-		STUNServerAddr: fmt.Sprintf("localhost:%d", conf.TURN.ListenPort),
-		TURNServerAddr: fmt.Sprintf("%s:%d", currentNode.Ip, conf.TURN.ListenPort),
+		STUNServerAddr: fmt.Sprintf("localhost:%d", conf.TURN.UDPPort),
+		TURNServerAddr: fmt.Sprintf("%s:%d", currentNode.Ip, conf.TURN.UDPPort),
 		Username:       rm.Name,
 		Password:       rm.TurnPassword,
 		Realm:          "livekit",
 	}
 
 	t.Run("TURN works over TCP", func(t *testing.T) {
-		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", conf.TURN.ListenPort))
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", conf.TURN.TCPPort))
 		require.NoError(t, err)
 
 		tc := *turnConf

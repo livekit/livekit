@@ -72,6 +72,7 @@ message JoinResponse {
   ParticipantInfo participant = 2;
   repeated ParticipantInfo other_participants = 3;
   string server_version = 4;
+  repeated ICEServer ice_servers = 5;
 }
 
 message TrackPublishedResponse {
@@ -117,4 +118,10 @@ message UpdateTrackSettings {
   repeated string track_sids = 1;
   bool mute = 3;
   VideoQuality quality = 4;
+}
+
+message ICEServer {
+  repeated string urls = 1;
+  string username = 2;
+  string credential = 3;
 }

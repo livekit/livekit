@@ -23,12 +23,16 @@ resource "aws_ecs_service" "livekit" {
     field = "instanceId"
   }
 
-  // load balancer for TCP port
+  // load balancer for HTTP port
   load_balancer {
-    target_group_arn = aws_lb_target_group.main.arn
+    target_group_arn = aws_lb_target_group.http.arn
     container_name = "livekit"
     container_port = var.http_port
   }
+
+  depends_on = [
+    aws_lb_listener.http
+  ]
 
   // lifecycle {
   //   ignore_changes = [desired_count]

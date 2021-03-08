@@ -267,8 +267,8 @@ func printPorts(c *cli.Context) error {
 
 	if conf.TURN.Enabled {
 		udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.TURN.PortRangeStart, conf.TURN.PortRangeEnd))
-		udpPorts = append(udpPorts, strconv.Itoa(conf.TURN.ListenPort))
-		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.ListenPort))
+		udpPorts = append(udpPorts, strconv.Itoa(conf.TURN.TCPPort))
+		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.TCPPort))
 	}
 
 	fmt.Println("TCP Ports")

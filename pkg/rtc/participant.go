@@ -375,7 +375,7 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 }
 
 // signal connection methods
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant) error {
+func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant, iceServers []*livekit.ICEServer) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
@@ -384,6 +384,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 				Participant:       p.ToProto(),
 				OtherParticipants: ToProtoParticipants(otherParticipants),
 				ServerVersion:     version.Version,
+				IceServers:        iceServers,
 			},
 		},
 	})
