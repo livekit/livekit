@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestIsAvailable(t *testing.T) {

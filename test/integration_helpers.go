@@ -12,13 +12,13 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
-	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/utils"
 )
 
 const (

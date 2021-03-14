@@ -8,7 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 const (

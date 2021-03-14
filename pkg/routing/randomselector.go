@@ -1,9 +1,8 @@
 package routing
 
 import (
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/thoas/go-funk"
-
-	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 type RandomSelector struct {

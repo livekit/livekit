@@ -3,7 +3,7 @@ package routing
 import (
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/utils"
 )
 
 type MessageChannel struct {

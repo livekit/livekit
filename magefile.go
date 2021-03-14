@@ -43,11 +43,11 @@ func Deps() error {
 
 // regenerate protobuf
 func Proto() error {
-	updated, err := target.Path("proto/livekit/model.pb.go",
-		"proto/model.proto",
-		"proto/room.proto",
-		"proto/rtc.proto",
-		"proto/internal.proto",
+	updated, err := target.Path("proto/model.pb.go",
+		"../protocol/model.proto",
+		"../protocol/room.proto",
+		"../protocol/rtc.proto",
+		"../protocol/internal.proto",
 	)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func Proto() error {
 	}
 
 	fmt.Println("generating protobuf")
-	target := "proto/livekit"
+	target := "proto"
 	if err := os.MkdirAll(target, 0755); err != nil {
 		return err
 	}
@@ -83,8 +83,8 @@ func Proto() error {
 		"--twirp_opt=paths=source_relative",
 		"--plugin=go="+protoc_go_path,
 		"--plugin=twirp="+twirp_path,
-		"-I=proto",
-		"proto/room.proto",
+		"-I=../protocol",
+		"../protocol/room.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
@@ -96,10 +96,10 @@ func Proto() error {
 		"--go_out", target,
 		"--go_opt=paths=source_relative",
 		"--plugin=go="+protoc_go_path,
-		"-I=proto",
-		"proto/rtc.proto",
-		"proto/internal.proto",
-		"proto/model.proto",
+		"-I=../protocol",
+		"../protocol/rtc.proto",
+		"../protocol/internal.proto",
+		"../protocol/model.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {

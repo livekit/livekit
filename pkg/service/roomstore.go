@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate

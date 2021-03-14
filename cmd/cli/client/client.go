@@ -21,8 +21,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 type RTCClient struct {

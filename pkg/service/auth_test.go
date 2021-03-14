@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/livekit/livekit-server/pkg/auth"
-	"github.com/livekit/livekit-server/pkg/auth/authfakes"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/auth/authfakes"
 )
 
 func TestAuthMiddleware(t *testing.T) {

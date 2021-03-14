@@ -13,8 +13,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 type NodeStats struct {

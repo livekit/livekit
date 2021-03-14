@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 type FakeNodeSelector struct {

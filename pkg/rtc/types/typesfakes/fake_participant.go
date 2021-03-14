@@ -6,7 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 )

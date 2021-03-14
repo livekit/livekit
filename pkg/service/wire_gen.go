@@ -6,9 +6,9 @@
 package service
 
 import (
-	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/auth"
 )
 
 // Injectors from wire.go:

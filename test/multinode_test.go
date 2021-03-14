@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestMultiNodeRouting(t *testing.T) {
@@ -115,8 +115,8 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 		return
 	}
 
-	logger.Infow("\n\n---Starting TestMultiNodeRouting---")
-	defer logger.Infow("---Finishing TestMultiNodeRouting---")
+	logger.Infow("\n\n---Starting TestMultinodeReconnectAfterNodeShutdown---")
+	defer logger.Infow("---Finishing TestMultinodeReconnectAfterNodeShutdown---")
 
 	s1, s2 := setupMultiNodeTest()
 	defer s1.Stop()

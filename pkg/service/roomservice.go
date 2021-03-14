@@ -7,7 +7,7 @@ import (
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 // A rooms service that supports a single node

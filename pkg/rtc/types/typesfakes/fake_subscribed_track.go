@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/ion-sfu/pkg/sfu"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/livekit/livekit-server/pkg/auth"
+	"github.com/livekit/protocol/auth"
 )
 
 var (

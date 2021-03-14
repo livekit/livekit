@@ -4,8 +4,8 @@ import (
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 type SubscribedTrack struct {

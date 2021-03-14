@@ -9,9 +9,9 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
-	"github.com/livekit/livekit-server/pkg/auth"
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/auth"
 )
 
 var (

@@ -8,7 +8,7 @@ import (
 
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/pkg/auth"
+	"github.com/livekit/protocol/auth"
 )
 
 const (

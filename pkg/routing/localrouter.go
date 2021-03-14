@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 // a router of messages on the same node, basic implementation for local testing

@@ -5,9 +5,8 @@ import (
 	"strings"
 	"time"
 
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/thoas/go-funk"
-
-	"github.com/livekit/livekit-server/proto/livekit"
 )
 
 // checks if a node has been updated recently to be considered for selection

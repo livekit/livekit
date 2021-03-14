@@ -2,8 +2,8 @@ package rtc_test
 
 import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/livekit-server/proto/livekit"
+	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 func newMockParticipant(identity string) *typesfakes.FakeParticipant {
