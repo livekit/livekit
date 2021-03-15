@@ -48,6 +48,12 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 }
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// reject non websocket requests
+	if !websocket.IsWebSocketUpgrade(r) {
+		w.WriteHeader(404)
+		return
+	}
+
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
 	isReconnect := reconnectParam == "1" || reconnectParam == "true"
