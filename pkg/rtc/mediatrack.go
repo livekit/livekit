@@ -256,7 +256,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			}
 		})
 	}
-	t.receiver.AddUpTrack(track, buff)
+	t.receiver.AddUpTrack(track, buff, true)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
 		MaxBitRate: t.receiverConf.maxBitrate,

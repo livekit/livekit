@@ -1,14 +1,14 @@
 package routing
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
-	"net"
 	"os"
 	"runtime"
 	"time"
 
+	"github.com/jxskiss/base62"
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
 
@@ -37,7 +37,7 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 		return nil, err
 	}
 	return &livekit.Node{
-		Id:      fmt.Sprintf("%s%s", utils.NodePrefix, utils.HashedID(hostname)[:8]),
+		Id:      fmt.Sprintf("%s%s", utils.NodePrefix, HashedID(hostname)[:8]),
 		Ip:      ip,
 		NumCpus: uint32(runtime.NumCPU()),
 		Stats: &livekit.NodeStats{
@@ -103,32 +103,11 @@ func GetLocalIP(stunServers []string) (string, error) {
 	return nodeIp, nil
 }
 
-func macUint64() uint64 {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return 0
-	}
+// Creates a hashed ID from a unique string
+func HashedID(id string) string {
+	h := sha1.New()
+	h.Write([]byte(id))
+	val := h.Sum(nil)
 
-	for _, i := range interfaces {
-		if i.Flags&net.FlagUp != 0 && bytes.Compare(i.HardwareAddr, nil) != 0 {
-
-			// Skip locally administered addresses
-			if i.HardwareAddr[0]&2 == 2 {
-				continue
-			}
-
-			var mac uint64
-			for j, b := range i.HardwareAddr {
-				if j >= 8 {
-					break
-				}
-				mac <<= 8
-				mac += uint64(b)
-			}
-
-			return mac
-		}
-	}
-
-	return 0
+	return base62.EncodeToString(val)
 }

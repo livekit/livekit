@@ -3,10 +3,12 @@ package rtc
 import (
 	"fmt"
 
+	"github.com/go-logr/zapr"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/logger"
 )
 
 type WebRTCConfig struct {
@@ -50,7 +52,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	if conf.PacketBufferSize == 0 {
 		conf.PacketBufferSize = 500
 	}
-	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize)
+	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize, zapr.NewLogger(logger.Desugar()))
 	s.BufferFactory = bufferFactory.GetOrNew
 
 	return &WebRTCConfig{
