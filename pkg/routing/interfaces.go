@@ -23,7 +23,14 @@ type MessageSource interface {
 	ReadChan() <-chan proto.Message
 }
 
-type NewParticipantCallback func(roomName, identity, metadata string, reconnect bool, requestSource MessageSource, responseSink MessageSink)
+type ParticipantInit struct {
+	Identity   string
+	Metadata   string
+	Reconnect  bool
+	Permission *livekit.ParticipantPermission
+}
+
+type NewParticipantCallback func(roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
 type RTCMessageCallback func(roomName, identity string, msg *livekit.RTCNodeMessage)
 
 // Router allows multiple nodes to coordinate the participant session
@@ -39,7 +46,7 @@ type Router interface {
 	ListNodes() ([]*livekit.Node, error)
 
 	// participant signal connection is ready to start
-	StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
 	// sends a message to RTC node
 	CreateRTCSink(roomName, identity string) (MessageSink, error)

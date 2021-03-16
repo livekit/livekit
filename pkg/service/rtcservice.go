@@ -56,14 +56,24 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
-	isReconnect := reconnectParam == "1" || reconnectParam == "true"
+
 	claims := GetGrants(r.Context())
 	// require a claim
 	if claims == nil || claims.Video == nil {
 		handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
 		return
 	}
-	identity := claims.Identity
+	pi := routing.ParticipantInit{
+		Reconnect: reconnectParam == "1" || reconnectParam == "true",
+		Identity:  claims.Identity,
+	}
+	// only use permissions if any of them are set, default permissive
+	if claims.Video.CanPublish || claims.Video.CanSubscribe {
+		pi.Permission = &livekit.ParticipantPermission{
+			CanSubscribe: claims.Video.CanSubscribe,
+			CanPublish:   claims.Video.CanPublish,
+		}
+	}
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
@@ -81,17 +91,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var metadata string
 	if claims.Metadata != nil {
 		if data, err := json.Marshal(claims.Metadata); err != nil {
 			logger.Warnw("unable to encode metadata", "error", err)
 		} else {
-			metadata = string(data)
+			pi.Metadata = string(data)
 		}
 	}
 
 	// this needs to be started first *before* using router functions on this node
-	connId, reqSink, resSource, err := s.router.StartParticipantSignal(roomName, identity, metadata, isReconnect)
+	connId, reqSink, resSource, err := s.router.StartParticipantSignal(roomName, pi)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
@@ -100,7 +109,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan bool, 1)
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		logger.Infow("WS connection closed", "participant", identity, "connectionId", connId)
+		logger.Infow("WS connection closed", "participant", pi.Identity, "connectionId", connId)
 		reqSink.Close()
 		close(done)
 	}()
@@ -120,7 +129,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"connectionId", connId,
 		"room", rm.Sid,
 		"roomName", rm.Name,
-		"name", identity,
+		"name", pi.Identity,
 	)
 
 	// handle responses
@@ -137,7 +146,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-resSource.ReadChan():
 				if msg == nil {
-					logger.Infow("source closed connection", "participant", identity,
+					logger.Infow("source closed connection",
+						"participant", pi.Identity,
 						"connectionId", connId)
 					return
 				}
@@ -145,7 +155,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if !ok {
 					logger.Errorw("unexpected message type",
 						"type", fmt.Sprintf("%T", msg),
-						"participant", identity,
+						"participant", pi.Identity,
 						"connectionId", connId)
 					continue
 				}
@@ -172,8 +182,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := reqSink.WriteMessage(req); err != nil {
-			logger.Warnw("error writing to request sink", "error", err,
-				"participant", identity, "connectionId", connId)
+			logger.Warnw("error writing to request sink",
+				"error", err,
+				"participant", pi.Identity,
+				"connectionId", connId)
 		}
 	}
 }

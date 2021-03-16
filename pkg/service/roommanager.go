@@ -172,22 +172,22 @@ func (r *RoomManager) CloseIdleRooms() {
 }
 
 // starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnect bool, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", "error", err)
 		return
 	}
 
-	participant := room.GetParticipant(identity)
+	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
 		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
 		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
-		if reconnect {
+		if pi.Reconnect {
 			logger.Debugw("resuming RTC session",
 				"room", roomName,
 				"node", r.currentNode.Id,
-				"participant", identity,
+				"participant", pi.Identity,
 			)
 			// close previous sink, and link to new one
 			prevSink := participant.GetResponseSink()
@@ -206,20 +206,24 @@ func (r *RoomManager) StartSession(roomName, identity, metadata string, reconnec
 	logger.Debugw("starting RTC session",
 		"room", roomName,
 		"node", r.currentNode.Id,
-		"participant", identity,
+		"participant", pi.Identity,
 		"num_participants", len(room.GetParticipants()),
 	)
 
-	participant, err = rtc.NewParticipant(identity, r.rtcConfig, responseSink, r.config.Audio)
+	participant, err = rtc.NewParticipant(pi.Identity, r.rtcConfig, responseSink, r.config.Audio)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
 	}
-	if metadata != "" {
+	if pi.Metadata != "" {
 		var md map[string]interface{}
-		if err := json.Unmarshal([]byte(metadata), &md); err == nil {
+		if err := json.Unmarshal([]byte(pi.Metadata), &md); err == nil {
 			participant.SetMetadata(md)
 		}
+	}
+
+	if pi.Permission != nil {
+		participant.SetPermission(pi.Permission)
 	}
 
 	// join room
@@ -334,7 +338,13 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 			case *livekit.SignalRequest_Subscription:
-				room.UpdateSubscriptions(participant, msg.Subscription)
+				if participant.CanSubscribe() {
+					room.UpdateSubscriptions(participant, msg.Subscription)
+				} else {
+					logger.Warnw("rejected participant subscription",
+						"participant", participant.Identity(),
+						"tracks", msg.Subscription.TrackSids)
+				}
 			case *livekit.SignalRequest_TrackSetting:
 				for _, subTrack := range participant.GetSubscribedTracks() {
 					for _, sid := range msg.TrackSetting.TrackSids {
@@ -373,6 +383,16 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
 			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
+	case *livekit.RTCNodeMessage_UpdateMetadata:
+		logger.Debugw("updating metadata", "room", roomName, "participant", identity)
+		var md map[string]interface{}
+		if rm.UpdateMetadata.Metadata != "" {
+			if err := json.Unmarshal([]byte(rm.UpdateMetadata.Metadata), &md); err != nil {
+				logger.Errorw("could not update metadata", "error", err)
+				return
+			}
+		}
+		participant.SetMetadata(md)
 	}
 }
 

@@ -137,7 +137,7 @@ func (r *Room) Join(participant types.Participant) error {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
 		}
-		r.broadcastParticipantState(p)
+		r.broadcastParticipantState(p, true)
 
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing publishedTracks
@@ -161,7 +161,7 @@ func (r *Room) Join(participant types.Participant) error {
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
-
+	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
 		"identity", participant.Identity(),
@@ -213,7 +213,7 @@ func (r *Room) RemoveParticipant(identity string) {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(p)
 		}
-		r.broadcastParticipantState(p)
+		r.broadcastParticipantState(p, true)
 	}
 }
 
@@ -288,7 +288,7 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
-	r.broadcastParticipantState(participant)
+	r.broadcastParticipantState(participant, true)
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
@@ -322,19 +322,27 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 }
 
 func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
-	r.broadcastParticipantState(p)
+	// send track updates to everyone, especially if track was updated by admin
+	r.broadcastParticipantState(p, false)
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
+}
+
+func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
+	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
 }
 
 // broadcast an update about participant p
-func (r *Room) broadcastParticipantState(p types.Participant) {
+func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
 	for _, op := range participants {
 		// skip itself && closed participants
-		if p.ID() == op.ID() || op.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if (skipSource && p.ID() == op.ID()) || op.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
 		}
 

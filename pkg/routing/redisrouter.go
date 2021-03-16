@@ -129,7 +129,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(roomName)
 	if err != nil {
@@ -138,7 +138,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 
 	// create a new connection id
 	connectionId = utils.NewGuid("CO_")
-	pKey := participantKey(roomName, identity)
+	pKey := participantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
 	if err = r.setParticipantSignalNode(connectionId, r.currentNode.Id); err != nil {
@@ -150,11 +150,12 @@ func (r *RedisRouter) StartParticipantSignal(roomName, identity, metadata string
 	// sends a message to start session
 	err = sink.WriteMessage(&livekit.StartSession{
 		RoomName: roomName,
-		Identity: identity,
-		Metadata: metadata,
+		Identity: pi.Identity,
+		Metadata: pi.Metadata,
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId: connectionId,
-		Reconnect:    reconnect,
+		Reconnect:    pi.Reconnect,
+		Permission:   pi.Permission,
 	})
 	if err != nil {
 		return
@@ -215,13 +216,18 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		}
 	}
 
+	pi := ParticipantInit{
+		Identity:   ss.Identity,
+		Metadata:   ss.Metadata,
+		Reconnect:  ss.Reconnect,
+		Permission: ss.Permission,
+	}
+
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
 	resSink := NewSignalNodeSink(r.rc, signalNode, ss.ConnectionId)
 	r.onNewParticipant(
 		ss.RoomName,
-		ss.Identity,
-		ss.Metadata,
-		ss.Reconnect,
+		pi,
 		reqChan,
 		resSink,
 	)

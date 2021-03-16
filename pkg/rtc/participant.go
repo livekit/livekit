@@ -38,9 +38,10 @@ type ParticipantImpl struct {
 	conf         *WebRTCConfig
 	identity     string
 	// JSON encoded metadata to pass to clients
-	metadata string
-	state    atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh   chan []rtcp.Packet
+	metadata   string
+	permission *livekit.ParticipantPermission
+	state      atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh     chan []rtcp.Packet
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -59,6 +60,7 @@ type ParticipantImpl struct {
 	onTrackPublished func(types.Participant, types.PublishedTrack)
 	onTrackUpdated   func(types.Participant, types.PublishedTrack)
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
+	onMetadataUpdate func(types.Participant)
 	onClose          func(types.Participant)
 }
 
@@ -140,16 +142,22 @@ func (p *ParticipantImpl) IsReady() bool {
 func (p *ParticipantImpl) SetMetadata(metadata map[string]interface{}) error {
 	if metadata == nil {
 		p.metadata = ""
-		return nil
-	}
-
-	if data, err := json.Marshal(metadata); err != nil {
-		return err
 	} else {
-		p.metadata = string(data)
+		if data, err := json.Marshal(metadata); err != nil {
+			return err
+		} else {
+			p.metadata = string(data)
+		}
 	}
 
+	if p.onMetadataUpdate != nil {
+		p.onMetadataUpdate(p)
+	}
 	return nil
+}
+
+func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) {
+	p.permission = permission
 }
 
 func (p *ParticipantImpl) RTCPChan() chan []rtcp.Packet {
@@ -195,6 +203,10 @@ func (p *ParticipantImpl) OnStateChange(callback func(p types.Participant, oldSt
 
 func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.PublishedTrack)) {
 	p.onTrackUpdated = callback
+}
+
+func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.Participant)) {
+	p.onMetadataUpdate = callback
 }
 
 func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
@@ -459,6 +471,14 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, noisy bool) {
 	return
 }
 
+func (p *ParticipantImpl) CanPublish() bool {
+	return p.permission == nil || p.permission.CanPublish
+}
+
+func (p *ParticipantImpl) CanSubscribe() bool {
+	return p.permission == nil || p.permission.CanSubscribe
+}
+
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
@@ -580,6 +600,12 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"remoteTrack", track.ID(),
 		"rid", track.RID())
 
+	if !p.CanPublish() {
+		logger.Warnw("no permission to publish mediaTrack",
+			"participant", p.Identity())
+		return
+	}
+
 	// delete pending track if it's not simulcasting
 	ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), track.RID() == "")
 	if ti == nil {
@@ -619,6 +645,12 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 		return
 	}
 	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
+
+	if !p.CanPublish() {
+		logger.Warnw("no permission to publish dataTrack",
+			"participant", p.Identity())
+		return
+	}
 
 	// data channels have numeric ids, so we use its label to identify
 	ti := p.getPendingTrack(dc.Label(), livekit.TrackType_DATA, true)

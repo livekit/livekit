@@ -71,7 +71,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(roomName, identity, metadata string, reconnect bool) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
@@ -79,21 +79,19 @@ func (r *LocalRouter) StartParticipantSignal(roomName, identity, metadata string
 	}
 
 	// index channels by roomName | identity
-	key := participantKey(roomName, identity)
+	key := participantKey(roomName, pi.Identity)
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
 
 	r.onNewParticipant(
 		roomName,
-		identity,
-		metadata,
-		reconnect,
+		pi,
 		// request source
 		reqChan,
 		// response sink
 		resChan,
 	)
-	return identity, reqChan, resChan, nil
+	return pi.Identity, reqChan, resChan, nil
 }
 
 func (r *LocalRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {

@@ -29,6 +29,7 @@ type Participant interface {
 	ToProto() *livekit.ParticipantInfo
 	RTCPChan() chan []rtcp.Packet
 	SetMetadata(metadata map[string]interface{}) error
+	SetPermission(permission *livekit.ParticipantPermission)
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 	SubscriberMediaEngine() *webrtc.MediaEngine
@@ -47,6 +48,10 @@ type Participant interface {
 	SetTrackMuted(trackId string, muted bool)
 	GetAudioLevel() (level uint8, noisy bool)
 
+	// permissions
+	CanPublish() bool
+	CanSubscribe() bool
+
 	Start()
 	Close() error
 
@@ -56,6 +61,7 @@ type Participant interface {
 	OnTrackPublished(func(Participant, PublishedTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(Participant, PublishedTrack))
+	OnMetadataUpdate(callback func(Participant))
 	OnClose(func(Participant))
 
 	// package methods
