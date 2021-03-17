@@ -134,6 +134,62 @@ func TestRoomJoin(t *testing.T) {
 	})
 }
 
+// various state changes to participant and that others are receiving update
+func TestParticipantUpdate(t *testing.T) {
+	tests := []struct {
+		name         string
+		sendToSender bool // should sender receive it
+		action       func(p types.Participant)
+	}{
+		{
+			"track mutes are sent to everyone",
+			false,
+			func(p types.Participant) {
+				p.SetTrackMuted("", true)
+			},
+		},
+		{
+			"track metadata updates are sent to everyone",
+			true,
+			func(p types.Participant) {
+				p.SetMetadata(map[string]interface{}{})
+			},
+		},
+		{
+			"track publishes are sent to existing participants",
+			false,
+			func(p types.Participant) {
+				p.AddTrack("", "", livekit.TrackType_VIDEO)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rm := newRoomWithParticipants(t, 3)
+			// remember how many times send has been called for each
+			callCounts := make(map[string]int)
+			for _, p := range rm.GetParticipants() {
+				fp := p.(*typesfakes.FakeParticipant)
+				callCounts[p.ID()] = fp.SendParticipantUpdateCallCount()
+			}
+
+			sender := rm.GetParticipants()[0]
+			test.action(sender)
+
+			// go through the other participants, make sure they've received update
+			for _, p := range rm.GetParticipants() {
+				expected := callCounts[p.ID()]
+				if p != sender || test.sendToSender {
+					expected += 1
+				}
+				fp := p.(*typesfakes.FakeParticipant)
+				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
+			}
+		})
+	}
+}
+
 func TestRoomClosure(t *testing.T) {
 	t.Run("room closes after participant leaves", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, 1)
