@@ -15,7 +15,7 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pion/ion-sfu v1.9.5
+	github.com/pion/ion-sfu v1.9.6-0.20210317032449-7359f9d16637
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v3 v3.0.4
