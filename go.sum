@@ -236,6 +236,10 @@ github.com/livekit/protocol v0.2.1 h1:kWZlkMxkuEfvrZa8NFqOCulybEL3eJr2lrq8OfrTLP
 github.com/livekit/protocol v0.2.1/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/livekit/protocol v0.2.2 h1:XRcbreNYi8ReAICSsJ3QXzGKSNOz0LxnimAwz5hVSHQ=
 github.com/livekit/protocol v0.2.2/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
+github.com/livekit/protocol v0.3.0 h1:Mk0DisPabFX+CzL5/zn4Dsrp5s0SvAmb/B1qE8IxKYI=
+github.com/livekit/protocol v0.3.0/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
+github.com/livekit/protocol v0.3.1 h1:EEf2pF8+7etfvgDeJPq6vWm0NTpZXa+3y8MTD6BVbmw=
+github.com/livekit/protocol v0.3.1/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/lucsky/cuid v1.0.2 h1:z4XlExeoderxoPj2/dxKOyPxe9RCOu7yNq9/XWxIUMQ=
 github.com/lucsky/cuid v1.0.2/go.mod h1:QaaJqckboimOmhRSJXSx/+IT+VTfxfPGSo/6mfgUfmE=
 github.com/lyft/protoc-gen-validate v0.0.13/go.mod h1:XbGvPuh87YZc5TdIa2/I4pLk0QoUACkjt2znoq26NVQ=

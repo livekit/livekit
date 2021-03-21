@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,12 +90,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if claims.Metadata != nil {
-		if data, err := json.Marshal(claims.Metadata); err != nil {
-			logger.Warnw("unable to encode metadata", "error", err)
-		} else {
-			pi.Metadata = string(data)
-		}
+	if claims.Metadata != "" {
+		pi.Metadata = claims.Metadata
 	}
 
 	// this needs to be started first *before* using router functions on this node

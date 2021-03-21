@@ -152,7 +152,7 @@ func TestParticipantUpdate(t *testing.T) {
 			"track metadata updates are sent to everyone",
 			true,
 			func(p types.Participant) {
-				p.SetMetadata(map[string]interface{}{})
+				p.SetMetadata("")
 			},
 		},
 		{
@@ -285,7 +285,7 @@ func TestActiveSpeakers(t *testing.T) {
 		assert.Equal(t, p2.ID(), speakers[1].Sid)
 	})
 
-	t.Run("participants are getting updates when active", func(t *testing.T) {
+	t.Run("participants are getting audio updates", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, 2)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
@@ -293,29 +293,29 @@ func TestActiveSpeakers(t *testing.T) {
 		p.GetAudioLevelReturns(30, true)
 
 		speakers := rm.GetActiveSpeakers()
-		assert.NotEmpty(t, speakers)
-		assert.Equal(t, p.ID(), speakers[0].Sid)
+		require.NotEmpty(t, speakers)
+		require.Equal(t, p.ID(), speakers[0].Sid)
 
 		time.Sleep(audioUpdateDuration)
 
 		// everyone should've received updates
 		for _, op := range participants {
 			op := op.(*typesfakes.FakeParticipant)
-			assert.Equal(t, 1, op.SendActiveSpeakersCallCount())
+			require.Equal(t, 1, op.SendActiveSpeakersCallCount())
 		}
 
 		// after another cycle, we are not getting any new updates since unchanged
 		time.Sleep(audioUpdateDuration)
 		for _, op := range participants {
 			op := op.(*typesfakes.FakeParticipant)
-			assert.Equal(t, 1, op.SendActiveSpeakersCallCount())
+			require.Equal(t, 1, op.SendActiveSpeakersCallCount())
 		}
 
 		// no longer speaking, send update with empty items
 		p.GetAudioLevelReturns(127, false)
 		time.Sleep(audioUpdateDuration)
-		assert.Equal(t, 2, p.SendActiveSpeakersCallCount())
-		assert.Empty(t, p.SendActiveSpeakersArgsForCall(1))
+		require.Equal(t, 2, p.SendActiveSpeakersCallCount())
+		require.Empty(t, p.SendActiveSpeakersArgsForCall(1))
 	})
 }
 

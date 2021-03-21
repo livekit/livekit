@@ -150,21 +150,21 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	return
 }
 
-func (s *RoomService) UpdateParticipantMetadata(ctx context.Context, req *livekit.UpdateParticipantMetadataRequest) (*livekit.ParticipantInfo, error) {
-	rtcSink, err := s.createRTCSink(ctx, req.Target.Room, req.Target.Identity)
+func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
+	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
 	defer rtcSink.Close()
 
-	participant, err := s.roomManager.roomStore.GetParticipant(req.Target.Room, req.Target.Identity)
+	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
 
 	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
-		Message: &livekit.RTCNodeMessage_UpdateMetadata{
-			UpdateMetadata: req,
+		Message: &livekit.RTCNodeMessage_UpdateParticipant{
+			UpdateParticipant: req,
 		},
 	})
 

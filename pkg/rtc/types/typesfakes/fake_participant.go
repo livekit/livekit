@@ -255,16 +255,10 @@ type FakeParticipant struct {
 	sendParticipantUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SetMetadataStub        func(map[string]interface{}) error
+	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
 	setMetadataArgsForCall []struct {
-		arg1 map[string]interface{}
-	}
-	setMetadataReturns struct {
-		result1 error
-	}
-	setMetadataReturnsOnCall map[int]struct {
-		result1 error
+		arg1 string
 	}
 	SetPermissionStub        func(*livekit.ParticipantPermission)
 	setPermissionMutex       sync.RWMutex
@@ -1661,23 +1655,17 @@ func (fake *FakeParticipant) SendParticipantUpdateReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeParticipant) SetMetadata(arg1 map[string]interface{}) error {
+func (fake *FakeParticipant) SetMetadata(arg1 string) {
 	fake.setMetadataMutex.Lock()
-	ret, specificReturn := fake.setMetadataReturnsOnCall[len(fake.setMetadataArgsForCall)]
 	fake.setMetadataArgsForCall = append(fake.setMetadataArgsForCall, struct {
-		arg1 map[string]interface{}
+		arg1 string
 	}{arg1})
 	stub := fake.SetMetadataStub
-	fakeReturns := fake.setMetadataReturns
 	fake.recordInvocation("SetMetadata", []interface{}{arg1})
 	fake.setMetadataMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		fake.SetMetadataStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeParticipant) SetMetadataCallCount() int {
@@ -1686,40 +1674,17 @@ func (fake *FakeParticipant) SetMetadataCallCount() int {
 	return len(fake.setMetadataArgsForCall)
 }
 
-func (fake *FakeParticipant) SetMetadataCalls(stub func(map[string]interface{}) error) {
+func (fake *FakeParticipant) SetMetadataCalls(stub func(string)) {
 	fake.setMetadataMutex.Lock()
 	defer fake.setMetadataMutex.Unlock()
 	fake.SetMetadataStub = stub
 }
 
-func (fake *FakeParticipant) SetMetadataArgsForCall(i int) map[string]interface{} {
+func (fake *FakeParticipant) SetMetadataArgsForCall(i int) string {
 	fake.setMetadataMutex.RLock()
 	defer fake.setMetadataMutex.RUnlock()
 	argsForCall := fake.setMetadataArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) SetMetadataReturns(result1 error) {
-	fake.setMetadataMutex.Lock()
-	defer fake.setMetadataMutex.Unlock()
-	fake.SetMetadataStub = nil
-	fake.setMetadataReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeParticipant) SetMetadataReturnsOnCall(i int, result1 error) {
-	fake.setMetadataMutex.Lock()
-	defer fake.setMetadataMutex.Unlock()
-	fake.SetMetadataStub = nil
-	if fake.setMetadataReturnsOnCall == nil {
-		fake.setMetadataReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.setMetadataReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeParticipant) SetPermission(arg1 *livekit.ParticipantPermission) {

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/urfave/cli/v2"
@@ -81,11 +80,7 @@ func createToken(c *cli.Context) error {
 	at := accessToken(c, grant, p)
 
 	if metadata != "" {
-		var md map[string]interface{}
-		if err := json.Unmarshal([]byte(metadata), &md); err != nil {
-			return err
-		}
-		at.SetMetadata(md)
+		at.SetMetadata(metadata)
 	}
 
 	token, err := at.ToJWT()

@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -139,21 +138,12 @@ func (p *ParticipantImpl) IsReady() bool {
 }
 
 // attach metadata to the participant
-func (p *ParticipantImpl) SetMetadata(metadata map[string]interface{}) error {
-	if metadata == nil {
-		p.metadata = ""
-	} else {
-		if data, err := json.Marshal(metadata); err != nil {
-			return err
-		} else {
-			p.metadata = string(data)
-		}
-	}
+func (p *ParticipantImpl) SetMetadata(metadata string) {
+	p.metadata = metadata
 
 	if p.onMetadataUpdate != nil {
 		p.onMetadataUpdate(p)
 	}
-	return nil
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) {
