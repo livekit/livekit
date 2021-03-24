@@ -117,7 +117,9 @@ func (s *LivekitServer) Start() error {
 	}
 
 	go func() {
-		logger.Infow("starting LiveKit server", "address", s.httpServer.Addr,
+		logger.Infow("starting LiveKit server",
+			"address", s.httpServer.Addr,
+			"UDP range", fmt.Sprintf("%d-%d", s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd),
 			"nodeId", s.currentNode.Id,
 			"version", version.Version)
 		s.httpServer.Serve(ln)
