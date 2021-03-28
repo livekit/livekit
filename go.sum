@@ -357,6 +357,8 @@ github.com/pion/udp v0.1.1/go.mod h1:6AFo+CMdKQm7UiA0eUPA8/eVCTx8jBIITLZHc9DWX5M
 github.com/pion/webrtc/v3 v3.0.10/go.mod h1:KdEZWLmBnxB2Qj4FtUb9vi1sIpqsHOisI7L6ggQBD0A=
 github.com/pion/webrtc/v3 v3.0.17 h1:JRM0zWJWe9p1h3Oj2+WWM3Q+h0myhtm1fw81UA+E000=
 github.com/pion/webrtc/v3 v3.0.17/go.mod h1:P/aoizAjeMUh61uAH58BRypn97IKjcLtIAm/mHqovJw=
+github.com/pion/webrtc/v3 v3.0.19 h1:h3EOMuMNYkJ0X2w1iKNGGBLFN7M/Max0vNUF9IUXqBc=
+github.com/pion/webrtc/v3 v3.0.19/go.mod h1:P/aoizAjeMUh61uAH58BRypn97IKjcLtIAm/mHqovJw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
