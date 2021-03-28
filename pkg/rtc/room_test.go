@@ -143,7 +143,7 @@ func TestParticipantUpdate(t *testing.T) {
 	}{
 		{
 			"track mutes are sent to everyone",
-			false,
+			true,
 			func(p types.Participant) {
 				p.SetTrackMuted("", true)
 			},
@@ -157,7 +157,7 @@ func TestParticipantUpdate(t *testing.T) {
 		},
 		{
 			"track publishes are sent to existing participants",
-			false,
+			true,
 			func(p types.Participant) {
 				p.AddTrack("", "", livekit.TrackType_VIDEO)
 			},
