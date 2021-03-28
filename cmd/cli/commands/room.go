@@ -100,9 +100,8 @@ var (
 					Required: true,
 				},
 				&cli.BoolFlag{
-					Name:     "muted",
-					Usage:    "set to true to mute, false to unmute",
-					Required: true,
+					Name:  "muted",
+					Usage: "set to true to mute, false to unmute",
 				},
 				roomHostFlag,
 				apiKeyFlag,

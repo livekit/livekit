@@ -4,8 +4,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thoas/go-funk"
-
 	livekit "github.com/livekit/livekit-server/proto"
 )
 
@@ -58,7 +56,11 @@ func (p *LocalRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
 func (p *LocalRoomStore) ListRooms() ([]*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return funk.Values(p.rooms).([]*livekit.Room), nil
+	rooms := make([]*livekit.Room, 0, len(p.rooms))
+	for _, r := range p.rooms {
+		rooms = append(rooms, r)
+	}
+	return rooms, nil
 }
 
 func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
@@ -115,8 +117,10 @@ func (p *LocalRoomStore) ListParticipants(roomName string) ([]*livekit.Participa
 		return nil, nil
 	}
 
-	items := funk.Values(roomParticipants).([]*livekit.ParticipantInfo)
-	// TODO: should short this to something reasonable
+	items := make([]*livekit.ParticipantInfo, 0, len(roomParticipants))
+	for _, p := range roomParticipants {
+		items = append(items, p)
+	}
 
 	return items, nil
 }

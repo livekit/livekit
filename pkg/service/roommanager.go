@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thoas/go-funk"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -13,7 +13,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -162,7 +161,10 @@ func (r *RoomManager) CleanupRooms() error {
 
 func (r *RoomManager) CloseIdleRooms() {
 	r.lock.RLock()
-	rooms := funk.Values(r.rooms).([]*rtc.Room)
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, rm := range r.rooms {
+		rooms = append(rooms, rm)
+	}
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
@@ -347,7 +349,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 						if subTrack.ID() != sid {
 							continue
 						}
-						subTrack.SetMuted(msg.TrackSetting.Mute)
+						subTrack.SetMuted(msg.TrackSetting.Disabled)
 						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
 					}
 				}

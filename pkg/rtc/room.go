@@ -323,7 +323,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 
 func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
 	// send track updates to everyone, especially if track was updated by admin
-	r.broadcastParticipantState(p, true)
+	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}

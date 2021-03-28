@@ -11,7 +11,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
-	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -271,7 +270,11 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
 	p.lock.RUnlock()
 	defer p.lock.RUnlock()
-	return funk.Values(p.publishedTracks).([]types.PublishedTrack)
+	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
+	for _, t := range p.publishedTracks {
+		tracks = append(tracks, t)
+	}
+	return tracks
 }
 
 // handles a client answer response, with subscriber PC, server initiates the offer
@@ -347,7 +350,10 @@ func (p *ParticipantImpl) Close() error {
 // Subscribes op to all publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	p.lock.RLock()
-	tracks := funk.Values(p.publishedTracks).([]types.PublishedTrack)
+	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
+	for _, t := range p.publishedTracks {
+		tracks = append(tracks, t)
+	}
 	defer p.lock.RUnlock()
 
 	if len(tracks) == 0 {
@@ -476,7 +482,13 @@ func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return funk.Values(p.subscribedTracks).([]types.SubscribedTrack)
+	subscribed := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
+	for _, pTracks := range p.subscribedTracks {
+		for _, t := range pTracks {
+			subscribed = append(subscribed, t)
+		}
+	}
+	return subscribed
 }
 
 // add a track to the participant's subscribed list

@@ -20,7 +20,6 @@ require (
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
-	github.com/pion/transport v0.12.3 // indirect
 	github.com/pion/turn/v2 v2.0.5
 	github.com/pion/udp v0.1.1 // indirect
 	github.com/pion/webrtc/v3 v3.0.17
