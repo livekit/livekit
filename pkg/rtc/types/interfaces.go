@@ -26,6 +26,7 @@ type Participant interface {
 	Identity() string
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
+	ConnectedAt() time.Time
 	ToProto() *livekit.ParticipantInfo
 	RTCPChan() chan []rtcp.Packet
 	SetMetadata(metadata string)

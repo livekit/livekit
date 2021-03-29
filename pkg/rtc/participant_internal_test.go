@@ -2,8 +2,11 @@ package rtc
 
 import (
 	"testing"
+	"time"
 
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -12,8 +15,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	livekit "github.com/livekit/livekit-server/proto"
 )
-
-//func Test
 
 func TestIsReady(t *testing.T) {
 	tests := []struct {
@@ -45,6 +46,32 @@ func TestIsReady(t *testing.T) {
 			assert.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+func TestICEStateChange(t *testing.T) {
+	t.Run("sets connectedAt when connected", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		require.True(t, p.ConnectedAt().IsZero())
+
+		p.handlePublisherICEStateChange(webrtc.ICEConnectionStateConnected)
+		require.True(t, time.Now().Sub(p.ConnectedAt()) < time.Second)
+	})
+
+	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		closeChan := make(chan bool, 1)
+		p.onClose = func(participant types.Participant) {
+			close(closeChan)
+		}
+		p.handlePublisherICEStateChange(webrtc.ICEConnectionStateDisconnected)
+
+		select {
+		case <-closeChan:
+			return
+		case <-time.After(time.Millisecond * 10):
+			t.Fatalf("onClose was not called after timeout")
+		}
+	})
 }
 
 func TestTrackPublishing(t *testing.T) {

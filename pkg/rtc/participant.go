@@ -35,11 +35,15 @@ type ParticipantImpl struct {
 	isClosed     utils.AtomicFlag
 	conf         *WebRTCConfig
 	identity     string
+	permission   *livekit.ParticipantPermission
+	state        atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh       chan []rtcp.Packet
+
+	// when first connected
+	connectedAt atomic.Value // time.Time
+
 	// JSON encoded metadata to pass to clients
-	metadata   string
-	permission *livekit.ParticipantPermission
-	state      atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh     chan []rtcp.Packet
+	metadata string
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -77,6 +81,8 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
 	}
+	// store empty value
+	p.connectedAt.Store(time.Time{})
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	var err error
 
@@ -102,14 +108,7 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 		p.sendIceCandidate(c, livekit.SignalTarget_SUBSCRIBER)
 	})
 
-	p.publisher.pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		//logger.Debugw("ICE connection state changed", "state", state.String())
-		if state == webrtc.ICEConnectionStateConnected {
-			p.updateState(livekit.ParticipantInfo_ACTIVE)
-		} else if state == webrtc.ICEConnectionStateDisconnected {
-			go p.Close()
-		}
-	})
+	p.publisher.pc.OnICEConnectionStateChange(p.handlePublisherICEStateChange)
 
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.subscriber.pc.OnDataChannel(p.onDataChannel)
@@ -136,6 +135,10 @@ func (p *ParticipantImpl) IsReady() bool {
 	return state == livekit.ParticipantInfo_JOINED || state == livekit.ParticipantInfo_ACTIVE
 }
 
+func (p *ParticipantImpl) ConnectedAt() time.Time {
+	return p.connectedAt.Load().(time.Time)
+}
+
 // attach metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.metadata = metadata
@@ -159,6 +162,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Identity: p.identity,
 		Metadata: p.metadata,
 		State:    p.State(),
+		JoinedAt: p.ConnectedAt().Unix(),
 	}
 
 	p.lock.RLock()
@@ -714,6 +718,16 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 
 	if p.onTrackPublished != nil {
 		p.onTrackPublished(p, track)
+	}
+}
+
+func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnectionState) {
+	//logger.Debugw("ICE connection state changed", "state", state.String())
+	if state == webrtc.ICEConnectionStateConnected {
+		p.connectedAt.Store(time.Now())
+		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	} else if state == webrtc.ICEConnectionStateDisconnected {
+		go p.Close()
 	}
 }
 

@@ -3,6 +3,7 @@ package typesfakes
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -77,6 +78,16 @@ type FakeParticipant struct {
 	}
 	closeReturnsOnCall map[int]struct {
 		result1 error
+	}
+	ConnectedAtStub        func() time.Time
+	connectedAtMutex       sync.RWMutex
+	connectedAtArgsForCall []struct {
+	}
+	connectedAtReturns struct {
+		result1 time.Time
+	}
+	connectedAtReturnsOnCall map[int]struct {
+		result1 time.Time
 	}
 	GetAudioLevelStub        func() (uint8, bool)
 	getAudioLevelMutex       sync.RWMutex
@@ -670,6 +681,59 @@ func (fake *FakeParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}
 	fake.closeReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) ConnectedAt() time.Time {
+	fake.connectedAtMutex.Lock()
+	ret, specificReturn := fake.connectedAtReturnsOnCall[len(fake.connectedAtArgsForCall)]
+	fake.connectedAtArgsForCall = append(fake.connectedAtArgsForCall, struct {
+	}{})
+	stub := fake.ConnectedAtStub
+	fakeReturns := fake.connectedAtReturns
+	fake.recordInvocation("ConnectedAt", []interface{}{})
+	fake.connectedAtMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) ConnectedAtCallCount() int {
+	fake.connectedAtMutex.RLock()
+	defer fake.connectedAtMutex.RUnlock()
+	return len(fake.connectedAtArgsForCall)
+}
+
+func (fake *FakeParticipant) ConnectedAtCalls(stub func() time.Time) {
+	fake.connectedAtMutex.Lock()
+	defer fake.connectedAtMutex.Unlock()
+	fake.ConnectedAtStub = stub
+}
+
+func (fake *FakeParticipant) ConnectedAtReturns(result1 time.Time) {
+	fake.connectedAtMutex.Lock()
+	defer fake.connectedAtMutex.Unlock()
+	fake.ConnectedAtStub = nil
+	fake.connectedAtReturns = struct {
+		result1 time.Time
+	}{result1}
+}
+
+func (fake *FakeParticipant) ConnectedAtReturnsOnCall(i int, result1 time.Time) {
+	fake.connectedAtMutex.Lock()
+	defer fake.connectedAtMutex.Unlock()
+	fake.ConnectedAtStub = nil
+	if fake.connectedAtReturnsOnCall == nil {
+		fake.connectedAtReturnsOnCall = make(map[int]struct {
+			result1 time.Time
+		})
+	}
+	fake.connectedAtReturnsOnCall[i] = struct {
+		result1 time.Time
 	}{result1}
 }
 
@@ -2037,6 +2101,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.canSubscribeMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.connectedAtMutex.RLock()
+	defer fake.connectedAtMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
