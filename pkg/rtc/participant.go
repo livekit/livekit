@@ -272,7 +272,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 }
 
 func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
-	p.lock.RUnlock()
+	p.lock.RLock()
 	defer p.lock.RUnlock()
 	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
 	for _, t := range p.publishedTracks {
