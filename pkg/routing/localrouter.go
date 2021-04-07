@@ -12,7 +12,7 @@ import (
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
 	currentNode LocalNode
-	lock        sync.Mutex
+	lock        sync.RWMutex
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel

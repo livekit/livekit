@@ -208,9 +208,9 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		// when it's not reconnecting, we do not want to re-use the same response sink
 		// the previous rtc worker thread is still consuming off of it.
 		// we'll want to sever the connection and switch to the new one
-		r.lock.Lock()
+		r.lock.RLock()
 		requestChan, ok := r.requestChannels[participantKey]
-		r.lock.Unlock()
+		r.lock.RUnlock()
 		if ok {
 			requestChan.Close()
 		}
@@ -334,9 +334,9 @@ func (r *RedisRouter) redisWorker() {
 func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 	connectionId := sm.ConnectionId
 
-	r.lock.Lock()
+	r.lock.RLock()
 	resSink := r.responseChannels[connectionId]
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	// if a client closed the channel, then sent more messages after that,
 	if resSink == nil {
@@ -371,9 +371,9 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 
 	case *livekit.RTCNodeMessage_Request:
-		r.lock.Lock()
+		r.lock.RLock()
 		requestChan := r.requestChannels[pKey]
-		r.lock.Unlock()
+		r.lock.RUnlock()
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
 		}
