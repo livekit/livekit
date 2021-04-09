@@ -251,11 +251,16 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 		case *livekit.SignalResponse_Update:
-			c.lock.Lock()
+			participants := make(map[string]*livekit.ParticipantInfo)
 			for _, p := range msg.Update.Participants {
-				c.remoteParticipants[p.Sid] = p
+				if p.State != livekit.ParticipantInfo_DISCONNECTED {
+					participants[p.Sid] = p
+				}
 			}
+			c.lock.Lock()
+			c.remoteParticipants = participants
 			c.lock.Unlock()
+
 		case *livekit.SignalResponse_TrackPublished:
 			logger.Debugw("track published", "track", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
 				"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
@@ -337,6 +342,11 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 }
 
 func (c *RTCClient) Stop() {
+	_ = c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_Leave{
+			Leave: &livekit.LeaveRequest{},
+		},
+	})
 	c.connected.TrySet(false)
 	c.iceConnected.TrySet(false)
 	c.conn.Close()

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -112,6 +113,13 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	success = withTimeout(t, "waiting to receive c2 tracks on c1", func() bool {
 		return len(c1.SubscribedTracks()[c2.ID()]) == 2
 	})
+	require.True(t, success)
+
+	// now leave, and ensure that it's immediate
+	c2.Stop()
+
+	time.Sleep(connectTimeout)
+	require.Empty(t, c1.RemoteParticipants())
 }
 
 // websocket reconnects

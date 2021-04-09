@@ -353,6 +353,8 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
 					}
 				}
+			case *livekit.SignalRequest_Leave:
+				participant.Close()
 			}
 		}
 	}
