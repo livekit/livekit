@@ -22,7 +22,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/turn/v2 v2.0.5
 	github.com/pion/udp v0.1.1 // indirect
-	github.com/pion/webrtc/v3 v3.0.19
+	github.com/pion/webrtc/v3 v3.0.21
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.19.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
@@ -34,9 +34,9 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
-	golang.org/x/crypto v0.0.0-20210317152858-513c2a44f670 // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/sys v0.0.0-20210320140829-1e4c9ba3b0c4 // indirect
+	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4 // indirect
+	golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
