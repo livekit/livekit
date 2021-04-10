@@ -722,11 +722,12 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 }
 
 func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnectionState) {
-	//logger.Debugw("ICE connection state changed", "state", state.String())
+	//logger.Debugw("ICE connection state changed", "state", state.String(),
+	//	"participant", p.identity)
 	if state == webrtc.ICEConnectionStateConnected {
 		p.connectedAt.Store(time.Now())
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	} else if state == webrtc.ICEConnectionStateDisconnected {
+	} else if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed {
 		go p.Close()
 	}
 }
