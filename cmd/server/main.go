@@ -184,6 +184,7 @@ func createRouterAndStore(config *config.Config, node routing.LocalNode) (router
 		logger.Infow("using multi-node routing via redis", "address", config.Redis.Address)
 		rc := redis.NewClient(&redis.Options{
 			Addr:     config.Redis.Address,
+			Username: config.Redis.Username,
 			Password: config.Redis.Password,
 		})
 		if err = rc.Ping(context.Background()).Err(); err != nil {
