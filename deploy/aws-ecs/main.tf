@@ -80,6 +80,11 @@ variable "udp_port_end" {
   default = 11000
 }
 
+variable "ice_tcp_port" {
+  type = number
+  default = 7881
+}
+
 variable "api_keys" {
   type = map(string)
 }
@@ -91,7 +96,7 @@ variable "redis_address" {
 
 variable "turn_enabled" {
   type = bool
-  default = true
+  default = false
 }
 
 variable "turn_tcp_port" {

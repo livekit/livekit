@@ -4,6 +4,7 @@ locals {
     rtc = {
       port_range_start = var.udp_port_start
       port_range_end = var.udp_port_end
+      ice_tcp_port = var.ice_tcp_port
     }
     turn = {
       enabled = var.turn_enabled
@@ -20,7 +21,7 @@ locals {
   }
 
   // mapping contains only the main listening ports
-  // other UDP ports don't have to be mapped, due to
+  // other UDP ports don't have to be mapped, due to using host-mode
   port_mapping = [
     {
       containerPort = var.http_port
@@ -34,6 +35,10 @@ locals {
       containerPort = var.turn_udp_port
       protocol = "udp"
     },
+    {
+      containerPort = var.ice_tcp_port
+      protocol = "tcp"
+    }
   ]
 
   task_config = [{

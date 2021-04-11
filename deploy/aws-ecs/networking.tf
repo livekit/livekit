@@ -16,6 +16,14 @@ resource "aws_security_group" "main" {
   }
 
   ingress {
+    description = "TCP port for ICE"
+    from_port   = var.ice_tcp_port
+    to_port     = var.ice_tcp_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     description = "UDP port for TURN"
     from_port   = var.turn_port_start
     to_port     = var.turn_port_end
