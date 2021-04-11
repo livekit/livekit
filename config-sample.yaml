@@ -1,0 +1,52 @@
+# main TCP port for RoomService and RTC endpoint
+# for production setups, this port should be placed behind a load balancer with TLS
+port: 7880
+
+# log level, valid values: debug, info, warning, error
+log_level: info
+
+# when redis is set, LiveKit will automatically operate in a fully distributed fashion
+# clients could connect to any node and be routed to the same room
+redis:
+  address: redis.host:6379
+#  username: myuser
+#  password: mypassword
+
+# WebRTC configuration
+rtc:
+  # when set, LiveKit will try to route traffic over TCP when UDP isn't available
+  # this port cannot be behind load balancer or TLS, and must be exposed on the node
+  ice_tcp_port: 7881
+  # UDP port range to transport WebRTC data
+  port_range_start: 9000
+  port_range_end: 11000
+  # when set to true, attempts to discover the host's public IP via STUN
+  # this is useful for cloud environments such as AWS, where hosts have an internal IP
+  # that maps to an external one
+  use_external_ip: true
+  # when using REMB, the max bitrate that the SFU would accept
+  max_bitrate: 3145728
+  # number of packets to buffer in the SFU, defaults to 500
+#  packet_buffer_size: 500
+  # optional stun servers to use. by default LiveKit uses Google's public STUN servers
+#  stun_servers:
+#    - server1
+
+# API key / secret pairs.
+# Keys are used for JWT authentication
+keys:
+  key1: secret1
+  key2: secret2
+
+# customize audio level sensitivity
+#audio:
+#  # minimum level to be considered active, 0-127, where 0 is loudest
+#  # defaults to 40
+#  active_level: 40
+#  # percentile to measure, a participant is considered active if it has exceeded the
+#  # ActiveLevel more than MinPercentile% of the time
+#  # defaults to 15
+#  min_percentile: 15
+#  # frequency in ms to notify changes to clients, defaults to 500
+#  update_interval: 500
+

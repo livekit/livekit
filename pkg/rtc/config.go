@@ -1,7 +1,9 @@
 package rtc
 
 import (
+	"errors"
 	"fmt"
+	"net"
 
 	"github.com/go-logr/zapr"
 	"github.com/pion/ion-sfu/pkg/buffer"
@@ -21,7 +23,6 @@ type WebRTCConfig struct {
 type ReceiverConfig struct {
 	packetBufferSize int
 	maxBitrate       uint64
-	maxBufferTime    int
 }
 
 func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, error) {
@@ -55,6 +56,37 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize, zapr.NewLogger(logger.Desugar()))
 	s.BufferFactory = bufferFactory.GetOrNew
 
+	networkTypes := []webrtc.NetworkType{}
+
+	if !conf.ForceTCP {
+		networkTypes = append(networkTypes,
+			webrtc.NetworkTypeUDP4,
+			webrtc.NetworkTypeUDP6)
+	}
+
+	// use TCP mux when it's set
+	if conf.ICETCPPort != 0 {
+		networkTypes = append(networkTypes,
+			webrtc.NetworkTypeTCP4,
+			webrtc.NetworkTypeTCP6,
+		)
+		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
+			IP:   net.IP{0, 0, 0, 0},
+			Port: int(conf.ICETCPPort),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		tcpMux := webrtc.NewICETCPMux(nil, tcpListener, 10)
+		s.SetICETCPMux(tcpMux)
+	}
+
+	if len(networkTypes) == 0 {
+		return nil, errors.New("TCP is forced but not configured")
+	}
+	s.SetNetworkTypes(networkTypes)
+
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
@@ -62,7 +94,6 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		Receiver: ReceiverConfig{
 			packetBufferSize: conf.PacketBufferSize,
 			maxBitrate:       conf.MaxBitrate,
-			maxBufferTime:    conf.MaxBufferTime,
 		},
 	}, nil
 }

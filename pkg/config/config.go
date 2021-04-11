@@ -22,17 +22,19 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	ICEPortRangeStart uint16   `yaml:"port_range_start"`
-	ICEPortRangeEnd   uint16   `yaml:"port_range_end"`
-	StunServers       []string `yaml:"stun_servers"`
-	UseExternalIP     bool     `yaml:"use_external_ip"`
+	ICETCPPort        uint16 `yaml:"ice_tcp_port"`
+	ICEPortRangeStart uint16 `yaml:"port_range_start"`
+	ICEPortRangeEnd   uint16 `yaml:"port_range_end"`
+	// for testing, disable UDP
+	ForceTCP      bool     `yaml:"force_tcp"`
+	StunServers   []string `yaml:"stun_servers"`
+	UseExternalIP bool     `yaml:"use_external_ip"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size"`
 
 	// Max bitrate for REMB
-	MaxBitrate    uint64 `yaml:"max_bitrate"`
-	MaxBufferTime int    `yaml:"max_buffer_time"`
+	MaxBitrate uint64 `yaml:"max_bitrate"`
 }
 
 type AudioConfig struct {
@@ -47,6 +49,7 @@ type AudioConfig struct {
 
 type RedisConfig struct {
 	Address  string `yaml:"address"`
+	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 }
 
@@ -63,7 +66,8 @@ func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		Port: 7880,
 		RTC: RTCConfig{
-			UseExternalIP:     true,
+			UseExternalIP: true,
+
 			ICEPortRangeStart: 9000,
 			ICEPortRangeEnd:   11000,
 			StunServers: []string{
