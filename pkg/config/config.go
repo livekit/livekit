@@ -22,7 +22,8 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	ICETCPPort        uint16 `yaml:"ice_tcp_port"`
+	UDPPort           uint16 `yaml:"udp_port"`
+	TCPPort           uint16 `yaml:"tcp_port"`
 	ICEPortRangeStart uint16 `yaml:"port_range_start"`
 	ICEPortRangeEnd   uint16 `yaml:"port_range_end"`
 	// for testing, disable UDP

@@ -6,7 +6,9 @@ import (
 	"net"
 
 	"github.com/go-logr/zapr"
+	"github.com/pion/ice/v2"
 	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/pion/logging"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -18,6 +20,7 @@ type WebRTCConfig struct {
 	SettingEngine webrtc.SettingEngine
 	Receiver      ReceiverConfig
 	BufferFactory *buffer.Factory
+	UDPMux        ice.UDPMux
 }
 
 type ReceiverConfig struct {
@@ -25,17 +28,16 @@ type ReceiverConfig struct {
 	maxBitrate       uint64
 }
 
+// number of packets to buffer up
+const readBufferSize = 50
+
 func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, error) {
 	c := webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 	s := webrtc.SettingEngine{}
-
-	if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
-		if err := s.SetEphemeralUDPPortRange(conf.ICEPortRangeStart, conf.ICEPortRangeEnd); err != nil {
-			return nil, err
-		}
-	}
+	loggerFactory := logging.NewDefaultLoggerFactory()
+	lkLogger := loggerFactory.NewLogger("livekit")
 
 	iceUrls := make([]string, 0)
 	for _, stunServer := range conf.StunServers {
@@ -64,21 +66,37 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			webrtc.NetworkTypeUDP6)
 	}
 
+	var udpMux *ice.UDPMuxDefault
+	if conf.UDPPort != 0 {
+		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
+			Logger:         lkLogger,
+			ReadBufferSize: readBufferSize,
+		})
+		if err := udpMux.Start(int(conf.UDPPort)); err != nil {
+			return nil, err
+		}
+		s.SetICEUDPMux(udpMux)
+	} else if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
+		if err := s.SetEphemeralUDPPortRange(conf.ICEPortRangeStart, conf.ICEPortRangeEnd); err != nil {
+			return nil, err
+		}
+	}
+
 	// use TCP mux when it's set
-	if conf.ICETCPPort != 0 {
+	if conf.TCPPort != 0 {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeTCP4,
 			webrtc.NetworkTypeTCP6,
 		)
 		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
 			IP:   net.IP{0, 0, 0, 0},
-			Port: int(conf.ICETCPPort),
+			Port: int(conf.TCPPort),
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		tcpMux := webrtc.NewICETCPMux(nil, tcpListener, 10)
+		tcpMux := webrtc.NewICETCPMux(lkLogger, tcpListener, readBufferSize)
 		s.SetICETCPMux(tcpMux)
 	}
 
@@ -95,5 +113,6 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			packetBufferSize: conf.PacketBufferSize,
 			maxBitrate:       conf.MaxBitrate,
 		},
+		UDPMux: udpMux,
 	}, nil
 }

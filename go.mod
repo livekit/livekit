@@ -15,13 +15,14 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/pion/ice/v2 v2.1.0
 	github.com/pion/ion-sfu v1.9.7
+	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/udp v0.1.1 // indirect
 	github.com/pion/webrtc/v3 v3.0.21
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.19.0 // indirect
@@ -35,9 +36,9 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4 // indirect
-	golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
+
+replace github.com/pion/webrtc/v3 => github.com/davidzhao/webrtc/v3 v3.0.4-0.20210413050400-3d284fbde125

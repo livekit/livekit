@@ -16,7 +16,8 @@ redis:
 rtc:
   # when set, LiveKit will try to route traffic over TCP when UDP isn't available
   # this port cannot be behind load balancer or TLS, and must be exposed on the node
-  ice_tcp_port: 7881
+  tcp_port: 7881
+  udp_port: 9000
   # UDP port range to transport WebRTC data
   port_range_start: 9000
   port_range_end: 11000
