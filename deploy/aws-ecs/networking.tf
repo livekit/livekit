@@ -8,7 +8,7 @@ resource "aws_security_group" "main" {
   vpc_id      = data.aws_vpc.main.id
 
   ingress {
-    description = "UDP port for ICE"
+    description = "UDP port range for ICE"
     from_port   = var.udp_port_start
     to_port     = var.udp_port_end
     protocol    = "udp"
@@ -16,9 +16,17 @@ resource "aws_security_group" "main" {
   }
 
   ingress {
+    description = "UDP port for ICE"
+    from_port   = var.rtc_udp_port
+    to_port     = var.rtc_udp_port
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     description = "TCP port for ICE"
-    from_port   = var.ice_tcp_port
-    to_port     = var.ice_tcp_port
+    from_port   = var.rtc_tcp_port
+    to_port     = var.rtc_tcp_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

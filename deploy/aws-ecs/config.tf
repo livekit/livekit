@@ -4,7 +4,8 @@ locals {
     rtc = {
       port_range_start = var.udp_port_start
       port_range_end = var.udp_port_end
-      ice_tcp_port = var.ice_tcp_port
+      tcp_port = var.rtc_tcp_port
+      udp_port = var.rtc_udp_port
     }
     turn = {
       enabled = var.turn_enabled
@@ -36,7 +37,7 @@ locals {
       protocol = "udp"
     },
     {
-      containerPort = var.ice_tcp_port
+      containerPort = var.rtc_tcp_port
       protocol = "tcp"
     }
   ]

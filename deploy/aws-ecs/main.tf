@@ -70,19 +70,26 @@ variable "http_port" {
   default = 7880
 }
 
+// not set by default, prefers rtc_udp_port
 variable "udp_port_start" {
   type = number
-  default = 9000
+  default = 0
 }
 
+// not set by default, prefers rtc_udp_port
 variable "udp_port_end" {
   type = number
-  default = 11000
+  default = 0
 }
 
-variable "ice_tcp_port" {
+variable "rtc_tcp_port" {
   type = number
   default = 7881
+}
+
+variable "rtc_udp_port" {
+  type = number
+  default = 9000
 }
 
 variable "api_keys" {
