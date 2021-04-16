@@ -128,7 +128,7 @@ func TestTrackPublishing(t *testing.T) {
 
 // after disconnection, things should continue to function and not panic
 func TestDisconnectTiming(t *testing.T) {
-	t.Run("negotiate doesn't fail after channel closed", func(t *testing.T) {
+	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		msg := routing.NewMessageChannel()
 		p.responseSink = msg
@@ -140,9 +140,8 @@ func TestDisconnectTiming(t *testing.T) {
 		track := &typesfakes.FakePublishedTrack{}
 		p.handleTrackPublished(track)
 
-		// close channel and then try to negotiate
+		// close channel and then try to Negotiate
 		msg.Close()
-		p.negotiate()
 	})
 }
 

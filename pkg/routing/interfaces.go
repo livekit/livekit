@@ -19,7 +19,7 @@ type MessageSink interface {
 
 //counterfeiter:generate . MessageSource
 type MessageSource interface {
-	// source exposes a one way channel to make it easier to use with select
+	// ReadChan exposes a one way channel to make it easier to use with select
 	ReadChan() <-chan proto.Message
 }
 

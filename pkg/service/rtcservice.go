@@ -63,7 +63,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pi := routing.ParticipantInit{
-		Reconnect: reconnectParam == "1" || reconnectParam == "true",
+		Reconnect: boolValue(reconnectParam),
 		Identity:  claims.Identity,
 	}
 	// only use permissions if any of them are set, default permissive

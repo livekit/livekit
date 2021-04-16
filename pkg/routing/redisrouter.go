@@ -128,7 +128,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 	return nodes, nil
 }
 
-// signal connection sets up paths to the RTC node, and starts to route messages to that message queue
+// StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
 func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(roomName)
@@ -248,8 +248,8 @@ func (r *RedisRouter) Stop() {
 		return
 	}
 	logger.Debugw("stopping RedisRouter")
-	r.pubsub.Close()
-	r.UnregisterNode()
+	_ = r.pubsub.Close()
+	_ = r.UnregisterNode()
 	r.cancel()
 }
 

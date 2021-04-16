@@ -58,8 +58,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize, zapr.NewLogger(logger.Desugar()))
 	s.BufferFactory = bufferFactory.GetOrNew
 
-	networkTypes := []webrtc.NetworkType{}
-
+	networkTypes := make([]webrtc.NetworkType, 0, 4)
 	if !conf.ForceTCP {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeUDP4,

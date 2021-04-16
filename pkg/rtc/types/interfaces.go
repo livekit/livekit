@@ -41,7 +41,7 @@ type Participant interface {
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	AddSubscriber(op Participant) error
+	AddSubscriber(op Participant) (int, error)
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error

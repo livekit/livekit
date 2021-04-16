@@ -112,8 +112,7 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.subscriber.pc.OnDataChannel(p.onDataChannel)
-
-	p.subscriber.OnNegotiationNeeded(p.negotiate)
+	p.subscriber.OnOffer(p.onOffer)
 
 	return p, nil
 }
@@ -139,7 +138,7 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt.Load().(time.Time)
 }
 
-// attach metadata to the participant
+// SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.metadata = metadata
 
@@ -334,7 +333,6 @@ func (p *ParticipantImpl) Close() error {
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.subscriber.pc.OnDataChannel(nil)
 	p.subscriber.pc.OnICECandidate(nil)
-	p.subscriber.pc.OnNegotiationNeeded(nil)
 	p.subscriber.pc.OnTrack(nil)
 	p.publisher.pc.OnICECandidate(nil)
 	// ensure this is synchronized
@@ -352,7 +350,7 @@ func (p *ParticipantImpl) Close() error {
 }
 
 // Subscribes op to all publishedTracks
-func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
+func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 	p.lock.RLock()
 	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
 	for _, t := range p.publishedTracks {
@@ -361,7 +359,7 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 	defer p.lock.RUnlock()
 
 	if len(tracks) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	logger.Debugw("subscribing new participant to tracks",
@@ -369,12 +367,14 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) error {
 		"newParticipant", op.Identity(),
 		"numTracks", len(tracks))
 
+	n := 0
 	for _, track := range tracks {
 		if err := track.AddSubscriber(op); err != nil {
-			return err
+			return n, err
 		}
+		n += 1
 	}
-	return nil
+	return n, nil
 }
 
 func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
@@ -533,40 +533,6 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 	})
 }
 
-// initiates server-driven negotiation by creating an offer
-func (p *ParticipantImpl) negotiate() {
-	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
-		logger.Debugw("skipping server negotiation", "participant", p.Identity())
-		// skip when disconnected
-		return
-	}
-
-	logger.Debugw("starting server negotiation", "participant", p.Identity())
-
-	offer, err := p.subscriber.pc.CreateOffer(nil)
-	if err != nil {
-		logger.Errorw("could not create offer", "err", err)
-		return
-	}
-
-	err = p.subscriber.pc.SetLocalDescription(offer)
-	if err != nil {
-		logger.Errorw("could not set local description", "err", err)
-		return
-	}
-
-	logger.Debugw("sending offer to participant",
-		"participant", p.Identity(),
-		//"sdp", offer.SDP,
-	)
-
-	p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Offer{
-			Offer: ToProtoSessionDescription(offer),
-		},
-	})
-}
-
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	oldState := p.State()
 	if state == oldState {
@@ -597,6 +563,25 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 		return err
 	}
 	return nil
+}
+
+// when the server has an offer for participant
+func (p *ParticipantImpl) onOffer(sd webrtc.SessionDescription) {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		logger.Debugw("skipping server offer", "participant", p.Identity())
+		// skip when disconnected
+		return
+	}
+	logger.Debugw("sending server offer to participant",
+		"participant", p.Identity(),
+		//"sdp", offer.SDP,
+	)
+
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Offer{
+			Offer: ToProtoSessionDescription(sd),
+		},
+	})
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room

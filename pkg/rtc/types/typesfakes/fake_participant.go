@@ -31,16 +31,18 @@ type FakeParticipant struct {
 		arg1 string
 		arg2 types.SubscribedTrack
 	}
-	AddSubscriberStub        func(types.Participant) error
+	AddSubscriberStub        func(types.Participant) (int, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
 		arg1 types.Participant
 	}
 	addSubscriberReturns struct {
-		result1 error
+		result1 int
+		result2 error
 	}
 	addSubscriberReturnsOnCall map[int]struct {
-		result1 error
+		result1 int
+		result2 error
 	}
 	AddTrackStub        func(string, string, livekit.TrackType)
 	addTrackMutex       sync.RWMutex
@@ -430,7 +432,7 @@ func (fake *FakeParticipant) AddSubscribedTrackArgsForCall(i int) (string, types
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant) error {
+func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant) (int, error) {
 	fake.addSubscriberMutex.Lock()
 	ret, specificReturn := fake.addSubscriberReturnsOnCall[len(fake.addSubscriberArgsForCall)]
 	fake.addSubscriberArgsForCall = append(fake.addSubscriberArgsForCall, struct {
@@ -444,9 +446,9 @@ func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant) error {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeParticipant) AddSubscriberCallCount() int {
@@ -455,7 +457,7 @@ func (fake *FakeParticipant) AddSubscriberCallCount() int {
 	return len(fake.addSubscriberArgsForCall)
 }
 
-func (fake *FakeParticipant) AddSubscriberCalls(stub func(types.Participant) error) {
+func (fake *FakeParticipant) AddSubscriberCalls(stub func(types.Participant) (int, error)) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = stub
@@ -468,27 +470,30 @@ func (fake *FakeParticipant) AddSubscriberArgsForCall(i int) types.Participant {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) AddSubscriberReturns(result1 error) {
+func (fake *FakeParticipant) AddSubscriberReturns(result1 int, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	fake.addSubscriberReturns = struct {
-		result1 error
-	}{result1}
+		result1 int
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeParticipant) AddSubscriberReturnsOnCall(i int, result1 error) {
+func (fake *FakeParticipant) AddSubscriberReturnsOnCall(i int, result1 int, result2 error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = nil
 	if fake.addSubscriberReturnsOnCall == nil {
 		fake.addSubscriberReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 int
+			result2 error
 		})
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 int
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeParticipant) AddTrack(arg1 string, arg2 string, arg3 livekit.TrackType) {

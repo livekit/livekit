@@ -20,8 +20,8 @@ const (
 	negotiationStateNone = iota
 	// waiting for client answer
 	negotiationStateClient
-	// need to negotiate again
-	negotiationStateServer
+	// need to Negotiate again
+	negotiationRetry
 )
 
 // PCTransport is a wrapper around PeerConnection, with some helper methods
@@ -32,7 +32,7 @@ type PCTransport struct {
 	lock               sync.Mutex
 	pendingCandidates  []webrtc.ICECandidateInit
 	debouncedNegotiate func(func())
-	onNegotiation      func()
+	onOffer            func(offer webrtc.SessionDescription)
 
 	negotiationState atomic.Value
 }
@@ -68,7 +68,6 @@ func NewPCTransport(target livekit.SignalTarget, conf *WebRTCConfig) (*PCTranspo
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 	t.negotiationState.Store(negotiationStateNone)
-
 	t.pc.OnNegotiationNeeded(t.negotiate)
 
 	return t, nil
@@ -90,7 +89,7 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 }
 
 func (t *PCTransport) Close() {
-	t.pc.Close()
+	_ = t.pc.Close()
 }
 
 func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
@@ -110,33 +109,50 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	// negotiated, reset flag
 	state := t.negotiationState.Load().(int)
 	t.negotiationState.Store(negotiationStateNone)
-	if state == negotiationStateServer && t.onNegotiation != nil {
-		logger.Debugw("negotiating again")
-		// need to negotiate again
+	if state == negotiationRetry {
+		// need to Negotiate again
 		t.negotiate()
 	}
 
 	return nil
 }
 
-func (t *PCTransport) OnNegotiationNeeded(f func()) {
-	t.onNegotiation = f
+// OnOffer is called when the PeerConnection starts negotiation and prepares an offer
+func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
+	t.onOffer = f
 }
 
 func (t *PCTransport) negotiate() {
-	t.debouncedNegotiate(func() {
-		state := t.negotiationState.Load().(int)
-		// when there's an ongoing negotiation, let it finish and not disrupt its state
-		if state == negotiationStateClient {
-			logger.Debugw("skipping negotiation, trying again later")
-			t.negotiationState.Store(negotiationStateServer)
-			return
-		}
+	t.debouncedNegotiate(t.handleNegotiate)
+}
 
-		if t.onNegotiation != nil {
-			t.onNegotiation()
-			// indicate waiting for client
-			t.negotiationState.Store(negotiationStateClient)
-		}
-	})
+func (t *PCTransport) handleNegotiate() {
+	if t.onOffer == nil {
+		return
+	}
+
+	state := t.negotiationState.Load().(int)
+	// when there's an ongoing negotiation, let it finish and not disrupt its state
+	if state == negotiationStateClient {
+		logger.Debugw("skipping negotiation, trying again later")
+		t.negotiationState.Store(negotiationRetry)
+		return
+	}
+
+	offer, err := t.pc.CreateOffer(nil)
+	if err != nil {
+		logger.Errorw("could not create offer", "err", err)
+		return
+	}
+
+	err = t.pc.SetLocalDescription(offer)
+	if err != nil {
+		logger.Errorw("could not set local description", "err", err)
+		return
+	}
+
+	t.onOffer(offer)
+
+	// indicate waiting for client
+	t.negotiationState.Store(negotiationStateClient)
 }

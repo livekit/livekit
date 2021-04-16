@@ -42,3 +42,5 @@ require (
 )
 
 replace github.com/pion/webrtc/v3 => github.com/davidzhao/webrtc/v3 v3.0.4-0.20210413050400-3d284fbde125
+
+replace github.com/pion/ice/v2 => github.com/davidzhao/ice/v2 v2.0.17-0.20210414203851-3eacd99ac5cd

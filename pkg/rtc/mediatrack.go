@@ -109,8 +109,7 @@ func (t *MediaTrack) OnClose(f func()) {
 	t.onClose = f
 }
 
-// subscribes participant to current remoteTrack
-// creates and add necessary forwarders and starts them
+// AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -200,7 +199,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	return nil
 }
 
-// adds a new RTP receiver to the track, returns true if this is a new track
+// AddReceiver adds a new RTP receiver to the track, returns true if this is a new track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -263,8 +262,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 }
 
-// removes peer from subscription
-// stop all forwarders to the peer
+// RemoveSubscriber removes participant from subscription
+// stop all forwarders to the client
 func (t *MediaTrack) RemoveSubscriber(participantId string) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
@@ -301,9 +300,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 	if chunks == nil {
 		return
 	}
-	if chunks != nil {
-		sd = append(sd, chunks...)
-	}
+	sd = append(sd, chunks...)
 
 	pkts := []rtcp.Packet{
 		&rtcp.SourceDescription{Chunks: sd},

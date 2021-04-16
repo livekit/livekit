@@ -132,7 +132,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.subscriber.PeerConnection().OnDataChannel(func(channel *webrtc.DataChannel) {
 	})
 
-	c.publisher.OnNegotiationNeeded(c.negotiate)
+	c.publisher.OnOffer(c.onOffer)
 
 	c.publisher.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		logger.Debugw("ICE state has changed", "state", connectionState.String(),
@@ -414,7 +414,6 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	if _, err = c.publisher.PeerConnection().AddTrack(track); err != nil {
 		return
 	}
-
 	writer = NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
@@ -516,21 +515,11 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 	return nil
 }
 
-func (c *RTCClient) negotiate() {
+func (c *RTCClient) onOffer(offer webrtc.SessionDescription) {
 	if c.localParticipant != nil {
 		logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
 	}
-
-	offer, err := c.publisher.PeerConnection().CreateOffer(nil)
-	if err != nil {
-		return
-	}
-
-	if err := c.publisher.PeerConnection().SetLocalDescription(offer); err != nil {
-		return
-	}
-
-	c.SendRequest(&livekit.SignalRequest{
+	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{
 			Offer: rtc.ToProtoSessionDescription(offer),
 		},

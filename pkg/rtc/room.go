@@ -141,20 +141,11 @@ func (r *Room) Join(participant types.Participant) error {
 
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing publishedTracks
-			for _, op := range r.GetParticipants() {
-				if p.ID() == op.ID() {
-					// don't send to itself
-					continue
-				}
-				if err := op.AddSubscriber(p); err != nil {
-					// TODO: log error? or disconnect?
-					logger.Errorw("could not subscribe to participant",
-						"dest", p.Identity(),
-						"source", op.Identity())
-				}
-			}
+			r.subscribeToExistingTracks(p)
+
 			// start the workers once connectivity is established
 			p.Start()
+
 		} else if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity())
@@ -244,7 +235,7 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, subscription *
 	return nil
 }
 
-// Close the room if all participants had left, or it's still empty past timeout
+// CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
 	if r.isClosed.Get() {
 		return
@@ -304,6 +295,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			// not fully joined. don't subscribe yet
 			continue
 		}
+
 		logger.Debugw("subscribing to new track",
 			"source", participant.Identity(),
 			"remoteTrack", track.ID(),
@@ -336,6 +328,27 @@ func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
 	}
 }
 
+func (r *Room) subscribeToExistingTracks(p types.Participant) {
+	tracksAdded := 0
+	for _, op := range r.GetParticipants() {
+		if p.ID() == op.ID() {
+			// don't send to itself
+			continue
+		}
+		if n, err := op.AddSubscriber(p); err != nil {
+			// TODO: log error? or disconnect?
+			logger.Errorw("could not subscribe to participant",
+				"dest", p.Identity(),
+				"source", op.Identity())
+		} else {
+			tracksAdded += n
+		}
+	}
+	if tracksAdded > 0 {
+		logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
+	}
+}
+
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 	updates := ToProtoParticipants([]types.Participant{p})
@@ -357,7 +370,7 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 
 func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 	for _, p := range r.GetParticipants() {
-		p.SendActiveSpeakers(speakers)
+		_ = p.SendActiveSpeakers(speakers)
 	}
 }
 

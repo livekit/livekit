@@ -5,14 +5,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/utils"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -140,7 +139,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 	return err
 }
 
-// clean up after old rooms that have been around for awhile
+// CleanupRooms cleans up after old rooms that have been around for awhile
 func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	rooms, err := r.roomStore.ListRooms()
@@ -172,7 +171,7 @@ func (r *RoomManager) CloseIdleRooms() {
 	}
 }
 
-// starts WebRTC session when a new participant is connected, takes place on RTC node
+// StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
 func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
@@ -196,7 +195,6 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 				prevSink.Close()
 			}
 			participant.SetResponseSink(responseSink)
-
 			return
 		} else {
 			// we need to clean up the existing participant, so a new one can join
@@ -257,10 +255,14 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		}
 	})
 	room.OnParticipantChanged(func(p types.Participant) {
+		var err error
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
-			r.roomStore.DeleteParticipant(roomName, p.Identity())
+			err = r.roomStore.DeleteParticipant(roomName, p.Identity())
 		} else {
-			r.roomStore.PersistParticipant(roomName, p.ToProto())
+			err = r.roomStore.PersistParticipant(roomName, p.ToProto())
+		}
+		if err != nil {
+			logger.Errorw("could not handle participant change", "error", err)
 		}
 	})
 	r.lock.Lock()

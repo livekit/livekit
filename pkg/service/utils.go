@@ -25,5 +25,9 @@ func handleError(w http.ResponseWriter, status int, msg string) {
 	l := logger.Desugar().WithOptions(zap.AddCallerSkip(1))
 	l.Debug("error handling request", zap.String("error", msg), zap.Int("status", status))
 	w.WriteHeader(status)
-	w.Write([]byte(msg))
+	_, _ = w.Write([]byte(msg))
+}
+
+func boolValue(s string) bool {
+	return s == "1" || s == "true"
 }
