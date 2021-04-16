@@ -117,12 +117,27 @@ func (s *LivekitServer) Start() error {
 	}
 
 	go func() {
-		logger.Infow("starting LiveKit server",
+		values := []interface{}{
 			"address", s.httpServer.Addr,
-			"UDP range", fmt.Sprintf("%d-%d", s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd),
 			"nodeId", s.currentNode.Id,
-			"version", version.Version)
-		s.httpServer.Serve(ln)
+			"version", version.Version,
+		}
+		if s.config.RTC.TCPPort != 0 {
+			values = append(values, "rtc.tcp_port", s.config.RTC.TCPPort)
+		}
+		if s.config.RTC.UDPPort != 0 {
+			values = append(values, "rtc.udp_port", s.config.RTC.UDPPort)
+		} else {
+			values = append(values,
+				"rtc.port_range_start", s.config.RTC.ICEPortRangeStart,
+				"rtc.port_range_end", s.config.RTC.ICEPortRangeEnd,
+			)
+		}
+		logger.Infow("starting LiveKit server", values...)
+		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
+			logger.Errorw("could not start server", "error", err)
+			s.Stop()
+		}
 	}()
 
 	go s.backgroundWorker()
