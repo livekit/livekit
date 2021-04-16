@@ -321,12 +321,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					return
 				}
 			case *livekit.SignalRequest_Trickle:
-				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot trickle before offer", "participant", participant.Identity())
-					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot trickle before peer offer"))
-					return
-				}
-
 				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
 				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
