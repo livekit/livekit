@@ -131,13 +131,20 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 
 	// using DownTrack from ion-sfu
+	streamId := t.participantId
+	if sub.ProtocolVersion().SupportsPackedStreamId() {
+		// when possible, pack both IDs in streamID to allow new streams to be generated
+		// react-native-webrtc still uses stream based APIs and require this
+		streamId = PackStreamID(t.participantId, t.ID())
+	}
+	receiver := NewWrappedReceiver(t.receiver, t.ID(), streamId)
 	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
 		MimeType:     codec.MimeType,
 		ClockRate:    codec.ClockRate,
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, t.receiver, t.bufferFactory, sub.ID(), t.receiverConf.packetBufferSize)
+	}, receiver, t.bufferFactory, sub.ID(), t.receiverConf.packetBufferSize)
 	if err != nil {
 		return err
 	}
@@ -189,12 +196,14 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		}
 
 		sub.RemoveSubscribedTrack(t.participantId, subTrack)
+		sub.Negotiate()
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
 
-	sub.AddSubscribedTrack(t.participantId, subTrack)
 	t.receiver.AddDownTrack(downTrack, true)
+	sub.AddSubscribedTrack(t.participantId, subTrack)
+	sub.Negotiate()
 
 	return nil
 }
@@ -242,7 +251,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 
 	if t.receiver == nil {
-		t.receiver = NewWrappedReceiver(sfu.NewWebRTCReceiver(receiver, track, t.participantId), t.ID(), t.participantId)
+		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.participantId)
 		t.receiver.SetRTCPCh(t.rtcpCh)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()

@@ -24,10 +24,12 @@ type MessageSource interface {
 }
 
 type ParticipantInit struct {
-	Identity   string
-	Metadata   string
-	Reconnect  bool
-	Permission *livekit.ParticipantPermission
+	Identity        string
+	Metadata        string
+	Reconnect       bool
+	Permission      *livekit.ParticipantPermission
+	ProtocolVersion int32
+	UsePlanB        bool
 }
 
 type NewParticipantCallback func(roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
@@ -45,16 +47,18 @@ type Router interface {
 	GetNode(nodeId string) (*livekit.Node, error)
 	ListNodes() ([]*livekit.Node, error)
 
-	// participant signal connection is ready to start
+	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
-	// sends a message to RTC node
+	// CreateRTCSink sends a message to RTC node
 	CreateRTCSink(roomName, identity string) (MessageSink, error)
 
-	// when a new participant's RTC connection is ready to start
+	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)
-	// messages to be delivered to RTC node
+
+	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
+
 	Start() error
 	Stop()
 }

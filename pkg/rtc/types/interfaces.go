@@ -25,6 +25,7 @@ type Participant interface {
 	ID() string
 	Identity() string
 	State() livekit.ParticipantInfo_State
+	ProtocolVersion() ProtocolVersion
 	IsReady() bool
 	ConnectedAt() time.Time
 	ToProto() *livekit.ParticipantInfo
@@ -34,6 +35,7 @@ type Participant interface {
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 	SubscriberMediaEngine() *webrtc.MediaEngine
+	Negotiate()
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	GetPublishedTracks() []PublishedTrack

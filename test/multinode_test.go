@@ -144,3 +144,5 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	c3 := createRTCClient("c3", defaultServerPort)
 	waitUntilConnected(t, c3)
 }
+
+// TODO: test room with protocol version 1 and 0 participants

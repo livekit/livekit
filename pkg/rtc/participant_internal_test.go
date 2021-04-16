@@ -152,6 +152,7 @@ func newParticipantForTest(identity string) *ParticipantImpl {
 		identity,
 		rtcConf,
 		&routingfakes.FakeMessageSink{},
-		config.AudioConfig{})
+		config.AudioConfig{},
+		0)
 	return p
 }

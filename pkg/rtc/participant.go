@@ -27,17 +27,18 @@ const (
 )
 
 type ParticipantImpl struct {
-	id           string
-	publisher    *PCTransport
-	subscriber   *PCTransport
-	responseSink routing.MessageSink
-	audioConfig  config.AudioConfig
-	isClosed     utils.AtomicFlag
-	conf         *WebRTCConfig
-	identity     string
-	permission   *livekit.ParticipantPermission
-	state        atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh       chan []rtcp.Packet
+	id              string
+	publisher       *PCTransport
+	subscriber      *PCTransport
+	responseSink    routing.MessageSink
+	audioConfig     config.AudioConfig
+	isClosed        utils.AtomicFlag
+	conf            *WebRTCConfig
+	identity        string
+	permission      *livekit.ParticipantPermission
+	state           atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh          chan []rtcp.Packet
+	protocolVersion types.ProtocolVersion
 
 	// when first connected
 	connectedAt atomic.Value // time.Time
@@ -66,7 +67,7 @@ type ParticipantImpl struct {
 	onClose          func(types.Participant)
 }
 
-func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, ac config.AudioConfig) (*ParticipantImpl, error) {
+func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, ac config.AudioConfig, pv types.ProtocolVersion) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
@@ -75,6 +76,7 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 		responseSink:     rs,
 		audioConfig:      ac,
 		conf:             conf,
+		protocolVersion:  pv,
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		lock:             sync.RWMutex{},
@@ -127,6 +129,10 @@ func (p *ParticipantImpl) Identity() string {
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state.Load().(livekit.ParticipantInfo_State)
+}
+
+func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
+	return p.protocolVersion
 }
 
 func (p *ParticipantImpl) IsReady() bool {
@@ -290,6 +296,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 		"participant", p.Identity(),
 		//"sdp", sdp.SDP,
 	)
+
 	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -349,7 +356,11 @@ func (p *ParticipantImpl) Close() error {
 	return nil
 }
 
-// Subscribes op to all publishedTracks
+func (p *ParticipantImpl) Negotiate() {
+	p.subscriber.Negotiate()
+}
+
+// AddSubscriber subscribes op to all publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 	p.lock.RLock()
 	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
@@ -566,12 +577,13 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 }
 
 // when the server has an offer for participant
-func (p *ParticipantImpl) onOffer(sd webrtc.SessionDescription) {
+func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		logger.Debugw("skipping server offer", "participant", p.Identity())
 		// skip when disconnected
 		return
 	}
+
 	logger.Debugw("sending server offer to participant",
 		"participant", p.Identity(),
 		//"sdp", offer.SDP,
@@ -579,7 +591,7 @@ func (p *ParticipantImpl) onOffer(sd webrtc.SessionDescription) {
 
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
-			Offer: ToProtoSessionDescription(sd),
+			Offer: ToProtoSessionDescription(offer),
 		},
 	})
 }

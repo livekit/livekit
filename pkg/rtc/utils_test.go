@@ -6,13 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPackTrackId(t *testing.T) {
+func TestPackStreamId(t *testing.T) {
 	packed := "PA_123abc|uuid-id"
-	pId, trackId := UnpackTrackId(packed)
+	pId, trackId := UnpackStreamID(packed)
 	assert.Equal(t, "PA_123abc", pId)
 	assert.Equal(t, "uuid-id", trackId)
 
-	assert.Equal(t, packed, PackTrackId(pId, trackId))
+	assert.Equal(t, packed, PackStreamID(pId, trackId))
 }
 
 func TestPackDataTrackLabel(t *testing.T) {

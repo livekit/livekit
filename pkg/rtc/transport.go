@@ -68,7 +68,7 @@ func NewPCTransport(target livekit.SignalTarget, conf *WebRTCConfig) (*PCTranspo
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 	t.negotiationState.Store(negotiationStateNone)
-	t.pc.OnNegotiationNeeded(t.negotiate)
+	//t.pc.OnNegotiationNeeded(t.Negotiate)
 
 	return t, nil
 }
@@ -111,7 +111,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	t.negotiationState.Store(negotiationStateNone)
 	if state == negotiationRetry {
 		// need to Negotiate again
-		t.negotiate()
+		t.Negotiate()
 	}
 
 	return nil
@@ -122,7 +122,7 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
 }
 
-func (t *PCTransport) negotiate() {
+func (t *PCTransport) Negotiate() {
 	t.debouncedNegotiate(t.handleNegotiate)
 }
 

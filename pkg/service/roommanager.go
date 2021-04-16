@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/livekit/protocol/utils"
+	"github.com/pion/webrtc/v3"
 )
 
 const (
@@ -206,10 +207,16 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 		"room", roomName,
 		"node", r.currentNode.Id,
 		"participant", pi.Identity,
-		"num_participants", len(room.GetParticipants()),
+		"plan_b", pi.UsePlanB,
+		"protocol", pi.ProtocolVersion,
 	)
 
-	participant, err = rtc.NewParticipant(pi.Identity, r.rtcConfig, responseSink, r.config.Audio)
+	pv := types.ProtocolVersion(pi.ProtocolVersion)
+	rtcConf := *r.rtcConfig
+	if pi.UsePlanB {
+		rtcConf.Configuration.SDPSemantics = webrtc.SDPSemanticsPlanB
+	}
+	participant, err = rtc.NewParticipant(pi.Identity, &rtcConf, responseSink, r.config.Audio, pv)
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -279,6 +286,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			"participant", participant.Identity(),
 			"room", room.Name,
 		)
+		participant.Close()
 	}()
 	defer rtc.Recover()
 
@@ -316,18 +324,12 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
 				if err := participant.HandleAnswer(sd); err != nil {
 					logger.Errorw("could not handle answer", "participant", participant.Identity(), "err", err)
-					//conn.WriteJSON(
-					//	jsonError(http.StatusInternalServerError, "could not handle negotiate", err.Error()))
-					return
 				}
 			case *livekit.SignalRequest_Trickle:
 				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
 				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
 					logger.Errorw("could not handle trickle", "participant", participant.Identity(), "err", err)
-					//conn.WriteJSON(
-					//	jsonError(http.StatusInternalServerError, "could not handle trickle", err.Error()))
-					return
 				}
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)

@@ -187,6 +187,10 @@ type FakeParticipant struct {
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	NegotiateStub        func()
+	negotiateMutex       sync.RWMutex
+	negotiateArgsForCall []struct {
+	}
 	OnCloseStub        func(func(types.Participant))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
@@ -211,6 +215,16 @@ type FakeParticipant struct {
 	onTrackUpdatedMutex       sync.RWMutex
 	onTrackUpdatedArgsForCall []struct {
 		arg1 func(types.Participant, types.PublishedTrack)
+	}
+	ProtocolVersionStub        func() types.ProtocolVersion
+	protocolVersionMutex       sync.RWMutex
+	protocolVersionArgsForCall []struct {
+	}
+	protocolVersionReturns struct {
+		result1 types.ProtocolVersion
+	}
+	protocolVersionReturnsOnCall map[int]struct {
+		result1 types.ProtocolVersion
 	}
 	RTCPChanStub        func() chan []rtcp.Packet
 	rTCPChanMutex       sync.RWMutex
@@ -1241,6 +1255,30 @@ func (fake *FakeParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) Negotiate() {
+	fake.negotiateMutex.Lock()
+	fake.negotiateArgsForCall = append(fake.negotiateArgsForCall, struct {
+	}{})
+	stub := fake.NegotiateStub
+	fake.recordInvocation("Negotiate", []interface{}{})
+	fake.negotiateMutex.Unlock()
+	if stub != nil {
+		fake.NegotiateStub()
+	}
+}
+
+func (fake *FakeParticipant) NegotiateCallCount() int {
+	fake.negotiateMutex.RLock()
+	defer fake.negotiateMutex.RUnlock()
+	return len(fake.negotiateArgsForCall)
+}
+
+func (fake *FakeParticipant) NegotiateCalls(stub func()) {
+	fake.negotiateMutex.Lock()
+	defer fake.negotiateMutex.Unlock()
+	fake.NegotiateStub = stub
+}
+
 func (fake *FakeParticipant) OnClose(arg1 func(types.Participant)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
@@ -1399,6 +1437,59 @@ func (fake *FakeParticipant) OnTrackUpdatedArgsForCall(i int) func(types.Partici
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	argsForCall := fake.onTrackUpdatedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) ProtocolVersion() types.ProtocolVersion {
+	fake.protocolVersionMutex.Lock()
+	ret, specificReturn := fake.protocolVersionReturnsOnCall[len(fake.protocolVersionArgsForCall)]
+	fake.protocolVersionArgsForCall = append(fake.protocolVersionArgsForCall, struct {
+	}{})
+	stub := fake.ProtocolVersionStub
+	fakeReturns := fake.protocolVersionReturns
+	fake.recordInvocation("ProtocolVersion", []interface{}{})
+	fake.protocolVersionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) ProtocolVersionCallCount() int {
+	fake.protocolVersionMutex.RLock()
+	defer fake.protocolVersionMutex.RUnlock()
+	return len(fake.protocolVersionArgsForCall)
+}
+
+func (fake *FakeParticipant) ProtocolVersionCalls(stub func() types.ProtocolVersion) {
+	fake.protocolVersionMutex.Lock()
+	defer fake.protocolVersionMutex.Unlock()
+	fake.ProtocolVersionStub = stub
+}
+
+func (fake *FakeParticipant) ProtocolVersionReturns(result1 types.ProtocolVersion) {
+	fake.protocolVersionMutex.Lock()
+	defer fake.protocolVersionMutex.Unlock()
+	fake.ProtocolVersionStub = nil
+	fake.protocolVersionReturns = struct {
+		result1 types.ProtocolVersion
+	}{result1}
+}
+
+func (fake *FakeParticipant) ProtocolVersionReturnsOnCall(i int, result1 types.ProtocolVersion) {
+	fake.protocolVersionMutex.Lock()
+	defer fake.protocolVersionMutex.Unlock()
+	fake.ProtocolVersionStub = nil
+	if fake.protocolVersionReturnsOnCall == nil {
+		fake.protocolVersionReturnsOnCall = make(map[int]struct {
+			result1 types.ProtocolVersion
+		})
+	}
+	fake.protocolVersionReturnsOnCall[i] = struct {
+		result1 types.ProtocolVersion
+	}{result1}
 }
 
 func (fake *FakeParticipant) RTCPChan() chan []rtcp.Packet {
@@ -2126,6 +2217,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.identityMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
+	fake.negotiateMutex.RLock()
+	defer fake.negotiateMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	fake.onMetadataUpdateMutex.RLock()
@@ -2136,6 +2229,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onTrackPublishedMutex.RUnlock()
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
+	fake.protocolVersionMutex.RLock()
+	defer fake.protocolVersionMutex.RUnlock()
 	fake.rTCPChanMutex.RLock()
 	defer fake.rTCPChanMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()

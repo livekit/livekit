@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/websocket"
@@ -55,6 +56,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
+	protocolParam := r.FormValue("protocol")
+	planBParam := r.FormValue("planb")
 
 	claims := GetGrants(r.Context())
 	// require a claim
@@ -65,6 +68,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pi := routing.ParticipantInit{
 		Reconnect: boolValue(reconnectParam),
 		Identity:  claims.Identity,
+		UsePlanB:  boolValue(planBParam),
 	}
 	// only use permissions if any of them are set, default permissive
 	if claims.Video.CanPublish || claims.Video.CanSubscribe {
@@ -72,6 +76,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			CanSubscribe: claims.Video.CanSubscribe,
 			CanPublish:   claims.Video.CanPublish,
 		}
+	}
+	if pv, err := strconv.Atoi(protocolParam); err == nil {
+		pi.ProtocolVersion = int32(pv)
 	}
 
 	onlyName, err := EnsureJoinPermission(r.Context())

@@ -414,6 +414,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	if _, err = c.publisher.PeerConnection().AddTrack(track); err != nil {
 		return
 	}
+	c.publisher.Negotiate()
 	writer = NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
