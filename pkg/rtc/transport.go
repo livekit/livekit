@@ -151,8 +151,8 @@ func (t *PCTransport) handleNegotiate() {
 		return
 	}
 
-	t.onOffer(offer)
-
 	// indicate waiting for client
 	t.negotiationState.Store(negotiationStateClient)
+
+	t.onOffer(offer)
 }
