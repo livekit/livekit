@@ -14,27 +14,29 @@ redis:
 
 # WebRTC configuration
 rtc:
-  # when set, LiveKit will try to route traffic over TCP when UDP isn't available
-  # this port cannot be behind load balancer or TLS, and must be exposed on the node
-  tcp_port: 7881
+  # the main UDP port to transport WebRTC data
   udp_port: 9000
-  # UDP port range to transport WebRTC data
-  port_range_start: 9000
-  port_range_end: 11000
+  # when set, LiveKit enable WebRTC ICE over TCP when UDP isn't available
+  # this port *cannot* be behind load balancer or TLS, and must be exposed on the node
+  # WebRTC transports are encrypted and do not require additional encryption
+  tcp_port: 7881
   # when set to true, attempts to discover the host's public IP via STUN
   # this is useful for cloud environments such as AWS, where hosts have an internal IP
   # that maps to an external one
   use_external_ip: true
-  # when using REMB, the max bitrate that the SFU would accept
-  max_bitrate: 3145728
-  # number of packets to buffer in the SFU, defaults to 500
+  # optional settings
+#  # when using REMB, the max bitrate that the SFU would accept, defaults to 3Mbps
+#  max_bitrate: 3145728
+#  # number of packets to buffer in the SFU, defaults to 500
 #  packet_buffer_size: 500
-  # optional stun servers to use. by default LiveKit uses Google's public STUN servers
+#  # optional stun servers to use. by default LiveKit uses Google's public STUN servers
+#  # LiveKit will automatically configure connected clients to use the same STUN servers
 #  stun_servers:
 #    - server1
 
 # API key / secret pairs.
-# Keys are used for JWT authentication
+# Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens
+# and make calls to the server
 keys:
   key1: secret1
   key2: secret2
