@@ -16,7 +16,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pion/ice/v2 v2.1.2
-	github.com/pion/ion-sfu v1.9.8
+	github.com/pion/ion-sfu v1.9.7
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.2
