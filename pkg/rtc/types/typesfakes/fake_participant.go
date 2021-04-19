@@ -157,6 +157,16 @@ type FakeParticipant struct {
 		result1 webrtc.SessionDescription
 		result2 error
 	}
+	ICERestartStub        func() error
+	iCERestartMutex       sync.RWMutex
+	iCERestartArgsForCall []struct {
+	}
+	iCERestartReturns struct {
+		result1 error
+	}
+	iCERestartReturnsOnCall map[int]struct {
+		result1 error
+	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -1094,6 +1104,59 @@ func (fake *FakeParticipant) HandleOfferReturnsOnCall(i int, result1 webrtc.Sess
 		result1 webrtc.SessionDescription
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeParticipant) ICERestart() error {
+	fake.iCERestartMutex.Lock()
+	ret, specificReturn := fake.iCERestartReturnsOnCall[len(fake.iCERestartArgsForCall)]
+	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
+	}{})
+	stub := fake.ICERestartStub
+	fakeReturns := fake.iCERestartReturns
+	fake.recordInvocation("ICERestart", []interface{}{})
+	fake.iCERestartMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) ICERestartCallCount() int {
+	fake.iCERestartMutex.RLock()
+	defer fake.iCERestartMutex.RUnlock()
+	return len(fake.iCERestartArgsForCall)
+}
+
+func (fake *FakeParticipant) ICERestartCalls(stub func() error) {
+	fake.iCERestartMutex.Lock()
+	defer fake.iCERestartMutex.Unlock()
+	fake.ICERestartStub = stub
+}
+
+func (fake *FakeParticipant) ICERestartReturns(result1 error) {
+	fake.iCERestartMutex.Lock()
+	defer fake.iCERestartMutex.Unlock()
+	fake.ICERestartStub = nil
+	fake.iCERestartReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) ICERestartReturnsOnCall(i int, result1 error) {
+	fake.iCERestartMutex.Lock()
+	defer fake.iCERestartMutex.Unlock()
+	fake.ICERestartStub = nil
+	if fake.iCERestartReturnsOnCall == nil {
+		fake.iCERestartReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.iCERestartReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeParticipant) ID() string {
@@ -2211,6 +2274,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
+	fake.iCERestartMutex.RLock()
+	defer fake.iCERestartMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()

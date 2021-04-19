@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
 )
 
@@ -123,12 +123,16 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 }
 
 func (t *PCTransport) Negotiate() {
-	t.debouncedNegotiate(t.handleNegotiate)
+	t.debouncedNegotiate(func() {
+		if err := t.CreateAndSendOffer(nil); err != nil {
+			logger.Errorw("could not negotiate", "error", err)
+		}
+	})
 }
 
-func (t *PCTransport) handleNegotiate() {
+func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.onOffer == nil {
-		return
+		return nil
 	}
 
 	state := t.negotiationState.Load().(int)
@@ -136,23 +140,24 @@ func (t *PCTransport) handleNegotiate() {
 	if state == negotiationStateClient {
 		logger.Debugw("skipping negotiation, trying again later")
 		t.negotiationState.Store(negotiationRetry)
-		return
+		return nil
 	}
 
-	offer, err := t.pc.CreateOffer(nil)
+	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
 		logger.Errorw("could not create offer", "err", err)
-		return
+		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		logger.Errorw("could not set local description", "err", err)
-		return
+		return err
 	}
 
 	// indicate waiting for client
 	t.negotiationState.Store(negotiationStateClient)
 
 	t.onOffer(offer)
+	return nil
 }

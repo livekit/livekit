@@ -36,6 +36,7 @@ type Participant interface {
 	SetResponseSink(sink routing.MessageSink)
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
+	ICERestart() error
 
 	AddTrack(clientId, name string, trackType livekit.TrackType)
 	GetPublishedTracks() []PublishedTrack

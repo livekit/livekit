@@ -360,6 +360,13 @@ func (p *ParticipantImpl) Negotiate() {
 	p.subscriber.Negotiate()
 }
 
+// ICERestart restarts subscriber ICE connections
+func (p *ParticipantImpl) ICERestart() error {
+	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
+		ICERestart: true,
+	})
+}
+
 // AddSubscriber subscribes op to all publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 	p.lock.RLock()

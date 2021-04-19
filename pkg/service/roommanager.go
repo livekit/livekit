@@ -196,6 +196,12 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 				prevSink.Close()
 			}
 			participant.SetResponseSink(responseSink)
+			if err := participant.ICERestart(); err != nil {
+				logger.Warnw("could not restart ICE",
+					"participant", pi.Identity,
+					"error", err,
+				)
+			}
 			return
 		} else {
 			// we need to clean up the existing participant, so a new one can join
