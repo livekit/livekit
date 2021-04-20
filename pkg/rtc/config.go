@@ -37,7 +37,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	}
 	s := webrtc.SettingEngine{}
 	loggerFactory := logging.NewDefaultLoggerFactory()
-	lkLogger := loggerFactory.NewLogger("livekit")
+	lkLogger := loggerFactory.NewLogger("livekit-mux")
 
 	iceUrls := make([]string, 0)
 	for _, stunServer := range conf.StunServers {
@@ -68,10 +68,15 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	var udpMux *ice.UDPMuxDefault
 	if conf.UDPPort != 0 {
 		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
-			Logger:         lkLogger,
-			ReadBufferSize: readBufferSize,
+			Logger: lkLogger,
 		})
-		if err := udpMux.Start(int(conf.UDPPort)); err != nil {
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{
+			Port: int(conf.UDPPort),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := udpMux.Start(conn); err != nil {
 			return nil, err
 		}
 		s.SetICEUDPMux(udpMux)

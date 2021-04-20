@@ -43,3 +43,5 @@ require (
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
+
+replace github.com/pion/ice/v2 => github.com/davidzhao/ice/v2 v2.0.17-0.20210419173216-2e00c9e6a072
