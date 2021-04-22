@@ -15,7 +15,7 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pion/ice/v2 v2.1.2
+	github.com/pion/ice/v2 v2.1.4
 	github.com/pion/ion-sfu v1.9.7
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
@@ -23,7 +23,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.0.22
+	github.com/pion/webrtc/v3 v3.0.23
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.19.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
@@ -35,13 +35,11 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
-	golang.org/x/crypto v0.0.0-20210415154028-4f45737414dc // indirect
+	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/net v0.0.0-20210415231046-e915ea6b2b7d // indirect
-	golang.org/x/sys v0.0.0-20210415045647-66c3f260301c // indirect
+	golang.org/x/net v0.0.0-20210421230115-4e50805a0758 // indirect
+	golang.org/x/sys v0.0.0-20210421221651-33663a62ff08 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
-
-replace github.com/pion/ice/v2 => github.com/davidzhao/ice/v2 v2.0.17-0.20210419173216-2e00c9e6a072

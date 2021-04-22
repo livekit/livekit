@@ -98,8 +98,7 @@ func (t *MediaTrack) SetMuted(muted bool) {
 
 	// mute all of the subscribedtracks
 	t.lock.RLock()
-	for id, st := range t.subscribedTracks {
-		logger.Debugw("setting muted", "dstParticipant", id, "muted", muted, "track", t.ID())
+	for _, st := range t.subscribedTracks {
 		st.SetPublisherMuted(muted)
 	}
 	t.lock.RUnlock()
