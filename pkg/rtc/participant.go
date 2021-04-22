@@ -41,7 +41,7 @@ type ParticipantImpl struct {
 	protocolVersion types.ProtocolVersion
 
 	// when first connected
-	connectedAt atomic.Value // time.Time
+	connectedAt time.Time
 
 	// JSON encoded metadata to pass to clients
 	metadata string
@@ -82,12 +82,11 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 		lock:             sync.RWMutex{},
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
+		connectedAt:      time.Now(),
 	}
-	// store empty value
-	p.connectedAt.Store(time.Time{})
 	p.state.Store(livekit.ParticipantInfo_JOINING)
-	var err error
 
+	var err error
 	p.publisher, err = NewPCTransport(livekit.SignalTarget_PUBLISHER, conf)
 	if err != nil {
 		return nil, err
@@ -141,7 +140,7 @@ func (p *ParticipantImpl) IsReady() bool {
 }
 
 func (p *ParticipantImpl) ConnectedAt() time.Time {
-	return p.connectedAt.Load().(time.Time)
+	return p.connectedAt
 }
 
 // SetMetadata attaches metadata to the participant
@@ -729,7 +728,6 @@ func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnecti
 	//logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity)
 	if state == webrtc.ICEConnectionStateConnected {
-		p.connectedAt.Store(time.Now())
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed {
 		go p.Close()

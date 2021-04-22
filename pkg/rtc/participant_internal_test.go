@@ -49,14 +49,6 @@ func TestIsReady(t *testing.T) {
 }
 
 func TestICEStateChange(t *testing.T) {
-	t.Run("sets connectedAt when connected", func(t *testing.T) {
-		p := newParticipantForTest("test")
-		require.True(t, p.ConnectedAt().IsZero())
-
-		p.handlePublisherICEStateChange(webrtc.ICEConnectionStateConnected)
-		require.True(t, time.Now().Sub(p.ConnectedAt()) < time.Second)
-	})
-
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan bool, 1)
@@ -143,6 +135,13 @@ func TestDisconnectTiming(t *testing.T) {
 		// close channel and then try to Negotiate
 		msg.Close()
 	})
+}
+
+func TestCorrectJoinedAt(t *testing.T) {
+	p := newParticipantForTest("test")
+	info := p.ToProto()
+	require.NotZero(t, info.JoinedAt)
+	require.True(t, time.Now().Unix()-info.JoinedAt <= 1)
 }
 
 func newParticipantForTest(identity string) *ParticipantImpl {
