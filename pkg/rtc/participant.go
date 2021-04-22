@@ -327,6 +327,13 @@ func (p *ParticipantImpl) Close() error {
 		return nil
 	}
 
+	// send leave message
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Leave{
+			Leave: &livekit.LeaveRequest{},
+		},
+	})
+
 	// remove all downtracks
 	p.lock.Lock()
 	for _, t := range p.publishedTracks {
