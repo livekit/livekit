@@ -273,11 +273,19 @@ func (r *RedisRouter) setParticipantSignalNode(connectionId, nodeId string) erro
 }
 
 func (r *RedisRouter) getParticipantRTCNode(participantKey string) (string, error) {
-	return r.rc.Get(r.ctx, participantRTCKey(participantKey)).Result()
+	val, err := r.rc.Get(r.ctx, participantRTCKey(participantKey)).Result()
+	if err == redis.Nil {
+		err = ErrNodeNotFound
+	}
+	return val, err
 }
 
 func (r *RedisRouter) getParticipantSignalNode(connectionId string) (nodeId string, err error) {
-	return r.rc.Get(r.ctx, participantSignalKey(connectionId)).Result()
+	val, err := r.rc.Get(r.ctx, participantSignalKey(connectionId)).Result()
+	if err == redis.Nil {
+		err = ErrNodeNotFound
+	}
+	return val, err
 }
 
 // update node stats and cleanup

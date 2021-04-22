@@ -54,17 +54,38 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 	return
 }
 
-func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (res *livekit.DeleteRoomResponse, err error) {
-	if err = EnsureCreatePermission(ctx); err != nil {
+func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
+	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	err = s.roomManager.DeleteRoom(req.Room)
+	// if the room is currently active, RTC node needs to disconnect clients
+	// here we are using any user's identity, due to how it works with routing
+	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
 	if err != nil {
-		err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
-		return
+		return nil, err
 	}
-	res = &livekit.DeleteRoomResponse{}
-	return
+
+	if len(participants) > 0 {
+		rtcSink, err := s.roomManager.router.CreateRTCSink(req.Room, participants[0].Identity)
+		if err != nil {
+			return nil, err
+		}
+
+		defer rtcSink.Close()
+		_ = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+			Message: &livekit.RTCNodeMessage_DeleteRoom{
+				DeleteRoom: req,
+			},
+		})
+	} else {
+		// if a room hasn't started, delete locally
+		if err = s.roomManager.DeleteRoom(req.Room); err != nil {
+			err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
+			return nil, err
+		}
+	}
+
+	return &livekit.DeleteRoomResponse{}, nil
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {

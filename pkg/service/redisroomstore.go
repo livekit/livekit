@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	// hash of room_name => Room proto
+	// RoomsKey is hash of room_name => Room proto
 	RoomsKey = "rooms"
 
-	// hash of room_id => room name
+	// RoomIdMap is hash of room_id => room name
 	RoomIdMap = "room_id_map"
 
-	// hash of participant_name => ParticipantInfo
+	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	// a key for each room, with expiration
 	RoomParticipantsPrefix = "room_participants:"
 
