@@ -547,10 +547,12 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 	ci := c.ToJSON()
 
 	// write candidate
-	//logger.Debugw("sending ice candidates")
+	logger.Debugw("sending ice candidates",
+		"participant", p.Identity(),
+		"candidate", c.String())
 	trickle := ToProtoTrickle(ci)
 	trickle.Target = target
-	p.writeMessage(&livekit.SignalResponse{
+	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{
 			Trickle: trickle,
 		},

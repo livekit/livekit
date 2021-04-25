@@ -37,6 +37,10 @@ locals {
       protocol = "udp"
     },
     {
+      containerPort = var.rtc_udp_port
+      protocol = "udp"
+    },
+    {
       containerPort = var.rtc_tcp_port
       protocol = "tcp"
     }

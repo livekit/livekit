@@ -67,8 +67,7 @@ func NewConfig(confString string) (*Config, error) {
 	conf := &Config{
 		Port: 7880,
 		RTC: RTCConfig{
-			UseExternalIP: true,
-
+			UseExternalIP:     true,
 			ICEPortRangeStart: 9000,
 			ICEPortRangeEnd:   11000,
 			StunServers: []string{

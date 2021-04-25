@@ -61,12 +61,13 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	networkTypes := make([]webrtc.NetworkType, 0, 4)
 	if !conf.ForceTCP {
 		networkTypes = append(networkTypes,
-			webrtc.NetworkTypeUDP4)
+			webrtc.NetworkTypeUDP4,
+		)
 	}
 
 	var udpMux *ice.UDPMuxDefault
 	if conf.UDPPort != 0 {
-		conn, err := net.ListenUDP("udp", &net.UDPAddr{
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 			Port: int(conf.UDPPort),
 		})
 		if err != nil {
@@ -88,7 +89,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeTCP4,
 		)
-		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
+		tcpListener, err := net.ListenTCP("tcp4", &net.TCPAddr{
 			Port: int(conf.TCPPort),
 		})
 		if err != nil {
