@@ -153,6 +153,7 @@ func (r *Room) Join(participant types.Participant) error {
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
+	participant.OnDataPacket(r.onDataPacket)
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
 		"identity", participant.Identity(),
@@ -192,9 +193,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
 	p.OnStateChange(nil)
+	p.OnMetadataUpdate(nil)
+	p.OnDataPacket(nil)
 
 	// close participant as well
-	p.Close()
+	_ = p.Close()
 
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
@@ -328,6 +331,18 @@ func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
 	}
 }
 
+func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
+	for _, op := range r.GetParticipants() {
+		if op.State() != livekit.ParticipantInfo_ACTIVE {
+			continue
+		}
+		if op.ID() == source.ID() {
+			continue
+		}
+		_ = op.SendDataPacket(dp)
+	}
+}
+
 func (r *Room) subscribeToExistingTracks(p types.Participant) {
 	tracksAdded := 0
 	for _, op := range r.GetParticipants() {
@@ -369,8 +384,22 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 }
 
 func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
+	dp := &livekit.DataPacket{
+		Kind: livekit.DataPacket_LOSSY,
+		Value: &livekit.DataPacket_Speaker{
+			Speaker: &livekit.ActiveSpeakerUpdate{
+				Speakers: speakers,
+			},
+		},
+	}
+
+	logger.Infow("sending active speakers", "count", len(speakers))
 	for _, p := range r.GetParticipants() {
-		_ = p.SendActiveSpeakers(speakers)
+		if p.ProtocolVersion().HandlesDataPackets() {
+			_ = p.SendDataPacket(dp)
+		} else {
+			_ = p.SendActiveSpeakers(speakers)
+		}
 	}
 }
 

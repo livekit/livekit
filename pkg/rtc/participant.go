@@ -11,6 +11,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -22,8 +23,10 @@ import (
 )
 
 const (
-	placeholderDataChannel = "_private"
-	sdBatchSize            = 15
+	lossyDataChannel    = "_lossy"
+	reliableDataChannel = "_reliable"
+	privateDataChannel  = "_private"
+	sdBatchSize         = 15
 )
 
 type ParticipantImpl struct {
@@ -39,6 +42,9 @@ type ParticipantImpl struct {
 	state           atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh          chan []rtcp.Packet
 	protocolVersion types.ProtocolVersion
+	// reliable and unreliable data channels
+	reliableDC *webrtc.DataChannel
+	lossyDC    *webrtc.DataChannel
 
 	// when first connected
 	connectedAt time.Time
@@ -64,6 +70,7 @@ type ParticipantImpl struct {
 	onTrackUpdated   func(types.Participant, types.PublishedTrack)
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.Participant)
+	onDataPacket     func(types.Participant, *livekit.DataPacket)
 	onClose          func(types.Participant)
 }
 
@@ -110,9 +117,9 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 	})
 
 	p.publisher.pc.OnICEConnectionStateChange(p.handlePublisherICEStateChange)
-
 	p.publisher.pc.OnTrack(p.onMediaTrack)
-	p.subscriber.pc.OnDataChannel(p.onDataChannel)
+	p.publisher.pc.OnDataChannel(p.onDataChannel)
+
 	p.subscriber.OnOffer(p.onOffer)
 
 	return p, nil
@@ -206,6 +213,10 @@ func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.Participant)) {
 	p.onMetadataUpdate = callback
 }
 
+func (p *ParticipantImpl) OnDataPacket(callback func(types.Participant, *livekit.DataPacket)) {
+	p.onDataPacket = callback
+}
+
 func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 	p.onClose = callback
 }
@@ -285,8 +296,8 @@ func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
 	return tracks
 }
 
-// handles a client answer response, with subscriber PC, server initiates the offer
-// and client answers
+// HandleAnswer handles a client answer response, with subscriber PC, server initiates the
+// offer and client answers
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
@@ -452,6 +463,30 @@ func (p *ParticipantImpl) SendActiveSpeakers(speakers []*livekit.SpeakerInfo) er
 			},
 		},
 	})
+}
+
+func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
+	if p.State() != livekit.ParticipantInfo_ACTIVE {
+		return ErrDataChannelUnavailable
+	}
+
+	data, err := proto.Marshal(dp)
+	if err != nil {
+		return err
+	}
+	if dp.Kind == livekit.DataPacket_RELIABLE {
+		if p.reliableDC == nil {
+			return ErrDataChannelUnavailable
+		}
+		logger.Debugw("sending reliable packet", "participant", p.Identity())
+		return p.reliableDC.Send(data)
+	} else {
+		if p.lossyDC == nil {
+			return ErrDataChannelUnavailable
+		}
+		logger.Debugw("sending lossy packet", "participant", p.Identity())
+		return p.lossyDC.Send(data)
+	}
 }
 
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
@@ -659,27 +694,39 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
-	if dc.Label() == placeholderDataChannel {
-		return
+	switch dc.Label() {
+	case reliableDataChannel:
+		p.reliableDC = dc
+		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
+		})
+	case lossyDataChannel:
+		p.lossyDC = dc
+		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
+		})
+	case privateDataChannel:
+		// ignore
+	default:
+		logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
+
+		if !p.CanPublish() {
+			logger.Warnw("no permission to publish dataTrack",
+				"participant", p.Identity())
+			return
+		}
+
+		// data channels have numeric ids, so we use its label to identify
+		ti := p.getPendingTrack(dc.Label(), livekit.TrackType_DATA, true)
+		if ti == nil {
+			return
+		}
+
+		dt := NewDataTrack(ti.Sid, p.id, dc)
+		dt.name = ti.Name
+
+		p.handleTrackPublished(dt)
 	}
-	logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
-
-	if !p.CanPublish() {
-		logger.Warnw("no permission to publish dataTrack",
-			"participant", p.Identity())
-		return
-	}
-
-	// data channels have numeric ids, so we use its label to identify
-	ti := p.getPendingTrack(dc.Label(), livekit.TrackType_DATA, true)
-	if ti == nil {
-		return
-	}
-
-	dt := NewDataTrack(ti.Sid, p.id, dc)
-	dt.name = ti.Name
-
-	p.handleTrackPublished(dt)
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, deleteAfter bool) *livekit.TrackInfo {
@@ -706,6 +753,28 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		delete(p.pendingTracks, clientId)
 	}
 	return ti
+}
+
+func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+	dp := livekit.DataPacket{}
+	if err := proto.Unmarshal(data, &dp); err != nil {
+		logger.Warnw("could not parse data packet", "error", err)
+		return
+	}
+
+	// trust the channel that it came in as the source of truth
+	dp.Kind = kind
+
+	// only forward on user payloads
+	switch payload := dp.Value.(type) {
+	case *livekit.DataPacket_User:
+		if p.onDataPacket != nil {
+			payload.User.ParticipantSid = p.id
+			p.onDataPacket(p, &dp)
+		}
+	default:
+		logger.Warnw("received unsupported data packet", "payload", payload)
+	}
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
