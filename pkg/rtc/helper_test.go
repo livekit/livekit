@@ -7,11 +7,12 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func newMockParticipant(identity string) *typesfakes.FakeParticipant {
+func newMockParticipant(identity string, protocol types.ProtocolVersion) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
 	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
+	p.ProtocolVersionReturns(protocol)
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.Participant)

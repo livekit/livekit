@@ -393,7 +393,6 @@ func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 		},
 	}
 
-	logger.Infow("sending active speakers", "count", len(speakers))
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().HandlesDataPackets() {
 			_ = p.SendDataPacket(dp)

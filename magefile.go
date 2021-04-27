@@ -161,14 +161,15 @@ func PublishDocker() error {
 		return err
 	}
 
-	latestImg := imageName + ":latest"
-	cmd = exec.Command("docker", "tag", versionImg, latestImg)
+	idx := strings.LastIndex(version.Version, ".")
+	minorImg := fmt.Sprintf("%s:v%s", imageName, version.Version[:idx])
+	cmd = exec.Command("docker", "tag", versionImg, minorImg)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
-	cmd = exec.Command("docker", "push", latestImg)
+	cmd = exec.Command("docker", "push", minorImg)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
