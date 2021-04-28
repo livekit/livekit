@@ -478,13 +478,11 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 		if p.reliableDC == nil {
 			return ErrDataChannelUnavailable
 		}
-		logger.Debugw("sending reliable packet", "participant", p.Identity())
 		return p.reliableDC.Send(data)
 	} else {
 		if p.lossyDC == nil {
 			return ErrDataChannelUnavailable
 		}
-		logger.Debugw("sending lossy packet", "participant", p.Identity())
 		return p.lossyDC.Send(data)
 	}
 }
