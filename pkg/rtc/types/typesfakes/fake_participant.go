@@ -206,6 +206,11 @@ type FakeParticipant struct {
 	onCloseArgsForCall []struct {
 		arg1 func(types.Participant)
 	}
+	OnDataPacketStub        func(func(types.Participant, *livekit.DataPacket))
+	onDataPacketMutex       sync.RWMutex
+	onDataPacketArgsForCall []struct {
+		arg1 func(types.Participant, *livekit.DataPacket)
+	}
 	OnMetadataUpdateStub        func(func(types.Participant))
 	onMetadataUpdateMutex       sync.RWMutex
 	onMetadataUpdateArgsForCall []struct {
@@ -266,6 +271,17 @@ type FakeParticipant struct {
 		result1 error
 	}
 	sendActiveSpeakersReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendDataPacketStub        func(*livekit.DataPacket) error
+	sendDataPacketMutex       sync.RWMutex
+	sendDataPacketArgsForCall []struct {
+		arg1 *livekit.DataPacket
+	}
+	sendDataPacketReturns struct {
+		result1 error
+	}
+	sendDataPacketReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SendJoinResponseStub        func(*livekit.Room, []types.Participant, []*livekit.ICEServer) error
@@ -1374,6 +1390,38 @@ func (fake *FakeParticipant) OnCloseArgsForCall(i int) func(types.Participant) {
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) OnDataPacket(arg1 func(types.Participant, *livekit.DataPacket)) {
+	fake.onDataPacketMutex.Lock()
+	fake.onDataPacketArgsForCall = append(fake.onDataPacketArgsForCall, struct {
+		arg1 func(types.Participant, *livekit.DataPacket)
+	}{arg1})
+	stub := fake.OnDataPacketStub
+	fake.recordInvocation("OnDataPacket", []interface{}{arg1})
+	fake.onDataPacketMutex.Unlock()
+	if stub != nil {
+		fake.OnDataPacketStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) OnDataPacketCallCount() int {
+	fake.onDataPacketMutex.RLock()
+	defer fake.onDataPacketMutex.RUnlock()
+	return len(fake.onDataPacketArgsForCall)
+}
+
+func (fake *FakeParticipant) OnDataPacketCalls(stub func(func(types.Participant, *livekit.DataPacket))) {
+	fake.onDataPacketMutex.Lock()
+	defer fake.onDataPacketMutex.Unlock()
+	fake.OnDataPacketStub = stub
+}
+
+func (fake *FakeParticipant) OnDataPacketArgsForCall(i int) func(types.Participant, *livekit.DataPacket) {
+	fake.onDataPacketMutex.RLock()
+	defer fake.onDataPacketMutex.RUnlock()
+	argsForCall := fake.onDataPacketArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) OnMetadataUpdate(arg1 func(types.Participant)) {
 	fake.onMetadataUpdateMutex.Lock()
 	fake.onMetadataUpdateArgsForCall = append(fake.onMetadataUpdateArgsForCall, struct {
@@ -1735,6 +1783,67 @@ func (fake *FakeParticipant) SendActiveSpeakersReturnsOnCall(i int, result1 erro
 		})
 	}
 	fake.sendActiveSpeakersReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SendDataPacket(arg1 *livekit.DataPacket) error {
+	fake.sendDataPacketMutex.Lock()
+	ret, specificReturn := fake.sendDataPacketReturnsOnCall[len(fake.sendDataPacketArgsForCall)]
+	fake.sendDataPacketArgsForCall = append(fake.sendDataPacketArgsForCall, struct {
+		arg1 *livekit.DataPacket
+	}{arg1})
+	stub := fake.SendDataPacketStub
+	fakeReturns := fake.sendDataPacketReturns
+	fake.recordInvocation("SendDataPacket", []interface{}{arg1})
+	fake.sendDataPacketMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SendDataPacketCallCount() int {
+	fake.sendDataPacketMutex.RLock()
+	defer fake.sendDataPacketMutex.RUnlock()
+	return len(fake.sendDataPacketArgsForCall)
+}
+
+func (fake *FakeParticipant) SendDataPacketCalls(stub func(*livekit.DataPacket) error) {
+	fake.sendDataPacketMutex.Lock()
+	defer fake.sendDataPacketMutex.Unlock()
+	fake.SendDataPacketStub = stub
+}
+
+func (fake *FakeParticipant) SendDataPacketArgsForCall(i int) *livekit.DataPacket {
+	fake.sendDataPacketMutex.RLock()
+	defer fake.sendDataPacketMutex.RUnlock()
+	argsForCall := fake.sendDataPacketArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SendDataPacketReturns(result1 error) {
+	fake.sendDataPacketMutex.Lock()
+	defer fake.sendDataPacketMutex.Unlock()
+	fake.SendDataPacketStub = nil
+	fake.sendDataPacketReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SendDataPacketReturnsOnCall(i int, result1 error) {
+	fake.sendDataPacketMutex.Lock()
+	defer fake.sendDataPacketMutex.Unlock()
+	fake.SendDataPacketStub = nil
+	if fake.sendDataPacketReturnsOnCall == nil {
+		fake.sendDataPacketReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendDataPacketReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -2286,6 +2395,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.negotiateMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
+	fake.onDataPacketMutex.RLock()
+	defer fake.onDataPacketMutex.RUnlock()
 	fake.onMetadataUpdateMutex.RLock()
 	defer fake.onMetadataUpdateMutex.RUnlock()
 	fake.onStateChangeMutex.RLock()
@@ -2304,6 +2415,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.sendActiveSpeakersMutex.RLock()
 	defer fake.sendActiveSpeakersMutex.RUnlock()
+	fake.sendDataPacketMutex.RLock()
+	defer fake.sendDataPacketMutex.RUnlock()
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()

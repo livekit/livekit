@@ -17,7 +17,7 @@ const (
 	trackIdSeparator = "|"
 )
 
-func UnpackStreamID(packed string) (peerId string, trackId string) {
+func UnpackStreamID(packed string) (participantId string, trackId string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) > 1 {
 		return parts[0], packed[len(parts[0])+1:]

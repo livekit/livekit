@@ -11,19 +11,19 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.4.0
+	github.com/livekit/protocol v0.5.0
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pion/ice/v2 v2.1.6
+	github.com/pion/ice/v2 v2.1.7
 	github.com/pion/ion-sfu v1.9.7
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
-	github.com/pion/rtp v1.6.2
+	github.com/pion/rtp v1.6.5
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.0.23
+	github.com/pion/webrtc/v3 v3.0.27
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.19.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
@@ -37,8 +37,8 @@ require (
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/net v0.0.0-20210423184538-5f58ad60dda6 // indirect
-	golang.org/x/sys v0.0.0-20210423185535-09eb48e85fd7 // indirect
+	golang.org/x/net v0.0.0-20210427231257-85d9c07bbe3a // indirect
+	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
 	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b

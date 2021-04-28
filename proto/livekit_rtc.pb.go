@@ -115,6 +115,52 @@ func (VideoQuality) EnumDescriptor() ([]byte, []int) {
 	return file_livekit_rtc_proto_rawDescGZIP(), []int{1}
 }
 
+type DataPacket_Kind int32
+
+const (
+	DataPacket_RELIABLE DataPacket_Kind = 0
+	DataPacket_LOSSY    DataPacket_Kind = 1
+)
+
+// Enum value maps for DataPacket_Kind.
+var (
+	DataPacket_Kind_name = map[int32]string{
+		0: "RELIABLE",
+		1: "LOSSY",
+	}
+	DataPacket_Kind_value = map[string]int32{
+		"RELIABLE": 0,
+		"LOSSY":    1,
+	}
+)
+
+func (x DataPacket_Kind) Enum() *DataPacket_Kind {
+	p := new(DataPacket_Kind)
+	*p = x
+	return p
+}
+
+func (x DataPacket_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DataPacket_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_livekit_rtc_proto_enumTypes[2].Descriptor()
+}
+
+func (DataPacket_Kind) Type() protoreflect.EnumType {
+	return &file_livekit_rtc_proto_enumTypes[2]
+}
+
+func (x DataPacket_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DataPacket_Kind.Descriptor instead.
+func (DataPacket_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_livekit_rtc_proto_rawDescGZIP(), []int{16, 0}
+}
+
 type SignalRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1244,6 +1290,152 @@ func (x *ICEServer) GetCredential() string {
 	return ""
 }
 
+// new DataPacket API
+type DataPacket struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Kind DataPacket_Kind `protobuf:"varint,1,opt,name=kind,proto3,enum=livekit.DataPacket_Kind" json:"kind,omitempty"`
+	// Types that are assignable to Value:
+	//	*DataPacket_User
+	//	*DataPacket_Speaker
+	Value isDataPacket_Value `protobuf_oneof:"value"`
+}
+
+func (x *DataPacket) Reset() {
+	*x = DataPacket{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_livekit_rtc_proto_msgTypes[16]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DataPacket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DataPacket) ProtoMessage() {}
+
+func (x *DataPacket) ProtoReflect() protoreflect.Message {
+	mi := &file_livekit_rtc_proto_msgTypes[16]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DataPacket.ProtoReflect.Descriptor instead.
+func (*DataPacket) Descriptor() ([]byte, []int) {
+	return file_livekit_rtc_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *DataPacket) GetKind() DataPacket_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return DataPacket_RELIABLE
+}
+
+func (m *DataPacket) GetValue() isDataPacket_Value {
+	if m != nil {
+		return m.Value
+	}
+	return nil
+}
+
+func (x *DataPacket) GetUser() *UserPacket {
+	if x, ok := x.GetValue().(*DataPacket_User); ok {
+		return x.User
+	}
+	return nil
+}
+
+func (x *DataPacket) GetSpeaker() *ActiveSpeakerUpdate {
+	if x, ok := x.GetValue().(*DataPacket_Speaker); ok {
+		return x.Speaker
+	}
+	return nil
+}
+
+type isDataPacket_Value interface {
+	isDataPacket_Value()
+}
+
+type DataPacket_User struct {
+	User *UserPacket `protobuf:"bytes,2,opt,name=user,proto3,oneof"`
+}
+
+type DataPacket_Speaker struct {
+	Speaker *ActiveSpeakerUpdate `protobuf:"bytes,3,opt,name=speaker,proto3,oneof"`
+}
+
+func (*DataPacket_User) isDataPacket_Value() {}
+
+func (*DataPacket_Speaker) isDataPacket_Value() {}
+
+type UserPacket struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// participant ID of user that sent the message
+	ParticipantSid string `protobuf:"bytes,1,opt,name=participant_sid,json=participantSid,proto3" json:"participant_sid,omitempty"`
+	// user defined payload
+	Payload []byte `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+}
+
+func (x *UserPacket) Reset() {
+	*x = UserPacket{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_livekit_rtc_proto_msgTypes[17]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *UserPacket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserPacket) ProtoMessage() {}
+
+func (x *UserPacket) ProtoReflect() protoreflect.Message {
+	mi := &file_livekit_rtc_proto_msgTypes[17]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserPacket.ProtoReflect.Descriptor instead.
+func (*UserPacket) Descriptor() ([]byte, []int) {
+	return file_livekit_rtc_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *UserPacket) GetParticipantSid() string {
+	if x != nil {
+		return x.ParticipantSid
+	}
+	return ""
+}
+
+func (x *UserPacket) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
 var File_livekit_rtc_proto protoreflect.FileDescriptor
 
 var file_livekit_rtc_proto_rawDesc = []byte{
@@ -1391,17 +1583,34 @@ var file_livekit_rtc_proto_rawDesc = []byte{
 	0x0a, 0x08, 0x75, 0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x08, 0x75, 0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x1e, 0x0a, 0x0a, 0x63, 0x72,
 	0x65, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
-	0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x2a, 0x2d, 0x0a, 0x0c, 0x53, 0x69,
-	0x67, 0x6e, 0x61, 0x6c, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x12, 0x0d, 0x0a, 0x09, 0x50, 0x55,
-	0x42, 0x4c, 0x49, 0x53, 0x48, 0x45, 0x52, 0x10, 0x00, 0x12, 0x0e, 0x0a, 0x0a, 0x53, 0x55, 0x42,
-	0x53, 0x43, 0x52, 0x49, 0x42, 0x45, 0x52, 0x10, 0x01, 0x2a, 0x2d, 0x0a, 0x0c, 0x56, 0x69, 0x64,
-	0x65, 0x6f, 0x51, 0x75, 0x61, 0x6c, 0x69, 0x74, 0x79, 0x12, 0x07, 0x0a, 0x03, 0x4c, 0x4f, 0x57,
-	0x10, 0x00, 0x12, 0x0a, 0x0a, 0x06, 0x4d, 0x45, 0x44, 0x49, 0x55, 0x4d, 0x10, 0x01, 0x12, 0x08,
-	0x0a, 0x04, 0x48, 0x49, 0x47, 0x48, 0x10, 0x02, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68,
-	0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2f, 0x6c,
-	0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2d, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2f, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x22, 0xc9, 0x01, 0x0a, 0x0a, 0x44,
+	0x61, 0x74, 0x61, 0x50, 0x61, 0x63, 0x6b, 0x65, 0x74, 0x12, 0x2c, 0x0a, 0x04, 0x6b, 0x69, 0x6e,
+	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x18, 0x2e, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69,
+	0x74, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x50, 0x61, 0x63, 0x6b, 0x65, 0x74, 0x2e, 0x4b, 0x69, 0x6e,
+	0x64, 0x52, 0x04, 0x6b, 0x69, 0x6e, 0x64, 0x12, 0x29, 0x0a, 0x04, 0x75, 0x73, 0x65, 0x72, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2e,
+	0x55, 0x73, 0x65, 0x72, 0x50, 0x61, 0x63, 0x6b, 0x65, 0x74, 0x48, 0x00, 0x52, 0x04, 0x75, 0x73,
+	0x65, 0x72, 0x12, 0x38, 0x0a, 0x07, 0x73, 0x70, 0x65, 0x61, 0x6b, 0x65, 0x72, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2e, 0x41, 0x63,
+	0x74, 0x69, 0x76, 0x65, 0x53, 0x70, 0x65, 0x61, 0x6b, 0x65, 0x72, 0x55, 0x70, 0x64, 0x61, 0x74,
+	0x65, 0x48, 0x00, 0x52, 0x07, 0x73, 0x70, 0x65, 0x61, 0x6b, 0x65, 0x72, 0x22, 0x1f, 0x0a, 0x04,
+	0x4b, 0x69, 0x6e, 0x64, 0x12, 0x0c, 0x0a, 0x08, 0x52, 0x45, 0x4c, 0x49, 0x41, 0x42, 0x4c, 0x45,
+	0x10, 0x00, 0x12, 0x09, 0x0a, 0x05, 0x4c, 0x4f, 0x53, 0x53, 0x59, 0x10, 0x01, 0x42, 0x07, 0x0a,
+	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x22, 0x4f, 0x0a, 0x0a, 0x55, 0x73, 0x65, 0x72, 0x50, 0x61,
+	0x63, 0x6b, 0x65, 0x74, 0x12, 0x27, 0x0a, 0x0f, 0x70, 0x61, 0x72, 0x74, 0x69, 0x63, 0x69, 0x70,
+	0x61, 0x6e, 0x74, 0x5f, 0x73, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x70,
+	0x61, 0x72, 0x74, 0x69, 0x63, 0x69, 0x70, 0x61, 0x6e, 0x74, 0x53, 0x69, 0x64, 0x12, 0x18, 0x0a,
+	0x07, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x07,
+	0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x2a, 0x2d, 0x0a, 0x0c, 0x53, 0x69, 0x67, 0x6e, 0x61,
+	0x6c, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x12, 0x0d, 0x0a, 0x09, 0x50, 0x55, 0x42, 0x4c, 0x49,
+	0x53, 0x48, 0x45, 0x52, 0x10, 0x00, 0x12, 0x0e, 0x0a, 0x0a, 0x53, 0x55, 0x42, 0x53, 0x43, 0x52,
+	0x49, 0x42, 0x45, 0x52, 0x10, 0x01, 0x2a, 0x2d, 0x0a, 0x0c, 0x56, 0x69, 0x64, 0x65, 0x6f, 0x51,
+	0x75, 0x61, 0x6c, 0x69, 0x74, 0x79, 0x12, 0x07, 0x0a, 0x03, 0x4c, 0x4f, 0x57, 0x10, 0x00, 0x12,
+	0x0a, 0x0a, 0x06, 0x4d, 0x45, 0x44, 0x49, 0x55, 0x4d, 0x10, 0x01, 0x12, 0x08, 0x0a, 0x04, 0x48,
+	0x49, 0x47, 0x48, 0x10, 0x02, 0x42, 0x31, 0x5a, 0x2f, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x2f, 0x6c, 0x69, 0x76, 0x65,
+	0x6b, 0x69, 0x74, 0x2d, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2f, 0x6c, 0x69, 0x76, 0x65, 0x6b, 0x69, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1416,65 +1625,71 @@ func file_livekit_rtc_proto_rawDescGZIP() []byte {
 	return file_livekit_rtc_proto_rawDescData
 }
 
-var file_livekit_rtc_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_livekit_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_livekit_rtc_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_livekit_rtc_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_livekit_rtc_proto_goTypes = []interface{}{
 	(SignalTarget)(0),              // 0: livekit.SignalTarget
 	(VideoQuality)(0),              // 1: livekit.VideoQuality
-	(*SignalRequest)(nil),          // 2: livekit.SignalRequest
-	(*SignalResponse)(nil),         // 3: livekit.SignalResponse
-	(*AddTrackRequest)(nil),        // 4: livekit.AddTrackRequest
-	(*TrickleRequest)(nil),         // 5: livekit.TrickleRequest
-	(*MuteTrackRequest)(nil),       // 6: livekit.MuteTrackRequest
-	(*NegotiationRequest)(nil),     // 7: livekit.NegotiationRequest
-	(*JoinResponse)(nil),           // 8: livekit.JoinResponse
-	(*TrackPublishedResponse)(nil), // 9: livekit.TrackPublishedResponse
-	(*SessionDescription)(nil),     // 10: livekit.SessionDescription
-	(*ParticipantUpdate)(nil),      // 11: livekit.ParticipantUpdate
-	(*ActiveSpeakerUpdate)(nil),    // 12: livekit.ActiveSpeakerUpdate
-	(*SpeakerInfo)(nil),            // 13: livekit.SpeakerInfo
-	(*UpdateSubscription)(nil),     // 14: livekit.UpdateSubscription
-	(*UpdateTrackSettings)(nil),    // 15: livekit.UpdateTrackSettings
-	(*LeaveRequest)(nil),           // 16: livekit.LeaveRequest
-	(*ICEServer)(nil),              // 17: livekit.ICEServer
-	(TrackType)(0),                 // 18: livekit.TrackType
-	(*Room)(nil),                   // 19: livekit.Room
-	(*ParticipantInfo)(nil),        // 20: livekit.ParticipantInfo
-	(*TrackInfo)(nil),              // 21: livekit.TrackInfo
+	(DataPacket_Kind)(0),           // 2: livekit.DataPacket.Kind
+	(*SignalRequest)(nil),          // 3: livekit.SignalRequest
+	(*SignalResponse)(nil),         // 4: livekit.SignalResponse
+	(*AddTrackRequest)(nil),        // 5: livekit.AddTrackRequest
+	(*TrickleRequest)(nil),         // 6: livekit.TrickleRequest
+	(*MuteTrackRequest)(nil),       // 7: livekit.MuteTrackRequest
+	(*NegotiationRequest)(nil),     // 8: livekit.NegotiationRequest
+	(*JoinResponse)(nil),           // 9: livekit.JoinResponse
+	(*TrackPublishedResponse)(nil), // 10: livekit.TrackPublishedResponse
+	(*SessionDescription)(nil),     // 11: livekit.SessionDescription
+	(*ParticipantUpdate)(nil),      // 12: livekit.ParticipantUpdate
+	(*ActiveSpeakerUpdate)(nil),    // 13: livekit.ActiveSpeakerUpdate
+	(*SpeakerInfo)(nil),            // 14: livekit.SpeakerInfo
+	(*UpdateSubscription)(nil),     // 15: livekit.UpdateSubscription
+	(*UpdateTrackSettings)(nil),    // 16: livekit.UpdateTrackSettings
+	(*LeaveRequest)(nil),           // 17: livekit.LeaveRequest
+	(*ICEServer)(nil),              // 18: livekit.ICEServer
+	(*DataPacket)(nil),             // 19: livekit.DataPacket
+	(*UserPacket)(nil),             // 20: livekit.UserPacket
+	(TrackType)(0),                 // 21: livekit.TrackType
+	(*Room)(nil),                   // 22: livekit.Room
+	(*ParticipantInfo)(nil),        // 23: livekit.ParticipantInfo
+	(*TrackInfo)(nil),              // 24: livekit.TrackInfo
 }
 var file_livekit_rtc_proto_depIdxs = []int32{
-	10, // 0: livekit.SignalRequest.offer:type_name -> livekit.SessionDescription
-	10, // 1: livekit.SignalRequest.answer:type_name -> livekit.SessionDescription
-	5,  // 2: livekit.SignalRequest.trickle:type_name -> livekit.TrickleRequest
-	4,  // 3: livekit.SignalRequest.add_track:type_name -> livekit.AddTrackRequest
-	6,  // 4: livekit.SignalRequest.mute:type_name -> livekit.MuteTrackRequest
-	14, // 5: livekit.SignalRequest.subscription:type_name -> livekit.UpdateSubscription
-	15, // 6: livekit.SignalRequest.track_setting:type_name -> livekit.UpdateTrackSettings
-	16, // 7: livekit.SignalRequest.leave:type_name -> livekit.LeaveRequest
-	8,  // 8: livekit.SignalResponse.join:type_name -> livekit.JoinResponse
-	10, // 9: livekit.SignalResponse.answer:type_name -> livekit.SessionDescription
-	10, // 10: livekit.SignalResponse.offer:type_name -> livekit.SessionDescription
-	5,  // 11: livekit.SignalResponse.trickle:type_name -> livekit.TrickleRequest
-	11, // 12: livekit.SignalResponse.update:type_name -> livekit.ParticipantUpdate
-	9,  // 13: livekit.SignalResponse.track_published:type_name -> livekit.TrackPublishedResponse
-	12, // 14: livekit.SignalResponse.speaker:type_name -> livekit.ActiveSpeakerUpdate
-	16, // 15: livekit.SignalResponse.leave:type_name -> livekit.LeaveRequest
-	18, // 16: livekit.AddTrackRequest.type:type_name -> livekit.TrackType
+	11, // 0: livekit.SignalRequest.offer:type_name -> livekit.SessionDescription
+	11, // 1: livekit.SignalRequest.answer:type_name -> livekit.SessionDescription
+	6,  // 2: livekit.SignalRequest.trickle:type_name -> livekit.TrickleRequest
+	5,  // 3: livekit.SignalRequest.add_track:type_name -> livekit.AddTrackRequest
+	7,  // 4: livekit.SignalRequest.mute:type_name -> livekit.MuteTrackRequest
+	15, // 5: livekit.SignalRequest.subscription:type_name -> livekit.UpdateSubscription
+	16, // 6: livekit.SignalRequest.track_setting:type_name -> livekit.UpdateTrackSettings
+	17, // 7: livekit.SignalRequest.leave:type_name -> livekit.LeaveRequest
+	9,  // 8: livekit.SignalResponse.join:type_name -> livekit.JoinResponse
+	11, // 9: livekit.SignalResponse.answer:type_name -> livekit.SessionDescription
+	11, // 10: livekit.SignalResponse.offer:type_name -> livekit.SessionDescription
+	6,  // 11: livekit.SignalResponse.trickle:type_name -> livekit.TrickleRequest
+	12, // 12: livekit.SignalResponse.update:type_name -> livekit.ParticipantUpdate
+	10, // 13: livekit.SignalResponse.track_published:type_name -> livekit.TrackPublishedResponse
+	13, // 14: livekit.SignalResponse.speaker:type_name -> livekit.ActiveSpeakerUpdate
+	17, // 15: livekit.SignalResponse.leave:type_name -> livekit.LeaveRequest
+	21, // 16: livekit.AddTrackRequest.type:type_name -> livekit.TrackType
 	0,  // 17: livekit.TrickleRequest.target:type_name -> livekit.SignalTarget
-	19, // 18: livekit.JoinResponse.room:type_name -> livekit.Room
-	20, // 19: livekit.JoinResponse.participant:type_name -> livekit.ParticipantInfo
-	20, // 20: livekit.JoinResponse.other_participants:type_name -> livekit.ParticipantInfo
-	17, // 21: livekit.JoinResponse.ice_servers:type_name -> livekit.ICEServer
-	21, // 22: livekit.TrackPublishedResponse.track:type_name -> livekit.TrackInfo
-	20, // 23: livekit.ParticipantUpdate.participants:type_name -> livekit.ParticipantInfo
-	13, // 24: livekit.ActiveSpeakerUpdate.speakers:type_name -> livekit.SpeakerInfo
+	22, // 18: livekit.JoinResponse.room:type_name -> livekit.Room
+	23, // 19: livekit.JoinResponse.participant:type_name -> livekit.ParticipantInfo
+	23, // 20: livekit.JoinResponse.other_participants:type_name -> livekit.ParticipantInfo
+	18, // 21: livekit.JoinResponse.ice_servers:type_name -> livekit.ICEServer
+	24, // 22: livekit.TrackPublishedResponse.track:type_name -> livekit.TrackInfo
+	23, // 23: livekit.ParticipantUpdate.participants:type_name -> livekit.ParticipantInfo
+	14, // 24: livekit.ActiveSpeakerUpdate.speakers:type_name -> livekit.SpeakerInfo
 	1,  // 25: livekit.UpdateSubscription.quality:type_name -> livekit.VideoQuality
 	1,  // 26: livekit.UpdateTrackSettings.quality:type_name -> livekit.VideoQuality
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	2,  // 27: livekit.DataPacket.kind:type_name -> livekit.DataPacket.Kind
+	20, // 28: livekit.DataPacket.user:type_name -> livekit.UserPacket
+	13, // 29: livekit.DataPacket.speaker:type_name -> livekit.ActiveSpeakerUpdate
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_livekit_rtc_proto_init() }
@@ -1676,6 +1891,30 @@ func file_livekit_rtc_proto_init() {
 				return nil
 			}
 		}
+		file_livekit_rtc_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DataPacket); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_livekit_rtc_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*UserPacket); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_livekit_rtc_proto_msgTypes[0].OneofWrappers = []interface{}{
 		(*SignalRequest_Offer)(nil),
@@ -1697,13 +1936,17 @@ func file_livekit_rtc_proto_init() {
 		(*SignalResponse_Speaker)(nil),
 		(*SignalResponse_Leave)(nil),
 	}
+	file_livekit_rtc_proto_msgTypes[16].OneofWrappers = []interface{}{
+		(*DataPacket_User)(nil),
+		(*DataPacket_Speaker)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_livekit_rtc_proto_rawDesc,
-			NumEnums:      2,
-			NumMessages:   16,
+			NumEnums:      3,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -371,6 +371,7 @@ func (x *TrackInfo) GetMuted() bool {
 	return false
 }
 
+// old DataTrack message
 type DataMessage struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

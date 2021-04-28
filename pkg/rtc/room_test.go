@@ -27,20 +27,20 @@ func init() {
 
 func TestJoinedState(t *testing.T) {
 	t.Run("new room should return joinedAt 0", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 0)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
 		assert.Equal(t, int64(0), rm.FirstJoinedAt())
 		assert.Equal(t, int64(0), rm.LastLeftAt())
 	})
 
 	t.Run("should be current time when a participant joins", func(t *testing.T) {
 		s := time.Now().Unix()
-		rm := newRoomWithParticipants(t, 1)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		assert.Equal(t, s, rm.FirstJoinedAt())
 		assert.Equal(t, int64(0), rm.LastLeftAt())
 	})
 
 	t.Run("should be set when a participant leaves", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 1)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		p0 := rm.GetParticipants()[0]
 		s := time.Now().Unix()
 		rm.RemoveParticipant(p0.Identity())
@@ -48,7 +48,7 @@ func TestJoinedState(t *testing.T) {
 	})
 
 	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 2)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		p0 := rm.GetParticipants()[0]
 		rm.RemoveParticipant(p0.Identity())
 		assert.EqualValues(t, 0, rm.LastLeftAt())
@@ -57,8 +57,8 @@ func TestJoinedState(t *testing.T) {
 
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, numParticipants)
-		pNew := newMockParticipant("new")
+		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
+		pNew := newMockParticipant("new", types.DefaultProtocol)
 
 		rm.Join(pNew)
 
@@ -72,8 +72,8 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
-		rm := newRoomWithParticipants(t, numExisting)
-		p := newMockParticipant("new")
+		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
+		p := newMockParticipant("new", types.DefaultProtocol)
 
 		err := rm.Join(p)
 		assert.NoError(t, err)
@@ -96,7 +96,7 @@ func TestRoomJoin(t *testing.T) {
 	})
 
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, numParticipants)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		var changedParticipant types.Participant
 		rm.OnParticipantChanged(func(participant types.Participant) {
 			changedParticipant = participant
@@ -125,9 +125,9 @@ func TestRoomJoin(t *testing.T) {
 	})
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 1)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		rm.MaxParticipants = 1
-		p := newMockParticipant("second")
+		p := newMockParticipant("second", types.ProtocolVersion(0))
 
 		err := rm.Join(p)
 		assert.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
@@ -166,7 +166,7 @@ func TestParticipantUpdate(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			rm := newRoomWithParticipants(t, 3)
+			rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 			// remember how many times send has been called for each
 			callCounts := make(map[string]int)
 			for _, p := range rm.GetParticipants() {
@@ -192,7 +192,7 @@ func TestParticipantUpdate(t *testing.T) {
 
 func TestRoomClosure(t *testing.T) {
 	t.Run("room closes after participant leaves", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 1)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		isClosed := false
 		rm.OnClose(func() {
 			isClosed = true
@@ -212,7 +212,7 @@ func TestRoomClosure(t *testing.T) {
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 0)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
 		isClosed := false
 		rm.OnClose(func() {
 			isClosed = true
@@ -223,7 +223,7 @@ func TestRoomClosure(t *testing.T) {
 	})
 
 	t.Run("room closes after empty timeout", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 0)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
 		isClosed := false
 		rm.OnClose(func() {
 			isClosed = true
@@ -238,7 +238,7 @@ func TestRoomClosure(t *testing.T) {
 
 func TestNewTrack(t *testing.T) {
 	t.Run("new track should be added to ready participants", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 3)
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 		participants := rm.GetParticipants()
 		p0 := participants[0].(*typesfakes.FakeParticipant)
 		p0.StateReturns(livekit.ParticipantInfo_JOINED)
@@ -260,19 +260,33 @@ func TestNewTrack(t *testing.T) {
 
 func TestActiveSpeakers(t *testing.T) {
 	t.Parallel()
+	getActiveSpeakerUpdates := func(p *typesfakes.FakeParticipant) []*livekit.ActiveSpeakerUpdate {
+		var updates []*livekit.ActiveSpeakerUpdate
+		numCalls := p.SendDataPacketCallCount()
+		for i := 0; i < numCalls; i++ {
+			dp := p.SendDataPacketArgsForCall(i)
+			switch val := dp.Value.(type) {
+			case *livekit.DataPacket_Speaker:
+				updates = append(updates, val.Speaker)
+			}
+		}
+		return updates
+	}
+
 	audioUpdateDuration := (audioUpdateInterval + 2) * time.Millisecond
-	t.Run("participant should not be getting audio updates", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 1)
+	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: types.DefaultProtocol})
 		p := rm.GetParticipants()[0].(*typesfakes.FakeParticipant)
 		assert.Empty(t, rm.GetActiveSpeakers())
 
 		time.Sleep(audioUpdateDuration)
 
-		assert.Zero(t, p.SendActiveSpeakersCallCount())
+		updates := getActiveSpeakerUpdates(p)
+		assert.Empty(t, updates)
 	})
 
-	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 2)
+	t.Run("speakers should be sorted by loudness (protocol 0)", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		p2 := participants[1].(*typesfakes.FakeParticipant)
@@ -285,8 +299,8 @@ func TestActiveSpeakers(t *testing.T) {
 		assert.Equal(t, p2.ID(), speakers[1].Sid)
 	})
 
-	t.Run("participants are getting audio updates", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, 2)
+	t.Run("participants are getting audio updates (protocol 2)", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol})
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
@@ -301,25 +315,33 @@ func TestActiveSpeakers(t *testing.T) {
 		// everyone should've received updates
 		for _, op := range participants {
 			op := op.(*typesfakes.FakeParticipant)
-			require.Equal(t, 1, op.SendActiveSpeakersCallCount())
+			updates := getActiveSpeakerUpdates(op)
+			require.Len(t, updates, 1)
 		}
 
 		// after another cycle, we are not getting any new updates since unchanged
 		time.Sleep(audioUpdateDuration)
 		for _, op := range participants {
 			op := op.(*typesfakes.FakeParticipant)
-			require.Equal(t, 1, op.SendActiveSpeakersCallCount())
+			updates := getActiveSpeakerUpdates(op)
+			require.Len(t, updates, 1)
 		}
 
 		// no longer speaking, send update with empty items
 		p.GetAudioLevelReturns(127, false)
 		time.Sleep(audioUpdateDuration)
-		require.Equal(t, 2, p.SendActiveSpeakersCallCount())
-		require.Empty(t, p.SendActiveSpeakersArgsForCall(1))
+		updates := getActiveSpeakerUpdates(p)
+		require.Len(t, updates, 2)
+		require.Empty(t, updates[1].Speakers)
 	})
 }
 
-func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
+type testRoomOpts struct {
+	num      int
+	protocol types.ProtocolVersion
+}
+
+func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	rm := rtc.NewRoom(
 		&livekit.Room{Name: "room"},
 		rtc.WebRTCConfig{},
@@ -332,10 +354,11 @@ func newRoomWithParticipants(t *testing.T, num int) *rtc.Room {
 		},
 		audioUpdateInterval,
 	)
-	for i := 0; i < num; i++ {
+	for i := 0; i < opts.num; i++ {
 		identity := fmt.Sprintf("p%d", i)
-		participant := newMockParticipant(identity)
+		participant := newMockParticipant(identity, opts.protocol)
 		err := rm.Join(participant)
+		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		assert.NoError(t, err)
 	}
 	return rm
