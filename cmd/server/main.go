@@ -186,6 +186,7 @@ func createRouterAndStore(config *config.Config, node routing.LocalNode) (router
 			Addr:     config.Redis.Address,
 			Username: config.Redis.Username,
 			Password: config.Redis.Password,
+			DB:       config.Redis.DB,
 		})
 		if err = rc.Ping(context.Background()).Err(); err != nil {
 			err = errors.Wrap(err, "unable to connect to redis")
