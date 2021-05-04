@@ -27,7 +27,7 @@ const (
 // Default target to run when none is specified
 // If not set, running mage will list available targets
 var Default = Build
-var checksummer = NewChecksummer(".", goChecksumFile, ".go")
+var checksummer = NewChecksummer(".", goChecksumFile, ".go", ".mod")
 
 func init() {
 	checksummer.IgnoredPaths = []string{
