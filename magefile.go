@@ -4,6 +4,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/json"
 	"fmt"
 	"go/build"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/livekit/livekit-server/version"
 	"github.com/magefile/mage/mg"
@@ -41,9 +43,27 @@ func Deps() error {
 	return installTools(true)
 }
 
+type modInfo struct {
+	Path      string
+	Version   string
+	Time      time.Time
+	Dir       string
+	GoMod     string
+	GoVersion string
+}
+
 // regenerate protobuf
 func Proto() error {
-	protoDir := "../protocol"
+	cmd := exec.Command("go", "list", "-m", "-json", "github.com/livekit/protocol")
+	out, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	info := modInfo{}
+	if err = json.Unmarshal(out, &info); err != nil {
+		return err
+	}
+	protoDir := info.Dir
 	updated, err := target.Path("proto/livekit_models.pb.go",
 		protoDir+"/livekit_models.proto",
 		protoDir+"/livekit_room.proto",
@@ -77,7 +97,7 @@ func Proto() error {
 	}
 
 	// generate model and room
-	cmd := exec.Command(protoc,
+	cmd = exec.Command(protoc,
 		"--go_out", target,
 		"--twirp_out", target,
 		"--go_opt=paths=source_relative",
