@@ -241,7 +241,10 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 		case *livekit.SignalResponse_Trickle:
-			candidateInit := rtc.FromProtoTrickle(msg.Trickle)
+			candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+			if err != nil {
+				return err
+			}
 			if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
 				err = c.publisher.AddICECandidate(candidateInit)
 			} else {

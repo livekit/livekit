@@ -332,7 +332,11 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					logger.Errorw("could not handle answer", "participant", participant.Identity(), "err", err)
 				}
 			case *livekit.SignalRequest_Trickle:
-				candidateInit := rtc.FromProtoTrickle(msg.Trickle)
+				candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+				if err != nil {
+					logger.Errorw("could not decode trickle", "participant", participant.Identity(), "err", err)
+					break
+				}
 				//logger.Debugw("adding peer candidate", "participant", participant.ID())
 				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
 					logger.Errorw("could not handle trickle", "participant", participant.Identity(), "err", err)

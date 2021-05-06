@@ -84,10 +84,13 @@ func ToProtoTrickle(candidateInit webrtc.ICECandidateInit) *livekit.TrickleReque
 	}
 }
 
-func FromProtoTrickle(trickle *livekit.TrickleRequest) webrtc.ICECandidateInit {
+func FromProtoTrickle(trickle *livekit.TrickleRequest) (webrtc.ICECandidateInit, error) {
 	ci := webrtc.ICECandidateInit{}
-	json.Unmarshal([]byte(trickle.CandidateInit), &ci)
-	return ci
+	err := json.Unmarshal([]byte(trickle.CandidateInit), &ci)
+	if err != nil {
+		return webrtc.ICECandidateInit{}, err
+	}
+	return ci, nil
 }
 
 func ToProtoTrack(t types.PublishedTrack) *livekit.TrackInfo {
