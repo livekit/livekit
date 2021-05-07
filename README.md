@@ -43,7 +43,7 @@ mage
 
 ### Docker
 
-LiveKit is published to dockerhub under livekit/livekit-server
+LiveKit is published to Docker Hub under livekit/livekit-server
 
 ## Running
 
@@ -61,7 +61,7 @@ Generate API key/secret pairs with:
 or
 
 ```shell
-docker run livekit/livekit-server:v0.9 generate-keys
+docker run --rm livekit/livekit-server:v0.9 generate-keys
 ```
 
 Store the generate keys in a YAML file like:
@@ -81,7 +81,7 @@ In development mode, LiveKit has no external dependencies. With the key file rea
 or
 
 ```shell
-docker run -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server:v0.9 --dev
+docker run --rm -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server:v0.9 --dev
 ```
 
 the `--dev` flag turns on log verbosity to make it easier for local debugging/development
@@ -104,7 +104,9 @@ This token has an expiration of a month, which is useful for development & testi
 
 ## Deploying for production
 
-LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS
+LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS.
+
+LiveKit is distributed, and scales by adding nodes. Different server instances coordinate via Redis to ensure clients in the same room are served by the same instance. Redis is the only external dependency for a production deployment.
 
 See documentation at https://docs.livekit.io/guides/deploy
 
