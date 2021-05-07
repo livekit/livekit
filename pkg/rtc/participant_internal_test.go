@@ -146,7 +146,13 @@ func TestCorrectJoinedAt(t *testing.T) {
 
 func newParticipantForTest(identity string) *ParticipantImpl {
 	conf, _ := config.NewConfig("")
-	rtcConf, _ := NewWebRTCConfig(&conf.RTC, "")
+	// disable mux, it doesn't play too well with unit test
+	conf.RTC.UDPPort = 0
+	conf.RTC.TCPPort = 0
+	rtcConf, err := NewWebRTCConfig(&conf.RTC, "")
+	if err != nil {
+		panic(err)
+	}
 	p, _ := NewParticipant(
 		identity,
 		rtcConf,

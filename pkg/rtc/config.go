@@ -16,11 +16,13 @@ import (
 )
 
 type WebRTCConfig struct {
-	Configuration webrtc.Configuration
-	SettingEngine webrtc.SettingEngine
-	Receiver      ReceiverConfig
-	BufferFactory *buffer.Factory
-	UDPMux        ice.UDPMux
+	Configuration  webrtc.Configuration
+	SettingEngine  webrtc.SettingEngine
+	Receiver       ReceiverConfig
+	BufferFactory  *buffer.Factory
+	UDPMux         ice.UDPMux
+	UDPMuxConn     *net.UDPConn
+	TCPMuxListener *net.TCPListener
 }
 
 type ReceiverConfig struct {
@@ -66,30 +68,34 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	}
 
 	var udpMux *ice.UDPMuxDefault
+	var udpMuxConn *net.UDPConn
+	var err error
 	if conf.UDPPort != 0 {
-		conn, err := net.ListenUDP("udp4", &net.UDPAddr{
+		udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
 			Port: int(conf.UDPPort),
 		})
 		if err != nil {
 			return nil, err
 		}
+
 		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			Logger:  lkLogger,
-			UDPConn: conn,
+			UDPConn: udpMuxConn,
 		})
 		s.SetICEUDPMux(udpMux)
 	} else if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
-		if err := s.SetEphemeralUDPPortRange(conf.ICEPortRangeStart, conf.ICEPortRangeEnd); err != nil {
+		if err := s.SetEphemeralUDPPortRange(uint16(conf.ICEPortRangeStart), uint16(conf.ICEPortRangeEnd)); err != nil {
 			return nil, err
 		}
 	}
 
 	// use TCP mux when it's set
+	var tcpListener *net.TCPListener
 	if conf.TCPPort != 0 {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeTCP4,
 		)
-		tcpListener, err := net.ListenTCP("tcp4", &net.TCPAddr{
+		tcpListener, err = net.ListenTCP("tcp4", &net.TCPAddr{
 			Port: int(conf.TCPPort),
 		})
 		if err != nil {
@@ -113,6 +119,8 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			packetBufferSize: conf.PacketBufferSize,
 			maxBitrate:       conf.MaxBitrate,
 		},
-		UDPMux: udpMux,
+		UDPMux:         udpMux,
+		UDPMuxConn:     udpMuxConn,
+		TCPMuxListener: tcpListener,
 	}, nil
 }

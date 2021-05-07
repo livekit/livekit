@@ -172,6 +172,17 @@ func (r *RoomManager) CloseIdleRooms() {
 	}
 }
 
+func (r *RoomManager) Stop() {
+	if r.rtcConfig != nil {
+		if r.rtcConfig.UDPMuxConn != nil {
+			_ = r.rtcConfig.UDPMuxConn.Close()
+		}
+		if r.rtcConfig.TCPMuxListener != nil {
+			_ = r.rtcConfig.TCPMuxListener.Close()
+		}
+	}
+}
+
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
 func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)

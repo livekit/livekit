@@ -130,7 +130,7 @@ func Proto() error {
 	return nil
 }
 
-// builds LiveKit server and cli
+// builds LiveKit server
 func Build() error {
 	mg.Deps(Proto, generateWire)
 	if !checksummer.IsChanged() {
@@ -144,13 +144,6 @@ func Build() error {
 	}
 	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-server")
 	cmd.Dir = "cmd/server"
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	cmd = exec.Command("go", "build", "-o", "../../bin/livekit-cli")
-	cmd.Dir = "cmd/cli"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

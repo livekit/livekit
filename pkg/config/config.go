@@ -22,10 +22,10 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	UDPPort           uint16 `yaml:"udp_port"`
-	TCPPort           uint16 `yaml:"tcp_port"`
-	ICEPortRangeStart uint16 `yaml:"port_range_start"`
-	ICEPortRangeEnd   uint16 `yaml:"port_range_end"`
+	UDPPort           uint32 `yaml:"udp_port"`
+	TCPPort           uint32 `yaml:"tcp_port"`
+	ICEPortRangeStart uint32 `yaml:"port_range_start"`
+	ICEPortRangeEnd   uint32 `yaml:"port_range_end"`
 	// for testing, disable UDP
 	ForceTCP      bool     `yaml:"force_tcp"`
 	StunServers   []string `yaml:"stun_servers"`
@@ -69,8 +69,10 @@ func NewConfig(confString string) (*Config, error) {
 		Port: 7880,
 		RTC: RTCConfig{
 			UseExternalIP:     true,
-			ICEPortRangeStart: 9000,
-			ICEPortRangeEnd:   11000,
+			TCPPort:           7881,
+			UDPPort:           7882,
+			ICEPortRangeStart: 0,
+			ICEPortRangeEnd:   0,
 			StunServers: []string{
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",

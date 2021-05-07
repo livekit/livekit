@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
 )
 
 func main() {
@@ -83,6 +81,23 @@ func main() {
 				Usage:  "print ports that server is configured to use",
 				Action: printPorts,
 			},
+			{
+				Name:   "create-join-token",
+				Usage:  "create a room join token for development use",
+				Action: createToken,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "room",
+						Usage:    "name of room to join",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "identity",
+						Usage:    "identity of participant that holds the token",
+						Required: true,
+					},
+				},
+			},
 		},
 		Version: version.Version,
 	}
@@ -92,23 +107,31 @@ func main() {
 	}
 }
 
+func getConfig(c *cli.Context) (*config.Config, error) {
+	confString, err := getConfigString(c)
+	if err != nil {
+		return nil, err
+	}
+
+	conf, err := config.NewConfig(confString)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = conf.UpdateFromCLI(c); err != nil {
+		return nil, err
+	}
+	return conf, nil
+}
+
 func startServer(c *cli.Context) error {
 	rand.Seed(time.Now().UnixNano())
 
 	cpuProfile := c.String("cpuprofile")
 	memProfile := c.String("memprofile")
 
-	confString, err := getConfigString(c)
+	conf, err := getConfig(c)
 	if err != nil {
-		return err
-	}
-
-	conf, err := config.NewConfig(confString)
-	if err != nil {
-		return err
-	}
-
-	if err = conf.UpdateFromCLI(c); err != nil {
 		return err
 	}
 
@@ -216,7 +239,9 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 		return auth.NewFileBasedKeyProviderFromReader(f)
 	}
 
@@ -240,47 +265,4 @@ func getConfigString(c *cli.Context) (string, error) {
 		}
 	}
 	return configBody, nil
-}
-
-func generateKeys(c *cli.Context) error {
-	apiKey := utils.NewGuid(utils.APIKeyPrefix)
-	secret := utils.RandomSecret()
-	fmt.Println("API Key: ", apiKey)
-	fmt.Println("Secret Key: ", secret)
-	return nil
-}
-
-func printPorts(c *cli.Context) error {
-	confString, err := getConfigString(c)
-	if err != nil {
-		return err
-	}
-
-	conf, err := config.NewConfig(confString)
-	if err != nil {
-		return err
-	}
-
-	udpPorts := make([]string, 0)
-	tcpPorts := make([]string, 0)
-
-	tcpPorts = append(tcpPorts, strconv.Itoa(int(conf.Port)))
-	udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.RTC.ICEPortRangeStart, conf.RTC.ICEPortRangeEnd))
-
-	if conf.TURN.Enabled {
-		udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.TURN.PortRangeStart, conf.TURN.PortRangeEnd))
-		udpPorts = append(udpPorts, strconv.Itoa(conf.TURN.TCPPort))
-		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.TCPPort))
-	}
-
-	fmt.Println("TCP Ports")
-	for _, p := range tcpPorts {
-		fmt.Println(p)
-	}
-
-	fmt.Println("UDP Ports")
-	for _, p := range udpPorts {
-		fmt.Println(p)
-	}
-	return nil
 }

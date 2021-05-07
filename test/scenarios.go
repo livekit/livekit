@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
+	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/logger"
 )
 
@@ -132,9 +132,9 @@ func scenarioWSReconnect(t *testing.T) {
 	// c1 publishes track, but disconnects websockets and reconnects
 }
 
-func publishTracksForClients(t *testing.T, clients ...*client.RTCClient) []*client.TrackWriter {
+func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
-	var writers []*client.TrackWriter
+	var writers []*testclient.TrackWriter
 	for i, _ := range clients {
 		c := clients[i]
 		tw, err := c.AddStaticTrack("audio/opus", "audio", "webcam")

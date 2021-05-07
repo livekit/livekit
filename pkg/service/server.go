@@ -102,7 +102,11 @@ func (s *LivekitServer) Start() error {
 	if err := s.router.RegisterNode(); err != nil {
 		return err
 	}
-	defer s.router.UnregisterNode()
+	defer func() {
+		if err := s.router.UnregisterNode(); err != nil {
+			logger.Errorw("could not unregister node", "error", err)
+		}
+	}()
 
 	if err := s.router.Start(); err != nil {
 		return err
@@ -152,11 +156,13 @@ func (s *LivekitServer) Start() error {
 
 	// wait for shutdown
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-	s.httpServer.Shutdown(ctx)
+	_ = s.httpServer.Shutdown(ctx)
 
 	if s.turnServer != nil {
-		s.turnServer.Close()
+		_ = s.turnServer.Close()
 	}
+
+	s.roomManager.Stop()
 
 	return nil
 }

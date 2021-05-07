@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/cmd/cli/client"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -26,7 +26,7 @@ const (
 	testApiSecret     = "apiSecret"
 	testRoom          = "mytestroom"
 	defaultServerPort = 7880
-	secondServerPort  = 7881
+	secondServerPort  = 8880
 	nodeId1           = "node-1"
 	nodeId2           = "node-2"
 
@@ -80,7 +80,7 @@ func teardownTest(s *service.LivekitServer, roomName string) {
 
 func contextWithCreateRoomToken() context.Context {
 	header := make(http.Header)
-	client.SetAuthorizationToken(header, createRoomToken())
+	testclient.SetAuthorizationToken(header, createRoomToken())
 	tctx, err := twirp.WithHTTPRequestHeaders(context.Background(), header)
 	if err != nil {
 		panic(err)
@@ -119,7 +119,7 @@ func withTimeout(t *testing.T, description string, f func() bool) bool {
 	}
 }
 
-func waitUntilConnected(t *testing.T, clients ...*client.RTCClient) {
+func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	logger.Infow("waiting for clients to become connected")
 	wg := sync.WaitGroup{}
 	errChan := make(chan error, len(clients))
@@ -179,13 +179,15 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Port = port
+	conf.RTC.UDPPort = port + 1
+	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 
 	currentNode, err := routing.NewLocalNode(conf)
-	currentNode.Id = nodeId
 	if err != nil {
 		panic(err)
 	}
+	currentNode.Id = nodeId
 
 	// local routing and store
 	rc := redisClient()
@@ -198,7 +200,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 
 	router := routing.NewRedisRouter(currentNode, rc)
 	roomStore := service.NewRedisRoomStore(rc)
-	roomStore.DeleteRoom(testRoom)
+	_ = roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
@@ -209,14 +211,14 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 }
 
 // creates a client and runs against server
-func createRTCClient(name string, port int) *client.RTCClient {
+func createRTCClient(name string, port int) *testclient.RTCClient {
 	token := joinToken(testRoom, name)
-	ws, err := client.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token)
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token)
 	if err != nil {
 		panic(err)
 	}
 
-	c, err := client.NewRTCClient(ws)
+	c, err := testclient.NewRTCClient(ws)
 	if err != nil {
 		panic(err)
 	}
@@ -254,13 +256,13 @@ func createRoomToken() string {
 	return t
 }
 
-func stopWriters(writers ...*client.TrackWriter) {
+func stopWriters(writers ...*testclient.TrackWriter) {
 	for _, w := range writers {
 		w.Stop()
 	}
 }
 
-func stopClients(clients ...*client.RTCClient) {
+func stopClients(clients ...*testclient.RTCClient) {
 	for _, c := range clients {
 		c.Stop()
 	}
