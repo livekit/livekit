@@ -233,7 +233,14 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 	if pi.UsePlanB {
 		rtcConf.Configuration.SDPSemantics = webrtc.SDPSemanticsPlanB
 	}
-	participant, err = rtc.NewParticipant(pi.Identity, &rtcConf, responseSink, r.config.Audio, pv)
+	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
+		Identity:        pi.Identity,
+		Config:          &rtcConf,
+		Sink:            responseSink,
+		AudioConfig:     r.config.Audio,
+		ProtocolVersion: pv,
+		Stats:           rtc.NewStatsReporter(roomName, pi.Identity),
+	})
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)
 		return
@@ -277,6 +284,11 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", "error", err)
 		}
+		// print stats
+		logger.Infow("room closed",
+			"incomingStats", room.GetIncomingStats(),
+			"outgoingStats", room.GetOutgoingStats(),
+		)
 	})
 	room.OnParticipantChanged(func(p types.Participant) {
 		var err error
@@ -303,7 +315,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			"participant", participant.Identity(),
 			"room", room.Name,
 		)
-		participant.Close()
+		_ = participant.Close()
 	}()
 	defer rtc.Recover()
 
@@ -356,9 +368,14 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 			case *livekit.SignalRequest_Subscription:
 				if participant.CanSubscribe() {
-					room.UpdateSubscriptions(participant, msg.Subscription)
+					if err := room.UpdateSubscriptions(participant, msg.Subscription); err != nil {
+						logger.Warnw("could not update subscription",
+							"participant", participant.Identity(),
+							"tracks", msg.Subscription.TrackSids,
+							"subscribe", msg.Subscription.Subscribe)
+					}
 				} else {
-					logger.Warnw("rejected participant subscription",
+					logger.Infow("rejected participant subscription",
 						"participant", participant.Identity(),
 						"tracks", msg.Subscription.TrackSids)
 				}
@@ -373,7 +390,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					}
 				}
 			case *livekit.SignalRequest_Leave:
-				participant.Close()
+				_ = participant.Close()
 			}
 		}
 	}

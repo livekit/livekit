@@ -29,19 +29,25 @@ const (
 	sdBatchSize         = 15
 )
 
+type ParticipantParams struct {
+	Identity        string
+	Config          *WebRTCConfig
+	Sink            routing.MessageSink
+	AudioConfig     config.AudioConfig
+	ProtocolVersion types.ProtocolVersion
+	Stats           *StatsReporter
+}
+
 type ParticipantImpl struct {
-	id              string
-	publisher       *PCTransport
-	subscriber      *PCTransport
-	responseSink    routing.MessageSink
-	audioConfig     config.AudioConfig
-	isClosed        utils.AtomicFlag
-	conf            *WebRTCConfig
-	identity        string
-	permission      *livekit.ParticipantPermission
-	state           atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh          chan []rtcp.Packet
-	protocolVersion types.ProtocolVersion
+	params     ParticipantParams
+	id         string
+	publisher  *PCTransport
+	subscriber *PCTransport
+	isClosed   utils.AtomicFlag
+	permission *livekit.ParticipantPermission
+	state      atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh     chan []rtcp.Packet
+
 	// reliable and unreliable data channels
 	reliableDC *webrtc.DataChannel
 	lossyDC    *webrtc.DataChannel
@@ -74,16 +80,12 @@ type ParticipantImpl struct {
 	onClose          func(types.Participant)
 }
 
-func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink, ac config.AudioConfig, pv types.ProtocolVersion) (*ParticipantImpl, error) {
+func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
+		params:           params,
 		id:               utils.NewGuid(utils.ParticipantPrefix),
-		identity:         identity,
-		responseSink:     rs,
-		audioConfig:      ac,
-		conf:             conf,
-		protocolVersion:  pv,
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		lock:             sync.RWMutex{},
@@ -94,11 +96,19 @@ func NewParticipant(identity string, conf *WebRTCConfig, rs routing.MessageSink,
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	var err error
-	p.publisher, err = NewPCTransport(livekit.SignalTarget_PUBLISHER, conf)
+	p.publisher, err = NewPCTransport(TransportParams{
+		Target: livekit.SignalTarget_PUBLISHER,
+		Config: params.Config,
+		Stats:  p.params.Stats,
+	})
 	if err != nil {
 		return nil, err
 	}
-	p.subscriber, err = NewPCTransport(livekit.SignalTarget_SUBSCRIBER, conf)
+	p.subscriber, err = NewPCTransport(TransportParams{
+		Target: livekit.SignalTarget_SUBSCRIBER,
+		Config: params.Config,
+		Stats:  p.params.Stats,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +140,7 @@ func (p *ParticipantImpl) ID() string {
 }
 
 func (p *ParticipantImpl) Identity() string {
-	return p.identity
+	return p.params.Identity
 }
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
@@ -138,7 +148,7 @@ func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 }
 
 func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
-	return p.protocolVersion
+	return p.params.ProtocolVersion
 }
 
 func (p *ParticipantImpl) IsReady() bool {
@@ -170,7 +180,7 @@ func (p *ParticipantImpl) RTCPChan() chan []rtcp.Packet {
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      p.id,
-		Identity: p.identity,
+		Identity: p.params.Identity,
 		Metadata: p.metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
@@ -185,11 +195,11 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 }
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
-	return p.responseSink
+	return p.params.Sink
 }
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.responseSink = sink
+	p.params.Sink = sink
 }
 
 func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
@@ -197,6 +207,7 @@ func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
 }
 
 // callbacks for clients
+
 func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.PublishedTrack)) {
 	p.onTrackPublished = callback
 }
@@ -247,11 +258,14 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		"participant", p.Identity(),
 		//"sdp", sdp.SDP,
 	)
-	p.writeMessage(&livekit.SignalResponse{
+	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
 	})
+	if err != nil {
+		return
+	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
@@ -259,7 +273,8 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	return
 }
 
-// client intends to publish track, this function records track details and schedules negotiation
+// AddTrack is called when client intends to publish track.
+// records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.TrackType) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -276,7 +291,7 @@ func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.Trac
 	}
 	p.pendingTracks[clientId] = ti
 
-	p.writeMessage(&livekit.SignalResponse{
+	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
 				Cid:   clientId,
@@ -361,7 +376,7 @@ func (p *ParticipantImpl) Close() error {
 	p.publisher.pc.OnICECandidate(nil)
 	// ensure this is synchronized
 	p.lock.RLock()
-	p.responseSink.Close()
+	p.params.Sink.Close()
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
@@ -422,6 +437,7 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 }
 
 // signal connection methods
+
 func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant, iceServers []*livekit.ICEServer) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
@@ -500,7 +516,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 
 	if currentMuted != track.IsMuted() && p.onTrackUpdated != nil {
 		logger.Debugw("mute status changed",
-			"participant", p.identity,
+			"participant", p.Identity(),
 			"track", trackId,
 			"muted", track.IsMuted())
 		p.onTrackUpdated(p, track)
@@ -552,7 +568,7 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 	return subscribed
 }
 
-// add a track to the participant's subscribed list
+// AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
 	logger.Debugw("added subscribedTrack", "srcParticipant", pubId,
 		"participant", p.Identity())
@@ -561,7 +577,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.Subscr
 	p.lock.Unlock()
 }
 
-// remove a track to the participant's subscribed list
+// RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
 	logger.Debugw("removed subscribedTrack", "srcParticipant", pubId,
 		"participant", p.Identity())
@@ -611,13 +627,13 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return nil
 	}
-	sink := p.responseSink
+	sink := p.params.Sink
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		logger.Warnw("could not send message to participant",
 			"error", err,
 			"id", p.ID(),
-			"participant", p.identity,
+			"participant", p.Identity(),
 			"message", fmt.Sprintf("%T", msg.Message))
 		return err
 	}
@@ -672,7 +688,15 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	if trk, ok := ptrack.(*MediaTrack); ok {
 		mt = trk
 	} else {
-		mt = NewMediaTrack(ti.Sid, p.id, p.rtcpCh, track, p.conf.BufferFactory, p.conf.Receiver, p.audioConfig)
+		mt = NewMediaTrack(track, MediaTrackParams{
+			TrackID:        ti.Sid,
+			ParticipantID:  p.id,
+			RTCPChan:       p.rtcpCh,
+			BufferFactory:  p.params.Config.BufferFactory,
+			ReceiverConfig: p.params.Config.Receiver,
+			AudioConfig:    p.params.AudioConfig,
+			Stats:          p.params.Stats,
+		})
 		mt.name = ti.Name
 		newTrack = true
 	}
@@ -680,7 +704,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
+			_ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
 		})
 	}
 	mt.AddReceiver(rtpReceiver, track, p.twcc)
@@ -806,7 +830,9 @@ func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnecti
 	if state == webrtc.ICEConnectionStateConnected {
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed {
-		go p.Close()
+		go func() {
+			_ = p.Close()
+		}()
 	}
 }
 

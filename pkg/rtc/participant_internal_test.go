@@ -95,7 +95,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		//track := &typesfakes.FakePublishedTrack{}
 		//track.IDReturns("id")
-		sink := p.responseSink.(*routingfakes.FakeMessageSink)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
 		assert.Equal(t, 1, sink.WriteMessageCallCount())
 		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
@@ -110,7 +110,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		//track := &typesfakes.FakePublishedTrack{}
 		//track.IDReturns("id")
-		sink := p.responseSink.(*routingfakes.FakeMessageSink)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
 		p.AddTrack("cid", "duplicate", livekit.TrackType_AUDIO)
 
@@ -123,7 +123,7 @@ func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		msg := routing.NewMessageChannel()
-		p.responseSink = msg
+		p.params.Sink = msg
 		go func() {
 			for msg := range msg.ReadChan() {
 				t.Log("received message from chan", msg)
@@ -153,11 +153,11 @@ func newParticipantForTest(identity string) *ParticipantImpl {
 	if err != nil {
 		panic(err)
 	}
-	p, _ := NewParticipant(
-		identity,
-		rtcConf,
-		&routingfakes.FakeMessageSink{},
-		config.AudioConfig{},
-		0)
+	p, _ := NewParticipant(ParticipantParams{
+		Identity:        identity,
+		Config:          rtcConf,
+		Sink:            &routingfakes.FakeMessageSink{},
+		ProtocolVersion: 0,
+	})
 	return p
 }

@@ -103,12 +103,18 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	conf := rtc.WebRTCConfig{
 		Configuration: rtcConf,
 	}
-	c.publisher, err = rtc.NewPCTransport(livekit.SignalTarget_PUBLISHER, &conf)
+	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
+		Target: livekit.SignalTarget_PUBLISHER,
+		Config: &conf,
+	})
 	if err != nil {
 		return nil, err
 	}
 	// intentionally use publisher transport to have codecs pre-registered
-	c.subscriber, err = rtc.NewPCTransport(livekit.SignalTarget_PUBLISHER, &conf)
+	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
+		Target: livekit.SignalTarget_PUBLISHER,
+		Config: &conf,
+	})
 	if err != nil {
 		return nil, err
 	}

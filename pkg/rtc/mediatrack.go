@@ -29,44 +29,43 @@ var (
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements the PublishedTrack interface
 type MediaTrack struct {
-	id            string
-	participantId string
-	muted         utils.AtomicFlag
-
-	ssrc          webrtc.SSRC
-	name          string
-	streamID      string
-	kind          livekit.TrackType
-	codec         webrtc.RTPCodecParameters
-	bufferFactory *buffer.Factory
-	receiverConf  ReceiverConfig
-	audioConf     config.AudioConfig
-	onClose       func()
+	params   MediaTrackParams
+	ssrc     webrtc.SSRC
+	name     string
+	streamID string
+	kind     livekit.TrackType
+	codec    webrtc.RTPCodecParameters
+	muted    utils.AtomicFlag
 
 	// channel to send RTCP packets to the source
-	rtcpCh chan []rtcp.Packet
-	lock   sync.RWMutex
+	lock sync.RWMutex
 	// map of target participantId -> *SubscribedTrack
 	subscribedTracks map[string]*SubscribedTrack
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
-	//lastNack   int64
-	lastPLI time.Time
+	lastPLI          time.Time
+
+	onClose func()
 }
 
-func NewMediaTrack(trackId string, pId string, rtcpCh chan []rtcp.Packet, track *webrtc.TrackRemote, bufferFactory *buffer.Factory, rc ReceiverConfig, ac config.AudioConfig) *MediaTrack {
+type MediaTrackParams struct {
+	TrackID        string
+	ParticipantID  string
+	RTCPChan       chan []rtcp.Packet
+	BufferFactory  *buffer.Factory
+	ReceiverConfig ReceiverConfig
+	AudioConfig    config.AudioConfig
+	Stats          *StatsReporter
+}
+
+func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		id:               trackId,
-		participantId:    pId,
+		params:           params,
 		ssrc:             track.SSRC(),
 		streamID:         track.StreamID(),
 		kind:             ToProtoTrackKind(track.Kind()),
 		codec:            track.Codec(),
-		bufferFactory:    bufferFactory,
-		receiverConf:     rc,
-		audioConf:        ac,
-		rtcpCh:           rtcpCh,
 		lock:             sync.RWMutex{},
 		subscribedTracks: make(map[string]*SubscribedTrack),
 	}
@@ -78,7 +77,7 @@ func (t *MediaTrack) Start() {
 }
 
 func (t *MediaTrack) ID() string {
-	return t.id
+	return t.params.TrackID
 }
 
 func (t *MediaTrack) Kind() livekit.TrackType {
@@ -130,11 +129,11 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 
 	// using DownTrack from ion-sfu
-	streamId := t.participantId
+	streamId := t.params.ParticipantID
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
 		// when possible, pack both IDs in streamID to allow new streams to be generated
 		// react-native-webrtc still uses stream based APIs and require this
-		streamId = PackStreamID(t.participantId, t.ID())
+		streamId = PackStreamID(t.params.ParticipantID, t.ID())
 	}
 	receiver := NewWrappedReceiver(t.receiver, t.ID(), streamId)
 	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
@@ -143,7 +142,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, receiver, t.bufferFactory, sub.ID(), t.receiverConf.packetBufferSize)
+	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.packetBufferSize)
 	if err != nil {
 		return err
 	}
@@ -179,8 +178,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			return
 		}
 		logger.Debugw("removing peerconnection track",
-			"track", t.id,
-			"participantId", t.participantId,
+			"track", t.params.TrackID,
+			"participantId", t.params.ParticipantID,
 			"destParticipant", sub.Identity())
 		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
 			if err == webrtc.ErrConnectionClosed {
@@ -194,14 +193,14 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			}
 		}
 
-		sub.RemoveSubscribedTrack(t.participantId, subTrack)
+		sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
 		sub.Negotiate()
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
 
 	t.receiver.AddDownTrack(downTrack, true)
-	sub.AddSubscribedTrack(t.participantId, subTrack)
+	sub.AddSubscribedTrack(t.params.ParticipantID, subTrack)
 	sub.Negotiate()
 
 	return nil
@@ -213,14 +212,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 
 	//rid := track.RID()
-	buff, rtcpReader := t.bufferFactory.GetBufferPair(uint32(track.SSRC()))
+	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
+		if t.params.Stats != nil {
+			t.params.Stats.incoming.HandleRTCP(fb)
+		}
 		// feedback for the source RTCP
-		t.rtcpCh <- fb
+		t.params.RTCPChan <- fb
 	})
 
 	if t.Kind() == livekit.TrackType_AUDIO {
-		t.audioLevel = NewAudioLevel(t.audioConf.ActiveLevel, t.audioConf.MinPercentile)
+		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
 		buff.OnAudioLevel(func(level uint8) {
 			t.audioLevel.Observe(level)
 		})
@@ -250,8 +252,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 
 	if t.receiver == nil {
-		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.participantId)
-		t.receiver.SetRTCPCh(t.rtcpCh)
+		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.params.ParticipantID)
+		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()
 			t.receiver = nil
@@ -266,7 +268,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.receiver.AddUpTrack(track, buff, true)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
-		MaxBitRate: t.receiverConf.maxBitrate,
+		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
 }
 
@@ -282,7 +284,7 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
-	logger.Debugw("removing all subscribers", "track", t.id)
+	logger.Debugw("removing all subscribers", "track", t.params.TrackID)
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	for _, subTrack := range t.subscribedTracks {

@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	DefaultEmptyTimeout = 5 * 60 // 5 mins
+	DefaultEmptyTimeout       = 5 * 60 // 5m
+	DefaultRoomDepartureGrace = 20
 )
 
 type Room struct {
@@ -32,6 +33,10 @@ type Room struct {
 	// for active speaker updates
 	audioUpdateInterval uint32
 	lastActiveSpeakers  []*livekit.SpeakerInfo
+
+	// aggregate stats
+	incomingStats PacketStats
+	outgoingStats PacketStats
 
 	onParticipantChanged func(p types.Participant)
 	onClose              func()
@@ -199,6 +204,12 @@ func (r *Room) RemoveParticipant(identity string) {
 	// close participant as well
 	_ = p.Close()
 
+	// add participant stats
+	if pi, ok := p.(*ParticipantImpl); ok && pi.params.Stats != nil {
+		r.incomingStats.addFrom(pi.params.Stats.incoming)
+		r.outgoingStats.addFrom(pi.params.Stats.outgoing)
+	}
+
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
 	}
@@ -252,23 +263,40 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
+	timeout := r.EmptyTimeout
 	var elapsed int64
 	if r.FirstJoinedAt() > 0 {
-		// compute elasped from last departure
+		// exit 20s after
 		elapsed = time.Now().Unix() - r.LastLeftAt()
+		if timeout > DefaultRoomDepartureGrace {
+			timeout = DefaultRoomDepartureGrace
+		}
 	} else {
 		elapsed = time.Now().Unix() - r.CreationTime
 	}
-	if elapsed >= int64(r.EmptyTimeout) {
+
+	if elapsed >= int64(timeout) {
 		r.Close()
 	}
 }
 
 func (r *Room) Close() {
+	if !r.isClosed.TrySet(true) {
+		return
+	}
 	logger.Infow("closing room", "room", r.Sid, "name", r.Name)
-	if r.isClosed.TrySet(true) && r.onClose != nil {
+
+	if r.onClose != nil {
 		r.onClose()
 	}
+}
+
+func (r *Room) GetIncomingStats() PacketStats {
+	return r.incomingStats
+}
+
+func (r *Room) GetOutgoingStats() PacketStats {
+	return r.outgoingStats
 }
 
 func (r *Room) OnClose(f func()) {
@@ -316,7 +344,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 	}
 }
 
-func (r *Room) onTrackUpdated(p types.Participant, track types.PublishedTrack) {
+func (r *Room) onTrackUpdated(p types.Participant, _ types.PublishedTrack) {
 	// send track updates to everyone, especially if track was updated by admin
 	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {

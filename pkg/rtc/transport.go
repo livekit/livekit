@@ -7,6 +7,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
 	livekit "github.com/livekit/livekit-server/proto"
@@ -37,10 +38,16 @@ type PCTransport struct {
 	negotiationState atomic.Value
 }
 
-func newPeerConnection(target livekit.SignalTarget, conf *WebRTCConfig) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+type TransportParams struct {
+	Target livekit.SignalTarget
+	Config *WebRTCConfig
+	Stats  *StatsReporter
+}
+
+func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	var me *webrtc.MediaEngine
 	var err error
-	if target == livekit.SignalTarget_PUBLISHER {
+	if params.Target == livekit.SignalTarget_PUBLISHER {
 		me, err = createPubMediaEngine()
 	} else {
 		me, err = createSubMediaEngine()
@@ -48,16 +55,31 @@ func newPeerConnection(target livekit.SignalTarget, conf *WebRTCConfig) (*webrtc
 	if err != nil {
 		return nil, nil, err
 	}
-	se := conf.SettingEngine
+	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+	if params.Stats != nil && se.BufferFactory != nil {
+		wrapper := &StatsBufferWrapper{
+			createBufferFunc: se.BufferFactory,
+			stats:            params.Stats.incoming,
+		}
+		se.BufferFactory = wrapper.CreateBuffer
+	}
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se))
-	pc, err := api.NewPeerConnection(conf.Configuration)
+	ir := &interceptor.Registry{}
+	if params.Stats != nil {
+		ir.Add(NewStatsInterceptor(params.Stats))
+	}
+	api := webrtc.NewAPI(
+		webrtc.WithMediaEngine(me),
+		webrtc.WithSettingEngine(se),
+		webrtc.WithInterceptorRegistry(ir),
+	)
+	pc, err := api.NewPeerConnection(params.Config.Configuration)
 	return pc, me, err
 }
 
-func NewPCTransport(target livekit.SignalTarget, conf *WebRTCConfig) (*PCTransport, error) {
-	pc, me, err := newPeerConnection(target, conf)
+func NewPCTransport(params TransportParams) (*PCTransport, error) {
+	pc, me, err := newPeerConnection(params)
 	if err != nil {
 		return nil, err
 	}
