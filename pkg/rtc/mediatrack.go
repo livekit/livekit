@@ -166,6 +166,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		delete(t.subscribedTracks, sub.ID())
 		t.lock.Unlock()
 
+		t.params.Stats.SubSubscribedTrack(t.kind.String())
+
 		// ignore if the subscribing sub is not connected
 		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
@@ -195,7 +197,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 		sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
 		sub.Negotiate()
-		t.params.Stats.SubSubscribedTrack(t.kind.String())
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
