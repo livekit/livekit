@@ -34,9 +34,7 @@ type Room struct {
 	audioUpdateInterval uint32
 	lastActiveSpeakers  []*livekit.SpeakerInfo
 
-	// aggregate stats
-	incomingStats PacketStats
-	outgoingStats PacketStats
+	statsReporter *RoomStatsReporter
 
 	onParticipantChanged func(p types.Participant)
 	onClose              func()
@@ -49,6 +47,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		iceServers:          iceServers,
 		audioUpdateInterval: audioUpdateInterval,
 		lock:                sync.RWMutex{},
+		statsReporter:       NewRoomStatsReporter(room.Name),
 		participants:        make(map[string]types.Participant),
 	}
 	if r.EmptyTimeout == 0 {
@@ -57,6 +56,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 	if r.CreationTime == 0 {
 		r.CreationTime = time.Now().Unix()
 	}
+	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
 	return r
 }
@@ -98,6 +98,10 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
+func (r *Room) GetStatsReporter() *RoomStatsReporter {
+	return r.statsReporter
+}
+
 func (r *Room) FirstJoinedAt() int64 {
 	j := r.joinedAt.Load()
 	if t, ok := j.(int64); ok {
@@ -133,6 +137,8 @@ func (r *Room) Join(participant types.Participant) error {
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
+
+	r.statsReporter.AddParticipant()
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackAdded)
@@ -191,6 +197,7 @@ func (r *Room) RemoveParticipant(identity string) {
 	if !ok {
 		return
 	}
+	r.statsReporter.SubParticipant()
 
 	// send broadcast only if it's not already closed
 	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
@@ -203,12 +210,6 @@ func (r *Room) RemoveParticipant(identity string) {
 
 	// close participant as well
 	_ = p.Close()
-
-	// add participant stats
-	if pi, ok := p.(*ParticipantImpl); ok && pi.params.Stats != nil {
-		r.incomingStats.addFrom(pi.params.Stats.incoming)
-		r.outgoingStats.addFrom(pi.params.Stats.outgoing)
-	}
 
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
@@ -286,17 +287,18 @@ func (r *Room) Close() {
 	}
 	logger.Infow("closing room", "room", r.Sid, "name", r.Name)
 
+	r.statsReporter.RoomEnded()
 	if r.onClose != nil {
 		r.onClose()
 	}
 }
 
 func (r *Room) GetIncomingStats() PacketStats {
-	return r.incomingStats
+	return *r.statsReporter.incoming
 }
 
 func (r *Room) GetOutgoingStats() PacketStats {
-	return r.outgoingStats
+	return *r.statsReporter.outgoing
 }
 
 func (r *Room) OnClose(f func()) {

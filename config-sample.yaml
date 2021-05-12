@@ -12,6 +12,9 @@ redis:
 #  username: myuser
 #  password: mypassword
 
+# when enabled, LiveKit will expose prometheus metrics on :6789/metrics
+#prometheus_port: 6789
+
 # WebRTC configuration
 rtc:
   # the main UDP port to transport WebRTC data

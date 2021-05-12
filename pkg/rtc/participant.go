@@ -35,7 +35,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Stats           *StatsReporter
+	Stats           *RoomStatsReporter
 }
 
 type ParticipantImpl struct {

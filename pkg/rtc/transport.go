@@ -41,7 +41,7 @@ type PCTransport struct {
 type TransportParams struct {
 	Target livekit.SignalTarget
 	Config *WebRTCConfig
-	Stats  *StatsReporter
+	Stats  *RoomStatsReporter
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {

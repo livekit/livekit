@@ -109,7 +109,7 @@ func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 	case webrtc.RTPCodecTypeAudio:
 		return livekit.TrackType_AUDIO
 	}
-	panic("unsupported track kind")
+	panic("unsupported track direction")
 }
 
 func IsEOF(err error) bool {

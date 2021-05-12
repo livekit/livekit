@@ -3,46 +3,180 @@ package rtc
 import (
 	"io"
 	"sync/atomic"
+	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/transport/packetio"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
-type PacketStats struct {
-	roomName string
-	identity string
-	kind     string // incoming or outgoing
+const livekitNamespace = "livekit"
 
-	PacketCount uint64 `json:"packetCount"`
-	NackCount   uint64 `json:"nackCount"`
-	PLICount    uint64 `json:"pliCount"`
-	FIRCount    uint64 `json:"firCount"`
+var (
+	promLabels  = []string{"direction"}
+	packetTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "packet",
+		Name:      "total",
+	}, promLabels)
+	packetBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "packet",
+		Name:      "bytes",
+	}, promLabels)
+	nackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "nack",
+		Name:      "total",
+	}, promLabels)
+	pliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "pli",
+		Name:      "total",
+	}, promLabels)
+	firTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "fir",
+		Name:      "total",
+	}, promLabels)
+	roomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "room",
+		Name:      "total",
+	})
+	roomDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "room",
+		Name:      "duration_seconds",
+		Buckets: []float64{
+			5, 10, 60, 5 * 60, 10 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 5 * 60 * 60, 10 * 60 * 60,
+		},
+	})
+	participantTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "participant",
+		Name:      "total",
+	})
+	trackPublishedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "track",
+		Name:      "published_total",
+	}, []string{"kind"})
+	trackSubscribedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: livekitNamespace,
+		Subsystem: "track",
+		Name:      "subscribed_total",
+	}, []string{"kind"})
+)
+
+func init() {
+	prometheus.MustRegister(packetTotal)
+	prometheus.MustRegister(packetBytes)
+	prometheus.MustRegister(nackTotal)
+	prometheus.MustRegister(pliTotal)
+	prometheus.MustRegister(firTotal)
+	prometheus.MustRegister(roomTotal)
+	prometheus.MustRegister(roomDuration)
+	prometheus.MustRegister(participantTotal)
+	prometheus.MustRegister(trackPublishedTotal)
+	prometheus.MustRegister(trackSubscribedTotal)
 }
 
-func newPacketStats(room, identity, kind string) *PacketStats {
-	return &PacketStats{
-		roomName: room,
-		identity: identity,
-		kind:     kind,
+// RoomStatsReporter is created for each room
+type RoomStatsReporter struct {
+	roomName  string
+	startedAt time.Time
+	incoming  *PacketStats
+	outgoing  *PacketStats
+}
+
+func NewRoomStatsReporter(roomName string) *RoomStatsReporter {
+	return &RoomStatsReporter{
+		roomName: roomName,
+		incoming: newPacketStats(roomName, "incoming"),
+		outgoing: newPacketStats(roomName, "outgoing"),
 	}
 }
 
+func (r *RoomStatsReporter) RoomStarted() {
+	r.startedAt = time.Now()
+	roomTotal.Add(1)
+}
+
+func (r *RoomStatsReporter) RoomEnded() {
+	if !r.startedAt.IsZero() {
+		roomDuration.Observe(float64(time.Now().Sub(r.startedAt)) / float64(time.Second))
+	}
+	roomTotal.Sub(1)
+}
+
+func (r *RoomStatsReporter) AddParticipant() {
+	participantTotal.Add(1)
+}
+
+func (r *RoomStatsReporter) SubParticipant() {
+	participantTotal.Sub(1)
+}
+
+func (r *RoomStatsReporter) AddPublishedTrack(kind string) {
+	trackPublishedTotal.WithLabelValues(kind).Add(1)
+}
+
+func (r *RoomStatsReporter) SubPublishedTrack(kind string) {
+	trackPublishedTotal.WithLabelValues(kind).Sub(1)
+}
+
+func (r *RoomStatsReporter) AddSubscribedTrack(kind string) {
+	trackSubscribedTotal.WithLabelValues(kind).Add(1)
+}
+
+func (r *RoomStatsReporter) SubSubscribedTrack(kind string) {
+	trackSubscribedTotal.WithLabelValues(kind).Sub(1)
+}
+
+type PacketStats struct {
+	roomName  string
+	direction string // incoming or outgoing
+
+	PacketBytes uint64 `json:"packetBytes"`
+	PacketTotal uint64 `json:"packetTotal"`
+	NackTotal   uint64 `json:"nackTotal"`
+	PLITotal    uint64 `json:"pliTotal"`
+	FIRTotal    uint64 `json:"firTotal"`
+}
+
+func newPacketStats(room, direction string) *PacketStats {
+	return &PacketStats{
+		roomName:  room,
+		direction: direction,
+	}
+}
+
+func (s *PacketStats) IncrementBytes(bytes uint64) {
+	packetBytes.WithLabelValues(s.direction).Add(float64(bytes))
+	atomic.AddUint64(&s.PacketBytes, bytes)
+}
+
 func (s *PacketStats) IncrementPackets(count uint64) {
-	atomic.AddUint64(&s.PacketCount, count)
+	packetTotal.WithLabelValues(s.direction).Add(float64(count))
+	atomic.AddUint64(&s.PacketTotal, count)
 }
 
 func (s *PacketStats) IncrementNack(count uint64) {
-	atomic.AddUint64(&s.NackCount, count)
+	nackTotal.WithLabelValues(s.direction).Add(float64(count))
+	atomic.AddUint64(&s.NackTotal, count)
 }
 
 func (s *PacketStats) IncrementPLI(count uint64) {
-	atomic.AddUint64(&s.PLICount, count)
+	pliTotal.WithLabelValues(s.direction).Add(float64(count))
+	atomic.AddUint64(&s.PLITotal, count)
 }
 
 func (s *PacketStats) IncrementFIR(count uint64) {
-	atomic.AddUint64(&s.FIRCount, count)
+	firTotal.WithLabelValues(s.direction).Add(float64(count))
+	atomic.AddUint64(&s.FIRTotal, count)
 }
 
 func (s *PacketStats) HandleRTCP(pkts []rtcp.Packet) {
@@ -55,25 +189,6 @@ func (s *PacketStats) HandleRTCP(pkts []rtcp.Packet) {
 		case *rtcp.FullIntraRequest:
 			s.IncrementFIR(1)
 		}
-	}
-}
-
-func (s *PacketStats) addFrom(o *PacketStats) {
-	s.PacketCount += atomic.LoadUint64(&o.PacketCount)
-	s.NackCount += atomic.LoadUint64(&o.NackCount)
-	s.PLICount += atomic.LoadUint64(&o.PLICount)
-	s.FIRCount += atomic.LoadUint64(&o.FIRCount)
-}
-
-type StatsReporter struct {
-	incoming *PacketStats
-	outgoing *PacketStats
-}
-
-func NewStatsReporter(roomName, identity string) *StatsReporter {
-	return &StatsReporter{
-		incoming: newPacketStats(roomName, identity, "incoming"),
-		outgoing: newPacketStats(roomName, identity, "outgoing"),
 	}
 }
 
@@ -103,6 +218,7 @@ type rtpReporterWriter struct {
 
 func (w *rtpReporterWriter) Write(p []byte) (n int, err error) {
 	w.stats.IncrementPackets(1)
+	w.stats.IncrementBytes(uint64(len(p)))
 	return w.ReadWriteCloser.Write(p)
 }
 
@@ -110,10 +226,10 @@ func (w *rtpReporterWriter) Write(p []byte) (n int, err error) {
 // it adheres to Pion interceptor interface
 type StatsInterceptor struct {
 	interceptor.NoOp
-	reporter *StatsReporter
+	reporter *RoomStatsReporter
 }
 
-func NewStatsInterceptor(reporter *StatsReporter) *StatsInterceptor {
+func NewStatsInterceptor(reporter *RoomStatsReporter) *StatsInterceptor {
 	return &StatsInterceptor{
 		reporter: reporter,
 	}
@@ -133,6 +249,7 @@ func (s *StatsInterceptor) BindRTCPWriter(writer interceptor.RTCPWriter) interce
 func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
 		s.reporter.outgoing.IncrementPackets(1)
+		s.reporter.outgoing.IncrementBytes(uint64(len(payload)))
 		return writer.Write(header, payload, attributes)
 	})
 }

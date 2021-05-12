@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pion/turn/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/negroni"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -25,6 +26,7 @@ type LivekitServer struct {
 	roomServer  livekit.TwirpServer
 	rtcService  *RTCService
 	httpServer  *http.Server
+	promServer  *http.Server
 	router      routing.Router
 	roomManager *RoomManager
 	turnServer  *turn.Server
@@ -69,6 +71,13 @@ func NewLivekitServer(conf *config.Config,
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.Port),
 		Handler: configureMiddlewares(mux, middlewares...),
+	}
+
+	if conf.PrometheusPort > 0 {
+		s.promServer = &http.Server{
+			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
+			Handler: promhttp.Handler(),
+		}
 	}
 
 	// hook up router to the RoomManager
@@ -120,6 +129,16 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
+	if s.promServer != nil {
+		promLn, err := net.Listen("tcp", s.promServer.Addr)
+		if err != nil {
+			return err
+		}
+		go func() {
+			_ = s.promServer.Serve(promLn)
+		}()
+	}
+
 	go func() {
 		values := []interface{}{
 			"address", s.httpServer.Addr,
@@ -136,6 +155,9 @@ func (s *LivekitServer) Start() error {
 				"rtc.port_range_start", s.config.RTC.ICEPortRangeStart,
 				"rtc.port_range_end", s.config.RTC.ICEPortRangeEnd,
 			)
+		}
+		if s.config.PrometheusPort != 0 {
+			values = append(values, "prometheus_port", s.config.PrometheusPort)
 		}
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {

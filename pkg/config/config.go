@@ -9,14 +9,15 @@ import (
 )
 
 type Config struct {
-	Port     uint32            `yaml:"port"`
-	RTC      RTCConfig         `yaml:"rtc"`
-	Redis    RedisConfig       `yaml:"redis"`
-	Audio    AudioConfig       `yaml:"audio"`
-	TURN     TURNConfig        `yaml:"turn"`
-	KeyFile  string            `yaml:"key_file"`
-	Keys     map[string]string `yaml:"keys"`
-	LogLevel string            `yaml:"log_level"`
+	Port           uint32            `yaml:"port"`
+	PrometheusPort uint32            `yaml:"prometheus_port"`
+	RTC            RTCConfig         `yaml:"rtc"`
+	Redis          RedisConfig       `yaml:"redis"`
+	Audio          AudioConfig       `yaml:"audio"`
+	TURN           TURNConfig        `yaml:"turn"`
+	KeyFile        string            `yaml:"key_file"`
+	Keys           map[string]string `yaml:"keys"`
+	LogLevel       string            `yaml:"log_level"`
 
 	Development bool `yaml:"development"`
 }

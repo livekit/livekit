@@ -239,7 +239,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 		Sink:            responseSink,
 		AudioConfig:     r.config.Audio,
 		ProtocolVersion: pv,
-		Stats:           rtc.NewStatsReporter(roomName, pi.Identity),
+		Stats:           room.GetStatsReporter(),
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", "error", err)

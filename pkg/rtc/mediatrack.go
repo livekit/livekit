@@ -56,7 +56,7 @@ type MediaTrackParams struct {
 	BufferFactory  *buffer.Factory
 	ReceiverConfig ReceiverConfig
 	AudioConfig    config.AudioConfig
-	Stats          *StatsReporter
+	Stats          *RoomStatsReporter
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -195,6 +195,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 		sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
 		sub.Negotiate()
+		t.params.Stats.SubSubscribedTrack(t.kind.String())
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
@@ -203,15 +204,15 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	sub.AddSubscribedTrack(t.params.ParticipantID, subTrack)
 	sub.Negotiate()
 
+	t.params.Stats.AddSubscribedTrack(t.kind.String())
 	return nil
 }
 
-// AddReceiver adds a new RTP receiver to the track, returns true if this is a new track
+// AddReceiver adds a new RTP receiver to the track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	//rid := track.RID()
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
 		if t.params.Stats != nil {
@@ -260,10 +261,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
+			t.params.Stats.SubPublishedTrack(t.kind.String())
 			if onclose != nil {
 				onclose()
 			}
 		})
+		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
 	t.receiver.AddUpTrack(track, buff, true)
 
