@@ -88,6 +88,7 @@ type PublishedTrack interface {
 	SetMuted(muted bool)
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
+	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
 
 	// callbacks

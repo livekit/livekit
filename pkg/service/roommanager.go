@@ -111,6 +111,12 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 	return rm, nil
 }
 
+func (r *RoomManager) GetRoom(roomName string) *rtc.Room {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.rooms[roomName]
+}
+
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) DeleteRoom(roomName string) error {
 	logger.Infow("deleting room state", "room", roomName)

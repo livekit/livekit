@@ -107,6 +107,12 @@ func (t *MediaTrack) OnClose(f func()) {
 	t.onClose = f
 }
 
+func (t *MediaTrack) IsSubscriber(subId string) bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.subscribedTracks[subId] != nil
+}
+
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()

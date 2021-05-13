@@ -196,6 +196,10 @@ func (s *LivekitServer) Stop() {
 	}
 }
 
+func (s *LivekitServer) RoomManager() *RoomManager {
+	return s.roomManager
+}
+
 func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }

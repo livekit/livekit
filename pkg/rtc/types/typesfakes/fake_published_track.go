@@ -40,6 +40,17 @@ type FakePublishedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsSubscriberStub        func(string) bool
+	isSubscriberMutex       sync.RWMutex
+	isSubscriberArgsForCall []struct {
+		arg1 string
+	}
+	isSubscriberReturns struct {
+		result1 bool
+	}
+	isSubscriberReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	KindStub        func() livekit.TrackType
 	kindMutex       sync.RWMutex
 	kindArgsForCall []struct {
@@ -250,6 +261,67 @@ func (fake *FakePublishedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) IsSubscriber(arg1 string) bool {
+	fake.isSubscriberMutex.Lock()
+	ret, specificReturn := fake.isSubscriberReturnsOnCall[len(fake.isSubscriberArgsForCall)]
+	fake.isSubscriberArgsForCall = append(fake.isSubscriberArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.IsSubscriberStub
+	fakeReturns := fake.isSubscriberReturns
+	fake.recordInvocation("IsSubscriber", []interface{}{arg1})
+	fake.isSubscriberMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) IsSubscriberCallCount() int {
+	fake.isSubscriberMutex.RLock()
+	defer fake.isSubscriberMutex.RUnlock()
+	return len(fake.isSubscriberArgsForCall)
+}
+
+func (fake *FakePublishedTrack) IsSubscriberCalls(stub func(string) bool) {
+	fake.isSubscriberMutex.Lock()
+	defer fake.isSubscriberMutex.Unlock()
+	fake.IsSubscriberStub = stub
+}
+
+func (fake *FakePublishedTrack) IsSubscriberArgsForCall(i int) string {
+	fake.isSubscriberMutex.RLock()
+	defer fake.isSubscriberMutex.RUnlock()
+	argsForCall := fake.isSubscriberArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) IsSubscriberReturns(result1 bool) {
+	fake.isSubscriberMutex.Lock()
+	defer fake.isSubscriberMutex.Unlock()
+	fake.IsSubscriberStub = nil
+	fake.isSubscriberReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) IsSubscriberReturnsOnCall(i int, result1 bool) {
+	fake.isSubscriberMutex.Lock()
+	defer fake.isSubscriberMutex.Unlock()
+	fake.IsSubscriberStub = nil
+	if fake.isSubscriberReturnsOnCall == nil {
+		fake.isSubscriberReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isSubscriberReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -513,6 +585,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.isSubscriberMutex.RLock()
+	defer fake.isSubscriberMutex.RUnlock()
 	fake.kindMutex.RLock()
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()

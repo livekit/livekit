@@ -88,6 +88,12 @@ func (t *DataTrack) OnClose(f func()) {
 	t.onClose = f
 }
 
+func (t *DataTrack) IsSubscriber(subId string) bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.subscribers[subId] != nil
+}
+
 func (t *DataTrack) AddSubscriber(participant types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()

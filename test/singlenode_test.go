@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -96,4 +97,22 @@ func TestSinglePublisher(t *testing.T) {
 	for _, tr := range tracks {
 		assert.True(t, strings.HasPrefix(tr.ID(), "TR_"), "track should begin with TR")
 	}
+
+	// when c3 disconnects.. ensure subscriber is cleaned up correctly
+	c3.Stop()
+
+	success = withTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+		room := s.RoomManager().GetRoom(testRoom)
+		require.NotNil(t, room)
+
+		p := room.GetParticipant("c3")
+		require.NotNil(t, p)
+
+		for _, t := range p.GetPublishedTracks() {
+			if t.IsSubscriber(p.ID()) {
+				return false
+			}
+		}
+		return true
+	})
 }
