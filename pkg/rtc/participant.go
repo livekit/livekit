@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -367,7 +368,18 @@ func (p *ParticipantImpl) Close() error {
 		t.OnClose(nil)
 		t.RemoveAllSubscribers()
 	}
+
+	var downtracksToClose []*sfu.DownTrack
+	for _, tracks := range p.subscribedTracks {
+		for _, st := range tracks {
+			downtracksToClose = append(downtracksToClose, st.DownTrack())
+		}
+	}
 	p.lock.Unlock()
+
+	for _, dt := range downtracksToClose {
+		dt.Close()
+	}
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	p.subscriber.pc.OnDataChannel(nil)
@@ -571,7 +583,7 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 // AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
 	logger.Debugw("added subscribedTrack", "srcParticipant", pubId,
-		"participant", p.Identity())
+		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
 	p.lock.Unlock()
@@ -580,7 +592,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.Subscr
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
 	logger.Debugw("removed subscribedTrack", "srcParticipant", pubId,
-		"participant", p.Identity())
+		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks[pubId]))

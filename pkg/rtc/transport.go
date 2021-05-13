@@ -156,6 +156,9 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.onOffer == nil {
 		return nil
 	}
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return nil
+	}
 
 	state := t.negotiationState.Load().(int)
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
