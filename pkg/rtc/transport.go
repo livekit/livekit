@@ -161,11 +161,20 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	state := t.negotiationState.Load().(int)
+
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if state == negotiationStateClient {
-		logger.Debugw("skipping negotiation, trying again later")
-		t.negotiationState.Store(negotiationRetry)
-		return nil
+		currentSD := t.pc.CurrentRemoteDescription()
+		if options != nil && options.ICERestart && currentSD != nil {
+			logger.Debugw("recovering from client negotiation state")
+			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
+				return err
+			}
+		} else {
+			logger.Debugw("skipping negotiation, trying again later")
+			t.negotiationState.Store(negotiationRetry)
+			return nil
+		}
 	}
 
 	offer, err := t.pc.CreateOffer(options)
