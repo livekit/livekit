@@ -406,6 +406,10 @@ func (p *ParticipantImpl) Negotiate() {
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart() error {
+	if p.subscriber.pc.RemoteDescription() == nil {
+		// not connected, skip
+		return nil
+	}
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
 	})
