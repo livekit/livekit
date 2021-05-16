@@ -30,10 +30,11 @@ type PCTransport struct {
 	pc *webrtc.PeerConnection
 	me *webrtc.MediaEngine
 
-	lock               sync.Mutex
-	pendingCandidates  []webrtc.ICECandidateInit
-	debouncedNegotiate func(func())
-	onOffer            func(offer webrtc.SessionDescription)
+	lock                  sync.Mutex
+	pendingCandidates     []webrtc.ICECandidateInit
+	debouncedNegotiate    func(func())
+	onOffer               func(offer webrtc.SessionDescription)
+	restartAfterGathering atomic.Value
 
 	negotiationState atomic.Value
 }
@@ -90,7 +91,15 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 	}
 	t.negotiationState.Store(negotiationStateNone)
-	//t.pc.OnNegotiationNeeded(t.Negotiate)
+	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
+		if state == webrtc.ICEGathererStateComplete {
+			if restart, ok := t.restartAfterGathering.Load().(bool); ok && restart {
+				if err := t.CreateAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
+					logger.Warnw("could not restart ICE", "error", err)
+				}
+			}
+		}
+	})
 
 	return t, nil
 }
@@ -160,12 +169,22 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
+	iceRestart := options != nil && options.ICERestart
+
+	// if restart is requested, and we are not ready, then continue afterwards
+	if iceRestart && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+		logger.Debugw("restart ICE after gathering")
+		t.restartAfterGathering.Store(true)
+		return nil
+	}
+
 	state := t.negotiationState.Load().(int)
+	logger.Debugw("restarting ICE")
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if state == negotiationStateClient {
 		currentSD := t.pc.CurrentRemoteDescription()
-		if options != nil && options.ICERestart && currentSD != nil {
+		if iceRestart && currentSD != nil {
 			logger.Debugw("recovering from client negotiation state")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
 				return err
@@ -191,6 +210,7 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 
 	// indicate waiting for client
 	t.negotiationState.Store(negotiationStateClient)
+	t.restartAfterGathering.Store(false)
 
 	t.onOffer(offer)
 	return nil

@@ -6,6 +6,7 @@ locals {
       port_range_end = var.udp_port_end
       tcp_port = var.rtc_tcp_port
       udp_port = var.rtc_udp_port
+      use_external_ip = true
     }
     turn = {
       enabled = var.turn_enabled
