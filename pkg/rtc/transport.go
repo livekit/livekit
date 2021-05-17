@@ -172,14 +172,16 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	iceRestart := options != nil && options.ICERestart
 
 	// if restart is requested, and we are not ready, then continue afterwards
-	if iceRestart && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		logger.Debugw("restart ICE after gathering")
-		t.restartAfterGathering.Store(true)
-		return nil
+	if iceRestart {
+		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+			logger.Debugw("restart ICE after gathering")
+			t.restartAfterGathering.Store(true)
+			return nil
+		}
+		logger.Debugw("restarting ICE")
 	}
 
 	state := t.negotiationState.Load().(int)
-	logger.Debugw("restarting ICE")
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if state == negotiationStateClient {
