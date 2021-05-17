@@ -61,7 +61,7 @@ Generate API key/secret pairs with:
 or
 
 ```shell
-docker run --rm livekit/livekit-server:v0.9 generate-keys
+docker run --rm livekit/livekit-server generate-keys
 ```
 
 Store the generate keys in a YAML file like:
@@ -81,7 +81,7 @@ In development mode, LiveKit has no external dependencies. With the key file rea
 or
 
 ```shell
-docker run --rm -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server:v0.9 --dev
+docker run --rm -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server --dev
 ```
 
 the `--dev` flag turns on log verbosity to make it easier for local debugging/development
