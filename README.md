@@ -32,7 +32,13 @@ Server APIs:
 
 ### From source
 
-Ensure Go 1.15+ is installed, and GOPATH/bin is in your PATH.
+Pre-requisites:
+
+* Go 1.15+ is installed
+* GOPATH/bin is in your PATH
+* [protoc](https://grpc.io/docs/protoc-installation/) is installed and in PATH
+
+Then run
 
 ```shell
 git clone https://github.com/livekit/livekit-server
