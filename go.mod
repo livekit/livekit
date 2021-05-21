@@ -17,7 +17,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pion/ice/v2 v2.1.7
 	github.com/pion/interceptor v0.0.12
-	github.com/pion/ion-sfu v1.10.0
+	github.com/pion/ion-sfu v1.10.3
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
 	github.com/pion/rtp v1.6.5
