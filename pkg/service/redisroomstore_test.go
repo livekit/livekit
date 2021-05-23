@@ -3,10 +3,9 @@ package service_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/livekit/livekit-server/pkg/service"
 	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParticipantPersisence(t *testing.T) {
@@ -33,28 +32,28 @@ func TestParticipantPersisence(t *testing.T) {
 	}
 
 	// create the participant
-	assert.NoError(t, rs.PersistParticipant(roomName, p))
+	require.NoError(t, rs.PersistParticipant(roomName, p))
 
 	// result should match
 	pGet, err := rs.GetParticipant(roomName, p.Identity)
-	assert.NoError(t, err)
-	assert.Equal(t, p.Identity, pGet.Identity)
-	assert.Equal(t, len(p.Tracks), len(pGet.Tracks))
-	assert.Equal(t, p.Tracks[0].Sid, pGet.Tracks[0].Sid)
+	require.NoError(t, err)
+	require.Equal(t, p.Identity, pGet.Identity)
+	require.Equal(t, len(p.Tracks), len(pGet.Tracks))
+	require.Equal(t, p.Tracks[0].Sid, pGet.Tracks[0].Sid)
 
 	// list should return one participant
 	participants, err := rs.ListParticipants(roomName)
-	assert.NoError(t, err)
-	assert.Len(t, participants, 1)
+	require.NoError(t, err)
+	require.Len(t, participants, 1)
 
 	// deleting participant should return back to normal
-	assert.NoError(t, rs.DeleteParticipant(roomName, p.Identity))
+	require.NoError(t, rs.DeleteParticipant(roomName, p.Identity))
 
 	participants, err = rs.ListParticipants(roomName)
-	assert.NoError(t, err)
-	assert.Len(t, participants, 0)
+	require.NoError(t, err)
+	require.Len(t, participants, 0)
 
 	// shouldn't be able to get it
 	_, err = rs.GetParticipant(roomName, p.Identity)
-	assert.Equal(t, err, service.ErrParticipantNotFound)
+	require.Equal(t, err, service.ErrParticipantNotFound)
 }

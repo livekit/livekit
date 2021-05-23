@@ -62,7 +62,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		ICERestart: true,
 	}))
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 }

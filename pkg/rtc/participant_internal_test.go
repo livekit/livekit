@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v3"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -43,7 +42,7 @@ func TestIsReady(t *testing.T) {
 		t.Run(test.state.String(), func(t *testing.T) {
 			p := &ParticipantImpl{}
 			p.state.Store(test.state)
-			assert.Equal(t, test.ready, p.IsReady())
+			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
 }
@@ -82,13 +81,13 @@ func TestTrackPublishing(t *testing.T) {
 		})
 		p.handleTrackPublished(track)
 
-		assert.True(t, published)
-		assert.False(t, updated)
-		assert.Len(t, p.publishedTracks, 1)
+		require.True(t, published)
+		require.False(t, updated)
+		require.Len(t, p.publishedTracks, 1)
 
 		track.OnCloseArgsForCall(0)()
-		assert.Len(t, p.publishedTracks, 0)
-		assert.True(t, updated)
+		require.Len(t, p.publishedTracks, 0)
+		require.True(t, updated)
 	})
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {
@@ -97,13 +96,13 @@ func TestTrackPublishing(t *testing.T) {
 		//track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
-		assert.Equal(t, 1, sink.WriteMessageCallCount())
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
-		assert.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
+		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
 		published := res.Message.(*livekit.SignalResponse_TrackPublished).TrackPublished
-		assert.Equal(t, "cid", published.Cid)
-		assert.Equal(t, "webcam", published.Track.Name)
-		assert.Equal(t, livekit.TrackType_VIDEO, published.Track.Type)
+		require.Equal(t, "cid", published.Cid)
+		require.Equal(t, "webcam", published.Track.Name)
+		require.Equal(t, livekit.TrackType_VIDEO, published.Track.Type)
 	})
 
 	t.Run("should not allow adding of duplicate tracks", func(t *testing.T) {
@@ -114,7 +113,7 @@ func TestTrackPublishing(t *testing.T) {
 		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
 		p.AddTrack("cid", "duplicate", livekit.TrackType_AUDIO)
 
-		assert.Equal(t, 1, sink.WriteMessageCallCount())
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
 }
 

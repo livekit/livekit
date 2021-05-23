@@ -23,7 +23,9 @@ type Room struct {
 	iceServers []*livekit.ICEServer
 	lock       sync.RWMutex
 	// map of identity -> Participant
-	participants map[string]types.Participant
+	participants    map[string]types.Participant
+	participantOpts map[string]*ParticipantOptions
+
 	// time the first participant joined the room
 	joinedAt atomic.Value
 	// time that the last participant left the room
@@ -40,6 +42,10 @@ type Room struct {
 	onClose              func()
 }
 
+type ParticipantOptions struct {
+	AutoSubscribe bool
+}
+
 func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioUpdateInterval uint32) *Room {
 	r := &Room{
 		Room:                *room,
@@ -49,6 +55,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		lock:                sync.RWMutex{},
 		statsReporter:       NewRoomStatsReporter(room.Name),
 		participants:        make(map[string]types.Participant),
+		participantOpts:     make(map[string]*ParticipantOptions),
 	}
 	if r.EmptyTimeout == 0 {
 		r.EmptyTimeout = DefaultEmptyTimeout
@@ -118,7 +125,7 @@ func (r *Room) LastLeftAt() int64 {
 	return 0
 }
 
-func (r *Room) Join(participant types.Participant) error {
+func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) error {
 	if r.isClosed.Get() {
 		return ErrRoomClosed
 	}
@@ -171,6 +178,7 @@ func (r *Room) Join(participant types.Participant) error {
 		"roomId", r.Sid)
 
 	r.participants[participant.Identity()] = participant
+	r.participantOpts[participant.Identity()] = opts
 
 	// gather other participants and send join response
 	otherParticipants := make([]types.Participant, 0, len(r.participants))
@@ -192,6 +200,7 @@ func (r *Room) RemoveParticipant(identity string) {
 	p, ok := r.participants[identity]
 	if ok {
 		delete(r.participants, identity)
+		delete(r.participantOpts, identity)
 	}
 	r.lock.Unlock()
 	if !ok {
@@ -309,6 +318,22 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 	r.onParticipantChanged = f
 }
 
+func (r *Room) autoSubscribe(participant types.Participant) bool {
+	if !participant.CanSubscribe() {
+		return false
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	opts := r.participantOpts[participant.Identity()]
+	// default to true if no options are set
+	if opts != nil && !opts.AutoSubscribe {
+		return false
+	}
+	return true
+}
+
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
@@ -326,6 +351,9 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 		}
 		if existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
 			// not fully joined. don't subscribe yet
+			continue
+		}
+		if !r.autoSubscribe(existingParticipant) {
 			continue
 		}
 
@@ -374,6 +402,10 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 }
 
 func (r *Room) subscribeToExistingTracks(p types.Participant) {
+	if !r.autoSubscribe(p) {
+		return
+	}
+
 	tracksAdded := 0
 	for _, op := range r.GetParticipants() {
 		if p.ID() == op.ID() {

@@ -54,6 +54,7 @@ type Participant interface {
 	GetAudioLevel() (level uint8, noisy bool)
 
 	// permissions
+
 	CanPublish() bool
 	CanSubscribe() bool
 
@@ -61,6 +62,7 @@ type Participant interface {
 	Close() error
 
 	// callbacks
+
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
@@ -71,6 +73,7 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
+
 	AddSubscribedTrack(participantId string, st SubscribedTrack)
 	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection

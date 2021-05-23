@@ -158,6 +158,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 		Permission:      pi.Permission,
 		ProtocolVersion: pi.ProtocolVersion,
 		UsePlanB:        pi.UsePlanB,
+		AutoSubscribe:   pi.AutoSubscribe,
 	})
 	if err != nil {
 		return
@@ -225,6 +226,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		Permission:      ss.Permission,
 		ProtocolVersion: ss.ProtocolVersion,
 		UsePlanB:        ss.UsePlanB,
+		AutoSubscribe:   ss.AutoSubscribe,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)

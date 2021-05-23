@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -28,15 +27,15 @@ func init() {
 func TestJoinedState(t *testing.T) {
 	t.Run("new room should return joinedAt 0", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
-		assert.Equal(t, int64(0), rm.FirstJoinedAt())
-		assert.Equal(t, int64(0), rm.LastLeftAt())
+		require.Equal(t, int64(0), rm.FirstJoinedAt())
+		require.Equal(t, int64(0), rm.LastLeftAt())
 	})
 
 	t.Run("should be current time when a participant joins", func(t *testing.T) {
 		s := time.Now().Unix()
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		assert.Equal(t, s, rm.FirstJoinedAt())
-		assert.Equal(t, int64(0), rm.LastLeftAt())
+		require.Equal(t, s, rm.FirstJoinedAt())
+		require.Equal(t, int64(0), rm.LastLeftAt())
 	})
 
 	t.Run("should be set when a participant leaves", func(t *testing.T) {
@@ -44,14 +43,14 @@ func TestJoinedState(t *testing.T) {
 		p0 := rm.GetParticipants()[0]
 		s := time.Now().Unix()
 		rm.RemoveParticipant(p0.Identity())
-		assert.Equal(t, s, rm.LastLeftAt())
+		require.Equal(t, s, rm.LastLeftAt())
 	})
 
 	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		p0 := rm.GetParticipants()[0]
 		rm.RemoveParticipant(p0.Identity())
-		assert.EqualValues(t, 0, rm.LastLeftAt())
+		require.EqualValues(t, 0, rm.LastLeftAt())
 	})
 }
 
@@ -60,13 +59,13 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		pNew := newMockParticipant("new", types.DefaultProtocol)
 
-		rm.Join(pNew)
+		rm.Join(pNew, nil)
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
-		assert.Equal(t, info.Sid, rm.Sid)
-		assert.Len(t, participants, numParticipants)
-		assert.Len(t, rm.GetParticipants(), numParticipants+1)
+		require.Equal(t, info.Sid, rm.Sid)
+		require.Len(t, participants, numParticipants)
+		require.Len(t, rm.GetParticipants(), numParticipants+1)
 		require.NotEmpty(t, iceServers)
 	})
 
@@ -75,11 +74,11 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := newMockParticipant("new", types.DefaultProtocol)
 
-		err := rm.Join(p)
-		assert.NoError(t, err)
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true})
+		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
-		assert.NotNil(t, stateChangeCB)
+		require.NotNil(t, stateChangeCB)
 		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
 
@@ -89,9 +88,9 @@ func TestRoomJoin(t *testing.T) {
 				continue
 			}
 			mockP := op.(*typesfakes.FakeParticipant)
-			assert.NotZero(t, mockP.AddSubscriberCallCount())
+			require.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
-			assert.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
+			require.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
 		}
 	})
 
@@ -109,19 +108,19 @@ func TestRoomJoin(t *testing.T) {
 		rm.RemoveParticipant(p.Identity())
 		time.Sleep(defaultDelay)
 
-		assert.Equal(t, p, changedParticipant)
+		require.Equal(t, p, changedParticipant)
 
 		numUpdates := 0
 		for _, op := range participants {
 			if op == p || op == disconnectedParticipant {
-				assert.Zero(t, p.SendParticipantUpdateCallCount())
+				require.Zero(t, p.SendParticipantUpdateCallCount())
 				continue
 			}
 			fakeP := op.(*typesfakes.FakeParticipant)
-			assert.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
+			require.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
 			numUpdates += 1
 		}
-		assert.Equal(t, numParticipants-2, numUpdates)
+		require.Equal(t, numParticipants-2, numUpdates)
 	})
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
@@ -129,8 +128,8 @@ func TestRoomJoin(t *testing.T) {
 		rm.MaxParticipants = 1
 		p := newMockParticipant("second", types.ProtocolVersion(0))
 
-		err := rm.Join(p)
-		assert.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
+		err := rm.Join(p, nil)
+		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
 	})
 }
 
@@ -205,10 +204,10 @@ func TestRoomClosure(t *testing.T) {
 		time.Sleep(defaultDelay)
 
 		rm.CloseIfEmpty()
-		assert.Len(t, rm.GetParticipants(), 0)
-		assert.True(t, isClosed)
+		require.Len(t, rm.GetParticipants(), 0)
+		require.True(t, isClosed)
 
-		assert.Equal(t, rtc.ErrRoomClosed, rm.Join(p))
+		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -217,9 +216,9 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		assert.NotZero(t, rm.EmptyTimeout)
+		require.NotZero(t, rm.EmptyTimeout)
 		rm.CloseIfEmpty()
-		assert.False(t, isClosed)
+		require.False(t, isClosed)
 	})
 
 	t.Run("room closes after empty timeout", func(t *testing.T) {
@@ -232,7 +231,7 @@ func TestRoomClosure(t *testing.T) {
 
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()
-		assert.True(t, isClosed)
+		require.True(t, isClosed)
 	})
 }
 
@@ -250,11 +249,11 @@ func TestNewTrack(t *testing.T) {
 		// p3 adds track
 		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
-		assert.NotNil(t, trackCB)
+		require.NotNil(t, trackCB)
 		trackCB(pub, track)
 		// only p2 should've been called
-		assert.Equal(t, 1, track.AddSubscriberCallCount())
-		assert.Equal(t, p1, track.AddSubscriberArgsForCall(0))
+		require.Equal(t, 1, track.AddSubscriberCallCount())
+		require.Equal(t, p1, track.AddSubscriberArgsForCall(0))
 	})
 }
 
@@ -273,16 +272,16 @@ func TestActiveSpeakers(t *testing.T) {
 		return updates
 	}
 
-	audioUpdateDuration := (audioUpdateInterval + 2) * time.Millisecond
+	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: types.DefaultProtocol})
 		p := rm.GetParticipants()[0].(*typesfakes.FakeParticipant)
-		assert.Empty(t, rm.GetActiveSpeakers())
+		require.Empty(t, rm.GetActiveSpeakers())
 
 		time.Sleep(audioUpdateDuration)
 
 		updates := getActiveSpeakerUpdates(p)
-		assert.Empty(t, updates)
+		require.Empty(t, updates)
 	})
 
 	t.Run("speakers should be sorted by loudness (protocol 0)", func(t *testing.T) {
@@ -294,9 +293,9 @@ func TestActiveSpeakers(t *testing.T) {
 		p2.GetAudioLevelReturns(20, true)
 
 		speakers := rm.GetActiveSpeakers()
-		assert.Len(t, speakers, 2)
-		assert.Equal(t, p.ID(), speakers[0].Sid)
-		assert.Equal(t, p2.ID(), speakers[1].Sid)
+		require.Len(t, speakers, 2)
+		require.Equal(t, p.ID(), speakers[0].Sid)
+		require.Equal(t, p2.ID(), speakers[1].Sid)
 	})
 
 	t.Run("participants are getting audio updates (protocol 2)", func(t *testing.T) {
@@ -357,9 +356,9 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	for i := 0; i < opts.num; i++ {
 		identity := fmt.Sprintf("p%d", i)
 		participant := newMockParticipant(identity, opts.protocol)
-		err := rm.Join(participant)
+		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true})
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	return rm
 }

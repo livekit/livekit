@@ -211,9 +211,9 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 }
 
 // creates a client and runs against server
-func createRTCClient(name string, port int) *testclient.RTCClient {
+func createRTCClient(name string, port int, opts *testclient.Options) *testclient.RTCClient {
 	token := joinToken(testRoom, name)
-	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token)
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
 	if err != nil {
 		panic(err)
 	}

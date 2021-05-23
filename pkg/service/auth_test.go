@@ -5,11 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/auth/authfakes"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuthMiddleware(t *testing.T) {
@@ -30,23 +29,23 @@ func TestAuthMiddleware(t *testing.T) {
 	at := auth.NewAccessToken(api, secret).
 		AddGrant(orig)
 	token, err := at.ToJWT()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	r := &http.Request{Header: http.Header{}}
 	w := httptest.NewRecorder()
 	service.SetAuthorizationToken(r, token)
 	m.ServeHTTP(w, r, handler)
 
-	assert.NotNil(t, grants)
-	assert.EqualValues(t, orig, grants.Video)
+	require.NotNil(t, grants)
+	require.EqualValues(t, orig, grants.Video)
 
 	// no authorization == no claims
 	grants = nil
 	w = httptest.NewRecorder()
 	r = &http.Request{Header: http.Header{}}
 	m.ServeHTTP(w, r, handler)
-	assert.Nil(t, grants)
-	assert.Equal(t, http.StatusOK, w.Code)
+	require.Nil(t, grants)
+	require.Equal(t, http.StatusOK, w.Code)
 
 	// incorrect authorization: error
 	grants = nil
@@ -54,6 +53,6 @@ func TestAuthMiddleware(t *testing.T) {
 	r = &http.Request{Header: http.Header{}}
 	service.SetAuthorizationToken(r, "invalid token")
 	m.ServeHTTP(w, r, handler)
-	assert.Nil(t, grants)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Nil(t, grants)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }

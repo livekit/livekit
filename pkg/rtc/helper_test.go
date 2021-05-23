@@ -13,6 +13,8 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion) *typesf
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
+	p.CanSubscribeReturns(true)
+	p.CanPublishReturns(true)
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.Participant)

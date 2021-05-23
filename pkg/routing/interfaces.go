@@ -30,6 +30,7 @@ type ParticipantInit struct {
 	Permission      *livekit.ParticipantPermission
 	ProtocolVersion int32
 	UsePlanB        bool
+	AutoSubscribe   bool
 }
 
 type NewParticipantCallback func(roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)

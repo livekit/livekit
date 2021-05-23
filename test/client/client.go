@@ -70,14 +70,23 @@ var (
 	}
 )
 
-func NewWebSocketConn(host, token string) (*websocket.Conn, error) {
+type Options struct {
+	AutoSubscribe bool
+}
+
+func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
 	u, err := url.Parse(host + "/rtc")
 	if err != nil {
 		return nil, err
 	}
 	requestHeader := make(http.Header)
 	SetAuthorizationToken(requestHeader, token)
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), requestHeader)
+
+	connectUrl := u.String()
+	if opts != nil {
+		connectUrl = fmt.Sprintf("%s?auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }
 

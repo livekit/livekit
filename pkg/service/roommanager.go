@@ -260,7 +260,10 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 	}
 
 	// join room
-	if err := room.Join(participant); err != nil {
+	opts := rtc.ParticipantOptions{
+		AutoSubscribe: pi.AutoSubscribe,
+	}
+	if err := room.Join(participant, &opts); err != nil {
 		logger.Errorw("could not join room", "error", err)
 		return
 	}

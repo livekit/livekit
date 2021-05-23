@@ -4,10 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMultiNodeRouting(t *testing.T) {
@@ -27,17 +26,17 @@ func TestMultiNodeRouting(t *testing.T) {
 	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
 		Name: testRoom,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// one node connecting to node 1, and another connecting to node 2
-	c1 := createRTCClient("c1", defaultServerPort)
-	c2 := createRTCClient("c2", secondServerPort)
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c2 := createRTCClient("c2", secondServerPort, nil)
 	waitUntilConnected(t, c1, c2)
 	defer stopClients(c1, c2)
 
 	// c1 publishing, and c2 receiving
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	if t1 != nil {
 		defer t1.Stop()
 	}
@@ -52,7 +51,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		assert.Equal(t, c1.ID(), tr1.StreamID())
+		require.Equal(t, c1.ID(), tr1.StreamID())
 		return true
 	})
 }
@@ -69,7 +68,7 @@ func TestConnectWithoutCreation(t *testing.T) {
 	defer s1.Stop()
 	defer s2.Stop()
 
-	c1 := createRTCClient("c1", defaultServerPort)
+	c1 := createRTCClient("c1", defaultServerPort, nil)
 	waitUntilConnected(t, c1)
 
 	c1.Stop()
@@ -127,11 +126,11 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 		Name:   testRoom,
 		NodeId: s2.Node().Id,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// one node connecting to node 1, and another connecting to node 2
-	c1 := createRTCClient("c1", defaultServerPort)
-	c2 := createRTCClient("c2", secondServerPort)
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c2 := createRTCClient("c2", secondServerPort, nil)
 
 	waitUntilConnected(t, c1, c2)
 	stopClients(c1, c2)
@@ -141,7 +140,7 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 
 	time.Sleep(syncDelay)
 
-	c3 := createRTCClient("c3", defaultServerPort)
+	c3 := createRTCClient("c3", defaultServerPort, nil)
 	waitUntilConnected(t, c3)
 }
 

@@ -115,6 +115,10 @@ func (t *MediaTrack) IsSubscriber(subId string) bool {
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
+	if !sub.CanSubscribe() {
+		return ErrPermissionDenied
+	}
+
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	existingSt := t.subscribedTracks[sub.ID()]

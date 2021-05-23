@@ -57,6 +57,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
 	protocolParam := r.FormValue("protocol")
+	autoSubParam := r.FormValue("auto_subscribe")
 	planBParam := r.FormValue("planb")
 
 	claims := GetGrants(r.Context())
@@ -66,19 +67,24 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pi := routing.ParticipantInit{
-		Reconnect: boolValue(reconnectParam),
-		Identity:  claims.Identity,
-		UsePlanB:  boolValue(planBParam),
+		Reconnect:     boolValue(reconnectParam),
+		Identity:      claims.Identity,
+		UsePlanB:      boolValue(planBParam),
+		AutoSubscribe: true,
 	}
+	if autoSubParam != "" {
+		pi.AutoSubscribe = boolValue(autoSubParam)
+	}
+	if pv, err := strconv.Atoi(protocolParam); err == nil {
+		pi.ProtocolVersion = int32(pv)
+	}
+
 	// only use permissions if any of them are set, default permissive
 	if claims.Video.CanPublish || claims.Video.CanSubscribe {
 		pi.Permission = &livekit.ParticipantPermission{
 			CanSubscribe: claims.Video.CanSubscribe,
 			CanPublish:   claims.Video.CanPublish,
 		}
-	}
-	if pv, err := strconv.Atoi(protocolParam); err == nil {
-		pi.ProtocolVersion = int32(pv)
 	}
 
 	onlyName, err := EnsureJoinPermission(r.Context())
