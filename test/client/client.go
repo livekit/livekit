@@ -197,7 +197,9 @@ func (c *RTCClient) Run() error {
 	// run the session
 	for {
 		res, err := c.ReadResponse()
-		if err != nil {
+		if errors.Is(io.EOF, err) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		switch msg := res.Message.(type) {
@@ -287,11 +289,6 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 		}
 	}
-
-	if err != io.EOF {
-		return err
-	}
-	return nil
 }
 
 func (c *RTCClient) WaitUntilConnected() error {
