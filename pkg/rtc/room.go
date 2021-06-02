@@ -318,13 +318,11 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 	r.onParticipantChanged = f
 }
 
+// checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
 func (r *Room) autoSubscribe(participant types.Participant) bool {
 	if !participant.CanSubscribe() {
 		return false
 	}
-
-	r.lock.RLock()
-	defer r.lock.RUnlock()
 
 	opts := r.participantOpts[participant.Identity()]
 	// default to true if no options are set
@@ -402,7 +400,10 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 }
 
 func (r *Room) subscribeToExistingTracks(p types.Participant) {
-	if !r.autoSubscribe(p) {
+	r.lock.RLock()
+	shouldSubscribe := r.autoSubscribe(p)
+	r.lock.RUnlock()
+	if !shouldSubscribe {
 		return
 	}
 
