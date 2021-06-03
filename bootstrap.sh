@@ -22,7 +22,7 @@ then
   exit 1
 fi
 
+go mod download
+
 go get -u github.com/twitchtv/twirp/protoc-gen-twirp
 go get -u google.golang.org/protobuf/cmd/protoc-gen-go
-
-go mod download
