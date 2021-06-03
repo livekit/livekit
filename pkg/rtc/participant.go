@@ -28,7 +28,7 @@ const (
 	lossyDataChannel    = "_lossy"
 	reliableDataChannel = "_reliable"
 	privateDataChannel  = "_private"
-	sdBatchSize         = 15
+	sdBatchSize         = 20
 )
 
 type ParticipantParams struct {
@@ -863,7 +863,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 			continue
 		}
 
-		var pkts []rtcp.Packet
+		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
 		for _, tracks := range p.subscribedTracks {
@@ -873,31 +873,46 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 				if sr == nil || chunks == nil {
 					continue
 				}
-				pkts = append(pkts, sr)
+				srs = append(srs, sr)
 				sd = append(sd, chunks...)
 			}
 		}
 		p.lock.RUnlock()
 
 		// now send in batches of sdBatchSize
-		// first batch will contain the sender reports too
 		var batch []rtcp.SourceDescriptionChunk
-		for len(sd) > 0 {
-			size := len(sd)
-			if size > sdBatchSize {
-				size = sdBatchSize
-			}
-			batch = sd[:size]
-			sd = sd[size:]
-			pkts = append(pkts, &rtcp.SourceDescription{Chunks: batch})
-			if err := p.subscriber.pc.WriteRTCP(pkts); err != nil {
-				if err == io.EOF || err == io.ErrClosedPipe {
-					return
+		var pkts []rtcp.Packet
+		batchSize := 0
+		for len(sd) > 0 || len(srs) > 0 {
+			numSRs := len(srs)
+			if numSRs > 0 {
+				if numSRs > sdBatchSize {
+					numSRs = sdBatchSize
 				}
-				logger.Errorw("could not send downtrack reports", err,
-					"participant", p.Identity())
+				pkts = append(pkts, srs[:numSRs]...)
+				srs = srs[numSRs:]
 			}
+
+			size := len(sd)
+			spaceRemain := sdBatchSize - batchSize
+			if spaceRemain > 0 && size > 0 {
+				if size > spaceRemain {
+					size = spaceRemain
+				}
+				batch = sd[:size]
+				sd = sd[size:]
+				pkts = append(pkts, &rtcp.SourceDescription{Chunks: batch})
+				if err := p.subscriber.pc.WriteRTCP(pkts); err != nil {
+					if err == io.EOF || err == io.ErrClosedPipe {
+						return
+					}
+					logger.Errorw("could not send downtrack reports", err,
+						"participant", p.Identity())
+				}
+			}
+
 			pkts = pkts[:0]
+			batchSize = 0
 		}
 	}
 }
