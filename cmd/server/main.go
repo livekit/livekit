@@ -24,6 +24,10 @@ import (
 	"github.com/livekit/protocol/auth"
 )
 
+func init() {
+	rand.Seed(time.Now().Unix())
+}
+
 func main() {
 	app := &cli.App{
 		Name:        "livekit-server",
