@@ -6,10 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -360,7 +361,7 @@ func (r *Room) onTrackAdded(participant types.Participant, track types.Published
 			"remoteTrack", track.ID(),
 			"dest", existingParticipant.Identity())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
-			logger.Errorw("could not subscribe to remoteTrack",
+			logger.Errorw("could not subscribe to remoteTrack", err,
 				"source", participant.Identity(),
 				"remoteTrack", track.ID(),
 				"dest", existingParticipant.Identity())
@@ -415,7 +416,7 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		}
 		if n, err := op.AddSubscriber(p); err != nil {
 			// TODO: log error? or disconnect?
-			logger.Errorw("could not subscribe to participant",
+			logger.Errorw("could not subscribe to participant", err,
 				"dest", p.Identity(),
 				"source", op.Identity())
 		} else {
@@ -439,9 +440,8 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
-			logger.Errorw("could not send update to participant",
-				"participant", p.Identity(),
-				"err", err)
+			logger.Errorw("could not send update to participant", err,
+				"participant", p.Identity())
 		}
 	}
 }

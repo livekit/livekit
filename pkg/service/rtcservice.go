@@ -31,8 +31,8 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 		upgrader:    websocket.Upgrader{
 			// increase buffer size to avoid errors such as
 			// read: connection reset by peer
-			//ReadBufferSize:  10240,
-			//WriteBufferSize: 10240,
+			// ReadBufferSize:  10240,
+			// WriteBufferSize: 10240,
 		},
 		currentNode: currentNode,
 		isDev:       conf.Development,
@@ -125,9 +125,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Warnw("could not upgrade to WS",
-			"err", err,
-		)
+		logger.Warnw("could not upgrade to WS", err)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -161,7 +159,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
-					logger.Errorw("unexpected message type",
+					logger.Errorw("unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
 						"participant", pi.Identity,
 						"connectionId", connId)
@@ -169,7 +167,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if err = sigConn.WriteResponse(res); err != nil {
-					logger.Warnw("error writing to websocket", "error", err)
+					logger.Warnw("error writing to websocket", err)
 					return
 				}
 			}
@@ -185,13 +183,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 				return
 			} else {
-				logger.Errorw("error reading from websocket", "error", err)
+				logger.Errorw("error reading from websocket", err)
 				return
 			}
 		}
 		if err := reqSink.WriteMessage(req); err != nil {
-			logger.Warnw("error writing to request sink",
-				"error", err,
+			logger.Warnw("error writing to request sink", err,
 				"participant", pi.Identity,
 				"connectionId", connId)
 		}

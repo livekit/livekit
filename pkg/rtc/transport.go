@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/livekit-server/pkg/logger"
 
 	livekit "github.com/livekit/livekit-server/proto"
 )
@@ -95,7 +96,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		if state == webrtc.ICEGathererStateComplete {
 			if restart, ok := t.restartAfterGathering.Load().(bool); ok && restart {
 				if err := t.CreateAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-					logger.Warnw("could not restart ICE", "error", err)
+					logger.Warnw("could not restart ICE", err)
 				}
 			}
 		}
@@ -156,7 +157,7 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 func (t *PCTransport) Negotiate() {
 	t.debouncedNegotiate(func() {
 		if err := t.CreateAndSendOffer(nil); err != nil {
-			logger.Errorw("could not negotiate", "error", err)
+			logger.Errorw("could not negotiate", err)
 		}
 	})
 }
@@ -200,13 +201,13 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
-		logger.Errorw("could not create offer", "err", err)
+		logger.Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
-		logger.Errorw("could not set local description", "err", err)
+		logger.Errorw("could not set local description", err)
 		return err
 	}
 

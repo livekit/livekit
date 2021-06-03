@@ -14,13 +14,14 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/livekit/livekit-server/version"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -524,7 +525,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	defer p.lock.RUnlock()
 	track := p.publishedTracks[trackId]
 	if track == nil {
-		logger.Warnw("could not locate track", "track", trackId)
+		logger.Warnw("could not locate track", nil, "track", trackId)
 		return
 	}
 	currentMuted := track.IsMuted()
@@ -646,8 +647,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	sink := p.params.Sink
 	err := sink.WriteMessage(msg)
 	if err != nil {
-		logger.Warnw("could not send message to participant",
-			"error", err,
+		logger.Warnw("could not send message to participant", err,
 			"id", p.ID(),
 			"participant", p.Identity(),
 			"message", fmt.Sprintf("%T", msg.Message))
@@ -684,7 +684,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"rid", track.RID())
 
 	if !p.CanPublish() {
-		logger.Warnw("no permission to publish mediaTrack",
+		logger.Warnw("no permission to publish mediaTrack", nil,
 			"participant", p.Identity())
 		return
 	}
@@ -749,7 +749,7 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 		logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
 
 		if !p.CanPublish() {
-			logger.Warnw("no permission to publish dataTrack",
+			logger.Warnw("no permission to publish dataTrack", nil,
 				"participant", p.Identity())
 			return
 		}
@@ -786,7 +786,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 
 	// if still not found, we are done
 	if ti == nil {
-		logger.Errorw("track info not published prior to track", "clientId", clientId)
+		logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	} else if deleteAfter {
 		delete(p.pendingTracks, clientId)
 	}
@@ -796,7 +796,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	dp := livekit.DataPacket{}
 	if err := proto.Unmarshal(data, &dp); err != nil {
-		logger.Warnw("could not parse data packet", "error", err)
+		logger.Warnw("could not parse data packet", err)
 		return
 	}
 
@@ -811,7 +811,7 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 			p.onDataPacket(p, &dp)
 		}
 	default:
-		logger.Warnw("received unsupported data packet", "payload", payload)
+		logger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 }
 
@@ -894,9 +894,8 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 				if err == io.EOF || err == io.ErrClosedPipe {
 					return
 				}
-				logger.Errorw("could not send downtrack reports",
-					"participant", p.Identity(),
-					"err", err)
+				logger.Errorw("could not send downtrack reports", err,
+					"participant", p.Identity())
 			}
 			pkts = pkts[:0]
 		}
@@ -914,9 +913,8 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		//	logger.Debugw("writing RTCP", "packet", pkt)
 		//}
 		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
-			logger.Errorw("could not write RTCP to participant",
-				"participant", p.Identity(),
-				"err", err)
+			logger.Errorw("could not write RTCP to participant", err,
+				"participant", p.Identity())
 		}
 	}
 }

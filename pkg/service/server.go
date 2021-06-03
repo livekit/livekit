@@ -113,7 +113,7 @@ func (s *LivekitServer) Start() error {
 	}
 	defer func() {
 		if err := s.router.UnregisterNode(); err != nil {
-			logger.Errorw("could not unregister node", "error", err)
+			logger.Errorw("could not unregister node", err)
 		}
 	}()
 
@@ -161,7 +161,7 @@ func (s *LivekitServer) Start() error {
 		}
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
-			logger.Errorw("could not start server", "error", err)
+			logger.Errorw("could not start server", err)
 			s.Stop()
 		}
 	}()
@@ -173,7 +173,7 @@ func (s *LivekitServer) Start() error {
 	<-s.doneChan
 
 	if err := s.router.UnregisterNode(); err != nil {
-		logger.Errorw("could not unregister node", "error", err)
+		logger.Errorw("could not unregister node", err)
 	}
 
 	// wait for shutdown

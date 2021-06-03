@@ -157,7 +157,7 @@ func (r *LocalRouter) rtcMessageWorker() {
 		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
 			room, identity, err := parseParticipantKey(rtcMsg.ParticipantKey)
 			if err != nil {
-				logger.Errorw("could not process RTC message", "error", err)
+				logger.Errorw("could not process RTC message", err)
 				continue
 			}
 			if r.onRTCMessage != nil {

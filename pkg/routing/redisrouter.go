@@ -8,9 +8,10 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -187,9 +188,10 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	if rtcNode.Id != r.currentNode.Id {
-		logger.Errorw("called participant on incorrect node",
+		err = ErrIncorrectRTCNode
+		logger.Errorw("called participant on incorrect node", err,
 			"rtcNode", rtcNode, "currentNode", r.currentNode.Id)
-		return ErrIncorrectRTCNode
+		return err
 	}
 
 	if err := r.setParticipantRTCNode(participantKey, rtcNode.Id); err != nil {
@@ -298,7 +300,7 @@ func (r *RedisRouter) statsWorker() {
 		case <-time.After(statsUpdateInterval):
 			r.currentNode.Stats.UpdatedAt = time.Now().Unix()
 			if err := r.RegisterNode(); err != nil {
-				logger.Errorw("could not update node", "error", err)
+				logger.Errorw("could not update node", err)
 			}
 		case <-r.ctx.Done():
 			return
@@ -324,21 +326,21 @@ func (r *RedisRouter) redisWorker() {
 		if msg.Channel == sigChannel {
 			sm := livekit.SignalNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &sm); err != nil {
-				logger.Errorw("could not unmarshal signal message on sigchan", "error", err)
+				logger.Errorw("could not unmarshal signal message on sigchan", err)
 				continue
 			}
 			if err := r.handleSignalMessage(&sm); err != nil {
-				logger.Errorw("error processing signal message", "error", err)
+				logger.Errorw("error processing signal message", err)
 				continue
 			}
 		} else if msg.Channel == rtcChannel {
 			rm := livekit.RTCNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &rm); err != nil {
-				logger.Errorw("could not unmarshal RTC message on rtcchan", "error", err)
+				logger.Errorw("could not unmarshal RTC message on rtcchan", err)
 				continue
 			}
 			if err := r.handleRTCMessage(&rm); err != nil {
-				logger.Errorw("error processing RTC message", "error", err)
+				logger.Errorw("error processing RTC message", err)
 				continue
 			}
 		}

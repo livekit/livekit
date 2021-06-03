@@ -49,16 +49,22 @@ func Infow(msg string, keysAndValues ...interface{}) {
 	logger.Infow(msg, keysAndValues...)
 }
 
-func Warnw(msg string, keysAndValues ...interface{}) {
+func Warnw(msg string, err error, keysAndValues ...interface{}) {
 	if logger == nil {
 		return
+	}
+	if err != nil {
+		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
 	}
 	logger.Warnw(msg, keysAndValues...)
 }
 
-func Errorw(msg string, keysAndValues ...interface{}) {
+func Errorw(msg string, err error, keysAndValues ...interface{}) {
 	if logger == nil {
 		return
+	}
+	if err != nil {
+		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
 	}
 	logger.Errorw(msg, keysAndValues...)
 }

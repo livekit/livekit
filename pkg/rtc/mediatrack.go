@@ -12,11 +12,12 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 var (
@@ -199,9 +200,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				return
 			}
 			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				logger.Warnw("could not remove remoteTrack from forwarder",
-					"sub", sub.Identity(),
-					"err", err)
+				logger.Warnw("could not remove remoteTrack from forwarder", err,
+					"sub", sub.Identity())
 			}
 		}
 
@@ -252,7 +252,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
-			logger.Errorw("could not unmarshal RTCP", "error", err)
+			logger.Errorw("could not unmarshal RTCP", err)
 			return
 		}
 

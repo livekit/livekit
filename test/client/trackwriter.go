@@ -112,7 +112,7 @@ func (w *TrackWriter) writeOgg() {
 		}
 
 		if err != nil {
-			logger.Errorw("could not parse ogg page", "err", err)
+			logger.Errorw("could not parse ogg page", err)
 			return
 		}
 
@@ -122,7 +122,7 @@ func (w *TrackWriter) writeOgg() {
 		sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
 
 		if err = w.track.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); err != nil {
-			logger.Errorw("could not write sample", "err", err)
+			logger.Errorw("could not write sample", err)
 			return
 		}
 
@@ -146,13 +146,13 @@ func (w *TrackWriter) writeVP8() {
 		}
 
 		if err != nil {
-			logger.Errorw("could not parse VP8 frame", "err", err)
+			logger.Errorw("could not parse VP8 frame", err)
 			return
 		}
 
 		time.Sleep(sleepTime)
 		if err = w.track.WriteSample(media.Sample{Data: frame, Duration: time.Second}); err != nil {
-			logger.Errorw("could not write sample", "err", err)
+			logger.Errorw("could not write sample", err)
 			return
 		}
 	}
