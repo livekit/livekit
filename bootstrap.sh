@@ -21,3 +21,5 @@ then
   echo "Ensure `go env GOPATH`/bin is in your \$PATH"
   exit 1
 fi
+
+go mod download

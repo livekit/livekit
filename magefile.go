@@ -16,9 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livekit/livekit-server/version"
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/target"
+
+	"github.com/livekit/livekit-server/version"
 )
 
 const (
@@ -87,11 +88,11 @@ func Proto() error {
 	if err != nil {
 		return err
 	}
-	protoc_go_path, err := getToolPath("protoc-gen-go")
+	protocGoPath, err := getToolPath("protoc-gen-go")
 	if err != nil {
 		return err
 	}
-	twirp_path, err := getToolPath("protoc-gen-twirp")
+	twirpPath, err := getToolPath("protoc-gen-twirp")
 	if err != nil {
 		return err
 	}
@@ -102,8 +103,8 @@ func Proto() error {
 		"--twirp_out", target,
 		"--go_opt=paths=source_relative",
 		"--twirp_opt=paths=source_relative",
-		"--plugin=go="+protoc_go_path,
-		"--plugin=twirp="+twirp_path,
+		"--plugin=go="+protocGoPath,
+		"--plugin=twirp="+twirpPath,
 		"-I="+protoDir,
 		protoDir+"/livekit_room.proto",
 	)
@@ -116,7 +117,7 @@ func Proto() error {
 	cmd = exec.Command(protoc,
 		"--go_out", target,
 		"--go_opt=paths=source_relative",
-		"--plugin=go="+protoc_go_path,
+		"--plugin=go="+protocGoPath,
 		"-I="+protoDir,
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",
@@ -209,7 +210,7 @@ func Test() error {
 	return cmd.Run()
 }
 
-// run all thests including integration
+// run all tests including integration
 func TestAll() error {
 	mg.Deps(Proto)
 	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=1m")
