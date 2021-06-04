@@ -45,7 +45,8 @@ func init() {
 	logger.InitDevelopment("")
 }
 
-func setupSingleNodeTest(roomName string) *service.LivekitServer {
+func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, func()) {
+	logger.Infow("----------------STARTING TEST----------------", "test", name)
 	s := createSingleNodeServer()
 	go func() {
 		s.Start()
@@ -58,10 +59,14 @@ func setupSingleNodeTest(roomName string) *service.LivekitServer {
 	if err != nil {
 		panic(err)
 	}
-	return s
+	return s, func() {
+		s.Stop()
+		logger.Infow("----------------FINISHING TEST----------------", "test", name)
+	}
 }
 
-func setupMultiNodeTest() (*service.LivekitServer, *service.LivekitServer) {
+func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
+	logger.Infow("----------------STARTING TEST----------------", "test", name)
 	s1 := createMultiNodeServer(utils.NewGuid(nodeId1), defaultServerPort)
 	s2 := createMultiNodeServer(utils.NewGuid(nodeId2), secondServerPort)
 	go s1.Start()
@@ -70,12 +75,12 @@ func setupMultiNodeTest() (*service.LivekitServer, *service.LivekitServer) {
 	waitForServerToStart(s1)
 	waitForServerToStart(s2)
 
-	return s1, s2
-}
-
-func teardownTest(s *service.LivekitServer, roomName string) {
-	roomClient.DeleteRoom(contextWithCreateRoomToken(), &livekit.DeleteRoomRequest{Room: roomName})
-	s.Stop()
+	return s1, s2, func() {
+		s1.Stop()
+		s2.Stop()
+		redisClient().FlushAll(context.Background())
+		logger.Infow("----------------FINISHING TEST----------------", "test", name)
+	}
 }
 
 func contextWithCreateRoomToken() context.Context {
@@ -131,18 +136,14 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 			err := c.WaitUntilConnected()
 			if err != nil {
 				errChan <- err
+				t.Error(err)
 			}
 		}()
 	}
 	wg.Wait()
 	close(errChan)
-	hasError := false
 	for err := range errChan {
 		t.Fatal(err)
-		hasError = true
-	}
-	if hasError {
-		t.FailNow()
 	}
 }
 

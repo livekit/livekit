@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/logger"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/stretchr/testify/require"
 )
@@ -16,10 +15,8 @@ func TestClientCouldConnect(t *testing.T) {
 		return
 	}
 
-	s := setupSingleNodeTest(testRoom)
-	defer func() {
-		teardownTest(s, testRoom)
-	}()
+	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	c2 := createRTCClient("c2", defaultServerPort, nil)
@@ -41,13 +38,8 @@ func TestSinglePublisher(t *testing.T) {
 		return
 	}
 
-	logger.Infow("\n\n---Starting TestSinglePublisher---")
-	defer logger.Infow("---Finishing TestSinglePublisher---")
-
-	s := setupSingleNodeTest(testRoom)
-	defer func() {
-		teardownTest(s, testRoom)
-	}()
+	s, finish := setupSingleNodeTest("TestSinglePublisher", testRoom)
+	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	c2 := createRTCClient("c2", defaultServerPort, nil)
@@ -128,10 +120,8 @@ func TestAutoSubDisabled(t *testing.T) {
 		return
 	}
 
-	s := setupSingleNodeTest(testRoom)
-	defer func() {
-		teardownTest(s, testRoom)
-	}()
+	_, finish := setupSingleNodeTest("TestAutoSubDisabled", testRoom)
+	defer finish()
 
 	opts := testclient.Options{AutoSubscribe: false}
 	c1 := createRTCClient("c1", defaultServerPort, &opts)

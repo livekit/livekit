@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/stretchr/testify/require"
 )
@@ -14,13 +13,8 @@ func TestMultiNodeRouting(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-
-	logger.Infow("\n\n---Starting TestMultiNodeRouting---")
-	defer logger.Infow("---Finishing TestMultiNodeRouting---")
-
-	s1, s2 := setupMultiNodeTest()
-	defer s1.Stop()
-	defer s2.Stop()
+	_, _, finish := setupMultiNodeTest("TestMultiNodeRouting")
+	defer finish()
 
 	// creating room on node 1
 	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
@@ -61,12 +55,9 @@ func TestConnectWithoutCreation(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	logger.Infow("\n\n---Starting TestConnectWithoutCreation---")
-	defer logger.Infow("---Finishing TestConnectWithoutCreation---")
 
-	s1, s2 := setupMultiNodeTest()
-	defer s1.Stop()
-	defer s2.Stop()
+	_, _, finish := setupMultiNodeTest("TestConnectWithoutCreation")
+	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	waitUntilConnected(t, c1)
@@ -80,13 +71,8 @@ func TestMultinodePublishingUponJoining(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-
-	logger.Infow("\n\n---Starting TestMultinodePublishingUponJoining---")
-	defer logger.Infow("---Finishing TestMultinodePublishingUponJoining---")
-
-	s1, s2 := setupMultiNodeTest()
-	defer s1.Stop()
-	defer s2.Stop()
+	_, _, finish := setupMultiNodeTest("TestMultinodePublishingUponJoining")
+	defer finish()
 
 	scenarioPublishingUponJoining(t, defaultServerPort, secondServerPort)
 }
@@ -96,13 +82,8 @@ func TestMultinodeReceiveBeforePublish(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-
-	logger.Infow("\n\n---Starting TestMultinodeReceiveBeforePublish---")
-	defer logger.Infow("---Finishing TestMultinodeReceiveBeforePublish---")
-
-	s1, s2 := setupMultiNodeTest()
-	defer s1.Stop()
-	defer s2.Stop()
+	_, _, finish := setupMultiNodeTest("TestMultinodeReceiveBeforePublish")
+	defer finish()
 
 	scenarioReceiveBeforePublish(t)
 }
@@ -114,12 +95,8 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 		return
 	}
 
-	logger.Infow("\n\n---Starting TestMultinodeReconnectAfterNodeShutdown---")
-	defer logger.Infow("---Finishing TestMultinodeReconnectAfterNodeShutdown---")
-
-	s1, s2 := setupMultiNodeTest()
-	defer s1.Stop()
-	defer s2.Stop()
+	_, s2, finish := setupMultiNodeTest("TestMultinodeReconnectAfterNodeShutdown")
+	defer finish()
 
 	// creating room on node 1
 	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
