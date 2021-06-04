@@ -63,7 +63,8 @@ func GetLocalIP(stunServers []string) (string, error) {
 	}
 
 	var stunErr error
-	var nodeIp string
+	// sufficiently large buffer to not block it
+	ipChan := make(chan string, 20)
 	err = c.Start(message, func(res stun.Event) {
 		if res.Error != nil {
 			stunErr = res.Error
@@ -77,7 +78,7 @@ func GetLocalIP(stunServers []string) (string, error) {
 		}
 		ip := xorAddr.IP.To4()
 		if ip != nil {
-			nodeIp = ip.String()
+			ipChan <- ip.String()
 		}
 	})
 	if err != nil {
@@ -86,21 +87,17 @@ func GetLocalIP(stunServers []string) (string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for nodeIp == "" {
-		select {
-		case <-ctx.Done():
-			msg := "could not determine public IP"
-			if stunErr != nil {
-				return "", errors.Wrap(stunErr, msg)
-			} else {
-				return "", fmt.Errorf(msg)
-			}
-		case <-time.After(100 * time.Millisecond):
-			continue
+	select {
+	case nodeIP := <-ipChan:
+		return nodeIP, nil
+	case <-ctx.Done():
+		msg := "could not determine public IP"
+		if stunErr != nil {
+			return "", errors.Wrap(stunErr, msg)
+		} else {
+			return "", fmt.Errorf(msg)
 		}
 	}
-
-	return nodeIp, nil
 }
 
 // Creates a hashed ID from a unique string

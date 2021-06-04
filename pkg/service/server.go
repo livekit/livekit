@@ -177,7 +177,8 @@ func (s *LivekitServer) Start() error {
 	}
 
 	// wait for shutdown
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
 	_ = s.httpServer.Shutdown(ctx)
 
 	if s.turnServer != nil {

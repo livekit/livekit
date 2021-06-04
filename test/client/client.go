@@ -189,7 +189,7 @@ func (c *RTCClient) Run() error {
 	})
 
 	// create a data channel, in order to work
-	_, err := c.publisher.PeerConnection().CreateDataChannel("_private", nil)
+	_, err := c.publisher.PeerConnection().CreateDataChannel("_lossy", nil)
 	if err != nil {
 		return err
 	}
@@ -353,6 +353,8 @@ func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
 }
 
 func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	return funk.Values(c.remoteParticipants).([]*livekit.ParticipantInfo)
 }
 

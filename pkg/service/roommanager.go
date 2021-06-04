@@ -307,10 +307,11 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", err)
 		}
+
 		// print stats
 		logger.Infow("room closed",
-			"incomingStats", room.GetIncomingStats(),
-			"outgoingStats", room.GetOutgoingStats(),
+			"incomingStats", room.GetIncomingStats().Copy(),
+			"outgoingStats", room.GetOutgoingStats().Copy(),
 		)
 	})
 	room.OnParticipantChanged(func(p types.Participant) {
@@ -336,7 +337,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 	defer func() {
 		logger.Debugw("RTC session finishing",
 			"participant", participant.Identity(),
-			"room", room.Name,
+			"room", room.Room.Name,
 		)
 		_ = participant.Close()
 	}()

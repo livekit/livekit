@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/utils"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -19,7 +20,7 @@ const (
 )
 
 type Room struct {
-	livekit.Room
+	Room       *livekit.Room
 	config     WebRTCConfig
 	iceServers []*livekit.ICEServer
 	lock       sync.RWMutex
@@ -49,20 +50,19 @@ type ParticipantOptions struct {
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioUpdateInterval uint32) *Room {
 	r := &Room{
-		Room:                *room,
+		Room:                proto.Clone(room).(*livekit.Room),
 		config:              config,
 		iceServers:          iceServers,
 		audioUpdateInterval: audioUpdateInterval,
-		lock:                sync.RWMutex{},
 		statsReporter:       NewRoomStatsReporter(room.Name),
 		participants:        make(map[string]types.Participant),
 		participantOpts:     make(map[string]*ParticipantOptions),
 	}
-	if r.EmptyTimeout == 0 {
-		r.EmptyTimeout = DefaultEmptyTimeout
+	if r.Room.EmptyTimeout == 0 {
+		r.Room.EmptyTimeout = DefaultEmptyTimeout
 	}
-	if r.CreationTime == 0 {
-		r.CreationTime = time.Now().Unix()
+	if r.Room.CreationTime == 0 {
+		r.Room.CreationTime = time.Now().Unix()
 	}
 	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
@@ -138,7 +138,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		return ErrAlreadyJoined
 	}
 
-	if r.MaxParticipants > 0 && int(r.MaxParticipants) == len(r.participants) {
+	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
 		return ErrMaxParticipantsExceeded
 	}
 
@@ -176,7 +176,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
 		"identity", participant.Identity(),
-		"roomId", r.Sid)
+		"roomId", r.Room.Sid)
 
 	r.participants[participant.Identity()] = participant
 	r.participantOpts[participant.Identity()] = opts
@@ -193,7 +193,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		r.onParticipantChanged(participant)
 	}
 
-	return participant.SendJoinResponse(&r.Room, otherParticipants, r.iceServers)
+	return participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers)
 }
 
 func (r *Room) RemoveParticipant(identity string) {
@@ -221,9 +221,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	// close participant as well
 	_ = p.Close()
 
+	r.lock.RLock()
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
 	}
+	r.lock.RUnlock()
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {
@@ -274,7 +276,7 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	timeout := r.EmptyTimeout
+	timeout := r.Room.EmptyTimeout
 	var elapsed int64
 	if r.FirstJoinedAt() > 0 {
 		// exit 20s after
@@ -283,7 +285,7 @@ func (r *Room) CloseIfEmpty() {
 			timeout = DefaultRoomDepartureGrace
 		}
 	} else {
-		elapsed = time.Now().Unix() - r.CreationTime
+		elapsed = time.Now().Unix() - r.Room.CreationTime
 	}
 
 	if elapsed >= int64(timeout) {
@@ -295,7 +297,7 @@ func (r *Room) Close() {
 	if !r.isClosed.TrySet(true) {
 		return
 	}
-	logger.Infow("closing room", "room", r.Sid, "name", r.Name)
+	logger.Infow("closing room", "room", r.Room.Sid, "name", r.Room.Name)
 
 	r.statsReporter.RoomEnded()
 	if r.onClose != nil {

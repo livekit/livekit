@@ -19,10 +19,10 @@ func createPubMediaEngine() (*webrtc.MediaEngine, error) {
 	}
 
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
-		{webrtc.TypeRTCPFBGoogREMB, ""},
-		{webrtc.TypeRTCPFBCCM, "fir"},
-		{webrtc.TypeRTCPFBNACK, ""},
-		{webrtc.TypeRTCPFBNACK, "pli"}}
+		{Type: webrtc.TypeRTCPFBGoogREMB, Parameter: ""},
+		{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+		{Type: webrtc.TypeRTCPFBNACK, Parameter: ""},
+		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
 	for _, codec := range []webrtc.RTPCodecParameters{
 		{
 			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: videoRTCPFeedback},

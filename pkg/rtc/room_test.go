@@ -63,7 +63,7 @@ func TestRoomJoin(t *testing.T) {
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
-		require.Equal(t, info.Sid, rm.Sid)
+		require.Equal(t, info.Sid, rm.Room.Sid)
 		require.Len(t, participants, numParticipants)
 		require.Len(t, rm.GetParticipants(), numParticipants+1)
 		require.NotEmpty(t, iceServers)
@@ -125,7 +125,7 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		rm.MaxParticipants = 1
+		rm.Room.MaxParticipants = 1
 		p := newMockParticipant("second", types.ProtocolVersion(0))
 
 		err := rm.Join(p, nil)
@@ -198,7 +198,7 @@ func TestRoomClosure(t *testing.T) {
 		})
 		p := rm.GetParticipants()[0]
 		// allows immediate close after
-		rm.EmptyTimeout = 0
+		rm.Room.EmptyTimeout = 0
 		rm.RemoveParticipant(p.Identity())
 
 		time.Sleep(defaultDelay)
@@ -216,7 +216,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		require.NotZero(t, rm.EmptyTimeout)
+		require.NotZero(t, rm.Room.EmptyTimeout)
 		rm.CloseIfEmpty()
 		require.False(t, isClosed)
 	})
@@ -227,7 +227,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		rm.EmptyTimeout = 1
+		rm.Room.EmptyTimeout = 1
 
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()

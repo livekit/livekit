@@ -45,14 +45,18 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 		msg := &livekit.SignalRequest{}
 		switch messageType {
 		case websocket.BinaryMessage:
+			c.mu.Lock()
 			// switch to protobuf if client supports it
 			c.useJSON = false
+			c.mu.Unlock()
 			// protobuf encoded
 			err := proto.Unmarshal(payload, msg)
 			return msg, err
 		case websocket.TextMessage:
+			c.mu.Lock()
 			// json encoded, also write back JSON
 			c.useJSON = true
+			c.mu.Unlock()
 			err := protojson.Unmarshal(payload, msg)
 			return msg, err
 		default:
@@ -67,6 +71,9 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 	var payload []byte
 	var err error
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.useJSON {
 		msgType = websocket.TextMessage
 		payload, err = protojson.Marshal(msg)
@@ -78,8 +85,6 @@ func (c *WSSignalConnection) WriteResponse(msg *livekit.SignalResponse) error {
 		return err
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.conn.WriteMessage(msgType, payload)
 }
 

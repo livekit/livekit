@@ -15,7 +15,8 @@ var (
 
 func WithTimeout(t *testing.T, description string, f func() bool) bool {
 	logger.Infow(description)
-	ctx, _ := context.WithTimeout(context.Background(), ConnectTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ConnectTimeout)
+	defer cancel()
 	for {
 		select {
 		case <-ctx.Done():

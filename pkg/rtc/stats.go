@@ -192,6 +192,18 @@ func (s *PacketStats) HandleRTCP(pkts []rtcp.Packet) {
 	}
 }
 
+func (s PacketStats) Copy() *PacketStats {
+	return &PacketStats{
+		roomName:    s.roomName,
+		direction:   s.direction,
+		PacketBytes: atomic.LoadUint64(&s.PacketBytes),
+		PacketTotal: atomic.LoadUint64(&s.PacketTotal),
+		NackTotal:   atomic.LoadUint64(&s.NackTotal),
+		PLITotal:    atomic.LoadUint64(&s.PLITotal),
+		FIRTotal:    atomic.LoadUint64(&s.FIRTotal),
+	}
+}
+
 // StatsBufferWrapper wraps a buffer factory so we could get information on
 // incoming packets
 type StatsBufferWrapper struct {

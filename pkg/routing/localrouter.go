@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/utils"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
@@ -35,7 +36,10 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 }
 
 func (r *LocalRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
-	return r.currentNode, nil
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
+	return node, nil
 }
 
 func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
@@ -132,7 +136,9 @@ func (r *LocalRouter) statsWorker() {
 		}
 		// update every 10 seconds
 		<-time.After(statsUpdateInterval)
+		r.lock.Lock()
 		r.currentNode.Stats.UpdatedAt = time.Now().Unix()
+		r.lock.Unlock()
 	}
 }
 

@@ -22,9 +22,9 @@ import (
 
 var (
 	feedbackTypes = []webrtc.RTCPFeedback{
-		{webrtc.TypeRTCPFBGoogREMB, ""},
-		{webrtc.TypeRTCPFBNACK, ""},
-		{webrtc.TypeRTCPFBNACK, "pli"}}
+		{Type: webrtc.TypeRTCPFBGoogREMB},
+		{Type: webrtc.TypeRTCPFBNACK},
+		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -67,7 +67,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		streamID:         track.StreamID(),
 		kind:             ToProtoTrackKind(track.Kind()),
 		codec:            track.Codec(),
-		lock:             sync.RWMutex{},
 		subscribedTracks: make(map[string]*SubscribedTrack),
 	}
 
@@ -170,7 +169,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
 		subTrack.SetPublisherMuted(t.IsMuted())
-		go t.sendDownTrackBindingReports(sub.ID(), sub.RTCPChan())
+		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnCloseHandler(func() {
 		t.lock.Lock()
@@ -302,8 +301,8 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 
 func (t *MediaTrack) RemoveAllSubscribers() {
 	logger.Debugw("removing all subscribers", "track", t.params.TrackID)
-	t.lock.RLock()
-	defer t.lock.RUnlock()
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	for _, subTrack := range t.subscribedTracks {
 		go subTrack.DownTrack().Close()
 	}
@@ -312,11 +311,11 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 
 // TODO: send for all downtracks from the source participant
 // https://tools.ietf.org/html/rfc7941
-func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh chan []rtcp.Packet) {
+func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	t.lock.RLock()
-	subTrack := t.subscribedTracks[participantId]
+	subTrack := t.subscribedTracks[sub.ID()]
 	t.lock.RUnlock()
 
 	if subTrack == nil {
@@ -338,7 +337,10 @@ func (t *MediaTrack) sendDownTrackBindingReports(participantId string, rtcpCh ch
 		batch := pkts
 		i := 0
 		for {
-			rtcpCh <- batch
+			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
+				logger.Errorw("could not write RTCP", err)
+				return
+			}
 			if i > 5 {
 				return
 			}

@@ -27,7 +27,6 @@ import (
 const (
 	lossyDataChannel    = "_lossy"
 	reliableDataChannel = "_reliable"
-	privateDataChannel  = "_private"
 	sdBatchSize         = 20
 )
 
@@ -90,7 +89,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		id:               utils.NewGuid(utils.ParticipantPrefix),
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
-		lock:             sync.RWMutex{},
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
 		connectedAt:      time.Now(),
@@ -632,10 +630,13 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 	p.state.Store(state)
 	logger.Debugw("updating participant state", "state", state.String(), "participant", p.Identity())
-	if p.onStateChange != nil {
+	p.lock.RLock()
+	onStateChange := p.onStateChange
+	p.lock.RUnlock()
+	if onStateChange != nil {
 		go func() {
 			defer Recover()
-			p.onStateChange(p, oldState)
+			onStateChange(p, oldState)
 		}()
 	}
 }
@@ -743,27 +744,8 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
 		})
-	case privateDataChannel:
-		// ignore
 	default:
-		logger.Debugw("dataChannel added", "participant", p.Identity(), "label", dc.Label())
-
-		if !p.CanPublish() {
-			logger.Warnw("no permission to publish dataTrack", nil,
-				"participant", p.Identity())
-			return
-		}
-
-		// data channels have numeric ids, so we use its label to identify
-		ti := p.getPendingTrack(dc.Label(), livekit.TrackType_DATA, true)
-		if ti == nil {
-			return
-		}
-
-		dt := NewDataTrack(ti.Sid, p.id, dc)
-		dt.name = ti.Name
-
-		p.handleTrackPublished(dt)
+		logger.Warnw("unsupported datachannel added", nil, "participant", p.Identity(), "label", dc.Label())
 	}
 }
 
