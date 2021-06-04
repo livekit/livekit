@@ -340,7 +340,6 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 	}
 }
 
-// TODO: this function is not thread safe, need to cleanup
 func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
 	// create a copy of this
 	c.lock.Lock()

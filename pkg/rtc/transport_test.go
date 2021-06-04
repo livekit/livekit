@@ -45,7 +45,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
 
 	// ensure we are connected the first time
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 

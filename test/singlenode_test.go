@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/logger"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/stretchr/testify/require"
 )
@@ -39,6 +40,9 @@ func TestSinglePublisher(t *testing.T) {
 		t.SkipNow()
 		return
 	}
+
+	logger.Infow("\n\n---Starting TestSinglePublisher---")
+	defer logger.Infow("---Finishing TestSinglePublisher---")
 
 	s := setupSingleNodeTest(testRoom)
 	defer func() {
