@@ -213,7 +213,7 @@ func Test() error {
 // run all tests including integration
 func TestAll() error {
 	mg.Deps(Proto)
-	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=1m")
+	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=5m")
 	connectStd(cmd)
 	return cmd.Run()
 }
