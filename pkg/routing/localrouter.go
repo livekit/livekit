@@ -4,9 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/logger"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 // a router of messages on the same node, basic implementation for local testing
@@ -121,7 +122,6 @@ func (r *LocalRouter) Start() error {
 }
 
 func (r *LocalRouter) Stop() {
-
 	r.rtcMessageChan.Close()
 }
 

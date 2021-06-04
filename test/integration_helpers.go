@@ -9,17 +9,17 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/utils"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/testutils"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 	syncDelay = 100 * time.Millisecond
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
 	// let connection timeout happen
-	//connectTimeout = 5000 * time.Second
+	// connectTimeout = 5000 * time.Second
 )
 
 var (
@@ -112,7 +112,6 @@ func waitForServerToStart(s *service.LivekitServer) {
 func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	logger.Infow("waiting for clients to become connected")
 	wg := sync.WaitGroup{}
-	errChan := make(chan error, len(clients))
 	for i := range clients {
 		c := clients[i]
 		wg.Add(1)
@@ -120,15 +119,13 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 			defer wg.Done()
 			err := c.WaitUntilConnected()
 			if err != nil {
-				errChan <- err
 				t.Error(err)
 			}
 		}()
 	}
 	wg.Wait()
-	close(errChan)
-	for err := range errChan {
-		t.Fatal(err)
+	if t.Failed() {
+		t.FailNow()
 	}
 }
 

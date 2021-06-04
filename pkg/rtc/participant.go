@@ -841,7 +841,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 }
 
 func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnectionState) {
-	//logger.Debugw("ICE connection state changed", "state", state.String(),
+	// logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity)
 	if state == webrtc.ICEConnectionStateConnected {
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
@@ -924,9 +924,9 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		if pkts == nil {
 			return
 		}
-		//for _, pkt := range pkts {
+		// for _, pkt := range pkts {
 		//	logger.Debugw("writing RTCP", "packet", pkt)
-		//}
+		// }
 		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
 			logger.Errorw("could not write RTCP to participant", err,
 				"participant", p.Identity())

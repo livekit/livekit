@@ -361,7 +361,7 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 
 	switch rmb := sm.Message.(type) {
 	case *livekit.SignalNodeMessage_Response:
-		//logger.Debugw("forwarding signal message",
+		// logger.Debugw("forwarding signal message",
 		//	"connectionId", connectionId,
 		//	"type", fmt.Sprintf("%T", rmb.Response.Message))
 		if err := resSink.WriteMessage(rmb.Response); err != nil {
@@ -369,7 +369,7 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 		}
 
 	case *livekit.SignalNodeMessage_EndSession:
-		//logger.Debugw("received EndSession, closing signal connection",
+		// logger.Debugw("received EndSession, closing signal connection",
 		//	"connectionId", connectionId)
 		resSink.Close()
 	}

@@ -370,7 +370,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			case *livekit.SignalRequest_Answer:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
 					logger.Errorw("cannot negotiate before peer offer", nil, "participant", participant.Identity())
-					//conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
+					// conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
 					return
 				}
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
@@ -383,7 +383,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 					logger.Errorw("could not decode trickle", err, "participant", participant.Identity())
 					break
 				}
-				//logger.Debugw("adding peer candidate", "participant", participant.ID())
+				// logger.Debugw("adding peer candidate", "participant", participant.ID())
 				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
 					logger.Errorw("could not handle trickle", err, "participant", participant.Identity())
 				}

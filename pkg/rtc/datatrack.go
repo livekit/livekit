@@ -32,7 +32,7 @@ type DataTrack struct {
 
 func NewDataTrack(trackId, participantId string, dc *webrtc.DataChannel) *DataTrack {
 	t := &DataTrack{
-		//ctx:           context.Background(),
+		// ctx:           context.Background(),
 		id:            trackId,
 		name:          dc.Label(),
 		participantId: participantId,
@@ -156,8 +156,7 @@ func (t *DataTrack) forwardWorker() {
 		for _, sub := range t.subscribers {
 			err := sub.SendMessage(msg)
 			if err != nil {
-				logger.Errorw("could not send data message",
-					err,
+				logger.Errorw("could not send data message", err,
 					"source", t.participantId,
 					"dest", sub.participantId)
 			}
