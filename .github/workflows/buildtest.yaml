@@ -1,0 +1,40 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/bin
+          ~/.cache
+        key: ${{ runner.os }}-amd64-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-amd64-go-
+    
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+
+    - name: Mage Build
+      uses: magefile/mage-action@v1
+      with:
+        version: latest
+        args: build
+
+    - name: Mage Test
+      uses: magefile/mage-action@v1
+      with:
+        version: latest
+        args: testall
