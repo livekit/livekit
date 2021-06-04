@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func TestClientCouldConnect(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// ensure they both see each other
-	withTimeout(t, "c1 and c2 could connect", func() bool {
+	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
 		if len(c1.RemoteParticipants()) == 0 || len(c2.RemoteParticipants()) == 0 {
 			return false
 		}
@@ -56,7 +57,7 @@ func TestSinglePublisher(t *testing.T) {
 	// a new client joins and should get the initial stream
 	c3 := createRTCClient("c3", defaultServerPort, nil)
 
-	success := withTimeout(t, "c2 should receive two tracks", func() bool {
+	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
 		}
@@ -75,7 +76,7 @@ func TestSinglePublisher(t *testing.T) {
 
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
-	success = withTimeout(t, "c2 should receive two tracks", func() bool {
+	success = testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c3.SubscribedTracks()) == 0 {
 			return false
 		}
@@ -98,7 +99,7 @@ func TestSinglePublisher(t *testing.T) {
 	// when c3 disconnects.. ensure subscriber is cleaned up correctly
 	c3.Stop()
 
-	success = withTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+	success = testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
 		room := s.RoomManager().GetRoom(testRoom)
 		require.NotNil(t, room)
 

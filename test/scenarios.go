@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/stretchr/testify/require"
 
@@ -26,7 +27,7 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	defer stopWriters(writers...)
 
 	logger.Infow("waiting to receive tracks from c1 and c2")
-	success := withTimeout(t, "c3 should receive tracks from both clients", func() bool {
+	success := testutils.WithTimeout(t, "c3 should receive tracks from both clients", func() bool {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c1.ID()]) != 2 {
 			return false
@@ -46,7 +47,7 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	c2.Stop()
 
 	logger.Infow("waiting for c2 tracks to be gone")
-	success = withTimeout(t, "c2 tracks should be gone", func() bool {
+	success = testutils.WithTimeout(t, "c2 tracks should be gone", func() bool {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c1.ID()]) != 2 {
 			return false
@@ -71,7 +72,7 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	success = withTimeout(t, "new c2 tracks should be published again", func() bool {
+	success = testutils.WithTimeout(t, "new c2 tracks should be published again", func() bool {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c2.ID()]) != 2 {
 			return false
@@ -98,7 +99,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	defer stopWriters(writers...)
 
 	// c2 should see some bytes flowing through
-	success := withTimeout(t, "waiting to receive bytes on c2", func() bool {
+	success := testutils.WithTimeout(t, "waiting to receive bytes on c2", func() bool {
 		return c2.BytesReceived() > 20
 	})
 	if !success {
@@ -109,7 +110,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	success = withTimeout(t, "waiting to receive c2 tracks on c1", func() bool {
+	success = testutils.WithTimeout(t, "waiting to receive c2 tracks on c1", func() bool {
 		return len(c1.SubscribedTracks()[c2.ID()]) == 2
 	})
 	require.True(t, success)
@@ -117,7 +118,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	// now leave, and ensure that it's immediate
 	c2.Stop()
 
-	time.Sleep(connectTimeout)
+	time.Sleep(testutils.ConnectTimeout)
 	require.Empty(t, c1.RemoteParticipants())
 }
 

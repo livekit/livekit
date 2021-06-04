@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bep/debounce"
@@ -35,9 +34,8 @@ type PCTransport struct {
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	onOffer               func(offer webrtc.SessionDescription)
-	restartAfterGathering atomic.Value
-
-	negotiationState atomic.Value
+	restartAfterGathering bool
+	negotiationState      int
 }
 
 type TransportParams struct {
@@ -90,11 +88,13 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		pc:                 pc,
 		me:                 me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
+		negotiationState:   negotiationStateNone,
 	}
-	t.negotiationState.Store(negotiationStateNone)
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
-			if restart, ok := t.restartAfterGathering.Load().(bool); ok && restart {
+			t.lock.Lock()
+			defer t.lock.Unlock()
+			if t.restartAfterGathering {
 				if err := t.CreateAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
 					logger.Warnw("could not restart ICE", err)
 				}
@@ -125,22 +125,23 @@ func (t *PCTransport) Close() {
 }
 
 func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	if err := t.pc.SetRemoteDescription(sd); err != nil {
 		return err
 	}
 
-	t.lock.Lock()
 	for _, c := range t.pendingCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
 			return err
 		}
 	}
 	t.pendingCandidates = nil
-	t.lock.Unlock()
 
 	// negotiated, reset flag
-	state := t.negotiationState.Load().(int)
-	t.negotiationState.Store(negotiationStateNone)
+	state := t.negotiationState
+	t.negotiationState = negotiationStateNone
 	if state == negotiationRetry {
 		// need to Negotiate again
 		t.Negotiate()
@@ -170,22 +171,22 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	iceRestart := options != nil && options.ICERestart
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
 		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 			logger.Debugw("restart ICE after gathering")
-			t.restartAfterGathering.Store(true)
+			t.restartAfterGathering = true
 			return nil
 		}
 		logger.Debugw("restarting ICE")
 	}
 
-	state := t.negotiationState.Load().(int)
-
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
-	if state == negotiationStateClient {
+	if t.negotiationState == negotiationStateClient {
 		currentSD := t.pc.CurrentRemoteDescription()
 		if iceRestart && currentSD != nil {
 			logger.Debugw("recovering from client negotiation state")
@@ -194,7 +195,7 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 			}
 		} else {
 			logger.Debugw("skipping negotiation, trying again later")
-			t.negotiationState.Store(negotiationRetry)
+			t.negotiationState = negotiationRetry
 			return nil
 		}
 	}
@@ -212,9 +213,9 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	// indicate waiting for client
-	t.negotiationState.Store(negotiationStateClient)
-	t.restartAfterGathering.Store(false)
+	t.negotiationState = negotiationStateClient
+	t.restartAfterGathering = false
 
-	t.onOffer(offer)
+	go t.onOffer(offer)
 	return nil
 }

@@ -2,8 +2,8 @@ package rtc
 
 import (
 	"testing"
-	"time"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
@@ -45,7 +45,10 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
 
 	// ensure we are connected the first time
-	time.Sleep(100 * time.Millisecond)
+	testutils.WithTimeout(t, "initial ICE connectivity", func() bool {
+		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	})
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 
@@ -53,7 +56,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	transportA.OnOffer(func(sd webrtc.SessionDescription) {})
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
 	require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
-	require.Equal(t, negotiationStateClient, transportA.negotiationState.Load().(int))
+	require.Equal(t, negotiationStateClient, transportA.negotiationState)
 
 	// now restart ICE
 	t.Logf("creating offer with ICE restart")
@@ -62,9 +65,10 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		ICERestart: true,
 	}))
 
-	time.Sleep(100 * time.Millisecond)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	testutils.WithTimeout(t, "restarted ICE connectivity", func() bool {
+		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	})
 }
 
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {

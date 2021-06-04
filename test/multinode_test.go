@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,7 @@ func TestMultiNodeRouting(t *testing.T) {
 		defer t1.Stop()
 	}
 
-	withTimeout(t, "c2 should receive one track", func() bool {
+	testutils.WithTimeout(t, "c2 should receive one track", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
 		}

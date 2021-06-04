@@ -344,7 +344,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 
 	for {
 		select {
-		case <-time.After(time.Millisecond * 100):
+		case <-time.After(time.Millisecond * 50):
 			// periodic check to ensure participant didn't become disconnected
 			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
 				return

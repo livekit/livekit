@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/twitchtv/twirp"
 
@@ -30,8 +31,7 @@ const (
 	nodeId1           = "node-1"
 	nodeId2           = "node-2"
 
-	syncDelay      = 100 * time.Millisecond
-	connectTimeout = 10 * time.Second
+	syncDelay = 100 * time.Millisecond
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
 	// let connection timeout happen
 	//connectTimeout = 5000 * time.Second
@@ -95,7 +95,8 @@ func contextWithCreateRoomToken() context.Context {
 
 func waitForServerToStart(s *service.LivekitServer) {
 	// wait till ready
-	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), testutils.ConnectTimeout)
+	defer cancel()
 	for {
 		select {
 		case <-ctx.Done():
@@ -103,22 +104,6 @@ func waitForServerToStart(s *service.LivekitServer) {
 		case <-time.After(10 * time.Millisecond):
 			if s.IsRunning() {
 				return
-			}
-		}
-	}
-}
-
-func withTimeout(t *testing.T, description string, f func() bool) bool {
-	logger.Infow(description)
-	ctx, _ := context.WithTimeout(context.Background(), connectTimeout)
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatal("timed out: " + description)
-			return false
-		case <-time.After(10 * time.Millisecond):
-			if f() {
-				return true
 			}
 		}
 	}

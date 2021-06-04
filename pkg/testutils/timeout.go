@@ -1,0 +1,30 @@
+package testutils
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/logger"
+)
+
+var (
+	SyncDelay      = 100 * time.Millisecond
+	ConnectTimeout = 5 * time.Second
+)
+
+func WithTimeout(t *testing.T, description string, f func() bool) bool {
+	logger.Infow(description)
+	ctx, _ := context.WithTimeout(context.Background(), ConnectTimeout)
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timed out: " + description)
+			return false
+		case <-time.After(10 * time.Millisecond):
+			if f() {
+				return true
+			}
+		}
+	}
+}
