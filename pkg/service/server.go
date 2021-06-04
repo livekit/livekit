@@ -190,10 +190,13 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop() {
-	if s.running.TrySet(false) {
-		s.router.Stop()
-		close(s.doneChan)
+	if !s.running.TrySet(false) {
+		return
 	}
+
+	s.router.Stop()
+	s.roomManager.Stop()
+	close(s.doneChan)
 }
 
 func (s *LivekitServer) RoomManager() *RoomManager {

@@ -180,6 +180,21 @@ func (r *RoomManager) CloseIdleRooms() {
 }
 
 func (r *RoomManager) Stop() {
+	// disconnect all clients
+	r.lock.RLock()
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, rm := range r.rooms {
+		rooms = append(rooms, rm)
+	}
+	r.lock.RUnlock()
+
+	for _, room := range rooms {
+		for _, p := range room.GetParticipants() {
+			_ = p.Close()
+		}
+		room.Close()
+	}
+
 	if r.rtcConfig != nil {
 		if r.rtcConfig.UDPMuxConn != nil {
 			_ = r.rtcConfig.UDPMuxConn.Close()
