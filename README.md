@@ -94,9 +94,9 @@ the `--dev` flag turns on log verbosity to make it easier for local debugging/de
 
 ### Sample client
 
-[client-sdk-js](https://github.com/livekit/client-sdk-js) contains a web sample client that can connect to your server locally.
+To test your server, you can use our [sample web client](https://sample-js.livekit.io/).
 
-Clone the repo and run `yarn sample`
+Enter generated access token and you should be able to connect. 
 
 ### Creating a JWT token
 
@@ -118,12 +118,4 @@ See documentation at https://docs.livekit.io/guides/deploy
 
 ## License
 
-LiveKit server is licensed under AGPL v3.0.
-
-## APIs & Protocol
-
-`livekit-server` provides two primary services, a `Room` service that allows for room management and participant moderation, and `RTC` service to handle WebRTC communications.
-
-Room APIs are defined in [room.proto](proto/room.proto). Room APIs are in HTTP, built with Twirp and follows [its the conventions](https://twitchtv.github.io/twirp/docs/routing.html).
-
-The RTC service provides the signaling and everything else when the client interacts with the room.
+LiveKit server is licensed under Apache License v2.0.
