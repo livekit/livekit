@@ -56,7 +56,7 @@ LiveKit is published to Docker Hub under livekit/livekit-server
 ### Creating API keys
 
 LiveKit utilizes JWT based access tokens for authentication to all of its APIs.
-Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens. For more, see [Authentication](docs/authentication.md).
+Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens. For more, see [Access Tokens](https://docs.livekit.io/guides/access-tokens).
 
 Generate API key/secret pairs with:
 
