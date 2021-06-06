@@ -391,12 +391,26 @@ func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
 }
 
 func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
+	dest := dp.GetUser().GetDestinationSids()
+
 	for _, op := range r.GetParticipants() {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
 			continue
 		}
 		if op.ID() == source.ID() {
 			continue
+		}
+		if len(dest) > 0 {
+			found := false
+			for _, dSid := range dest {
+				if op.ID() == dSid {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
 		}
 		_ = op.SendDataPacket(dp)
 	}
