@@ -66,7 +66,8 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	}
 
 	ir := &interceptor.Registry{}
-	if params.Stats != nil {
+	if params.Stats != nil && params.Target == livekit.SignalTarget_SUBSCRIBER {
+		// only capture subscriber for outbound streams
 		ir.Add(NewStatsInterceptor(params.Stats))
 	}
 	api := webrtc.NewAPI(
