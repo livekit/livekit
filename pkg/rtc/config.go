@@ -89,20 +89,15 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			UDPConn: udpMuxConn,
 		})
 		s.SetICEUDPMux(udpMux)
-
-		fd, err := udpMuxConn.File()
+		val, err := checkUDPReadBuffer()
 		if err == nil {
-			value, err := syscall.GetsockoptInt(int(fd.Fd()), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
-			if err == nil {
-				if value < minUDPBufferSize {
-					logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
-						"current", value,
-						"suggested", minUDPBufferSize)
-				} else {
-					logger.Debugw("UDP receive buffer size", "current", value)
-				}
+			if val < minUDPBufferSize {
+				logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
+					"current", val,
+					"suggested", minUDPBufferSize)
+			} else {
+				logger.Debugw("UDP receive buffer size", "current", val)
 			}
-			_ = fd.Close()
 		}
 	} else if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
 		if err := s.SetEphemeralUDPPortRange(uint16(conf.ICEPortRangeStart), uint16(conf.ICEPortRangeEnd)); err != nil {
@@ -144,4 +139,20 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		UDPMuxConn:     udpMuxConn,
 		TCPMuxListener: tcpListener,
 	}, nil
+}
+
+func checkUDPReadBuffer() (int, error) {
+	conn, err := net.ListenUDP("udp4", nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetReadBuffer(minUDPBufferSize)
+	fd, err := conn.File()
+	if err != nil {
+		return 0, nil
+	}
+	defer func() { _ = fd.Close() }()
+
+	return syscall.GetsockoptInt(int(fd.Fd()), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
 }
