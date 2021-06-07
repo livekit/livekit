@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"syscall"
 
 	"github.com/go-logr/zapr"
 	"github.com/pion/ice/v2"
@@ -13,6 +14,10 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
+)
+
+const (
+	minUDPBufferSize = 5_000_000
 )
 
 type WebRTCConfig struct {
@@ -77,12 +82,28 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		if err != nil {
 			return nil, err
 		}
+		_ = udpMuxConn.SetReadBuffer(minUDPBufferSize)
 
 		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			Logger:  lkLogger,
 			UDPConn: udpMuxConn,
 		})
 		s.SetICEUDPMux(udpMux)
+
+		fd, err := udpMuxConn.File()
+		if err == nil {
+			value, err := syscall.GetsockoptInt(int(fd.Fd()), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
+			if err == nil {
+				if value < minUDPBufferSize {
+					logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
+						"current", value,
+						"suggested", minUDPBufferSize)
+				} else {
+					logger.Debugw("UDP receive buffer size", "current", value)
+				}
+			}
+			_ = fd.Close()
+		}
 	} else if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
 		if err := s.SetEphemeralUDPPortRange(uint16(conf.ICEPortRangeStart), uint16(conf.ICEPortRangeEnd)); err != nil {
 			return nil, err
