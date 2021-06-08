@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	minUDPBufferSize = 5_000_000
+	minUDPBufferSize     = 5_000_000
+	defaultUDPBufferSize = 16_777_216
 )
 
 type WebRTCConfig struct {
@@ -82,7 +83,8 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		if err != nil {
 			return nil, err
 		}
-		_ = udpMuxConn.SetReadBuffer(minUDPBufferSize)
+		_ = udpMuxConn.SetReadBuffer(defaultUDPBufferSize)
+		_ = udpMuxConn.SetWriteBuffer(defaultUDPBufferSize)
 
 		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
 			Logger:  lkLogger,
