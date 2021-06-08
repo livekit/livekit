@@ -421,7 +421,7 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 	for _, t := range p.publishedTracks {
 		tracks = append(tracks, t)
 	}
-	defer p.lock.RUnlock()
+	p.lock.RUnlock()
 
 	if len(tracks) == 0 {
 		return 0, nil
