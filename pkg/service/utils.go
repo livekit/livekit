@@ -22,7 +22,7 @@ var ServiceSet = wire.NewSet(
 )
 
 func handleError(w http.ResponseWriter, status int, msg string) {
-	l := logger.Desugar().WithOptions(zap.AddCallerSkip(1))
+	l := logger.GetLogger().WithOptions(zap.AddCallerSkip(1))
 	l.Debug("error handling request", zap.String("error", msg), zap.Int("status", status))
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(msg))

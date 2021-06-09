@@ -34,7 +34,7 @@ type RoomManager struct {
 }
 
 func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, conf *config.Config) (*RoomManager, error) {
-	rtcConf, err := rtc.NewWebRTCConfig(&conf.RTC, currentNode.Ip)
+	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err
 	}

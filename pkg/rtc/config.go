@@ -39,7 +39,8 @@ type ReceiverConfig struct {
 // number of packets to buffer up
 const readBufferSize = 50
 
-func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, error) {
+func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, error) {
+	rtcConf := conf.RTC
 	c := webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
@@ -48,7 +49,7 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	lkLogger := loggerFactory.NewLogger("livekit-mux")
 
 	iceUrls := make([]string, 0)
-	for _, stunServer := range conf.StunServers {
+	for _, stunServer := range rtcConf.StunServers {
 		iceUrls = append(iceUrls, fmt.Sprintf("stun:%s", stunServer))
 	}
 	c.ICEServers = []webrtc.ICEServer{
@@ -56,18 +57,18 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			URLs: iceUrls,
 		},
 	}
-	if conf.UseExternalIP && externalIP != "" {
+	if rtcConf.UseExternalIP && externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
 
-	if conf.PacketBufferSize == 0 {
-		conf.PacketBufferSize = 500
+	if rtcConf.PacketBufferSize == 0 {
+		rtcConf.PacketBufferSize = 500
 	}
-	bufferFactory := buffer.NewBufferFactory(conf.PacketBufferSize, zapr.NewLogger(logger.Desugar()))
+	bufferFactory := buffer.NewBufferFactory(rtcConf.PacketBufferSize, zapr.NewLogger(logger.GetLogger()))
 	s.BufferFactory = bufferFactory.GetOrNew
 
 	networkTypes := make([]webrtc.NetworkType, 0, 4)
-	if !conf.ForceTCP {
+	if !rtcConf.ForceTCP {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeUDP4,
 		)
@@ -76,9 +77,9 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 	var udpMux *ice.UDPMuxDefault
 	var udpMuxConn *net.UDPConn
 	var err error
-	if conf.UDPPort != 0 {
+	if rtcConf.UDPPort != 0 {
 		udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
-			Port: int(conf.UDPPort),
+			Port: int(rtcConf.UDPPort),
 		})
 		if err != nil {
 			return nil, err
@@ -91,30 +92,32 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 			UDPConn: udpMuxConn,
 		})
 		s.SetICEUDPMux(udpMux)
-		val, err := checkUDPReadBuffer()
-		if err == nil {
-			if val < minUDPBufferSize {
-				logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
-					"current", val,
-					"suggested", minUDPBufferSize)
-			} else {
-				logger.Debugw("UDP receive buffer size", "current", val)
+		if !conf.Development {
+			val, err := checkUDPReadBuffer()
+			if err == nil {
+				if val < minUDPBufferSize {
+					logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
+						"current", val,
+						"suggested", minUDPBufferSize)
+				} else {
+					logger.Debugw("UDP receive buffer size", "current", val)
+				}
 			}
 		}
-	} else if conf.ICEPortRangeStart != 0 && conf.ICEPortRangeEnd != 0 {
-		if err := s.SetEphemeralUDPPortRange(uint16(conf.ICEPortRangeStart), uint16(conf.ICEPortRangeEnd)); err != nil {
+	} else if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
+		if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
 			return nil, err
 		}
 	}
 
 	// use TCP mux when it's set
 	var tcpListener *net.TCPListener
-	if conf.TCPPort != 0 {
+	if rtcConf.TCPPort != 0 {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeTCP4,
 		)
 		tcpListener, err = net.ListenTCP("tcp4", &net.TCPAddr{
-			Port: int(conf.TCPPort),
+			Port: int(rtcConf.TCPPort),
 		})
 		if err != nil {
 			return nil, err
@@ -134,8 +137,8 @@ func NewWebRTCConfig(conf *config.RTCConfig, externalIP string) (*WebRTCConfig, 
 		SettingEngine: s,
 		BufferFactory: bufferFactory,
 		Receiver: ReceiverConfig{
-			packetBufferSize: conf.PacketBufferSize,
-			maxBitrate:       conf.MaxBitrate,
+			packetBufferSize: rtcConf.PacketBufferSize,
+			maxBitrate:       rtcConf.MaxBitrate,
 		},
 		UDPMux:         udpMux,
 		UDPMuxConn:     udpMuxConn,

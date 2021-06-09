@@ -1,21 +1,27 @@
 package logger
 
 import (
+	"github.com/go-logr/zapr"
+	"github.com/pion/ion-sfu/pkg/buffer"
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 var (
-	logger *zap.SugaredLogger
+	wrappedLogger *zap.SugaredLogger
+	// zap logger
+	defaultLogger *zap.Logger
 )
 
-func getLogger() *zap.SugaredLogger {
-	if logger == nil {
+func GetLogger() *zap.Logger {
+	if defaultLogger == nil {
 		InitDevelopment("")
 	}
-	return logger
+	return defaultLogger
 }
 
+// valid levels: debug, info, warn, error, fatal, panic
 func initLogger(config zap.Config, level string) {
 	if level != "" {
 		lvl := zapcore.Level(0)
@@ -23,8 +29,14 @@ func initLogger(config zap.Config, level string) {
 			config.Level = zap.NewAtomicLevelAt(lvl)
 		}
 	}
+	// skip one level to remove this helper file
 	l, _ := config.Build(zap.AddCallerSkip(1))
-	logger = l.Sugar()
+	wrappedLogger = l.Sugar()
+
+	defaultLogger, _ = config.Build()
+	ionLogger := zapr.NewLogger(defaultLogger)
+	sfu.Logger = ionLogger
+	buffer.Logger = ionLogger
 }
 
 func InitProduction(logLevel string) {
@@ -36,42 +48,35 @@ func InitDevelopment(logLevel string) {
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {
-	if logger == nil {
+	if wrappedLogger == nil {
 		return
 	}
-	logger.Debugw(msg, keysAndValues...)
+	wrappedLogger.Debugw(msg, keysAndValues...)
 }
 
 func Infow(msg string, keysAndValues ...interface{}) {
-	if logger == nil {
+	if wrappedLogger == nil {
 		return
 	}
-	logger.Infow(msg, keysAndValues...)
+	wrappedLogger.Infow(msg, keysAndValues...)
 }
 
 func Warnw(msg string, err error, keysAndValues ...interface{}) {
-	if logger == nil {
+	if wrappedLogger == nil {
 		return
 	}
 	if err != nil {
 		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
 	}
-	logger.Warnw(msg, keysAndValues...)
+	wrappedLogger.Warnw(msg, keysAndValues...)
 }
 
 func Errorw(msg string, err error, keysAndValues ...interface{}) {
-	if logger == nil {
+	if wrappedLogger == nil {
 		return
 	}
 	if err != nil {
 		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
 	}
-	logger.Errorw(msg, keysAndValues...)
-}
-
-func Desugar() *zap.Logger {
-	if logger == nil {
-		getLogger()
-	}
-	return logger.Desugar()
+	wrappedLogger.Errorw(msg, keysAndValues...)
 }

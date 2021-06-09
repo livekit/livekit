@@ -122,7 +122,7 @@ func RecoverSilent() {
 
 func Recover() {
 	if r := recover(); r != nil {
-		log := logger.Desugar().WithOptions(zap.AddCallerSkip(1))
+		log := logger.GetLogger().WithOptions(zap.AddCallerSkip(1))
 		log.Error("recovered panic", zap.Any("error", r))
 	}
 }
