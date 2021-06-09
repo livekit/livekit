@@ -168,6 +168,9 @@ func (s *LivekitServer) Start() error {
 
 	go s.backgroundWorker()
 
+	// give time for Serve goroutine to start
+	time.Sleep(10 * time.Millisecond)
+
 	s.running.TrySet(true)
 
 	<-s.doneChan

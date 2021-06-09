@@ -53,6 +53,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reconnectParam := r.FormValue("reconnect")
 	protocolParam := r.FormValue("protocol")
 	autoSubParam := r.FormValue("auto_subscribe")
+	// plan b does not work fully at the moment.
 	planBParam := r.FormValue("planb")
 
 	claims := GetGrants(r.Context())
