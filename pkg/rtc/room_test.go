@@ -335,6 +335,67 @@ func TestActiveSpeakers(t *testing.T) {
 	})
 }
 
+func TestDataChannel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("participants should receive data", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+
+		packet := livekit.DataPacket{
+			Kind: livekit.DataPacket_RELIABLE,
+			Value: &livekit.DataPacket_User{
+				User: &livekit.UserPacket{
+					ParticipantSid: p.ID(),
+					Payload:        []byte("message.."),
+				},
+			},
+		}
+		p.OnDataPacketArgsForCall(0)(p, &packet)
+
+		// ensure everyone has received the packet
+		for _, op := range participants {
+			fp := op.(*typesfakes.FakeParticipant)
+			if fp == p {
+				require.Zero(t, fp.SendDataPacketCallCount())
+				continue
+			}
+			require.Equal(t, 1, fp.SendDataPacketCallCount())
+			require.Equal(t, packet.Value, fp.SendDataPacketArgsForCall(0).Value)
+		}
+	})
+
+	t.Run("only one participant should receive the data", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+		p1 := participants[1].(*typesfakes.FakeParticipant)
+
+		packet := livekit.DataPacket{
+			Kind: livekit.DataPacket_RELIABLE,
+			Value: &livekit.DataPacket_User{
+				User: &livekit.UserPacket{
+					ParticipantSid:  p.ID(),
+					Payload:         []byte("message to p1.."),
+					DestinationSids: []string{p1.ID()},
+				},
+			},
+		}
+		p.OnDataPacketArgsForCall(0)(p, &packet)
+
+		// only p1 should receive the data
+		for _, op := range participants {
+			fp := op.(*typesfakes.FakeParticipant)
+			if fp != p1 {
+				require.Zero(t, fp.SendDataPacketCallCount())
+			}
+		}
+		require.Equal(t, 1, p1.SendDataPacketCallCount())
+		require.Equal(t, packet.Value, p1.SendDataPacketArgsForCall(0).Value)
+	})
+}
+
 type testRoomOpts struct {
 	num      int
 	protocol types.ProtocolVersion
