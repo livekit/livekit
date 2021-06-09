@@ -246,9 +246,18 @@ func (r *RedisRouter) Start() error {
 	if !r.isStarted.TrySet(true) {
 		return nil
 	}
+
+	workerStarted := make(chan struct{})
 	go r.statsWorker()
-	go r.redisWorker()
-	return nil
+	go r.redisWorker(workerStarted)
+
+	// wait until worker is running
+	select {
+	case <-workerStarted:
+		return nil
+	case <-time.After(3 * time.Second):
+		return errors.New("Unable to start redis router")
+	}
 }
 
 func (r *RedisRouter) Stop() {
@@ -309,7 +318,7 @@ func (r *RedisRouter) statsWorker() {
 }
 
 // worker that consumes redis messages intended for this node
-func (r *RedisRouter) redisWorker() {
+func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 	defer func() {
 		logger.Debugw("finishing redisWorker", "node", r.currentNode.Id)
 	}()
@@ -318,6 +327,8 @@ func (r *RedisRouter) redisWorker() {
 	sigChannel := signalNodeChannel(r.currentNode.Id)
 	rtcChannel := rtcNodeChannel(r.currentNode.Id)
 	r.pubsub = r.rc.Subscribe(r.ctx, sigChannel, rtcChannel)
+
+	close(startedChan)
 	for msg := range r.pubsub.Channel() {
 		if msg == nil {
 			return
