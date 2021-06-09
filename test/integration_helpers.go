@@ -135,6 +135,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
+	conf.Development = true
 
 	currentNode, err := routing.NewLocalNode(conf)
 	currentNode.Id = utils.NewGuid(nodeId1)
@@ -165,6 +166,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	conf.RTC.UDPPort = port + 1
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
+	conf.Development = true
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {

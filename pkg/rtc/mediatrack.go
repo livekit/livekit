@@ -5,14 +5,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
-
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -178,34 +177,36 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 		t.params.Stats.SubSubscribedTrack(t.kind.String())
 
-		// ignore if the subscribing sub is not connected
-		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
-			return
-		}
-
-		// if the source has been terminated, we'll need to terminate all of the subscribedtracks
-		// however, if the dest sub has disconnected, then we can skip
-		sender := transceiver.Sender()
-		if sender == nil {
-			return
-		}
-		logger.Debugw("removing peerconnection track",
-			"track", t.params.TrackID,
-			"participantId", t.params.ParticipantID,
-			"destParticipant", sub.Identity())
-		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
-			if err == webrtc.ErrConnectionClosed {
-				// sub closing, can skip removing subscribedtracks
+		go func() {
+			// ignore if the subscribing sub is not connected
+			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
 				return
 			}
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				logger.Warnw("could not remove remoteTrack from forwarder", err,
-					"sub", sub.Identity())
-			}
-		}
 
-		sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
-		sub.Negotiate()
+			// if the source has been terminated, we'll need to terminate all of the subscribedtracks
+			// however, if the dest sub has disconnected, then we can skip
+			sender := transceiver.Sender()
+			if sender == nil {
+				return
+			}
+			logger.Debugw("removing peerconnection track",
+				"track", t.params.TrackID,
+				"participantId", t.params.ParticipantID,
+				"destParticipant", sub.Identity())
+			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+				if err == webrtc.ErrConnectionClosed {
+					// sub closing, can skip removing subscribedtracks
+					return
+				}
+				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+					logger.Warnw("could not remove remoteTrack from forwarder", err,
+						"sub", sub.Identity())
+				}
+			}
+
+			sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
+			sub.Negotiate()
+		}()
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
