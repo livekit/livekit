@@ -1,6 +1,7 @@
 name: Test
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master ]
   pull_request:
@@ -34,18 +35,15 @@ jobs:
       run: go mod download
 
     - name: Download protoc
-      run: curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip
+      run: |
+        curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip
+        sudo unzip protoc-3.15.8-linux-x86_64.zip -d /usr
+        sudo chmod 755 /usr/bin/protoc
 
-    - name: Install protoc
-      run: sudo unzip protoc-3.15.8-linux-x86_64.zip -d /usr
-
-    - run: sudo chmod 755 /usr/bin/protoc
-
-    - name: Install protoc-gen-twirp
-      run: go install github.com/twitchtv/twirp/protoc-gen-twirp
-
-    - name: Install protoc-gen-go
-      run: go install google.golang.org/protobuf/cmd/protoc-gen-go
+    - name: Install protobuf generators
+      run: |
+        go install github.com/twitchtv/twirp/protoc-gen-twirp
+        go install google.golang.org/protobuf/cmd/protoc-gen-go
 
     - name: Mage Build
       uses: magefile/mage-action@v1
