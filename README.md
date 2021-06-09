@@ -112,9 +112,9 @@ This token has an expiration of a month, which is useful for development & testi
 
 LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS.
 
-LiveKit is distributed, and scales by adding nodes. Different server instances coordinate via Redis to ensure clients in the same room are served by the same instance. Redis is the only external dependency for a production deployment.
+LiveKit is distributed, and scales by adding nodes. Server instances coordinate via Redis to ensure clients in the same room are served by the same instance. Redis is the only external dependency for a production deployment.
 
-See documentation at https://docs.livekit.io/guides/deploy
+See documentation at https://docs.livekit.io/guides/deployment
 
 ## License
 
