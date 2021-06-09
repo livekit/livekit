@@ -144,8 +144,10 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	state := t.negotiationState
 	t.negotiationState = negotiationStateNone
 	if state == negotiationRetry {
-		// need to Negotiate again
-		t.Negotiate()
+		// need to Negotiate again, do it immediately
+		if err := t.CreateAndSendOffer(nil); err != nil {
+			logger.Errorw("could not negotiate", err)
+		}
 	}
 
 	return nil
@@ -199,6 +201,9 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 			t.negotiationState = negotiationRetry
 			return nil
 		}
+	} else if t.negotiationState == negotiationRetry {
+		// already set to retry, we can safely skip this attempt
+		return nil
 	}
 
 	offer, err := t.pc.CreateOffer(options)

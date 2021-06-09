@@ -152,7 +152,7 @@ func checkUDPReadBuffer() (int, error) {
 		return 0, err
 	}
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetReadBuffer(minUDPBufferSize)
+	_ = conn.SetReadBuffer(defaultUDPBufferSize)
 	fd, err := conn.File()
 	if err != nil {
 		return 0, nil

@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -23,20 +24,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.NoError(t, err)
 
 	// exchange ICE
-	transportA.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate == nil {
-			return
-		}
-		t.Logf("got ICE candidate from A: %v", candidate)
-		require.NoError(t, transportB.AddICECandidate(candidate.ToJSON()))
-	})
-	transportB.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate == nil {
-			return
-		}
-		t.Logf("got ICE candidate from B: %v", candidate)
-		require.NoError(t, transportA.AddICECandidate(candidate.ToJSON()))
-	})
+	handleICEExchange(t, transportA, transportB)
+
 	// set offer/answer
 	handleOffer := handleOfferFunc(t, transportA, transportB)
 	transportA.OnOffer(handleOffer)
@@ -71,6 +60,38 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	})
 }
 
+func TestNegotiationTiming(t *testing.T) {
+	params := TransportParams{
+		Target: livekit.SignalTarget_SUBSCRIBER,
+		Config: &WebRTCConfig{},
+		Stats:  nil,
+	}
+	transportA, err := NewPCTransport(params)
+	require.NoError(t, err)
+	_, err = transportA.pc.CreateDataChannel("test", nil)
+	require.NoError(t, err)
+	transportB, err := NewPCTransport(params)
+	require.NoError(t, err)
+
+	handleICEExchange(t, transportA, transportB)
+	offer := atomic.Value{}
+	transportA.OnOffer(func(sd webrtc.SessionDescription) {
+		offer.Store(sd)
+	})
+
+	// initial offer
+	require.NoError(t, transportA.CreateAndSendOffer(nil))
+	require.Equal(t, negotiationStateClient, transportA.negotiationState)
+
+	// second try, should've flipped transport status to retry
+	require.NoError(t, transportA.CreateAndSendOffer(nil))
+	require.Equal(t, negotiationRetry, transportA.negotiationState)
+
+	// third try, should've stayed at retry
+	require.NoError(t, transportA.CreateAndSendOffer(nil))
+	require.Equal(t, negotiationRetry, transportA.negotiationState)
+}
+
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {
 	return func(sd webrtc.SessionDescription) {
 		t.Logf("handling offer")
@@ -83,4 +104,21 @@ func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.S
 		t.Logf("setting answer on current")
 		require.NoError(t, current.SetRemoteDescription(answer))
 	}
+}
+
+func handleICEExchange(t *testing.T, a, b *PCTransport) {
+	a.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+		t.Logf("got ICE candidate from A: %v", candidate)
+		require.NoError(t, b.AddICECandidate(candidate.ToJSON()))
+	})
+	b.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+		t.Logf("got ICE candidate from B: %v", candidate)
+		require.NoError(t, a.AddICECandidate(candidate.ToJSON()))
+	})
 }
