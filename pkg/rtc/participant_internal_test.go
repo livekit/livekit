@@ -148,7 +148,7 @@ func newParticipantForTest(identity string) *ParticipantImpl {
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0
 	conf.RTC.TCPPort = 0
-	rtcConf, err := NewWebRTCConfig(&conf.RTC, "")
+	rtcConf, err := NewWebRTCConfig(conf, "")
 	if err != nil {
 		panic(err)
 	}
