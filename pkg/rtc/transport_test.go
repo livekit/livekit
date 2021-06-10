@@ -3,6 +3,7 @@ package rtc
 import (
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 	livekit "github.com/livekit/livekit-server/proto"
@@ -76,7 +77,7 @@ func TestNegotiationTiming(t *testing.T) {
 	handleICEExchange(t, transportA, transportB)
 	offer := atomic.Value{}
 	transportA.OnOffer(func(sd webrtc.SessionDescription) {
-		offer.Store(sd)
+		offer.Store(&sd)
 	})
 
 	// initial offer
@@ -90,6 +91,23 @@ func TestNegotiationTiming(t *testing.T) {
 	// third try, should've stayed at retry
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
 	require.Equal(t, negotiationRetry, transportA.negotiationState)
+
+	time.Sleep(5 * time.Millisecond)
+	actualOffer, ok := offer.Load().(*webrtc.SessionDescription)
+
+	require.True(t, ok)
+	require.NoError(t, transportB.SetRemoteDescription(*actualOffer))
+	answer, err := transportB.pc.CreateAnswer(nil)
+	require.NoError(t, err)
+	require.NoError(t, transportB.pc.SetLocalDescription(answer))
+	require.NoError(t, transportA.SetRemoteDescription(answer))
+	time.Sleep(5 * time.Millisecond)
+
+	// it should still be negotiating again
+	require.Equal(t, negotiationStateClient, transportA.negotiationState)
+	offer2, ok := offer.Load().(*webrtc.SessionDescription)
+	require.True(t, ok)
+	require.False(t, offer2 == actualOffer)
 }
 
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {

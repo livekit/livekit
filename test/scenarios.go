@@ -72,7 +72,7 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	success = testutils.WithTimeout(t, "new c2 tracks should be published again", func() bool {
+	testutils.WithTimeout(t, "new c2 tracks should be published again", func() bool {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c2.ID()]) != 2 {
 			return false
@@ -82,9 +82,6 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 		}
 		return true
 	})
-	if !success {
-		t.FailNow()
-	}
 }
 
 func scenarioReceiveBeforePublish(t *testing.T) {

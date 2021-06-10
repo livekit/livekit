@@ -96,7 +96,8 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			t.lock.Lock()
 			defer t.lock.Unlock()
 			if t.restartAfterGathering {
-				if err := t.CreateAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
+				logger.Debugw("restarting ICE after ICE gathering")
+				if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
 					logger.Warnw("could not restart ICE", err)
 				}
 			}
@@ -133,6 +134,10 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 		return err
 	}
 
+	// negotiated, reset flag
+	lastState := t.negotiationState
+	t.negotiationState = negotiationStateNone
+
 	for _, c := range t.pendingCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
 			return err
@@ -140,16 +145,13 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 	t.pendingCandidates = nil
 
-	// negotiated, reset flag
-	state := t.negotiationState
-	t.negotiationState = negotiationStateNone
-	if state == negotiationRetry {
-		// need to Negotiate again, do it immediately
-		if err := t.CreateAndSendOffer(nil); err != nil {
+	// only initiate when we are the offerer
+	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
+		logger.Debugw("re-negotiate after answering")
+		if err := t.createAndSendOffer(nil); err != nil {
 			logger.Errorw("could not negotiate", err)
 		}
 	}
-
 	return nil
 }
 
@@ -167,6 +169,13 @@ func (t *PCTransport) Negotiate() {
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.createAndSendOffer(options)
+}
+
+// creates and sends offer assuming lock has been acquired
+func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.onOffer == nil {
 		return nil
 	}
@@ -174,8 +183,6 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
-	t.lock.Lock()
-	defer t.lock.Unlock()
 	iceRestart := options != nil && options.ICERestart
 
 	// if restart is requested, and we are not ready, then continue afterwards
