@@ -114,7 +114,7 @@ LiveKit is deployable to any environment that supports docker, including Kuberne
 
 LiveKit is distributed, and scales by adding nodes. Server instances coordinate via Redis to ensure clients in the same room are served by the same instance. Redis is the only external dependency for a production deployment.
 
-See documentation at https://docs.livekit.io/guides/deployment
+See documentation at https://docs.livekit.io/guides/deploy
 
 ## License
 
