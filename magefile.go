@@ -228,7 +228,7 @@ func Clean() {
 
 // regenerate code
 func Generate() error {
-	mg.Deps(installDeps)
+	mg.Deps(installDeps, Proto)
 
 	fmt.Println("generating...")
 
