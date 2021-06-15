@@ -78,7 +78,8 @@ func NewConfig(confString string) (*Config, error) {
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",
 			},
-			MaxBitrate: 3 * 1024 * 1024, // 3 mbps
+			MaxBitrate:       3 * 1024 * 1024, // 3 mbps
+			PacketBufferSize: 500,
 		},
 		Audio: AudioConfig{
 			ActiveLevel:    40,

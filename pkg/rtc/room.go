@@ -6,7 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/zapr"
 	"github.com/livekit/protocol/utils"
+	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -27,6 +29,7 @@ type Room struct {
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
+	bufferFactory   *buffer.Factory
 
 	// time the first participant joined the room
 	joinedAt atomic.Value
@@ -57,6 +60,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		statsReporter:       NewRoomStatsReporter(room.Name),
 		participants:        make(map[string]types.Participant),
 		participantOpts:     make(map[string]*ParticipantOptions),
+		bufferFactory:       buffer.NewBufferFactory(config.Receiver.packetBufferSize, zapr.NewLogger(logger.GetLogger())),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
@@ -108,6 +112,10 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 
 func (r *Room) GetStatsReporter() *RoomStatsReporter {
 	return r.statsReporter
+}
+
+func (r *Room) GetBufferFactor() *buffer.Factory {
+	return r.bufferFactory
 }
 
 func (r *Room) FirstJoinedAt() int64 {

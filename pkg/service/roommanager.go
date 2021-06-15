@@ -250,6 +250,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 
 	pv := types.ProtocolVersion(pi.ProtocolVersion)
 	rtcConf := *r.rtcConfig
+	rtcConf.SetBufferFactory(room.GetBufferFactor())
 	if pi.UsePlanB {
 		rtcConf.Configuration.SDPSemantics = webrtc.SDPSemanticsPlanB
 	}

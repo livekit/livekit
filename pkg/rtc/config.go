@@ -6,7 +6,6 @@ import (
 	"net"
 	"syscall"
 
-	"github.com/go-logr/zapr"
 	"github.com/pion/ice/v2"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/logging"
@@ -64,8 +63,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
-	bufferFactory := buffer.NewBufferFactory(rtcConf.PacketBufferSize, zapr.NewLogger(logger.GetLogger()))
-	s.BufferFactory = bufferFactory.GetOrNew
 
 	networkTypes := make([]webrtc.NetworkType, 0, 4)
 	if !rtcConf.ForceTCP {
@@ -135,7 +132,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
-		BufferFactory: bufferFactory,
 		Receiver: ReceiverConfig{
 			packetBufferSize: rtcConf.PacketBufferSize,
 			maxBitrate:       rtcConf.MaxBitrate,
@@ -144,6 +140,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		UDPMuxConn:     udpMuxConn,
 		TCPMuxListener: tcpListener,
 	}, nil
+}
+
+func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
+	c.BufferFactory = factory
+	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
 func checkUDPReadBuffer() (int, error) {
