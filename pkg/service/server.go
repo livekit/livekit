@@ -12,13 +12,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/negroni"
 
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/livekit/livekit-server/version"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
 )
 
 type LivekitServer struct {

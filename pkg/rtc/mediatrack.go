@@ -279,6 +279,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			if onclose != nil {
 				onclose()
 			}
+			if buff := t.params.BufferFactory.GetBuffer(uint32(t.ssrc)); buff != nil {
+				_ = buff.Close()
+			}
 		})
 		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
