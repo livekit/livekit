@@ -57,6 +57,8 @@ type MediaTrackParams struct {
 	ReceiverConfig ReceiverConfig
 	AudioConfig    config.AudioConfig
 	Stats          *RoomStatsReporter
+	Width          uint32
+	Height         uint32
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -308,6 +310,17 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 		go subTrack.DownTrack().Close()
 	}
 	t.subscribedTracks = make(map[string]*SubscribedTrack)
+}
+
+func (t *MediaTrack) ToProto() *livekit.TrackInfo {
+	return &livekit.TrackInfo{
+		Sid:    t.ID(),
+		Type:   t.Kind(),
+		Name:   t.Name(),
+		Muted:  t.IsMuted(),
+		Width:  t.params.Width,
+		Height: t.params.Height,
+	}
 }
 
 // TODO: send for all downtracks from the source participant

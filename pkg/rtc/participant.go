@@ -188,7 +188,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 
 	p.lock.RLock()
 	for _, t := range p.publishedTracks {
-		info.Tracks = append(info.Tracks, ToProtoTrack(t))
+		info.Tracks = append(info.Tracks, t.ToProto())
 	}
 	p.lock.RUnlock()
 	return info
@@ -710,6 +710,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			ReceiverConfig: p.params.Config.Receiver,
 			AudioConfig:    p.params.AudioConfig,
 			Stats:          p.params.Stats,
+			Width:          ti.Width,
+			Height:         ti.Height,
 		})
 		mt.name = ti.Name
 		newTrack = true

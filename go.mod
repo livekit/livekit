@@ -45,3 +45,4 @@ require (
 )
 
 replace github.com/pion/webrtc/v3 => github.com/livekit/pion-webrtc/v3 v3.0.30
+replace github.com/livekit/protocol => ../protocol

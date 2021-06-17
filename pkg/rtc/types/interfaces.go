@@ -93,6 +93,7 @@ type PublishedTrack interface {
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	ToProto() *livekit.TrackInfo
 
 	// callbacks
 	OnClose(func())
