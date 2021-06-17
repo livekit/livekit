@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/pprof"
 	"time"
 
 	"github.com/pion/turn/v2"
@@ -68,6 +69,9 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/", s.healthCheck)
+	if conf.Development {
+		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
+	}
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", conf.Port),
@@ -206,6 +210,10 @@ func (s *LivekitServer) Stop() {
 
 func (s *LivekitServer) RoomManager() *RoomManager {
 	return s.roomManager
+}
+
+func (s *LivekitServer) debugGoroutines(w http.ResponseWriter, r *http.Request) {
+	_ = pprof.Lookup("goroutine").WriteTo(w, 2)
 }
 
 func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
