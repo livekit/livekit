@@ -841,6 +841,9 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 	for {
 		time.Sleep(5 * time.Second)
 
+		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+			return
+		}
 		if p.subscriber.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
 		}
