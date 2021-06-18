@@ -93,14 +93,16 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
-			t.lock.Lock()
-			defer t.lock.Unlock()
-			if t.restartAfterGathering {
-				logger.Debugw("restarting ICE after ICE gathering")
-				if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-					logger.Warnw("could not restart ICE", err)
+			go func() {
+				t.lock.Lock()
+				defer t.lock.Unlock()
+				if t.restartAfterGathering {
+					logger.Debugw("restarting ICE after ICE gathering")
+					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
+						logger.Warnw("could not restart ICE", err)
+					}
 				}
-			}
+			}()
 		}
 	})
 
