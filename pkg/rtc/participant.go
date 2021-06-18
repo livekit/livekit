@@ -114,13 +114,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 
 	p.publisher.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
+		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
 		p.sendIceCandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
 	p.subscriber.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
+		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
 		p.sendIceCandidate(c, livekit.SignalTarget_SUBSCRIBER)
@@ -381,10 +381,7 @@ func (p *ParticipantImpl) Close() error {
 	}
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
-	p.subscriber.pc.OnDataChannel(nil)
-	p.subscriber.pc.OnICECandidate(nil)
-	p.subscriber.pc.OnTrack(nil)
-	p.publisher.pc.OnICECandidate(nil)
+
 	// ensure this is synchronized
 	p.lock.RLock()
 	p.params.Sink.Close()
@@ -675,6 +672,10 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		return
+	}
+
 	logger.Debugw("mediaTrack added",
 		"participant", p.Identity(),
 		"remoteTrack", track.ID(),
@@ -729,6 +730,9 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
+	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		return
+	}
 	switch dc.Label() {
 	case reliableDataChannel:
 		p.reliableDC = dc
