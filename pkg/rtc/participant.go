@@ -275,26 +275,28 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 // AddTrack is called when client intends to publish track.
 // records track details and lets client know it's ok to proceed
-func (p *ParticipantImpl) AddTrack(clientId, name string, trackType livekit.TrackType) {
+func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	// if track is already published, reject
-	if p.pendingTracks[clientId] != nil {
+	if p.pendingTracks[req.Cid] != nil {
 		return
 	}
 
 	ti := &livekit.TrackInfo{
-		Type: trackType,
-		Name: name,
-		Sid:  utils.NewGuid(utils.TrackPrefix),
+		Type:   req.Type,
+		Name:   req.Name,
+		Sid:    utils.NewGuid(utils.TrackPrefix),
+		Width:  req.Width,
+		Height: req.Height,
 	}
-	p.pendingTracks[clientId] = ti
+	p.pendingTracks[req.Cid] = ti
 
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: &livekit.TrackPublishedResponse{
-				Cid:   clientId,
+				Cid:   req.Cid,
 				Track: ti,
 			},
 		},

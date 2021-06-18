@@ -157,7 +157,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	r.statsReporter.AddParticipant()
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
-	participant.OnTrackPublished(r.onTrackAdded)
+	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
 		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
 			"oldState", oldState)
@@ -344,7 +344,7 @@ func (r *Room) autoSubscribe(participant types.Participant) bool {
 }
 
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
-func (r *Room) onTrackAdded(participant types.Participant, track types.PublishedTrack) {
+func (r *Room) onTrackPublished(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, true)
 

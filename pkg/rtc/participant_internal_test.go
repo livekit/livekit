@@ -95,7 +95,13 @@ func TestTrackPublishing(t *testing.T) {
 		//track := &typesfakes.FakePublishedTrack{}
 		//track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
-		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:    "cid",
+			Name:   "webcam",
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1024,
+			Height: 768,
+		})
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 		require.IsType(t, &livekit.SignalResponse_TrackPublished{}, res.Message)
@@ -103,6 +109,8 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, "cid", published.Cid)
 		require.Equal(t, "webcam", published.Track.Name)
 		require.Equal(t, livekit.TrackType_VIDEO, published.Track.Type)
+		require.Equal(t, uint32(1024), published.Track.Width)
+		require.Equal(t, uint32(768), published.Track.Height)
 	})
 
 	t.Run("should not allow adding of duplicate tracks", func(t *testing.T) {
@@ -110,8 +118,16 @@ func TestTrackPublishing(t *testing.T) {
 		//track := &typesfakes.FakePublishedTrack{}
 		//track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
-		p.AddTrack("cid", "webcam", livekit.TrackType_VIDEO)
-		p.AddTrack("cid", "duplicate", livekit.TrackType_AUDIO)
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "duplicate",
+			Type: livekit.TrackType_AUDIO,
+		})
 
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})

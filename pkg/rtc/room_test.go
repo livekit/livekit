@@ -158,7 +158,9 @@ func TestParticipantUpdate(t *testing.T) {
 			"track publishes are sent to existing participants",
 			true,
 			func(p types.Participant) {
-				p.AddTrack("", "", livekit.TrackType_VIDEO)
+				p.AddTrack(&livekit.AddTrackRequest{
+					Type: livekit.TrackType_VIDEO,
+				})
 			},
 		},
 	}

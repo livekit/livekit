@@ -29,13 +29,14 @@ var (
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements the PublishedTrack interface
 type MediaTrack struct {
-	params   MediaTrackParams
-	ssrc     webrtc.SSRC
-	name     string
-	streamID string
-	kind     livekit.TrackType
-	codec    webrtc.RTPCodecParameters
-	muted    utils.AtomicFlag
+	params      MediaTrackParams
+	ssrc        webrtc.SSRC
+	name        string
+	streamID    string
+	kind        livekit.TrackType
+	codec       webrtc.RTPCodecParameters
+	muted       utils.AtomicFlag
+	simulcasted bool
 
 	// channel to send RTCP packets to the source
 	lock sync.RWMutex
@@ -285,6 +286,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
 	t.receiver.AddUpTrack(track, buff, true)
+	// when RID is set, track is simulcasted
+	t.simulcasted = track.RID() != ""
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
@@ -314,12 +317,13 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return &livekit.TrackInfo{
-		Sid:    t.ID(),
-		Type:   t.Kind(),
-		Name:   t.Name(),
-		Muted:  t.IsMuted(),
-		Width:  t.params.Width,
-		Height: t.params.Height,
+		Sid:       t.ID(),
+		Type:      t.Kind(),
+		Name:      t.Name(),
+		Muted:     t.IsMuted(),
+		Width:     t.params.Width,
+		Height:    t.params.Height,
+		Simulcast: t.simulcasted,
 	}
 }
 
