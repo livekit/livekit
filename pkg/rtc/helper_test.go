@@ -38,7 +38,7 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion) *typesf
 	p.SetTrackMutedStub = func(sid string, muted bool) {
 		updateTrack()
 	}
-	p.AddTrackStub = func(s string, s2 string, trackType livekit.TrackType) {
+	p.AddTrackStub = func(req *livekit.AddTrackRequest) {
 		updateTrack()
 	}
 

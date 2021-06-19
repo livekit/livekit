@@ -93,15 +93,6 @@ func FromProtoTrickle(trickle *livekit.TrickleRequest) (webrtc.ICECandidateInit,
 	return ci, nil
 }
 
-func ToProtoTrack(t types.PublishedTrack) *livekit.TrackInfo {
-	return &livekit.TrackInfo{
-		Sid:   t.ID(),
-		Type:  t.Kind(),
-		Name:  t.Name(),
-		Muted: t.IsMuted(),
-	}
-}
-
 func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 	switch kind {
 	case webrtc.RTPCodecTypeVideo:

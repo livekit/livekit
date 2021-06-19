@@ -94,6 +94,16 @@ type FakePublishedTrack struct {
 	startMutex       sync.RWMutex
 	startArgsForCall []struct {
 	}
+	ToProtoStub        func() *livekit.TrackInfo
+	toProtoMutex       sync.RWMutex
+	toProtoArgsForCall []struct {
+	}
+	toProtoReturns struct {
+		result1 *livekit.TrackInfo
+	}
+	toProtoReturnsOnCall map[int]struct {
+		result1 *livekit.TrackInfo
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -576,6 +586,59 @@ func (fake *FakePublishedTrack) StartCalls(stub func()) {
 	fake.StartStub = stub
 }
 
+func (fake *FakePublishedTrack) ToProto() *livekit.TrackInfo {
+	fake.toProtoMutex.Lock()
+	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
+	fake.toProtoArgsForCall = append(fake.toProtoArgsForCall, struct {
+	}{})
+	stub := fake.ToProtoStub
+	fakeReturns := fake.toProtoReturns
+	fake.recordInvocation("ToProto", []interface{}{})
+	fake.toProtoMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) ToProtoCallCount() int {
+	fake.toProtoMutex.RLock()
+	defer fake.toProtoMutex.RUnlock()
+	return len(fake.toProtoArgsForCall)
+}
+
+func (fake *FakePublishedTrack) ToProtoCalls(stub func() *livekit.TrackInfo) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = stub
+}
+
+func (fake *FakePublishedTrack) ToProtoReturns(result1 *livekit.TrackInfo) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = nil
+	fake.toProtoReturns = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) ToProtoReturnsOnCall(i int, result1 *livekit.TrackInfo) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = nil
+	if fake.toProtoReturnsOnCall == nil {
+		fake.toProtoReturnsOnCall = make(map[int]struct {
+			result1 *livekit.TrackInfo
+		})
+	}
+	fake.toProtoReturnsOnCall[i] = struct {
+		result1 *livekit.TrackInfo
+	}{result1}
+}
+
 func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -601,6 +664,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.setMutedMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
+	fake.toProtoMutex.RLock()
+	defer fake.toProtoMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

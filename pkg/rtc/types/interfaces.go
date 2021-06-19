@@ -38,7 +38,7 @@ type Participant interface {
 	Negotiate()
 	ICERestart() error
 
-	AddTrack(clientId, name string, trackType livekit.TrackType)
+	AddTrack(req *livekit.AddTrackRequest)
 	GetPublishedTracks() []PublishedTrack
 	GetSubscribedTracks() []SubscribedTrack
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
@@ -93,6 +93,7 @@ type PublishedTrack interface {
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	ToProto() *livekit.TrackInfo
 
 	// callbacks
 	OnClose(func())

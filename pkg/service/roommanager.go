@@ -368,7 +368,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			case *livekit.SignalRequest_AddTrack:
 				logger.Debugw("add track request", "participant", participant.Identity(),
 					"track", msg.AddTrack.Cid)
-				participant.AddTrack(msg.AddTrack.Cid, msg.AddTrack.Name, msg.AddTrack.Type)
+				participant.AddTrack(msg.AddTrack)
 			case *livekit.SignalRequest_Answer:
 				if participant.State() == livekit.ParticipantInfo_JOINING {
 					logger.Errorw("cannot negotiate before peer offer", nil, "participant", participant.Identity())
@@ -410,6 +410,9 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 						if subTrack.ID() != sid {
 							continue
 						}
+						logger.Debugw("updating track settings",
+							"participant", participant.Identity(),
+							"settings", msg.TrackSetting)
 						subTrack.SetMuted(msg.TrackSetting.Disabled)
 						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
 					}

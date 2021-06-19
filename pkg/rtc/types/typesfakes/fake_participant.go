@@ -44,12 +44,10 @@ type FakeParticipant struct {
 		result1 int
 		result2 error
 	}
-	AddTrackStub        func(string, string, livekit.TrackType)
+	AddTrackStub        func(*livekit.AddTrackRequest)
 	addTrackMutex       sync.RWMutex
 	addTrackArgsForCall []struct {
-		arg1 string
-		arg2 string
-		arg3 livekit.TrackType
+		arg1 *livekit.AddTrackRequest
 	}
 	CanPublishStub        func() bool
 	canPublishMutex       sync.RWMutex
@@ -536,18 +534,16 @@ func (fake *FakeParticipant) AddSubscriberReturnsOnCall(i int, result1 int, resu
 	}{result1, result2}
 }
 
-func (fake *FakeParticipant) AddTrack(arg1 string, arg2 string, arg3 livekit.TrackType) {
+func (fake *FakeParticipant) AddTrack(arg1 *livekit.AddTrackRequest) {
 	fake.addTrackMutex.Lock()
 	fake.addTrackArgsForCall = append(fake.addTrackArgsForCall, struct {
-		arg1 string
-		arg2 string
-		arg3 livekit.TrackType
-	}{arg1, arg2, arg3})
+		arg1 *livekit.AddTrackRequest
+	}{arg1})
 	stub := fake.AddTrackStub
-	fake.recordInvocation("AddTrack", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("AddTrack", []interface{}{arg1})
 	fake.addTrackMutex.Unlock()
 	if stub != nil {
-		fake.AddTrackStub(arg1, arg2, arg3)
+		fake.AddTrackStub(arg1)
 	}
 }
 
@@ -557,17 +553,17 @@ func (fake *FakeParticipant) AddTrackCallCount() int {
 	return len(fake.addTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) AddTrackCalls(stub func(string, string, livekit.TrackType)) {
+func (fake *FakeParticipant) AddTrackCalls(stub func(*livekit.AddTrackRequest)) {
 	fake.addTrackMutex.Lock()
 	defer fake.addTrackMutex.Unlock()
 	fake.AddTrackStub = stub
 }
 
-func (fake *FakeParticipant) AddTrackArgsForCall(i int) (string, string, livekit.TrackType) {
+func (fake *FakeParticipant) AddTrackArgsForCall(i int) *livekit.AddTrackRequest {
 	fake.addTrackMutex.RLock()
 	defer fake.addTrackMutex.RUnlock()
 	argsForCall := fake.addTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1
 }
 
 func (fake *FakeParticipant) CanPublish() bool {

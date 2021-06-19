@@ -46,11 +46,22 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 
 func (t *SubscribedTrack) SetVideoQuality(quality livekit.VideoQuality) {
 	if t.dt.Kind() == webrtc.RTPCodecTypeVideo {
-		t.dt.SwitchSpatialLayer(int64(quality), true)
+		t.dt.SwitchSpatialLayer(spatialLayerForQuality(quality), true)
 	}
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
 	t.dt.Mute(muted)
+}
+
+func spatialLayerForQuality(quality livekit.VideoQuality) int64 {
+	switch quality {
+	case livekit.VideoQuality_LOW:
+		return 0
+	case livekit.VideoQuality_MEDIUM:
+		return 1
+	default:
+		return 2
+	}
 }
