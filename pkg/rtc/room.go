@@ -167,6 +167,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		r.broadcastParticipantState(p, true)
 
 		if p.State() == livekit.ParticipantInfo_ACTIVE {
+			if p.UpdateAfterActive() {
+				_ = p.SendParticipantUpdate(ToProtoParticipants(r.GetParticipants()))
+			}
+
 			// subscribe participant to existing publishedTracks
 			r.subscribeToExistingTracks(p)
 

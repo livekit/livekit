@@ -40,14 +40,15 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
-	params     ParticipantParams
-	id         string
-	publisher  *PCTransport
-	subscriber *PCTransport
-	isClosed   utils.AtomicFlag
-	permission *livekit.ParticipantPermission
-	state      atomic.Value // livekit.ParticipantInfo_State
-	rtcpCh     chan []rtcp.Packet
+	params            ParticipantParams
+	id                string
+	publisher         *PCTransport
+	subscriber        *PCTransport
+	isClosed          utils.AtomicFlag
+	permission        *livekit.ParticipantPermission
+	state             atomic.Value // livekit.ParticipantInfo_State
+	updateAfterActive atomic.Value // bool
+	rtcpCh            chan []rtcp.Packet
 
 	// reliable and unreliable data channels
 	reliableDC *webrtc.DataChannel
@@ -94,6 +95,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		connectedAt:      time.Now(),
 	}
 	p.state.Store(livekit.ParticipantInfo_JOINING)
+	p.updateAfterActive.Store(false)
 
 	var err error
 	p.publisher, err = NewPCTransport(TransportParams{
@@ -145,6 +147,10 @@ func (p *ParticipantImpl) Identity() string {
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state.Load().(livekit.ParticipantInfo_State)
+}
+
+func (p *ParticipantImpl) UpdateAfterActive() bool {
+	return p.updateAfterActive.Load().(bool)
 }
 
 func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
@@ -468,10 +474,19 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
+	participantsToUpdate := participants
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		// have not fully joined, it will not know how to handle updates
+		// make a note so that Room could resend updates once fully joined
+		p.updateAfterActive.Store(true)
+		return nil
+	}
+
+	p.updateAfterActive.Store(false)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
-				Participants: participants,
+				Participants: participantsToUpdate,
 			},
 		},
 	})
