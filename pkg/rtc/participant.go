@@ -961,9 +961,11 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 			})
 		}
 
-		if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
-			logger.Errorw("could not write RTCP to participant", err,
-				"participant", p.Identity())
+		if len(fwdPkts) > 0 {
+			if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
+				logger.Errorw("could not write RTCP to participant", err,
+					"participant", p.Identity())
+			}
 		}
 	}
 }
