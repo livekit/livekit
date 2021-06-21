@@ -720,7 +720,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	p.lock.Lock()
 	ptrack := p.publishedTracks[ti.Sid]
 
-	ssrc := uint32(track.SSRC())
 	var mt *MediaTrack
 	var newTrack bool
 	if trk, ok := ptrack.(*MediaTrack); ok {
@@ -739,9 +738,10 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		})
 		mt.name = ti.Name
 		newTrack = true
-		p.rtcpThrottle.addTrack(ssrc)
 	}
 
+	ssrc := uint32(track.SSRC())
+	p.rtcpThrottle.addTrack(ssrc)
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
@@ -934,6 +934,14 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
+
+	write := func(pkts []rtcp.Packet) {
+		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
+			logger.Errorw("could not write RTCP to participant", err,
+				"participant", p.Identity())
+		}
+	}
+
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
@@ -952,20 +960,11 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 				continue
 			}
 
-			throttlePkts := []rtcp.Packet{pkt}
-			p.rtcpThrottle.add(mediaSSRC, func() {
-				if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
-					logger.Errorw("could not write RTCP to participant", err,
-						"participant", p.Identity())
-				}
-			})
+			p.rtcpThrottle.add(mediaSSRC, func() { write([]rtcp.Packet{pkt}) })
 		}
 
 		if len(fwdPkts) > 0 {
-			if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
-				logger.Errorw("could not write RTCP to participant", err,
-					"participant", p.Identity())
-			}
+			write(fwdPkts)
 		}
 	}
 }
