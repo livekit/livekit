@@ -953,9 +953,11 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 
 			throttlePkts := []rtcp.Packet{pkt}
 			p.rtcpThrottle.add(mediaSSRC, func() {
-				if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
-					logger.Errorw("could not write RTCP to participant", err,
-						"participant", p.Identity())
+				if p.publisher != nil && p.publisher.pc != nil {
+					if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
+						logger.Errorw("could not write RTCP to participant", err,
+							"participant", p.Identity())
+					}
 				}
 			})
 		}
