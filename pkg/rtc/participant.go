@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/frostbyte73/go-throttle"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
@@ -49,6 +50,7 @@ type ParticipantImpl struct {
 	state             atomic.Value // livekit.ParticipantInfo_State
 	updateAfterActive atomic.Value // bool
 	rtcpCh            chan []rtcp.Packet
+	rtcpThrottle      *rtcpThrottle
 
 	// reliable and unreliable data channels
 	reliableDC *webrtc.DataChannel
@@ -86,9 +88,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
-		params:           params,
-		id:               utils.NewGuid(utils.ParticipantPrefix),
-		rtcpCh:           make(chan []rtcp.Packet, 50),
+		params: params,
+		id:     utils.NewGuid(utils.ParticipantPrefix),
+		rtcpCh: make(chan []rtcp.Packet, 50),
+		rtcpThrottle: &rtcpThrottle{
+			throttles: make(map[uint32]func(func())),
+		},
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
@@ -714,6 +719,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	p.lock.Lock()
 	ptrack := p.publishedTracks[ti.Sid]
 
+	ssrc := uint32(track.SSRC())
 	var mt *MediaTrack
 	var newTrack bool
 	if trk, ok := ptrack.(*MediaTrack); ok {
@@ -732,10 +738,11 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		})
 		mt.name = ti.Name
 		newTrack = true
+		p.rtcpThrottle.addTrack(ssrc)
 	}
 
 	if p.twcc == nil {
-		p.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
+		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
 			_ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
 		})
@@ -833,6 +840,9 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
+		if mt, ok := track.(*MediaTrack); ok {
+			p.rtcpThrottle.removeTrack(uint32(mt.ssrc))
+		}
 		track.OnClose(nil)
 	})
 
@@ -928,12 +938,59 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		if pkts == nil {
 			return
 		}
-		// for _, pkt := range pkts {
-		//	logger.Debugw("writing RTCP", "packet", pkt)
-		// }
-		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
+		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
+		for _, pkt := range pkts {
+			var mediaSSRC uint32
+			switch pkt.(type) {
+			case *rtcp.PictureLossIndication:
+				mediaSSRC = pkt.(*rtcp.PictureLossIndication).MediaSSRC
+			case *rtcp.FullIntraRequest:
+				mediaSSRC = pkt.(*rtcp.FullIntraRequest).MediaSSRC
+			default:
+				fwdPkts = append(fwdPkts, pkt)
+				continue
+			}
+
+			throttlePkts := []rtcp.Packet{pkt}
+			p.rtcpThrottle.add(mediaSSRC, func() {
+				if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
+					logger.Errorw("could not write RTCP to participant", err,
+						"participant", p.Identity())
+				}
+			})
+		}
+
+		if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
 			logger.Errorw("could not write RTCP to participant", err,
 				"participant", p.Identity())
 		}
+	}
+}
+
+type rtcpThrottle struct {
+	mu        sync.RWMutex
+	throttles map[uint32]func(func())
+}
+
+func (t *rtcpThrottle) addTrack(ssrc uint32) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.throttles[ssrc] = throttle.New(time.Millisecond * 500)
+}
+
+func (t *rtcpThrottle) removeTrack(ssrc uint32) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	delete(t.throttles, ssrc)
+}
+
+func (t *rtcpThrottle) add(ssrc uint32, f func()) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if trackThrottle := t.throttles[ssrc]; trackThrottle != nil {
+		trackThrottle(f)
 	}
 }

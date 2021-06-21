@@ -45,3 +45,5 @@ require (
 )
 
 replace github.com/pion/webrtc/v3 => github.com/livekit/pion-webrtc/v3 v3.0.30
+
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.10.7-0.20210621205540-f74d53541f95
