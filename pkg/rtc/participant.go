@@ -403,6 +403,7 @@ func (p *ParticipantImpl) Close() error {
 	if onClose != nil {
 		onClose(p)
 	}
+	p.rtcpThrottle.close()
 	p.publisher.Close()
 	p.subscriber.Close()
 	close(p.rtcpCh)
@@ -953,11 +954,9 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 
 			throttlePkts := []rtcp.Packet{pkt}
 			p.rtcpThrottle.add(mediaSSRC, func() {
-				if p.publisher != nil && p.publisher.pc != nil {
-					if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
-						logger.Errorw("could not write RTCP to participant", err,
-							"participant", p.Identity())
-					}
+				if err := p.publisher.pc.WriteRTCP(throttlePkts); err != nil {
+					logger.Errorw("could not write RTCP to participant", err,
+						"participant", p.Identity())
 				}
 			})
 		}
@@ -981,18 +980,31 @@ func (t *rtcpThrottle) addTrack(ssrc uint32) {
 	t.throttles[ssrc] = throttle.New(time.Millisecond * 500)
 }
 
-func (t *rtcpThrottle) removeTrack(ssrc uint32) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	delete(t.throttles, ssrc)
-}
-
 func (t *rtcpThrottle) add(ssrc uint32, f func()) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if trackThrottle := t.throttles[ssrc]; trackThrottle != nil {
+	if trackThrottle, ok := t.throttles[ssrc]; ok {
 		trackThrottle(f)
+	}
+}
+
+func (t *rtcpThrottle) removeTrack(ssrc uint32) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if trackThrottle, ok := t.throttles[ssrc]; ok {
+		trackThrottle(func() {})
+		delete(t.throttles, ssrc)
+	}
+}
+
+func (t *rtcpThrottle) close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for ssrc, trackThrottle := range t.throttles {
+		trackThrottle(func() {})
+		delete(t.throttles, ssrc)
 	}
 }
