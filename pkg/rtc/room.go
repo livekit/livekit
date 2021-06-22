@@ -538,7 +538,7 @@ func (r *Room) audioUpdateWorker() {
 		}
 
 		// see if an update is needed
-		if len(speakers) == 0 && len(r.lastActiveSpeakers) == 0 {
+		if len(speakers) == len(r.lastActiveSpeakers) {
 			for i, speaker := range speakers {
 				if speaker.Sid != r.lastActiveSpeakers[i].Sid || speaker.Level != r.lastActiveSpeakers[i].Level {
 					r.sendSpeakerUpdates(speakers)
