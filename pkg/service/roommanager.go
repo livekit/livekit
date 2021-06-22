@@ -414,8 +414,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 						logger.Debugw("updating track settings",
 							"participant", participant.Identity(),
 							"settings", msg.TrackSetting)
-						subTrack.SetMuted(msg.TrackSetting.Disabled)
-						subTrack.SetVideoQuality(msg.TrackSetting.Quality)
+						subTrack.UpdateSubscriberSettings(!msg.TrackSetting.Disabled, msg.TrackSetting.Quality)
 					}
 				}
 			case *livekit.SignalRequest_Leave:

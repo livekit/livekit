@@ -40,20 +40,16 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SetMutedStub        func(bool)
-	setMutedMutex       sync.RWMutex
-	setMutedArgsForCall []struct {
-		arg1 bool
-	}
 	SetPublisherMutedStub        func(bool)
 	setPublisherMutedMutex       sync.RWMutex
 	setPublisherMutedArgsForCall []struct {
 		arg1 bool
 	}
-	SetVideoQualityStub        func(livekit.VideoQuality)
-	setVideoQualityMutex       sync.RWMutex
-	setVideoQualityArgsForCall []struct {
-		arg1 livekit.VideoQuality
+	UpdateSubscriberSettingsStub        func(bool, livekit.VideoQuality)
+	updateSubscriberSettingsMutex       sync.RWMutex
+	updateSubscriberSettingsArgsForCall []struct {
+		arg1 bool
+		arg2 livekit.VideoQuality
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -218,38 +214,6 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) SetMuted(arg1 bool) {
-	fake.setMutedMutex.Lock()
-	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
-		arg1 bool
-	}{arg1})
-	stub := fake.SetMutedStub
-	fake.recordInvocation("SetMuted", []interface{}{arg1})
-	fake.setMutedMutex.Unlock()
-	if stub != nil {
-		fake.SetMutedStub(arg1)
-	}
-}
-
-func (fake *FakeSubscribedTrack) SetMutedCallCount() int {
-	fake.setMutedMutex.RLock()
-	defer fake.setMutedMutex.RUnlock()
-	return len(fake.setMutedArgsForCall)
-}
-
-func (fake *FakeSubscribedTrack) SetMutedCalls(stub func(bool)) {
-	fake.setMutedMutex.Lock()
-	defer fake.setMutedMutex.Unlock()
-	fake.SetMutedStub = stub
-}
-
-func (fake *FakeSubscribedTrack) SetMutedArgsForCall(i int) bool {
-	fake.setMutedMutex.RLock()
-	defer fake.setMutedMutex.RUnlock()
-	argsForCall := fake.setMutedArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeSubscribedTrack) SetPublisherMuted(arg1 bool) {
 	fake.setPublisherMutedMutex.Lock()
 	fake.setPublisherMutedArgsForCall = append(fake.setPublisherMutedArgsForCall, struct {
@@ -282,36 +246,37 @@ func (fake *FakeSubscribedTrack) SetPublisherMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
-func (fake *FakeSubscribedTrack) SetVideoQuality(arg1 livekit.VideoQuality) {
-	fake.setVideoQualityMutex.Lock()
-	fake.setVideoQualityArgsForCall = append(fake.setVideoQualityArgsForCall, struct {
-		arg1 livekit.VideoQuality
-	}{arg1})
-	stub := fake.SetVideoQualityStub
-	fake.recordInvocation("SetVideoQuality", []interface{}{arg1})
-	fake.setVideoQualityMutex.Unlock()
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 bool, arg2 livekit.VideoQuality) {
+	fake.updateSubscriberSettingsMutex.Lock()
+	fake.updateSubscriberSettingsArgsForCall = append(fake.updateSubscriberSettingsArgsForCall, struct {
+		arg1 bool
+		arg2 livekit.VideoQuality
+	}{arg1, arg2})
+	stub := fake.UpdateSubscriberSettingsStub
+	fake.recordInvocation("UpdateSubscriberSettings", []interface{}{arg1, arg2})
+	fake.updateSubscriberSettingsMutex.Unlock()
 	if stub != nil {
-		fake.SetVideoQualityStub(arg1)
+		fake.UpdateSubscriberSettingsStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeSubscribedTrack) SetVideoQualityCallCount() int {
-	fake.setVideoQualityMutex.RLock()
-	defer fake.setVideoQualityMutex.RUnlock()
-	return len(fake.setVideoQualityArgsForCall)
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCallCount() int {
+	fake.updateSubscriberSettingsMutex.RLock()
+	defer fake.updateSubscriberSettingsMutex.RUnlock()
+	return len(fake.updateSubscriberSettingsArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) SetVideoQualityCalls(stub func(livekit.VideoQuality)) {
-	fake.setVideoQualityMutex.Lock()
-	defer fake.setVideoQualityMutex.Unlock()
-	fake.SetVideoQualityStub = stub
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCalls(stub func(bool, livekit.VideoQuality)) {
+	fake.updateSubscriberSettingsMutex.Lock()
+	defer fake.updateSubscriberSettingsMutex.Unlock()
+	fake.UpdateSubscriberSettingsStub = stub
 }
 
-func (fake *FakeSubscribedTrack) SetVideoQualityArgsForCall(i int) livekit.VideoQuality {
-	fake.setVideoQualityMutex.RLock()
-	defer fake.setVideoQualityMutex.RUnlock()
-	argsForCall := fake.setVideoQualityArgsForCall[i]
-	return argsForCall.arg1
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsArgsForCall(i int) (bool, livekit.VideoQuality) {
+	fake.updateSubscriberSettingsMutex.RLock()
+	defer fake.updateSubscriberSettingsMutex.RUnlock()
+	argsForCall := fake.updateSubscriberSettingsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
@@ -323,12 +288,10 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
-	fake.setMutedMutex.RLock()
-	defer fake.setMutedMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
-	fake.setVideoQualityMutex.RLock()
-	defer fake.setVideoQualityMutex.RUnlock()
+	fake.updateSubscriberSettingsMutex.RLock()
+	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

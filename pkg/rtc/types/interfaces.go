@@ -105,9 +105,8 @@ type SubscribedTrack interface {
 	ID() string
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
-	SetMuted(muted bool)
-	SetVideoQuality(quality livekit.VideoQuality)
 	SetPublisherMuted(muted bool)
+	UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality)
 }
 
 // interface for properties of webrtc.TrackRemote

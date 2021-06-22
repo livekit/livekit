@@ -1,6 +1,9 @@
 package rtc
 
 import (
+	"time"
+
+	"github.com/bep/debounce"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
 
@@ -8,15 +11,21 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+const (
+	subscriptionDebounceInterval = 10 * time.Millisecond
+)
+
 type SubscribedTrack struct {
-	dt       *sfu.DownTrack
-	subMuted utils.AtomicFlag
-	pubMuted utils.AtomicFlag
+	dt        *sfu.DownTrack
+	subMuted  utils.AtomicFlag
+	pubMuted  utils.AtomicFlag
+	debouncer func(func())
 }
 
 func NewSubscribedTrack(dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
-		dt: dt,
+		dt:        dt,
+		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 }
 
@@ -33,21 +42,19 @@ func (t *SubscribedTrack) IsMuted() bool {
 	return t.subMuted.Get()
 }
 
-// set subscriber mute preference
-func (t *SubscribedTrack) SetMuted(muted bool) {
-	t.subMuted.TrySet(muted)
-	t.updateDownTrackMute()
-}
-
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.pubMuted.TrySet(muted)
 	t.updateDownTrackMute()
 }
 
-func (t *SubscribedTrack) SetVideoQuality(quality livekit.VideoQuality) {
-	if t.dt.Kind() == webrtc.RTPCodecTypeVideo {
-		t.dt.SwitchSpatialLayer(spatialLayerForQuality(quality), true)
-	}
+func (t *SubscribedTrack) UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality) {
+	t.debouncer(func() {
+		t.subMuted.TrySet(!enabled)
+		t.updateDownTrackMute()
+		if enabled && t.dt.Kind() == webrtc.RTPCodecTypeVideo {
+			_ = t.dt.SwitchSpatialLayer(spatialLayerForQuality(quality), true)
+		}
+	})
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
