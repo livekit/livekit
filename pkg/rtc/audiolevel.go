@@ -65,6 +65,6 @@ func (l *AudioLevel) GetLevel() (level uint8, noisy bool) {
 	return
 }
 
-func convertAudioLevel(level uint8) float32 {
+func ConvertAudioLevel(level uint8) float32 {
 	return (127 - float32(level)) / 127
 }

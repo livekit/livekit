@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -335,6 +337,29 @@ func TestActiveSpeakers(t *testing.T) {
 		require.Len(t, updates, 2)
 		require.Empty(t, updates[1].Speakers)
 	})
+
+	t.Run("audio level is smoothed", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothSamples: 3})
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+		op := participants[1].(*typesfakes.FakeParticipant)
+		p.GetAudioLevelReturns(30, true)
+		convertedLevel := rtc.ConvertAudioLevel(30)
+		testutils.WithTimeout(t, "checking first update is received", func() bool {
+			updates := getActiveSpeakerUpdates(op)
+			if len(updates) == 0 {
+				return false
+			}
+			lastSpeakers := updates[len(updates)-1].Speakers
+			if len(lastSpeakers) == 0 {
+				return false
+			}
+			if lastSpeakers[0].Level < convertedLevel/2 {
+				return true
+			}
+			return false
+		})
+	})
 }
 
 func TestDataChannel(t *testing.T) {
@@ -399,8 +424,9 @@ func TestDataChannel(t *testing.T) {
 }
 
 type testRoomOpts struct {
-	num      int
-	protocol types.ProtocolVersion
+	num                int
+	protocol           types.ProtocolVersion
+	audioSmoothSamples uint32
 }
 
 func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
@@ -414,7 +440,10 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 				},
 			},
 		},
-		audioUpdateInterval,
+		&config.AudioConfig{
+			UpdateInterval: audioUpdateInterval,
+			SmoothSamples:  opts.audioSmoothSamples,
+		},
 	)
 	for i := 0; i < opts.num; i++ {
 		identity := fmt.Sprintf("p%d", i)

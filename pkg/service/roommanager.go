@@ -304,7 +304,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	}
 
 	// construct ice servers
-	room = rtc.NewRoom(ri, *r.rtcConfig, r.iceServersForRoom(ri), r.config.Audio.UpdateInterval)
+	room = rtc.NewRoom(ri, *r.rtcConfig, r.iceServersForRoom(ri), &r.config.Audio)
 	room.OnClose(func() {
 		if err := r.DeleteRoom(roomName); err != nil {
 			logger.Errorw("could not delete room", err)

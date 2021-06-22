@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
@@ -38,8 +39,8 @@ type Room struct {
 	isClosed utils.AtomicFlag
 
 	// for active speaker updates
-	audioUpdateInterval uint32
-	lastActiveSpeakers  []*livekit.SpeakerInfo
+	audioConfig        *config.AudioConfig
+	lastActiveSpeakers []*livekit.SpeakerInfo
 
 	statsReporter *RoomStatsReporter
 
@@ -51,16 +52,16 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioUpdateInterval uint32) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioConfig *config.AudioConfig) *Room {
 	r := &Room{
-		Room:                proto.Clone(room).(*livekit.Room),
-		config:              config,
-		iceServers:          iceServers,
-		audioUpdateInterval: audioUpdateInterval,
-		statsReporter:       NewRoomStatsReporter(room.Name),
-		participants:        make(map[string]types.Participant),
-		participantOpts:     make(map[string]*ParticipantOptions),
-		bufferFactory:       buffer.NewBufferFactory(config.Receiver.packetBufferSize, zapr.NewLogger(logger.GetLogger())),
+		Room:            proto.Clone(room).(*livekit.Room),
+		config:          config,
+		iceServers:      iceServers,
+		audioConfig:     audioConfig,
+		statsReporter:   NewRoomStatsReporter(room.Name),
+		participants:    make(map[string]types.Participant),
+		participantOpts: make(map[string]*ParticipantOptions),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, zapr.NewLogger(logger.GetLogger())),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
@@ -99,7 +100,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
 			Sid:    p.ID(),
-			Level:  convertAudioLevel(level),
+			Level:  ConvertAudioLevel(level),
 			Active: active,
 		})
 	}
@@ -494,12 +495,47 @@ func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 }
 
 func (r *Room) audioUpdateWorker() {
+	smoothValues := make(map[string]float32)
+	smoothSamples := float32(r.audioConfig.SmoothSamples)
+	activeThreshold := float32(0.5)
+
 	for {
 		if r.isClosed.Get() {
 			return
 		}
 
 		speakers := r.GetActiveSpeakers()
+		if smoothSamples > 1 {
+			seenSids := make(map[string]bool)
+			for _, speaker := range speakers {
+				speaker.Level += (speaker.Level - smoothValues[speaker.Sid]) / smoothSamples
+				smoothValues[speaker.Sid] = speaker.Level
+				seenSids[speaker.Sid] = true
+			}
+
+			// ensure that previous active speakers are also included
+			for sid, level := range smoothValues {
+				if seenSids[sid] {
+					continue
+				}
+				level += (0 - level) / smoothSamples
+				smoothValues[sid] = level
+
+				if level > activeThreshold {
+					speakers = append(speakers, &livekit.SpeakerInfo{
+						Sid:    sid,
+						Level:  level,
+						Active: true,
+					})
+				} else {
+					delete(smoothValues, sid)
+				}
+			}
+
+			sort.Slice(speakers, func(i, j int) bool {
+				return speakers[i].Level > speakers[j].Level
+			})
+		}
 
 		// see if an update is needed
 		if len(speakers) == len(r.lastActiveSpeakers) {
@@ -515,6 +551,6 @@ func (r *Room) audioUpdateWorker() {
 
 		r.lastActiveSpeakers = speakers
 
-		time.Sleep(time.Duration(r.audioUpdateInterval) * time.Millisecond)
+		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
 	}
 }
