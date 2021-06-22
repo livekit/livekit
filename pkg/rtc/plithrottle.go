@@ -9,8 +9,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
-type rtcpThrottle struct {
-	config    config.RTCPThrottleConfig
+type pliThrottle struct {
+	config    config.PLIThrottleConfig
 	mu        sync.RWMutex
 	throttles map[uint32]func(func())
 }
@@ -22,14 +22,14 @@ const (
 	quarterResolution = "q"
 )
 
-func newRtcpThrottle(conf config.RTCPThrottleConfig) *rtcpThrottle {
-	return &rtcpThrottle{
+func newPLIThrottle(conf config.PLIThrottleConfig) *pliThrottle {
+	return &pliThrottle{
 		config:    conf,
 		throttles: make(map[uint32]func(func())),
 	}
 }
 
-func (t *rtcpThrottle) addTrack(ssrc uint32, rid string) {
+func (t *pliThrottle) addTrack(ssrc uint32, rid string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -48,7 +48,7 @@ func (t *rtcpThrottle) addTrack(ssrc uint32, rid string) {
 	t.throttles[ssrc] = throttle.New(duration)
 }
 
-func (t *rtcpThrottle) add(ssrc uint32, f func()) {
+func (t *pliThrottle) add(ssrc uint32, f func()) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -57,7 +57,7 @@ func (t *rtcpThrottle) add(ssrc uint32, f func()) {
 	}
 }
 
-func (t *rtcpThrottle) removeTrack(ssrc uint32) {
+func (t *pliThrottle) removeTrack(ssrc uint32) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -67,7 +67,7 @@ func (t *rtcpThrottle) removeTrack(ssrc uint32) {
 	}
 }
 
-func (t *rtcpThrottle) close() {
+func (t *pliThrottle) close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

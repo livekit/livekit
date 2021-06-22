@@ -261,7 +261,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 		AudioConfig:     r.config.Audio,
 		ProtocolVersion: pv,
 		Stats:           room.GetStatsReporter(),
-		ThrottleConfig:  r.config.RTC.Throttle,
+		ThrottleConfig:  r.config.RTC.PLIThrottle,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)

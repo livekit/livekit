@@ -39,11 +39,11 @@ type RTCConfig struct {
 	// Max bitrate for REMB
 	MaxBitrate uint64 `yaml:"max_bitrate"`
 
-	// Throttle periods for rtcp packets
-	Throttle RTCPThrottleConfig `yaml:"rtcp_throttle"`
+	// Throttle periods for pli/fir rtcp packets
+	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
 }
 
-type RTCPThrottleConfig struct {
+type PLIThrottleConfig struct {
 	LowQuality  time.Duration `yaml:"low_quality"`
 	MidQuality  time.Duration `yaml:"mid_quality"`
 	HighQuality time.Duration `yaml:"high_quality"`
@@ -93,7 +93,7 @@ func NewConfig(confString string) (*Config, error) {
 			},
 			MaxBitrate:       3 * 1024 * 1024, // 3 mbps
 			PacketBufferSize: 500,
-			Throttle: RTCPThrottleConfig{
+			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  time.Second,
 				MidQuality:  time.Second * 2,
 				HighQuality: time.Second * 3,

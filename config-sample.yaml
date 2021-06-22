@@ -36,6 +36,14 @@ rtc:
 #  # LiveKit will automatically configure connected clients to use the same STUN servers
 #  stun_servers:
 #    - server1
+#  # minimum amount of time between pli/fir rtcp packets being sent to an individual
+#  # producer. Increasing these times can lead to longer black screens when participants join,
+#  # while reducing them can lead to higher producer bitrates.
+#  pli_throttle:
+#    low_quality: 1s
+#    mid_quality: 2s
+#    high_quality: 3s
+
 
 # API key / secret pairs.
 # Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens

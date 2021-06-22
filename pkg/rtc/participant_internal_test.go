@@ -173,7 +173,7 @@ func newParticipantForTest(identity string) *ParticipantImpl {
 		Config:          rtcConf,
 		Sink:            &routingfakes.FakeMessageSink{},
 		ProtocolVersion: 0,
-		ThrottleConfig:  conf.RTC.Throttle,
+		ThrottleConfig:  conf.RTC.PLIThrottle,
 	})
 	return p
 }
