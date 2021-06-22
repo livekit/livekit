@@ -270,7 +270,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 
 	if t.receiver == nil {
-		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.params.ParticipantID)
+		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.params.ParticipantID, sfu.WithPliThrottle(0))
 		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()

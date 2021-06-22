@@ -37,6 +37,7 @@ type ParticipantParams struct {
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
 	Stats           *RoomStatsReporter
+	ThrottleConfig  config.RTCPThrottleConfig
 }
 
 type ParticipantImpl struct {
@@ -49,6 +50,7 @@ type ParticipantImpl struct {
 	state             atomic.Value // livekit.ParticipantInfo_State
 	updateAfterActive atomic.Value // bool
 	rtcpCh            chan []rtcp.Packet
+	rtcpThrottle      *rtcpThrottle
 
 	// reliable and unreliable data channels
 	reliableDC *webrtc.DataChannel
@@ -89,6 +91,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		params:           params,
 		id:               utils.NewGuid(utils.ParticipantPrefix),
 		rtcpCh:           make(chan []rtcp.Packet, 50),
+		rtcpThrottle:     newRtcpThrottle(params.ThrottleConfig),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
@@ -398,6 +401,7 @@ func (p *ParticipantImpl) Close() error {
 	if onClose != nil {
 		onClose(p)
 	}
+	p.rtcpThrottle.close()
 	p.publisher.Close()
 	p.subscriber.Close()
 	close(p.rtcpCh)
@@ -734,8 +738,10 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		newTrack = true
 	}
 
+	ssrc := uint32(track.SSRC())
+	p.rtcpThrottle.addTrack(ssrc, track.RID())
 	if p.twcc == nil {
-		p.twcc = twcc.NewTransportWideCCResponder(uint32(track.SSRC()))
+		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
 			_ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
 		})
@@ -833,6 +839,9 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
+		if mt, ok := track.(*MediaTrack); ok {
+			p.rtcpThrottle.removeTrack(uint32(mt.ssrc))
+		}
 		track.OnClose(nil)
 	})
 
@@ -923,17 +932,37 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
+
+	write := func(pkts []rtcp.Packet) {
+		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
+			logger.Errorw("could not write RTCP to participant", err,
+				"participant", p.Identity())
+		}
+	}
+
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
 			return
 		}
-		// for _, pkt := range pkts {
-		//	logger.Debugw("writing RTCP", "packet", pkt)
-		// }
-		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
-			logger.Errorw("could not write RTCP to participant", err,
-				"participant", p.Identity())
+		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
+		for _, pkt := range pkts {
+			var mediaSSRC uint32
+			switch pkt.(type) {
+			case *rtcp.PictureLossIndication:
+				mediaSSRC = pkt.(*rtcp.PictureLossIndication).MediaSSRC
+			case *rtcp.FullIntraRequest:
+				mediaSSRC = pkt.(*rtcp.FullIntraRequest).MediaSSRC
+			default:
+				fwdPkts = append(fwdPkts, pkt)
+				continue
+			}
+
+			p.rtcpThrottle.add(mediaSSRC, func() { write([]rtcp.Packet{pkt}) })
+		}
+
+		if len(fwdPkts) > 0 {
+			write(fwdPkts)
 		}
 	}
 }

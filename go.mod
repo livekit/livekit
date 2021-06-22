@@ -5,6 +5,7 @@ go 1.15
 require (
 	github.com/bep/debounce v1.2.0
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d // indirect
 	github.com/go-logr/zapr v0.4.0
 	github.com/go-redis/redis/v8 v8.7.1
 	github.com/google/wire v0.5.0
@@ -45,3 +46,5 @@ require (
 )
 
 replace github.com/pion/webrtc/v3 => github.com/livekit/pion-webrtc/v3 v3.0.30
+
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.10.7-0.20210621205540-f74d53541f95
