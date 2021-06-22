@@ -508,8 +508,8 @@ func (r *Room) audioUpdateWorker() {
 		if smoothSamples > 1 {
 			seenSids := make(map[string]bool)
 			for _, speaker := range speakers {
-				speaker.Level += (speaker.Level - smoothValues[speaker.Sid]) / smoothSamples
-				smoothValues[speaker.Sid] = speaker.Level
+				smoothValues[speaker.Sid] += (speaker.Level - smoothValues[speaker.Sid]) / smoothSamples
+				speaker.Level = smoothValues[speaker.Sid]
 				seenSids[speaker.Sid] = true
 			}
 
@@ -538,9 +538,9 @@ func (r *Room) audioUpdateWorker() {
 		}
 
 		// see if an update is needed
-		if len(speakers) == len(r.lastActiveSpeakers) {
+		if len(speakers) == 0 && len(r.lastActiveSpeakers) == 0 {
 			for i, speaker := range speakers {
-				if speaker.Sid != r.lastActiveSpeakers[i].Sid {
+				if speaker.Sid != r.lastActiveSpeakers[i].Sid || speaker.Level != r.lastActiveSpeakers[i].Level {
 					r.sendSpeakerUpdates(speakers)
 					break
 				}

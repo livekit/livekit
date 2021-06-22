@@ -279,6 +279,7 @@ func TestActiveSpeakers(t *testing.T) {
 	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: types.DefaultProtocol})
+		defer rm.Close()
 		p := rm.GetParticipants()[0].(*typesfakes.FakeParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
 
@@ -290,6 +291,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("speakers should be sorted by loudness (protocol 0)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		p2 := participants[1].(*typesfakes.FakeParticipant)
@@ -304,6 +306,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("participants are getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol})
+		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
@@ -313,38 +316,36 @@ func TestActiveSpeakers(t *testing.T) {
 		require.NotEmpty(t, speakers)
 		require.Equal(t, p.ID(), speakers[0].Sid)
 
-		time.Sleep(audioUpdateDuration)
-
-		// everyone should've received updates
-		for _, op := range participants {
-			op := op.(*typesfakes.FakeParticipant)
-			updates := getActiveSpeakerUpdates(op)
-			require.Len(t, updates, 1)
-		}
-
-		// after another cycle, we are not getting any new updates since unchanged
-		time.Sleep(audioUpdateDuration)
-		for _, op := range participants {
-			op := op.(*typesfakes.FakeParticipant)
-			updates := getActiveSpeakerUpdates(op)
-			require.Len(t, updates, 1)
-		}
+		testutils.WithTimeout(t, "ensure everyone has gotten an audio update", func() bool {
+			for _, op := range participants {
+				op := op.(*typesfakes.FakeParticipant)
+				updates := getActiveSpeakerUpdates(op)
+				if len(updates) == 0 {
+					return false
+				}
+			}
+			return true
+		})
 
 		// no longer speaking, send update with empty items
 		p.GetAudioLevelReturns(127, false)
-		time.Sleep(audioUpdateDuration)
-		updates := getActiveSpeakerUpdates(p)
-		require.Len(t, updates, 2)
-		require.Empty(t, updates[1].Speakers)
+
+		testutils.WithTimeout(t, "ensure no one is speaking", func() bool {
+			updates := getActiveSpeakerUpdates(p)
+			lastUpdate := updates[len(updates)-1]
+			return len(lastUpdate.Speakers) == 0
+		})
 	})
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothSamples: 3})
+		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		op := participants[1].(*typesfakes.FakeParticipant)
 		p.GetAudioLevelReturns(30, true)
 		convertedLevel := rtc.ConvertAudioLevel(30)
+
 		testutils.WithTimeout(t, "checking first update is received", func() bool {
 			updates := getActiveSpeakerUpdates(op)
 			if len(updates) == 0 {
@@ -359,6 +360,35 @@ func TestActiveSpeakers(t *testing.T) {
 			}
 			return false
 		})
+
+		testutils.WithTimeout(t, "eventually reaches actual levels", func() bool {
+			updates := getActiveSpeakerUpdates(op)
+			if len(updates) == 0 {
+				return false
+			}
+			lastSpeakers := updates[len(updates)-1].Speakers
+			if len(lastSpeakers) == 0 {
+				return false
+			}
+			if lastSpeakers[0].Level > convertedLevel*0.99 {
+				return true
+			}
+			return false
+		})
+
+		p.GetAudioLevelReturns(127, false)
+
+		testutils.WithTimeout(t, "eventually goes back to 0", func() bool {
+			updates := getActiveSpeakerUpdates(op)
+			if len(updates) == 0 {
+				return false
+			}
+			lastSpeakers := updates[len(updates)-1].Speakers
+			if len(lastSpeakers) == 0 {
+				return true
+			}
+			return false
+		})
 	})
 }
 
@@ -367,6 +397,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("participants should receive data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 
@@ -395,6 +426,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("only one participant should receive the data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
+		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
 		p1 := participants[1].(*typesfakes.FakeParticipant)
