@@ -55,4 +55,5 @@ keys:
 #  min_percentile: 15
 #  # frequency in ms to notify changes to clients, defaults to 500
 #  update_interval: 500
-
+#  # to prevent speaker updates from too jumpy, smooth out values over N samples
+#  smooth_samples: 5
