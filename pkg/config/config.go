@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
@@ -37,6 +38,15 @@ type RTCConfig struct {
 
 	// Max bitrate for REMB
 	MaxBitrate uint64 `yaml:"max_bitrate"`
+
+	// Throttle periods for rtcp packets
+	Throttle RTCPThrottleConfig `yaml:"rtcp_throttle"`
+}
+
+type RTCPThrottleConfig struct {
+	LowQuality  time.Duration `yaml:"low_quality"`
+	MidQuality  time.Duration `yaml:"mid_quality"`
+	HighQuality time.Duration `yaml:"high_quality"`
 }
 
 type AudioConfig struct {
@@ -80,6 +90,11 @@ func NewConfig(confString string) (*Config, error) {
 			},
 			MaxBitrate:       3 * 1024 * 1024, // 3 mbps
 			PacketBufferSize: 500,
+			Throttle: RTCPThrottleConfig{
+				LowQuality:  time.Second,
+				MidQuality:  time.Second * 2,
+				HighQuality: time.Second * 3,
+			},
 		},
 		Audio: AudioConfig{
 			ActiveLevel:    40,

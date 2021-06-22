@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/frostbyte73/go-throttle"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
@@ -38,6 +37,7 @@ type ParticipantParams struct {
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
 	Stats           *RoomStatsReporter
+	ThrottleConfig  config.RTCPThrottleConfig
 }
 
 type ParticipantImpl struct {
@@ -88,12 +88,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
-		params: params,
-		id:     utils.NewGuid(utils.ParticipantPrefix),
-		rtcpCh: make(chan []rtcp.Packet, 50),
-		rtcpThrottle: &rtcpThrottle{
-			throttles: make(map[uint32]func(func())),
-		},
+		params:           params,
+		id:               utils.NewGuid(utils.ParticipantPrefix),
+		rtcpCh:           make(chan []rtcp.Packet, 50),
+		rtcpThrottle:     newRtcpThrottle(params.ThrottleConfig),
 		subscribedTracks: make(map[string][]types.SubscribedTrack),
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
@@ -741,7 +739,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	ssrc := uint32(track.SSRC())
-	p.rtcpThrottle.addTrack(ssrc)
+	p.rtcpThrottle.addTrack(ssrc, track.RID())
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
@@ -966,46 +964,5 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		if len(fwdPkts) > 0 {
 			write(fwdPkts)
 		}
-	}
-}
-
-type rtcpThrottle struct {
-	mu        sync.RWMutex
-	throttles map[uint32]func(func())
-}
-
-func (t *rtcpThrottle) addTrack(ssrc uint32) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.throttles[ssrc] = throttle.New(time.Millisecond * 500)
-}
-
-func (t *rtcpThrottle) add(ssrc uint32, f func()) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if trackThrottle, ok := t.throttles[ssrc]; ok {
-		trackThrottle(f)
-	}
-}
-
-func (t *rtcpThrottle) removeTrack(ssrc uint32) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if trackThrottle, ok := t.throttles[ssrc]; ok {
-		trackThrottle(func() {})
-		delete(t.throttles, ssrc)
-	}
-}
-
-func (t *rtcpThrottle) close() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	for ssrc, trackThrottle := range t.throttles {
-		trackThrottle(func() {})
-		delete(t.throttles, ssrc)
 	}
 }
