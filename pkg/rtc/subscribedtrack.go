@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	subscriptionDebounceInterval = 10 * time.Millisecond
+	subscriptionDebounceInterval = 100 * time.Millisecond
 )
 
 type SubscribedTrack struct {

@@ -175,6 +175,11 @@ func PublishDocker() error {
 		return err
 	}
 
+	// don't publish snapshot versions as latest or minor version
+	if strings.HasSuffix(version.Version, "SNAPSHOT") {
+		return nil
+	}
+
 	idx := strings.LastIndex(version.Version, ".")
 	minorImg := fmt.Sprintf("%s:v%s", imageName, version.Version[:idx])
 	cmd = exec.Command("docker", "tag", versionImg, minorImg)
