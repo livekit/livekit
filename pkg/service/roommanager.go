@@ -393,17 +393,11 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
 			case *livekit.SignalRequest_Subscription:
-				if participant.CanSubscribe() {
-					if err := room.UpdateSubscriptions(participant, msg.Subscription); err != nil {
-						logger.Warnw("could not update subscription", err,
-							"participant", participant.Identity(),
-							"tracks", msg.Subscription.TrackSids,
-							"subscribe", msg.Subscription.Subscribe)
-					}
-				} else {
-					logger.Infow("rejected participant subscription",
+				if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
+					logger.Warnw("could not update subscription", err,
 						"participant", participant.Identity(),
-						"tracks", msg.Subscription.TrackSids)
+						"tracks", msg.Subscription.TrackSids,
+						"subscribe", msg.Subscription.Subscribe)
 				}
 			case *livekit.SignalRequest_TrackSetting:
 				for _, subTrack := range participant.GetSubscribedTracks() {
@@ -460,6 +454,14 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 			_ = p.Close()
 		}
 		room.Close()
+	case *livekit.RTCNodeMessage_UpdateSubscriptions:
+		logger.Debugw("updating participant subscriptions", "room", roomName, "participant", identity)
+		if err := room.UpdateSubscriptions(participant, rm.UpdateSubscriptions.TrackSids, rm.UpdateSubscriptions.Subscribe); err != nil {
+			logger.Warnw("could not update subscription", err,
+				"participant", participant.Identity(),
+				"tracks", rm.UpdateSubscriptions.TrackSids,
+				"subscribe", rm.UpdateSubscriptions.Subscribe)
+		}
 	}
 }
 

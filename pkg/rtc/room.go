@@ -248,12 +248,16 @@ func (r *Room) RemoveParticipant(identity string) {
 	}
 }
 
-func (r *Room) UpdateSubscriptions(participant types.Participant, subscription *livekit.UpdateSubscription) error {
+func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []string, subscribe bool) error {
+	if !participant.CanSubscribe() {
+		return ErrCannotSubscribe
+	}
+
 	// find all matching tracks
 	var tracks []types.PublishedTrack
 	participants := r.GetParticipants()
 	for _, p := range participants {
-		for _, sid := range subscription.TrackSids {
+		for _, sid := range trackIds {
 			for _, track := range p.GetPublishedTracks() {
 				if sid == track.ID() {
 					tracks = append(tracks, track)
@@ -264,7 +268,7 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, subscription *
 
 	// handle subscription changes
 	for _, track := range tracks {
-		if subscription.Subscribe {
+		if subscribe {
 			if err := track.AddSubscriber(participant); err != nil {
 				return err
 			}

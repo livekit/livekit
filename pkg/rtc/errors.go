@@ -9,4 +9,5 @@ var (
 	ErrAlreadyJoined           = errors.New("a participant with the same identity is already in the room")
 	ErrUnexpectedOffer         = errors.New("expected answer SDP, received offer")
 	ErrDataChannelUnavailable  = errors.New("data channel is not available")
+	ErrCannotSubscribe         = errors.New("participant does not have permission to subscribe")
 )

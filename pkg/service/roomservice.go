@@ -119,6 +119,10 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 }
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.RemoveParticipantResponse, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
 	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
 
 	if err != nil {
@@ -136,6 +140,10 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (res *livekit.MuteRoomTrackResponse, err error) {
+	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
 	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
 	if err != nil {
 		return
@@ -172,6 +180,10 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
+	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
 	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
@@ -191,6 +203,26 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 
 	participant.Metadata = req.Metadata
 	return participant, nil
+}
+
+func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
+	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
+	if err != nil {
+		return nil, err
+	}
+	defer rtcSink.Close()
+
+	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
+			UpdateSubscriptions: req,
+		},
+	})
+
+	return &livekit.UpdateSubscriptionsResponse{}, nil
 }
 
 func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) (routing.MessageSink, error) {
