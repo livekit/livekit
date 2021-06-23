@@ -285,7 +285,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		})
 		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
-	t.receiver.AddUpTrack(track, buff, true)
+	t.receiver.AddUpTrack(track, buff, false)
 	// when RID is set, track is simulcasted
 	t.simulcasted = track.RID() != ""
 

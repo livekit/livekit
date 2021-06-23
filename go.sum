@@ -89,8 +89,6 @@ github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/franela/goblin v0.0.0-20200105215937-c9ffbefa60db/go.mod h1:7dvUGVsVBjqR7JHJk0brhHOZYGmfBYOrK0ZhYMEtBr4=
 github.com/franela/goreq v0.0.0-20171204163338-bcd34c9993f8/go.mod h1:ZhphrRTfi2rbfLwlschooIH4+wKKDR4Pdxhh+TRoA20=
-github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d h1:rvSueMilKro0jF+VfxoVR42wazKPl+cUBL3rFbiBGso=
-github.com/frostbyte73/go-throttle v0.0.0-20210621200530-8018c891361d/go.mod h1:jhHJXDlUaWA2g15qvWdleCmRe0Z3noWIQQvjbTZOhGY=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fsnotify/fsnotify v1.4.9 h1:hsms1Qyu0jgnwNXIxa+/V/PDsU6CfLf6CNO8H7IWoS4=
 github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4IgpuI1SZQ=
@@ -232,8 +230,8 @@ github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-b
 github.com/lightstep/lightstep-tracer-go v0.18.1/go.mod h1:jlF1pusYV4pidLvZ+XD0UBX0ZE6WURAspgAczcDHrL4=
 github.com/lithammer/shortuuid/v3 v3.0.6 h1:pr15YQyvhiSX/qPxncFtqk+v4xLEpOZObbsY/mKrcvA=
 github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
-github.com/livekit/ion-sfu v1.10.7-0.20210621205540-f74d53541f95 h1:4Vx5bjf5zD95MEsmIKennsFnHu4CzN4wfy+9JxKTX5Q=
-github.com/livekit/ion-sfu v1.10.7-0.20210621205540-f74d53541f95/go.mod h1:0Kn3ywQ/4PneeIsshuSnCNzQrbWSgRlKrgWXiGRLUp0=
+github.com/livekit/ion-sfu v1.10.7-0.20210623183123-16d9c5c00864 h1:9j7EYJ1h0nUkXLsZxEoRP8EAzMIzWVbi6KzKWLqr/qM=
+github.com/livekit/ion-sfu v1.10.7-0.20210623183123-16d9c5c00864/go.mod h1:Wx6b4qGUjvSo1kGl+/fHl0ZF48g2IJOjzUFg0yCo9qY=
 github.com/livekit/pion-webrtc/v3 v3.0.30 h1:2RomVfztLegWIePXcyPFJDiF5pbT64aIX4RtpXdDksU=
 github.com/livekit/pion-webrtc/v3 v3.0.30/go.mod h1:XFQeLYBf++bWWA0sJqh6zF1ouWluosxwTOMOoTZGaD0=
 github.com/livekit/protocol v0.5.3 h1:u4J6poLLX3zRFsJVGAz5X8KFv9+6dwffksMW/4EI+14=

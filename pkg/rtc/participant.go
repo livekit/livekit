@@ -401,7 +401,6 @@ func (p *ParticipantImpl) Close() error {
 	if onClose != nil {
 		onClose(p)
 	}
-	p.pliThrottle.close()
 	p.publisher.Close()
 	p.subscriber.Close()
 	close(p.rtcpCh)
@@ -839,9 +838,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
-		if mt, ok := track.(*MediaTrack); ok {
-			p.pliThrottle.removeTrack(uint32(mt.ssrc))
-		}
 		track.OnClose(nil)
 	})
 
@@ -933,36 +929,35 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 func (p *ParticipantImpl) rtcpSendWorker() {
 	defer Recover()
 
-	write := func(pkts []rtcp.Packet) {
-		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
-			logger.Errorw("could not write RTCP to participant", err,
-				"participant", p.Identity())
-		}
-	}
-
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
 			return
 		}
+
 		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
 		for _, pkt := range pkts {
-			var mediaSSRC uint32
 			switch pkt.(type) {
 			case *rtcp.PictureLossIndication:
-				mediaSSRC = pkt.(*rtcp.PictureLossIndication).MediaSSRC
+				mediaSSRC := pkt.(*rtcp.PictureLossIndication).MediaSSRC
+				if p.pliThrottle.canSend(mediaSSRC) {
+					fwdPkts = append(fwdPkts, pkt)
+				}
 			case *rtcp.FullIntraRequest:
-				mediaSSRC = pkt.(*rtcp.FullIntraRequest).MediaSSRC
+				mediaSSRC := pkt.(*rtcp.FullIntraRequest).MediaSSRC
+				if p.pliThrottle.canSend(mediaSSRC) {
+					fwdPkts = append(fwdPkts, pkt)
+				}
 			default:
 				fwdPkts = append(fwdPkts, pkt)
-				continue
 			}
-
-			p.pliThrottle.add(mediaSSRC, func() { write([]rtcp.Packet{pkt}) })
 		}
 
 		if len(fwdPkts) > 0 {
-			write(fwdPkts)
+			if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
+				logger.Errorw("could not write RTCP to participant", err,
+					"participant", p.Identity())
+			}
 		}
 	}
 }

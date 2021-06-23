@@ -4,15 +4,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frostbyte73/go-throttle"
-
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
 type pliThrottle struct {
-	config    config.PLIThrottleConfig
-	mu        sync.RWMutex
-	throttles map[uint32]func(func())
+	config   config.PLIThrottleConfig
+	mu       sync.RWMutex
+	periods  map[uint32]int64
+	lastSent map[uint32]int64
 }
 
 // github.com/pion/ion-sfu/pkg/sfu/simulcast.go
@@ -24,8 +23,9 @@ const (
 
 func newPLIThrottle(conf config.PLIThrottleConfig) *pliThrottle {
 	return &pliThrottle{
-		config:    conf,
-		throttles: make(map[uint32]func(func())),
+		config:   conf,
+		periods:  make(map[uint32]int64),
+		lastSent: make(map[uint32]int64),
 	}
 }
 
@@ -45,34 +45,20 @@ func (t *pliThrottle) addTrack(ssrc uint32, rid string) {
 		duration = t.config.MidQuality
 	}
 
-	t.throttles[ssrc] = throttle.New(duration)
+	t.periods[ssrc] = duration.Nanoseconds()
 }
 
-func (t *pliThrottle) add(ssrc uint32, f func()) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if trackThrottle, ok := t.throttles[ssrc]; ok {
-		trackThrottle(f)
-	}
-}
-
-func (t *pliThrottle) removeTrack(ssrc uint32) {
+func (t *pliThrottle) canSend(ssrc uint32) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if trackThrottle, ok := t.throttles[ssrc]; ok {
-		trackThrottle(func() {})
-		delete(t.throttles, ssrc)
+	if period, ok := t.periods[ssrc]; ok {
+		if n := time.Now().UnixNano(); n-t.lastSent[ssrc] > period {
+			t.lastSent[ssrc] = n
+			return true
+		} else {
+			return false
+		}
 	}
-}
-
-func (t *pliThrottle) close() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	for ssrc, trackThrottle := range t.throttles {
-		trackThrottle(func() {})
-		delete(t.throttles, ssrc)
-	}
+	return true
 }
