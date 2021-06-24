@@ -230,12 +230,10 @@ github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-b
 github.com/lightstep/lightstep-tracer-go v0.18.1/go.mod h1:jlF1pusYV4pidLvZ+XD0UBX0ZE6WURAspgAczcDHrL4=
 github.com/lithammer/shortuuid/v3 v3.0.6 h1:pr15YQyvhiSX/qPxncFtqk+v4xLEpOZObbsY/mKrcvA=
 github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
-github.com/livekit/ion-sfu v1.10.7-0.20210623183123-16d9c5c00864 h1:9j7EYJ1h0nUkXLsZxEoRP8EAzMIzWVbi6KzKWLqr/qM=
-github.com/livekit/ion-sfu v1.10.7-0.20210623183123-16d9c5c00864/go.mod h1:Wx6b4qGUjvSo1kGl+/fHl0ZF48g2IJOjzUFg0yCo9qY=
+github.com/livekit/ion-sfu v1.10.7-0.20210624043550-63c2bdd50f84 h1:mdRsMaWgYmZxcrH2jL/7SUVouXE4LSTGabky7YXEUKM=
+github.com/livekit/ion-sfu v1.10.7-0.20210624043550-63c2bdd50f84/go.mod h1:Wx6b4qGUjvSo1kGl+/fHl0ZF48g2IJOjzUFg0yCo9qY=
 github.com/livekit/pion-webrtc/v3 v3.0.30 h1:2RomVfztLegWIePXcyPFJDiF5pbT64aIX4RtpXdDksU=
 github.com/livekit/pion-webrtc/v3 v3.0.30/go.mod h1:XFQeLYBf++bWWA0sJqh6zF1ouWluosxwTOMOoTZGaD0=
-github.com/livekit/protocol v0.5.3 h1:u4J6poLLX3zRFsJVGAz5X8KFv9+6dwffksMW/4EI+14=
-github.com/livekit/protocol v0.5.3/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/livekit/protocol v0.5.4 h1:OFOOahFXGOusgd8X1Ucnl8H/sxa3DzwSrnmKNIUOu/0=
 github.com/livekit/protocol v0.5.4/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/lucsky/cuid v1.0.2 h1:z4XlExeoderxoPj2/dxKOyPxe9RCOu7yNq9/XWxIUMQ=
