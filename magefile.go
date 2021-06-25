@@ -176,7 +176,7 @@ func PublishDocker() error {
 	}
 
 	// don't publish snapshot versions as latest or minor version
-	if strings.HasSuffix(version.Version, "SNAPSHOT") {
+	if strings.Contains(version.Version, "SNAPSHOT") {
 		return nil
 	}
 

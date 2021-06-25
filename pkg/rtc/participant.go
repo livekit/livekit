@@ -533,8 +533,8 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	p.lock.RLock()
-	defer p.lock.RUnlock()
 	track := p.publishedTracks[trackId]
+	p.lock.RUnlock()
 	if track == nil {
 		logger.Warnw("could not locate track", nil, "track", trackId)
 		return

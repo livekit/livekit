@@ -62,7 +62,7 @@ func (t *SubscribedTrack) updateDownTrackMute() {
 	t.dt.Mute(muted)
 }
 
-func spatialLayerForQuality(quality livekit.VideoQuality) int64 {
+func spatialLayerForQuality(quality livekit.VideoQuality) int32 {
 	switch quality {
 	case livekit.VideoQuality_LOW:
 		return 0

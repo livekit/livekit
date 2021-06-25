@@ -173,14 +173,15 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		subTrack.SetPublisherMuted(t.IsMuted())
 		go t.sendDownTrackBindingReports(sub)
 	})
+
 	downTrack.OnCloseHandler(func() {
-		t.lock.Lock()
-		delete(t.subscribedTracks, sub.ID())
-		t.lock.Unlock()
-
-		t.params.Stats.SubSubscribedTrack(t.kind.String())
-
 		go func() {
+			t.lock.Lock()
+			delete(t.subscribedTracks, sub.ID())
+			t.lock.Unlock()
+
+			t.params.Stats.SubSubscribedTrack(t.kind.String())
+
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
 				return
@@ -214,7 +215,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	t.subscribedTracks[sub.ID()] = subTrack
 
-	t.receiver.AddDownTrack(downTrack, len(t.subscribedTracks) < 10)
+	t.receiver.AddDownTrack(downTrack, t.shouldStartWithBestQuality())
 	// since sub will lock, run it in a gorountine to avoid deadlocks
 	go func() {
 		sub.AddSubscribedTrack(t.params.ParticipantID, subTrack)
@@ -285,7 +286,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		})
 		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
-	t.receiver.AddUpTrack(track, buff, false)
+	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
 	// when RID is set, track is simulcasted
 	t.simulcasted = track.RID() != ""
 
@@ -325,6 +326,11 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 		Height:    t.params.Height,
 		Simulcast: t.simulcasted,
 	}
+}
+
+// this function assumes caller holds lock
+func (t *MediaTrack) shouldStartWithBestQuality() bool {
+	return len(t.subscribedTracks) < 10
 }
 
 // TODO: send for all downtracks from the source participant
