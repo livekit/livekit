@@ -3,6 +3,7 @@ module github.com/livekit/livekit-server
 go 1.15
 
 require (
+	github.com/aws/aws-sdk-go v1.38.68 // indirect
 	github.com/bep/debounce v1.2.0
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/go-logr/zapr v0.4.0
