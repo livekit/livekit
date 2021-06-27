@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
@@ -167,7 +167,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		}
 		r.broadcastParticipantState(p, true)
 
-		if p.State() == livekit.ParticipantInfo_ACTIVE {
+		state := p.State()
+		if state == livekit.ParticipantInfo_ACTIVE {
 			if p.UpdateAfterActive() {
 				_ = p.SendParticipantUpdate(ToProtoParticipants(r.GetParticipants()))
 			}
@@ -178,7 +179,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 			// start the workers once connectivity is established
 			p.Start()
 
-		} else if p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity())
 		}
@@ -205,6 +206,13 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
 	}
+
+	time.AfterFunc(time.Minute, func() {
+		state := participant.State()
+		if state == livekit.ParticipantInfo_JOINING || state == livekit.ParticipantInfo_JOINED {
+			r.RemoveParticipant(participant.Identity())
+		}
+	})
 
 	return participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers)
 }
