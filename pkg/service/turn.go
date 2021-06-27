@@ -1,12 +1,14 @@
 package service
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+	"github.com/soheilhy/cmux"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -33,9 +35,32 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 		if err != nil {
 			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 		}
+		mux := cmux.New(tcpListener)
+
+		httpListener := mux.Match(cmux.HTTP1Fast())
+
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load tls cert")
+		}
+		tlsListener := tls.NewListener(mux.Match(cmux.Any()), &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		})
+
 		serverConfig.ListenerConfigs = []turn.ListenerConfig{
 			{
-				Listener: tcpListener,
+				Listener: httpListener,
+				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+					RelayAddress: net.ParseIP(node.Ip),
+					Address:      "0.0.0.0",
+					MinPort:      turnConf.PortRangeStart,
+					MaxPort:      turnConf.PortRangeEnd,
+					MaxRetries:   allocateRetries,
+				},
+			},
+			{
+				Listener: tlsListener,
 				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 					RelayAddress: net.ParseIP(node.Ip),
 					Address:      "0.0.0.0",
