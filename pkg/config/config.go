@@ -94,9 +94,9 @@ func NewConfig(confString string) (*Config, error) {
 			MaxBitrate:       3 * 1024 * 1024, // 3 mbps
 			PacketBufferSize: 500,
 			PLIThrottle: PLIThrottleConfig{
-				LowQuality:  time.Second,
-				MidQuality:  time.Second * 2,
-				HighQuality: time.Second * 3,
+				LowQuality:  500 * time.Millisecond,
+				MidQuality:  time.Second,
+				HighQuality: time.Second,
 			},
 		},
 		Audio: AudioConfig{

@@ -40,9 +40,9 @@ rtc:
 #  # producer. Increasing these times can lead to longer black screens when participants join,
 #  # while reducing them can lead to higher producer bitrates.
 #  pli_throttle:
-#    low_quality: 1s
-#    mid_quality: 2s
-#    high_quality: 3s
+#    low_quality: 500ms
+#    mid_quality: 1s
+#    high_quality: 1s
 
 
 # API key / secret pairs.
