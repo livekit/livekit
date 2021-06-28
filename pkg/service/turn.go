@@ -1,17 +1,13 @@
 package service
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"strconv"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
-	"github.com/soheilhy/cmux"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -34,57 +30,30 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	}
 
 	if turnConf.TCPPort > 0 {
-		tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TCPPort))
+		cert, err := tls.LoadX509KeyPair(turnConf.CertFilePath, turnConf.KeyFilePath)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load tls cert")
+		}
+
+		tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TCPPort), &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		})
 		if err != nil {
 			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 		}
 
-		cert, err := downloadTLSCert()
-		if err != nil {
-			logger.Errorw("TURN TLS unavailable", err)
-			serverConfig.ListenerConfigs = []turn.ListenerConfig{
-				{
-					Listener: tcpListener,
-					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: net.ParseIP(node.Ip),
-						Address:      "0.0.0.0",
-						MinPort:      turnConf.PortRangeStart,
-						MaxPort:      turnConf.PortRangeEnd,
-						MaxRetries:   allocateRetries,
-					},
+		serverConfig.ListenerConfigs = []turn.ListenerConfig{
+			{
+				Listener: tlsListener,
+				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
+					RelayAddress: net.ParseIP(node.Ip),
+					Address:      "0.0.0.0",
+					MinPort:      turnConf.PortRangeStart,
+					MaxPort:      turnConf.PortRangeEnd,
+					MaxRetries:   allocateRetries,
 				},
-			}
-		} else {
-			mux := cmux.New(tcpListener)
-			httpListener := mux.Match(cmux.HTTP1Fast())
-
-			tlsListener := tls.NewListener(mux.Match(cmux.Any()), &tls.Config{
-				MinVersion:   tls.VersionTLS12,
-				Certificates: []tls.Certificate{cert},
-			})
-
-			serverConfig.ListenerConfigs = []turn.ListenerConfig{
-				{
-					Listener: httpListener,
-					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: net.ParseIP(node.Ip),
-						Address:      "0.0.0.0",
-						MinPort:      turnConf.PortRangeStart,
-						MaxPort:      turnConf.PortRangeEnd,
-						MaxRetries:   allocateRetries,
-					},
-				},
-				{
-					Listener: tlsListener,
-					RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-						RelayAddress: net.ParseIP(node.Ip),
-						Address:      "0.0.0.0",
-						MinPort:      turnConf.PortRangeStart,
-						MaxPort:      turnConf.PortRangeEnd,
-						MaxRetries:   allocateRetries,
-					},
-				},
-			}
+			},
 		}
 	}
 
@@ -112,20 +81,6 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 		"UDP port", turnConf.UDPPort,
 		"portRange", fmt.Sprintf("%d-%d", turnConf.PortRangeStart, turnConf.PortRangeEnd))
 	return turn.NewServer(serverConfig)
-}
-
-func downloadTLSCert() (tls.Certificate, error) {
-	// TODO
-	client := acm.New(aws.Config{})
-	certResp, err := client.ExportCertificateRequest(&acm.ExportCertificateInput{
-		CertificateArn: nil,
-		Passphrase:     nil,
-	}).Send(context.Background())
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	return tls.X509KeyPair([]byte(*certResp.Certificate), []byte(*certResp.PrivateKey))
 }
 
 func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
