@@ -109,7 +109,7 @@ func NewConfig(confString string) (*Config, error) {
 		},
 		Redis: RedisConfig{},
 		TURN: TURNConfig{
-			Enabled:        true,
+			Enabled:        false,
 			TCPPort:        3478,
 			UDPPort:        3478,
 			PortRangeStart: 12000,
