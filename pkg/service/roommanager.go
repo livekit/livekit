@@ -229,6 +229,12 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 				prevSink.Close()
 			}
 			participant.SetResponseSink(responseSink)
+
+			if err := participant.SendParticipantUpdate(rtc.ToProtoParticipants(room.GetParticipants())); err != nil {
+				logger.Warnw("failed to send participant update", err,
+					"participant", pi.Identity)
+			}
+
 			if err := participant.ICERestart(); err != nil {
 				logger.Warnw("could not restart ICE", err,
 					"participant", pi.Identity)
