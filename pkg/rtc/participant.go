@@ -851,7 +851,8 @@ func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnecti
 	//	"participant", p.identity)
 	if state == webrtc.ICEConnectionStateConnected {
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	} else if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed {
+	} else if state == webrtc.ICEConnectionStateFailed {
+		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
 			_ = p.Close()
 		}()

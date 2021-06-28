@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"syscall"
 
@@ -47,15 +46,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	loggerFactory := logging.NewDefaultLoggerFactory()
 	lkLogger := loggerFactory.NewLogger("livekit-mux")
 
-	iceUrls := make([]string, 0)
-	for _, stunServer := range rtcConf.StunServers {
-		iceUrls = append(iceUrls, fmt.Sprintf("stun:%s", stunServer))
-	}
-	c.ICEServers = []webrtc.ICEServer{
-		{
-			URLs: iceUrls,
-		},
-	}
 	if rtcConf.UseExternalIP && externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
@@ -74,6 +64,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	var udpMux *ice.UDPMuxDefault
 	var udpMuxConn *net.UDPConn
 	var err error
+
 	if rtcConf.UDPPort != 0 {
 		udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
 			Port: int(rtcConf.UDPPort),
