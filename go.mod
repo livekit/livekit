@@ -3,14 +3,12 @@ module github.com/livekit/livekit-server
 go 1.15
 
 require (
-	github.com/aws/aws-sdk-go-v2 v0.18.0
 	github.com/bep/debounce v1.2.0
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/go-logr/zapr v0.4.0
 	github.com/go-redis/redis/v8 v8.7.1
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
 	github.com/livekit/protocol v0.5.4
 	github.com/magefile/mage v1.11.0
@@ -31,7 +29,6 @@ require (
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.19.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/soheilhy/cmux v0.1.4
 	github.com/stretchr/testify v1.7.0
 	github.com/thoas/go-funk v0.8.0
 	github.com/twitchtv/twirp v8.0.0+incompatible

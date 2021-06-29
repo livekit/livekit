@@ -68,14 +68,14 @@ keys:
 
 # turn server
 turn:
-  # Uses TLS. Requires cert and key pem files by one of:
-  # - using turn.mount_path and turn.secretName if deploying with our helm chart
-  # - LIVEKIT_TURN_CERT and LIVEKIT_TURN_KEY env vars with file locations
+  # Uses TLS. Requires cert and key pem files by either:
+  # - using turn.secretName if deploying with our helm chart, or
+  # - setting LIVEKIT_TURN_CERT and LIVEKIT_TURN_KEY env vars with file locations, or
   # - using cert_file and key_file below
   # defaults to false
   enabled: false
   # needs to match tls cert domain
-  domain: turn.livekit.io
+  domain: turn.myhost.com
   # defaults to 3478
   tls_port: 3478
   # optional
