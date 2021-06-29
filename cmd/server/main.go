@@ -77,12 +77,12 @@ func main() {
 			},
 			&cli.StringFlag{
 				Name:    "turn-cert",
-				Usage:   "tls cert for TURN server",
+				Usage:   "tls cert file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_CERT"},
 			},
 			&cli.StringFlag{
 				Name:    "turn-key",
-				Usage:   "tls key for TURN server",
+				Usage:   "tls key file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_KEY"},
 			},
 		},

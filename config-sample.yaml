@@ -68,14 +68,16 @@ keys:
 
 # turn server
 turn:
-  # enabling turn requires access to tls cert on a mounted volume
+  # Uses TLS. Requires cert and key pem files by one of:
+  # - using turn.mount_path and turn.secretName if deploying with our helm chart
+  # - LIVEKIT_TURN_CERT and LIVEKIT_TURN_KEY env vars with file locations
+  # - using cert_file and key_file below
   # defaults to false
   enabled: false
-  # turn server domain
+  # needs to match tls cert domain
   domain: turn.livekit.io
-  # optional: defaults to 3478
-  tcp_port: 3478
-  # defaults to 12000
-  port_range_start: 12000
-  # defaults to 14000
-  port_range_end: 14000
+  # defaults to 3478
+  tls_port: 3478
+  # optional
+  # cert_file: /path/to/cert.pem
+  # key_file: /path/to/key.pem

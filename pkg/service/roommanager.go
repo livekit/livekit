@@ -473,13 +473,13 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 			Urls: r.rtcConfig.Configuration.ICEServers[0].URLs,
 		})
 	}
-	if r.config.TURN.Enabled && r.config.TURN.TCPPort > 0 {
+	if r.config.TURN.Enabled && r.config.TURN.TLSPort > 0 {
 		host := r.currentNode.Ip
 		if r.config.TURN.Domain != "" {
 			host = r.config.TURN.Domain
 		}
 		iceServers = append(iceServers, &livekit.ICEServer{
-			Urls:       []string{fmt.Sprintf("turns:%s:%d?transport=tcp", host, r.config.TURN.TCPPort)},
+			Urls:       []string{fmt.Sprintf("turns:%s:%d?transport=tcp", host, r.config.TURN.TLSPort)},
 			Username:   ri.Name,
 			Credential: ri.TurnPassword,
 		})
