@@ -138,10 +138,10 @@ func createSingleNodeServer() *service.LivekitServer {
 	conf.Development = true
 
 	currentNode, err := routing.NewLocalNode(conf)
-	currentNode.Id = utils.NewGuid(nodeId1)
 	if err != nil {
 		panic(err)
 	}
+	currentNode.Id = utils.NewGuid(nodeId1)
 
 	// local routing and store
 	router := routing.NewLocalRouter(currentNode)
