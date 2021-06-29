@@ -71,10 +71,8 @@ type RedisConfig struct {
 
 type TURNConfig struct {
 	Enabled        bool   `yaml:"enabled"`
-	CertFilePath   string `yaml:"cert_file_path"`
-	KeyFilePath    string `yaml:"key_file_path"`
+	Domain         string `yaml:"domain"`
 	TCPPort        int    `yaml:"tcp_port"`
-	UDPPort        int    `yaml:"udp_port"`
 	PortRangeStart uint16 `yaml:"port_range_start"`
 	PortRangeEnd   uint16 `yaml:"port_range_end"`
 }
@@ -109,9 +107,8 @@ func NewConfig(confString string) (*Config, error) {
 		},
 		Redis: RedisConfig{},
 		TURN: TURNConfig{
-			Enabled:        false,
+			Enabled:        true,
 			TCPPort:        3478,
-			UDPPort:        3478,
 			PortRangeStart: 12000,
 			PortRangeEnd:   14000,
 		},

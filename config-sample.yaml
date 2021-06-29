@@ -65,3 +65,17 @@ keys:
 #  update_interval: 500
 #  # to prevent speaker updates from too jumpy, smooth out values over N samples
 #  smooth_samples: 5
+
+# turn server
+turn:
+  # enabling turn requires access to tls cert on a mounted volume
+  # defaults to false
+  enabled: false
+  # turn server domain
+  domain: turn.livekit.io
+  # optional: defaults to 3478
+  tcp_port: 3478
+  # defaults to 12000
+  port_range_start: 12000
+  # defaults to 14000
+  port_range_end: 14000
