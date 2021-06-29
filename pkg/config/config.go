@@ -72,6 +72,8 @@ type RedisConfig struct {
 type TURNConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	Domain         string `yaml:"domain"`
+	CertFile       string `yaml:"cert_file"`
+	KeyFile        string `yaml:"key_file"`
 	TCPPort        int    `yaml:"tcp_port"`
 	PortRangeStart uint16 `yaml:"port_range_start"`
 	PortRangeEnd   uint16 `yaml:"port_range_end"`
@@ -107,7 +109,7 @@ func NewConfig(confString string) (*Config, error) {
 		},
 		Redis: RedisConfig{},
 		TURN: TURNConfig{
-			Enabled:        true,
+			Enabled:        false,
 			TCPPort:        3478,
 			PortRangeStart: 12000,
 			PortRangeEnd:   14000,
@@ -141,6 +143,12 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 	}
 	if c.IsSet("redis-password") {
 		conf.Redis.Password = c.String("redis-password")
+	}
+	if c.IsSet("turn-cert") {
+		conf.TURN.CertFile = c.String("turn-cert")
+	}
+	if c.IsSet("turn-key") {
+		conf.TURN.KeyFile = c.String("turn-key")
 	}
 	// expand env vars in filenames
 	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))

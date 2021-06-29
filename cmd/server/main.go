@@ -75,6 +75,16 @@ func main() {
 				Name:  "dev",
 				Usage: "sets log-level to debug, and console formatter",
 			},
+			&cli.StringFlag{
+				Name:    "turn-cert",
+				Usage:   "tls cert for TURN server",
+				EnvVars: []string{"LIVEKIT_TURN_CERT"},
+			},
+			&cli.StringFlag{
+				Name:    "turn-key",
+				Usage:   "tls key for TURN server",
+				EnvVars: []string{"LIVEKIT_TURN_KEY"},
+			},
 		},
 		Action: startServer,
 		Commands: []*cli.Command{
