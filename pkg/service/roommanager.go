@@ -479,7 +479,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 			host = r.config.TURN.Domain
 		}
 		iceServers = append(iceServers, &livekit.ICEServer{
-			Urls:       []string{fmt.Sprintf("turn:%s:%d?transport=tcp", host, r.config.TURN.TCPPort)},
+			Urls:       []string{fmt.Sprintf("turns:%s:%d?transport=tcp", host, r.config.TURN.TCPPort)},
 			Username:   ri.Name,
 			Credential: ri.TurnPassword,
 		})
