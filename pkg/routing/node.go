@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha1"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/jxskiss/base62"
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
 
@@ -29,6 +31,11 @@ type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {
 	ip, err := GetLocalIP(conf.RTC.StunServers)
+	if err != nil {
+		logger.Errorw("could not get local IP", err)
+		// use local ip instead
+		ip, err = getLocalIPAddress()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -107,4 +114,30 @@ func HashedID(id string) string {
 	val := h.Sum(nil)
 
 	return base62.EncodeToString(val)
+}
+
+func getLocalIPAddress() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	// handle err
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+
+				ip = v.IP
+			}
+			return ip.String(), nil
+		}
+	}
+	return "", fmt.Errorf("could not find local IP address")
 }
