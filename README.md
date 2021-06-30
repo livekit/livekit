@@ -22,8 +22,9 @@ Client SDKs:
 - [Javascript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
 - [iOS - Swift](https://github.com/livekit/client-sdk-ios) ([docs](https://docs.livekit.io/client-sdk-ios/))
 - [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
+- [React](https://github.com/livekit/livekit-react)
 
-Server APIs:
+Server SDKs:
 
 - [Javascript](https://github.com/livekit/server-api-js) ([docs](https://docs.livekit.io/server-api-js/))
 - [Go](https://github.com/livekit/livekit-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/livekit-sdk-go))
@@ -94,9 +95,9 @@ the `--dev` flag turns on log verbosity to make it easier for local debugging/de
 
 ### Sample client
 
-To test your server, you can use our [sample web client](https://sample-js.livekit.io/).
+To test your server, you can use our [example web client](https://example.livekit.io/) (built with our [React component](https://github.com/livekit/livekit-react))
 
-Enter generated access token and you should be able to connect. 
+Enter generated access token and you are connected to a room! 
 
 ### Creating a JWT token
 
@@ -112,9 +113,11 @@ This token has an expiration of a month, which is useful for development & testi
 
 LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS.
 
-LiveKit is distributed, and scales by adding nodes. Server instances coordinate via Redis to ensure clients in the same room are served by the same instance. Redis is the only external dependency for a production deployment.
+See deployment docs at https://docs.livekit.io/guides/deploy
 
-See documentation at https://docs.livekit.io/guides/deploy
+## Contributing
+
+We welcome your contributions to make LiveKit better! Please join us on Slack to discuss your ideas and/or submit PRs.
 
 ## License
 
