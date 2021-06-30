@@ -138,15 +138,15 @@ func createSingleNodeServer() *service.LivekitServer {
 	conf.Development = true
 
 	currentNode, err := routing.NewLocalNode(conf)
-	currentNode.Id = utils.NewGuid(nodeId1)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("could not create local node: %v", err))
 	}
+	currentNode.Id = utils.NewGuid(nodeId1)
 
 	// local routing and store
 	router := routing.NewLocalRouter(currentNode)
 	roomStore := service.NewLocalRoomStore()
-	roomStore.DeleteRoom(testRoom)
+	_ = roomStore.DeleteRoom(testRoom)
 	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
