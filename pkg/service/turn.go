@@ -24,13 +24,16 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	if !turnConf.Enabled {
 		return nil, nil
 	}
+	if turnConf.Domain == "" {
+		return nil, errors.New("TURN domain required")
+	}
 	if turnConf.TLSPort == 0 {
 		return nil, errors.New("invalid TURN tcp port")
 	}
 
 	cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
 	if err != nil {
-		return nil, errors.Wrap(err, "tls cert required")
+		return nil, errors.Wrap(err, "TURN tls cert required")
 	}
 
 	tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort), &tls.Config{

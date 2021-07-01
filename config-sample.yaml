@@ -76,7 +76,7 @@ turn:
   enabled: false
   # needs to match tls cert domain
   domain: turn.myhost.com
-  # defaults to 3478
+  # defaults to 3478 - if not using a load balancer, this must be set to 443
   tls_port: 3478
   # optional
   # cert_file: /path/to/cert.pem
