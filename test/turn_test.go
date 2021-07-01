@@ -9,14 +9,15 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
-func TestTurnServer(t *testing.T) {
+func testTurnServer(t *testing.T) {
 	conf, err := config.NewConfig("")
 	require.NoError(t, err)
 
@@ -47,15 +48,15 @@ func TestTurnServer(t *testing.T) {
 	require.NoError(t, roomStore.CreateRoom(rm))
 
 	turnConf := &turn.ClientConfig{
-		STUNServerAddr: fmt.Sprintf("localhost:%d", conf.TURN.UDPPort),
-		TURNServerAddr: fmt.Sprintf("%s:%d", currentNode.Ip, conf.TURN.UDPPort),
+		STUNServerAddr: fmt.Sprintf("localhost:%d", conf.TURN.TLSPort),
+		TURNServerAddr: fmt.Sprintf("%s:%d", currentNode.Ip, conf.TURN.TLSPort),
 		Username:       rm.Name,
 		Password:       rm.TurnPassword,
 		Realm:          "livekit",
 	}
 
 	t.Run("TURN works over TCP", func(t *testing.T) {
-		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", conf.TURN.TCPPort))
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", conf.TURN.TLSPort))
 		require.NoError(t, err)
 
 		tc := *turnConf

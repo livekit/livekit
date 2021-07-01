@@ -480,21 +480,11 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		})
 	}
 	if r.config.TURN.Enabled {
-		if r.config.TURN.TCPPort > 0 {
-			iceServers = append(iceServers, &livekit.ICEServer{
-				Urls:       []string{fmt.Sprintf("turn:%s:%d?transport=tcp", r.currentNode.Ip, r.config.TURN.TCPPort)},
-				Username:   ri.Name,
-				Credential: ri.TurnPassword,
-			})
-		}
-
-		if r.config.TURN.UDPPort > 0 {
-			iceServers = append(iceServers, &livekit.ICEServer{
-				Urls:       []string{fmt.Sprintf("turn:%s:%d?transport=udp", r.currentNode.Ip, r.config.TURN.UDPPort)},
-				Username:   ri.Name,
-				Credential: ri.TurnPassword,
-			})
-		}
+		iceServers = append(iceServers, &livekit.ICEServer{
+			Urls:       []string{fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain)},
+			Username:   ri.Name,
+			Credential: ri.TurnPassword,
+		})
 	}
 	return iceServers
 }

@@ -65,3 +65,19 @@ keys:
 #  update_interval: 500
 #  # to prevent speaker updates from too jumpy, smooth out values over N samples
 #  smooth_samples: 5
+
+# turn server
+turn:
+  # Uses TLS. Requires cert and key pem files by either:
+  # - using turn.secretName if deploying with our helm chart, or
+  # - setting LIVEKIT_TURN_CERT and LIVEKIT_TURN_KEY env vars with file locations, or
+  # - using cert_file and key_file below
+  # defaults to false
+  enabled: false
+  # needs to match tls cert domain
+  domain: turn.myhost.com
+  # defaults to 3478 - if not using a load balancer, this must be set to 443
+  tls_port: 3478
+  # optional
+  # cert_file: /path/to/cert.pem
+  # key_file: /path/to/key.pem

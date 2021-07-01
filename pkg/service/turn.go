@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"strconv"
@@ -23,19 +24,32 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	if !turnConf.Enabled {
 		return nil, nil
 	}
+	if turnConf.Domain == "" {
+		return nil, errors.New("TURN domain required")
+	}
+	if turnConf.TLSPort == 0 {
+		return nil, errors.New("invalid TURN tcp port")
+	}
+
+	cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "TURN tls cert required")
+	}
+
+	tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort), &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+	}
+
 	serverConfig := turn.ServerConfig{
 		Realm:       livekitRealm,
 		AuthHandler: newTurnAuthHandler(roomStore),
-	}
-
-	if turnConf.TCPPort > 0 {
-		tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TCPPort))
-		if err != nil {
-			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-		}
-		serverConfig.ListenerConfigs = []turn.ListenerConfig{
+		ListenerConfigs: []turn.ListenerConfig{
 			{
-				Listener: tcpListener,
+				Listener: tlsListener,
 				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 					RelayAddress: net.ParseIP(node.Ip),
 					Address:      "0.0.0.0",
@@ -44,31 +58,11 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 					MaxRetries:   allocateRetries,
 				},
 			},
-		}
-	}
-
-	if turnConf.UDPPort > 0 {
-		udpListener, err := net.ListenPacket("udp4", "0.0.0.0:"+strconv.Itoa(turnConf.UDPPort))
-		if err != nil {
-			return nil, errors.Wrap(err, "could not listen on TURN UDP port")
-		}
-		serverConfig.PacketConnConfigs = []turn.PacketConnConfig{
-			{
-				PacketConn: udpListener,
-				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-					RelayAddress: net.ParseIP(node.Ip), // Claim that we are listening on IP passed by user (This should be your Public IP)
-					Address:      "0.0.0.0",            // But actually be listening on every interface
-					MinPort:      turnConf.PortRangeStart,
-					MaxPort:      turnConf.PortRangeEnd,
-					MaxRetries:   allocateRetries,
-				},
-			},
-		}
+		},
 	}
 
 	logger.Infow("Starting TURN server",
-		"TCP port", turnConf.TCPPort,
-		"UDP port", turnConf.UDPPort,
+		"TCP port", turnConf.TLSPort,
 		"portRange", fmt.Sprintf("%d-%d", turnConf.PortRangeStart, turnConf.PortRangeEnd))
 	return turn.NewServer(serverConfig)
 }
