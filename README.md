@@ -27,7 +27,7 @@ Client SDKs:
 Server SDKs:
 
 - [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-api-js/))
-- [Go](https://github.com/livekit/livekit-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/livekit-sdk-go))
+- [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
 
 ## Installing
 
