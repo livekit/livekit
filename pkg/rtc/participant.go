@@ -38,6 +38,7 @@ type ParticipantParams struct {
 	ProtocolVersion types.ProtocolVersion
 	Stats           *RoomStatsReporter
 	ThrottleConfig  config.PLIThrottleConfig
+	EnabledCodecs   []*livekit.Codec
 }
 
 type ParticipantImpl struct {
@@ -102,9 +103,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	var err error
 	p.publisher, err = NewPCTransport(TransportParams{
-		Target: livekit.SignalTarget_PUBLISHER,
-		Config: params.Config,
-		Stats:  p.params.Stats,
+		Target:        livekit.SignalTarget_PUBLISHER,
+		Config:        params.Config,
+		Stats:         p.params.Stats,
+		EnabledCodecs: p.params.EnabledCodecs,
 	})
 	if err != nil {
 		return nil, err

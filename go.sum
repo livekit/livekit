@@ -236,6 +236,8 @@ github.com/livekit/pion-webrtc/v3 v3.0.30 h1:2RomVfztLegWIePXcyPFJDiF5pbT64aIX4R
 github.com/livekit/pion-webrtc/v3 v3.0.30/go.mod h1:XFQeLYBf++bWWA0sJqh6zF1ouWluosxwTOMOoTZGaD0=
 github.com/livekit/protocol v0.5.4 h1:OFOOahFXGOusgd8X1Ucnl8H/sxa3DzwSrnmKNIUOu/0=
 github.com/livekit/protocol v0.5.4/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
+github.com/livekit/protocol v0.5.5 h1:ZsfmTpaApf2o75qpJLP2f/FsCOwxW2sDJE3HKDa2OXE=
+github.com/livekit/protocol v0.5.5/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/lucsky/cuid v1.0.2 h1:z4XlExeoderxoPj2/dxKOyPxe9RCOu7yNq9/XWxIUMQ=
 github.com/lucsky/cuid v1.0.2/go.mod h1:QaaJqckboimOmhRSJXSx/+IT+VTfxfPGSo/6mfgUfmE=
 github.com/lyft/protoc-gen-validate v0.0.13/go.mod h1:XbGvPuh87YZc5TdIa2/I4pLk0QoUACkjt2znoq26NVQ=

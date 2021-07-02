@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mitchellh/go-homedir"
+	"github.com/pion/webrtc/v3"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	RTC            RTCConfig         `yaml:"rtc"`
 	Redis          RedisConfig       `yaml:"redis"`
 	Audio          AudioConfig       `yaml:"audio"`
+	Room           RoomConfig        `yaml:"room"`
 	TURN           TURNConfig        `yaml:"turn"`
 	KeyFile        string            `yaml:"key_file"`
 	Keys           map[string]string `yaml:"keys"`
@@ -69,14 +71,23 @@ type RedisConfig struct {
 	DB       int    `yaml:"db"`
 }
 
+type RoomConfig struct {
+	EnabledCodecs   []CodecSpec `yaml:"enabled_codecs"`
+	MaxParticipants uint32      `yaml:"max_participants"`
+	EmptyTimeout    uint32      `yaml:"empty_timeout"`
+}
+
+type CodecSpec struct {
+	Mime     string `yaml:"mime"`
+	FmtpLine string `yaml:"fmtp_line"`
+}
+
 type TURNConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	Domain         string `yaml:"domain"`
-	CertFile       string `yaml:"cert_file"`
-	KeyFile        string `yaml:"key_file"`
-	TLSPort        int    `yaml:"tls_port"`
-	PortRangeStart uint16 `yaml:"port_range_start"`
-	PortRangeEnd   uint16 `yaml:"port_range_end"`
+	Enabled  bool   `yaml:"enabled"`
+	Domain   string `yaml:"domain"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	TLSPort  int    `yaml:"tls_port"`
 }
 
 func NewConfig(confString string) (*Config, error) {
@@ -103,21 +114,29 @@ func NewConfig(confString string) (*Config, error) {
 		},
 		Audio: AudioConfig{
 			ActiveLevel:    40,
-			MinPercentile:  15,
+			MinPercentile:  40,
 			UpdateInterval: 500,
-			SmoothSamples:  5,
+			SmoothSamples:  8,
 		},
 		Redis: RedisConfig{},
+		Room: RoomConfig{
+			// by default only enable opus and VP8
+			EnabledCodecs: []CodecSpec{
+				{Mime: webrtc.MimeTypeOpus},
+				{Mime: webrtc.MimeTypeVP8},
+				//{Mime: webrtc.MimeTypeH264},
+				//{Mime: webrtc.MimeTypeVP9},
+			},
+			EmptyTimeout: 5 * 60,
+		},
 		TURN: TURNConfig{
-			Enabled:        false,
-			TLSPort:        3478,
-			PortRangeStart: 12000,
-			PortRangeEnd:   14000,
+			Enabled: false,
+			TLSPort: 3478,
 		},
 		Keys: map[string]string{},
 	}
 	if confString != "" {
-		yaml.Unmarshal([]byte(confString), conf)
+		_ = yaml.Unmarshal([]byte(confString), conf)
 	}
 	return conf, nil
 }

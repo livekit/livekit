@@ -39,16 +39,17 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Target livekit.SignalTarget
-	Config *WebRTCConfig
-	Stats  *RoomStatsReporter
+	Target        livekit.SignalTarget
+	Config        *WebRTCConfig
+	Stats         *RoomStatsReporter
+	EnabledCodecs []*livekit.Codec
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	var me *webrtc.MediaEngine
 	var err error
 	if params.Target == livekit.SignalTarget_PUBLISHER {
-		me, err = createPubMediaEngine()
+		me, err = createPubMediaEngine(params.EnabledCodecs)
 	} else {
 		me, err = createSubMediaEngine()
 	}

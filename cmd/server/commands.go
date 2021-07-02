@@ -40,7 +40,6 @@ func printPorts(c *cli.Context) error {
 	}
 
 	if conf.TURN.Enabled {
-		udpPorts = append(udpPorts, fmt.Sprintf("%d-%d", conf.TURN.PortRangeStart, conf.TURN.PortRangeEnd))
 		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.TLSPort))
 	}
 

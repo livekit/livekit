@@ -52,7 +52,7 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
-// it'll also monitor its state, and cleans it up when appropriate
+// it'll also monitor fits state, and cleans it up when appropriate
 func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
 	// find existing room and update it
 	rm, err := r.roomStore.GetRoom(req.Name)
@@ -63,6 +63,7 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 			CreationTime: time.Now().Unix(),
 			TurnPassword: utils.RandomSecret(),
 		}
+		applyDefaultRoomConfig(rm, &r.config.Room)
 	} else if err != nil {
 		return nil, err
 	}
@@ -268,6 +269,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 		ProtocolVersion: pv,
 		Stats:           room.GetStatsReporter(),
 		ThrottleConfig:  r.config.RTC.PLIThrottle,
+		EnabledCodecs:   room.Room.EnabledCodecs,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)
@@ -487,4 +489,15 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		})
 	}
 	return iceServers
+}
+
+func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
+	room.EmptyTimeout = conf.EmptyTimeout
+	room.MaxParticipants = conf.MaxParticipants
+	for _, codec := range conf.EnabledCodecs {
+		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
+			Mime:     codec.Mime,
+			FmtpLine: codec.FmtpLine,
+		})
+	}
 }

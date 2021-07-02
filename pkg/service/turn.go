@@ -2,7 +2,6 @@ package service
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net"
 	"strconv"
 
@@ -15,7 +14,9 @@ import (
 )
 
 const (
-	allocateRetries = 1000
+	allocateRetries = 50
+	turnMinPort     = 1024
+	turnMaxPort     = 30000
 	livekitRealm    = "livekit"
 )
 
@@ -53,8 +54,8 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
 					RelayAddress: net.ParseIP(node.Ip),
 					Address:      "0.0.0.0",
-					MinPort:      turnConf.PortRangeStart,
-					MaxPort:      turnConf.PortRangeEnd,
+					MinPort:      turnMinPort,
+					MaxPort:      turnMaxPort,
 					MaxRetries:   allocateRetries,
 				},
 			},
@@ -62,8 +63,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	}
 
 	logger.Infow("Starting TURN server",
-		"TCP port", turnConf.TLSPort,
-		"portRange", fmt.Sprintf("%d-%d", turnConf.PortRangeStart, turnConf.PortRangeEnd))
+		"TLS port", turnConf.TLSPort)
 	return turn.NewServer(serverConfig)
 }
 

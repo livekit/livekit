@@ -1,6 +1,9 @@
 package rtc
 
 import (
+	"strings"
+
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 )
@@ -9,13 +12,16 @@ const (
 	frameMarking = "urn:ietf:params:rtp-hdrext:framemarking"
 )
 
-func createPubMediaEngine() (*webrtc.MediaEngine, error) {
+func createPubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) {
 	me := &webrtc.MediaEngine{}
-	if err := me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil},
-		PayloadType:        111,
-	}, webrtc.RTPCodecTypeAudio); err != nil {
-		return nil, err
+	opusCodec := webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil}
+	if isCodecEnabled(codecs, opusCodec) {
+		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: opusCodec,
+			PayloadType:        111,
+		}, webrtc.RTPCodecTypeAudio); err != nil {
+			return nil, err
+		}
 	}
 
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
@@ -57,8 +63,10 @@ func createPubMediaEngine() (*webrtc.MediaEngine, error) {
 			PayloadType:        123,
 		},
 	} {
-		if err := me.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
-			return nil, err
+		if isCodecEnabled(codecs, codec.RTPCodecCapability) {
+			if err := me.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -88,4 +96,16 @@ func createPubMediaEngine() (*webrtc.MediaEngine, error) {
 func createSubMediaEngine() (*webrtc.MediaEngine, error) {
 	me := &webrtc.MediaEngine{}
 	return me, nil
+}
+
+func isCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool {
+	for _, codec := range codecs {
+		if !strings.EqualFold(codec.Mime, cap.MimeType) {
+			continue
+		}
+		if codec.FmtpLine == "" || strings.EqualFold(codec.FmtpLine, cap.SDPFmtpLine) {
+			return true
+		}
+	}
+	return false
 }

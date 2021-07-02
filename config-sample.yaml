@@ -52,6 +52,21 @@ keys:
   key1: secret1
   key2: secret2
 
+# Default room config
+# Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
+# precedence over defaults
+#room:
+#  # number of seconds to leave a room open when it's empty
+#  empty_timeout: 300
+#  # limit number of participants that can be in a room, 0 for no limit
+#  max_participants: 0
+#  # only accept specific codecs for clients publishing to this room
+#  # this is useful to standardize codecs across clients
+#  # other supported codecs are video/h264, video/vp9
+#  enabled_codecs:
+#    - mime: audio/opus
+#    - mime: video/vp8
+
 # customize audio level sensitivity
 #audio:
 #  # minimum level to be considered active, 0-127, where 0 is loudest
@@ -59,12 +74,12 @@ keys:
 #  active_level: 40
 #  # percentile to measure, a participant is considered active if it has exceeded the
 #  # ActiveLevel more than MinPercentile% of the time
-#  # defaults to 15
-#  min_percentile: 15
+#  # defaults to 40
+#  min_percentile: 40
 #  # frequency in ms to notify changes to clients, defaults to 500
 #  update_interval: 500
 #  # to prevent speaker updates from too jumpy, smooth out values over N samples
-#  smooth_samples: 5
+#  smooth_samples: 8
 
 # turn server
 turn:
