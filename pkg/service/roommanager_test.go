@@ -19,7 +19,7 @@ func TestCreateRoom(t *testing.T) {
 		room, err := manager.CreateRoom(&livekit.CreateRoomRequest{Name: "myroom"})
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
-		require.Len(t, room.EnabledCodecs, 4)
+		require.NotEmpty(t, room.EnabledCodecs)
 	})
 }
 
