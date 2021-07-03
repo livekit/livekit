@@ -5,17 +5,17 @@ LiveKit is an open source project that provides scalable, multi-user conferencin
 ## Features
 
 - Horizontally scalable WebRTC Selective Forwarding Unit (SFU)
-- Modern, full-featured [client SDKs](references/client-sdks.md) for JS, iOS, Android
-- Built for production - JWT authentication and [server APIs](references/server-apis.md)
+- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, iOS, Android
+- Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
 - Robust networking & connectivity, over UDP & TCP
 - Easy to deploy, a single binary and only three ports to forward.
-- Advanced features - simulcasting, selective subscription, moderation APIs.
+- Advanced features - speaker detection, simulcasting, selective subscription, moderation APIs.
 
 ## Documentation & Guides
 
 Docs & Guides at: https://docs.livekit.io
 
-## SDKs & APIs
+## SDKs & Tools
 
 Client SDKs:
 
@@ -28,6 +28,11 @@ Server SDKs:
 
 - [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
 - [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
+
+Tools:
+
+- [livekit-cli](https://github.com/livekit/livekit-cli)
+- [chrometester](https://github.com/livekit/chrometester)
 
 ## Installing
 
