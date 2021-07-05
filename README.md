@@ -15,6 +15,10 @@ LiveKit is an open source project that provides scalable, multi-user conferencin
 
 Docs & Guides at: https://docs.livekit.io
 
+## Try it live
+
+Head to [our playground](https://livekit.io/playground) and give it a spin. Build a Zoom-like conferencing app in under 100 lines of code!
+
 ## SDKs & Tools
 
 Client SDKs:
@@ -55,14 +59,14 @@ mage
 
 ### Docker
 
-LiveKit is published to Docker Hub under livekit/livekit-server
+LiveKit is published to Docker Hub under [livekit/livekit-server](https://hub.docker.com/r/livekit/livekit-server)
 
 ## Running
 
 ### Creating API keys
 
 LiveKit utilizes JWT based access tokens for authentication to all of its APIs.
-Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens. For more, see [Access Tokens](https://docs.livekit.io/guides/access-tokens).
+Because of this, the server needs a list of valid API keys and secrets to validate the provided tokens. For more, see [Access Tokens guide](https://docs.livekit.io/guides/access-tokens).
 
 Generate API key/secret pairs with:
 
@@ -100,7 +104,8 @@ the `--dev` flag turns on log verbosity to make it easier for local debugging/de
 
 ### Sample client
 
-To test your server, you can use our [example web client](https://example.livekit.io/) (built with our [React component](https://github.com/livekit/livekit-react))
+To test your server, you can use our [example web client](https://example.livekit.io/) 
+(built with our [React component](https://github.com/livekit/livekit-react))
 
 Enter generated access token and you are connected to a room! 
 
@@ -122,7 +127,7 @@ See deployment docs at https://docs.livekit.io/guides/deploy
 
 ## Contributing
 
-We welcome your contributions to make LiveKit better! Please join us on Slack to discuss your ideas and/or submit PRs.
+We welcome your contributions to make LiveKit better! Please join us [on Slack](https://join.slack.com/t/livekit-users/shared_invite/zt-rrdy5abr-5pZ1wW8pXEkiQxBzFiXPUg) to discuss your ideas and/or submit PRs.
 
 ## License
 
