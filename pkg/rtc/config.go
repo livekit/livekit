@@ -65,7 +65,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	var udpMuxConn *net.UDPConn
 	var err error
 
-	if rtcConf.UDPPort != 0 {
+	if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
+		if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
+			return nil, err
+		}
+	} else if rtcConf.UDPPort != 0 {
 		udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
 			Port: int(rtcConf.UDPPort),
 		})
@@ -91,10 +95,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 					logger.Debugw("UDP receive buffer size", "current", val)
 				}
 			}
-		}
-	} else if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
-		if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
-			return nil, err
 		}
 	}
 

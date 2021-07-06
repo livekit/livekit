@@ -97,9 +97,9 @@ func NewConfig(confString string) (*Config, error) {
 		RTC: RTCConfig{
 			UseExternalIP:     false,
 			TCPPort:           7881,
-			UDPPort:           7882,
-			ICEPortRangeStart: 0,
-			ICEPortRangeEnd:   0,
+			UDPPort:           0,
+			ICEPortRangeStart: 50000,
+			ICEPortRangeEnd:   60000,
 			StunServers: []string{
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",
