@@ -262,11 +262,11 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		return auth.NewFileBasedKeyProviderFromReader(f)
 	}
 
-	if conf.Keys != nil {
-		return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
+	if len(conf.Keys) == 0 {
+		return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
 	}
 
-	return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+	return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 }
 
 func getConfigString(c *cli.Context) (string, error) {
