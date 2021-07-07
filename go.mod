@@ -31,7 +31,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/thoas/go-funk v0.8.0
-	github.com/twitchtv/twirp v8.0.0+incompatible
+	github.com/twitchtv/twirp v8.1.0+incompatible
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/multierr v1.6.0 // indirect
@@ -39,7 +39,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf // indirect
 	golang.org/x/sys v0.0.0-20210601080250-7ecdf8ef093b // indirect
 	golang.org/x/tools v0.1.2 // indirect
-	google.golang.org/protobuf v1.26.0
+	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
