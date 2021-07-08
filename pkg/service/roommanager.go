@@ -245,6 +245,19 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 			// we need to clean up the existing participant, so a new one can join
 			room.RemoveParticipant(participant.Identity())
 		}
+	} else if pi.Reconnect {
+		// send leave request if participant is trying to reconnect but missing from the room
+		if err = responseSink.WriteMessage(&livekit.SignalRequest{
+			Message: &livekit.SignalRequest_Leave{
+				Leave: &livekit.LeaveRequest{
+					CanReconnect: true,
+				},
+			},
+		}); err != nil {
+			logger.Warnw("could not restart participant", err,
+				"participant", pi.Identity)
+		}
+		return
 	}
 
 	logger.Debugw("starting RTC session",
