@@ -131,7 +131,7 @@ func (p *RedisRoomStore) LockRoom(name string, duration time.Duration) (string, 
 	key := RoomLockPrefix + name
 
 	startTime := time.Now()
-	for time.Now().Sub(startTime) < duration {
+	for {
 		locked, err := p.rc.SetNX(p.ctx, key, token, duration).Result()
 		if err != nil {
 			return "", err
@@ -139,6 +139,12 @@ func (p *RedisRoomStore) LockRoom(name string, duration time.Duration) (string, 
 		if locked {
 			return token, nil
 		}
+
+		// stop waiting past lock duration
+		if time.Now().Sub(startTime) > duration {
+			break
+		}
+
 		time.Sleep(100 * time.Millisecond)
 	}
 

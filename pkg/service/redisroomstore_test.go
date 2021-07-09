@@ -87,10 +87,21 @@ func TestRoomLock(t *testing.T) {
 		}()
 
 		// release after 2 ms
-		time.Sleep(2)
+		time.Sleep(2 * time.Millisecond)
 		atomic.StoreUint32(&unlocked, 1)
 		rs.UnlockRoom(roomName, token)
 
 		wg.Wait()
+	})
+
+	t.Run("lock expires", func(t *testing.T) {
+		token, err := rs.LockRoom(roomName, lockInterval)
+		require.NoError(t, err)
+		defer rs.UnlockRoom(roomName, token)
+
+		time.Sleep(lockInterval + time.Millisecond)
+		token2, err := rs.LockRoom(roomName, lockInterval)
+		require.NoError(t, err)
+		rs.UnlockRoom(roomName, token2)
 	})
 }
