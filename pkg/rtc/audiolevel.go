@@ -64,7 +64,7 @@ func (l *AudioLevel) Observe(level uint8) {
 // returns current audio level, 0 (loudest) to 127 (silent)
 func (l *AudioLevel) GetLevel() (uint8, bool) {
 	level := uint8(atomic.LoadUint32(&l.currentLevel))
-	active := level < l.levelThreshold
+	active := level != silentAudioLevel
 	return level, active
 }
 
