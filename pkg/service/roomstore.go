@@ -1,6 +1,8 @@
 package service
 
 import (
+	"time"
+
 	livekit "github.com/livekit/livekit-server/proto"
 )
 
@@ -14,6 +16,11 @@ type RoomStore interface {
 	GetRoom(idOrName string) (*livekit.Room, error)
 	ListRooms() ([]*livekit.Room, error)
 	DeleteRoom(idOrName string) error
+
+	// enable locking on a specific room to prevent race
+	// returns a (lock uuid, error)
+	LockRoom(name string, duration time.Duration) (string, error)
+	UnlockRoom(name string, uid string) error
 
 	PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error
 	GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)

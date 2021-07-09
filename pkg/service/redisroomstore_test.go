@@ -1,18 +1,17 @@
 package service_test
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/service"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParticipantPersisence(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
-		return
-	}
+func TestParticipantPersistence(t *testing.T) {
 	rs := service.NewRedisRoomStore(redisClient())
 
 	roomName := "room1"
@@ -56,4 +55,42 @@ func TestParticipantPersisence(t *testing.T) {
 	// shouldn't be able to get it
 	_, err = rs.GetParticipant(roomName, p.Identity)
 	require.Equal(t, err, service.ErrParticipantNotFound)
+}
+
+func TestRoomLock(t *testing.T) {
+	rs := service.NewRedisRoomStore(redisClient())
+	lockInterval := 5 * time.Millisecond
+	roomName := "myroom"
+
+	t.Run("normal locking", func(t *testing.T) {
+		token, err := rs.LockRoom(roomName, lockInterval)
+		require.NoError(t, err)
+		require.NotEmpty(t, token)
+		require.NoError(t, rs.UnlockRoom(roomName, token))
+	})
+
+	t.Run("waits before acquiring lock", func(t *testing.T) {
+		token, err := rs.LockRoom(roomName, lockInterval)
+		require.NoError(t, err)
+		require.NotEmpty(t, token)
+		unlocked := uint32(0)
+		wg := sync.WaitGroup{}
+
+		wg.Add(1)
+		go func() {
+			// attempt to lock again
+			defer wg.Done()
+			token2, err := rs.LockRoom(roomName, lockInterval)
+			require.NoError(t, err)
+			defer rs.UnlockRoom(roomName, token2)
+			require.Equal(t, uint32(1), atomic.LoadUint32(&unlocked))
+		}()
+
+		// release after 2 ms
+		time.Sleep(2)
+		atomic.StoreUint32(&unlocked, 1)
+		rs.UnlockRoom(roomName, token)
+
+		wg.Wait()
+	})
 }

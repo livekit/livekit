@@ -3,6 +3,7 @@ package servicefakes
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/service"
 	livekit "github.com/livekit/livekit-server/proto"
@@ -95,6 +96,20 @@ type FakeRoomStore struct {
 		result1 []*livekit.Room
 		result2 error
 	}
+	LockRoomStub        func(string, time.Duration) (string, error)
+	lockRoomMutex       sync.RWMutex
+	lockRoomArgsForCall []struct {
+		arg1 string
+		arg2 time.Duration
+	}
+	lockRoomReturns struct {
+		result1 string
+		result2 error
+	}
+	lockRoomReturnsOnCall map[int]struct {
+		result1 string
+		result2 error
+	}
 	PersistParticipantStub        func(string, *livekit.ParticipantInfo) error
 	persistParticipantMutex       sync.RWMutex
 	persistParticipantArgsForCall []struct {
@@ -105,6 +120,18 @@ type FakeRoomStore struct {
 		result1 error
 	}
 	persistParticipantReturnsOnCall map[int]struct {
+		result1 error
+	}
+	UnlockRoomStub        func(string, string) error
+	unlockRoomMutex       sync.RWMutex
+	unlockRoomArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	unlockRoomReturns struct {
+		result1 error
+	}
+	unlockRoomReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
@@ -544,6 +571,71 @@ func (fake *FakeRoomStore) ListRoomsReturnsOnCall(i int, result1 []*livekit.Room
 	}{result1, result2}
 }
 
+func (fake *FakeRoomStore) LockRoom(arg1 string, arg2 time.Duration) (string, error) {
+	fake.lockRoomMutex.Lock()
+	ret, specificReturn := fake.lockRoomReturnsOnCall[len(fake.lockRoomArgsForCall)]
+	fake.lockRoomArgsForCall = append(fake.lockRoomArgsForCall, struct {
+		arg1 string
+		arg2 time.Duration
+	}{arg1, arg2})
+	stub := fake.LockRoomStub
+	fakeReturns := fake.lockRoomReturns
+	fake.recordInvocation("LockRoom", []interface{}{arg1, arg2})
+	fake.lockRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeRoomStore) LockRoomCallCount() int {
+	fake.lockRoomMutex.RLock()
+	defer fake.lockRoomMutex.RUnlock()
+	return len(fake.lockRoomArgsForCall)
+}
+
+func (fake *FakeRoomStore) LockRoomCalls(stub func(string, time.Duration) (string, error)) {
+	fake.lockRoomMutex.Lock()
+	defer fake.lockRoomMutex.Unlock()
+	fake.LockRoomStub = stub
+}
+
+func (fake *FakeRoomStore) LockRoomArgsForCall(i int) (string, time.Duration) {
+	fake.lockRoomMutex.RLock()
+	defer fake.lockRoomMutex.RUnlock()
+	argsForCall := fake.lockRoomArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) LockRoomReturns(result1 string, result2 error) {
+	fake.lockRoomMutex.Lock()
+	defer fake.lockRoomMutex.Unlock()
+	fake.LockRoomStub = nil
+	fake.lockRoomReturns = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRoomStore) LockRoomReturnsOnCall(i int, result1 string, result2 error) {
+	fake.lockRoomMutex.Lock()
+	defer fake.lockRoomMutex.Unlock()
+	fake.LockRoomStub = nil
+	if fake.lockRoomReturnsOnCall == nil {
+		fake.lockRoomReturnsOnCall = make(map[int]struct {
+			result1 string
+			result2 error
+		})
+	}
+	fake.lockRoomReturnsOnCall[i] = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeRoomStore) PersistParticipant(arg1 string, arg2 *livekit.ParticipantInfo) error {
 	fake.persistParticipantMutex.Lock()
 	ret, specificReturn := fake.persistParticipantReturnsOnCall[len(fake.persistParticipantArgsForCall)]
@@ -606,6 +698,68 @@ func (fake *FakeRoomStore) PersistParticipantReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
+func (fake *FakeRoomStore) UnlockRoom(arg1 string, arg2 string) error {
+	fake.unlockRoomMutex.Lock()
+	ret, specificReturn := fake.unlockRoomReturnsOnCall[len(fake.unlockRoomArgsForCall)]
+	fake.unlockRoomArgsForCall = append(fake.unlockRoomArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.UnlockRoomStub
+	fakeReturns := fake.unlockRoomReturns
+	fake.recordInvocation("UnlockRoom", []interface{}{arg1, arg2})
+	fake.unlockRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) UnlockRoomCallCount() int {
+	fake.unlockRoomMutex.RLock()
+	defer fake.unlockRoomMutex.RUnlock()
+	return len(fake.unlockRoomArgsForCall)
+}
+
+func (fake *FakeRoomStore) UnlockRoomCalls(stub func(string, string) error) {
+	fake.unlockRoomMutex.Lock()
+	defer fake.unlockRoomMutex.Unlock()
+	fake.UnlockRoomStub = stub
+}
+
+func (fake *FakeRoomStore) UnlockRoomArgsForCall(i int) (string, string) {
+	fake.unlockRoomMutex.RLock()
+	defer fake.unlockRoomMutex.RUnlock()
+	argsForCall := fake.unlockRoomArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) UnlockRoomReturns(result1 error) {
+	fake.unlockRoomMutex.Lock()
+	defer fake.unlockRoomMutex.Unlock()
+	fake.UnlockRoomStub = nil
+	fake.unlockRoomReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) UnlockRoomReturnsOnCall(i int, result1 error) {
+	fake.unlockRoomMutex.Lock()
+	defer fake.unlockRoomMutex.Unlock()
+	fake.UnlockRoomStub = nil
+	if fake.unlockRoomReturnsOnCall == nil {
+		fake.unlockRoomReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.unlockRoomReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -623,8 +777,12 @@ func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	defer fake.listParticipantsMutex.RUnlock()
 	fake.listRoomsMutex.RLock()
 	defer fake.listRoomsMutex.RUnlock()
+	fake.lockRoomMutex.RLock()
+	defer fake.lockRoomMutex.RUnlock()
 	fake.persistParticipantMutex.RLock()
 	defer fake.persistParticipantMutex.RUnlock()
+	fake.unlockRoomMutex.RLock()
+	defer fake.unlockRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

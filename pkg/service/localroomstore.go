@@ -16,6 +16,7 @@ type LocalRoomStore struct {
 	// map of roomName => { identity: participant }
 	participants map[string]map[string]*livekit.ParticipantInfo
 	lock         sync.RWMutex
+	globalLock   sync.Mutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
@@ -77,6 +78,17 @@ func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
 	delete(p.participants, room.Name)
 	delete(p.roomIds, room.Name)
 	delete(p.rooms, room.Sid)
+	return nil
+}
+
+func (p *LocalRoomStore) LockRoom(name string, duration time.Duration) (string, error) {
+	// local rooms lock & unlock globally
+	p.globalLock.Lock()
+	return "", nil
+}
+
+func (p *LocalRoomStore) UnlockRoom(name string, uid string) error {
+	p.globalLock.Unlock()
 	return nil
 }
 
