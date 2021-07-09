@@ -23,7 +23,6 @@ type TrackWriter struct {
 	track    *webrtc.TrackLocalStaticSample
 	filePath string
 	mime     string
-	done     chan bool
 
 	ogg       *oggreader.OggReader
 	ivfheader *ivfreader.IVFFileHeader
@@ -39,7 +38,6 @@ func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, f
 		track:    track,
 		filePath: filePath,
 		mime:     track.Codec().MimeType,
-		done:     make(chan bool),
 	}
 }
 

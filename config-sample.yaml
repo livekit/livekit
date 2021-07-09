@@ -76,8 +76,8 @@ keys:
 # customize audio level sensitivity
 #audio:
 #  # minimum level to be considered active, 0-127, where 0 is loudest
-#  # defaults to 40
-#  active_level: 40
+#  # defaults to 30
+#  active_level: 30
 #  # percentile to measure, a participant is considered active if it has exceeded the
 #  # ActiveLevel more than MinPercentile% of the time
 #  # defaults to 40
@@ -85,7 +85,7 @@ keys:
 #  # frequency in ms to notify changes to clients, defaults to 500
 #  update_interval: 500
 #  # to prevent speaker updates from too jumpy, smooth out values over N samples
-#  smooth_samples: 8
+#  smooth_intervals: 4
 
 # turn server
 #turn:
