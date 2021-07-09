@@ -338,7 +338,7 @@ func TestActiveSpeakers(t *testing.T) {
 	})
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothSamples: 3})
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothIntervals: 3})
 		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeParticipant)
@@ -355,7 +355,7 @@ func TestActiveSpeakers(t *testing.T) {
 			if len(lastSpeakers) == 0 {
 				return false
 			}
-			if lastSpeakers[0].Level < convertedLevel/2 {
+			if lastSpeakers[0].Level > convertedLevel {
 				return true
 			}
 			return false
@@ -370,7 +370,7 @@ func TestActiveSpeakers(t *testing.T) {
 			if len(lastSpeakers) == 0 {
 				return false
 			}
-			if lastSpeakers[0].Level > convertedLevel*0.99 {
+			if lastSpeakers[0].Level > convertedLevel {
 				return true
 			}
 			return false
@@ -456,9 +456,9 @@ func TestDataChannel(t *testing.T) {
 }
 
 type testRoomOpts struct {
-	num                int
-	protocol           types.ProtocolVersion
-	audioSmoothSamples uint32
+	num                  int
+	protocol             types.ProtocolVersion
+	audioSmoothIntervals uint32
 }
 
 func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
@@ -473,8 +473,8 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 			},
 		},
 		&config.AudioConfig{
-			UpdateInterval: audioUpdateInterval,
-			SmoothSamples:  opts.audioSmoothSamples,
+			UpdateInterval:  audioUpdateInterval,
+			SmoothIntervals: opts.audioSmoothIntervals,
 		},
 	)
 	for i := 0; i < opts.num; i++ {

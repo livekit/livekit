@@ -110,7 +110,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	done := make(chan bool, 1)
+	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
 		logger.Infow("WS connection closed", "participant", pi.Identity, "connectionId", connId)

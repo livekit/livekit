@@ -51,7 +51,7 @@ type Participant interface {
 	SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SetTrackMuted(trackId string, muted bool)
-	GetAudioLevel() (level uint8, noisy bool)
+	GetAudioLevel() (level uint8, active bool)
 
 	// permissions
 

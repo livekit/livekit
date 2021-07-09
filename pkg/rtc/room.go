@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,7 @@ import (
 const (
 	DefaultEmptyTimeout       = 5 * 60 // 5m
 	DefaultRoomDepartureGrace = 20
+	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
 )
 
 type Room struct {
@@ -39,8 +41,7 @@ type Room struct {
 	isClosed utils.AtomicFlag
 
 	// for active speaker updates
-	audioConfig        *config.AudioConfig
-	lastActiveSpeakers []*livekit.SpeakerInfo
+	audioConfig *config.AudioConfig
 
 	statsReporter *RoomStatsReporter
 
@@ -507,41 +508,49 @@ func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 }
 
 func (r *Room) audioUpdateWorker() {
-	smoothValues := make(map[string]float32)
-	smoothSamples := float32(r.audioConfig.SmoothSamples)
-	activeThreshold := float32(0.5)
+	var smoothValues map[string]float32
+	var smoothFactor float32
+	var activeThreshold float32
+	if ss := r.audioConfig.SmoothIntervals; ss > 1 {
+		smoothValues = make(map[string]float32)
+		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
+		smoothFactor = 2 / float32(ss+1)
+		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
+	}
 
+	var lastActiveSpeakers []*livekit.SpeakerInfo
 	for {
 		if r.isClosed.Get() {
 			return
 		}
 
 		speakers := r.GetActiveSpeakers()
-		if smoothSamples > 1 {
-			seenSids := make(map[string]bool)
+		if smoothValues != nil {
 			for _, speaker := range speakers {
-				smoothValues[speaker.Sid] += (speaker.Level - smoothValues[speaker.Sid]) / smoothSamples
-				speaker.Level = smoothValues[speaker.Sid]
-				seenSids[speaker.Sid] = true
+				sid := speaker.Sid
+				level := smoothValues[sid]
+				delete(smoothValues, sid)
+				// exponential moving average (EMA)
+				level += (speaker.Level - level) * smoothFactor
+				speaker.Level = level
 			}
 
 			// ensure that previous active speakers are also included
 			for sid, level := range smoothValues {
-				if seenSids[sid] {
-					continue
-				}
-				level += (0 - level) / smoothSamples
-				smoothValues[sid] = level
-
+				delete(smoothValues, sid)
+				level += -level * smoothFactor
 				if level > activeThreshold {
 					speakers = append(speakers, &livekit.SpeakerInfo{
 						Sid:    sid,
 						Level:  level,
 						Active: true,
 					})
-				} else {
-					delete(smoothValues, sid)
 				}
+			}
+
+			// smoothValues map is drained, now repopulate it back
+			for _, speaker := range speakers {
+				smoothValues[speaker.Sid] = speaker.Level
 			}
 
 			sort.Slice(speakers, func(i, j int) bool {
@@ -549,10 +558,15 @@ func (r *Room) audioUpdateWorker() {
 			})
 		}
 
+		const invAudioLevelQuantization = 1.0 / AudioLevelQuantization
+		for _, speaker := range speakers {
+			speaker.Level = float32(math.Ceil(float64(speaker.Level*AudioLevelQuantization)) * invAudioLevelQuantization)
+		}
+
 		// see if an update is needed
-		if len(speakers) == len(r.lastActiveSpeakers) {
+		if len(speakers) == len(lastActiveSpeakers) {
 			for i, speaker := range speakers {
-				if speaker.Sid != r.lastActiveSpeakers[i].Sid || speaker.Level != r.lastActiveSpeakers[i].Level {
+				if speaker.Level != lastActiveSpeakers[i].Level || speaker.Sid != lastActiveSpeakers[i].Sid {
 					r.sendSpeakerUpdates(speakers)
 					break
 				}
@@ -561,7 +575,7 @@ func (r *Room) audioUpdateWorker() {
 			r.sendSpeakerUpdates(speakers)
 		}
 
-		r.lastActiveSpeakers = speakers
+		lastActiveSpeakers = speakers
 
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
 	}

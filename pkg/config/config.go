@@ -60,8 +60,8 @@ type AudioConfig struct {
 	// interval to update clients, in ms
 	UpdateInterval uint32 `yaml:"update_interval"`
 	// smoothing for audioLevel values sent to the client.
-	// audioLevel will be an average of `smooth_samples`, 0 to disable
-	SmoothSamples uint32 `yaml:"smooth_samples"`
+	// audioLevel will be an average of `smooth_intervals`, 0 to disable
+	SmoothIntervals uint32 `yaml:"smooth_intervals"`
 }
 
 type RedisConfig struct {
@@ -113,10 +113,10 @@ func NewConfig(confString string) (*Config, error) {
 			},
 		},
 		Audio: AudioConfig{
-			ActiveLevel:    40,
-			MinPercentile:  40,
-			UpdateInterval: 500,
-			SmoothSamples:  8,
+			ActiveLevel:     30, // -30dBov = 0.03
+			MinPercentile:   40,
+			UpdateInterval:  500,
+			SmoothIntervals: 4,
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{

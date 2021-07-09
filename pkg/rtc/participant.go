@@ -553,7 +553,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	}
 }
 
-func (p *ParticipantImpl) GetAudioLevel() (level uint8, noisy bool) {
+func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	level = silentAudioLevel
@@ -562,9 +562,9 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, noisy bool) {
 			if mt.audioLevel == nil {
 				continue
 			}
-			tl, tn := mt.audioLevel.GetLevel()
-			if tn {
-				noisy = true
+			tl, ta := mt.audioLevel.GetLevel()
+			if ta {
+				active = true
 				if tl < level {
 					level = tl
 				}

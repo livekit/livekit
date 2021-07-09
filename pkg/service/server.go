@@ -34,7 +34,7 @@ type LivekitServer struct {
 	turnServer  *turn.Server
 	currentNode routing.LocalNode
 	running     utils.AtomicFlag
-	doneChan    chan bool
+	doneChan    chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -126,7 +126,7 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	s.doneChan = make(chan bool, 1)
+	s.doneChan = make(chan struct{})
 
 	// ensure we could listen
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
