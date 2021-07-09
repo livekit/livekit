@@ -964,3 +964,54 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 		}
 	}
 }
+
+func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
+	info := map[string]interface{}{
+		"ID":    p.id,
+		"State": p.State(),
+	}
+
+	publishedTrackInfo := make([]map[string]interface{}, 0)
+	subscribedTrackInfo := make([][]map[string]interface{}, 0)
+	pendingTrackInfo := make([]map[string]interface{}, 0)
+
+	p.lock.RLock()
+	for _, track := range p.publishedTracks {
+		if mt, ok := track.(*MediaTrack); ok {
+			publishedTrackInfo = append(publishedTrackInfo, mt.DebugInfo())
+		} else {
+			publishedTrackInfo = append(publishedTrackInfo, map[string]interface{}{
+				"Name":  track.Name(),
+				"ID":    track.ID(),
+				"Kind":  track.Kind(),
+				"Muted": track.IsMuted(),
+			})
+		}
+	}
+
+	for _, tracks := range p.subscribedTracks {
+		trackInfo := make([]map[string]interface{}, 0, len(tracks))
+		for _, track := range tracks {
+			trackInfo = append(trackInfo, map[string]interface{}{
+				"Muted":     track.IsMuted(),
+				"DownTrack": track.DownTrack().DebugInfo(),
+			})
+		}
+		subscribedTrackInfo = append(subscribedTrackInfo, trackInfo)
+	}
+
+	for _, track := range p.pendingTracks {
+		pendingTrackInfo = append(pendingTrackInfo, map[string]interface{}{
+			"Name": track.Name,
+			"Sid":  track.Sid,
+			"Type": track.Type,
+		})
+	}
+	p.lock.RUnlock()
+
+	info["PublishedTracks"] = publishedTrackInfo
+	info["SubscribedTracks"] = subscribedTrackInfo
+	info["PendingTracks"] = pendingTrackInfo
+
+	return info
+}

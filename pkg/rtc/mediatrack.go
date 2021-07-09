@@ -373,3 +373,31 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 		}
 	}()
 }
+
+func (t *MediaTrack) DebugInfo() map[string]interface{} {
+	info := map[string]interface{}{
+		"Name":  t.name,
+		"ID":    t.ID(),
+		"SSRC":  t.ssrc,
+		"Kind":  t.kind,
+		"Muted": t.muted.Get(),
+	}
+
+	subscribedTrackInfo := make([]map[string]interface{}, 0)
+	t.lock.RLock()
+	for _, track := range t.subscribedTracks {
+		subscribedTrackInfo = append(subscribedTrackInfo, map[string]interface{}{
+			"PubMuted":  track.pubMuted.Get(),
+			"SubMuted":  track.subMuted.Get(),
+			"DownTrack": track.dt.DebugInfo(),
+		})
+	}
+	t.lock.RUnlock()
+	info["SubscribedTracks"] = subscribedTrackInfo
+
+	if t.receiver != nil {
+		info["Receiver"] = t.receiver.DebugInfo()
+	}
+
+	return info
+}

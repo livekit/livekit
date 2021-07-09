@@ -78,6 +78,8 @@ type Participant interface {
 	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
 	UpdateAfterActive() bool
+
+	DebugInfo() map[string]interface{}
 }
 
 // PublishedTrack is the main interface representing a track published to the room
