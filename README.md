@@ -97,7 +97,7 @@ In development mode, LiveKit has no external dependencies. With the key file rea
 or
 
 ```shell
-docker run --rm -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server --dev
+docker run --rm -p 7880:7880 -p 7881:7881 -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server --dev
 ```
 
 the `--dev` flag turns on log verbosity to make it easier for local debugging/development
