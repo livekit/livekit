@@ -190,7 +190,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	participant.OnDataPacket(r.onDataPacket)
 	logger.Infow("new participant joined",
 		"id", participant.ID(),
-		"identity", participant.Identity(),
+		"participant", participant.Identity(),
 		"roomId", r.Room.Sid)
 
 	r.participants[participant.Identity()] = participant

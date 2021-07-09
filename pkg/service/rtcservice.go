@@ -131,7 +131,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"connectionId", connId,
 		"room", rm.Sid,
 		"roomName", rm.Name,
-		"name", pi.Identity,
+		"participant", pi.Identity,
 	)
 
 	// handle responses
