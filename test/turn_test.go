@@ -18,7 +18,7 @@ import (
 )
 
 func testTurnServer(t *testing.T) {
-	conf, err := config.NewConfig("")
+	conf, err := config.NewConfig("", nil)
 	require.NoError(t, err)
 
 	conf.TURN.Enabled = true

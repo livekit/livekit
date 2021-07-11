@@ -27,7 +27,7 @@ func newTestRoomManager(t *testing.T) (*service.RoomManager, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.GetRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
-	conf, err := config.NewConfig("")
+	conf, err := config.NewConfig("", nil)
 	require.NoError(t, err)
 	selector := &routing.RandomSelector{}
 	node, err := routing.NewLocalNode(conf)

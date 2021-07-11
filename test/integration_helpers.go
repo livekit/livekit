@@ -49,7 +49,9 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
 	s := createSingleNodeServer()
 	go func() {
-		s.Start()
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
 	}()
 
 	waitForServerToStart(s)
@@ -131,7 +133,7 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 
 func createSingleNodeServer() *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("")
+	conf, err := config.NewConfig("", nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
@@ -158,7 +160,7 @@ func createSingleNodeServer() *service.LivekitServer {
 
 func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig("")
+	conf, err := config.NewConfig("", nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}

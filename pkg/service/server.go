@@ -35,6 +35,7 @@ type LivekitServer struct {
 	currentNode routing.LocalNode
 	running     utils.AtomicFlag
 	doneChan    chan struct{}
+	closedChan  chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -55,6 +56,7 @@ func NewLivekitServer(conf *config.Config,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
+		closedChan:  make(chan struct{}),
 	}
 
 	middlewares := []negroni.Handler{
@@ -147,7 +149,8 @@ func (s *LivekitServer) Start() error {
 	go func() {
 		values := []interface{}{
 			"address", s.httpServer.Addr,
-			"nodeId", s.currentNode.Id,
+			"node", s.currentNode.Id,
+			"nodeIP", s.currentNode.Ip,
 			"version", version.Version,
 		}
 		if s.config.RTC.TCPPort != 0 {
@@ -195,6 +198,7 @@ func (s *LivekitServer) Start() error {
 
 	s.roomManager.Stop()
 
+	close(s.closedChan)
 	return nil
 }
 
@@ -204,8 +208,10 @@ func (s *LivekitServer) Stop() {
 	}
 
 	s.router.Stop()
-	s.roomManager.Stop()
 	close(s.doneChan)
+
+	// wait for fully closed
+	<-s.closedChan
 }
 
 func (s *LivekitServer) RoomManager() *RoomManager {

@@ -7,7 +7,7 @@ import (
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
-	conf, err := NewConfig("")
+	conf, err := NewConfig("", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, conf.unmarshalKeys("key1: secret1"))

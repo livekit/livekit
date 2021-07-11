@@ -160,7 +160,7 @@ func TestCorrectJoinedAt(t *testing.T) {
 }
 
 func newParticipantForTest(identity string) *ParticipantImpl {
-	conf, _ := config.NewConfig("")
+	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0
 	conf.RTC.TCPPort = 0

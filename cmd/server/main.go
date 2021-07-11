@@ -54,6 +54,11 @@ func main() {
 				EnvVars: []string{"LIVEKIT_KEYS"},
 			},
 			&cli.StringFlag{
+				Name:    "node-ip",
+				Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
+				EnvVars: []string{"NODE_IP"},
+			},
+			&cli.StringFlag{
 				Name:    "redis-host",
 				Usage:   "host (incl. port) to redis server",
 				EnvVars: []string{"REDIS_HOST"},
@@ -130,15 +135,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	conf, err := config.NewConfig(confString)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = conf.UpdateFromCLI(c); err != nil {
-		return nil, err
-	}
-	return conf, nil
+	return config.NewConfig(confString, c)
 }
 
 func startServer(c *cli.Context) error {
@@ -177,8 +174,8 @@ func startServer(c *cli.Context) error {
 			defer func() {
 				// run memory profile at termination
 				runtime.GC()
-				pprof.WriteHeapProfile(f)
-				f.Close()
+				_ = pprof.WriteHeapProfile(f)
+				_ = f.Close()
 			}()
 		}
 	}
