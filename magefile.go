@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/build"
 	"io/ioutil"
@@ -168,38 +169,13 @@ func Docker() error {
 func PublishDocker() error {
 	mg.Deps(Docker)
 
+	// don't publish snapshot versions as latest or minor version
+	if !strings.Contains(version.Version, "SNAPSHOT") {
+		return errors.New("Cannot publish non-snapshot versions")
+	}
+
 	versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
 	cmd := exec.Command("docker", "push", versionImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// don't publish snapshot versions as latest or minor version
-	if strings.Contains(version.Version, "SNAPSHOT") {
-		return nil
-	}
-
-	idx := strings.LastIndex(version.Version, ".")
-	minorImg := fmt.Sprintf("%s:v%s", imageName, version.Version[:idx])
-	cmd = exec.Command("docker", "tag", versionImg, minorImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	cmd = exec.Command("docker", "push", minorImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	latestImg := fmt.Sprintf("%s:latest", imageName)
-	cmd = exec.Command("docker", "tag", versionImg, latestImg)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	cmd = exec.Command("docker", "push", latestImg)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
