@@ -46,7 +46,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	loggerFactory := logging.NewDefaultLoggerFactory()
 	lkLogger := loggerFactory.NewLogger("livekit-mux")
 
-	if rtcConf.UseExternalIP && externalIP != "" {
+	if externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
 

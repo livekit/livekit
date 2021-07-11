@@ -1,11 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +32,7 @@ type RTCConfig struct {
 	TCPPort           uint32 `yaml:"tcp_port"`
 	ICEPortRangeStart uint32 `yaml:"port_range_start"`
 	ICEPortRangeEnd   uint32 `yaml:"port_range_end"`
+	NodeIP            string `yaml:"node_ip"`
 	// for testing, disable UDP
 	ForceTCP      bool     `yaml:"force_tcp"`
 	StunServers   []string `yaml:"stun_servers"`
@@ -90,7 +93,7 @@ type TURNConfig struct {
 	TLSPort  int    `yaml:"tls_port"`
 }
 
-func NewConfig(confString string) (*Config, error) {
+func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	// start with defaults
 	conf := &Config{
 		Port: 7880,
@@ -98,8 +101,8 @@ func NewConfig(confString string) (*Config, error) {
 			UseExternalIP:     false,
 			TCPPort:           7881,
 			UDPPort:           0,
-			ICEPortRangeStart: 50000,
-			ICEPortRangeEnd:   60000,
+			ICEPortRangeStart: 0,
+			ICEPortRangeEnd:   0,
 			StunServers: []string{
 				"stun.l.google.com:19302",
 				"stun1.l.google.com:19302",
@@ -136,7 +139,39 @@ func NewConfig(confString string) (*Config, error) {
 		Keys: map[string]string{},
 	}
 	if confString != "" {
-		_ = yaml.Unmarshal([]byte(confString), conf)
+		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
+			return nil, fmt.Errorf("could not parse config: %v", err)
+		}
+	}
+
+	if c != nil {
+		if err := conf.updateFromCLI(c); err != nil {
+			return nil, err
+		}
+	}
+
+	// expand env vars in filenames
+	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
+	if err != nil {
+		return nil, err
+	}
+	conf.KeyFile = file
+
+	// set defaults for ports if none are set
+	if conf.RTC.UDPPort == 0 && conf.RTC.ICEPortRangeStart == 0 {
+		if conf.Development {
+			conf.RTC.UDPPort = 7882
+		} else {
+			conf.RTC.ICEPortRangeStart = 50000
+			conf.RTC.ICEPortRangeEnd = 60000
+		}
+	}
+
+	if conf.RTC.NodeIP == "" {
+		conf.RTC.NodeIP, err = conf.determineIP()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return conf, nil
 }
@@ -145,7 +180,7 @@ func (conf *Config) HasRedis() bool {
 	return conf.Redis.Address != ""
 }
 
-func (conf *Config) UpdateFromCLI(c *cli.Context) error {
+func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("dev") {
 		conf.Development = c.Bool("dev")
 	}
@@ -154,7 +189,7 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 	}
 	if c.IsSet("keys") {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
-			return err
+			return errors.New("Could not parse keys, it needs to be \"key: secret\", one per line")
 		}
 	}
 	if c.IsSet("redis-host") {
@@ -169,12 +204,9 @@ func (conf *Config) UpdateFromCLI(c *cli.Context) error {
 	if c.IsSet("turn-key") {
 		conf.TURN.KeyFile = c.String("turn-key")
 	}
-	// expand env vars in filenames
-	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
-	if err != nil {
-		return err
+	if c.IsSet("node-ip") {
+		conf.RTC.NodeIP = c.String("node-ip")
 	}
-	conf.KeyFile = file
 
 	return nil
 }
