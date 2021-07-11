@@ -91,16 +91,23 @@ APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
 In development mode, LiveKit has no external dependencies. With the key file ready, you can start LiveKit with
 
 ```shell
-./bin/livekit-server --key-file <path/to/keyfile> --dev
+LIVEKIT_KEYS="<key>: <secret>" ./bin/livekit-server --dev
 ```
 
 or
 
 ```shell
-docker run --rm -p 7880:7880 -p 7881:7881 -e LIVEKIT_KEYS="<key>: <secret>" livekit/livekit-server --dev
+docker run --rm \
+  -p 7880:7880 \
+  -p 7881:7881 \
+  -p 7882:7882/udp \
+  -e LIVEKIT_KEYS="<key>: <secret>" \
+  livekit/livekit-server \
+  --dev \
+  --node-ip=<machine-ip>
 ```
 
-the `--dev` flag turns on log verbosity to make it easier for local debugging/development
+The `--dev` flag turns on log verbosity to make it easier for local debugging/development
 
 ### Sample client
 
