@@ -106,12 +106,12 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	t.lock.RUnlock()
 }
 
-func (t *MediaTrack) SetSimulcastLayers(layers []uint32) {
+func (t *MediaTrack) SetSimulcastLayers(layers []livekit.VideoQuality) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	if t.receiver != nil {
-		layers16 := funk.Map(layers, func(l uint32) uint16 {
-			return uint16(l)
+		layers16 := funk.Map(layers, func(l livekit.VideoQuality) uint16 {
+			return uint16(spatialLayerForQuality(l))
 		}).([]uint16)
 		t.receiver.SetAvailableLayers(layers16)
 	}
