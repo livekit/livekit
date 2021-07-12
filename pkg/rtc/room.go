@@ -589,9 +589,9 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	}
 
 	participants := r.GetParticipants()
-	participantInfo := make([]map[string]interface{}, 0, len(participants))
+	participantInfo := make(map[string]interface{})
 	for _, p := range participants {
-		participantInfo = append(participantInfo, p.DebugInfo())
+		participantInfo[p.Identity()] = p.DebugInfo()
 	}
 	info["Participants"] = participantInfo
 

@@ -379,7 +379,7 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 		"Name":  t.name,
 		"ID":    t.ID(),
 		"SSRC":  t.ssrc,
-		"Kind":  t.kind,
+		"Kind":  t.kind.String(),
 		"Muted": t.muted.Get(),
 	}
 

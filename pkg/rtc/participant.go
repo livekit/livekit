@@ -968,28 +968,27 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":    p.id,
-		"State": p.State(),
+		"State": p.State().String(),
 	}
 
-	publishedTrackInfo := make([]map[string]interface{}, 0)
-	subscribedTrackInfo := make([][]map[string]interface{}, 0)
-	pendingTrackInfo := make([]map[string]interface{}, 0)
+	publishedTrackInfo := make(map[string]interface{})
+	subscribedTrackInfo := make(map[string]interface{})
+	pendingTrackInfo := make(map[string]interface{})
 
 	p.lock.RLock()
-	for _, track := range p.publishedTracks {
+	for trackID, track := range p.publishedTracks {
 		if mt, ok := track.(*MediaTrack); ok {
-			publishedTrackInfo = append(publishedTrackInfo, mt.DebugInfo())
+			publishedTrackInfo[trackID] = mt.DebugInfo()
 		} else {
-			publishedTrackInfo = append(publishedTrackInfo, map[string]interface{}{
-				"Name":  track.Name(),
+			publishedTrackInfo[trackID] = map[string]interface{}{
 				"ID":    track.ID(),
-				"Kind":  track.Kind(),
+				"Kind":  track.Kind().String(),
 				"Muted": track.IsMuted(),
-			})
+			}
 		}
 	}
 
-	for _, tracks := range p.subscribedTracks {
+	for pubID, tracks := range p.subscribedTracks {
 		trackInfo := make([]map[string]interface{}, 0, len(tracks))
 		for _, track := range tracks {
 			trackInfo = append(trackInfo, map[string]interface{}{
@@ -997,15 +996,15 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 				"DownTrack": track.DownTrack().DebugInfo(),
 			})
 		}
-		subscribedTrackInfo = append(subscribedTrackInfo, trackInfo)
+		subscribedTrackInfo[pubID] = trackInfo
 	}
 
-	for _, track := range p.pendingTracks {
-		pendingTrackInfo = append(pendingTrackInfo, map[string]interface{}{
-			"Name": track.Name,
-			"Sid":  track.Sid,
-			"Type": track.Type,
-		})
+	for clientID, track := range p.pendingTracks {
+		pendingTrackInfo[clientID] = map[string]interface{}{
+			"Sid":       track.Sid,
+			"Type":      track.Type.String(),
+			"Simulcast": track.Simulcast,
+		}
 	}
 	p.lock.RUnlock()
 
