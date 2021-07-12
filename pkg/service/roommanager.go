@@ -54,6 +54,14 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor fits state, and cleans it up when appropriate
 func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
+	token, err := r.roomStore.LockRoom(req.Name, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = r.roomStore.UnlockRoom(req.Name, token)
+	}()
+
 	// find existing room and update it
 	rm, err := r.roomStore.GetRoom(req.Name)
 	if err == ErrRoomNotFound {

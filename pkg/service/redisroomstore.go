@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
@@ -22,7 +23,8 @@ const (
 	// a key for each room, with expiration
 	RoomParticipantsPrefix = "room_participants:"
 
-	participantMappingTTL = 24 * time.Hour
+	// RoomLockPrefix is a simple key containing a provided lock uid
+	RoomLockPrefix = "room_lock:"
 )
 
 type RedisRoomStore struct {
@@ -122,6 +124,48 @@ func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
 
 	_, err = pp.Exec(p.ctx)
 	return err
+}
+
+func (p *RedisRoomStore) LockRoom(name string, duration time.Duration) (string, error) {
+	token := utils.NewGuid("LOCK")
+	key := RoomLockPrefix + name
+
+	startTime := time.Now()
+	for {
+		locked, err := p.rc.SetNX(p.ctx, key, token, duration).Result()
+		if err != nil {
+			return "", err
+		}
+		if locked {
+			return token, nil
+		}
+
+		// stop waiting past lock duration
+		if time.Now().Sub(startTime) > duration {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return "", ErrRoomLockFailed
+}
+
+func (p *RedisRoomStore) UnlockRoom(name string, uid string) error {
+	key := RoomLockPrefix + name
+
+	val, err := p.rc.Get(p.ctx, key).Result()
+	if err == redis.Nil {
+		// already unlocked
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if val != uid {
+		return ErrRoomUnlockFailed
+	}
+	return p.rc.Del(p.ctx, key).Err()
 }
 
 func (p *RedisRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
