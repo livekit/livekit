@@ -92,6 +92,7 @@ type PublishedTrack interface {
 	Name() string
 	IsMuted() bool
 	SetMuted(muted bool)
+	SetSimulcastLayers(layers []uint32)
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool

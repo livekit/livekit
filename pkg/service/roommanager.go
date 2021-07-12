@@ -442,6 +442,16 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 				}
 			case *livekit.SignalRequest_Leave:
 				_ = participant.Close()
+			case *livekit.SignalRequest_Simulcast:
+				for _, track := range participant.GetPublishedTracks() {
+					if track.ID() == msg.Simulcast.TrackSid {
+						logger.Debugw("updating simulcast layers",
+							"participant", participant.Identity(),
+							"track", track.ID(),
+							"layers", msg.Simulcast.Layers)
+						track.SetSimulcastLayers(msg.Simulcast.Layers)
+					}
+				}
 			}
 		}
 	}

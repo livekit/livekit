@@ -12,6 +12,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
+	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -103,6 +104,17 @@ func (t *MediaTrack) SetMuted(muted bool) {
 		st.SetPublisherMuted(muted)
 	}
 	t.lock.RUnlock()
+}
+
+func (t *MediaTrack) SetSimulcastLayers(layers []uint32) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	if t.receiver != nil {
+		layers16 := funk.Map(layers, func(l uint32) uint16 {
+			return uint16(l)
+		}).([]uint16)
+		t.receiver.SetAvailableLayers(layers16)
+	}
 }
 
 func (t *MediaTrack) OnClose(f func()) {
