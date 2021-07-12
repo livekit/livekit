@@ -88,7 +88,8 @@ APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
 
 ### Starting the server
 
-In development mode, LiveKit has no external dependencies. With the key file ready, you can start LiveKit with
+In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the keys it should use in `LIVEKIT_KEYS`.
+LiveKit could also use a [config file](config-sample.yaml) or config environment variable `LIVEKIT_CONFIG`
 
 ```shell
 LIVEKIT_KEYS="<key>: <secret>" ./bin/livekit-server --dev
@@ -107,14 +108,9 @@ docker run --rm \
   --node-ip=<machine-ip>
 ```
 
+When running with docker, `--node-ip` needs to be set to your machine's local IP address.
+
 The `--dev` flag turns on log verbosity to make it easier for local debugging/development
-
-### Sample client
-
-To test your server, you can use our [example web client](https://example.livekit.io/) 
-(built with our [React component](https://github.com/livekit/livekit-react))
-
-Enter generated access token and you are connected to a room! 
 
 ### Creating a JWT token
 
@@ -125,6 +121,12 @@ This token has an expiration of a month, which is useful for development & testi
 ./bin/livekit-server --key-file <path/to/keyfile> create-join-token --room "myroom" --identity "myidentity"
 ```
 
+### Sample client
+
+To test your server, you can use our [example web client](https://example.livekit.io/) 
+(built with our [React component](https://github.com/livekit/livekit-react))
+
+Enter generated access token and you are connected to a room! 
 
 ## Deploying for production
 
