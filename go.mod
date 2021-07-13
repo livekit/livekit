@@ -43,4 +43,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
-replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.1
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.2

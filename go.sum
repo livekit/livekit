@@ -230,8 +230,8 @@ github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-b
 github.com/lightstep/lightstep-tracer-go v0.18.1/go.mod h1:jlF1pusYV4pidLvZ+XD0UBX0ZE6WURAspgAczcDHrL4=
 github.com/lithammer/shortuuid/v3 v3.0.6 h1:pr15YQyvhiSX/qPxncFtqk+v4xLEpOZObbsY/mKrcvA=
 github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
-github.com/livekit/ion-sfu v1.20.1 h1:TjHvflxWT3HJ0PGaQr27fm9/T8XcyvRey9cLgyIPc5I=
-github.com/livekit/ion-sfu v1.20.1/go.mod h1:Wx6b4qGUjvSo1kGl+/fHl0ZF48g2IJOjzUFg0yCo9qY=
+github.com/livekit/ion-sfu v1.20.2 h1:fIvKl2biQUbIdVPgWgGaMXo8e3s9E9ActCvD5lSlVJo=
+github.com/livekit/ion-sfu v1.20.2/go.mod h1:Wx6b4qGUjvSo1kGl+/fHl0ZF48g2IJOjzUFg0yCo9qY=
 github.com/livekit/protocol v0.5.6 h1:vMUjYvJH2TD/WIjrXtG6aQl5fFrIj0/ZgIctQqmmwro=
 github.com/livekit/protocol v0.5.6/go.mod h1:wo3CGfYB7XMF8GoVJAfTARrYSP/ombi+sbLl6AYdKP0=
 github.com/lucsky/cuid v1.0.2 h1:z4XlExeoderxoPj2/dxKOyPxe9RCOu7yNq9/XWxIUMQ=
