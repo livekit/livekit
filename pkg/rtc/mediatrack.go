@@ -376,7 +376,6 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 
 func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
-		"Name":  t.name,
 		"ID":    t.ID(),
 		"SSRC":  t.ssrc,
 		"Kind":  t.kind.String(),
