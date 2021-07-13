@@ -385,11 +385,10 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	t.lock.RLock()
 	for _, track := range t.subscribedTracks {
-		subscribedTrackInfo = append(subscribedTrackInfo, map[string]interface{}{
-			"PubMuted":  track.pubMuted.Get(),
-			"SubMuted":  track.subMuted.Get(),
-			"DownTrack": track.dt.DebugInfo(),
-		})
+		dt := track.dt.DebugInfo()
+		dt["PubMuted"] = track.pubMuted.Get()
+		dt["SubMuted"] = track.subMuted.Get()
+		subscribedTrackInfo = append(subscribedTrackInfo, dt)
 	}
 	t.lock.RUnlock()
 	info["DownTracks"] = subscribedTrackInfo

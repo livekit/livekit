@@ -981,9 +981,9 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 			publishedTrackInfo[trackID] = mt.DebugInfo()
 		} else {
 			publishedTrackInfo[trackID] = map[string]interface{}{
-				"ID":    track.ID(),
-				"Kind":  track.Kind().String(),
-				"Muted": track.IsMuted(),
+				"ID":       track.ID(),
+				"Kind":     track.Kind().String(),
+				"PubMuted": track.IsMuted(),
 			}
 		}
 	}
@@ -991,10 +991,9 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	for pubID, tracks := range p.subscribedTracks {
 		trackInfo := make([]map[string]interface{}, 0, len(tracks))
 		for _, track := range tracks {
-			trackInfo = append(trackInfo, map[string]interface{}{
-				"Muted":     track.IsMuted(),
-				"DownTrack": track.DownTrack().DebugInfo(),
-			})
+			dt := track.DownTrack().DebugInfo()
+			dt["SubMuted"] = track.IsMuted()
+			trackInfo = append(trackInfo, dt)
 		}
 		subscribedTrackInfo[pubID] = trackInfo
 	}
