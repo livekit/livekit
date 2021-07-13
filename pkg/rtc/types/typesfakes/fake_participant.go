@@ -89,6 +89,16 @@ type FakeParticipant struct {
 	connectedAtReturnsOnCall map[int]struct {
 		result1 time.Time
 	}
+	DebugInfoStub        func() map[string]interface{}
+	debugInfoMutex       sync.RWMutex
+	debugInfoArgsForCall []struct {
+	}
+	debugInfoReturns struct {
+		result1 map[string]interface{}
+	}
+	debugInfoReturnsOnCall map[int]struct {
+		result1 map[string]interface{}
+	}
 	GetAudioLevelStub        func() (uint8, bool)
 	getAudioLevelMutex       sync.RWMutex
 	getAudioLevelArgsForCall []struct {
@@ -785,6 +795,59 @@ func (fake *FakeParticipant) ConnectedAtReturnsOnCall(i int, result1 time.Time) 
 	}
 	fake.connectedAtReturnsOnCall[i] = struct {
 		result1 time.Time
+	}{result1}
+}
+
+func (fake *FakeParticipant) DebugInfo() map[string]interface{} {
+	fake.debugInfoMutex.Lock()
+	ret, specificReturn := fake.debugInfoReturnsOnCall[len(fake.debugInfoArgsForCall)]
+	fake.debugInfoArgsForCall = append(fake.debugInfoArgsForCall, struct {
+	}{})
+	stub := fake.DebugInfoStub
+	fakeReturns := fake.debugInfoReturns
+	fake.recordInvocation("DebugInfo", []interface{}{})
+	fake.debugInfoMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) DebugInfoCallCount() int {
+	fake.debugInfoMutex.RLock()
+	defer fake.debugInfoMutex.RUnlock()
+	return len(fake.debugInfoArgsForCall)
+}
+
+func (fake *FakeParticipant) DebugInfoCalls(stub func() map[string]interface{}) {
+	fake.debugInfoMutex.Lock()
+	defer fake.debugInfoMutex.Unlock()
+	fake.DebugInfoStub = stub
+}
+
+func (fake *FakeParticipant) DebugInfoReturns(result1 map[string]interface{}) {
+	fake.debugInfoMutex.Lock()
+	defer fake.debugInfoMutex.Unlock()
+	fake.DebugInfoStub = nil
+	fake.debugInfoReturns = struct {
+		result1 map[string]interface{}
+	}{result1}
+}
+
+func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]interface{}) {
+	fake.debugInfoMutex.Lock()
+	defer fake.debugInfoMutex.Unlock()
+	fake.DebugInfoStub = nil
+	if fake.debugInfoReturnsOnCall == nil {
+		fake.debugInfoReturnsOnCall = make(map[int]struct {
+			result1 map[string]interface{}
+		})
+	}
+	fake.debugInfoReturnsOnCall[i] = struct {
+		result1 map[string]interface{}
 	}{result1}
 }
 
@@ -2430,6 +2493,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
 	defer fake.connectedAtMutex.RUnlock()
+	fake.debugInfoMutex.RLock()
+	defer fake.debugInfoMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()

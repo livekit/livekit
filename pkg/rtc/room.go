@@ -580,3 +580,20 @@ func (r *Room) audioUpdateWorker() {
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
 	}
 }
+
+func (r *Room) DebugInfo() map[string]interface{} {
+	info := map[string]interface{}{
+		"Name":      r.Room.Name,
+		"Sid":       r.Room.Sid,
+		"CreatedAt": r.Room.CreationTime,
+	}
+
+	participants := r.GetParticipants()
+	participantInfo := make(map[string]interface{})
+	for _, p := range participants {
+		participantInfo[p.Identity()] = p.DebugInfo()
+	}
+	info["Participants"] = participantInfo
+
+	return info
+}

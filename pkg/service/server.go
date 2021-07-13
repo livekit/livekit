@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -73,6 +74,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/", s.healthCheck)
 	if conf.Development {
 		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
+		mux.HandleFunc("/debug/rooms", s.debugInfo)
 	}
 
 	s.httpServer = &http.Server{
@@ -220,6 +222,23 @@ func (s *LivekitServer) RoomManager() *RoomManager {
 
 func (s *LivekitServer) debugGoroutines(w http.ResponseWriter, r *http.Request) {
 	_ = pprof.Lookup("goroutine").WriteTo(w, 2)
+}
+
+func (s *LivekitServer) debugInfo(w http.ResponseWriter, r *http.Request) {
+	s.roomManager.lock.RLock()
+	info := make([]map[string]interface{}, 0, len(s.roomManager.rooms))
+	for _, room := range s.roomManager.rooms {
+		info = append(info, room.DebugInfo())
+	}
+	s.roomManager.lock.RUnlock()
+
+	b, err := json.Marshal(info)
+	if err != nil {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(err.Error()))
+	} else {
+		_, _ = w.Write(b)
+	}
 }
 
 func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
