@@ -376,10 +376,10 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 
 func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
-		"ID":    t.ID(),
-		"SSRC":  t.ssrc,
-		"Kind":  t.kind.String(),
-		"Muted": t.muted.Get(),
+		"ID":       t.ID(),
+		"SSRC":     t.ssrc,
+		"Kind":     t.kind.String(),
+		"PubMuted": t.muted.Get(),
 	}
 
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
@@ -392,10 +392,13 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 		})
 	}
 	t.lock.RUnlock()
-	info["SubscribedTracks"] = subscribedTrackInfo
+	info["DownTracks"] = subscribedTrackInfo
 
 	if t.receiver != nil {
-		info["Receiver"] = t.receiver.DebugInfo()
+		receiverInfo := t.receiver.DebugInfo()
+		for k, v := range receiverInfo {
+			info[k] = v
+		}
 	}
 
 	return info
