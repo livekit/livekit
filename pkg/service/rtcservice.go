@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -126,6 +127,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sigConn := NewWSSignalConnection(conn)
+	if types.ProtocolVersion(pi.ProtocolVersion).SupportsProtobuf() {
+		sigConn.useJSON = false
+	}
 
 	logger.Infow("new client WS connected",
 		"connectionId", connId,
