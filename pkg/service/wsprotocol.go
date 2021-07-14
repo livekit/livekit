@@ -45,10 +45,12 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, error) {
 		msg := &livekit.SignalRequest{}
 		switch messageType {
 		case websocket.BinaryMessage:
-			c.mu.Lock()
-			// switch to protobuf if client supports it
-			c.useJSON = false
-			c.mu.Unlock()
+			if c.useJSON {
+				c.mu.Lock()
+				// switch to protobuf if client supports it
+				c.useJSON = false
+				c.mu.Unlock()
+			}
 			// protobuf encoded
 			err := proto.Unmarshal(payload, msg)
 			return msg, err
