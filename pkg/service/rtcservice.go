@@ -45,7 +45,6 @@ func NewRTCService(conf *config.Config, roomManager *RoomManager, router routing
 
 func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _, code, err := s.validate(r)
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if err != nil {
 		handleError(w, code, err.Error())
 		return
@@ -54,6 +53,17 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit, int, error) {
+	claims := GetGrants(r.Context())
+	// require a claim
+	if claims == nil || claims.Video == nil {
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+	}
+
+	onlyName, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
+	}
+
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
 	protocolParam := r.FormValue("protocol")
@@ -61,10 +71,8 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	// plan b does not work fully at the moment.
 	planBParam := r.FormValue("planb")
 
-	claims := GetGrants(r.Context())
-	// require a claim
-	if claims == nil || claims.Video == nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+	if onlyName != "" {
+		roomName = onlyName
 	}
 
 	pi := routing.ParticipantInit{
@@ -87,15 +95,6 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 			CanSubscribe: claims.Video.CanSubscribe,
 			CanPublish:   claims.Video.CanPublish,
 		}
-	}
-
-	onlyName, err := EnsureJoinPermission(r.Context())
-	if err != nil {
-		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
-	}
-
-	if onlyName != "" {
-		roomName = onlyName
 	}
 
 	return roomName, pi, http.StatusOK, nil

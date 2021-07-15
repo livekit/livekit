@@ -34,6 +34,10 @@ func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
 }
 
 func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if r.URL.Path == "/rtc/validate" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+
 	authHeader := r.Header.Get(authorizationHeader)
 	var authToken string
 
