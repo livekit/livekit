@@ -22,7 +22,7 @@ func GetLogger() *zap.Logger {
 }
 
 // valid levels: debug, info, warn, error, fatal, panic
-func initLogger(config zap.Config, level string) {
+func InitLogger(config zap.Config, level string, opts ...zap.Option) {
 	if level != "" {
 		lvl := zapcore.Level(0)
 		if err := lvl.UnmarshalText([]byte(level)); err == nil {
@@ -30,21 +30,21 @@ func initLogger(config zap.Config, level string) {
 		}
 	}
 	// skip one level to remove this helper file
-	l, _ := config.Build(zap.AddCallerSkip(1))
+	l, _ := config.Build(append(opts, zap.AddCallerSkip(1))...)
 	wrappedLogger = l.Sugar()
 
-	defaultLogger, _ = config.Build()
+	defaultLogger, _ = config.Build(opts...)
 	ionLogger := zapr.NewLogger(defaultLogger)
 	sfu.Logger = ionLogger
 	buffer.Logger = ionLogger
 }
 
 func InitProduction(logLevel string) {
-	initLogger(zap.NewProductionConfig(), logLevel)
+	InitLogger(zap.NewProductionConfig(), logLevel)
 }
 
 func InitDevelopment(logLevel string) {
-	initLogger(zap.NewDevelopmentConfig(), logLevel)
+	InitLogger(zap.NewDevelopmentConfig(), logLevel)
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {
