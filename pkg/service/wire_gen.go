@@ -22,7 +22,7 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomSto
 	if err != nil {
 		return nil, err
 	}
-	rtcService := NewRTCService(conf, roomStore, roomManager, router, currentNode)
+	rtcService := NewRTCService(conf, roomManager, router, currentNode)
 	server, err := NewTurnServer(conf, roomStore, currentNode)
 	if err != nil {
 		return nil, err

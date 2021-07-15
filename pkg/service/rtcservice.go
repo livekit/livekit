@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	livekit "github.com/livekit/livekit-server/proto"
 )
 
@@ -25,7 +25,7 @@ type RTCService struct {
 	isDev       bool
 }
 
-func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomManager, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, roomManager *RoomManager, router routing.Router, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:      router,
 		roomManager: roomManager,
@@ -43,13 +43,17 @@ func NewRTCService(conf *config.Config, roomStore RoomStore, roomManager *RoomMa
 	return s
 }
 
-func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// reject non websocket requests
-	if !websocket.IsWebSocketUpgrade(r) {
-		w.WriteHeader(404)
+func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
+	_, _, code, err := s.validate(r)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if err != nil {
+		handleError(w, code, err.Error())
 		return
 	}
+	_, _ = w.Write([]byte("success"))
+}
 
+func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit, int, error) {
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
 	protocolParam := r.FormValue("protocol")
@@ -60,14 +64,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	claims := GetGrants(r.Context())
 	// require a claim
 	if claims == nil || claims.Video == nil {
-		handleError(w, http.StatusUnauthorized, rtc.ErrPermissionDenied.Error())
-		return
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 	}
+
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
 		Identity:      claims.Identity,
 		UsePlanB:      boolValue(planBParam),
 		AutoSubscribe: true,
+		Metadata:      claims.Metadata,
 	}
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
@@ -86,11 +91,27 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		handleError(w, http.StatusUnauthorized, err.Error())
-		return
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 	}
+
 	if onlyName != "" {
 		roomName = onlyName
+	}
+
+	return roomName, pi, http.StatusOK, nil
+}
+
+func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// reject non websocket requests
+	if !websocket.IsWebSocketUpgrade(r) {
+		w.WriteHeader(404)
+		return
+	}
+
+	roomName, pi, code, err := s.validate(r)
+	if err != nil {
+		handleError(w, code, err.Error())
+		return
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
@@ -98,10 +119,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-
-	if claims.Metadata != "" {
-		pi.Metadata = claims.Metadata
 	}
 
 	// this needs to be started first *before* using router functions on this node

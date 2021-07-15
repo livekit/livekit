@@ -71,6 +71,7 @@ func NewLivekitServer(conf *config.Config,
 	mux := http.NewServeMux()
 	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
 	mux.Handle("/rtc", rtcService)
+	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
 	if conf.Development {
 		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
