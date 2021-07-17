@@ -149,7 +149,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 	}()
 
 	wg.Wait()
-	if err != nil {
+	if err2 != nil {
 		err = err2
 	}
 
