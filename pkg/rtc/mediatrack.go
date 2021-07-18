@@ -207,8 +207,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			}
 			logger.Debugw("removing peerconnection track",
 				"track", t.params.TrackID,
-				"participantId", t.params.ParticipantID,
-				"destParticipant", sub.Identity())
+				"pIDs", []string{t.params.ParticipantID, sub.ID()},
+				"participant", sub.Identity(),
+			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
 				if err == webrtc.ErrConnectionClosed {
 					// sub closing, can skip removing subscribedtracks
@@ -216,7 +217,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					logger.Warnw("could not remove remoteTrack from forwarder", err,
-						"sub", sub.Identity())
+						"participant", sub.Identity(), "pID", sub.ID())
 				}
 			}
 

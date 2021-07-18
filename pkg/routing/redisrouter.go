@@ -190,7 +190,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	if rtcNode.Id != r.currentNode.Id {
 		err = ErrIncorrectRTCNode
 		logger.Errorw("called participant on incorrect node", err,
-			"rtcNode", rtcNode, "currentNode", r.currentNode.Id)
+			"rtcNode", rtcNode, "nodeID", r.currentNode.Id)
 		return err
 	}
 
@@ -309,7 +309,7 @@ func (r *RedisRouter) statsWorker() {
 		case <-time.After(statsUpdateInterval):
 			r.currentNode.Stats.UpdatedAt = time.Now().Unix()
 			if err := r.RegisterNode(); err != nil {
-				logger.Errorw("could not update node", err)
+				logger.Errorw("could not update node", err, "nodeID", r.currentNode.Id)
 			}
 		case <-r.ctx.Done():
 			return
@@ -320,9 +320,9 @@ func (r *RedisRouter) statsWorker() {
 // worker that consumes redis messages intended for this node
 func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 	defer func() {
-		logger.Debugw("finishing redisWorker", "node", r.currentNode.Id)
+		logger.Debugw("finishing redisWorker", "nodeID", r.currentNode.Id)
 	}()
-	logger.Debugw("starting redisWorker", "node", r.currentNode.Id)
+	logger.Debugw("starting redisWorker", "nodeID", r.currentNode.Id)
 
 	sigChannel := signalNodeChannel(r.currentNode.Id)
 	rtcChannel := rtcNodeChannel(r.currentNode.Id)
@@ -373,7 +373,7 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 	switch rmb := sm.Message.(type) {
 	case *livekit.SignalNodeMessage_Response:
 		// logger.Debugw("forwarding signal message",
-		//	"connectionId", connectionId,
+		//	"connID", connectionId,
 		//	"type", fmt.Sprintf("%T", rmb.Response.Message))
 		if err := resSink.WriteMessage(rmb.Response); err != nil {
 			return err
@@ -381,7 +381,7 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 
 	case *livekit.SignalNodeMessage_EndSession:
 		// logger.Debugw("received EndSession, closing signal connection",
-		//	"connectionId", connectionId)
+		//	"connID", connectionId)
 		resSink.Close()
 	}
 	return nil

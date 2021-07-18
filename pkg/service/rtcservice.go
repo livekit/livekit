@@ -130,7 +130,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		logger.Infow("WS connection closed", "participant", pi.Identity, "connectionId", connId)
+		logger.Infow("WS connection closed", "participant", pi.Identity, "connID", connId)
 		reqSink.Close()
 		close(done)
 	}()
@@ -148,9 +148,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Infow("new client WS connected",
-		"connectionId", connId,
-		"room", rm.Sid,
-		"roomName", rm.Name,
+		"connID", connId,
+		"roomID", rm.Sid,
+		"room", rm.Name,
 		"participant", pi.Identity,
 	)
 
@@ -170,7 +170,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if msg == nil {
 					logger.Infow("source closed connection",
 						"participant", pi.Identity,
-						"connectionId", connId)
+						"connID", connId)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
@@ -178,7 +178,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					logger.Errorw("unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
 						"participant", pi.Identity,
-						"connectionId", connId)
+						"connID", connId)
 					continue
 				}
 
@@ -206,7 +206,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := reqSink.WriteMessage(req); err != nil {
 			logger.Warnw("error writing to request sink", err,
 				"participant", pi.Identity,
-				"connectionId", connId)
+				"connID", connId)
 		}
 	}
 }

@@ -185,7 +185,7 @@ func startServer(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	logger.Infow("configured key provider", "num_keys", keyProvider.NumKeys())
+	logger.Infow("configured key provider", "numKeys", keyProvider.NumKeys())
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -218,7 +218,7 @@ func startServer(c *cli.Context) error {
 
 func createRouterAndStore(config *config.Config, node routing.LocalNode) (router routing.Router, store service.RoomStore, err error) {
 	if config.HasRedis() {
-		logger.Infow("using multi-node routing via redis", "address", config.Redis.Address)
+		logger.Infow("using multi-node routing via redis", "addr", config.Redis.Address)
 		rc := redis.NewClient(&redis.Options{
 			Addr:     config.Redis.Address,
 			Username: config.Redis.Username,
