@@ -7,7 +7,6 @@ import (
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/ion-sfu/pkg/buffer"
-	"github.com/pion/logging"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -42,9 +41,10 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	c := webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
-	s := webrtc.SettingEngine{}
-	loggerFactory := logging.NewDefaultLoggerFactory()
-	lkLogger := loggerFactory.NewLogger("livekit-mux")
+	s := webrtc.SettingEngine{
+		LoggerFactory: logger.LoggerFactory(),
+	}
+	lkLogger := s.LoggerFactory.NewLogger("livekit-mux")
 
 	if externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)

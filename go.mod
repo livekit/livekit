@@ -5,6 +5,7 @@ go 1.15
 require (
 	github.com/bep/debounce v1.2.0
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/go-logr/logr v1.0.0
 	github.com/go-logr/zapr v1.0.0
 	github.com/go-redis/redis/v8 v8.7.1
 	github.com/google/wire v0.5.0

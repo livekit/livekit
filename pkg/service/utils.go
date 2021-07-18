@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/google/wire"
-	"go.uber.org/zap"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -22,8 +21,8 @@ var ServiceSet = wire.NewSet(
 )
 
 func handleError(w http.ResponseWriter, status int, msg string) {
-	l := logger.GetLogger().WithOptions(zap.AddCallerSkip(1))
-	l.Debug("error handling request", zap.String("error", msg), zap.Int("status", status))
+	// GetLogger already with extra depth 1
+	logger.GetLogger().V(1).Info("error handling request", "error", msg, "status", status)
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(msg))
 }

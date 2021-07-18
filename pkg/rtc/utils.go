@@ -2,11 +2,11 @@ package rtc
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
-	"go.uber.org/zap"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -113,7 +113,15 @@ func RecoverSilent() {
 
 func Recover() {
 	if r := recover(); r != nil {
-		log := logger.GetLogger().WithOptions(zap.AddCallerSkip(1))
-		log.Error("recovered panic", zap.Any("error", r))
+		var err error
+		switch e := r.(type) {
+		case string:
+			err = errors.New(e)
+		case error:
+			err = e
+		default:
+			err = errors.New("unknown panic")
+		}
+		logger.GetLogger().Error(err, "recovered panic", "panic", r)
 	}
 }

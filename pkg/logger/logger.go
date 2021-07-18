@@ -1,82 +1,85 @@
 package logger
 
 import (
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/pion/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 var (
-	wrappedLogger *zap.SugaredLogger
-	// zap logger
-	defaultLogger *zap.Logger
+	// pion/ion-sfu
+	defaultLogger = logr.Discard()
+	// pion/webrtc, pion/turn
+	defaultFactory logging.LoggerFactory
 )
 
-func GetLogger() *zap.Logger {
-	if defaultLogger == nil {
+// Note: already with extra depth 1
+func GetLogger() logr.Logger {
+	if defaultLogger == logr.Discard() {
 		InitDevelopment("")
 	}
 	return defaultLogger
 }
 
+// Note: only pass in logr.Logger with default depth
+func SetLogger(l logr.Logger) {
+	sfu.Logger = l.WithName("sfu")
+	buffer.Logger = sfu.Logger
+
+	defaultLogger = l.WithName("livekit").WithCallDepth(1)
+}
+
+func LoggerFactory() logging.LoggerFactory {
+	if defaultFactory == nil {
+		defaultFactory = logging.NewDefaultLoggerFactory()
+	}
+	return defaultFactory
+}
+
+func SetLoggerFactory(lf logging.LoggerFactory) {
+	defaultFactory = lf
+}
+
 // valid levels: debug, info, warn, error, fatal, panic
-func InitLogger(config zap.Config, level string, opts ...zap.Option) {
+func initLogger(config zap.Config, level string) {
 	if level != "" {
 		lvl := zapcore.Level(0)
 		if err := lvl.UnmarshalText([]byte(level)); err == nil {
 			config.Level = zap.NewAtomicLevelAt(lvl)
 		}
 	}
-	// skip one level to remove this helper file
-	l, _ := config.Build(append(opts, zap.AddCallerSkip(1))...)
-	wrappedLogger = l.Sugar()
 
-	defaultLogger, _ = config.Build(opts...)
-	ionLogger := zapr.NewLogger(defaultLogger)
-	sfu.Logger = ionLogger
-	buffer.Logger = ionLogger
+	logger, _ := config.Build()
+	SetLogger(zapr.NewLogger(logger))
 }
 
 func InitProduction(logLevel string) {
-	InitLogger(zap.NewProductionConfig(), logLevel)
+	initLogger(zap.NewProductionConfig(), logLevel)
 }
 
 func InitDevelopment(logLevel string) {
-	InitLogger(zap.NewDevelopmentConfig(), logLevel)
+	initLogger(zap.NewDevelopmentConfig(), logLevel)
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {
-	if wrappedLogger == nil {
-		return
-	}
-	wrappedLogger.Debugw(msg, keysAndValues...)
+	defaultLogger.V(1).Info(msg, keysAndValues...)
 }
 
 func Infow(msg string, keysAndValues ...interface{}) {
-	if wrappedLogger == nil {
-		return
-	}
-	wrappedLogger.Infow(msg, keysAndValues...)
+	defaultLogger.Info(msg, keysAndValues...)
 }
 
 func Warnw(msg string, err error, keysAndValues ...interface{}) {
-	if wrappedLogger == nil {
-		return
-	}
 	if err != nil {
 		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
 	}
-	wrappedLogger.Warnw(msg, keysAndValues...)
+	defaultLogger.Info(msg, keysAndValues...)
 }
 
 func Errorw(msg string, err error, keysAndValues ...interface{}) {
-	if wrappedLogger == nil {
-		return
-	}
-	if err != nil {
-		keysAndValues = append([]interface{}{"error", err}, keysAndValues...)
-	}
-	wrappedLogger.Errorw(msg, keysAndValues...)
+	defaultLogger.Error(err, msg, keysAndValues...)
 }
