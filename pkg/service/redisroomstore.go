@@ -195,7 +195,7 @@ func (p *RedisRoomStore) GetParticipant(roomName, identity string) (*livekit.Par
 	return &pi, nil
 }
 
-func (p *RedisRoomStore) ListParticipants(roomName string, includeHidden bool) ([]*livekit.ParticipantInfo, error) {
+func (p *RedisRoomStore) ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + roomName
 	items, err := p.rc.HVals(p.ctx, key).Result()
 	if err == redis.Nil {

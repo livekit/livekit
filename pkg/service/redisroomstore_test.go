@@ -42,14 +42,14 @@ func TestParticipantPersistence(t *testing.T) {
 	require.Equal(t, p.Tracks[0].Sid, pGet.Tracks[0].Sid)
 
 	// list should return one participant
-	participants, err := rs.ListParticipants(roomName, true)
+	participants, err := rs.ListParticipants(roomName)
 	require.NoError(t, err)
 	require.Len(t, participants, 1)
 
 	// deleting participant should return back to normal
 	require.NoError(t, rs.DeleteParticipant(roomName, p.Identity))
 
-	participants, err = rs.ListParticipants(roomName, true)
+	participants, err = rs.ListParticipants(roomName)
 	require.NoError(t, err)
 	require.Len(t, participants, 0)
 
