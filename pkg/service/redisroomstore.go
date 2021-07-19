@@ -210,9 +210,7 @@ func (p *RedisRoomStore) ListParticipants(roomName string, includeHidden bool) (
 		if err := proto.Unmarshal([]byte(item), &pi); err != nil {
 			return nil, err
 		}
-		if includeHidden || !pi.Hidden {
-			participants = append(participants, &pi)
-		}
+		participants = append(participants, &pi)
 	}
 	return participants, nil
 }

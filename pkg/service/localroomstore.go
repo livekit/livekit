@@ -119,7 +119,7 @@ func (p *LocalRoomStore) GetParticipant(roomName, identity string) (*livekit.Par
 	return participant, nil
 }
 
-func (p *LocalRoomStore) ListParticipants(roomName string, includeHidden bool) ([]*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -131,9 +131,7 @@ func (p *LocalRoomStore) ListParticipants(roomName string, includeHidden bool) (
 
 	items := make([]*livekit.ParticipantInfo, 0, len(roomParticipants))
 	for _, p := range roomParticipants {
-		if includeHidden || !p.Hidden {
-			items = append(items, p)
-		}
+		items = append(items, p)
 	}
 
 	return items, nil

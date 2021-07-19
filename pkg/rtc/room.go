@@ -481,6 +481,15 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 	if p.Hidden() {
+		if !skipSource {
+			// send update only to hidden participant
+			updates := ToProtoParticipants([]types.Participant{p})
+			err := p.SendParticipantUpdate(updates)
+			if err != nil {
+				logger.Errorw("could not send update to participant", err,
+					"participant", p.Identity(), "pID", p.ID())
+			}
+		}
 		return
 	}
 
