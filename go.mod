@@ -5,7 +5,8 @@ go 1.15
 require (
 	github.com/bep/debounce v1.2.0
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/go-logr/zapr v0.4.0
+	github.com/go-logr/logr v1.0.0
+	github.com/go-logr/zapr v1.0.0
 	github.com/go-redis/redis/v8 v8.7.1
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
@@ -34,8 +35,7 @@ require (
 	github.com/twitchtv/twirp v8.1.0+incompatible
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/urfave/negroni v1.0.0
-	go.uber.org/multierr v1.6.0 // indirect
-	go.uber.org/zap v1.16.0
+	go.uber.org/zap v1.18.1
 	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf // indirect
 	golang.org/x/sys v0.0.0-20210601080250-7ecdf8ef093b // indirect
 	golang.org/x/tools v0.1.2 // indirect
@@ -43,4 +43,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
-replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.2
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.3

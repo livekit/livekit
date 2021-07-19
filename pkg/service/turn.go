@@ -46,8 +46,9 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	}
 
 	serverConfig := turn.ServerConfig{
-		Realm:       livekitRealm,
-		AuthHandler: newTurnAuthHandler(roomStore),
+		Realm:         livekitRealm,
+		AuthHandler:   newTurnAuthHandler(roomStore),
+		LoggerFactory: logger.LoggerFactory(),
 		ListenerConfigs: []turn.ListenerConfig{
 			{
 				Listener: tlsListener,

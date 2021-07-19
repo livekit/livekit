@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
@@ -62,7 +61,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		statsReporter:   NewRoomStatsReporter(room.Name),
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, zapr.NewLogger(logger.GetLogger())),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logger.GetLogger()),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
