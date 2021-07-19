@@ -103,6 +103,11 @@ func createToken(c *cli.Context) error {
 		RoomJoin: true,
 		Room:     room,
 	}
+	if c.Bool("recorder") {
+		grant.Hidden = true
+		grant.CanSubscribe = true
+	}
+
 	at := auth.NewAccessToken(apiKey, apiSecret).
 		AddGrant(grant).
 		SetIdentity(identity).

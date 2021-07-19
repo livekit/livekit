@@ -81,6 +81,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		UsePlanB:      boolValue(planBParam),
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
+		Hidden:        claims.Video.Hidden,
 	}
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)

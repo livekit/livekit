@@ -31,6 +31,7 @@ type ParticipantInit struct {
 	ProtocolVersion int32
 	UsePlanB        bool
 	AutoSubscribe   bool
+	Hidden          bool
 }
 
 type NewParticipantCallback func(roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)

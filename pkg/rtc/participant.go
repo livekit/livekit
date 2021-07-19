@@ -39,6 +39,7 @@ type ParticipantParams struct {
 	Stats           *RoomStatsReporter
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
+	Hidden          bool
 }
 
 type ParticipantImpl struct {
@@ -195,6 +196,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Metadata: p.metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
+		Hidden:   p.Hidden(),
 	}
 
 	p.lock.RLock()
@@ -581,6 +583,10 @@ func (p *ParticipantImpl) CanPublish() bool {
 
 func (p *ParticipantImpl) CanSubscribe() bool {
 	return p.permission == nil || p.permission.CanSubscribe
+}
+
+func (p *ParticipantImpl) Hidden() bool {
+	return p.params.Hidden
 }
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {

@@ -199,7 +199,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	// gather other participants and send join response
 	otherParticipants := make([]types.Participant, 0, len(r.participants))
 	for _, p := range r.participants {
-		if p.ID() != participant.ID() {
+		if p.ID() != participant.ID() && !p.Hidden() {
 			otherParticipants = append(otherParticipants, p)
 		}
 	}
@@ -295,10 +295,15 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	r.lock.RLock()
-	numParticipants := len(r.participants)
+	visibleParticipants := 0
+	for _, p := range r.participants {
+		if !p.Hidden() {
+			visibleParticipants++
+		}
+	}
 	r.lock.RUnlock()
 
-	if numParticipants > 0 {
+	if visibleParticipants > 0 {
 		return
 	}
 
@@ -472,6 +477,19 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	if p.Hidden() {
+		if !skipSource {
+			// send update only to hidden participant
+			updates := ToProtoParticipants([]types.Participant{p})
+			err := p.SendParticipantUpdate(updates)
+			if err != nil {
+				logger.Errorw("could not send update to participant", err,
+					"participant", p.Identity(), "pID", p.ID())
+			}
+		}
+		return
+	}
+
 	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
 	for _, op := range participants {

@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/testutils"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -59,7 +60,7 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := newMockParticipant("new", types.DefaultProtocol)
+		pNew := newMockParticipant("new", types.DefaultProtocol, false)
 
 		rm.Join(pNew, nil)
 
@@ -74,7 +75,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := newMockParticipant("new", types.DefaultProtocol)
+		p := newMockParticipant("new", types.DefaultProtocol, false)
 
 		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true})
 		require.NoError(t, err)
@@ -128,7 +129,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("cannot exceed max participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		rm.Room.MaxParticipants = 1
-		p := newMockParticipant("second", types.ProtocolVersion(0))
+		p := newMockParticipant("second", types.ProtocolVersion(0), false)
 
 		err := rm.Join(p, nil)
 		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
@@ -455,8 +456,50 @@ func TestDataChannel(t *testing.T) {
 	})
 }
 
+func TestHiddenParticipants(t *testing.T) {
+	t.Run("other participants don't receive hidden updates", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
+		defer rm.Close()
+
+		pNew := newMockParticipant("new", types.DefaultProtocol, false)
+		rm.Join(pNew, nil)
+
+		// expect new participant to get a JoinReply
+		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
+		require.Equal(t, info.Sid, rm.Room.Sid)
+		require.Len(t, participants, 2)
+		require.Len(t, rm.GetParticipants(), 4)
+		require.NotEmpty(t, iceServers)
+	})
+
+	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
+		p := newMockParticipant("new", types.DefaultProtocol, false)
+
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true})
+		require.NoError(t, err)
+
+		stateChangeCB := p.OnStateChangeArgsForCall(0)
+		require.NotNil(t, stateChangeCB)
+		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		stateChangeCB(p, livekit.ParticipantInfo_JOINED)
+
+		// it should become a subscriber when connectivity changes
+		for _, op := range rm.GetParticipants() {
+			if p == op {
+				continue
+			}
+			mockP := op.(*typesfakes.FakeParticipant)
+			require.NotZero(t, mockP.AddSubscriberCallCount())
+			// last call should be to add the newest participant
+			require.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
+		}
+	})
+}
+
 type testRoomOpts struct {
 	num                  int
+	numHidden            int
 	protocol             types.ProtocolVersion
 	audioSmoothIntervals uint32
 }
@@ -477,9 +520,9 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 			SmoothIntervals: opts.audioSmoothIntervals,
 		},
 	)
-	for i := 0; i < opts.num; i++ {
+	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := fmt.Sprintf("p%d", i)
-		participant := newMockParticipant(identity, opts.protocol)
+		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
 		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true})
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		require.NoError(t, err)

@@ -1,20 +1,22 @@
 package rtc_test
 
 import (
+	"github.com/livekit/protocol/utils"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
-func newMockParticipant(identity string, protocol types.ProtocolVersion) *typesfakes.FakeParticipant {
+func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
 	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
 	p.CanSubscribeReturns(true)
-	p.CanPublishReturns(true)
+	p.CanPublishReturns(!hidden)
+	p.HiddenReturns(hidden)
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.Participant)
