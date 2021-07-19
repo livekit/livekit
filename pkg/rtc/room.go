@@ -295,18 +295,15 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	r.lock.RLock()
-	numParticipants := len(r.participants)
-	if numParticipants == 1 {
-		for _, p := range r.participants {
-			if !p.Hidden() {
-				r.lock.RUnlock()
-				return
-			}
+	visibleParticipants := 0
+	for _, p := range r.participants {
+		if !p.Hidden() {
+			visibleParticipants++
 		}
 	}
 	r.lock.RUnlock()
 
-	if numParticipants > 1 {
+	if visibleParticipants > 0 {
 		return
 	}
 
