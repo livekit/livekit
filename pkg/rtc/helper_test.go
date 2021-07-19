@@ -15,7 +15,7 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden 
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
 	p.CanSubscribeReturns(true)
-	p.CanPublishReturns(true)
+	p.CanPublishReturns(!hidden)
 	p.HiddenReturns(hidden)
 
 	p.SetMetadataStub = func(m string) {
