@@ -60,7 +60,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 	// if the room is currently active, RTC node needs to disconnect clients
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	participants, err := s.roomManager.roomStore.ListParticipants(req.Room, true)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	participants, err := s.roomManager.roomStore.ListParticipants(req.Room, false)
 	if err != nil {
 		return
 	}

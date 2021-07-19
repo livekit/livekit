@@ -165,6 +165,16 @@ type FakeParticipant struct {
 		result1 webrtc.SessionDescription
 		result2 error
 	}
+	HiddenStub        func() bool
+	hiddenMutex       sync.RWMutex
+	hiddenArgsForCall []struct {
+	}
+	hiddenReturns struct {
+		result1 bool
+	}
+	hiddenReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	ICERestartStub        func() error
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
@@ -1189,6 +1199,59 @@ func (fake *FakeParticipant) HandleOfferReturnsOnCall(i int, result1 webrtc.Sess
 		result1 webrtc.SessionDescription
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeParticipant) Hidden() bool {
+	fake.hiddenMutex.Lock()
+	ret, specificReturn := fake.hiddenReturnsOnCall[len(fake.hiddenArgsForCall)]
+	fake.hiddenArgsForCall = append(fake.hiddenArgsForCall, struct {
+	}{})
+	stub := fake.HiddenStub
+	fakeReturns := fake.hiddenReturns
+	fake.recordInvocation("Hidden", []interface{}{})
+	fake.hiddenMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) HiddenCallCount() int {
+	fake.hiddenMutex.RLock()
+	defer fake.hiddenMutex.RUnlock()
+	return len(fake.hiddenArgsForCall)
+}
+
+func (fake *FakeParticipant) HiddenCalls(stub func() bool) {
+	fake.hiddenMutex.Lock()
+	defer fake.hiddenMutex.Unlock()
+	fake.HiddenStub = stub
+}
+
+func (fake *FakeParticipant) HiddenReturns(result1 bool) {
+	fake.hiddenMutex.Lock()
+	defer fake.hiddenMutex.Unlock()
+	fake.HiddenStub = nil
+	fake.hiddenReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) HiddenReturnsOnCall(i int, result1 bool) {
+	fake.hiddenMutex.Lock()
+	defer fake.hiddenMutex.Unlock()
+	fake.HiddenStub = nil
+	if fake.hiddenReturnsOnCall == nil {
+		fake.hiddenReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hiddenReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeParticipant) ICERestart() error {
@@ -2507,6 +2570,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
+	fake.hiddenMutex.RLock()
+	defer fake.hiddenMutex.RUnlock()
 	fake.iCERestartMutex.RLock()
 	defer fake.iCERestartMutex.RUnlock()
 	fake.iDMutex.RLock()

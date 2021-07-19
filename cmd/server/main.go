@@ -118,6 +118,11 @@ func main() {
 						Usage:    "identity of participant that holds the token",
 						Required: true,
 					},
+					&cli.BoolFlag{
+						Name:     "recorder",
+						Usage:    "creates a hidden participant that can only subscribe",
+						Required: false,
+					},
 				},
 			},
 		},

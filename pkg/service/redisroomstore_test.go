@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/service"
 	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParticipantPersistence(t *testing.T) {
@@ -41,14 +42,14 @@ func TestParticipantPersistence(t *testing.T) {
 	require.Equal(t, p.Tracks[0].Sid, pGet.Tracks[0].Sid)
 
 	// list should return one participant
-	participants, err := rs.ListParticipants(roomName)
+	participants, err := rs.ListParticipants(roomName, true)
 	require.NoError(t, err)
 	require.Len(t, participants, 1)
 
 	// deleting participant should return back to normal
 	require.NoError(t, rs.DeleteParticipant(roomName, p.Identity))
 
-	participants, err = rs.ListParticipants(roomName)
+	participants, err = rs.ListParticipants(roomName, true)
 	require.NoError(t, err)
 	require.Len(t, participants, 0)
 

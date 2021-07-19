@@ -199,7 +199,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	// gather other participants and send join response
 	otherParticipants := make([]types.Participant, 0, len(r.participants))
 	for _, p := range r.participants {
-		if p.ID() != participant.ID() {
+		if p.ID() != participant.ID() && !p.Hidden() {
 			otherParticipants = append(otherParticipants, p)
 		}
 	}
@@ -296,9 +296,17 @@ func (r *Room) CloseIfEmpty() {
 
 	r.lock.RLock()
 	numParticipants := len(r.participants)
+	if numParticipants == 1 {
+		for _, p := range r.participants {
+			if !p.Hidden() {
+				r.lock.RUnlock()
+				return
+			}
+		}
+	}
 	r.lock.RUnlock()
 
-	if numParticipants > 0 {
+	if numParticipants > 1 {
 		return
 	}
 
@@ -472,6 +480,10 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	if p.Hidden() {
+		return
+	}
+
 	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
 	for _, op := range participants {
