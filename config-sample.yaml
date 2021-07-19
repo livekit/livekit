@@ -95,10 +95,12 @@ keys:
 #  # - using cert_file and key_file below
 #  # defaults to false
 #  enabled: false
-#  # needs to match tls cert domain
-#  domain: turn.myhost.com
+#  # defaults to 3478 - recommended to 443 if not running HTTP3/QUIC server
+#  udp_port: 3478
 #  # defaults to 3478 - if not using a load balancer, this must be set to 443
 #  tls_port: 3478
+#  # needs to match tls cert domain
+#  domain: turn.myhost.com
 #  # optional
 #  # cert_file: /path/to/cert.pem
 #  # key_file: /path/to/key.pem
