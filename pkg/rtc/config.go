@@ -54,45 +54,44 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		rtcConf.PacketBufferSize = 500
 	}
 
+	var udpMux *ice.UDPMuxDefault
+	var udpMuxConn *net.UDPConn
+	var err error
 	networkTypes := make([]webrtc.NetworkType, 0, 4)
+
 	if !rtcConf.ForceTCP {
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeUDP4,
 		)
-	}
+		if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
+			if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
+				return nil, err
+			}
+		} else if rtcConf.UDPPort != 0 {
+			udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
+				Port: int(rtcConf.UDPPort),
+			})
+			if err != nil {
+				return nil, err
+			}
+			_ = udpMuxConn.SetReadBuffer(defaultUDPBufferSize)
+			_ = udpMuxConn.SetWriteBuffer(defaultUDPBufferSize)
 
-	var udpMux *ice.UDPMuxDefault
-	var udpMuxConn *net.UDPConn
-	var err error
-
-	if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
-		if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
-			return nil, err
-		}
-	} else if rtcConf.UDPPort != 0 {
-		udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
-			Port: int(rtcConf.UDPPort),
-		})
-		if err != nil {
-			return nil, err
-		}
-		_ = udpMuxConn.SetReadBuffer(defaultUDPBufferSize)
-		_ = udpMuxConn.SetWriteBuffer(defaultUDPBufferSize)
-
-		udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
-			Logger:  lkLogger,
-			UDPConn: udpMuxConn,
-		})
-		s.SetICEUDPMux(udpMux)
-		if !conf.Development {
-			val, err := checkUDPReadBuffer()
-			if err == nil {
-				if val < minUDPBufferSize {
-					logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
-						"current", val,
-						"suggested", minUDPBufferSize)
-				} else {
-					logger.Debugw("UDP receive buffer size", "current", val)
+			udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
+				Logger:  lkLogger,
+				UDPConn: udpMuxConn,
+			})
+			s.SetICEUDPMux(udpMux)
+			if !conf.Development {
+				val, err := checkUDPReadBuffer()
+				if err == nil {
+					if val < minUDPBufferSize {
+						logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
+							"current", val,
+							"suggested", minUDPBufferSize)
+					} else {
+						logger.Debugw("UDP receive buffer size", "current", val)
+					}
 				}
 			}
 		}
