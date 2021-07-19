@@ -563,7 +563,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	c.lock.Unlock()
 
 	logger.Debugw("client added track", "participant", c.localParticipant.Identity,
-		"source", pId,
+		"pID", pId,
 		"track", trackId,
 	)
 
@@ -593,7 +593,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
 			logger.Debugw("consumed from participant",
-				"track", trackId, "participant", pId,
+				"track", trackId, "pID", pId,
 				"size", numBytes)
 			lastUpdate = time.Now()
 		}

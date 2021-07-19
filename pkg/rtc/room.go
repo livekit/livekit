@@ -160,7 +160,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(),
+		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
 			"oldState", oldState)
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
@@ -188,9 +188,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
 	participant.OnDataPacket(r.onDataPacket)
 	logger.Infow("new participant joined",
-		"id", participant.ID(),
+		"pID", participant.ID(),
 		"participant", participant.Identity(),
-		"roomId", r.Room.Sid)
+		"room", r.Room.Name,
+		"roomID", r.Room.Sid)
 
 	r.participants[participant.Identity()] = participant
 	r.participantOpts[participant.Identity()] = opts
@@ -322,7 +323,7 @@ func (r *Room) Close() {
 	if !r.isClosed.TrySet(true) {
 		return
 	}
-	logger.Infow("closing room", "room", r.Room.Sid, "name", r.Room.Name)
+	logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
 
 	r.statsReporter.RoomEnded()
 	if r.onClose != nil {
@@ -384,14 +385,14 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 		}
 
 		logger.Debugw("subscribing to new track",
-			"source", participant.Identity(),
-			"remoteTrack", track.ID(),
-			"dest", existingParticipant.Identity())
+			"participants", []string{participant.Identity(), existingParticipant.Identity()},
+			"pIDs", []string{participant.ID(), existingParticipant.ID()},
+			"track", track.ID())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
 			logger.Errorw("could not subscribe to remoteTrack", err,
-				"source", participant.Identity(),
-				"remoteTrack", track.ID(),
-				"dest", existingParticipant.Identity())
+				"participants", []string{participant.Identity(), existingParticipant.Identity()},
+				"pIDs", []string{participant.ID(), existingParticipant.ID()},
+				"track", track.ID())
 		}
 	}
 
@@ -458,8 +459,8 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		if n, err := op.AddSubscriber(p); err != nil {
 			// TODO: log error? or disconnect?
 			logger.Errorw("could not subscribe to participant", err,
-				"dest", p.Identity(),
-				"source", op.Identity())
+				"participants", []string{op.Identity(), p.Identity()},
+				"pIDs", []string{op.ID(), p.ID()})
 		} else {
 			tracksAdded += n
 		}
@@ -482,7 +483,7 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			logger.Errorw("could not send update to participant", err,
-				"participant", p.Identity())
+				"participant", p.Identity(), "pID", p.ID())
 		}
 	}
 }

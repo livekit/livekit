@@ -151,24 +151,23 @@ func (s *LivekitServer) Start() error {
 
 	go func() {
 		values := []interface{}{
-			"address", s.httpServer.Addr,
-			"node", s.currentNode.Id,
+			"addr", s.httpServer.Addr,
+			"nodeID", s.currentNode.Id,
 			"nodeIP", s.currentNode.Ip,
 			"version", version.Version,
 		}
 		if s.config.RTC.TCPPort != 0 {
-			values = append(values, "rtc.tcp_port", s.config.RTC.TCPPort)
+			values = append(values, "rtc.portTCP", s.config.RTC.TCPPort)
 		}
 		if !s.config.RTC.ForceTCP && s.config.RTC.UDPPort != 0 {
-			values = append(values, "rtc.udp_port", s.config.RTC.UDPPort)
+			values = append(values, "rtc.portUDP", s.config.RTC.UDPPort)
 		} else {
 			values = append(values,
-				"rtc.port_range_start", s.config.RTC.ICEPortRangeStart,
-				"rtc.port_range_end", s.config.RTC.ICEPortRangeEnd,
+				"rtc.portICERange", []uint32{s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd},
 			)
 		}
 		if s.config.PrometheusPort != 0 {
-			values = append(values, "prometheus_port", s.config.PrometheusPort)
+			values = append(values, "portPrometheus", s.config.PrometheusPort)
 		}
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
