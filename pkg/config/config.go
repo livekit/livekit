@@ -91,6 +91,7 @@ type TURNConfig struct {
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
 	TLSPort  int    `yaml:"tls_port"`
+	UDPPort  int    `yaml:"udp_port"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -135,6 +136,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		TURN: TURNConfig{
 			Enabled: false,
 			TLSPort: 3478,
+			UDPPort: 3478,
 		},
 		Keys: map[string]string{},
 	}

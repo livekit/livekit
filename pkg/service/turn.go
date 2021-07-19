@@ -25,46 +25,67 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	if !turnConf.Enabled {
 		return nil, nil
 	}
-	if turnConf.Domain == "" {
-		return nil, errors.New("TURN domain required")
-	}
-	if turnConf.TLSPort == 0 {
-		return nil, errors.New("invalid TURN tcp port")
-	}
 
-	cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "TURN tls cert required")
-	}
-
-	tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort), &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+	if turnConf.TLSPort == 0 && turnConf.UDPPort == 0 {
+		return nil, errors.New("invalid TURN ports")
 	}
 
 	serverConfig := turn.ServerConfig{
 		Realm:         livekitRealm,
 		AuthHandler:   newTurnAuthHandler(roomStore),
 		LoggerFactory: logger.LoggerFactory(),
-		ListenerConfigs: []turn.ListenerConfig{
-			{
-				Listener: tlsListener,
-				RelayAddressGenerator: &turn.RelayAddressGeneratorPortRange{
-					RelayAddress: net.ParseIP(node.Ip),
-					Address:      "0.0.0.0",
-					MinPort:      turnMinPort,
-					MaxPort:      turnMaxPort,
-					MaxRetries:   allocateRetries,
-				},
-			},
-		},
+	}
+	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
+		RelayAddress: net.ParseIP(node.Ip),
+		Address:      "0.0.0.0",
+		MinPort:      turnMinPort,
+		MaxPort:      turnMaxPort,
+		MaxRetries:   allocateRetries,
+	}
+	var logValues []interface{}
+
+	if turnConf.TLSPort > 0 {
+		if turnConf.Domain == "" {
+			return nil, errors.New("TURN domain required")
+		}
+
+		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "TURN tls cert required")
+		}
+
+		tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
+			&tls.Config{
+				MinVersion:   tls.VersionTLS12,
+				Certificates: []tls.Certificate{cert},
+			})
+		if err != nil {
+			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+		}
+
+		listenerConfig := turn.ListenerConfig{
+			Listener:              tlsListener,
+			RelayAddressGenerator: relayAddrGen,
+		}
+		serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
+		logValues = append(logValues, "turn.portTLS", turnConf.TLSPort)
 	}
 
-	logger.Infow("Starting TURN server",
-		"TLS port", turnConf.TLSPort)
+	if turnConf.UDPPort > 0 {
+		udpListener, err := net.ListenPacket("udp4", "0.0.0.0:"+strconv.Itoa(turnConf.UDPPort))
+		if err != nil {
+			return nil, errors.Wrap(err, "could not listen on TURN UDP port")
+		}
+
+		packetConfig := turn.PacketConnConfig{
+			PacketConn:            udpListener,
+			RelayAddressGenerator: relayAddrGen,
+		}
+		serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
+		logValues = append(logValues, "turn.portUDP", turnConf.UDPPort)
+	}
+
+	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
 }
 

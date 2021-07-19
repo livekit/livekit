@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/livekit/protocol/auth"
@@ -40,7 +39,12 @@ func printPorts(c *cli.Context) error {
 	}
 
 	if conf.TURN.Enabled {
-		tcpPorts = append(tcpPorts, strconv.Itoa(conf.TURN.TLSPort))
+		if conf.TURN.TLSPort > 0 {
+			tcpPorts = append(tcpPorts, fmt.Sprintf("%d - TURN/TLS", conf.TURN.TLSPort))
+		}
+		if conf.TURN.UDPPort > 0 {
+			udpPorts = append(udpPorts, fmt.Sprintf("%d - TURN/UDP", conf.TURN.UDPPort))
+		}
 	}
 
 	fmt.Println("TCP Ports")

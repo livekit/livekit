@@ -513,11 +513,20 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		})
 	}
 	if r.config.TURN.Enabled {
-		iceServers = append(iceServers, &livekit.ICEServer{
-			Urls:       []string{fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain)},
-			Username:   ri.Name,
-			Credential: ri.TurnPassword,
-		})
+		var urls []string
+		if r.config.TURN.UDPPort > 0 {
+			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
+		}
+		if r.config.TURN.TLSPort > 0 {
+			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
+		}
+		if len(urls) > 0 {
+			iceServers = append(iceServers, &livekit.ICEServer{
+				Urls:       urls,
+				Username:   ri.Name,
+				Credential: ri.TurnPassword,
+			})
+		}
 	}
 	return iceServers
 }

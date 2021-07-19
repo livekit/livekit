@@ -41,10 +41,13 @@ func GetLocalIPAddress() (string, error) {
 			var ip net.IP
 			switch v := addr.(type) {
 			case *net.IPNet:
-				ip = v.IP
+				ip = v.IP.To4()
 			case *net.IPAddr:
-				ip = v.IP
+				ip = v.IP.To4()
 			default:
+				continue
+			}
+			if ip == nil {
 				continue
 			}
 			if ip.IsLoopback() {
