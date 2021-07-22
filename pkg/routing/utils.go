@@ -22,7 +22,7 @@ func GetAvailableNodes(nodes []*livekit.Node) []*livekit.Node {
 	}).([]*livekit.Node)
 }
 
-func participantKey(roomName, identity string) string {
+func ParticipantKey(roomName, identity string) string {
 	return roomName + "|" + identity
 }
 
