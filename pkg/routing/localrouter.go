@@ -84,7 +84,7 @@ func (r *LocalRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 	}
 
 	// index channels by roomName | identity
-	key := participantKey(roomName, pi.Identity)
+	key := ParticipantKey(roomName, pi.Identity)
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
 

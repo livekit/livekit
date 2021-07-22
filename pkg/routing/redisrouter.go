@@ -139,7 +139,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 
 	// create a new connection id
 	connectionId = utils.NewGuid("CO_")
-	pKey := participantKey(roomName, pi.Identity)
+	pKey := ParticipantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
 	if err = r.setParticipantSignalNode(connectionId, r.currentNode.Id); err != nil {
@@ -172,7 +172,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 }
 
 func (r *RedisRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {
-	pkey := participantKey(roomName, identity)
+	pkey := ParticipantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
 		return nil, err

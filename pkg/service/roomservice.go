@@ -66,17 +66,14 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	if len(participants) > 0 {
-		rtcSink, err := s.roomManager.router.CreateRTCSink(req.Room, participants[0].Identity)
-		if err != nil {
-			return nil, err
-		}
-
-		defer rtcSink.Close()
-		_ = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
 			Message: &livekit.RTCNodeMessage_DeleteRoom{
 				DeleteRoom: req,
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		// if a room hasn't started, delete locally
 		if err = s.roomManager.DeleteRoom(req.Room); err != nil {
@@ -119,21 +116,14 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 }
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.RemoveParticipantResponse, err error) {
-	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
-	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
-
-	if err != nil {
-		return
-	}
-	defer rtcSink.Close()
-	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
 		},
 	})
+	if err != nil {
+		return
+	}
 
 	res = &livekit.RemoveParticipantResponse{}
 	return
@@ -143,12 +133,6 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	if err = EnsureAdminPermission(ctx, req.Room); err != nil {
 		return nil, twirpAuthError(err)
 	}
-
-	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
-	if err != nil {
-		return
-	}
-	defer rtcSink.Close()
 
 	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
 	if err != nil {
@@ -162,7 +146,8 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirp.NotFoundError(ErrTrackNotFound.Error())
 	}
 
-	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+		ParticipantKey: routing.ParticipantKey(req.Room, req.Identity),
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},
@@ -180,47 +165,33 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
-	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
+	err := s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_UpdateParticipant{
+			UpdateParticipant: req,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rtcSink.Close()
 
 	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
 
-	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
-		Message: &livekit.RTCNodeMessage_UpdateParticipant{
-			UpdateParticipant: req,
-		},
-	})
-
 	participant.Metadata = req.Metadata
 	return participant, nil
 }
 
 func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
-	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
-	rtcSink, err := s.createRTCSink(ctx, req.Room, req.Identity)
-	if err != nil {
-		return nil, err
-	}
-	defer rtcSink.Close()
-
-	err = rtcSink.WriteMessage(&livekit.RTCNodeMessage{
+	err := s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return &livekit.UpdateSubscriptionsResponse{}, nil
 }
@@ -236,4 +207,15 @@ func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) 
 	}
 
 	return s.roomManager.router.CreateRTCSink(room, identity)
+}
+
+func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
+	rtcSink, err := s.createRTCSink(ctx, room, identity)
+	if err != nil {
+		return err
+	}
+	defer rtcSink.Close()
+
+	msg.ParticipantKey = routing.ParticipantKey(room, identity)
+	return rtcSink.WriteMessage(msg)
 }
