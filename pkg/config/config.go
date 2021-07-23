@@ -135,7 +135,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		TURN: TURNConfig{
 			Enabled: false,
-			TLSPort: 3478,
+			TLSPort: 5349,
 			UDPPort: 3478,
 		},
 		Keys: map[string]string{},

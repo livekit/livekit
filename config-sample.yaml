@@ -21,6 +21,7 @@ rtc:
   # when set, LiveKit enable WebRTC ICE over TCP when UDP isn't available
   # this port *cannot* be behind load balancer or TLS, and must be exposed on the node
   # WebRTC transports are encrypted and do not require additional encryption
+  # only 80/443 on public IP are allowed if less than 1024
   tcp_port: 7881
   # when set to true, attempts to discover the host's public IP via STUN
   # this is useful for cloud environments such as AWS & Google where hosts have an internal IP
@@ -96,9 +97,10 @@ keys:
 #  # defaults to false
 #  enabled: false
 #  # defaults to 3478 - recommended to 443 if not running HTTP3/QUIC server
+#  # only 53/80/443 are allowed if less than 1024
 #  udp_port: 3478
-#  # defaults to 3478 - if not using a load balancer, this must be set to 443
-#  tls_port: 3478
+#  # defaults to 5349 - if not using a load balancer, this must be set to 443
+#  tls_port: 5349
 #  # needs to match tls cert domain
 #  domain: turn.myhost.com
 #  # optional
