@@ -15,7 +15,7 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pion/ice/v2 v2.1.7
+	github.com/pion/ice/v2 v2.1.10
 	github.com/pion/interceptor v0.0.13
 	github.com/pion/ion-sfu v1.10.5
 	github.com/pion/logging v0.2.2
@@ -25,7 +25,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.12.3
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.0.30
+	github.com/pion/webrtc/v3 v3.0.32
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.19.0 // indirect
