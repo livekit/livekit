@@ -44,7 +44,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	s := webrtc.SettingEngine{
 		LoggerFactory: logger.LoggerFactory(),
 	}
-	lkLogger := s.LoggerFactory.NewLogger("livekit-mux")
 
 	if externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
@@ -78,7 +77,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			_ = udpMuxConn.SetWriteBuffer(defaultUDPBufferSize)
 
 			udpMux = ice.NewUDPMuxDefault(ice.UDPMuxParams{
-				Logger:  lkLogger,
+				Logger:  s.LoggerFactory.NewLogger("udp_mux"),
 				UDPConn: udpMuxConn,
 			})
 			s.SetICEUDPMux(udpMux)
@@ -110,7 +109,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			return nil, err
 		}
 
-		tcpMux := webrtc.NewICETCPMux(lkLogger, tcpListener, readBufferSize)
+		tcpMux := webrtc.NewICETCPMux(
+			s.LoggerFactory.NewLogger("tcp_mux"),
+			tcpListener,
+			readBufferSize,
+		)
 		s.SetICETCPMux(tcpMux)
 	}
 
