@@ -9,6 +9,7 @@ log_level: info
 # clients could connect to any node and be routed to the same room
 redis:
   address: redis.host:6379
+#  db: 0
 #  username: myuser
 #  password: mypassword
 
