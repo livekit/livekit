@@ -514,16 +514,12 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 
-	if len(r.config.RTC.StunServers) > 0 {
-		iceServer := &livekit.ICEServer{}
-		for _, stunServer := range r.config.RTC.StunServers {
-			iceServer.Urls = append(iceServer.Urls, fmt.Sprintf("stun:%s", stunServer))
-		}
-		iceServers = append(iceServers, iceServer)
-	}
+	hasSTUN := false
 	if r.config.TURN.Enabled {
 		var urls []string
 		if r.config.TURN.UDPPort > 0 {
+			// UDP TURN is used as STUN
+			hasSTUN = true
 			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
 		}
 		if r.config.TURN.TLSPort > 0 {
@@ -537,6 +533,15 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 			})
 		}
 	}
+
+	if len(r.config.RTC.StunServers) > 0 {
+		hasSTUN = true
+		iceServers = append(iceServers, iceServerForStunServers(r.config.RTC.StunServers))
+	}
+
+	if !hasSTUN {
+		iceServers = append(iceServers, iceServerForStunServers(config.DEFAULT_STUN_SERVERS))
+	}
 	return iceServers
 }
 
@@ -549,4 +554,12 @@ func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
 			FmtpLine: codec.FmtpLine,
 		})
 	}
+}
+
+func iceServerForStunServers(servers []string) *livekit.ICEServer {
+	iceServer := &livekit.ICEServer{}
+	for _, stunServer := range servers {
+		iceServer.Urls = append(iceServer.Urls, fmt.Sprintf("stun:%s", stunServer))
+	}
+	return iceServer
 }

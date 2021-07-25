@@ -12,6 +12,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var DEFAULT_STUN_SERVERS = []string{
+	"stun.l.google.com:19302",
+	"stun1.l.google.com:19302",
+}
+
 type Config struct {
 	Port           uint32            `yaml:"port"`
 	PrometheusPort uint32            `yaml:"prometheus_port"`
@@ -104,12 +109,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
-			StunServers: []string{
-				"stun.l.google.com:19302",
-				"stun1.l.google.com:19302",
-			},
-			MaxBitrate:       3 * 1024 * 1024, // 3 mbps
-			PacketBufferSize: 500,
+			StunServers:       []string{},
+			MaxBitrate:        3 * 1024 * 1024, // 3 mbps
+			PacketBufferSize:  500,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
 				MidQuality:  time.Second,
