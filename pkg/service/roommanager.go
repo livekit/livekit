@@ -514,10 +514,12 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 
-	if len(r.rtcConfig.Configuration.ICEServers) > 0 {
-		iceServers = append(iceServers, &livekit.ICEServer{
-			Urls: r.rtcConfig.Configuration.ICEServers[0].URLs,
-		})
+	if len(r.config.RTC.StunServers) > 0 {
+		iceServer := &livekit.ICEServer{}
+		for _, stunServer := range r.config.RTC.StunServers {
+			iceServer.Urls = append(iceServer.Urls, fmt.Sprintf("stun:%s", stunServer))
+		}
+		iceServers = append(iceServers, iceServer)
 	}
 	if r.config.TURN.Enabled {
 		var urls []string
