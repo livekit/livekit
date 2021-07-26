@@ -71,6 +71,7 @@ func Proto() error {
 		protoDir+"/livekit_room.proto",
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",
+		protoDir+"/livekit_recording_internal.proto",
 	)
 	if err != nil {
 		return err
@@ -123,6 +124,7 @@ func Proto() error {
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",
 		protoDir+"/livekit_models.proto",
+		protoDir+"/livekit_recording_internal.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
