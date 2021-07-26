@@ -1,4 +1,4 @@
-package service
+package recorder
 
 import (
 	"context"
@@ -21,8 +21,8 @@ const (
 	recorderTimeout    = time.Second * 3
 )
 
-func NewRecordingService(rc *redis.Client) *RedisRoomStore {
-	return &RedisRoomStore{
+func NewRecordingService(rc *redis.Client) *RecordingService {
+	return &RecordingService{
 		ctx: context.Background(),
 		rc:  rc,
 	}
