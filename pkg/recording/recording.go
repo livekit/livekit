@@ -52,7 +52,7 @@ func (s *RoomRecorder) EndRecording(ctx context.Context, recordingID string) err
 }
 
 func ResponseChannel(id string) string {
-	return "RESPONSE" + id
+	return "RESPONSE_" + id
 }
 
 func StartRecordingChannel(id string) string {
