@@ -2,13 +2,10 @@ package service
 
 import (
 	"context"
-	"time"
 
-	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/recording"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -41,7 +38,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 			return nil, errors.New("recording not configured (redis required)")
 		}
 
-		recordingID, err = s.reserveRecorder(ctx, req.Recording)
+		recordingID, err = s.recorder.ReserveRecorder(ctx, req.Recording)
 		if err != nil {
 			err = errors.Wrap(err, "could not reserve recorder")
 			return
@@ -228,7 +225,7 @@ func (s *RoomService) RecordRoom(ctx context.Context, req *livekit.RecordRoomReq
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
-	id, err := s.reserveRecorder(ctx, req)
+	id, err := s.recorder.ReserveRecorder(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -275,25 +272,4 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 
 	msg.ParticipantKey = routing.ParticipantKey(room, identity)
 	return rtcSink.WriteMessage(msg)
-}
-
-func (s *RoomService) reserveRecorder(ctx context.Context, req *livekit.RecordRoomRequest) (string, error) {
-	id := utils.NewGuid(utils.RecordingPrefix)
-	reservation := &livekit.RecordingReservation{
-		Id:          id,
-		SubmittedAt: time.Now().UnixNano(),
-		Input:       req.Input,
-		Output:      req.Output,
-	}
-	b, err := proto.Marshal(reservation)
-	if err != nil {
-		return "", err
-	}
-
-	err = s.recorder.ReserveRecorder(ctx, string(b), id)
-	if err != nil {
-		return "", err
-	}
-
-	return id, nil
 }

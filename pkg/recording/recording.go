@@ -5,7 +5,11 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
+	"google.golang.org/protobuf/proto"
+
+	livekit "github.com/livekit/livekit-server/proto"
 )
 
 type RoomRecorder struct {
@@ -26,20 +30,32 @@ func NewRoomRecorder(rc *redis.Client) *RoomRecorder {
 	return &RoomRecorder{rc: rc}
 }
 
-func (s *RoomRecorder) ReserveRecorder(ctx context.Context, msg, id string) error {
+func (s *RoomRecorder) ReserveRecorder(ctx context.Context, req *livekit.RecordRoomRequest) (string, error) {
+	id := utils.NewGuid(utils.RecordingPrefix)
+	reservation := &livekit.RecordingReservation{
+		Id:          id,
+		SubmittedAt: time.Now().UnixNano(),
+		Input:       req.Input,
+		Output:      req.Output,
+	}
+	b, err := proto.Marshal(reservation)
+	if err != nil {
+		return "", err
+	}
+
 	sub := s.rc.Subscribe(ctx, ResponseChannel(id))
 	defer sub.Close()
 
-	err := s.rc.Publish(ctx, ReservationChannel, msg).Err()
+	err = s.rc.Publish(ctx, ReservationChannel, string(b)).Err()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	select {
 	case <-sub.Channel():
-		return nil
+		return id, nil
 	case <-time.After(recorderTimeout):
-		return errors.New("no recorders available")
+		return "", errors.New("no recorders available")
 	}
 }
 
