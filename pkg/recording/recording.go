@@ -16,13 +16,6 @@ type RoomRecorder struct {
 	rc *redis.Client
 }
 
-const (
-	ReservationChannel = "RESERVE_RECORDER"
-	recorderTimeout    = time.Second * 3
-	// used by livekit-recorder
-	ReservationTimeout = time.Second * 2
-)
-
 func NewRoomRecorder(rc *redis.Client) *RoomRecorder {
 	if rc == nil {
 		return nil
@@ -43,10 +36,10 @@ func (s *RoomRecorder) ReserveRecorder(ctx context.Context, req *livekit.RecordR
 		return "", err
 	}
 
-	sub := s.rc.Subscribe(ctx, ResponseChannel(id))
+	sub := s.rc.Subscribe(ctx, utils.ReservationResponseChannel(id))
 	defer sub.Close()
 
-	err = s.rc.Publish(ctx, ReservationChannel, string(b)).Err()
+	err = s.rc.Publish(ctx, utils.ReservationChannel, string(b)).Err()
 	if err != nil {
 		return "", err
 	}
@@ -54,27 +47,15 @@ func (s *RoomRecorder) ReserveRecorder(ctx context.Context, req *livekit.RecordR
 	select {
 	case <-sub.Channel():
 		return id, nil
-	case <-time.After(recorderTimeout):
+	case <-time.After(utils.RecorderTimeout):
 		return "", errors.New("no recorders available")
 	}
 }
 
 func (s *RoomRecorder) StartRecording(ctx context.Context, recordingID string) error {
-	return s.rc.Publish(ctx, StartRecordingChannel(recordingID), nil).Err()
+	return s.rc.Publish(ctx, utils.StartRecordingChannel(recordingID), nil).Err()
 }
 
 func (s *RoomRecorder) EndRecording(ctx context.Context, recordingID string) error {
-	return s.rc.Publish(ctx, EndRecordingChannel(recordingID), nil).Err()
-}
-
-func ResponseChannel(id string) string {
-	return "RESPONSE_" + id
-}
-
-func StartRecordingChannel(id string) string {
-	return "START_RECORDING_" + id
-}
-
-func EndRecordingChannel(id string) string {
-	return "END_RECORDING_" + id
+	return s.rc.Publish(ctx, utils.EndRecordingChannel(recordingID), nil).Err()
 }
