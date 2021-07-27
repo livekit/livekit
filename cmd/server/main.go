@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -12,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
@@ -197,14 +195,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	// local routing and store
-	router, roomStore, err := createRouterAndStore(conf, currentNode)
-	if err != nil {
-		return err
-	}
-
-	server, err := service.InitializeServer(conf, keyProvider,
-		roomStore, router, currentNode, &routing.RandomSelector{})
+	server, err := service.InitializeServer(conf, keyProvider, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		return err
 	}
@@ -219,31 +210,6 @@ func startServer(c *cli.Context) error {
 	}()
 
 	return server.Start()
-}
-
-func createRouterAndStore(config *config.Config, node routing.LocalNode) (router routing.Router, store service.RoomStore, err error) {
-	if config.HasRedis() {
-		logger.Infow("using multi-node routing via redis", "addr", config.Redis.Address)
-		rc := redis.NewClient(&redis.Options{
-			Addr:     config.Redis.Address,
-			Username: config.Redis.Username,
-			Password: config.Redis.Password,
-			DB:       config.Redis.DB,
-		})
-		if err = rc.Ping(context.Background()).Err(); err != nil {
-			err = errors.Wrap(err, "unable to connect to redis")
-			return
-		}
-
-		router = routing.NewRedisRouter(node, rc)
-		store = service.NewRedisRoomStore(rc)
-	} else {
-		// local routing and store
-		logger.Infow("using single-node routing")
-		router = routing.NewLocalRouter(node)
-		store = service.NewLocalRoomStore()
-	}
-	return
 }
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {

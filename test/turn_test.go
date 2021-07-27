@@ -28,10 +28,7 @@ func testTurnServer(t *testing.T) {
 	currentNode.Id = utils.NewGuid(nodeId1)
 
 	// local routing and store
-	router := routing.NewLocalRouter(currentNode)
-	roomStore := service.NewLocalRoomStore()
-	roomStore.DeleteRoom(testRoom)
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
 	require.NoError(t, err)
 	go s.Start()
 	waitForServerToStart(s)
@@ -45,7 +42,7 @@ func testTurnServer(t *testing.T) {
 		Name:         "testroom",
 		TurnPassword: utils.RandomSecret(),
 	}
-	require.NoError(t, roomStore.CreateRoom(rm))
+	// require.NoError(t, roomStore.CreateRoom(rm))
 
 	turnConf := &turn.ClientConfig{
 		STUNServerAddr: fmt.Sprintf("localhost:%d", conf.TURN.TLSPort),

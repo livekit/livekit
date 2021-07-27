@@ -7,18 +7,26 @@ package service
 
 import (
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/recording"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/auth"
 )
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, roomStore RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
+	client, err := createRedisClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	roomStore := createStore(client)
+	router := createRouter(client, currentNode)
 	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, conf)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomManager)
+	roomRecorder := recording.NewRoomRecorder(client)
+	roomService, err := NewRoomService(roomManager, roomRecorder)
 	if err != nil {
 		return nil, err
 	}

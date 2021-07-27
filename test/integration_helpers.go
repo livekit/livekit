@@ -145,11 +145,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	// local routing and store
-	router := routing.NewLocalRouter(currentNode)
-	roomStore := service.NewLocalRoomStore()
-	_ = roomStore.DeleteRoom(testRoom)
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -176,19 +172,8 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	}
 	currentNode.Id = nodeId
 
-	// local routing and store
-	rc := redisClient()
-	if err = rc.Ping(context.Background()).Err(); err != nil {
-		panic(err)
-	}
-	if err = rc.Del(context.Background(), routing.NodesKey).Err(); err != nil {
-		panic(err)
-	}
-
-	router := routing.NewRedisRouter(currentNode, rc)
-	roomStore := service.NewRedisRoomStore(rc)
-	_ = roomStore.DeleteRoom(testRoom)
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, roomStore, router, currentNode, &routing.RandomSelector{})
+	// redis routing and store
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
