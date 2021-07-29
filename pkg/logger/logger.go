@@ -30,7 +30,7 @@ func SetLogger(l logr.Logger) {
 	sfu.Logger = l.WithName("sfu")
 	buffer.Logger = sfu.Logger
 
-	defaultLogger = l.WithName("livekit").WithCallDepth(1)
+	defaultLogger = l.WithCallDepth(1).WithName("livekit")
 }
 
 func LoggerFactory() logging.LoggerFactory {
