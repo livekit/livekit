@@ -255,8 +255,8 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 		}
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect but missing from the room
-		if err = responseSink.WriteMessage(&livekit.SignalRequest{
-			Message: &livekit.SignalRequest_Leave{
+		if err = responseSink.WriteMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
 				Leave: &livekit.LeaveRequest{
 					CanReconnect: true,
 				},
