@@ -229,7 +229,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.subscribedTracks[sub.ID()] = subTrack
 
 	t.receiver.AddDownTrack(downTrack, t.shouldStartWithBestQuality())
-	// since sub will lock, run it in a gorountine to avoid deadlocks
+	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
 		sub.AddSubscribedTrack(t.params.ParticipantID, subTrack)
 		sub.Negotiate()
