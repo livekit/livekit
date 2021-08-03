@@ -220,36 +220,6 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	return &livekit.UpdateSubscriptionsResponse{}, nil
 }
 
-func (s *RoomService) RecordRoom(ctx context.Context, req *livekit.RecordRoomRequest) (*livekit.RecordingResponse, error) {
-	if s.recorder == nil {
-		return nil, errors.New("recording not configured (redis required)")
-	}
-
-	id, err := s.recorder.ReserveRecorder(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.recorder.StartRecording(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return &livekit.RecordingResponse{RecordingId: id}, nil
-}
-
-func (s *RoomService) EndRoomRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResponse, error) {
-	if s.recorder == nil {
-		return nil, errors.New("recording not configured (redis required)")
-	}
-
-	err := s.recorder.EndRecording(ctx, req.RecordingId)
-	if err != nil {
-		return nil, err
-	}
-	return &livekit.RecordingResponse{RecordingId: req.RecordingId}, nil
-}
-
 func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) (routing.MessageSink, error) {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return nil, twirpAuthError(err)
