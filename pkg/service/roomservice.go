@@ -7,7 +7,6 @@ import (
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/pkg/recording"
 	"github.com/livekit/livekit-server/pkg/routing"
 	livekit "github.com/livekit/livekit-server/proto"
 )
@@ -15,15 +14,10 @@ import (
 // A rooms service that supports a single node
 type RoomService struct {
 	roomManager *RoomManager
-	recorder    *recording.RoomRecorder
 }
 
-func NewRoomService(roomManager *RoomManager, rs *recording.RoomRecorder) (svc *RoomService, err error) {
-	svc = &RoomService{
-		roomManager: roomManager,
-		recorder:    rs,
-	}
-
+func NewRoomService(roomManager *RoomManager) (svc *RoomService, err error) {
+	svc = &RoomService{roomManager: roomManager}
 	return
 }
 
@@ -32,29 +26,9 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	var recordingID string
-	if req.Recording != nil {
-		if s.recorder == nil {
-			return nil, errors.New("recording not configured (redis required)")
-		}
-
-		recordingID, err = s.recorder.ReserveRecorder(ctx, req.Recording)
-		if err != nil {
-			err = errors.Wrap(err, "could not reserve recorder")
-			return
-		}
-	}
-
 	rm, err = s.roomManager.CreateRoom(req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
-	}
-
-	if recordingID != "" {
-		err = s.recorder.StartRecording(ctx, recordingID)
-		if err != nil {
-			err = errors.Wrap(err, "could not start recording")
-		}
 	}
 
 	return
@@ -218,44 +192,6 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	}
 
 	return &livekit.UpdateSubscriptionsResponse{}, nil
-}
-
-func (s *RoomService) StartRecording(ctx context.Context, req *livekit.RecordRoomRequest) (*livekit.RecordingResponse, error) {
-	if err := EnsureAdminPermission(ctx, ""); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
-	if s.recorder == nil {
-		return nil, errors.New("recording not configured (redis required)")
-	}
-
-	id, err := s.recorder.ReserveRecorder(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.recorder.StartRecording(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return &livekit.RecordingResponse{RecordingId: id}, nil
-}
-
-func (s *RoomService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResponse, error) {
-	if err := EnsureAdminPermission(ctx, ""); err != nil {
-		return nil, twirpAuthError(err)
-	}
-
-	if s.recorder == nil {
-		return nil, errors.New("recording not configured (redis required)")
-	}
-
-	err := s.recorder.EndRecording(ctx, req.RecordingId)
-	if err != nil {
-		return nil, err
-	}
-	return &livekit.RecordingResponse{RecordingId: req.RecordingId}, nil
 }
 
 func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) (routing.MessageSink, error) {

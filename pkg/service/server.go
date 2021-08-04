@@ -27,6 +27,7 @@ import (
 type LivekitServer struct {
 	config      *config.Config
 	roomServer  livekit.TwirpServer
+	recServer   livekit.TwirpServer
 	rtcService  *RTCService
 	httpServer  *http.Server
 	promServer  *http.Server
@@ -41,6 +42,7 @@ type LivekitServer struct {
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
+	recService livekit.RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -51,6 +53,7 @@ func NewLivekitServer(conf *config.Config,
 	s = &LivekitServer{
 		config:      conf,
 		roomServer:  livekit.NewRoomServiceServer(roomService),
+		recServer:   livekit.NewRecordingServiceServer(recService),
 		rtcService:  rtcService,
 		router:      router,
 		roomManager: roomManager,
@@ -70,6 +73,7 @@ func NewLivekitServer(conf *config.Config,
 
 	mux := http.NewServeMux()
 	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
+	mux.Handle(s.recServer.PathPrefix(), s.recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
