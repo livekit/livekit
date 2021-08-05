@@ -10,7 +10,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/recording"
 	"github.com/livekit/livekit-server/pkg/routing"
 	livekit "github.com/livekit/livekit-server/proto"
 )
@@ -19,13 +18,14 @@ var ServiceSet = wire.NewSet(
 	createRedisClient,
 	createRouter,
 	createStore,
-	recording.NewRoomRecorder,
+	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
 	NewLivekitServer,
 	NewRoomManager,
 	NewTurnServer,
 	config.GetAudioConfig,
+	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )
 
