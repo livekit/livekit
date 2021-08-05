@@ -21,7 +21,7 @@ func NewRecordingService(rc *redis.Client) *RecordingService {
 }
 
 func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.RecordingResponse, error) {
-	if err := EnsureAdminPermission(ctx, ""); err != nil {
+	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
@@ -73,7 +73,7 @@ func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.Sta
 }
 
 func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResponse, error) {
-	if err := EnsureAdminPermission(ctx, ""); err != nil {
+	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
