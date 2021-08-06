@@ -49,8 +49,7 @@ func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.Sta
 	reservation := &livekit.RecordingReservation{
 		Id:          id,
 		SubmittedAt: time.Now().UnixNano(),
-		Input:       req.Input,
-		Output:      req.Output,
+		Request:     req,
 	}
 	b, err := proto.Marshal(reservation)
 	if err != nil {
