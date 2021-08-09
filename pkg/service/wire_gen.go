@@ -20,7 +20,11 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, current
 	}
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
-	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, conf)
+	notifier, err := createWebhookNotifier(conf, keyProvider)
+	if err != nil {
+		return nil, err
+	}
+	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, notifier, conf)
 	if err != nil {
 		return nil, err
 	}

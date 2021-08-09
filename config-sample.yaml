@@ -75,6 +75,16 @@ keys:
 #    - mime: audio/opus
 #    - mime: video/vp8
 
+# Webhooks
+# when configured, LiveKit notifies your URL handler with room events
+#webhook:
+#  # the API key to use in order to sign the message
+#  # this must match one of the keys LiveKit is configured with
+#  api_key: <api_key>
+#  # list of URLs to be notified of room events
+#  urls:
+#    - https://your-host.com/handler
+
 # customize audio level sensitivity
 #audio:
 #  # minimum level to be considered active, 0-127, where 0 is loudest

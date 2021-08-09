@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var DEFAULT_STUN_SERVERS = []string{
+var DefaultStunServers = []string{
 	"stun.l.google.com:19302",
 	"stun1.l.google.com:19302",
 }
@@ -25,6 +25,7 @@ type Config struct {
 	Audio          AudioConfig       `yaml:"audio"`
 	Room           RoomConfig        `yaml:"room"`
 	TURN           TURNConfig        `yaml:"turn"`
+	WebHook        WebHookConfig     `yaml:"webhook"`
 	KeyFile        string            `yaml:"key_file"`
 	Keys           map[string]string `yaml:"keys"`
 	LogLevel       string            `yaml:"log_level"`
@@ -97,6 +98,12 @@ type TURNConfig struct {
 	KeyFile  string `yaml:"key_file"`
 	TLSPort  int    `yaml:"tls_port"`
 	UDPPort  int    `yaml:"udp_port"`
+}
+
+type WebHookConfig struct {
+	URLs []string `yaml:"urls"`
+	// key to use for webhook
+	APIKey string `yaml:"api_key"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
