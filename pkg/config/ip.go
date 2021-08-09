@@ -15,7 +15,7 @@ func (conf *Config) determineIP() (string, error) {
 	if conf.RTC.UseExternalIP {
 		stunServers := conf.RTC.StunServers
 		if len(stunServers) == 0 {
-			stunServers = DEFAULT_STUN_SERVERS
+			stunServers = DefaultStunServers
 		}
 		ip, err := GetExternalIP(stunServers)
 		if err == nil {

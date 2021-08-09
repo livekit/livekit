@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -18,6 +20,7 @@ var ServiceSet = wire.NewSet(
 	createRedisClient,
 	createRouter,
 	createStore,
+	createWebhookNotifier,
 	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
@@ -64,6 +67,19 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
+}
+
+func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
+	wc := conf.WebHook
+	if len(wc.URLs) == 0 {
+		return nil, nil
+	}
+	secret := provider.GetSecret(wc.APIKey)
+	if secret == "" {
+		return nil, ErrWebHookMissingAPIKey
+	}
+
+	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
 func handleError(w http.ResponseWriter, status int, msg string) {

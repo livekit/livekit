@@ -67,11 +67,12 @@ func Proto() error {
 	}
 	protoDir := info.Dir
 	updated, err := target.Path("proto/livekit_models.pb.go",
+		protoDir+"/livekit_internal.proto",
 		protoDir+"/livekit_models.proto",
 		protoDir+"/livekit_recording.proto",
 		protoDir+"/livekit_room.proto",
 		protoDir+"/livekit_rtc.proto",
-		protoDir+"/livekit_internal.proto",
+		protoDir+"/livekit_webhook.proto",
 	)
 	if err != nil {
 		return err
@@ -99,7 +100,7 @@ func Proto() error {
 		return err
 	}
 
-	// generate model and room
+	// generate twirp-related protos
 	cmd = exec.Command(protoc,
 		"--go_out", target,
 		"--twirp_out", target,
@@ -116,7 +117,7 @@ func Proto() error {
 		return err
 	}
 
-	// generate rtc
+	// generate basic protobuf
 	cmd = exec.Command(protoc,
 		"--go_out", target,
 		"--go_opt=paths=source_relative",
@@ -126,6 +127,7 @@ func Proto() error {
 		protoDir+"/livekit_rtc.proto",
 		protoDir+"/livekit_internal.proto",
 		protoDir+"/livekit_models.proto",
+		protoDir+"/livekit_webhook.proto",
 	)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {

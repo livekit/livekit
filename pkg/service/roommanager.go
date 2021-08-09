@@ -5,7 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/webhook"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -28,12 +30,15 @@ type RoomManager struct {
 	selector    routing.NodeSelector
 	router      routing.Router
 	currentNode routing.LocalNode
+	notifier    *webhook.Notifier
 	rtcConfig   *rtc.WebRTCConfig
 	config      *config.Config
+	webhookPool *workerpool.WorkerPool
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector, conf *config.Config) (*RoomManager, error) {
+func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector,
+	notifier *webhook.Notifier, conf *config.Config) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err
@@ -46,7 +51,9 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 		config:      conf,
 		router:      router,
 		selector:    selector,
+		notifier:    notifier,
 		currentNode: currentNode,
+		webhookPool: workerpool.New(1),
 		rooms:       make(map[string]*rtc.Room),
 	}, nil
 }
@@ -317,7 +324,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 	go r.rtcSessionWorker(room, participant, requestSource)
 }
 
-// create the actual room object
+// create the actual room object, to be used on RTC node
 func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
@@ -340,6 +347,11 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 			logger.Errorw("could not delete room", err)
 		}
 
+		r.notifyEvent(&livekit.WebhookEvent{
+			Type: webhook.EventRoomFinished,
+			Room: room.Room,
+		})
+
 		// print stats
 		logger.Infow("room closed",
 			"incomingStats", room.GetIncomingStats().Copy(),
@@ -361,10 +373,15 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	r.rooms[roomName] = room
 	r.lock.Unlock()
 
+	r.notifyEvent(&livekit.WebhookEvent{
+		Type: webhook.EventRoomStarted,
+		Room: room.Room,
+	})
+
 	return room, nil
 }
 
-// manages a RTC session for a participant, runs on the RTC node
+// manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
@@ -374,9 +391,20 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			"roomID", room.Room.Sid,
 		)
 		_ = participant.Close()
+
+		r.notifyEvent(&livekit.WebhookEvent{
+			Type:        webhook.EventParticipantLeft,
+			Room:        room.Room,
+			Participant: participant.ToProto(),
+		})
 	}()
 	defer rtc.Recover()
 
+	r.notifyEvent(&livekit.WebhookEvent{
+		Type:        webhook.EventParticipantJoined,
+		Room:        room.Room,
+		Participant: participant.ToProto(),
+	})
 	for {
 		select {
 		case <-time.After(time.Millisecond * 50):
@@ -540,9 +568,21 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	}
 
 	if !hasSTUN {
-		iceServers = append(iceServers, iceServerForStunServers(config.DEFAULT_STUN_SERVERS))
+		iceServers = append(iceServers, iceServerForStunServers(config.DefaultStunServers))
 	}
 	return iceServers
+}
+
+func (r *RoomManager) notifyEvent(event *livekit.WebhookEvent) {
+	if r.notifier == nil {
+		return
+	}
+
+	r.webhookPool.Submit(func() {
+		if err := r.notifier.Notify(event); err != nil {
+			logger.Warnw("could not notify webhook", err, "event", event.Type)
+		}
+	})
 }
 
 func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
