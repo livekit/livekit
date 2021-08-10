@@ -156,7 +156,7 @@ func (s *webookTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.lock.Lock()
-	s.events[event.Type] = &event
+	s.events[event.Event] = &event
 	s.lock.Unlock()
 }
 

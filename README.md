@@ -9,7 +9,7 @@ LiveKit is an open source project that provides scalable, multi-user conferencin
 - Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
 - Robust networking & connectivity, over UDP & TCP
 - Easy to deploy - pure Go & single binary
-- Advanced features - speaker detection, simulcasting, selective subscription, moderation APIs.
+- Advanced features - speaker detection, simulcast, selective subscription, moderation APIs, and webhooks.
 
 ## Documentation & Guides
 

@@ -348,8 +348,8 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		}
 
 		r.notifyEvent(&livekit.WebhookEvent{
-			Type: webhook.EventRoomFinished,
-			Room: room.Room,
+			Event: webhook.EventRoomFinished,
+			Room:  room.Room,
 		})
 
 		// print stats
@@ -374,8 +374,8 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	r.lock.Unlock()
 
 	r.notifyEvent(&livekit.WebhookEvent{
-		Type: webhook.EventRoomStarted,
-		Room: room.Room,
+		Event: webhook.EventRoomStarted,
+		Room:  room.Room,
 	})
 
 	return room, nil
@@ -393,7 +393,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 		_ = participant.Close()
 
 		r.notifyEvent(&livekit.WebhookEvent{
-			Type:        webhook.EventParticipantLeft,
+			Event:       webhook.EventParticipantLeft,
 			Room:        room.Room,
 			Participant: participant.ToProto(),
 		})
@@ -401,7 +401,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 	defer rtc.Recover()
 
 	r.notifyEvent(&livekit.WebhookEvent{
-		Type:        webhook.EventParticipantJoined,
+		Event:       webhook.EventParticipantJoined,
 		Room:        room.Room,
 		Participant: participant.ToProto(),
 	})
@@ -580,7 +580,7 @@ func (r *RoomManager) notifyEvent(event *livekit.WebhookEvent) {
 
 	r.webhookPool.Submit(func() {
 		if err := r.notifier.Notify(event); err != nil {
-			logger.Warnw("could not notify webhook", err, "event", event.Type)
+			logger.Warnw("could not notify webhook", err, "event", event.Event)
 		}
 	})
 }
