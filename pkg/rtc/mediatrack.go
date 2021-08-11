@@ -182,7 +182,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
-		subTrack.SetPublisherMuted(t.IsMuted())
 		go t.sendDownTrackBindingReports(sub)
 	})
 
@@ -227,6 +226,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	})
 
 	t.subscribedTracks[sub.ID()] = subTrack
+	subTrack.SetPublisherMuted(t.IsMuted())
 
 	t.receiver.AddDownTrack(downTrack, t.shouldStartWithBestQuality())
 	// since sub will lock, run it in a goroutine to avoid deadlocks

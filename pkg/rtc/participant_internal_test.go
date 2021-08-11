@@ -159,6 +159,31 @@ func TestCorrectJoinedAt(t *testing.T) {
 	require.True(t, time.Now().Unix()-info.JoinedAt <= 1)
 }
 
+func TestMuteSetting(t *testing.T) {
+	t.Run("can set mute when track is pending", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		ti := &livekit.TrackInfo{Sid: "testTrack"}
+		p.pendingTracks["cid"] = ti
+
+		p.SetTrackMuted(ti.Sid, true)
+		require.True(t, ti.Muted)
+
+	})
+
+	t.Run("can publish a muted track", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:   "cid",
+			Type:  livekit.TrackType_AUDIO,
+			Muted: true,
+		})
+
+		ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
+		require.NotNil(t, ti)
+		require.True(t, ti.Muted)
+	})
+}
+
 func newParticipantForTest(identity string) *ParticipantImpl {
 	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
