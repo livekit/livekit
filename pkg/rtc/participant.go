@@ -303,6 +303,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		Sid:    utils.NewGuid(utils.TrackPrefix),
 		Width:  req.Width,
 		Height: req.Height,
+		Muted:  req.Muted,
 	}
 	p.pendingTracks[req.Cid] = ti
 
@@ -536,9 +537,21 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 }
 
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
+	isPending := false
 	p.lock.RLock()
+	for _, ti := range p.pendingTracks {
+		if ti.Sid == trackId {
+			ti.Muted = muted
+			isPending = true
+		}
+	}
 	track := p.publishedTracks[trackId]
 	p.lock.RUnlock()
+
+	// already handled
+	if isPending {
+		return
+	}
 	if track == nil {
 		logger.Warnw("could not locate track", nil, "track", trackId)
 		return
@@ -719,6 +732,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	// delete pending track if it's not simulcasting
+	// TODO: we should delete it after adding three tracks
 	ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), track.RID() == "")
 	if ti == nil {
 		return
@@ -745,6 +759,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			Height:         ti.Height,
 		})
 		mt.name = ti.Name
+		mt.SetMuted(ti.Muted)
 		newTrack = true
 	}
 
