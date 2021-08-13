@@ -3,6 +3,7 @@ package rtc
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/livekit/protocol/utils"
@@ -12,7 +13,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
-	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -37,6 +37,7 @@ type MediaTrack struct {
 	kind        livekit.TrackType
 	codec       webrtc.RTPCodecParameters
 	muted       utils.AtomicFlag
+	numUpTracks uint32
 	simulcasted bool
 
 	// channel to send RTCP packets to the source
@@ -98,23 +99,15 @@ func (t *MediaTrack) IsMuted() bool {
 func (t *MediaTrack) SetMuted(muted bool) {
 	t.muted.TrySet(muted)
 
-	// mute all of the subscribedtracks
 	t.lock.RLock()
+	if t.receiver != nil {
+		t.receiver.SetUpTrackPaused(muted)
+	}
+	// mute all of the subscribedtracks
 	for _, st := range t.subscribedTracks {
 		st.SetPublisherMuted(muted)
 	}
 	t.lock.RUnlock()
-}
-
-func (t *MediaTrack) SetSimulcastLayers(layers []livekit.VideoQuality) {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-	if t.receiver != nil {
-		layers16 := funk.Map(layers, func(l livekit.VideoQuality) uint16 {
-			return uint16(spatialLayerForQuality(l))
-		}).([]uint16)
-		t.receiver.SetAvailableLayers(layers16)
-	}
 }
 
 func (t *MediaTrack) OnClose(f func()) {
@@ -239,6 +232,10 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	return nil
 }
 
+func (t *MediaTrack) NumUpTracks() uint32 {
+	return atomic.LoadUint32(&t.numUpTracks)
+}
+
 // AddReceiver adds a new RTP receiver to the track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	t.lock.Lock()
@@ -286,7 +283,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	if t.receiver == nil {
 		t.receiver = sfu.NewWebRTCReceiver(receiver, track, t.params.ParticipantID,
 			sfu.WithPliThrottle(0),
-			sfu.WithLoadBalanceThreshold(20))
+			sfu.WithLoadBalanceThreshold(20),
+			sfu.WithStreamTrackers())
 		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
 			t.lock.Lock()
@@ -304,6 +302,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
 	// when RID is set, track is simulcasted
 	t.simulcasted = track.RID() != ""
+	atomic.AddUint32(&t.numUpTracks, 1)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
