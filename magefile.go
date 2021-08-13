@@ -160,6 +160,35 @@ func Build() error {
 	return nil
 }
 
+// builds binary that runs on linux amd64
+func BuildLinux() error {
+	mg.Deps(Proto, generateWire)
+	if !checksummer.IsChanged() {
+		fmt.Println("up to date")
+		return nil
+	}
+
+	fmt.Println("building...")
+	if err := os.MkdirAll("bin", 0755); err != nil {
+		return err
+	}
+	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-server-amd64")
+	cmd.Env = []string{
+		"GOOS=linux",
+		"GOARCH=amd64",
+		"HOME=" + os.Getenv("HOME"),
+		"GOPATH=" + os.Getenv("GOPATH"),
+	}
+	cmd.Dir = "cmd/server"
+	connectStd(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	checksummer.WriteChecksum()
+	return nil
+}
+
 // builds docker image for LiveKit server
 func Docker() error {
 	mg.Deps(Proto, generateWire)

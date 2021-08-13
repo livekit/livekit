@@ -731,15 +731,13 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	// delete pending track if it's not simulcasting
-	// TODO: we should delete it after adding three tracks
-	ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), track.RID() == "")
-	if ti == nil {
-		return
-	}
-
 	// use existing mediatrack to handle simulcast
 	p.lock.Lock()
+	ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), false)
+	if ti == nil {
+		p.lock.Unlock()
+		return
+	}
 	ptrack := p.publishedTracks[ti.Sid]
 
 	var mt *MediaTrack
@@ -772,6 +770,11 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		})
 	}
 	mt.AddReceiver(rtpReceiver, track, p.twcc)
+
+	// cleanup pendingTracks
+	if !mt.simulcasted || mt.NumUpTracks() == 3 {
+		_ = p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
+	}
 	p.lock.Unlock()
 
 	if newTrack {
@@ -800,8 +803,6 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, deleteAfter bool) *livekit.TrackInfo {
-	p.lock.Lock()
-	defer p.lock.Unlock()
 	ti := p.pendingTracks[clientId]
 
 	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
