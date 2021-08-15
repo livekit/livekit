@@ -53,6 +53,9 @@ type RTCConfig struct {
 
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
+
+	// Attempt to create new rooms on this node
+	PreferLocalNode bool `yaml:"prefer_local_node"`
 }
 
 type PLIThrottleConfig struct {
@@ -131,6 +134,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 				MidQuality:  time.Second,
 				HighQuality: time.Second,
 			},
+			PreferLocalNode: false,
 		},
 		Audio: AudioConfig{
 			ActiveLevel:     30, // -30dBov = 0.03

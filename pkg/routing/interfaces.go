@@ -69,5 +69,5 @@ type Router interface {
 // NodeSelector selects an appropriate node to run the current session
 //counterfeiter:generate . NodeSelector
 type NodeSelector interface {
-	SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error)
+	SelectNode(nodes []*livekit.Node, room *livekit.Room, preferredNode *livekit.Node) (*livekit.Node, error)
 }

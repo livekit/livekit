@@ -112,6 +112,7 @@ func (r *LocalRoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRo
 
 	// select a new node
 	nodeId := req.NodeId
+
 	if nodeId == "" {
 		// select a node for room
 		nodes, err := r.router.ListNodes()
@@ -119,7 +120,14 @@ func (r *LocalRoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRo
 			return nil, err
 		}
 
-		node, err := r.selector.SelectNode(nodes, rm)
+		// Set this node to preferred if local node preferred
+		var preferredNode *livekit.Node
+		if r.config.RTC.PreferLocalNode {
+			logger.Debugw("requesting preferred local node")
+			preferredNode = r.currentNode
+		}
+
+		node, err := r.selector.SelectNode(nodes, rm, preferredNode)
 		if err != nil {
 			return nil, err
 		}
