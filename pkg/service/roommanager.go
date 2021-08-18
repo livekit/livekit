@@ -527,6 +527,25 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 				"tracks", rm.UpdateSubscriptions.TrackSids,
 				"subscribe", rm.UpdateSubscriptions.Subscribe)
 		}
+	case *livekit.RTCNodeMessage_SendData:
+		logger.Debugw("SendData", "message", rm)
+
+		kind := livekit.DataPacket_RELIABLE // Default to RELIABLE
+		if rm.SendData.Kind == "lossy" {
+			kind = livekit.DataPacket_LOSSY
+		}
+
+		dp := &livekit.DataPacket{
+			Kind: kind,
+			Value: &livekit.DataPacket_User{
+				User: &livekit.UserPacket{
+					DestinationSids: rm.SendData.DestinationSids,
+					Payload:         rm.SendData.Data,
+				},
+			},
+		}
+
+		room.SendDataPacket(dp, nil)
 	}
 }
 

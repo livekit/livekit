@@ -186,7 +186,9 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
-	participant.OnDataPacket(r.onDataPacket)
+	participant.OnDataPacket(func(p types.Participant, dp *livekit.DataPacket) {
+		r.SendDataPacket(dp, &p)
+	})
 	logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -421,14 +423,14 @@ func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
 	}
 }
 
-func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
+func (r *Room) SendDataPacket(dp *livekit.DataPacket, source *types.Participant) {
 	dest := dp.GetUser().GetDestinationSids()
 
 	for _, op := range r.GetParticipants() {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
 			continue
 		}
-		if op.ID() == source.ID() {
+		if source != nil && op.ID() == (*source).ID() {
 			continue
 		}
 		if len(dest) > 0 {
