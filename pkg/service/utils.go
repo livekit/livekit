@@ -92,3 +92,21 @@ func handleError(w http.ResponseWriter, status int, msg string) {
 func boolValue(s string) bool {
 	return s == "1" || s == "true"
 }
+
+func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission {
+	p := &livekit.ParticipantPermission{
+		CanSubscribe:   true,
+		CanPublish:     true,
+		CanPublishData: true,
+	}
+	if claim.CanPublish != nil {
+		p.CanPublish = *claim.CanPublish
+	}
+	if claim.CanSubscribe != nil {
+		p.CanSubscribe = *claim.CanSubscribe
+	}
+	if claim.CanPublishData != nil {
+		p.CanPublishData = *claim.CanPublishData
+	}
+	return p
+}

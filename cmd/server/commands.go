@@ -105,7 +105,8 @@ func createToken(c *cli.Context) error {
 	}
 	if c.Bool("recorder") {
 		grant.Hidden = true
-		grant.CanSubscribe = true
+		grant.SetCanPublish(false)
+		grant.SetCanPublishData(false)
 	}
 
 	at := auth.NewAccessToken(apiKey, apiSecret).

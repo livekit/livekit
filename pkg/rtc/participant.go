@@ -598,6 +598,10 @@ func (p *ParticipantImpl) CanSubscribe() bool {
 	return p.permission == nil || p.permission.CanSubscribe
 }
 
+func (p *ParticipantImpl) CanPublishData() bool {
+	return p.permission == nil || p.permission.CanPublishData
+}
+
 func (p *ParticipantImpl) Hidden() bool {
 	return p.params.Hidden
 }
