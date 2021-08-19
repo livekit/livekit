@@ -454,6 +454,30 @@ func TestDataChannel(t *testing.T) {
 		require.Equal(t, 1, p1.SendDataPacketCallCount())
 		require.Equal(t, packet.Value, p1.SendDataPacketArgsForCall(0).Value)
 	})
+
+	t.Run("publishing disallowed", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close()
+		participants := rm.GetParticipants()
+		p := participants[0].(*typesfakes.FakeParticipant)
+		p.CanPublishDataReturns(false)
+
+		packet := livekit.DataPacket{
+			Kind: livekit.DataPacket_RELIABLE,
+			Value: &livekit.DataPacket_User{
+				User: &livekit.UserPacket{
+					Payload: []byte{},
+				},
+			},
+		}
+		p.OnDataPacketArgsForCall(0)(p, &packet)
+
+		// no one should've been sent packet
+		for _, op := range participants {
+			fp := op.(*typesfakes.FakeParticipant)
+			require.Zero(t, fp.SendDataPacketCallCount())
+		}
+	})
 }
 
 func TestHiddenParticipants(t *testing.T) {

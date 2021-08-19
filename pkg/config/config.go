@@ -144,8 +144,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		TURN: TURNConfig{
 			Enabled: false,
-			TLSPort: 5349,
-			UDPPort: 3478,
 		},
 		Keys: map[string]string{},
 	}
@@ -170,6 +168,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 
 	// set defaults for ports if none are set
 	if conf.RTC.UDPPort == 0 && conf.RTC.ICEPortRangeStart == 0 {
+		// to make it easier to run in dev mode/docker, default to single port
 		if conf.Development {
 			conf.RTC.UDPPort = 7882
 		} else {

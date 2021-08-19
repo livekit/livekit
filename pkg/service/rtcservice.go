@@ -89,14 +89,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	if pv, err := strconv.Atoi(protocolParam); err == nil {
 		pi.ProtocolVersion = int32(pv)
 	}
-
-	// only use permissions if any of them are set, default permissive
-	if claims.Video.CanPublish || claims.Video.CanSubscribe {
-		pi.Permission = &livekit.ParticipantPermission{
-			CanSubscribe: claims.Video.CanSubscribe,
-			CanPublish:   claims.Video.CanPublish,
-		}
-	}
+	pi.Permission = permissionFromGrant(claims.Video)
 
 	return roomName, pi, http.StatusOK, nil
 }

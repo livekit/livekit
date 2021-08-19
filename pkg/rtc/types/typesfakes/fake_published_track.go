@@ -90,11 +90,6 @@ type FakePublishedTrack struct {
 	setMutedArgsForCall []struct {
 		arg1 bool
 	}
-	SetSimulcastLayersStub        func([]livekit.VideoQuality)
-	setSimulcastLayersMutex       sync.RWMutex
-	setSimulcastLayersArgsForCall []struct {
-		arg1 []livekit.VideoQuality
-	}
 	StartStub        func()
 	startMutex       sync.RWMutex
 	startArgsForCall []struct {
@@ -567,43 +562,6 @@ func (fake *FakePublishedTrack) SetMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
-func (fake *FakePublishedTrack) SetSimulcastLayers(arg1 []livekit.VideoQuality) {
-	var arg1Copy []livekit.VideoQuality
-	if arg1 != nil {
-		arg1Copy = make([]livekit.VideoQuality, len(arg1))
-		copy(arg1Copy, arg1)
-	}
-	fake.setSimulcastLayersMutex.Lock()
-	fake.setSimulcastLayersArgsForCall = append(fake.setSimulcastLayersArgsForCall, struct {
-		arg1 []livekit.VideoQuality
-	}{arg1Copy})
-	stub := fake.SetSimulcastLayersStub
-	fake.recordInvocation("SetSimulcastLayers", []interface{}{arg1Copy})
-	fake.setSimulcastLayersMutex.Unlock()
-	if stub != nil {
-		fake.SetSimulcastLayersStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) SetSimulcastLayersCallCount() int {
-	fake.setSimulcastLayersMutex.RLock()
-	defer fake.setSimulcastLayersMutex.RUnlock()
-	return len(fake.setSimulcastLayersArgsForCall)
-}
-
-func (fake *FakePublishedTrack) SetSimulcastLayersCalls(stub func([]livekit.VideoQuality)) {
-	fake.setSimulcastLayersMutex.Lock()
-	defer fake.setSimulcastLayersMutex.Unlock()
-	fake.SetSimulcastLayersStub = stub
-}
-
-func (fake *FakePublishedTrack) SetSimulcastLayersArgsForCall(i int) []livekit.VideoQuality {
-	fake.setSimulcastLayersMutex.RLock()
-	defer fake.setSimulcastLayersMutex.RUnlock()
-	argsForCall := fake.setSimulcastLayersArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakePublishedTrack) Start() {
 	fake.startMutex.Lock()
 	fake.startArgsForCall = append(fake.startArgsForCall, struct {
@@ -704,8 +662,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
-	fake.setSimulcastLayersMutex.RLock()
-	defer fake.setSimulcastLayersMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	fake.toProtoMutex.RLock()

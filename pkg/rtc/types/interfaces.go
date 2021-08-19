@@ -57,6 +57,7 @@ type Participant interface {
 
 	CanPublish() bool
 	CanSubscribe() bool
+	CanPublishData() bool
 	Hidden() bool
 
 	Start()

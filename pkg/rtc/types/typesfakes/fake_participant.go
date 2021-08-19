@@ -59,6 +59,16 @@ type FakeParticipant struct {
 	canPublishReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	CanPublishDataStub        func() bool
+	canPublishDataMutex       sync.RWMutex
+	canPublishDataArgsForCall []struct {
+	}
+	canPublishDataReturns struct {
+		result1 bool
+	}
+	canPublishDataReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	CanSubscribeStub        func() bool
 	canSubscribeMutex       sync.RWMutex
 	canSubscribeArgsForCall []struct {
@@ -645,6 +655,59 @@ func (fake *FakeParticipant) CanPublishReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.canPublishReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) CanPublishData() bool {
+	fake.canPublishDataMutex.Lock()
+	ret, specificReturn := fake.canPublishDataReturnsOnCall[len(fake.canPublishDataArgsForCall)]
+	fake.canPublishDataArgsForCall = append(fake.canPublishDataArgsForCall, struct {
+	}{})
+	stub := fake.CanPublishDataStub
+	fakeReturns := fake.canPublishDataReturns
+	fake.recordInvocation("CanPublishData", []interface{}{})
+	fake.canPublishDataMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) CanPublishDataCallCount() int {
+	fake.canPublishDataMutex.RLock()
+	defer fake.canPublishDataMutex.RUnlock()
+	return len(fake.canPublishDataArgsForCall)
+}
+
+func (fake *FakeParticipant) CanPublishDataCalls(stub func() bool) {
+	fake.canPublishDataMutex.Lock()
+	defer fake.canPublishDataMutex.Unlock()
+	fake.CanPublishDataStub = stub
+}
+
+func (fake *FakeParticipant) CanPublishDataReturns(result1 bool) {
+	fake.canPublishDataMutex.Lock()
+	defer fake.canPublishDataMutex.Unlock()
+	fake.CanPublishDataStub = nil
+	fake.canPublishDataReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) CanPublishDataReturnsOnCall(i int, result1 bool) {
+	fake.canPublishDataMutex.Lock()
+	defer fake.canPublishDataMutex.Unlock()
+	fake.CanPublishDataStub = nil
+	if fake.canPublishDataReturnsOnCall == nil {
+		fake.canPublishDataReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.canPublishDataReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -2550,6 +2613,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.addTrackMutex.RUnlock()
 	fake.canPublishMutex.RLock()
 	defer fake.canPublishMutex.RUnlock()
+	fake.canPublishDataMutex.RLock()
+	defer fake.canPublishDataMutex.RUnlock()
 	fake.canSubscribeMutex.RLock()
 	defer fake.canSubscribeMutex.RUnlock()
 	fake.closeMutex.RLock()
