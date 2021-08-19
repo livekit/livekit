@@ -9,6 +9,7 @@ require (
 	github.com/go-logr/logr v1.0.0
 	github.com/go-logr/zapr v1.0.0
 	github.com/go-redis/redis/v8 v8.7.1
+	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
@@ -16,6 +17,7 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/ice/v2 v2.1.10
 	github.com/pion/interceptor v0.0.13
 	github.com/pion/ion-sfu v1.10.5
@@ -38,8 +40,9 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.18.1
 	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf // indirect
-	golang.org/x/sys v0.0.0-20210601080250-7ecdf8ef093b // indirect
-	golang.org/x/tools v0.1.2 // indirect
+	golang.org/x/mod v0.5.0 // indirect
+	golang.org/x/sys v0.0.0-20210816183151-1e6c022a8912 // indirect
+	golang.org/x/tools v0.1.5 // indirect
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )

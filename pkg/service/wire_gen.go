@@ -44,3 +44,12 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, current
 	}
 	return livekitServer, nil
 }
+
+func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+	client, err := createRedisClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	router := createRouter(client, currentNode)
+	return router, nil
+}
