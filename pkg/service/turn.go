@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/tls"
 	"net"
+	"regexp"
 	"strconv"
 
 	"github.com/pion/turn/v2"
@@ -47,6 +48,10 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	if turnConf.TLSPort > 0 {
 		if turnConf.Domain == "" {
 			return nil, errors.New("TURN domain required")
+		}
+
+		if isValidDomain(turnConf.Domain) == false {
+			return nil, errors.New("TURN domain is not correct")
 		}
 
 		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
@@ -99,4 +104,9 @@ func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
 
 		return turn.GenerateAuthKey(username, livekitRealm, rm.TurnPassword), true
 	}
+}
+
+func isValidDomain(domain string) bool {
+	domainRegexp := regexp.MustCompile(`^(?i)[a-z0-9-]+(\.[a-z0-9-]+)+\.?$`)
+	return domainRegexp.MatchString(domain)
 }
