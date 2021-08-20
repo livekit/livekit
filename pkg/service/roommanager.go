@@ -527,6 +527,13 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 				"tracks", rm.UpdateSubscriptions.TrackSids,
 				"subscribe", rm.UpdateSubscriptions.Subscribe)
 		}
+	case *livekit.RTCNodeMessage_SendData:
+		logger.Debugw("SendData", "message", rm)
+		up := &livekit.UserPacket{
+			Payload:         rm.SendData.Data,
+			DestinationSids: rm.SendData.DestinationSids,
+		}
+		room.SendDataPacket(up, rm.SendData.Kind)
 	}
 }
 

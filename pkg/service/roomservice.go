@@ -194,6 +194,27 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	return &livekit.UpdateSubscriptionsResponse{}, nil
 }
 
+func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
+	// here we are using any user's identity, due to how it works with routing
+	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(participants) > 0 {
+		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
+			Message: &livekit.RTCNodeMessage_SendData{
+				SendData: req,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &livekit.SendDataResponse{}, nil
+}
+
 func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) (routing.MessageSink, error) {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return nil, twirpAuthError(err)

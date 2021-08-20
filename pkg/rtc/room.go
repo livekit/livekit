@@ -352,6 +352,16 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 	r.onParticipantChanged = f
 }
 
+func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Kind) {
+	dp := &livekit.DataPacket{
+		Kind: kind,
+		Value: &livekit.DataPacket_User{
+			User: up,
+		},
+	}
+	r.onDataPacket(nil, dp)
+}
+
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
 func (r *Room) autoSubscribe(participant types.Participant) bool {
 	if !participant.CanSubscribe() {
@@ -422,13 +432,17 @@ func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
 }
 
 func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
+	// don't forward if source isn't allowed to publish data
+	if source != nil && !source.CanPublishData() {
+		return
+	}
 	dest := dp.GetUser().GetDestinationSids()
 
 	for _, op := range r.GetParticipants() {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
 			continue
 		}
-		if op.ID() == source.ID() {
+		if source != nil && op.ID() == source.ID() {
 			continue
 		}
 		if len(dest) > 0 {
