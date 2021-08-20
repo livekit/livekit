@@ -26,7 +26,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 		return nil, nil
 	}
 
-	if turnConf.TLSPort == 0 && turnConf.UDPPort == 0 {
+	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
 	}
 
