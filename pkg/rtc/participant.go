@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/livekit/livekit-server/version"
 )
@@ -36,7 +37,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Stats           *RoomStatsReporter
+	Stats           *stats.RoomStatsReporter
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool

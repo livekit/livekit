@@ -309,6 +309,7 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
+			// r.currentNode.Stats.
 			r.currentNode.Stats.UpdatedAt = time.Now().Unix()
 			if err := r.RegisterNode(); err != nil {
 				logger.Errorw("could not update node", err, "nodeID", r.currentNode.Id)

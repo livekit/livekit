@@ -1,4 +1,4 @@
-package rtc
+package stats
 
 import (
 	"io"
@@ -88,15 +88,15 @@ func init() {
 type RoomStatsReporter struct {
 	roomName  string
 	startedAt time.Time
-	incoming  *PacketStats
-	outgoing  *PacketStats
+	Incoming  *PacketStats
+	Outgoing  *PacketStats
 }
 
 func NewRoomStatsReporter(roomName string) *RoomStatsReporter {
 	return &RoomStatsReporter{
 		roomName: roomName,
-		incoming: newPacketStats(roomName, "incoming"),
-		outgoing: newPacketStats(roomName, "outgoing"),
+		Incoming: newPacketStats(roomName, "incoming"),
+		Outgoing: newPacketStats(roomName, "outgoing"),
 	}
 }
 
@@ -207,17 +207,17 @@ func (s PacketStats) Copy() *PacketStats {
 // StatsBufferWrapper wraps a buffer factory so we could get information on
 // incoming packets
 type StatsBufferWrapper struct {
-	createBufferFunc func(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser
-	stats            *PacketStats
+	CreateBufferFunc func(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser
+	Stats            *PacketStats
 }
 
 func (w *StatsBufferWrapper) CreateBuffer(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
-	writer := w.createBufferFunc(packetType, ssrc)
+	writer := w.CreateBufferFunc(packetType, ssrc)
 	if packetType == packetio.RTPBufferPacket {
 		// wrap this in a counter class
 		return &rtpReporterWriter{
 			ReadWriteCloser: writer,
-			stats:           w.stats,
+			stats:           w.Stats,
 		}
 	}
 	return writer
@@ -251,7 +251,7 @@ func NewStatsInterceptor(reporter *RoomStatsReporter) *StatsInterceptor {
 // will be called once per packet batch.
 func (s *StatsInterceptor) BindRTCPWriter(writer interceptor.RTCPWriter) interceptor.RTCPWriter {
 	return interceptor.RTCPWriterFunc(func(pkts []rtcp.Packet, attributes interceptor.Attributes) (int, error) {
-		s.reporter.outgoing.HandleRTCP(pkts)
+		s.reporter.Outgoing.HandleRTCP(pkts)
 		return writer.Write(pkts, attributes)
 	})
 }
@@ -260,8 +260,8 @@ func (s *StatsInterceptor) BindRTCPWriter(writer interceptor.RTCPWriter) interce
 // will be called once per rtp packet.
 func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
-		s.reporter.outgoing.IncrementPackets(1)
-		s.reporter.outgoing.IncrementBytes(uint64(len(payload)))
+		s.reporter.Outgoing.IncrementPackets(1)
+		s.reporter.Outgoing.IncrementBytes(uint64(len(payload)))
 		return writer.Write(header, payload, attributes)
 	})
 }
