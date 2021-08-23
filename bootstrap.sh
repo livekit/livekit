@@ -25,7 +25,7 @@ fi
 go mod download
 
 GO_VERSION=`go version | { read _ _ v _; echo ${v#go}; }`
-GO_TARGET_VERSION=1.19
+GO_TARGET_VERSION=1.17
 IS_HIGH_VERSION=$(echo $GO_VERSION'>='$GO_TARGET_VERSION | bc -l)
 
 if [ "$IS_HIGH_VERSION" -eq 1 ];
