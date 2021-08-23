@@ -149,19 +149,17 @@ func listNodes(c *cli.Context) error {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "IP Address", "Num CPUs", "Started At", "Updated At"})
+	table.SetHeader([]string{"ID", "IP Address", "Num CPUs", "Num Clients", "Num Rooms", "Num Tracks In", "Num Tracks Out", "Started At", "Updated At"})
 	for _, node := range nodes {
 		cpus := strconv.Itoa(int(node.NumCpus))
-
-		// TODO(mk): populate (in pkg/routing/redisrouter.go) or remove these stats
-		// clients := strconv.Itoa(int(node.Stats.NumClients))
-		// rooms := strconv.Itoa(int(node.Stats.NumRooms))
-		// tracksIn := strconv.Itoa(int(node.Stats.NumTracksIn))
-		// tracksOut := strconv.Itoa(int(node.Stats.NumTracksOut))
+		clients := strconv.Itoa(int(node.Stats.NumClients))
+		rooms := strconv.Itoa(int(node.Stats.NumRooms))
+		tracksIn := strconv.Itoa(int(node.Stats.NumTracksIn))
+		tracksOut := strconv.Itoa(int(node.Stats.NumTracksOut))
 
 		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
 		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
-		table.Append([]string{node.Id, node.Ip, cpus, startedAt, updatedAt})
+		table.Append([]string{node.Id, node.Ip, cpus, clients, rooms, tracksIn, tracksOut, startedAt, updatedAt})
 	}
 	table.Render()
 
