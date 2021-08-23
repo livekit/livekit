@@ -26,9 +26,10 @@ go mod download
 
 GO_VERSION=`go version | { read _ _ v _; echo ${v#go}; }`
 GO_TARGET_VERSION=1.17
-IS_HIGH_VERSION=$(echo $GO_VERSION'>='$GO_TARGET_VERSION | bc -l)
 
-if [ "$IS_HIGH_VERSION" -eq 1 ];
+function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
+
+if [ $(version $GO_VERSION) -ge $(version $GO_TARGET_VERSION) ];
   then
     go install github.com/twitchtv/twirp/protoc-gen-twirp@v8.1.0
     go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1
