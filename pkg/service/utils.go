@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"regexp"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
@@ -91,6 +92,11 @@ func handleError(w http.ResponseWriter, status int, msg string) {
 
 func boolValue(s string) bool {
 	return s == "1" || s == "true"
+}
+
+func IsValidDomain(domain string) bool {
+	domainRegexp := regexp.MustCompile(`^(?i)[a-z0-9-]+(\.[a-z0-9-]+)+\.?$`)
+	return domainRegexp.MatchString(domain)
 }
 
 func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission {
