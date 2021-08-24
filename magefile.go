@@ -54,18 +54,25 @@ type modInfo struct {
 	GoVersion string
 }
 
-// regenerate protobuf
+// regenerate protobuf. set PROTOPATH to reference a local path.
 func Proto() error {
-	cmd := exec.Command("go", "list", "-m", "-json", "github.com/livekit/protocol")
-	out, err := cmd.Output()
-	if err != nil {
-		return err
+	protoDir := os.Getenv("PROTOPATH")
+	if protoDir == "" {
+		protoDir = "../protocol"
+
+		cmd := exec.Command("go", "list", "-m", "-json", "github.com/livekit/protocol")
+		out, err := cmd.Output()
+		if err != nil {
+			return err
+		}
+		info := modInfo{}
+		if err = json.Unmarshal(out, &info); err != nil {
+			return err
+		}
+
+		protoDir = info.Dir
 	}
-	info := modInfo{}
-	if err = json.Unmarshal(out, &info); err != nil {
-		return err
-	}
-	protoDir := info.Dir
+
 	updated, err := target.Path("proto/livekit_models.pb.go",
 		protoDir+"/livekit_internal.proto",
 		protoDir+"/livekit_models.proto",
@@ -101,7 +108,7 @@ func Proto() error {
 	}
 
 	// generate twirp-related protos
-	cmd = exec.Command(protoc,
+	cmd := exec.Command(protoc,
 		"--go_out", target,
 		"--twirp_out", target,
 		"--go_opt=paths=source_relative",

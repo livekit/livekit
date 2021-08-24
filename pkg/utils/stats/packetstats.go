@@ -3,11 +3,14 @@ package stats
 import (
 	"sync/atomic"
 
+	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/rtcp"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
+	nackTotal uint64
+
 	promPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "packet",
@@ -74,6 +77,7 @@ func (s *PacketStats) IncrementPackets(count uint64) {
 func (s *PacketStats) IncrementNack(count uint64) {
 	promNackTotal.WithLabelValues(s.direction).Add(float64(count))
 	atomic.AddUint64(&s.NackTotal, count)
+	atomic.AddUint64(&nackTotal, count)
 }
 
 func (s *PacketStats) IncrementPLI(count uint64) {
@@ -109,4 +113,15 @@ func (s PacketStats) Copy() *PacketStats {
 		PLITotal:    atomic.LoadUint64(&s.PLITotal),
 		FIRTotal:    atomic.LoadUint64(&s.FIRTotal),
 	}
+}
+
+func updateCurrentNodePacketStats(nodeStats *livekit.NodeStats) {
+	secondsSinceLastUpdate := nodeStats.UpdatedAt - nodeStats.UpdatedAtPrevious
+	if secondsSinceLastUpdate == 0 {
+		return
+	}
+	nackTotalPrevious := nodeStats.NackTotal
+	nodeStats.NackTotal = atomic.LoadUint64(&nackTotal)
+
+	nodeStats.NackPerSec = float32(nodeStats.NackTotal-nackTotalPrevious) / float32(secondsSinceLastUpdate)
 }

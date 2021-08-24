@@ -2,9 +2,9 @@ package stats
 
 import (
 	"io"
-	"sync/atomic"
 	"time"
 
+	linuxproc "github.com/c9s/goprocinfo/linux"
 	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
@@ -85,11 +85,26 @@ func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer int
 	})
 }
 
-func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) {
-	nodeStats.NumClients = uint32(atomic.LoadInt32(&participantTotal))
-	nodeStats.NumRooms = uint32(atomic.LoadInt32(&roomTotal))
-	nodeStats.NumTracksIn = uint32(atomic.LoadInt32(&trackPublishedTotal))
-	nodeStats.NumTracksOut = uint32(atomic.LoadInt32(&trackSubscribedTotal))
-
+func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) (err error) {
+	nodeStats.UpdatedAtPrevious = nodeStats.UpdatedAt
 	nodeStats.UpdatedAt = time.Now().Unix()
+
+	err = updateCurrentNodeSystemStats(nodeStats)
+	updateCurrentNodeRoomStats(nodeStats)
+	updateCurrentNodePacketStats(nodeStats)
+
+	return
+}
+
+func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) (err error) {
+	var loadAvg *linuxproc.LoadAvg
+	if loadAvg, err = linuxproc.ReadLoadAvg("/proc/loadavg"); err != nil {
+		return
+	}
+
+	nodeStats.LoadAvgLast1Min = float32(loadAvg.Last1Min)
+	nodeStats.LoadAvgLast5Min = float32(loadAvg.Last5Min)
+	nodeStats.LoadAvgLast15Min = float32(loadAvg.Last15Min)
+
+	return
 }

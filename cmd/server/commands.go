@@ -150,17 +150,38 @@ func listNodes(c *cli.Context) error {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "IP Address", "Num CPUs", "Num Clients", "Num Rooms", "Num Tracks In", "Num Tracks Out", "Started At", "Updated At"})
+	table.SetHeader([]string{
+		"ID", "IP Address",
+		"Num CPUs", "Load",
+		"Num Clients", "Num Rooms", "Num Tracks In", "Num Tracks Out",
+		"Nack", "Nack/Sec",
+		"Started At", "Updated At",
+	})
 	for _, node := range nodes {
+		// System stats
 		cpus := strconv.Itoa(int(node.NumCpus))
+		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", node.Stats.LoadAvgLast1Min, node.Stats.LoadAvgLast5Min, node.Stats.LoadAvgLast15Min)
+
+		// Room stats
 		clients := strconv.Itoa(int(node.Stats.NumClients))
 		rooms := strconv.Itoa(int(node.Stats.NumRooms))
 		tracksIn := strconv.Itoa(int(node.Stats.NumTracksIn))
 		tracksOut := strconv.Itoa(int(node.Stats.NumTracksOut))
 
+		// Packet stats
+		nack := strconv.Itoa(int(node.Stats.NackTotal))
+		nackPerSec := fmt.Sprintf("%f", node.Stats.NackPerSec)
+
 		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
 		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
-		table.Append([]string{node.Id, node.Ip, cpus, clients, rooms, tracksIn, tracksOut, startedAt, updatedAt})
+
+		table.Append([]string{
+			node.Id, node.Ip,
+			cpus, loadAvg,
+			clients, rooms, tracksIn, tracksOut,
+			nack, nackPerSec,
+			startedAt, updatedAt,
+		})
 	}
 	table.Render()
 

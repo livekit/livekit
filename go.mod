@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/bep/debounce v1.2.0
+	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/gammazero/workerpool v1.1.2
 	github.com/go-logr/logr v1.0.0
