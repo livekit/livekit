@@ -2,6 +2,7 @@ package stats
 
 import (
 	"io"
+	"sync/atomic"
 	"time"
 
 	livekit "github.com/livekit/livekit-server/proto"
@@ -85,10 +86,10 @@ func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer int
 }
 
 func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) {
-	nodeStats.NumClients = uint32(participantTotal)
-	nodeStats.NumRooms = uint32(roomTotal)
-	nodeStats.NumTracksIn = uint32(trackPublishedTotal)
-	nodeStats.NumTracksOut = uint32(trackSubscribedTotal)
+	nodeStats.NumClients = uint32(atomic.LoadInt32(&participantTotal))
+	nodeStats.NumRooms = uint32(atomic.LoadInt32(&roomTotal))
+	nodeStats.NumTracksIn = uint32(atomic.LoadInt32(&trackPublishedTotal))
+	nodeStats.NumTracksOut = uint32(atomic.LoadInt32(&trackSubscribedTotal))
 
 	nodeStats.UpdatedAt = time.Now().Unix()
 }
