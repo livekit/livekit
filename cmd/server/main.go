@@ -123,6 +123,11 @@ func main() {
 					},
 				},
 			},
+			{
+				Name: "list-nodes",
+				Usage: "list all nodes",
+				Action: listNodes,
+			},
 		},
 		Version: version.Version,
 	}

@@ -3,10 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/utils"
+	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -120,6 +124,45 @@ func createToken(c *cli.Context) error {
 	}
 
 	fmt.Println("Token:", token)
+
+	return nil
+}
+
+func listNodes(c *cli.Context) error {
+	conf, err := getConfig(c)
+	if err != nil {
+		return err
+	}
+
+	currentNode, err := routing.NewLocalNode(conf)
+	if err != nil {
+		return err
+	}
+
+	router, err := service.InitializeRouter(conf, currentNode)
+	if err != nil {
+		return err
+	}
+
+	nodes, err := router.ListNodes()
+	if err != nil {
+		return err
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"ID", "IP Address", "Num CPUs", "Num Clients", "Num Rooms", "Num Tracks In", "Num Tracks Out", "Started At", "Updated At"})
+	for _, node := range nodes {
+		cpus := strconv.Itoa(int(node.NumCpus))
+		clients := strconv.Itoa(int(node.Stats.NumClients))
+		rooms := strconv.Itoa(int(node.Stats.NumRooms))
+		tracksIn := strconv.Itoa(int(node.Stats.NumTracksIn))
+		tracksOut := strconv.Itoa(int(node.Stats.NumTracksOut))
+
+		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
+		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
+		table.Append([]string{node.Id, node.Ip, cpus, clients, rooms, tracksIn, tracksOut, startedAt, updatedAt})
+	}
+	table.Render()
 
 	return nil
 }

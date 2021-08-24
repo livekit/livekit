@@ -17,3 +17,14 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, current
 	)
 	return &LivekitServer{}, nil
 }
+
+func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+	wire.Build(
+		wire.NewSet(
+			createRedisClient,
+			createRouter,
+		),
+	)
+
+	return nil, nil
+}

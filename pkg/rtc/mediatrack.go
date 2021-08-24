@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 	livekit "github.com/livekit/livekit-server/proto"
 )
 
@@ -59,7 +60,7 @@ type MediaTrackParams struct {
 	BufferFactory  *buffer.Factory
 	ReceiverConfig ReceiverConfig
 	AudioConfig    config.AudioConfig
-	Stats          *RoomStatsReporter
+	Stats          *stats.RoomStatsReporter
 	Width          uint32
 	Height         uint32
 }
@@ -244,7 +245,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	buff.OnFeedback(func(fb []rtcp.Packet) {
 		if t.params.Stats != nil {
-			t.params.Stats.incoming.HandleRTCP(fb)
+			t.params.Stats.Incoming.HandleRTCP(fb)
 		}
 		// feedback for the source RTCP
 		t.params.RTCPChan <- fb
