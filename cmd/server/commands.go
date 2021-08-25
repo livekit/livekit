@@ -152,24 +152,27 @@ func listNodes(c *cli.Context) error {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
 		"ID", "IP Address",
-		"Num CPUs", "Load",
-		"Num Clients", "Num Rooms", "Num Tracks In", "Num Tracks Out",
-		"Nack", "Nack/Sec",
+		"CPUs", "Load",
+		"Clients", "Rooms", "Tracks In/Out",
+		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
 		"Started At", "Updated At",
 	})
 	for _, node := range nodes {
 		// System stats
-		cpus := strconv.Itoa(int(node.NumCpus))
+		cpus := strconv.Itoa(int(node.Stats.NumCpus))
 		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", node.Stats.LoadAvgLast1Min, node.Stats.LoadAvgLast5Min, node.Stats.LoadAvgLast15Min)
 
 		// Room stats
 		clients := strconv.Itoa(int(node.Stats.NumClients))
 		rooms := strconv.Itoa(int(node.Stats.NumRooms))
-		tracksIn := strconv.Itoa(int(node.Stats.NumTracksIn))
-		tracksOut := strconv.Itoa(int(node.Stats.NumTracksOut))
+		tracks := fmt.Sprintf("%d / %d", node.Stats.NumTracksIn, node.Stats.NumTracksOut)
 
 		// Packet stats
+		bytes := fmt.Sprintf("%d / %d", node.Stats.BytesIn, node.Stats.BytesOut)
+		packets := fmt.Sprintf("%d / %d", node.Stats.PacketsIn, node.Stats.PacketsOut)
 		nack := strconv.Itoa(int(node.Stats.NackTotal))
+		bps := fmt.Sprintf("%.2f / %.2f", node.Stats.BytesInPerSec, node.Stats.BytesOutPerSec)
+		packetsPerSec := fmt.Sprintf("%.2f / %.2f", node.Stats.PacketsInPerSec, node.Stats.PacketsOutPerSec)
 		nackPerSec := fmt.Sprintf("%f", node.Stats.NackPerSec)
 
 		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
@@ -178,8 +181,8 @@ func listNodes(c *cli.Context) error {
 		table.Append([]string{
 			node.Id, node.Ip,
 			cpus, loadAvg,
-			clients, rooms, tracksIn, tracksOut,
-			nack, nackPerSec,
+			clients, rooms, tracks,
+			bytes, packets, nack, bps, packetsPerSec, nackPerSec,
 			startedAt, updatedAt,
 		})
 	}
