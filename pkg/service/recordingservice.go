@@ -67,7 +67,7 @@ func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.Sta
 	case <-sub.Channel():
 		return id, nil
 	case <-time.After(utils.RecorderTimeout):
-		return "", errors.New("no recorders available")
+		return "", errors.New("recording request failed")
 	}
 }
 
