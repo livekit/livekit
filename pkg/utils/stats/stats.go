@@ -85,26 +85,27 @@ func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer int
 	})
 }
 
-func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) (err error) {
+func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) error {
 	updatedAtPrevious := nodeStats.UpdatedAt
 	nodeStats.UpdatedAt = time.Now().Unix()
 	secondsSinceLastUpdate := nodeStats.UpdatedAt - updatedAtPrevious
 
-	err = updateCurrentNodeSystemStats(nodeStats)
+	err := updateCurrentNodeSystemStats(nodeStats)
 	updateCurrentNodeRoomStats(nodeStats)
 	updateCurrentNodePacketStats(nodeStats, secondsSinceLastUpdate)
 
-	return
+	return err
 }
 
-func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) (err error) {
-	var cpuInfo *linuxproc.CPUInfo
-	if cpuInfo, err = linuxproc.ReadCPUInfo("/proc/cpuinfo"); err != nil {
-		return
+func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) error {
+	cpuInfo, err := linuxproc.ReadCPUInfo("/proc/cpuinfo")
+	if err != nil {
+		return err
 	}
-	var loadAvg *linuxproc.LoadAvg
-	if loadAvg, err = linuxproc.ReadLoadAvg("/proc/loadavg"); err != nil {
-		return
+
+	loadAvg, err := linuxproc.ReadLoadAvg("/proc/loadavg")
+	if err != nil {
+		return err
 	}
 
 	nodeStats.NumCpus = uint32(cpuInfo.NumCPU())
@@ -112,5 +113,5 @@ func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) (err error) {
 	nodeStats.LoadAvgLast5Min = float32(loadAvg.Last5Min)
 	nodeStats.LoadAvgLast15Min = float32(loadAvg.Last15Min)
 
-	return
+	return nil
 }
