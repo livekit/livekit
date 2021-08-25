@@ -20,16 +20,16 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/ice/v2 v2.1.10
-	github.com/pion/interceptor v0.0.13
+	github.com/pion/interceptor v0.0.15
 	github.com/pion/ion-sfu v1.10.5
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.6
-	github.com/pion/rtp v1.6.5
+	github.com/pion/rtp v1.7.1
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.12.3
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.0.32
+	github.com/pion/webrtc/v3 v3.1.0-beta.2.0.20210808020610-5253475ec730
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.19.0 // indirect
@@ -40,7 +40,6 @@ require (
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.18.1
-	golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf // indirect
 	golang.org/x/mod v0.5.0 // indirect
 	golang.org/x/sys v0.0.0-20210816183151-1e6c022a8912 // indirect
 	golang.org/x/tools v0.1.5 // indirect
@@ -48,4 +47,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
-replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.7
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.8
