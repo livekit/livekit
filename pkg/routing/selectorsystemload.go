@@ -6,7 +6,7 @@ import (
 )
 
 type SystemLoadSelector struct {
-	LoadLevelHigh float32
+	SysloadLimit float32
 }
 
 func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error) {
@@ -17,7 +17,11 @@ func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Roo
 
 	nodesLowLoad := []*livekit.Node{}
 	for _, node := range nodes {
-		if node.Stats.LoadAvgLast1Min/float32(node.Stats.NumCpus) < s.LoadLevelHigh {
+		numCpus := node.Stats.NumCpus
+		if numCpus == 0 {
+			numCpus = 1
+		}
+		if node.Stats.LoadAvgLast1Min/float32(numCpus) < s.SysloadLimit {
 			nodesLowLoad = append(nodesLowLoad, node)
 		}
 	}

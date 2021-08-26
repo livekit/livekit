@@ -261,7 +261,7 @@ func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
 	switch conf.NodeSelector.Kind {
 	case "sysload":
 		return &routing.SystemLoadSelector{
-			LoadLevelHigh: conf.NodeSelector.SysloadLevelHigh,
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
 		}
 	default:
 		return &routing.RandomSelector{}
