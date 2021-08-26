@@ -124,8 +124,8 @@ func main() {
 				},
 			},
 			{
-				Name: "list-nodes",
-				Usage: "list all nodes",
+				Name:   "list-nodes",
+				Usage:  "list all nodes",
 				Action: listNodes,
 			},
 		},
@@ -200,7 +200,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, keyProvider, currentNode, &routing.RandomSelector{})
+	server, err := service.InitializeServer(conf, keyProvider, currentNode)
 	if err != nil {
 		return err
 	}

@@ -117,3 +117,11 @@ keys:
 #  # optional
 #  # cert_file: /path/to/cert.pem
 #  # key_file: /path/to/key.pem
+
+# # node selector
+# node_selector:
+#   # default: random. valid values: random, sysload
+#   kind: sysload
+#   # used in sysload node selector
+#   # do not assign room to node if load per CPU exceeds sysload_limit
+#   sysload_limit: 0.7
