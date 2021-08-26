@@ -30,9 +30,8 @@ func TestSystemLoadSelector_SelectNode(t *testing.T) {
 	selector := routing.SystemLoadSelector{SysloadLimit: 1.0}
 
 	nodes := []*livekit.Node{}
-	if _, err := selector.SelectNode(nodes, nil); err == nil {
-		t.Error("should error no available nodes")
-	}
+	err := selector.SelectNode(nodes, nil)
+	require.Error(t, err, "should error no available nodes")
 
 	// Select a node with high load when no nodes with low load are available
 	nodes = []*livekit.Node{nodeLoadHigh}
