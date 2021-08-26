@@ -14,18 +14,19 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode) (*LivekitServer, error) {
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
 	}
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
+	nodeSelector := nodeSelectorFromConfig(conf)
 	notifier, err := createWebhookNotifier(conf, keyProvider)
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, notifier, conf)
+	roomManager, err := NewRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
 	if err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
 		ServiceSet,
 	)

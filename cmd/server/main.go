@@ -200,7 +200,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, keyProvider, currentNode, nodeSelectorFromConfig(conf))
+	server, err := service.InitializeServer(conf, keyProvider, currentNode)
 	if err != nil {
 		return err
 	}
@@ -255,15 +255,4 @@ func getConfigString(c *cli.Context) (string, error) {
 		}
 	}
 	return configBody, nil
-}
-
-func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
-	switch conf.NodeSelector.Kind {
-	case "sysload":
-		return &routing.SystemLoadSelector{
-			SysloadLimit: conf.NodeSelector.SysloadLimit,
-		}
-	default:
-		return &routing.RandomSelector{}
-	}
 }
