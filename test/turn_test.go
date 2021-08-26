@@ -28,7 +28,7 @@ func testTurnServer(t *testing.T) {
 	currentNode.Id = utils.NewGuid(nodeId1)
 
 	// local routing and store
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
 	require.NoError(t, err)
 	go s.Start()
 	waitForServerToStart(s)
