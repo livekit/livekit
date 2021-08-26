@@ -62,6 +62,7 @@ keys:
 
 auth_type: redis
 
+
 # Default room config
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
 # precedence over defaults

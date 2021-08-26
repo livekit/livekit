@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
@@ -109,4 +111,35 @@ func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission 
 		p.CanPublishData = *claim.CanPublishData
 	}
 	return p
+}
+
+func createKeyProvider(client *redis.Client, conf *config.Config) (auth.KeyProvider, error) {
+	if conf.AuthType == "file" {
+		// prefer keyfile if set
+		if conf.KeyFile != "" {
+			if st, err := os.Stat(conf.KeyFile); err != nil {
+				return nil, err
+			} else if st.Mode().Perm() != 0600 {
+				return nil, fmt.Errorf("key file must have permission set to 600")
+			}
+			f, err := os.Open(conf.KeyFile)
+			if err != nil {
+				return nil, err
+			}
+			defer func() {
+				_ = f.Close()
+			}()
+			return auth.NewFileBasedKeyProviderFromReader(f)
+		}
+
+		if len(conf.Keys) == 0 {
+			return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+		}
+
+		return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
+	} else if conf.AuthType == "redis" {
+		return auth.NewRedisBaseKeyProvider(client), nil
+	} else {
+		return nil, errors.New("conf.auth_type value is not current")
+	}
 }
