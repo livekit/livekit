@@ -109,7 +109,7 @@ type WebHookConfig struct {
 
 type NodeSelectorConfig struct {
 	Kind             string  `yaml:"kind"`
-	SysloadLevelHigh float32 `yaml:"sysload_level_high"`
+	SysloadLimit float32 `yaml:"sysload_limit"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
