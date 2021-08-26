@@ -124,8 +124,8 @@ func main() {
 				},
 			},
 			{
-				Name: "list-nodes",
-				Usage: "list all nodes",
+				Name:   "list-nodes",
+				Usage:  "list all nodes",
 				Action: listNodes,
 			},
 		},
@@ -200,7 +200,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, keyProvider, currentNode, &routing.RandomSelector{})
+	server, err := service.InitializeServer(conf, keyProvider, currentNode, nodeSelectorFromConfig(conf))
 	if err != nil {
 		return err
 	}
@@ -255,4 +255,15 @@ func getConfigString(c *cli.Context) (string, error) {
 		}
 	}
 	return configBody, nil
+}
+
+func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
+	switch conf.NodeSelector.Kind {
+	case "sysload":
+		return &routing.SystemLoadSelector{
+			LoadLevelHigh: conf.NodeSelector.SysloadLevelHigh,
+		}
+	default:
+		return &routing.RandomSelector{}
+	}
 }
