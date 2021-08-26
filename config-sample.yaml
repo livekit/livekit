@@ -123,6 +123,5 @@ keys:
 #   # default: random. valid values: random, sysload
 #   kind: sysload
 #   # used in sysload node selector
-#  # do not assign room to node if load per CPU exceeds sysload_limit
-#  sysload_limit: 0.7
-#   sysload_level_high: 0.7
+#   # do not assign room to node if load per CPU exceeds sysload_limit
+#   sysload_limit: 0.7

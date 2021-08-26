@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -30,7 +31,7 @@ func TestSystemLoadSelector_SelectNode(t *testing.T) {
 	selector := routing.SystemLoadSelector{SysloadLimit: 1.0}
 
 	nodes := []*livekit.Node{}
-	err := selector.SelectNode(nodes, nil)
+	_, err := selector.SelectNode(nodes, nil)
 	require.Error(t, err, "should error no available nodes")
 
 	// Select a node with high load when no nodes with low load are available
