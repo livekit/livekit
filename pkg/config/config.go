@@ -29,6 +29,7 @@ type Config struct {
 	KeyFile        string            `yaml:"key_file"`
 	Keys           map[string]string `yaml:"keys"`
 	LogLevel       string            `yaml:"log_level"`
+	AuthType	   string			 `yaml:"auth_type"`
 
 	Development bool `yaml:"development"`
 }
@@ -146,6 +147,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			Enabled: false,
 		},
 		Keys: map[string]string{},
+		AuthType: "file",
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
