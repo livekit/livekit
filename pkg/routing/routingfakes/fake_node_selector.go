@@ -9,11 +9,12 @@ import (
 )
 
 type FakeNodeSelector struct {
-	SelectNodeStub        func([]*livekit.Node, *livekit.Room) (*livekit.Node, error)
+	SelectNodeStub        func([]*livekit.Node, *livekit.Room, livekit.NodeType) (*livekit.Node, error)
 	selectNodeMutex       sync.RWMutex
 	selectNodeArgsForCall []struct {
 		arg1 []*livekit.Node
 		arg2 *livekit.Room
+		arg3 livekit.NodeType
 	}
 	selectNodeReturns struct {
 		result1 *livekit.Node
@@ -27,7 +28,7 @@ type FakeNodeSelector struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeNodeSelector) SelectNode(arg1 []*livekit.Node, arg2 *livekit.Room) (*livekit.Node, error) {
+func (fake *FakeNodeSelector) SelectNode(arg1 []*livekit.Node, arg2 *livekit.Room, arg3 livekit.NodeType) (*livekit.Node, error) {
 	var arg1Copy []*livekit.Node
 	if arg1 != nil {
 		arg1Copy = make([]*livekit.Node, len(arg1))
@@ -38,13 +39,14 @@ func (fake *FakeNodeSelector) SelectNode(arg1 []*livekit.Node, arg2 *livekit.Roo
 	fake.selectNodeArgsForCall = append(fake.selectNodeArgsForCall, struct {
 		arg1 []*livekit.Node
 		arg2 *livekit.Room
-	}{arg1Copy, arg2})
+		arg3 livekit.NodeType
+	}{arg1Copy, arg2, arg3})
 	stub := fake.SelectNodeStub
 	fakeReturns := fake.selectNodeReturns
-	fake.recordInvocation("SelectNode", []interface{}{arg1Copy, arg2})
+	fake.recordInvocation("SelectNode", []interface{}{arg1Copy, arg2, arg3})
 	fake.selectNodeMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -58,17 +60,17 @@ func (fake *FakeNodeSelector) SelectNodeCallCount() int {
 	return len(fake.selectNodeArgsForCall)
 }
 
-func (fake *FakeNodeSelector) SelectNodeCalls(stub func([]*livekit.Node, *livekit.Room) (*livekit.Node, error)) {
+func (fake *FakeNodeSelector) SelectNodeCalls(stub func([]*livekit.Node, *livekit.Room, livekit.NodeType) (*livekit.Node, error)) {
 	fake.selectNodeMutex.Lock()
 	defer fake.selectNodeMutex.Unlock()
 	fake.SelectNodeStub = stub
 }
 
-func (fake *FakeNodeSelector) SelectNodeArgsForCall(i int) ([]*livekit.Node, *livekit.Room) {
+func (fake *FakeNodeSelector) SelectNodeArgsForCall(i int) ([]*livekit.Node, *livekit.Room, livekit.NodeType) {
 	fake.selectNodeMutex.RLock()
 	defer fake.selectNodeMutex.RUnlock()
 	argsForCall := fake.selectNodeArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeNodeSelector) SelectNodeReturns(result1 *livekit.Node, result2 error) {

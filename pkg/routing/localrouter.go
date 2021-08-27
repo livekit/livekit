@@ -35,14 +35,14 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+func (r *LocalRouter) GetNodesForRoom(roomName string, nodeType livekit.NodeType) ([]*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
-	return node, nil
+	return []*livekit.Node{node}, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
+func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string, nodeType livekit.NodeType) error {
 	return nil
 }
 
@@ -70,7 +70,7 @@ func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
 	return nil, ErrNotFound
 }
 
-func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
+func (r *LocalRouter) ListNodes(nodeType livekit.NodeType) ([]*livekit.Node, error) {
 	return []*livekit.Node{
 		r.currentNode,
 	}, nil

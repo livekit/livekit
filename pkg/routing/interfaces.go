@@ -39,14 +39,14 @@ type RTCMessageCallback func(roomName, identity string, msg *livekit.RTCNodeMess
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
 type Router interface {
-	GetNodeForRoom(roomName string) (*livekit.Node, error)
-	SetNodeForRoom(roomName string, nodeId string) error
+	GetNodesForRoom(roomName string, nodeType livekit.NodeType) ([]*livekit.Node, error)
+	SetNodeForRoom(roomName string, nodeId string, nodeType livekit.NodeType) error
 	ClearRoomState(roomName string) error
 	RegisterNode() error
 	UnregisterNode() error
 	RemoveDeadNodes() error
 	GetNode(nodeId string) (*livekit.Node, error)
-	ListNodes() ([]*livekit.Node, error)
+	ListNodes(nodeType livekit.NodeType) ([]*livekit.Node, error)
 
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
@@ -67,5 +67,5 @@ type Router interface {
 // NodeSelector selects an appropriate node to run the current session
 //counterfeiter:generate . NodeSelector
 type NodeSelector interface {
-	SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error)
+	SelectNode(nodes []*livekit.Node, room *livekit.Room, nodeType livekit.NodeType) (*livekit.Node, error)
 }
