@@ -22,6 +22,7 @@ var ServiceSet = wire.NewSet(
 	createRouter,
 	createStore,
 	createWebhookNotifier,
+	nodeSelectorFromConfig,
 	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
@@ -81,6 +82,17 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*web
 	}
 
 	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+}
+
+func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
+	switch conf.NodeSelector.Kind {
+	case "sysload":
+		return &routing.SystemLoadSelector{
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		}
+	default:
+		return &routing.RandomSelector{}
+	}
 }
 
 func handleError(w http.ResponseWriter, status int, msg string) {

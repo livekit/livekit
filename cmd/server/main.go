@@ -199,7 +199,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, keyProvider, currentNode, &routing.RandomSelector{})
+	server, err := service.InitializeServer(conf, keyProvider, currentNode)
 	if err != nil {
 		return err
 	}
