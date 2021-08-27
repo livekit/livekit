@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
@@ -146,7 +145,7 @@ func listNodes(c *cli.Context) error {
 		return err
 	}
 
-	nodes, err := router.ListNodes(livekit.NodeType_SERVER)
+	nodes, err := router.ListNodes()
 	if err != nil {
 		return err
 	}

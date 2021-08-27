@@ -95,13 +95,13 @@ func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.
 	}
 
 	// Is that node still available?
-	nodes, err := r.router.GetNodesForRoom(rm.Name, livekit.NodeType_SERVER)
+	node, err := r.router.GetNodeForRoom(rm.Name)
 	if err != routing.ErrNotFound && err != nil {
 		return nil, err
 	}
 
 	// keep it on that node
-	if err == nil && len(nodes) > 0 && routing.IsAvailable(nodes[0]) {
+	if err == nil && routing.IsAvailable(node) {
 		return rm, nil
 	}
 
@@ -109,7 +109,7 @@ func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.
 	nodeId := req.NodeId
 	if nodeId == "" {
 		// select a node for room
-		nodes, err := r.router.ListNodes(livekit.NodeType_SERVER)
+		nodes, err := r.router.ListNodes()
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +122,7 @@ func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.
 	}
 
 	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeId)
-	if err := r.router.SetNodeForRoom(req.Name, nodeId, livekit.NodeType_SERVER); err != nil {
+	if err := r.router.SetNodeForRoom(req.Name, nodeId); err != nil {
 		return nil, err
 	}
 

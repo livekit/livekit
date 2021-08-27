@@ -34,7 +34,7 @@ func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config
 	node, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
 
-	router.GetNodesForRoomReturns([]*livekit.Node{node}, nil)
+	router.GetNodeForRoomReturns(node, nil)
 
 	rm, err := service.NewLocalRoomManager(store, router, node, selector, nil, conf)
 	require.NoError(t, err)
