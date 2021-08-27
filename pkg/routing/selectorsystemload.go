@@ -1,7 +1,7 @@
 package routing
 
 import (
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/thoas/go-funk"
 )
 
@@ -15,7 +15,7 @@ func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Roo
 		return nil, ErrNoAvailableNodes
 	}
 
-	nodesLowLoad := []*livekit.Node{}
+	nodesLowLoad := make([]*livekit.Node, 0)
 	for _, node := range nodes {
 		numCpus := node.Stats.NumCpus
 		if numCpus == 0 {
