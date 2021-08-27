@@ -24,7 +24,7 @@ func TestCreateRoom(t *testing.T) {
 	})
 }
 
-func newTestRoomManager(t *testing.T) (*service.RoomManager, *config.Config) {
+func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.GetRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
@@ -36,7 +36,7 @@ func newTestRoomManager(t *testing.T) (*service.RoomManager, *config.Config) {
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	rm, err := service.NewRoomManager(store, router, node, selector, nil, conf)
+	rm, err := service.NewLocalRoomManager(store, router, node, selector, nil, conf)
 	require.NoError(t, err)
 
 	return rm, conf

@@ -22,9 +22,9 @@ const (
 	roomPurgeSeconds = 24 * 60 * 60
 )
 
-// RoomManager manages rooms and its interaction with participants.
+// LocalRoomManager manages rooms and its interaction with participants.
 // It's responsible for creating, deleting rooms, as well as running sessions for participants
-type RoomManager struct {
+type LocalRoomManager struct {
 	lock        sync.RWMutex
 	roomStore   RoomStore
 	selector    routing.NodeSelector
@@ -37,14 +37,14 @@ type RoomManager struct {
 	rooms       map[string]*rtc.Room
 }
 
-func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector,
-	notifier *webhook.Notifier, conf *config.Config) (*RoomManager, error) {
+func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector,
+	notifier *webhook.Notifier, conf *config.Config) (*LocalRoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err
 	}
 
-	return &RoomManager{
+	return &LocalRoomManager{
 		lock:        sync.RWMutex{},
 		roomStore:   rp,
 		rtcConfig:   rtcConf,
@@ -60,7 +60,7 @@ func NewRoomManager(rp RoomStore, router routing.Router, currentNode routing.Loc
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor fits state, and cleans it up when appropriate
-func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
+func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
 	token, err := r.roomStore.LockRoom(req.Name, 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -128,14 +128,14 @@ func (r *RoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room,
 	return rm, nil
 }
 
-func (r *RoomManager) GetRoom(roomName string) *rtc.Room {
+func (r *LocalRoomManager) GetRoom(roomName string) *rtc.Room {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.rooms[roomName]
 }
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) DeleteRoom(roomName string) error {
+func (r *LocalRoomManager) DeleteRoom(roomName string) error {
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
@@ -164,7 +164,7 @@ func (r *RoomManager) DeleteRoom(roomName string) error {
 }
 
 // CleanupRooms cleans up after old rooms that have been around for awhile
-func (r *RoomManager) CleanupRooms() error {
+func (r *LocalRoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	rooms, err := r.roomStore.ListRooms()
 	if err != nil {
@@ -182,7 +182,7 @@ func (r *RoomManager) CleanupRooms() error {
 	return nil
 }
 
-func (r *RoomManager) CloseIdleRooms() {
+func (r *LocalRoomManager) CloseIdleRooms() {
 	r.lock.RLock()
 	rooms := make([]*rtc.Room, 0, len(r.rooms))
 	for _, rm := range r.rooms {
@@ -195,7 +195,7 @@ func (r *RoomManager) CloseIdleRooms() {
 	}
 }
 
-func (r *RoomManager) Stop() {
+func (r *LocalRoomManager) Stop() {
 	// disconnect all clients
 	r.lock.RLock()
 	rooms := make([]*rtc.Room, 0, len(r.rooms))
@@ -222,7 +222,7 @@ func (r *RoomManager) Stop() {
 }
 
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *LocalRoomManager) StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(roomName)
 	if err != nil {
 		logger.Errorw("could not create room", err, "room", roomName)
@@ -325,7 +325,7 @@ func (r *RoomManager) StartSession(roomName string, pi routing.ParticipantInit, 
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
+func (r *LocalRoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
@@ -382,7 +382,7 @@ func (r *RoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 }
 
 // manages an RTC session for a participant, runs on the RTC node
-func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
+func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
 			"participant", participant.Identity(),
@@ -482,7 +482,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 	}
 }
 
-func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) {
+func (r *LocalRoomManager) handleRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
@@ -537,7 +537,7 @@ func (r *RoomManager) handleRTCMessage(roomName, identity string, msg *livekit.R
 	}
 }
 
-func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
+func (r *LocalRoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 
 	hasSTUN := false
@@ -571,7 +571,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	return iceServers
 }
 
-func (r *RoomManager) notifyEvent(event *livekit.WebhookEvent) {
+func (r *LocalRoomManager) notifyEvent(event *livekit.WebhookEvent) {
 	if r.notifier == nil {
 		return
 	}

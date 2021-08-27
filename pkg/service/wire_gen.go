@@ -25,7 +25,7 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, current
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := NewRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
+	roomManager, err := NewLocalRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
 	if err != nil {
 		return nil, err
 	}

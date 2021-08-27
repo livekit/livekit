@@ -4,6 +4,9 @@ import (
 	"time"
 
 	livekit "github.com/livekit/protocol/proto"
+
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -26,4 +29,14 @@ type RoomStore interface {
 	GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
 	ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error)
 	DeleteParticipant(roomName, identity string) error
+}
+
+type RoomManager interface {
+	CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error)
+	GetRoom(roomName string) *rtc.Room
+	DeleteRoom(roomName string) error
+	CleanupRooms() error
+	CloseIdleRooms()
+	Stop()
+	StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 }

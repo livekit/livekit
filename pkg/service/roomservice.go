@@ -13,10 +13,10 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	roomManager *RoomManager
+	roomManager *LocalRoomManager
 }
 
-func NewRoomService(roomManager *RoomManager) (svc *RoomService, err error) {
+func NewRoomService(roomManager *LocalRoomManager) (svc *RoomService, err error) {
 	svc = &RoomService{roomManager: roomManager}
 	return
 }
