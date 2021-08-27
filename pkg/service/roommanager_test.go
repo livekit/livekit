@@ -26,7 +26,7 @@ func TestCreateRoom(t *testing.T) {
 
 func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
-	store.GetRoomReturns(nil, service.ErrRoomNotFound)
+	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
 	conf, err := config.NewConfig("", nil)
 	require.NoError(t, err)
@@ -34,7 +34,7 @@ func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config
 	node, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
 
-	router.GetNodeForRoomReturns(node, nil)
+	router.GetNodesForRoomReturns([]*livekit.Node{node}, nil)
 
 	rm, err := service.NewLocalRoomManager(store, router, node, selector, nil, conf)
 	require.NoError(t, err)
