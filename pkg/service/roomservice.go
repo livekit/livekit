@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 // A rooms service that supports a single node

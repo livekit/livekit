@@ -4,7 +4,6 @@ package main
 
 import (
 	"crypto/sha1"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go/build"
@@ -15,10 +14,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/magefile/mage/mg"
-	"github.com/magefile/mage/target"
 
 	"github.com/livekit/livekit-server/version"
 )
@@ -45,101 +42,9 @@ func Deps() error {
 	return installTools(true)
 }
 
-type modInfo struct {
-	Path      string
-	Version   string
-	Time      time.Time
-	Dir       string
-	GoMod     string
-	GoVersion string
-}
-
-// regenerate protobuf
-func Proto() error {
-	cmd := exec.Command("go", "list", "-m", "-json", "github.com/livekit/protocol")
-	out, err := cmd.Output()
-	if err != nil {
-		return err
-	}
-	info := modInfo{}
-	if err = json.Unmarshal(out, &info); err != nil {
-		return err
-	}
-	protoDir := info.Dir
-	updated, err := target.Path("proto/livekit_models.pb.go",
-		protoDir+"/livekit_internal.proto",
-		protoDir+"/livekit_models.proto",
-		protoDir+"/livekit_recording.proto",
-		protoDir+"/livekit_room.proto",
-		protoDir+"/livekit_rtc.proto",
-		protoDir+"/livekit_webhook.proto",
-	)
-	if err != nil {
-		return err
-	}
-	if !updated {
-		return nil
-	}
-
-	fmt.Println("generating protobuf")
-	target := "proto"
-	if err := os.MkdirAll(target, 0755); err != nil {
-		return err
-	}
-
-	protoc, err := getToolPath("protoc")
-	if err != nil {
-		return err
-	}
-	protocGoPath, err := getToolPath("protoc-gen-go")
-	if err != nil {
-		return err
-	}
-	twirpPath, err := getToolPath("protoc-gen-twirp")
-	if err != nil {
-		return err
-	}
-
-	// generate twirp-related protos
-	cmd = exec.Command(protoc,
-		"--go_out", target,
-		"--twirp_out", target,
-		"--go_opt=paths=source_relative",
-		"--twirp_opt=paths=source_relative",
-		"--plugin=go="+protocGoPath,
-		"--plugin=twirp="+twirpPath,
-		"-I="+protoDir,
-		protoDir+"/livekit_recording.proto",
-		protoDir+"/livekit_room.proto",
-	)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// generate basic protobuf
-	cmd = exec.Command(protoc,
-		"--go_out", target,
-		"--go_opt=paths=source_relative",
-		"--plugin=go="+protocGoPath,
-		"-I="+protoDir,
-		protoDir+"/livekit_recording.proto",
-		protoDir+"/livekit_rtc.proto",
-		protoDir+"/livekit_internal.proto",
-		protoDir+"/livekit_models.proto",
-		protoDir+"/livekit_webhook.proto",
-	)
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // builds LiveKit server
 func Build() error {
-	mg.Deps(Proto, generateWire)
+	mg.Deps(generateWire)
 	if !checksummer.IsChanged() {
 		fmt.Println("up to date")
 		return nil
@@ -162,7 +67,7 @@ func Build() error {
 
 // builds binary that runs on linux amd64
 func BuildLinux() error {
-	mg.Deps(Proto, generateWire)
+	mg.Deps(generateWire)
 	if !checksummer.IsChanged() {
 		fmt.Println("up to date")
 		return nil
@@ -191,7 +96,7 @@ func BuildLinux() error {
 
 // builds docker image for LiveKit server
 func Docker() error {
-	mg.Deps(Proto, generateWire)
+	mg.Deps(generateWire)
 	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
@@ -219,7 +124,6 @@ func PublishDocker() error {
 
 // run unit tests, skipping integration
 func Test() error {
-	mg.Deps(Proto)
 	cmd := exec.Command("go", "test", "-short", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -227,7 +131,6 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
-	mg.Deps(Proto)
 	// "-v", "-race",
 	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=3m")
 	connectStd(cmd)
@@ -243,7 +146,7 @@ func Clean() {
 
 // regenerate code
 func Generate() error {
-	mg.Deps(installDeps, Proto)
+	mg.Deps(installDeps)
 
 	fmt.Println("generating...")
 
@@ -254,7 +157,7 @@ func Generate() error {
 
 // code generation for wiring
 func generateWire() error {
-	mg.Deps(installDeps, Proto)
+	mg.Deps(installDeps)
 	if !checksummer.IsChanged() {
 		return nil
 	}
@@ -286,13 +189,7 @@ func installDeps() error {
 }
 
 func installTools(force bool) error {
-	if _, err := getToolPath("protoc"); err != nil {
-		return fmt.Errorf("protoc is required but is not found")
-	}
-
 	tools := []string{
-		"google.golang.org/protobuf/cmd/protoc-gen-go",
-		"github.com/twitchtv/twirp/protoc-gen-twirp",
 		"github.com/google/wire/cmd/wire",
 	}
 	for _, t := range tools {

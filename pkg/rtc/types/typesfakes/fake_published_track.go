@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 )
 
 type FakePublishedTrack struct {

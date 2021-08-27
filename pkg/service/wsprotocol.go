@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 const (

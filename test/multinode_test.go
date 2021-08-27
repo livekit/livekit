@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 func TestMultiNodeRouting(t *testing.T) {

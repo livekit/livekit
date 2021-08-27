@@ -6,13 +6,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/utils"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/service"
 )
 
 func generateKeys(c *cli.Context) error {

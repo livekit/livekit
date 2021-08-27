@@ -3,7 +3,7 @@ package stats
 import (
 	"sync/atomic"
 
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/rtcp"
 	"github.com/prometheus/client_golang/prometheus"
 )
