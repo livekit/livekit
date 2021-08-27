@@ -12,7 +12,6 @@ RUN go mod download
 # Copy the go source
 COPY cmd/ cmd/
 COPY pkg/ pkg/
-COPY proto/ proto/
 COPY test/ test/
 COPY tools/ tools/
 COPY version/ version/
