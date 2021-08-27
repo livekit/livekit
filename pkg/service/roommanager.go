@@ -114,7 +114,7 @@ func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.
 			return nil, err
 		}
 
-		node, err := r.selector.SelectNode(nodes, rm, livekit.NodeType_SERVER)
+		node, err := r.selector.SelectNode(nodes, rm)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +364,7 @@ func (r *LocalRoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			err = r.DeleteParticipant(roomName, p.Identity())
 		} else {
-			err = r.PersistParticipant(roomName, p.ToProto())
+			err = r.StoreParticipant(roomName, p.ToProto())
 		}
 		if err != nil {
 			logger.Errorw("could not handle participant change", err)

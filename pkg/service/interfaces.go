@@ -25,8 +25,8 @@ type RoomStore interface {
 	LockRoom(name string, duration time.Duration) (string, error)
 	UnlockRoom(name string, uid string) error
 
-	PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error
-	GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
+	StoreParticipant(roomName string, participant *livekit.ParticipantInfo) error
+	LoadParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
 	ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error)
 	DeleteParticipant(roomName, identity string) error
 }

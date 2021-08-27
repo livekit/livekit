@@ -92,7 +92,7 @@ func (p *LocalRoomStore) UnlockRoom(name string, uid string) error {
 	return nil
 }
 
-func (p *LocalRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
+func (p *LocalRoomStore) StoreParticipant(roomName string, participant *livekit.ParticipantInfo) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	roomParticipants := p.participants[roomName]
@@ -104,7 +104,7 @@ func (p *LocalRoomStore) PersistParticipant(roomName string, participant *liveki
 	return nil
 }
 
-func (p *LocalRoomStore) GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) LoadParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 

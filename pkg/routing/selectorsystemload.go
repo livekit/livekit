@@ -9,7 +9,7 @@ type SystemLoadSelector struct {
 	SysloadLimit float32
 }
 
-func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room, nodeType livekit.NodeType) (*livekit.Node, error) {
+func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error) {
 	nodes = GetAvailableNodes(nodes)
 	if len(nodes) == 0 {
 		return nil, ErrNoAvailableNodes

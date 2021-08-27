@@ -167,7 +167,7 @@ func (p *RedisRoomStore) UnlockRoom(name string, uid string) error {
 	return p.rc.Del(p.ctx, key).Err()
 }
 
-func (p *RedisRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
+func (p *RedisRoomStore) StoreParticipant(roomName string, participant *livekit.ParticipantInfo) error {
 	key := RoomParticipantsPrefix + roomName
 
 	data, err := proto.Marshal(participant)
@@ -178,7 +178,7 @@ func (p *RedisRoomStore) PersistParticipant(roomName string, participant *liveki
 	return p.rc.HSet(p.ctx, key, participant.Identity, data).Err()
 }
 
-func (p *RedisRoomStore) GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
+func (p *RedisRoomStore) LoadParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + roomName
 	data, err := p.rc.HGet(p.ctx, key, identity).Result()
 	if err == redis.Nil {

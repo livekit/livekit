@@ -108,7 +108,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return
 	}
@@ -136,7 +136,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, err
 	}
 
-	participant, err := s.roomManager.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) 
 		return nil, twirpAuthError(err)
 	}
 
-	_, err := s.roomManager.GetParticipant(room, identity)
+	_, err := s.roomManager.LoadParticipant(room, identity)
 	if err != nil {
 		return nil, err
 	}
