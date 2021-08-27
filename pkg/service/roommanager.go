@@ -153,7 +153,7 @@ func (r *LocalRoomManager) DeleteRoom(roomName string) error {
 	// also delete room from db
 	go func() {
 		defer wg.Done()
-		err2 = r.DeleteRoom(roomName)
+		err2 = r.RoomStore.DeleteRoom(roomName)
 	}()
 
 	wg.Wait()
