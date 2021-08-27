@@ -30,6 +30,7 @@ var ServiceSet = wire.NewSet(
 	NewLocalRoomManager,
 	NewTurnServer,
 	config.GetAudioConfig,
+	wire.Bind(new(RoomManager), new(*LocalRoomManager)),
 	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )

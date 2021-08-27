@@ -25,8 +25,9 @@ const (
 // LocalRoomManager manages rooms and its interaction with participants.
 // It's responsible for creating, deleting rooms, as well as running sessions for participants
 type LocalRoomManager struct {
+	RoomStore
+
 	lock        sync.RWMutex
-	roomStore   RoomStore
 	selector    routing.NodeSelector
 	router      routing.Router
 	currentNode routing.LocalNode
@@ -45,8 +46,8 @@ func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routin
 	}
 
 	return &LocalRoomManager{
+		RoomStore:   rp,
 		lock:        sync.RWMutex{},
-		roomStore:   rp,
 		rtcConfig:   rtcConf,
 		config:      conf,
 		router:      router,
@@ -61,16 +62,16 @@ func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routin
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor fits state, and cleans it up when appropriate
 func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	token, err := r.roomStore.LockRoom(req.Name, 5*time.Second)
+	token, err := r.LockRoom(req.Name, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		_ = r.roomStore.UnlockRoom(req.Name, token)
+		_ = r.UnlockRoom(req.Name, token)
 	}()
 
 	// find existing room and update it
-	rm, err := r.roomStore.GetRoom(req.Name)
+	rm, err := r.LoadRoom(req.Name)
 	if err == ErrRoomNotFound {
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -89,7 +90,7 @@ func (r *LocalRoomManager) CreateRoom(req *livekit.CreateRoomRequest) (*livekit.
 	if req.MaxParticipants > 0 {
 		rm.MaxParticipants = req.MaxParticipants
 	}
-	if err := r.roomStore.CreateRoom(rm); err != nil {
+	if err := r.StoreRoom(rm); err != nil {
 		return nil, err
 	}
 
@@ -152,7 +153,7 @@ func (r *LocalRoomManager) DeleteRoom(roomName string) error {
 	// also delete room from db
 	go func() {
 		defer wg.Done()
-		err2 = r.roomStore.DeleteRoom(roomName)
+		err2 = r.DeleteRoom(roomName)
 	}()
 
 	wg.Wait()
@@ -166,7 +167,7 @@ func (r *LocalRoomManager) DeleteRoom(roomName string) error {
 // CleanupRooms cleans up after old rooms that have been around for awhile
 func (r *LocalRoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
-	rooms, err := r.roomStore.ListRooms()
+	rooms, err := r.ListRooms()
 	if err != nil {
 		return err
 	}
@@ -335,7 +336,7 @@ func (r *LocalRoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	}
 
 	// create new room, get details first
-	ri, err := r.roomStore.GetRoom(roomName)
+	ri, err := r.LoadRoom(roomName)
 	if err != nil {
 		return nil, err
 	}
@@ -361,9 +362,9 @@ func (r *LocalRoomManager) getOrCreateRoom(roomName string) (*rtc.Room, error) {
 	room.OnParticipantChanged(func(p types.Participant) {
 		var err error
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
-			err = r.roomStore.DeleteParticipant(roomName, p.Identity())
+			err = r.DeleteParticipant(roomName, p.Identity())
 		} else {
-			err = r.roomStore.PersistParticipant(roomName, p.ToProto())
+			err = r.PersistParticipant(roomName, p.ToProto())
 		}
 		if err != nil {
 			logger.Errorw("could not handle participant change", err)

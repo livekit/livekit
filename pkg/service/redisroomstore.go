@@ -38,7 +38,7 @@ func NewRedisRoomStore(rc *redis.Client) *RedisRoomStore {
 	}
 }
 
-func (p *RedisRoomStore) CreateRoom(room *livekit.Room) error {
+func (p *RedisRoomStore) StoreRoom(room *livekit.Room) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -58,7 +58,7 @@ func (p *RedisRoomStore) CreateRoom(room *livekit.Room) error {
 	return nil
 }
 
-func (p *RedisRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
+func (p *RedisRoomStore) LoadRoom(idOrName string) (*livekit.Room, error) {
 	// see if matches any ids
 	name, err := p.rc.HGet(p.ctx, RoomIdMap, idOrName).Result()
 	if err != nil {
@@ -102,7 +102,7 @@ func (p *RedisRoomStore) ListRooms() ([]*livekit.Room, error) {
 }
 
 func (p *RedisRoomStore) DeleteRoom(idOrName string) error {
-	room, err := p.GetRoom(idOrName)
+	room, err := p.LoadRoom(idOrName)
 	var sid, name string
 
 	if err == ErrRoomNotFound {

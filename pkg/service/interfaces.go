@@ -15,8 +15,8 @@ import (
 // look up participant
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
-	CreateRoom(room *livekit.Room) error
-	GetRoom(idOrName string) (*livekit.Room, error)
+	StoreRoom(room *livekit.Room) error
+	LoadRoom(idOrName string) (*livekit.Room, error)
 	ListRooms() ([]*livekit.Room, error)
 	DeleteRoom(idOrName string) error
 
@@ -32,6 +32,8 @@ type RoomStore interface {
 }
 
 type RoomManager interface {
+	RoomStore
+
 	CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error)
 	GetRoom(roomName string) *rtc.Room
 	DeleteRoom(roomName string) error

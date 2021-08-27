@@ -28,7 +28,7 @@ func NewLocalRoomStore() *LocalRoomStore {
 	}
 }
 
-func (p *LocalRoomStore) CreateRoom(room *livekit.Room) error {
+func (p *LocalRoomStore) StoreRoom(room *livekit.Room) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -39,7 +39,7 @@ func (p *LocalRoomStore) CreateRoom(room *livekit.Room) error {
 	return nil
 }
 
-func (p *LocalRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
+func (p *LocalRoomStore) LoadRoom(idOrName string) (*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	// see if it's an id or name
@@ -65,7 +65,7 @@ func (p *LocalRoomStore) ListRooms() ([]*livekit.Room, error) {
 }
 
 func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
-	room, err := p.GetRoom(idOrName)
+	room, err := p.LoadRoom(idOrName)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {

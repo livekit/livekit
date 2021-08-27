@@ -10,17 +10,6 @@ import (
 )
 
 type FakeRoomStore struct {
-	CreateRoomStub        func(*livekit.Room) error
-	createRoomMutex       sync.RWMutex
-	createRoomArgsForCall []struct {
-		arg1 *livekit.Room
-	}
-	createRoomReturns struct {
-		result1 error
-	}
-	createRoomReturnsOnCall map[int]struct {
-		result1 error
-	}
 	DeleteParticipantStub        func(string, string) error
 	deleteParticipantMutex       sync.RWMutex
 	deleteParticipantArgsForCall []struct {
@@ -58,19 +47,6 @@ type FakeRoomStore struct {
 		result1 *livekit.ParticipantInfo
 		result2 error
 	}
-	GetRoomStub        func(string) (*livekit.Room, error)
-	getRoomMutex       sync.RWMutex
-	getRoomArgsForCall []struct {
-		arg1 string
-	}
-	getRoomReturns struct {
-		result1 *livekit.Room
-		result2 error
-	}
-	getRoomReturnsOnCall map[int]struct {
-		result1 *livekit.Room
-		result2 error
-	}
 	ListParticipantsStub        func(string) ([]*livekit.ParticipantInfo, error)
 	listParticipantsMutex       sync.RWMutex
 	listParticipantsArgsForCall []struct {
@@ -94,6 +70,19 @@ type FakeRoomStore struct {
 	}
 	listRoomsReturnsOnCall map[int]struct {
 		result1 []*livekit.Room
+		result2 error
+	}
+	LoadRoomStub        func(string) (*livekit.Room, error)
+	loadRoomMutex       sync.RWMutex
+	loadRoomArgsForCall []struct {
+		arg1 string
+	}
+	loadRoomReturns struct {
+		result1 *livekit.Room
+		result2 error
+	}
+	loadRoomReturnsOnCall map[int]struct {
+		result1 *livekit.Room
 		result2 error
 	}
 	LockRoomStub        func(string, time.Duration) (string, error)
@@ -122,6 +111,17 @@ type FakeRoomStore struct {
 	persistParticipantReturnsOnCall map[int]struct {
 		result1 error
 	}
+	StoreRoomStub        func(*livekit.Room) error
+	storeRoomMutex       sync.RWMutex
+	storeRoomArgsForCall []struct {
+		arg1 *livekit.Room
+	}
+	storeRoomReturns struct {
+		result1 error
+	}
+	storeRoomReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UnlockRoomStub        func(string, string) error
 	unlockRoomMutex       sync.RWMutex
 	unlockRoomArgsForCall []struct {
@@ -136,67 +136,6 @@ type FakeRoomStore struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeRoomStore) CreateRoom(arg1 *livekit.Room) error {
-	fake.createRoomMutex.Lock()
-	ret, specificReturn := fake.createRoomReturnsOnCall[len(fake.createRoomArgsForCall)]
-	fake.createRoomArgsForCall = append(fake.createRoomArgsForCall, struct {
-		arg1 *livekit.Room
-	}{arg1})
-	stub := fake.CreateRoomStub
-	fakeReturns := fake.createRoomReturns
-	fake.recordInvocation("CreateRoom", []interface{}{arg1})
-	fake.createRoomMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeRoomStore) CreateRoomCallCount() int {
-	fake.createRoomMutex.RLock()
-	defer fake.createRoomMutex.RUnlock()
-	return len(fake.createRoomArgsForCall)
-}
-
-func (fake *FakeRoomStore) CreateRoomCalls(stub func(*livekit.Room) error) {
-	fake.createRoomMutex.Lock()
-	defer fake.createRoomMutex.Unlock()
-	fake.CreateRoomStub = stub
-}
-
-func (fake *FakeRoomStore) CreateRoomArgsForCall(i int) *livekit.Room {
-	fake.createRoomMutex.RLock()
-	defer fake.createRoomMutex.RUnlock()
-	argsForCall := fake.createRoomArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRoomStore) CreateRoomReturns(result1 error) {
-	fake.createRoomMutex.Lock()
-	defer fake.createRoomMutex.Unlock()
-	fake.CreateRoomStub = nil
-	fake.createRoomReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeRoomStore) CreateRoomReturnsOnCall(i int, result1 error) {
-	fake.createRoomMutex.Lock()
-	defer fake.createRoomMutex.Unlock()
-	fake.CreateRoomStub = nil
-	if fake.createRoomReturnsOnCall == nil {
-		fake.createRoomReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.createRoomReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeRoomStore) DeleteParticipant(arg1 string, arg2 string) error {
@@ -387,70 +326,6 @@ func (fake *FakeRoomStore) GetParticipantReturnsOnCall(i int, result1 *livekit.P
 	}{result1, result2}
 }
 
-func (fake *FakeRoomStore) GetRoom(arg1 string) (*livekit.Room, error) {
-	fake.getRoomMutex.Lock()
-	ret, specificReturn := fake.getRoomReturnsOnCall[len(fake.getRoomArgsForCall)]
-	fake.getRoomArgsForCall = append(fake.getRoomArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.GetRoomStub
-	fakeReturns := fake.getRoomReturns
-	fake.recordInvocation("GetRoom", []interface{}{arg1})
-	fake.getRoomMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeRoomStore) GetRoomCallCount() int {
-	fake.getRoomMutex.RLock()
-	defer fake.getRoomMutex.RUnlock()
-	return len(fake.getRoomArgsForCall)
-}
-
-func (fake *FakeRoomStore) GetRoomCalls(stub func(string) (*livekit.Room, error)) {
-	fake.getRoomMutex.Lock()
-	defer fake.getRoomMutex.Unlock()
-	fake.GetRoomStub = stub
-}
-
-func (fake *FakeRoomStore) GetRoomArgsForCall(i int) string {
-	fake.getRoomMutex.RLock()
-	defer fake.getRoomMutex.RUnlock()
-	argsForCall := fake.getRoomArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRoomStore) GetRoomReturns(result1 *livekit.Room, result2 error) {
-	fake.getRoomMutex.Lock()
-	defer fake.getRoomMutex.Unlock()
-	fake.GetRoomStub = nil
-	fake.getRoomReturns = struct {
-		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRoomStore) GetRoomReturnsOnCall(i int, result1 *livekit.Room, result2 error) {
-	fake.getRoomMutex.Lock()
-	defer fake.getRoomMutex.Unlock()
-	fake.GetRoomStub = nil
-	if fake.getRoomReturnsOnCall == nil {
-		fake.getRoomReturnsOnCall = make(map[int]struct {
-			result1 *livekit.Room
-			result2 error
-		})
-	}
-	fake.getRoomReturnsOnCall[i] = struct {
-		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
-}
-
 func (fake *FakeRoomStore) ListParticipants(arg1 string) ([]*livekit.ParticipantInfo, error) {
 	fake.listParticipantsMutex.Lock()
 	ret, specificReturn := fake.listParticipantsReturnsOnCall[len(fake.listParticipantsArgsForCall)]
@@ -567,6 +442,70 @@ func (fake *FakeRoomStore) ListRoomsReturnsOnCall(i int, result1 []*livekit.Room
 	}
 	fake.listRoomsReturnsOnCall[i] = struct {
 		result1 []*livekit.Room
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRoomStore) LoadRoom(arg1 string) (*livekit.Room, error) {
+	fake.loadRoomMutex.Lock()
+	ret, specificReturn := fake.loadRoomReturnsOnCall[len(fake.loadRoomArgsForCall)]
+	fake.loadRoomArgsForCall = append(fake.loadRoomArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.LoadRoomStub
+	fakeReturns := fake.loadRoomReturns
+	fake.recordInvocation("LoadRoom", []interface{}{arg1})
+	fake.loadRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeRoomStore) LoadRoomCallCount() int {
+	fake.loadRoomMutex.RLock()
+	defer fake.loadRoomMutex.RUnlock()
+	return len(fake.loadRoomArgsForCall)
+}
+
+func (fake *FakeRoomStore) LoadRoomCalls(stub func(string) (*livekit.Room, error)) {
+	fake.loadRoomMutex.Lock()
+	defer fake.loadRoomMutex.Unlock()
+	fake.LoadRoomStub = stub
+}
+
+func (fake *FakeRoomStore) LoadRoomArgsForCall(i int) string {
+	fake.loadRoomMutex.RLock()
+	defer fake.loadRoomMutex.RUnlock()
+	argsForCall := fake.loadRoomArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRoomStore) LoadRoomReturns(result1 *livekit.Room, result2 error) {
+	fake.loadRoomMutex.Lock()
+	defer fake.loadRoomMutex.Unlock()
+	fake.LoadRoomStub = nil
+	fake.loadRoomReturns = struct {
+		result1 *livekit.Room
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRoomStore) LoadRoomReturnsOnCall(i int, result1 *livekit.Room, result2 error) {
+	fake.loadRoomMutex.Lock()
+	defer fake.loadRoomMutex.Unlock()
+	fake.LoadRoomStub = nil
+	if fake.loadRoomReturnsOnCall == nil {
+		fake.loadRoomReturnsOnCall = make(map[int]struct {
+			result1 *livekit.Room
+			result2 error
+		})
+	}
+	fake.loadRoomReturnsOnCall[i] = struct {
+		result1 *livekit.Room
 		result2 error
 	}{result1, result2}
 }
@@ -698,6 +637,67 @@ func (fake *FakeRoomStore) PersistParticipantReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
+func (fake *FakeRoomStore) StoreRoom(arg1 *livekit.Room) error {
+	fake.storeRoomMutex.Lock()
+	ret, specificReturn := fake.storeRoomReturnsOnCall[len(fake.storeRoomArgsForCall)]
+	fake.storeRoomArgsForCall = append(fake.storeRoomArgsForCall, struct {
+		arg1 *livekit.Room
+	}{arg1})
+	stub := fake.StoreRoomStub
+	fakeReturns := fake.storeRoomReturns
+	fake.recordInvocation("StoreRoom", []interface{}{arg1})
+	fake.storeRoomMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) StoreRoomCallCount() int {
+	fake.storeRoomMutex.RLock()
+	defer fake.storeRoomMutex.RUnlock()
+	return len(fake.storeRoomArgsForCall)
+}
+
+func (fake *FakeRoomStore) StoreRoomCalls(stub func(*livekit.Room) error) {
+	fake.storeRoomMutex.Lock()
+	defer fake.storeRoomMutex.Unlock()
+	fake.StoreRoomStub = stub
+}
+
+func (fake *FakeRoomStore) StoreRoomArgsForCall(i int) *livekit.Room {
+	fake.storeRoomMutex.RLock()
+	defer fake.storeRoomMutex.RUnlock()
+	argsForCall := fake.storeRoomArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRoomStore) StoreRoomReturns(result1 error) {
+	fake.storeRoomMutex.Lock()
+	defer fake.storeRoomMutex.Unlock()
+	fake.StoreRoomStub = nil
+	fake.storeRoomReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) StoreRoomReturnsOnCall(i int, result1 error) {
+	fake.storeRoomMutex.Lock()
+	defer fake.storeRoomMutex.Unlock()
+	fake.StoreRoomStub = nil
+	if fake.storeRoomReturnsOnCall == nil {
+		fake.storeRoomReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.storeRoomReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomStore) UnlockRoom(arg1 string, arg2 string) error {
 	fake.unlockRoomMutex.Lock()
 	ret, specificReturn := fake.unlockRoomReturnsOnCall[len(fake.unlockRoomArgsForCall)]
@@ -763,24 +763,24 @@ func (fake *FakeRoomStore) UnlockRoomReturnsOnCall(i int, result1 error) {
 func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.createRoomMutex.RLock()
-	defer fake.createRoomMutex.RUnlock()
 	fake.deleteParticipantMutex.RLock()
 	defer fake.deleteParticipantMutex.RUnlock()
 	fake.deleteRoomMutex.RLock()
 	defer fake.deleteRoomMutex.RUnlock()
 	fake.getParticipantMutex.RLock()
 	defer fake.getParticipantMutex.RUnlock()
-	fake.getRoomMutex.RLock()
-	defer fake.getRoomMutex.RUnlock()
 	fake.listParticipantsMutex.RLock()
 	defer fake.listParticipantsMutex.RUnlock()
 	fake.listRoomsMutex.RLock()
 	defer fake.listRoomsMutex.RUnlock()
+	fake.loadRoomMutex.RLock()
+	defer fake.loadRoomMutex.RUnlock()
 	fake.lockRoomMutex.RLock()
 	defer fake.lockRoomMutex.RUnlock()
 	fake.persistParticipantMutex.RLock()
 	defer fake.persistParticipantMutex.RUnlock()
+	fake.storeRoomMutex.RLock()
+	defer fake.storeRoomMutex.RUnlock()
 	fake.unlockRoomMutex.RLock()
 	defer fake.unlockRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
