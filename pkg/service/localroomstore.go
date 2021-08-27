@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 )
 
 // encapsulates CRUD operations for room settings

@@ -8,13 +8,13 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
 	"github.com/livekit/protocol/auth"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 var ServiceSet = wire.NewSet(

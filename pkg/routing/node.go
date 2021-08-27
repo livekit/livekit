@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/jxskiss/base62"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 type NodeStats struct {

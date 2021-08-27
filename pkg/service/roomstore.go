@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate

@@ -11,10 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
-
-	"github.com/livekit/protocol/auth"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"

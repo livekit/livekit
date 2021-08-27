@@ -8,13 +8,13 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	livekit "github.com/livekit/protocol/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 type RTCService struct {

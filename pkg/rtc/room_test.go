@@ -5,16 +5,15 @@ import (
 	"testing"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/testutils"
-
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 const (

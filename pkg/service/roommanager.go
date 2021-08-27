@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/webrtc/v3"
@@ -15,7 +16,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 const (

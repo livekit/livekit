@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/service"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestParticipantPersistence(t *testing.T) {

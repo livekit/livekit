@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {

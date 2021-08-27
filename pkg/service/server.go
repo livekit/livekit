@@ -10,17 +10,16 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/livekit/protocol/auth"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/negroni"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
 	"github.com/livekit/livekit-server/version"
 )
 

@@ -4,11 +4,10 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
-
-	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/utils"
 )
 
 const (

@@ -3,13 +3,14 @@ package service_test
 import (
 	"testing"
 
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
-	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCreateRoom(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

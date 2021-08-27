@@ -5,7 +5,7 @@ import (
 	"time"
 
 	linuxproc "github.com/c9s/goprocinfo/linux"
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"

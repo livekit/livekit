@@ -1,9 +1,8 @@
 package routing
 
 import (
+	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/proto"
-
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
