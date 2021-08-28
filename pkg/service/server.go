@@ -31,7 +31,7 @@ type LivekitServer struct {
 	httpServer  *http.Server
 	promServer  *http.Server
 	router      routing.Router
-	roomManager *RoomManager
+	roomManager *LocalRoomManager
 	turnServer  *turn.Server
 	currentNode routing.LocalNode
 	running     utils.AtomicFlag
@@ -45,7 +45,7 @@ func NewLivekitServer(conf *config.Config,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
-	roomManager *RoomManager,
+	roomManager *LocalRoomManager,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
@@ -219,7 +219,7 @@ func (s *LivekitServer) Stop() {
 	<-s.closedChan
 }
 
-func (s *LivekitServer) RoomManager() *RoomManager {
+func (s *LivekitServer) RoomManager() RoomManager {
 	return s.roomManager
 }
 

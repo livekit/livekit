@@ -25,21 +25,21 @@ func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, current
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := NewRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
+	localRoomManager, err := NewLocalRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomManager)
+	roomService, err := NewRoomService(localRoomManager, router)
 	if err != nil {
 		return nil, err
 	}
 	recordingService := NewRecordingService(client)
-	rtcService := NewRTCService(conf, roomManager, router, currentNode)
+	rtcService := NewRTCService(conf, localRoomManager, router, currentNode)
 	server, err := NewTurnServer(conf, roomStore, currentNode)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, localRoomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

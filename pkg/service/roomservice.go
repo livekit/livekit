@@ -13,11 +13,15 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	roomManager *RoomManager
+	router      routing.Router
+	roomManager RoomManager
 }
 
-func NewRoomService(roomManager *RoomManager) (svc *RoomService, err error) {
-	svc = &RoomService{roomManager: roomManager}
+func NewRoomService(roomManager RoomManager, router routing.Router) (svc *RoomService, err error) {
+	svc = &RoomService{
+		router:      router,
+		roomManager: roomManager,
+	}
 	return
 }
 
@@ -40,7 +44,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 		return nil, twirpAuthError(err)
 	}
 
-	rooms, err := s.roomManager.roomStore.ListRooms()
+	rooms, err := s.roomManager.ListRooms()
 	if err != nil {
 		// TODO: translate error codes to twirp
 		return
@@ -58,7 +62,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 	// if the room is currently active, RTC node needs to disconnect clients
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	participants, err := s.roomManager.ListParticipants(req.Room)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +92,7 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	participants, err := s.roomManager.ListParticipants(req.Room)
 	if err != nil {
 		return
 	}
@@ -104,7 +108,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return
 	}
@@ -132,7 +136,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +176,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, err
 	}
 
-	participant, err := s.roomManager.roomStore.GetParticipant(req.Room, req.Identity)
+	participant, err := s.roomManager.LoadParticipant(req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +200,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.roomStore.ListParticipants(req.Room)
+	participants, err := s.roomManager.ListParticipants(req.Room)
 	if err != nil {
 		return nil, err
 	}
@@ -220,12 +224,12 @@ func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) 
 		return nil, twirpAuthError(err)
 	}
 
-	_, err := s.roomManager.roomStore.GetParticipant(room, identity)
+	_, err := s.roomManager.LoadParticipant(room, identity)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.roomManager.router.CreateRTCSink(room, identity)
+	return s.router.CreateRTCSink(room, identity)
 }
 
 func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
