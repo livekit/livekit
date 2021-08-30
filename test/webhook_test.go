@@ -92,6 +92,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	conf.WebHook.URLs = []string{"http://localhost:7890"}
 	conf.WebHook.APIKey = testApiKey
 	conf.Development = true
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	testServer = newTestServer(":7890")
 	if err = testServer.Start(); err != nil {
@@ -104,7 +105,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	server, err = service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
+	server, err = service.InitializeServer(conf, currentNode)
 	if err != nil {
 		return
 	}
@@ -134,7 +135,7 @@ type webookTestServer struct {
 func newTestServer(addr string) *webookTestServer {
 	s := &webookTestServer{
 		events:   make(map[string]*livekit.WebhookEvent),
-		provider: &StaticKeyProvider{},
+		provider: auth.NewFileBasedKeyProviderFromMap(map[string]string{testApiKey: testApiSecret}),
 	}
 	s.server = &http.Server{
 		Addr:    addr,

@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 
 	"github.com/go-redis/redis/v8"
@@ -21,8 +23,9 @@ var ServiceSet = wire.NewSet(
 	createRedisClient,
 	createRouter,
 	createStore,
-	createWebhookNotifier,
-	nodeSelectorFromConfig,
+	CreateKeyProvider,
+	CreateWebhookNotifier,
+	CreateNodeSelector,
 	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
@@ -34,6 +37,55 @@ var ServiceSet = wire.NewSet(
 	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )
+
+func CreateKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
+	// prefer keyfile if set
+	if conf.KeyFile != "" {
+		if st, err := os.Stat(conf.KeyFile); err != nil {
+			return nil, err
+		} else if st.Mode().Perm() != 0600 {
+			return nil, fmt.Errorf("key file must have permission set to 600")
+		}
+		f, err := os.Open(conf.KeyFile)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		return auth.NewFileBasedKeyProviderFromReader(f)
+	}
+
+	if len(conf.Keys) == 0 {
+		return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+	}
+
+	return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
+}
+
+func CreateWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
+	wc := conf.WebHook
+	if len(wc.URLs) == 0 {
+		return nil, nil
+	}
+	secret := provider.GetSecret(wc.APIKey)
+	if secret == "" {
+		return nil, ErrWebHookMissingAPIKey
+	}
+
+	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+}
+
+func CreateNodeSelector(conf *config.Config) routing.NodeSelector {
+	switch conf.NodeSelector.Kind {
+	case "sysload":
+		return &routing.SystemLoadSelector{
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		}
+	default:
+		return &routing.RandomSelector{}
+	}
+}
 
 func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	if !conf.HasRedis() {
@@ -70,30 +122,6 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
-}
-
-func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
-	wc := conf.WebHook
-	if len(wc.URLs) == 0 {
-		return nil, nil
-	}
-	secret := provider.GetSecret(wc.APIKey)
-	if secret == "" {
-		return nil, ErrWebHookMissingAPIKey
-	}
-
-	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
-}
-
-func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
-	switch conf.NodeSelector.Kind {
-	case "sysload":
-		return &routing.SystemLoadSelector{
-			SysloadLimit: conf.NodeSelector.SysloadLimit,
-		}
-	default:
-		return &routing.RandomSelector{}
-	}
 }
 
 func handleError(w http.ResponseWriter, status int, msg string) {

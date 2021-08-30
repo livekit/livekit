@@ -8,20 +8,23 @@ package service
 import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/protocol/auth"
 )
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, keyProvider auth.KeyProvider, currentNode routing.LocalNode) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
 	}
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
-	nodeSelector := nodeSelectorFromConfig(conf)
-	notifier, err := createWebhookNotifier(conf, keyProvider)
+	nodeSelector := CreateNodeSelector(conf)
+	keyProvider, err := CreateKeyProvider(conf)
+	if err != nil {
+		return nil, err
+	}
+	notifier, err := CreateWebhookNotifier(conf, keyProvider)
 	if err != nil {
 		return nil, err
 	}

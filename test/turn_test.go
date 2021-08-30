@@ -21,13 +21,14 @@ func testTurnServer(t *testing.T) {
 	require.NoError(t, err)
 
 	conf.TURN.Enabled = true
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
 	currentNode.Id = utils.NewGuid(nodeId1)
 
 	// local routing and store
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
+	s, err := service.InitializeServer(conf, currentNode)
 	require.NoError(t, err)
 	go s.Start()
 	waitForServerToStart(s)
