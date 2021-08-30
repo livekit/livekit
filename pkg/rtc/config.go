@@ -3,7 +3,6 @@ package rtc
 import (
 	"errors"
 	"net"
-	"syscall"
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/ion-sfu/pkg/buffer"
@@ -82,16 +81,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			})
 			s.SetICEUDPMux(udpMux)
 			if !conf.Development {
-				val, err := checkUDPReadBuffer()
-				if err == nil {
-					if val < minUDPBufferSize {
-						logger.Warnw("UDP receive buffer is too small for a production set-up", nil,
-							"current", val,
-							"suggested", minUDPBufferSize)
-					} else {
-						logger.Debugw("UDP receive buffer size", "current", val)
-					}
-				}
+				checkUDPReadBuffer()
 			}
 		}
 	}
@@ -138,20 +128,4 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
-}
-
-func checkUDPReadBuffer() (int, error) {
-	conn, err := net.ListenUDP("udp4", nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = conn.Close() }()
-	_ = conn.SetReadBuffer(defaultUDPBufferSize)
-	fd, err := conn.File()
-	if err != nil {
-		return 0, nil
-	}
-	defer func() { _ = fd.Close() }()
-
-	return syscall.GetsockoptInt(int(fd.Fd()), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
 }
