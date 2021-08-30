@@ -17,12 +17,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode, select
 	if err != nil {
 		return nil, err
 	}
-	keyProvider, err := createKeyProvider(client, conf)
-	if err != nil {
-		return err
-	}
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
+	keyProvider, err := createKeyProvider(client, conf)
+	if err != nil {
+		return nil, err
+	}
 	notifier, err := createWebhookNotifier(conf, keyProvider)
 	if err != nil {
 		return nil, err

@@ -20,6 +20,7 @@ import (
 
 var ServiceSet = wire.NewSet(
 	createRedisClient,
+	createKeyProvider,
 	createRouter,
 	createStore,
 	createWebhookNotifier,
@@ -138,7 +139,7 @@ func createKeyProvider(client *redis.Client, conf *config.Config) (auth.KeyProvi
 
 		return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 	} else if conf.AuthType == "redis" {
-		return auth.NewRedisBaseKeyProvider(client), nil
+		return NewRedisBasedKeyProvider(client), nil
 	} else {
 		return nil, errors.New("conf.auth_type value is not current")
 	}
