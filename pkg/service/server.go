@@ -93,10 +93,6 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
-	// hook up router to the RoomManager
-	router.OnNewParticipantRTC(roomManager.StartSession)
-	router.OnRTCMessage(roomManager.handleRTCMessage)
-
 	// clean up old rooms on startup
 	if err = roomManager.CleanupRooms(); err != nil {
 		return
