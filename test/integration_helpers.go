@@ -145,7 +145,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	s, err := service.InitializeServer(conf, currentNode)
+	s, err := service.InitializeServer(conf, currentNode, true)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -173,7 +173,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	currentNode.Id = nodeId
 
 	// redis routing and store
-	s, err := service.InitializeServer(conf, currentNode)
+	s, err := service.InitializeServer(conf, currentNode, true)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}

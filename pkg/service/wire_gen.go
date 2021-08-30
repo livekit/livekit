@@ -12,7 +12,7 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, currentNode routing.LocalNode, isTest bool) (*LivekitServer, error) {
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -20,7 +20,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
 	nodeSelector := nodeSelectorFromConfig(conf)
-	keyProvider, err := createKeyProvider(client, conf)
+	keyProvider, err := createKeyProvider(client, conf, isTest)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return livekitServer, nil
 }
 
-func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+func InitializeRouter(conf *config.Config, currentNode routing.LocalNode, isTest bool) (routing.Router, error) {
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err

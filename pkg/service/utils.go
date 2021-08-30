@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/livekit/livekit-server/test"
 	"net/http"
 	"os"
 	"regexp"
@@ -134,7 +135,9 @@ func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission 
 }
 
 func createKeyProvider(client *redis.Client, conf *config.Config) (auth.KeyProvider, error) {
-	if conf.AuthType == "file" {
+	if isTest {
+		return &test.StaticKeyProvider{}, nil
+	} else if conf.AuthType == "file" {
 		// prefer keyfile if set
 		if conf.KeyFile != "" {
 			if st, err := os.Stat(conf.KeyFile); err != nil {
