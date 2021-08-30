@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -16,6 +17,7 @@ func NewRedisBasedKeyProvider(c *redis.Client) *RedisBasedKeyProvider {
 }
 
 func (p *RedisBasedKeyProvider) GetSecret(key string) string {
+	fmt.Print("GetSecret CALLED", "\n")
 	secret, _ := p.client.Get(context.Background(), key).Result()
 	return secret
 }
