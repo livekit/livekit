@@ -45,7 +45,7 @@ func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routin
 		return nil, err
 	}
 
-	return &LocalRoomManager{
+	r := &LocalRoomManager{
 		RoomStore:   rp,
 		lock:        sync.RWMutex{},
 		rtcConfig:   rtcConf,
@@ -56,7 +56,12 @@ func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routin
 		currentNode: currentNode,
 		webhookPool: workerpool.New(1),
 		rooms:       make(map[string]*rtc.Room),
-	}, nil
+	}
+
+	// hook up to router
+	router.OnNewParticipantRTC(r.StartSession)
+	router.OnRTCMessage(r.handleRTCMessage)
+	return r, nil
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
