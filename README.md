@@ -46,7 +46,6 @@ Pre-requisites:
 
 * Go 1.15+ is installed
 * GOPATH/bin is in your PATH
-* [protoc](https://grpc.io/docs/protoc-installation/) is installed and in PATH
 
 Then run
 
