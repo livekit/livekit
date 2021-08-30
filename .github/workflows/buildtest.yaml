@@ -17,7 +17,6 @@ jobs:
         path: |
           ~/go/pkg/mod
           ~/go/bin
-          ~/bin/protoc
           ~/.cache
         key: livekit-server
     - uses: shogo82148/actions-setup-redis@v1.10.3
@@ -33,17 +32,6 @@ jobs:
 
     - name: Download Go modules
       run: go mod download
-
-    - name: Download protoc
-      run: |
-        curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip
-        sudo unzip protoc-3.15.8-linux-x86_64.zip -d /usr
-        sudo chmod 755 /usr/bin/protoc
-
-    - name: Install protobuf generators
-      run: |
-        go install github.com/twitchtv/twirp/protoc-gen-twirp
-        go install google.golang.org/protobuf/cmd/protoc-gen-go
 
     - name: Mage Build
       uses: magefile/mage-action@v1
