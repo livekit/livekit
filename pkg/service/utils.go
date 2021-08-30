@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
 	"os"
+	"regexp"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
