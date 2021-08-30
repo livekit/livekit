@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 func TestIsAvailable(t *testing.T) {

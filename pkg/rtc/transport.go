@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/logger"
-
-	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
 const (
@@ -41,7 +41,7 @@ type PCTransport struct {
 type TransportParams struct {
 	Target        livekit.SignalTarget
 	Config        *WebRTCConfig
-	Stats         *RoomStatsReporter
+	Stats         *stats.RoomStatsReporter
 	EnabledCodecs []*livekit.Codec
 }
 
@@ -59,9 +59,9 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
 	if params.Stats != nil && se.BufferFactory != nil {
-		wrapper := &StatsBufferWrapper{
-			createBufferFunc: se.BufferFactory,
-			stats:            params.Stats.incoming,
+		wrapper := &stats.StatsBufferWrapper{
+			CreateBufferFunc: se.BufferFactory,
+			Stats:            params.Stats.Incoming,
 		}
 		se.BufferFactory = wrapper.CreateBuffer
 	}
@@ -69,7 +69,7 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	ir := &interceptor.Registry{}
 	if params.Stats != nil && params.Target == livekit.SignalTarget_SUBSCRIBER {
 		// only capture subscriber for outbound streams
-		ir.Add(NewStatsInterceptor(params.Stats))
+		ir.Add(stats.NewStatsInterceptor(params.Stats))
 	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),

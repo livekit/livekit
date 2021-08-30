@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/service"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestParticipantPersistence(t *testing.T) {
@@ -32,10 +32,10 @@ func TestParticipantPersistence(t *testing.T) {
 	}
 
 	// create the participant
-	require.NoError(t, rs.PersistParticipant(roomName, p))
+	require.NoError(t, rs.StoreParticipant(roomName, p))
 
 	// result should match
-	pGet, err := rs.GetParticipant(roomName, p.Identity)
+	pGet, err := rs.LoadParticipant(roomName, p.Identity)
 	require.NoError(t, err)
 	require.Equal(t, p.Identity, pGet.Identity)
 	require.Equal(t, len(p.Tracks), len(pGet.Tracks))
@@ -54,7 +54,7 @@ func TestParticipantPersistence(t *testing.T) {
 	require.Len(t, participants, 0)
 
 	// shouldn't be able to get it
-	_, err = rs.GetParticipant(roomName, p.Identity)
+	_, err = rs.LoadParticipant(roomName, p.Identity)
 	require.Equal(t, err, service.ErrParticipantNotFound)
 }
 

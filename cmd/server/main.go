@@ -10,7 +10,6 @@ import (
 	"runtime/pprof"
 	"syscall"
 	"time"
-
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -120,6 +119,11 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:   "list-nodes",
+				Usage:  "list all nodes",
+				Action: listNodes,
+			},
 		},
 		Version: version.Version,
 	}
@@ -180,19 +184,12 @@ func startServer(c *cli.Context) error {
 		}
 	}
 
-	// require a key provider
-	//keyProvider, err := createKeyProvider(conf)
-	//if err != nil {
-	//	return err
-	//}
-	//logger.Infow("configured key provider", "numKeys", keyProvider.NumKeys())
-
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, currentNode, &routing.RandomSelector{})
+	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
 		return err
 	}

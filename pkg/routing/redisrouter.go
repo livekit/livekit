@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/utils"
-
 	"github.com/livekit/livekit-server/pkg/logger"
-	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
 const (
@@ -309,7 +309,9 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
-			r.currentNode.Stats.UpdatedAt = time.Now().Unix()
+			if err := stats.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
+				logger.Errorw("could not update node stats", err, "nodeID", r.currentNode.Id)
+			}
 			if err := r.RegisterNode(); err != nil {
 				logger.Errorw("could not update node", err, "nodeID", r.currentNode.Id)
 			}

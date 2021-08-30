@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"os"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
 	"github.com/livekit/protocol/auth"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 var ServiceSet = wire.NewSet(
@@ -24,13 +25,15 @@ var ServiceSet = wire.NewSet(
 	createRouter,
 	createStore,
 	createWebhookNotifier,
+	nodeSelectorFromConfig,
 	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
 	NewLivekitServer,
-	NewRoomManager,
+	NewLocalRoomManager,
 	NewTurnServer,
 	config.GetAudioConfig,
+	wire.Bind(new(RoomManager), new(*LocalRoomManager)),
 	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )
@@ -85,6 +88,17 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*web
 	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
+func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
+	switch conf.NodeSelector.Kind {
+	case "sysload":
+		return &routing.SystemLoadSelector{
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		}
+	default:
+		return &routing.RandomSelector{}
+	}
+}
+
 func handleError(w http.ResponseWriter, status int, msg string) {
 	// GetLogger already with extra depth 1
 	logger.GetLogger().V(1).Info("error handling request", "error", msg, "status", status)
@@ -94,6 +108,11 @@ func handleError(w http.ResponseWriter, status int, msg string) {
 
 func boolValue(s string) bool {
 	return s == "1" || s == "true"
+}
+
+func IsValidDomain(domain string) bool {
+	domainRegexp := regexp.MustCompile(`^(?i)[a-z0-9-]+(\.[a-z0-9-]+)+\.?$`)
+	return domainRegexp.MatchString(domain)
 }
 
 func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission {

@@ -4,10 +4,9 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
-	"google.golang.org/protobuf/proto"
-
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
+	"google.golang.org/protobuf/proto"
 )
 
 const (

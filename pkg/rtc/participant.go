@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
@@ -14,13 +16,11 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/utils"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -36,7 +36,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Stats           *RoomStatsReporter
+	Stats           *stats.RoomStatsReporter
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool

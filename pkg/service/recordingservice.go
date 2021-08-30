@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
-
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 type RecordingService struct {
@@ -67,7 +66,7 @@ func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.Sta
 	case <-sub.Channel():
 		return id, nil
 	case <-time.After(utils.RecorderTimeout):
-		return "", errors.New("no recorders available")
+		return "", errors.New("recording request failed")
 	}
 }
 

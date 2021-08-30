@@ -4,11 +4,11 @@ import (
 	"sync"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/logger"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 // a router of messages on the same node, basic implementation for local testing

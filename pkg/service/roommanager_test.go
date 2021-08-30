@@ -3,13 +3,14 @@ package service_test
 import (
 	"testing"
 
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
-	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCreateRoom(t *testing.T) {
@@ -23,9 +24,9 @@ func TestCreateRoom(t *testing.T) {
 	})
 }
 
-func newTestRoomManager(t *testing.T) (*service.RoomManager, *config.Config) {
+func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
-	store.GetRoomReturns(nil, service.ErrRoomNotFound)
+	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
 	conf, err := config.NewConfig("", nil)
 	require.NoError(t, err)
@@ -35,7 +36,7 @@ func newTestRoomManager(t *testing.T) (*service.RoomManager, *config.Config) {
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	rm, err := service.NewRoomManager(store, router, node, selector, nil, conf)
+	rm, err := service.NewLocalRoomManager(store, router, node, selector, nil, conf)
 	require.NoError(t, err)
 
 	return rm, conf

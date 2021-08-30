@@ -4,8 +4,9 @@ import (
 	"sync"
 	"testing"
 
+	livekit "github.com/livekit/protocol/proto"
+
 	"github.com/livekit/livekit-server/pkg/routing"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestMessageChannel_WriteMessageClosed(t *testing.T) {

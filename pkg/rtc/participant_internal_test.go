@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	livekit "github.com/livekit/livekit-server/proto"
 )
 
 func TestIsReady(t *testing.T) {

@@ -12,13 +12,14 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeServer(conf *config.Config, currentNode routing.LocalNode, selector routing.NodeSelector) (*LivekitServer, error) {
+func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
 	}
 	roomStore := createStore(client)
 	router := createRouter(client, currentNode)
+	nodeSelector := nodeSelectorFromConfig(conf)
 	keyProvider, err := createKeyProvider(client, conf)
 	if err != nil {
 		return nil, err
@@ -27,23 +28,32 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode, select
 	if err != nil {
 		return nil, err
 	}
-	roomManager, err := NewRoomManager(roomStore, router, currentNode, selector, notifier, conf)
+	localRoomManager, err := NewLocalRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomManager)
+	roomService, err := NewRoomService(localRoomManager, router)
 	if err != nil {
 		return nil, err
 	}
 	recordingService := NewRecordingService(client)
-	rtcService := NewRTCService(conf, roomManager, router, currentNode)
+	rtcService := NewRTCService(conf, localRoomManager, router, currentNode)
 	server, err := NewTurnServer(conf, roomStore, currentNode)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, localRoomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
 	return livekitServer, nil
+}
+
+func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
+	client, err := createRedisClient(conf)
+	if err != nil {
+		return nil, err
+	}
+	router := createRouter(client, currentNode)
+	return router, nil
 }

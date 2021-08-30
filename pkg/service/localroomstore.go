@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	livekit "github.com/livekit/livekit-server/proto"
+	livekit "github.com/livekit/protocol/proto"
 )
 
 // encapsulates CRUD operations for room settings
@@ -28,7 +28,7 @@ func NewLocalRoomStore() *LocalRoomStore {
 	}
 }
 
-func (p *LocalRoomStore) CreateRoom(room *livekit.Room) error {
+func (p *LocalRoomStore) StoreRoom(room *livekit.Room) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -39,7 +39,7 @@ func (p *LocalRoomStore) CreateRoom(room *livekit.Room) error {
 	return nil
 }
 
-func (p *LocalRoomStore) GetRoom(idOrName string) (*livekit.Room, error) {
+func (p *LocalRoomStore) LoadRoom(idOrName string) (*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	// see if it's an id or name
@@ -65,7 +65,7 @@ func (p *LocalRoomStore) ListRooms() ([]*livekit.Room, error) {
 }
 
 func (p *LocalRoomStore) DeleteRoom(idOrName string) error {
-	room, err := p.GetRoom(idOrName)
+	room, err := p.LoadRoom(idOrName)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {
@@ -92,7 +92,7 @@ func (p *LocalRoomStore) UnlockRoom(name string, uid string) error {
 	return nil
 }
 
-func (p *LocalRoomStore) PersistParticipant(roomName string, participant *livekit.ParticipantInfo) error {
+func (p *LocalRoomStore) StoreParticipant(roomName string, participant *livekit.ParticipantInfo) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	roomParticipants := p.participants[roomName]
@@ -104,7 +104,7 @@ func (p *LocalRoomStore) PersistParticipant(roomName string, participant *liveki
 	return nil
 }
 
-func (p *LocalRoomStore) GetParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) LoadParticipant(roomName, identity string) (*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 

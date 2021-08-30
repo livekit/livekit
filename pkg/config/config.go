@@ -18,18 +18,19 @@ var DefaultStunServers = []string{
 }
 
 type Config struct {
-	Port           uint32            `yaml:"port"`
-	PrometheusPort uint32            `yaml:"prometheus_port"`
-	RTC            RTCConfig         `yaml:"rtc"`
-	Redis          RedisConfig       `yaml:"redis"`
-	Audio          AudioConfig       `yaml:"audio"`
-	Room           RoomConfig        `yaml:"room"`
-	TURN           TURNConfig        `yaml:"turn"`
-	WebHook        WebHookConfig     `yaml:"webhook"`
-	KeyFile        string            `yaml:"key_file"`
-	Keys           map[string]string `yaml:"keys"`
-	LogLevel       string            `yaml:"log_level"`
-	AuthType	   string			 `yaml:"auth_type"`
+	Port           uint32             `yaml:"port"`
+	PrometheusPort uint32             `yaml:"prometheus_port"`
+	RTC            RTCConfig          `yaml:"rtc"`
+	Redis          RedisConfig        `yaml:"redis"`
+	Audio          AudioConfig        `yaml:"audio"`
+	Room           RoomConfig         `yaml:"room"`
+	TURN           TURNConfig         `yaml:"turn"`
+	WebHook        WebHookConfig      `yaml:"webhook"`
+	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
+	KeyFile        string             `yaml:"key_file"`
+	Keys           map[string]string  `yaml:"keys"`
+	LogLevel       string             `yaml:"log_level"`
+	AuthType	   string			  `yaml:"auth_type"`
 
 	Development bool `yaml:"development"`
 }
@@ -107,6 +108,11 @@ type WebHookConfig struct {
 	APIKey string `yaml:"api_key"`
 }
 
+type NodeSelectorConfig struct {
+	Kind         string  `yaml:"kind"`
+	SysloadLimit float32 `yaml:"sysload_limit"`
+}
+
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	// start with defaults
 	conf := &Config{
@@ -145,6 +151,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		TURN: TURNConfig{
 			Enabled: false,
+		},
+		NodeSelector: NodeSelectorConfig{
+			Kind:         "random",
+			SysloadLimit: 0.7,
 		},
 		Keys: map[string]string{},
 		AuthType: "file",

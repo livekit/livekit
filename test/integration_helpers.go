@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/protocol/auth"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/twitchtv/twirp"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
-	livekit "github.com/livekit/livekit-server/proto"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
 
@@ -145,7 +145,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -173,7 +173,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	currentNode.Id = nodeId
 
 	// redis routing and store
-	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
+	s, err := service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}

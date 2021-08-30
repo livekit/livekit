@@ -8,17 +8,18 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/livekit/protocol/auth"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/webhook"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
-	livekit "github.com/livekit/livekit-server/proto"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
-	"github.com/livekit/protocol/webhook"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestWebhooks(t *testing.T) {
@@ -103,7 +104,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	server, err = service.InitializeServer(conf, &StaticKeyProvider{}, currentNode, &routing.RandomSelector{})
+	server, err = service.InitializeServer(conf, &StaticKeyProvider{}, currentNode)
 	if err != nil {
 		return
 	}

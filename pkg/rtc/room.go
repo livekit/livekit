@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
@@ -14,7 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	livekit "github.com/livekit/livekit-server/proto"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
 const (
@@ -42,7 +43,7 @@ type Room struct {
 	// for active speaker updates
 	audioConfig *config.AudioConfig
 
-	statsReporter *RoomStatsReporter
+	statsReporter *stats.RoomStatsReporter
 
 	onParticipantChanged func(p types.Participant)
 	onClose              func()
@@ -58,7 +59,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		config:          config,
 		iceServers:      iceServers,
 		audioConfig:     audioConfig,
-		statsReporter:   NewRoomStatsReporter(room.Name),
+		statsReporter:   stats.NewRoomStatsReporter(room.Name),
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logger.GetLogger()),
@@ -111,7 +112,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
-func (r *Room) GetStatsReporter() *RoomStatsReporter {
+func (r *Room) GetStatsReporter() *stats.RoomStatsReporter {
 	return r.statsReporter
 }
 
@@ -336,12 +337,12 @@ func (r *Room) Close() {
 	}
 }
 
-func (r *Room) GetIncomingStats() PacketStats {
-	return *r.statsReporter.incoming
+func (r *Room) GetIncomingStats() stats.PacketStats {
+	return *r.statsReporter.Incoming
 }
 
-func (r *Room) GetOutgoingStats() PacketStats {
-	return *r.statsReporter.outgoing
+func (r *Room) GetOutgoingStats() stats.PacketStats {
+	return *r.statsReporter.Outgoing
 }
 
 func (r *Room) OnClose(f func()) {

@@ -26,7 +26,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 		return nil, nil
 	}
 
-	if turnConf.TLSPort == 0 && turnConf.UDPPort == 0 {
+	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
 	}
 
@@ -47,6 +47,10 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	if turnConf.TLSPort > 0 {
 		if turnConf.Domain == "" {
 			return nil, errors.New("TURN domain required")
+		}
+
+		if IsValidDomain(turnConf.Domain) == false {
+			return nil, errors.New("TURN domain is not correct")
 		}
 
 		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
@@ -92,7 +96,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
-		rm, err := roomStore.GetRoom(username)
+		rm, err := roomStore.LoadRoom(username)
 		if err != nil {
 			return nil, false
 		}
