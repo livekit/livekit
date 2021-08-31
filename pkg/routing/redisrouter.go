@@ -139,7 +139,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 
 	// create a new connection id
 	connectionId = utils.NewGuid("CO_")
-	pKey := r.ParticipantKey(ctx, roomName, pi.Identity)
+	pKey := participantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
 	if err = r.setParticipantSignalNode(connectionId, r.currentNode.Id); err != nil {
@@ -171,14 +171,15 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return connectionId, sink, resChan, nil
 }
 
-func (r *RedisRouter) CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error) {
-	pkey := r.ParticipantKey(ctx, roomName, identity)
+func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+	pkey := participantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return NewRTCNodeSink(r.rc, rtcNode, pkey), nil
+	rtcSink := NewRTCNodeSink(r.rc, rtcNode, pkey)
+	return r.writeRTCMessage(roomName, identity, msg, rtcSink)
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
