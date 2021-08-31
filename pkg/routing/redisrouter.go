@@ -29,9 +29,6 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted utils.AtomicFlag
 
-	// map of connectionId => SignalNodeSink
-	signalSinks map[string]*SignalNodeSink
-
 	pubsub *redis.PubSub
 	cancel func()
 }
@@ -40,7 +37,6 @@ func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: *NewLocalRouter(currentNode),
 		rc:          rc,
-		signalSinks: make(map[string]*SignalNodeSink),
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
 	return rr
