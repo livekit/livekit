@@ -106,11 +106,11 @@ func (r *LocalRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
 	}
-	defer r.rtcMessageChan.Close()
 	return r.writeRTCMessage(roomName, identity, msg, r.rtcMessageChan)
 }
 
 func (r *LocalRouter) writeRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage, sink MessageSink) error {
+	defer sink.Close()
 	msg.ParticipantKey = participantKey(roomName, identity)
 	return sink.WriteMessage(msg)
 }
