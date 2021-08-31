@@ -86,6 +86,19 @@ type FakeRouter struct {
 	onRTCMessageArgsForCall []struct {
 		arg1 routing.RTCMessageCallback
 	}
+	ParticipantKeyStub        func(context.Context, string, string) string
+	participantKeyMutex       sync.RWMutex
+	participantKeyArgsForCall []struct {
+		arg1 context.Context
+		arg2 string
+		arg3 string
+	}
+	participantKeyReturns struct {
+		result1 string
+	}
+	participantKeyReturnsOnCall map[int]struct {
+		result1 string
+	}
 	RegisterNodeStub        func() error
 	registerNodeMutex       sync.RWMutex
 	registerNodeArgsForCall []struct {
@@ -543,6 +556,69 @@ func (fake *FakeRouter) OnRTCMessageArgsForCall(i int) routing.RTCMessageCallbac
 	return argsForCall.arg1
 }
 
+func (fake *FakeRouter) ParticipantKey(arg1 context.Context, arg2 string, arg3 string) string {
+	fake.participantKeyMutex.Lock()
+	ret, specificReturn := fake.participantKeyReturnsOnCall[len(fake.participantKeyArgsForCall)]
+	fake.participantKeyArgsForCall = append(fake.participantKeyArgsForCall, struct {
+		arg1 context.Context
+		arg2 string
+		arg3 string
+	}{arg1, arg2, arg3})
+	stub := fake.ParticipantKeyStub
+	fakeReturns := fake.participantKeyReturns
+	fake.recordInvocation("ParticipantKey", []interface{}{arg1, arg2, arg3})
+	fake.participantKeyMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) ParticipantKeyCallCount() int {
+	fake.participantKeyMutex.RLock()
+	defer fake.participantKeyMutex.RUnlock()
+	return len(fake.participantKeyArgsForCall)
+}
+
+func (fake *FakeRouter) ParticipantKeyCalls(stub func(context.Context, string, string) string) {
+	fake.participantKeyMutex.Lock()
+	defer fake.participantKeyMutex.Unlock()
+	fake.ParticipantKeyStub = stub
+}
+
+func (fake *FakeRouter) ParticipantKeyArgsForCall(i int) (context.Context, string, string) {
+	fake.participantKeyMutex.RLock()
+	defer fake.participantKeyMutex.RUnlock()
+	argsForCall := fake.participantKeyArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRouter) ParticipantKeyReturns(result1 string) {
+	fake.participantKeyMutex.Lock()
+	defer fake.participantKeyMutex.Unlock()
+	fake.ParticipantKeyStub = nil
+	fake.participantKeyReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeRouter) ParticipantKeyReturnsOnCall(i int, result1 string) {
+	fake.participantKeyMutex.Lock()
+	defer fake.participantKeyMutex.Unlock()
+	fake.ParticipantKeyStub = nil
+	if fake.participantKeyReturnsOnCall == nil {
+		fake.participantKeyReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.participantKeyReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeRouter) RegisterNode() error {
 	fake.registerNodeMutex.Lock()
 	ret, specificReturn := fake.registerNodeReturnsOnCall[len(fake.registerNodeArgsForCall)]
@@ -931,6 +1007,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.onNewParticipantRTCMutex.RUnlock()
 	fake.onRTCMessageMutex.RLock()
 	defer fake.onRTCMessageMutex.RUnlock()
+	fake.participantKeyMutex.RLock()
+	defer fake.participantKeyMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
 	fake.removeDeadNodesMutex.RLock()
