@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,10 +14,11 @@ import (
 )
 
 func TestParticipantPersistence(t *testing.T) {
+	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 
 	roomName := "room1"
-	rs.DeleteRoom(roomName)
+	rs.DeleteRoom(ctx, roomName)
 
 	p := &livekit.ParticipantInfo{
 		Sid:      "PA_test",
@@ -32,46 +34,47 @@ func TestParticipantPersistence(t *testing.T) {
 	}
 
 	// create the participant
-	require.NoError(t, rs.StoreParticipant(roomName, p))
+	require.NoError(t, rs.StoreParticipant(ctx, roomName, p))
 
 	// result should match
-	pGet, err := rs.LoadParticipant(roomName, p.Identity)
+	pGet, err := rs.LoadParticipant(ctx, roomName, p.Identity)
 	require.NoError(t, err)
 	require.Equal(t, p.Identity, pGet.Identity)
 	require.Equal(t, len(p.Tracks), len(pGet.Tracks))
 	require.Equal(t, p.Tracks[0].Sid, pGet.Tracks[0].Sid)
 
 	// list should return one participant
-	participants, err := rs.ListParticipants(roomName)
+	participants, err := rs.ListParticipants(ctx, roomName)
 	require.NoError(t, err)
 	require.Len(t, participants, 1)
 
 	// deleting participant should return back to normal
-	require.NoError(t, rs.DeleteParticipant(roomName, p.Identity))
+	require.NoError(t, rs.DeleteParticipant(ctx, roomName, p.Identity))
 
-	participants, err = rs.ListParticipants(roomName)
+	participants, err = rs.ListParticipants(ctx, roomName)
 	require.NoError(t, err)
 	require.Len(t, participants, 0)
 
 	// shouldn't be able to get it
-	_, err = rs.LoadParticipant(roomName, p.Identity)
+	_, err = rs.LoadParticipant(ctx, roomName, p.Identity)
 	require.Equal(t, err, service.ErrParticipantNotFound)
 }
 
 func TestRoomLock(t *testing.T) {
+	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 	lockInterval := 5 * time.Millisecond
 	roomName := "myroom"
 
 	t.Run("normal locking", func(t *testing.T) {
-		token, err := rs.LockRoom(roomName, lockInterval)
+		token, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
 		require.NotEmpty(t, token)
-		require.NoError(t, rs.UnlockRoom(roomName, token))
+		require.NoError(t, rs.UnlockRoom(ctx, roomName, token))
 	})
 
 	t.Run("waits before acquiring lock", func(t *testing.T) {
-		token, err := rs.LockRoom(roomName, lockInterval)
+		token, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
 		require.NotEmpty(t, token)
 		unlocked := uint32(0)
@@ -81,28 +84,28 @@ func TestRoomLock(t *testing.T) {
 		go func() {
 			// attempt to lock again
 			defer wg.Done()
-			token2, err := rs.LockRoom(roomName, lockInterval)
+			token2, err := rs.LockRoom(ctx, roomName, lockInterval)
 			require.NoError(t, err)
-			defer rs.UnlockRoom(roomName, token2)
+			defer rs.UnlockRoom(ctx, roomName, token2)
 			require.Equal(t, uint32(1), atomic.LoadUint32(&unlocked))
 		}()
 
 		// release after 2 ms
 		time.Sleep(2 * time.Millisecond)
 		atomic.StoreUint32(&unlocked, 1)
-		rs.UnlockRoom(roomName, token)
+		rs.UnlockRoom(ctx, roomName, token)
 
 		wg.Wait()
 	})
 
 	t.Run("lock expires", func(t *testing.T) {
-		token, err := rs.LockRoom(roomName, lockInterval)
+		token, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
-		defer rs.UnlockRoom(roomName, token)
+		defer rs.UnlockRoom(ctx, roomName, token)
 
 		time.Sleep(lockInterval + time.Millisecond)
-		token2, err := rs.LockRoom(roomName, lockInterval)
+		token2, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
-		rs.UnlockRoom(roomName, token2)
+		rs.UnlockRoom(ctx, roomName, token2)
 	})
 }

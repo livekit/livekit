@@ -77,7 +77,7 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *RedisRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error) {
 	nodeId, err := r.rc.HGet(r.ctx, NodeRoomKey, roomName).Result()
 	if err == redis.Nil {
 		return nil, ErrNotFound
@@ -88,11 +88,11 @@ func (r *RedisRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
 	return r.GetNode(nodeId)
 }
 
-func (r *RedisRouter) SetNodeForRoom(roomName string, nodeId string) error {
+func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error {
 	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
 }
 
-func (r *RedisRouter) ClearRoomState(roomName string) error {
+func (r *RedisRouter) ClearRoomState(ctx context.Context, roomName string) error {
 	if err := r.rc.HDel(r.ctx, NodeRoomKey, roomName).Err(); err != nil {
 		return errors.Wrap(err, "could not clear room state")
 	}
@@ -130,9 +130,9 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
-	rtcNode, err := r.GetNodeForRoom(roomName)
+	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
 		return
 	}
@@ -171,7 +171,7 @@ func (r *RedisRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 	return connectionId, sink, resChan, nil
 }
 
-func (r *RedisRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {
+func (r *RedisRouter) CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error) {
 	pkey := ParticipantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
@@ -183,7 +183,7 @@ func (r *RedisRouter) CreateRTCSink(roomName, identity string) (MessageSink, err
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
 	// find the node where the room is hosted at
-	rtcNode, err := r.GetNodeForRoom(ss.RoomName)
+	rtcNode, err := r.GetNodeForRoom(r.ctx, ss.RoomName)
 	if err != nil {
 		return err
 	}
@@ -236,6 +236,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
 	resSink := NewSignalNodeSink(r.rc, signalNode, ss.ConnectionId)
 	r.onNewParticipant(
+		r.ctx,
 		ss.RoomName,
 		pi,
 		reqChan,
@@ -416,7 +417,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			if err != nil {
 				return err
 			}
-			r.onRTCMessage(roomName, identity, rm)
+			r.onRTCMessage(context.Background(), roomName, identity, rm)
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	livekit "github.com/livekit/protocol/proto"
@@ -15,30 +16,30 @@ import (
 // look up participant
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
-	StoreRoom(room *livekit.Room) error
-	LoadRoom(idOrName string) (*livekit.Room, error)
-	ListRooms() ([]*livekit.Room, error)
-	DeleteRoom(idOrName string) error
+	StoreRoom(ctx context.Context, room *livekit.Room) error
+	LoadRoom(ctx context.Context, idOrName string) (*livekit.Room, error)
+	ListRooms(ctx context.Context) ([]*livekit.Room, error)
+	DeleteRoom(ctx context.Context, idOrName string) error
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)
-	LockRoom(name string, duration time.Duration) (string, error)
-	UnlockRoom(name string, uid string) error
+	LockRoom(ctx context.Context, name string, duration time.Duration) (string, error)
+	UnlockRoom(ctx context.Context, name string, uid string) error
 
-	StoreParticipant(roomName string, participant *livekit.ParticipantInfo) error
-	LoadParticipant(roomName, identity string) (*livekit.ParticipantInfo, error)
-	ListParticipants(roomName string) ([]*livekit.ParticipantInfo, error)
-	DeleteParticipant(roomName, identity string) error
+	StoreParticipant(ctx context.Context, roomName string, participant *livekit.ParticipantInfo) error
+	LoadParticipant(ctx context.Context, roomName, identity string) (*livekit.ParticipantInfo, error)
+	ListParticipants(ctx context.Context, roomName string) ([]*livekit.ParticipantInfo, error)
+	DeleteParticipant(ctx context.Context, roomName, identity string) error
 }
 
 type RoomManager interface {
 	RoomStore
 
-	CreateRoom(req *livekit.CreateRoomRequest) (*livekit.Room, error)
-	GetRoom(roomName string) *rtc.Room
-	DeleteRoom(roomName string) error
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
+	GetRoom(ctx context.Context, roomName string) *rtc.Room
+	DeleteRoom(ctx context.Context, roomName string) error
+	StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 	CleanupRooms() error
 	CloseIdleRooms()
 	Stop()
-	StartSession(roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 }
