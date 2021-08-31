@@ -417,7 +417,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			if err != nil {
 				return err
 			}
-			r.onRTCMessage(context.Background(), roomName, identity, rm)
+			r.onRTCMessage(r.ctx, roomName, identity, rm)
 		}
 	}
 	return nil
