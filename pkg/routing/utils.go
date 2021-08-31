@@ -22,10 +22,6 @@ func GetAvailableNodes(nodes []*livekit.Node) []*livekit.Node {
 	}).([]*livekit.Node)
 }
 
-func ParticipantKey(roomName, identity string) string {
-	return roomName + "|" + identity
-}
-
 func parseParticipantKey(pkey string) (roomName string, identity string, err error) {
 	parts := strings.Split(pkey, "|")
 	if len(parts) != 2 {

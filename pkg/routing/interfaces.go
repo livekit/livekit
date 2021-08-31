@@ -62,6 +62,8 @@ type Router interface {
 	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
 
+	ParticipantKey(ctx context.Context, roomName, identity string) string
+
 	Start() error
 	Stop()
 }

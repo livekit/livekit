@@ -85,7 +85,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	}
 
 	// index channels by roomName | identity
-	key := ParticipantKey(roomName, pi.Identity)
+	key := r.ParticipantKey(ctx, roomName, pi.Identity)
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
 
@@ -115,6 +115,10 @@ func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {
 
 func (r *LocalRouter) OnRTCMessage(callback RTCMessageCallback) {
 	r.onRTCMessage = callback
+}
+
+func (r *LocalRouter) ParticipantKey(ctx context.Context, roomName, identity string) string {
+	return roomName + "|" + identity
 }
 
 func (r *LocalRouter) Start() error {

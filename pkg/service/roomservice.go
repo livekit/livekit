@@ -149,7 +149,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	}
 
 	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
-		ParticipantKey: routing.ParticipantKey(req.Room, req.Identity),
+		ParticipantKey: s.router.ParticipantKey(ctx, req.Room, req.Identity),
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},
@@ -239,6 +239,6 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 	}
 	defer rtcSink.Close()
 
-	msg.ParticipantKey = routing.ParticipantKey(room, identity)
+	msg.ParticipantKey = s.router.ParticipantKey(ctx, room, identity)
 	return rtcSink.WriteMessage(msg)
 }
