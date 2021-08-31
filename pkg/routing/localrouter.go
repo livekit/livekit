@@ -85,7 +85,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	}
 
 	// index channels by roomName | identity
-	key := ParticipantKey(roomName, pi.Identity)
+	key := participantKey(roomName, pi.Identity)
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, key)
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
 
@@ -101,12 +101,18 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return pi.Identity, reqChan, resChan, nil
 }
 
-func (r *LocalRouter) CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error) {
+func (r *LocalRouter) WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.isClosed.Get() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
 	}
-	return r.rtcMessageChan, nil
+	return r.writeRTCMessage(roomName, identity, msg, r.rtcMessageChan)
+}
+
+func (r *LocalRouter) writeRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage, sink MessageSink) error {
+	defer sink.Close()
+	msg.ParticipantKey = participantKey(roomName, identity)
+	return sink.WriteMessage(msg)
 }
 
 func (r *LocalRouter) OnNewParticipantRTC(callback NewParticipantCallback) {
