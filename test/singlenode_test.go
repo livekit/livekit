@@ -1,13 +1,15 @@
 package test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
-	"github.com/stretchr/testify/require"
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -100,7 +102,7 @@ func TestSinglePublisher(t *testing.T) {
 	c3.Stop()
 
 	success = testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
-		room := s.RoomManager().GetRoom(testRoom)
+		room := s.RoomManager().GetRoom(context.Background(), testRoom)
 		require.NotNil(t, room)
 
 		p := room.GetParticipant("c1")

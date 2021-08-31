@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -35,18 +36,18 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(roomName string) (*livekit.Node, error) {
+func (r *LocalRouter) GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(roomName string, nodeId string) error {
+func (r *LocalRouter) SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error {
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(roomName string) error {
+func (r *LocalRouter) ClearRoomState(ctx context.Context, roomName string) error {
 	// do nothing
 	return nil
 }
@@ -76,7 +77,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
@@ -89,6 +90,7 @@ func (r *LocalRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 	resChan := r.getOrCreateMessageChannel(r.responseChannels, key)
 
 	r.onNewParticipant(
+		ctx,
 		roomName,
 		pi,
 		// request source
@@ -99,7 +101,7 @@ func (r *LocalRouter) StartParticipantSignal(roomName string, pi ParticipantInit
 	return pi.Identity, reqChan, resChan, nil
 }
 
-func (r *LocalRouter) CreateRTCSink(roomName, identity string) (MessageSink, error) {
+func (r *LocalRouter) CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error) {
 	if r.rtcMessageChan.isClosed.Get() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
@@ -167,7 +169,7 @@ func (r *LocalRouter) rtcMessageWorker() {
 				continue
 			}
 			if r.onRTCMessage != nil {
-				r.onRTCMessage(room, identity, rtcMsg)
+				r.onRTCMessage(context.Background(), room, identity, rtcMsg)
 			}
 		}
 	}

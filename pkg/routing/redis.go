@@ -54,7 +54,7 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 		rm = o
 		rm.ParticipantKey = participantKey
 	default:
-		return errInvalidRouterMessage
+		return ErrInvalidRouterMessage
 	}
 	data, err := proto.Marshal(rm)
 	if err != nil {
@@ -80,7 +80,7 @@ func publishSignalMessage(rc *redis.Client, nodeId string, connectionId string, 
 			EndSession: o,
 		}
 	default:
-		return errInvalidRouterMessage
+		return ErrInvalidRouterMessage
 	}
 	data, err := proto.Marshal(rm)
 	if err != nil {

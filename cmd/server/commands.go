@@ -140,7 +140,7 @@ func listNodes(c *cli.Context) error {
 		return err
 	}
 
-	router, err := service.InitializeRouter(conf, currentNode, false)
+	router, err := service.InitializeRouter(conf, currentNode)
 	if err != nil {
 		return err
 	}

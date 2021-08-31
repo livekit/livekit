@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"testing"
 
 	livekit "github.com/livekit/protocol/proto"
@@ -17,7 +18,7 @@ func TestCreateRoom(t *testing.T) {
 	manager, conf := newTestRoomManager(t)
 
 	t.Run("ensure default room settings are applied", func(t *testing.T) {
-		room, err := manager.CreateRoom(&livekit.CreateRoomRequest{Name: "myroom"})
+		room, err := manager.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
 		require.NotEmpty(t, room.EnabledCodecs)

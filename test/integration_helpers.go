@@ -138,6 +138,7 @@ func createSingleNodeServer() *service.LivekitServer {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Development = true
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -145,7 +146,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	s, err := service.InitializeServer(conf, currentNode, true)
+	s, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -165,6 +166,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 	conf.Development = true
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -173,7 +175,8 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	currentNode.Id = nodeId
 
 	// redis routing and store
-	s, err := service.InitializeServer(conf, currentNode, true)
+	s, err := service.InitializeServer(conf, currentNode)
+
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
@@ -238,18 +241,4 @@ func stopClients(clients ...*testclient.RTCClient) {
 	for _, c := range clients {
 		c.Stop()
 	}
-}
-
-type StaticKeyProvider struct {
-}
-
-func (p *StaticKeyProvider) NumKeys() int {
-	return 1
-}
-
-func (p *StaticKeyProvider) GetSecret(key string) string {
-	if key == testApiKey {
-		return testApiSecret
-	}
-	return ""
 }

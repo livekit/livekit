@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/livekit/livekit-server/test"
 	"net/http"
 	"os"
 	"regexp"
@@ -22,11 +21,11 @@ import (
 
 var ServiceSet = wire.NewSet(
 	createRedisClient,
-	createKeyProvider,
 	createRouter,
 	createStore,
-	createWebhookNotifier,
-	nodeSelectorFromConfig,
+	CreateKeyProvider,
+	CreateWebhookNotifier,
+	CreateNodeSelector,
 	NewRecordingService,
 	NewRoomService,
 	NewRTCService,
@@ -38,6 +37,61 @@ var ServiceSet = wire.NewSet(
 	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )
+
+func CreateKeyProvider(client *redis.Client, conf *config.Config) (auth.KeyProvider, error) {
+	if conf.AuthType == "file" {
+		// prefer keyfile if set
+		if conf.KeyFile != "" {
+			if st, err := os.Stat(conf.KeyFile); err != nil {
+				return nil, err
+			} else if st.Mode().Perm() != 0600 {
+				return nil, fmt.Errorf("key file must have permission set to 600")
+			}
+			f, err := os.Open(conf.KeyFile)
+			if err != nil {
+				return nil, err
+			}
+			defer func() {
+				_ = f.Close()
+			}()
+			return auth.NewFileBasedKeyProviderFromReader(f)
+		}
+
+		if len(conf.Keys) == 0 {
+			return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+		}
+
+		return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
+	} else if conf.AuthType == "redis" {
+		return NewRedisBasedKeyProvider(client), nil
+	} else {
+		return nil, errors.New("conf.auth_type value is not current")
+	}
+}
+
+func CreateWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
+	wc := conf.WebHook
+	if len(wc.URLs) == 0 {
+		return nil, nil
+	}
+	secret := provider.GetSecret(wc.APIKey)
+	if secret == "" {
+		return nil, ErrWebHookMissingAPIKey
+	}
+
+	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
+}
+
+func CreateNodeSelector(conf *config.Config) routing.NodeSelector {
+	switch conf.NodeSelector.Kind {
+	case "sysload":
+		return &routing.SystemLoadSelector{
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		}
+	default:
+		return &routing.RandomSelector{}
+	}
+}
 
 func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	if !conf.HasRedis() {
@@ -76,30 +130,6 @@ func createStore(rc *redis.Client) RoomStore {
 	return NewLocalRoomStore()
 }
 
-func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
-	wc := conf.WebHook
-	if len(wc.URLs) == 0 {
-		return nil, nil
-	}
-	secret := provider.GetSecret(wc.APIKey)
-	if secret == "" {
-		return nil, ErrWebHookMissingAPIKey
-	}
-
-	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
-}
-
-func nodeSelectorFromConfig(conf *config.Config) routing.NodeSelector {
-	switch conf.NodeSelector.Kind {
-	case "sysload":
-		return &routing.SystemLoadSelector{
-			SysloadLimit: conf.NodeSelector.SysloadLimit,
-		}
-	default:
-		return &routing.RandomSelector{}
-	}
-}
-
 func handleError(w http.ResponseWriter, status int, msg string) {
 	// GetLogger already with extra depth 1
 	logger.GetLogger().V(1).Info("error handling request", "error", msg, "status", status)
@@ -135,9 +165,7 @@ func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission 
 }
 
 func createKeyProvider(client *redis.Client, conf *config.Config) (auth.KeyProvider, error) {
-	if isTest {
-		return &test.StaticKeyProvider{}, nil
-	} else if conf.AuthType == "file" {
+	if conf.AuthType == "file" {
 		// prefer keyfile if set
 		if conf.KeyFile != "" {
 			if st, err := os.Stat(conf.KeyFile); err != nil {

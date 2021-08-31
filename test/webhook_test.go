@@ -73,7 +73,7 @@ func TestWebhooks(t *testing.T) {
 	ts.ClearEvents()
 
 	// room closed
-	rm := server.RoomManager().GetRoom(testRoom)
+	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
 	rm.Close()
 	testutils.WithTimeout(t, "webhook events room_finished", func() bool {
 		if ts.GetEvent(webhook.EventRoomFinished) == nil {
@@ -92,6 +92,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	conf.WebHook.URLs = []string{"http://localhost:7890"}
 	conf.WebHook.APIKey = testApiKey
 	conf.Development = true
+	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	testServer = newTestServer(":7890")
 	if err = testServer.Start(); err != nil {
@@ -104,7 +105,8 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	}
 	currentNode.Id = utils.NewGuid(nodeId1)
 
-	server, err = service.InitializeServer(conf, currentNode, true)
+	server, err = service.InitializeServer(conf, currentNode)
+
 	if err != nil {
 		return
 	}
@@ -134,7 +136,7 @@ type webookTestServer struct {
 func newTestServer(addr string) *webookTestServer {
 	s := &webookTestServer{
 		events:   make(map[string]*livekit.WebhookEvent),
-		provider: &StaticKeyProvider{},
+		provider: auth.NewFileBasedKeyProviderFromMap(map[string]string{testApiKey: testApiSecret}),
 	}
 	s.server = &http.Server{
 		Addr:    addr,

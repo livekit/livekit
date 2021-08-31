@@ -5,7 +5,7 @@ LiveKit is an open source project that provides scalable, multi-user conferencin
 ## Features
 
 - Horizontally scalable WebRTC Selective Forwarding Unit (SFU)
-- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, iOS, Android
+- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, iOS, Android, and Flutter
 - Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
 - Robust networking & connectivity, over UDP & TCP
 - Easy to deploy - pure Go & single binary
@@ -24,9 +24,10 @@ Head to [our playground](https://livekit.io/playground) and give it a spin. Buil
 Client SDKs:
 
 - [Javascript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
+- [React](https://github.com/livekit/livekit-react)
 - [iOS - Swift](https://github.com/livekit/client-sdk-ios) ([docs](https://docs.livekit.io/client-sdk-ios/))
 - [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
-- [React](https://github.com/livekit/livekit-react)
+- [Flutter](https://github.com/livekit/client-sdk-flutter) ([docs](https://docs.livekit.io/client-sdk-flutter/))
 
 Server SDKs:
 
@@ -46,7 +47,6 @@ Pre-requisites:
 
 * Go 1.15+ is installed
 * GOPATH/bin is in your PATH
-* [protoc](https://grpc.io/docs/protoc-installation/) is installed and in PATH
 
 Then run
 

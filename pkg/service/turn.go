@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"strconv"
@@ -96,7 +97,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
-		rm, err := roomStore.LoadRoom(username)
+		rm, err := roomStore.LoadRoom(context.Background(), username)
 		if err != nil {
 			return nil, false
 		}

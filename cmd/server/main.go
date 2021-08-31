@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"syscall"
 	"time"
+
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -189,7 +190,9 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	server, err := service.InitializeServer(conf, currentNode, false)
+
+	server, err := service.InitializeServer(conf, currentNode)
+
 	if err != nil {
 		return err
 	}
