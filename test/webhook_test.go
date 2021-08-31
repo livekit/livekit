@@ -73,7 +73,7 @@ func TestWebhooks(t *testing.T) {
 	ts.ClearEvents()
 
 	// room closed
-	rm := server.RoomManager().GetRoom(testRoom)
+	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
 	rm.Close()
 	testutils.WithTimeout(t, "webhook events room_finished", func() bool {
 		if ts.GetEvent(webhook.EventRoomFinished) == nil {

@@ -1,6 +1,8 @@
 package routing
 
 import (
+	"context"
+
 	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -33,15 +35,15 @@ type ParticipantInit struct {
 	Hidden          bool
 }
 
-type NewParticipantCallback func(roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
-type RTCMessageCallback func(roomName, identity string, msg *livekit.RTCNodeMessage)
+type NewParticipantCallback func(ctx context.Context, roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
+type RTCMessageCallback func(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage)
 
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
 type Router interface {
-	GetNodeForRoom(roomName string) (*livekit.Node, error)
-	SetNodeForRoom(roomName string, nodeId string) error
-	ClearRoomState(roomName string) error
+	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
+	SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error
+	ClearRoomState(ctx context.Context, roomName string) error
 	RegisterNode() error
 	UnregisterNode() error
 	RemoveDeadNodes() error
@@ -49,10 +51,10 @@ type Router interface {
 	ListNodes() ([]*livekit.Node, error)
 
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
 	// CreateRTCSink sends a message to RTC node
-	CreateRTCSink(roomName, identity string) (MessageSink, error)
+	CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error)
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)

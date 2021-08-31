@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -108,14 +109,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
-	rm, err := s.roomManager.CreateRoom(&livekit.CreateRoomRequest{Name: roomName})
+	rm, err := s.roomManager.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: roomName})
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// this needs to be started first *before* using router functions on this node
-	connId, reqSink, resSource, err := s.router.StartParticipantSignal(roomName, pi)
+	connId, reqSink, resSource, err := s.router.StartParticipantSignal(context.Background(), roomName, pi)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
