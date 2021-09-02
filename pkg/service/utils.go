@@ -11,6 +11,7 @@ import (
 	"github.com/google/wire"
 	"github.com/livekit/protocol/auth"
 	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 
@@ -21,6 +22,7 @@ import (
 
 var ServiceSet = wire.NewSet(
 	createRedisClient,
+	utils.NewRedisMessageBus,
 	createRouter,
 	createStore,
 	CreateKeyProvider,
