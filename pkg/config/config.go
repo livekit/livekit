@@ -82,9 +82,10 @@ type RedisConfig struct {
 }
 
 type RoomConfig struct {
-	EnabledCodecs   []CodecSpec `yaml:"enabled_codecs"`
-	MaxParticipants uint32      `yaml:"max_participants"`
-	EmptyTimeout    uint32      `yaml:"empty_timeout"`
+	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs"`
+	MaxParticipants    uint32      `yaml:"max_participants"`
+	EmptyTimeout       uint32      `yaml:"empty_timeout"`
+	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute"`
 }
 
 type CodecSpec struct {

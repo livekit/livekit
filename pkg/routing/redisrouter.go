@@ -154,7 +154,6 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 		Reconnect:       pi.Reconnect,
 		Permission:      pi.Permission,
 		ProtocolVersion: pi.ProtocolVersion,
-		UsePlanB:        pi.UsePlanB,
 		AutoSubscribe:   pi.AutoSubscribe,
 		Hidden:          pi.Hidden,
 	})
@@ -225,7 +224,6 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		Reconnect:       ss.Reconnect,
 		Permission:      ss.Permission,
 		ProtocolVersion: ss.ProtocolVersion,
-		UsePlanB:        ss.UsePlanB,
 		AutoSubscribe:   ss.AutoSubscribe,
 		Hidden:          ss.Hidden,
 	}

@@ -30,7 +30,6 @@ type ParticipantInit struct {
 	Reconnect       bool
 	Permission      *livekit.ParticipantPermission
 	ProtocolVersion int32
-	UsePlanB        bool
 	AutoSubscribe   bool
 	Hidden          bool
 }
