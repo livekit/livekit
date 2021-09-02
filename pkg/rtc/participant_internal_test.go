@@ -165,7 +165,7 @@ func TestMuteSetting(t *testing.T) {
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
 		p.pendingTracks["cid"] = ti
 
-		p.SetTrackMuted(ti.Sid, true)
+		p.SetTrackMuted(ti.Sid, true, false)
 		require.True(t, ti.Muted)
 
 	})

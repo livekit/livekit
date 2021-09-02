@@ -10,7 +10,6 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -287,16 +286,12 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
-		"planB", pi.UsePlanB,
 		"protocol", pi.ProtocolVersion,
 	)
 
 	pv := types.ProtocolVersion(pi.ProtocolVersion)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactor())
-	if pi.UsePlanB {
-		rtcConf.Configuration.SDPSemantics = webrtc.SDPSemanticsPlanB
-	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:        pi.Identity,
 		Config:          &rtcConf,
@@ -459,7 +454,7 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 					logger.Errorw("could not handle trickle", err, "participant", participant.Identity(), "pID", participant.ID())
 				}
 			case *livekit.SignalRequest_Mute:
-				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted)
+				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
 			case *livekit.SignalRequest_Subscription:
 				if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
 					logger.Warnw("could not update subscription", err,
@@ -490,6 +485,7 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 	}
 }
 
+// handles RTC messages resulted from Room API calls
 func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
@@ -512,7 +508,11 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 	case *livekit.RTCNodeMessage_MuteTrack:
 		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
 			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
-		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted)
+		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
+			logger.Errorw("cannot unmute track, remote unmute is disabled", nil)
+			return
+		}
+		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted, true)
 	case *livekit.RTCNodeMessage_UpdateParticipant:
 		logger.Debugw("updating participant", "room", roomName, "participant", identity)
 		if rm.UpdateParticipant.Metadata != "" {

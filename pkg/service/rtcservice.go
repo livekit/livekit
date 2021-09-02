@@ -68,8 +68,6 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	reconnectParam := r.FormValue("reconnect")
 	protocolParam := r.FormValue("protocol")
 	autoSubParam := r.FormValue("auto_subscribe")
-	// plan b does not work fully at the moment.
-	planBParam := r.FormValue("planb")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -78,7 +76,6 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
 		Identity:      claims.Identity,
-		UsePlanB:      boolValue(planBParam),
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,

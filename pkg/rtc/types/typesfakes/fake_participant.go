@@ -351,11 +351,12 @@ type FakeParticipant struct {
 	setResponseSinkArgsForCall []struct {
 		arg1 routing.MessageSink
 	}
-	SetTrackMutedStub        func(string, bool)
+	SetTrackMutedStub        func(string, bool, bool)
 	setTrackMutedMutex       sync.RWMutex
 	setTrackMutedArgsForCall []struct {
 		arg1 string
 		arg2 bool
+		arg3 bool
 	}
 	StartStub        func()
 	startMutex       sync.RWMutex
@@ -2278,17 +2279,18 @@ func (fake *FakeParticipant) SetResponseSinkArgsForCall(i int) routing.MessageSi
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) SetTrackMuted(arg1 string, arg2 bool) {
+func (fake *FakeParticipant) SetTrackMuted(arg1 string, arg2 bool, arg3 bool) {
 	fake.setTrackMutedMutex.Lock()
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
 		arg1 string
 		arg2 bool
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.SetTrackMutedStub
-	fake.recordInvocation("SetTrackMuted", []interface{}{arg1, arg2})
+	fake.recordInvocation("SetTrackMuted", []interface{}{arg1, arg2, arg3})
 	fake.setTrackMutedMutex.Unlock()
 	if stub != nil {
-		fake.SetTrackMutedStub(arg1, arg2)
+		fake.SetTrackMutedStub(arg1, arg2, arg3)
 	}
 }
 
@@ -2298,17 +2300,17 @@ func (fake *FakeParticipant) SetTrackMutedCallCount() int {
 	return len(fake.setTrackMutedArgsForCall)
 }
 
-func (fake *FakeParticipant) SetTrackMutedCalls(stub func(string, bool)) {
+func (fake *FakeParticipant) SetTrackMutedCalls(stub func(string, bool, bool)) {
 	fake.setTrackMutedMutex.Lock()
 	defer fake.setTrackMutedMutex.Unlock()
 	fake.SetTrackMutedStub = stub
 }
 
-func (fake *FakeParticipant) SetTrackMutedArgsForCall(i int) (string, bool) {
+func (fake *FakeParticipant) SetTrackMutedArgsForCall(i int) (string, bool, bool) {
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	argsForCall := fake.setTrackMutedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeParticipant) Start() {

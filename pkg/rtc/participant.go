@@ -536,7 +536,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 	}
 }
 
-func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
+func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool, fromAdmin bool) {
 	isPending := false
 	p.lock.RLock()
 	for _, ti := range p.pendingTracks {
@@ -558,6 +558,18 @@ func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool) {
 	}
 	currentMuted := track.IsMuted()
 	track.SetMuted(muted)
+
+	// when request is coming from admin, send message to current participant
+	if fromAdmin {
+		_ = p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Mute{
+				Mute: &livekit.MuteTrackRequest{
+					Sid:   trackId,
+					Muted: muted,
+				},
+			},
+		})
+	}
 
 	if currentMuted != track.IsMuted() && p.onTrackUpdated != nil {
 		logger.Debugw("mute status changed",
