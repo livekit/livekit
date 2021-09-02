@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.8.1
+	github.com/livekit/protocol v0.8.2
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -48,5 +48,3 @@ require (
 )
 
 replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.9
-
-replace github.com/livekit/protocol => ../protocol
