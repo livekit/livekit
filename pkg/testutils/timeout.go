@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
 )
 
 var (

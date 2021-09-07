@@ -10,12 +10,13 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -42,7 +43,7 @@ var (
 )
 
 func init() {
-	logger.InitDevelopment("")
+	serverlogger.InitDevelopment("")
 }
 
 func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, func()) {

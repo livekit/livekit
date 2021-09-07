@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
@@ -155,9 +156,9 @@ func startServer(c *cli.Context) error {
 	}
 
 	if conf.Development {
-		logger.InitDevelopment(conf.LogLevel)
+		serverlogger.InitDevelopment(conf.LogLevel)
 	} else {
-		logger.InitProduction(conf.LogLevel)
+		serverlogger.InitProduction(conf.LogLevel)
 	}
 
 	if cpuProfile != "" {

@@ -6,11 +6,12 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
@@ -34,7 +35,7 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 	serverConfig := turn.ServerConfig{
 		Realm:         livekitRealm,
 		AuthHandler:   newTurnAuthHandler(roomStore),
-		LoggerFactory: logger.LoggerFactory(),
+		LoggerFactory: serverlogger.LoggerFactory(),
 	}
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(node.Ip),

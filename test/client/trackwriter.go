@@ -12,7 +12,7 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media/ivfreader"
 	"github.com/pion/webrtc/v3/pkg/media/oggreader"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
 )
 
 // Writes a file to an RTP track.
