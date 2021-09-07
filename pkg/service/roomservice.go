@@ -149,7 +149,6 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	}
 
 	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
-		ParticipantKey: routing.ParticipantKey(req.Room, req.Identity),
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},
@@ -219,26 +218,15 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 	return &livekit.SendDataResponse{}, nil
 }
 
-func (s *RoomService) createRTCSink(ctx context.Context, room, identity string) (routing.MessageSink, error) {
+func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
-		return nil, twirpAuthError(err)
+		return twirpAuthError(err)
 	}
 
 	_, err := s.roomManager.LoadParticipant(ctx, room, identity)
 	if err != nil {
-		return nil, err
-	}
-
-	return s.router.CreateRTCSink(ctx, room, identity)
-}
-
-func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
-	rtcSink, err := s.createRTCSink(ctx, room, identity)
-	if err != nil {
 		return err
 	}
-	defer rtcSink.Close()
 
-	msg.ParticipantKey = routing.ParticipantKey(room, identity)
-	return rtcSink.WriteMessage(msg)
+	return s.router.WriteRTCMessage(ctx, room, identity, msg)
 }

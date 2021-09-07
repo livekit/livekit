@@ -30,7 +30,6 @@ type ParticipantInit struct {
 	Reconnect       bool
 	Permission      *livekit.ParticipantPermission
 	ProtocolVersion int32
-	UsePlanB        bool
 	AutoSubscribe   bool
 	Hidden          bool
 }
@@ -53,8 +52,8 @@ type Router interface {
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
-	// CreateRTCSink sends a message to RTC node
-	CreateRTCSink(ctx context.Context, roomName, identity string) (MessageSink, error)
+	// WriteRTCMessage sends a message to the RTC node
+	WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)

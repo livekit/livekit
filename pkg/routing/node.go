@@ -14,14 +14,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
-type NodeStats struct {
-	NumRooms         int32
-	NumClients       int32
-	NumVideoChannels int32
-	NumAudioChannels int32
-	BytesPerMin      int64
-}
-
 type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {

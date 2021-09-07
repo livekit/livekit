@@ -5,18 +5,17 @@ import (
 	"errors"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
 )
 
 type RecordingService struct {
-	rc *redis.Client
+	mb utils.MessageBus
 }
 
-func NewRecordingService(rc *redis.Client) *RecordingService {
-	return &RecordingService{rc: rc}
+func NewRecordingService(mb utils.MessageBus) *RecordingService {
+	return &RecordingService{mb: mb}
 }
 
 func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.RecordingResponse, error) {
@@ -24,7 +23,7 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, twirpAuthError(err)
 	}
 
-	if s.rc == nil {
+	if s.mb == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
@@ -35,7 +34,7 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 	}
 
 	// start the recording
-	err = s.rc.Publish(ctx, utils.StartRecordingChannel(recordingID), nil).Err()
+	err = s.mb.Publish(ctx, utils.StartRecordingChannel(recordingID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +54,13 @@ func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.Sta
 		return "", err
 	}
 
-	sub := s.rc.Subscribe(ctx, utils.ReservationResponseChannel(id))
+	sub, err := s.mb.Subscribe(ctx, utils.ReservationResponseChannel(id))
+	if err != nil {
+		return "", err
+	}
 	defer sub.Close()
 
-	if err = s.rc.Publish(ctx, utils.ReservationChannel, string(b)).Err(); err != nil {
+	if err = s.mb.Publish(ctx, utils.ReservationChannel, string(b)); err != nil {
 		return "", err
 	}
 
@@ -75,11 +77,11 @@ func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRec
 		return nil, twirpAuthError(err)
 	}
 
-	if s.rc == nil {
+	if s.mb == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
-	if err := s.rc.Publish(ctx, utils.EndRecordingChannel(req.RecordingId), nil).Err(); err != nil {
+	if err := s.mb.Publish(ctx, utils.EndRecordingChannel(req.RecordingId), nil); err != nil {
 		return nil, err
 	}
 

@@ -78,6 +78,9 @@ key_provider: redis
 #  enabled_codecs:
 #    - mime: audio/opus
 #    - mime: video/vp8
+#  # allow tracks to be unmuted remotely, defaults to false
+#  # tracks can always be muted from the Room Service APIs
+#  enable_remote_unmute: true
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events
