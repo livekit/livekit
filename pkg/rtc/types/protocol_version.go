@@ -15,3 +15,8 @@ func (v ProtocolVersion) SupportsProtobuf() bool {
 func (v ProtocolVersion) HandlesDataPackets() bool {
 	return v > 1
 }
+
+// SubscriberAsPrimary indicates clients initiate subscriber connection as primary
+func (v ProtocolVersion) SubscriberAsPrimary() bool {
+	return v > 2
+}

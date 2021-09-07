@@ -54,7 +54,7 @@ func TestICEStateChange(t *testing.T) {
 		p.onClose = func(participant types.Participant) {
 			close(closeChan)
 		}
-		p.handlePublisherICEStateChange(webrtc.ICEConnectionStateFailed)
+		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)
 
 		select {
 		case <-closeChan:

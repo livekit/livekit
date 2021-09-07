@@ -434,11 +434,6 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 					"track", msg.AddTrack.Cid)
 				participant.AddTrack(msg.AddTrack)
 			case *livekit.SignalRequest_Answer:
-				if participant.State() == livekit.ParticipantInfo_JOINING {
-					logger.Errorw("cannot negotiate before peer offer", nil, "participant", participant.Identity(), "pID", participant.ID())
-					// conn.WriteJSON(jsonError(http.StatusNotAcceptable, "cannot negotiate before peer offer"))
-					return
-				}
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
 				if err := participant.HandleAnswer(sd); err != nil {
 					logger.Errorw("could not handle answer", err, "participant", participant.Identity(), "pID", participant.ID())

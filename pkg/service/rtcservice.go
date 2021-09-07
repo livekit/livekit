@@ -150,7 +150,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
-			conn.Close()
+			_ = conn.Close()
 		}()
 		defer rtc.Recover()
 		for {
