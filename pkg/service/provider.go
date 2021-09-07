@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/go-redis/redis/v8"
+)
+
+const (
+	LIVEKIT_KEYS = "livekit-keys"
 )
 
 type RedisBasedKeyProvider struct {
@@ -17,11 +20,11 @@ func NewRedisBasedKeyProvider(c *redis.Client) *RedisBasedKeyProvider {
 }
 
 func (p *RedisBasedKeyProvider) GetSecret(key string) string {
-	fmt.Print("GetSecret CALLED", "\n")
-	secret, _ := p.client.Get(context.Background(), key).Result()
+	secret, _ := p.client.HGet(context.Background(), LIVEKIT_KEYS, key).Result()
 	return secret
 }
 
 func (p *RedisBasedKeyProvider) NumKeys() int {
-	return 1
+	numKey, _ := p.client.HLen(context.Background(), "livekit-keys").Result()
+	return int(numKey)
 }

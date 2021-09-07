@@ -60,7 +60,8 @@ keys:
   key1: secret1
   key2: secret2
 
-auth_type: redis
+# auth details could be stored in Redis. when enabled
+key_provider: redis
 
 
 # Default room config

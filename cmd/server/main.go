@@ -190,7 +190,6 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-
 	server, err := service.InitializeServer(conf, currentNode)
 
 	if err != nil {
