@@ -548,17 +548,26 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 	if err != nil {
 		return err
 	}
+
+	var dc *webrtc.DataChannel
 	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.reliableDCSub == nil {
-			return ErrDataChannelUnavailable
+		if p.ProtocolVersion().SubscriberAsPrimary() {
+			dc = p.reliableDCSub
+		} else {
+			dc = p.reliableDC
 		}
-		return p.reliableDCSub.Send(data)
 	} else {
-		if p.lossyDCSub == nil {
-			return ErrDataChannelUnavailable
+		if p.ProtocolVersion().SubscriberAsPrimary() {
+			dc = p.lossyDCSub
+		} else {
+			dc = p.lossyDC
 		}
-		return p.lossyDCSub.Send(data)
 	}
+
+	if dc == nil {
+		return ErrDataChannelUnavailable
+	}
+	return dc.Send(data)
 }
 
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool, fromAdmin bool) {
