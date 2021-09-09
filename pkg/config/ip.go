@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
 )

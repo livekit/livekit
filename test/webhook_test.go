@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
@@ -16,7 +17,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/testutils"

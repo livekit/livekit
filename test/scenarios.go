@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
