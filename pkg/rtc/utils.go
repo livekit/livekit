@@ -6,10 +6,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 

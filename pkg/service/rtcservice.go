@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
