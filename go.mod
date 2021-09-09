@@ -7,14 +7,13 @@ require (
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/gammazero/workerpool v1.1.2
-	github.com/go-logr/logr v1.1.0
 	github.com/go-logr/zapr v1.1.0
 	github.com/go-redis/redis/v8 v8.11.3
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.8.6
+	github.com/livekit/protocol v0.8.7
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -48,4 +47,3 @@ require (
 )
 
 replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.9
-replace github.com/livekit/protocol => ../protocol
