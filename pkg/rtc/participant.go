@@ -55,8 +55,10 @@ type ParticipantImpl struct {
 	pliThrottle       *pliThrottle
 
 	// reliable and unreliable data channels
-	reliableDC *webrtc.DataChannel
-	lossyDC    *webrtc.DataChannel
+	reliableDC    *webrtc.DataChannel
+	reliableDCSub *webrtc.DataChannel
+	lossyDC       *webrtc.DataChannel
+	lossyDCSub    *webrtc.DataChannel
 
 	// when first connected
 	connectedAt time.Time
@@ -134,7 +136,28 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.sendIceCandidate(c, livekit.SignalTarget_SUBSCRIBER)
 	})
 
-	p.publisher.pc.OnICEConnectionStateChange(p.handlePublisherICEStateChange)
+	primaryPC := p.publisher.pc
+
+	if p.ProtocolVersion().SubscriberAsPrimary() {
+		primaryPC = p.subscriber.pc
+		ordered := true
+		// also create data channels for subs
+		p.reliableDCSub, err = primaryPC.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		})
+		if err != nil {
+			return nil, err
+		}
+		retransmits := uint16(0)
+		p.lossyDCSub, err = primaryPC.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &retransmits,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	primaryPC.OnICEConnectionStateChange(p.handlePrimaryICEStateChange)
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
@@ -476,6 +499,8 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 				OtherParticipants: ToProtoParticipants(otherParticipants),
 				ServerVersion:     version.Version,
 				IceServers:        iceServers,
+				// indicates both server and client support subscriber as primary
+				SubscriberPrimary: p.ProtocolVersion().SubscriberAsPrimary(),
 			},
 		},
 	})
@@ -523,17 +548,26 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 	if err != nil {
 		return err
 	}
+
+	var dc *webrtc.DataChannel
 	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.reliableDC == nil {
-			return ErrDataChannelUnavailable
+		if p.ProtocolVersion().SubscriberAsPrimary() {
+			dc = p.reliableDCSub
+		} else {
+			dc = p.reliableDC
 		}
-		return p.reliableDC.Send(data)
 	} else {
-		if p.lossyDC == nil {
-			return ErrDataChannelUnavailable
+		if p.ProtocolVersion().SubscriberAsPrimary() {
+			dc = p.lossyDCSub
+		} else {
+			dc = p.lossyDC
 		}
-		return p.lossyDC.Send(data)
 	}
+
+	if dc == nil {
+		return ErrDataChannelUnavailable
+	}
+	return dc.Send(data)
 }
 
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool, fromAdmin bool) {
@@ -889,7 +923,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 	}
 }
 
-func (p *ParticipantImpl) handlePublisherICEStateChange(state webrtc.ICEConnectionState) {
+func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnectionState) {
 	// logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity, "pID", p.ID())
 	if state == webrtc.ICEConnectionStateConnected {

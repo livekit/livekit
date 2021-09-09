@@ -216,7 +216,16 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		}
 	})
 
-	return participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers)
+	if err := participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers); err != nil {
+		return err
+	}
+
+	if participant.ProtocolVersion().SubscriberAsPrimary() {
+		// initiates sub connection as primary
+		participant.Negotiate()
+	}
+
+	return nil
 }
 
 func (r *Room) RemoveParticipant(identity string) {
