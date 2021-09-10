@@ -41,5 +41,6 @@ type RoomManager interface {
 	StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 	CleanupRooms() error
 	CloseIdleRooms()
+	HasParticipants() bool
 	Stop()
 }

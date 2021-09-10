@@ -202,6 +202,15 @@ func (r *LocalRoomManager) CloseIdleRooms() {
 	}
 }
 
+func (r *LocalRoomManager) HasParticipants() bool {
+	for _, room := range r.rooms {
+		if len(room.GetParticipants()) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *LocalRoomManager) Stop() {
 	// disconnect all clients
 	r.lock.RLock()
