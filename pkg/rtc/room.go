@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -62,7 +63,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 		statsReporter:   stats.NewRoomStatsReporter(room.Name),
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logger.GetLogger()),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout

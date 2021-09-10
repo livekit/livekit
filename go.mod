@@ -7,6 +7,7 @@ require (
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/gammazero/workerpool v1.1.2
+	github.com/go-logr/logr v1.1.0
 	github.com/go-logr/zapr v1.1.0
 	github.com/go-redis/redis/v8 v8.11.3
 	github.com/google/subcommands v1.2.0 // indirect
