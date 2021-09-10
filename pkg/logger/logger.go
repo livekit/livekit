@@ -1,6 +1,7 @@
 package serverlogger
 
 import (
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/ion-sfu/pkg/buffer"
@@ -26,6 +27,13 @@ func SetLoggerFactory(lf logging.LoggerFactory) {
 	defaultFactory = lf
 }
 
+// Note: only pass in logr.Logger with default depth
+func SetLogger(l logr.Logger) {
+	logger.SetLogger(l, "livekit")
+	sfu.Logger = l.WithName("sfu")
+	buffer.Logger = sfu.Logger
+}
+
 func InitProduction(logLevel string) {
 	initLogger(zap.NewProductionConfig(), logLevel)
 }
@@ -45,7 +53,5 @@ func initLogger(config zap.Config, level string) {
 
 	l, _ := config.Build()
 	zapLogger := zapr.NewLogger(l)
-	sfu.Logger = zapLogger.WithName("sfu")
-	buffer.Logger = sfu.Logger
-	logger.SetLogger(zapLogger, "livekit")
+	SetLogger(zapLogger)
 }
