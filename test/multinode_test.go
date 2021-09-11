@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
@@ -47,7 +48,8 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		require.Equal(t, c1.ID(), tr1.StreamID())
+		streamId, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), streamId)
 		return true
 	})
 }

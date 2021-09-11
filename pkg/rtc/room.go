@@ -192,6 +192,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
+		"protocol", participant.ProtocolVersion(),
 		"room", r.Room.Name,
 		"roomID", r.Room.Sid)
 

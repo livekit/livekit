@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -69,7 +70,8 @@ func TestSinglePublisher(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		require.Equal(t, c1.ID(), tr1.StreamID())
+		participantId, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), participantId)
 		return true
 	})
 	if !success {
