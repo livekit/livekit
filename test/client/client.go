@@ -244,18 +244,13 @@ func (c *RTCClient) Run() error {
 		return nil
 	})
 
-	// create a data channel, in order to work
-	_, err := c.publisher.PeerConnection().CreateDataChannel("_lossy", nil)
-	if err != nil {
-		return err
-	}
-
 	// run the session
 	for {
 		res, err := c.ReadResponse()
 		if errors.Is(io.EOF, err) {
 			return nil
 		} else if err != nil {
+			logger.Errorw("error while reading", err)
 			return err
 		}
 		switch msg := res.Message.(type) {
@@ -269,8 +264,6 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 
 			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
-
-			defer c.Stop()
 		case *livekit.SignalResponse_Answer:
 			//logger.Debugw("received server answer",
 			//	"participant", c.localParticipant.Identity,
