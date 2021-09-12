@@ -129,12 +129,16 @@ func scenarioDataPublish(t *testing.T) {
 
 	received := utils.AtomicFlag{}
 	c2.OnDataReceived = func(data []byte, sid string) {
-		if string(data) == payload && sid == c2.ID() {
+		if string(data) == payload && sid == c1.ID() {
 			received.TrySet(true)
 		}
 	}
 
 	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_LOSSY))
+
+	testutils.WithTimeout(t, "waiting for c2 to receive data", func() bool {
+		return received.Get()
+	})
 }
 
 // websocket reconnects

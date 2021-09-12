@@ -196,7 +196,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.publisher.OnOffer(c.onOffer)
 
 	c.subscriber.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		logger.Infow("ICE state has changed", "state", connectionState.String(),
+		logger.Infow("subscriber ICE state has changed", "state", connectionState.String(),
 			"participant", c.localParticipant.Identity)
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			// flush peers
@@ -219,6 +219,8 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	})
 
 	c.publisher.PeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.Infow("publisher ICE state changed", "state", state.String(),
+			"participant", c.localParticipant.Identity)
 		if state == webrtc.ICEConnectionStateConnected {
 			c.publisherConnected.TrySet(true)
 		} else {
@@ -380,6 +382,7 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 }
 
 func (c *RTCClient) Stop() {
+	logger.Infow("stopping client", "ID", c.ID())
 	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Leave{
 			Leave: &livekit.LeaveRequest{},
@@ -525,6 +528,8 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 	if err != nil {
 		return err
 	}
+
+	logger.Infow("trying to publish")
 	if kind == livekit.DataPacket_RELIABLE {
 		return c.reliableDC.Send(payload)
 	} else {
@@ -551,6 +556,8 @@ func (c *RTCClient) ensurePublisherConnected() error {
 			return fmt.Errorf("could not connect publisher after timeout")
 		case <-time.After(10 * time.Millisecond):
 			if c.publisherConnected.Get() {
+				// TODO: pion seem to have a timing issue here. data channel is not actually open at this moment
+				time.Sleep(10 * time.Millisecond)
 				return nil
 			}
 		}
