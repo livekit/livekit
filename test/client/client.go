@@ -547,6 +547,14 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		c.publisher.Negotiate()
 	}
 
+	dcOpen := utils.AtomicFlag{}
+	c.lossyDC.OnOpen(func() {
+		dcOpen.TrySet(true)
+	})
+	if c.lossyDC.ReadyState() == webrtc.DataChannelStateOpen {
+		dcOpen.TrySet(true)
+	}
+
 	// wait until connected
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -555,9 +563,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		case <-ctx.Done():
 			return fmt.Errorf("could not connect publisher after timeout")
 		case <-time.After(10 * time.Millisecond):
-			if c.publisherConnected.Get() {
-				// TODO: pion seem to have a timing issue here. data channel is not actually open at this moment
-				time.Sleep(100 * time.Millisecond)
+			if c.publisherConnected.Get() && dcOpen.Get() {
 				return nil
 			}
 		}
