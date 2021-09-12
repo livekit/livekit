@@ -557,7 +557,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		case <-time.After(10 * time.Millisecond):
 			if c.publisherConnected.Get() {
 				// TODO: pion seem to have a timing issue here. data channel is not actually open at this moment
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
 		}
