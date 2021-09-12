@@ -125,4 +125,14 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	waitUntilConnected(t, c3)
 }
 
-// TODO: test room with protocol version 1 and 0 participants
+func TestMultinodeDataPublishing(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("TestMultinodeDataPublishing")
+	defer finish()
+
+	scenarioDataPublish(t)
+}

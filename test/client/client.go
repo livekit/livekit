@@ -25,6 +25,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
+const (
+	lossyDataChannel    = "_lossy"
+	reliableDataChannel = "_reliable"
+)
+
 type RTCClient struct {
 	id         string
 	conn       *websocket.Conn
@@ -43,11 +48,18 @@ type RTCClient struct {
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
+	reliableDC         *webrtc.DataChannel
+	reliableDCSub      *webrtc.DataChannel
+	lossyDC            *webrtc.DataChannel
+	lossyDCSub         *webrtc.DataChannel
+	publisherConnected utils.AtomicFlag
+
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
 
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
+	OnDataReceived      func(data []byte, sid string)
 
 	// map of track Id and last packet
 	lastPackets   map[string]*rtp.Packet
@@ -138,6 +150,22 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		return nil, err
 	}
 
+	ordered := true
+	c.reliableDC, err = c.publisher.PeerConnection().CreateDataChannel(reliableDataChannel,
+		&webrtc.DataChannelInit{Ordered: &ordered},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	maxRetransmits := uint16(0)
+	c.lossyDC, err = c.publisher.PeerConnection().CreateDataChannel(lossyDataChannel,
+		&webrtc.DataChannelInit{Ordered: &ordered, MaxRetransmits: &maxRetransmits},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	c.publisher.PeerConnection().OnICECandidate(func(ic *webrtc.ICECandidate) {
 		if ic == nil {
 			return
@@ -155,6 +183,14 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		go c.processTrack(track)
 	})
 	c.subscriber.PeerConnection().OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() == reliableDataChannel {
+			c.reliableDCSub = channel
+		} else if channel.Label() == lossyDataChannel {
+			c.lossyDCSub = channel
+		} else {
+			return
+		}
+		channel.OnMessage(c.handleDataMessage)
 	})
 
 	c.publisher.OnOffer(c.onOffer)
@@ -179,6 +215,14 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 			if initialConnect && c.OnConnected != nil {
 				go c.OnConnected()
 			}
+		}
+	})
+
+	c.publisher.PeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		if state == webrtc.ICEConnectionStateConnected {
+			c.publisherConnected.TrySet(true)
+		} else {
+			c.publisherConnected.TrySet(false)
 		}
 	})
 
@@ -464,6 +508,66 @@ func (c *RTCClient) SendAddTrack(cid string, name string, trackType livekit.Trac
 			},
 		},
 	})
+}
+
+func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error {
+	if err := c.ensurePublisherConnected(); err != nil {
+		return err
+	}
+
+	dp := &livekit.DataPacket{
+		Kind: kind,
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{Payload: data},
+		},
+	}
+	payload, err := proto.Marshal(dp)
+	if err != nil {
+		return err
+	}
+	if kind == livekit.DataPacket_RELIABLE {
+		return c.reliableDC.Send(payload)
+	} else {
+		return c.lossyDC.Send(payload)
+	}
+}
+
+func (c *RTCClient) ensurePublisherConnected() error {
+	if c.publisherConnected.Get() {
+		return nil
+	}
+
+	if c.publisher.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateNew {
+		// start negotiating
+		c.publisher.Negotiate()
+	}
+
+	// wait until connected
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("could not connect publisher after timeout")
+		case <-time.After(10 * time.Millisecond):
+			if c.publisherConnected.Get() {
+				return nil
+			}
+		}
+	}
+}
+
+func (c *RTCClient) handleDataMessage(msg webrtc.DataChannelMessage) {
+	dp := &livekit.DataPacket{}
+	err := proto.Unmarshal(msg.Data, dp)
+	if err != nil {
+		return
+	}
+	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
+		if c.OnDataReceived != nil {
+			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
+		}
+	}
 }
 
 // handles a server initiated offer, handle on subscriber PC
