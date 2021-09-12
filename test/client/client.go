@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -377,7 +376,6 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 
 func (c *RTCClient) Stop() {
 	logger.Infow("stopping client", "ID", c.ID())
-	debug.PrintStack()
 	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Leave{
 			Leave: &livekit.LeaveRequest{},
@@ -524,7 +522,6 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	logger.Infow("trying to publish")
 	if kind == livekit.DataPacket_RELIABLE {
 		return c.reliableDC.Send(payload)
 	} else {
