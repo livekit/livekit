@@ -134,7 +134,7 @@ func scenarioDataPublish(t *testing.T) {
 		}
 	}
 
-	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_LOSSY))
+	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
 
 	testutils.WithTimeout(t, "waiting for c2 to receive data", func() bool {
 		return received.Get()
