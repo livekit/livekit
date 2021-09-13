@@ -258,6 +258,10 @@ func (r *RedisRouter) Start() error {
 	}
 }
 
+func (r *RedisRouter) PreStop() {
+
+}
+
 func (r *RedisRouter) Stop() {
 	if !r.isStarted.TrySet(false) {
 		return

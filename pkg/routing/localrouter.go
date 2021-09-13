@@ -132,6 +132,10 @@ func (r *LocalRouter) Start() error {
 	return nil
 }
 
+func (r *LocalRouter) PreStop() {
+
+}
+
 func (r *LocalRouter) Stop() {
 	r.rtcMessageChan.Close()
 }
