@@ -320,6 +320,12 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
+	if !p.CanPublish() {
+		logger.Warnw("no permission to publish track", nil,
+			"participant", p.Identity(), "pID", p.ID())
+		return
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:   req.Type,
 		Name:   req.Name,
@@ -770,6 +776,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	logger.Debugw("mediaTrack added",
+		"kind", track.Kind().String(),
 		"participant", p.Identity(),
 		"pID", p.ID(),
 		"track", track.ID(),
