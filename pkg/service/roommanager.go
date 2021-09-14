@@ -203,6 +203,9 @@ func (r *LocalRoomManager) CloseIdleRooms() {
 }
 
 func (r *LocalRoomManager) HasParticipants() bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
 	for _, room := range r.rooms {
 		if len(room.GetParticipants()) != 0 {
 			return true
