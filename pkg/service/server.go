@@ -171,7 +171,7 @@ func (s *LivekitServer) Start() error {
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)
-			s.Stop()
+			s.Stop(true)
 		}
 	}()
 
@@ -199,15 +199,11 @@ func (s *LivekitServer) Start() error {
 	return nil
 }
 
-func (s *LivekitServer) Stop() {
-	if !s.running.TrySet(false) {
-		return
-	}
-
+func (s *LivekitServer) Stop(force bool) {
 	// wait for all participants to exit
 	s.router.PreStop()
 	partTicker := time.NewTicker(5 * time.Second)
-	waitingForParticipants := s.roomManager.HasParticipants()
+	waitingForParticipants := !force && s.roomManager.HasParticipants()
 	for waitingForParticipants {
 		select {
 		case <-partTicker.C:
@@ -216,6 +212,10 @@ func (s *LivekitServer) Stop() {
 		}
 	}
 	partTicker.Stop()
+
+	if !s.running.TrySet(false) {
+		return
+	}
 
 	s.router.Stop()
 	close(s.doneChan)

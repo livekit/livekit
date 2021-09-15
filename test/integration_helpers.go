@@ -63,7 +63,7 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 		panic(err)
 	}
 	return s, func() {
-		s.Stop()
+		s.Stop(true)
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
 	}
 }
@@ -79,8 +79,8 @@ func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitSe
 	waitForServerToStart(s2)
 
 	return s1, s2, func() {
-		s1.Stop()
-		s2.Stop()
+		s1.Stop(true)
+		s2.Stop(true)
 		redisClient().FlushAll(context.Background())
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
 	}
