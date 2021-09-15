@@ -12,6 +12,7 @@ import (
 
 var (
 	nodeLoadLow = &livekit.Node{
+		State: livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
@@ -20,6 +21,7 @@ var (
 	}
 
 	nodeLoadHigh = &livekit.Node{
+		State: livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
