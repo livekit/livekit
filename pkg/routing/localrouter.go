@@ -132,7 +132,9 @@ func (r *LocalRouter) Start() error {
 	return nil
 }
 
-func (r *LocalRouter) PreStop() {}
+func (r *LocalRouter) PreStop() {
+	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
+}
 
 func (r *LocalRouter) Stop() {
 	r.rtcMessageChan.Close()

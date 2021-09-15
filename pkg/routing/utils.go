@@ -18,7 +18,7 @@ func IsAvailable(node *livekit.Node) bool {
 
 func GetAvailableNodes(nodes []*livekit.Node) []*livekit.Node {
 	return funk.Filter(nodes, func(node *livekit.Node) bool {
-		return IsAvailable(node)
+		return IsAvailable(node) && node.State == livekit.NodeState_SERVING
 	}).([]*livekit.Node)
 }
 
