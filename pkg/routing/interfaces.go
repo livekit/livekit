@@ -62,6 +62,7 @@ type Router interface {
 	OnRTCMessage(callback RTCMessageCallback)
 
 	Start() error
+	PreStop()
 	Stop()
 }
 

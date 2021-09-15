@@ -117,7 +117,7 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	stopClients(c1, c2)
 
 	// stop s2, and connect to room again
-	s2.Stop()
+	s2.Stop(true)
 
 	time.Sleep(syncDelay)
 

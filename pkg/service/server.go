@@ -171,7 +171,7 @@ func (s *LivekitServer) Start() error {
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)
-			s.Stop()
+			s.Stop(true)
 		}
 	}()
 
@@ -183,10 +183,6 @@ func (s *LivekitServer) Start() error {
 	s.running.TrySet(true)
 
 	<-s.doneChan
-
-	if err := s.router.UnregisterNode(); err != nil {
-		logger.Errorw("could not unregister node", err)
-	}
 
 	// wait for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -203,7 +199,20 @@ func (s *LivekitServer) Start() error {
 	return nil
 }
 
-func (s *LivekitServer) Stop() {
+func (s *LivekitServer) Stop(force bool) {
+	// wait for all participants to exit
+	s.router.PreStop()
+	partTicker := time.NewTicker(5 * time.Second)
+	waitingForParticipants := !force && s.roomManager.HasParticipants()
+	for waitingForParticipants {
+		select {
+		case <-partTicker.C:
+			logger.Infow("waiting for participants to exit")
+			waitingForParticipants = s.roomManager.HasParticipants()
+		}
+	}
+	partTicker.Stop()
+
 	if !s.running.TrySet(false) {
 		return
 	}

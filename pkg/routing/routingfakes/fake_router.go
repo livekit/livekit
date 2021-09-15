@@ -782,6 +782,8 @@ func (fake *FakeRouter) Stop() {
 	}
 }
 
+func (fake *FakeRouter) PreStop() {}
+
 func (fake *FakeRouter) StopCallCount() int {
 	fake.stopMutex.RLock()
 	defer fake.stopMutex.RUnlock()
