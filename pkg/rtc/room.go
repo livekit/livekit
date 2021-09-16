@@ -40,6 +40,8 @@ type Room struct {
 	// time that the last participant left the room
 	leftAt   atomic.Value
 	isClosed utils.AtomicFlag
+	// JSON encoded metadata to pass to clients
+	metadata string
 
 	// for active speaker updates
 	audioConfig *config.AudioConfig
@@ -47,6 +49,7 @@ type Room struct {
 	statsReporter *stats.RoomStatsReporter
 
 	onParticipantChanged func(p types.Participant)
+	onMetadataUpdate     func(r *Room)
 	onClose              func()
 }
 
@@ -298,6 +301,19 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []str
 		}
 	}
 	return nil
+}
+
+// SetMetadata attaches metadata to the room
+func (r *Room) SetMetadata(metadata string) {
+	r.metadata = metadata
+
+	if r.onMetadataUpdate != nil {
+		r.onMetadataUpdate(r)
+	}
+}
+
+func (r *Room) OnMetadataUpdate(callback func(*Room)) {
+	r.onMetadataUpdate = callback
 }
 
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout

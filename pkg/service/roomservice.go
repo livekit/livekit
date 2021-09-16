@@ -184,6 +184,25 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	return participant, nil
 }
 
+func (s *RoomService) UpdateRoom(ctx context.Context, req *livekit.UpdateRoomRequest) (*livekit.RoomInfo, error) {
+	err := s.writeMessage(ctx, req.Room, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_UpdateRoom{
+			UpdateRoom: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	room, err := s.roomManager.LoadRoom(ctx, req.Room)
+	if err != nil {
+		return nil, err
+	}
+
+	room.Metadata = req.Metadata
+	return room, nil
+}
+
 func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
 	err := s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{

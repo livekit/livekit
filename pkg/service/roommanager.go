@@ -528,6 +528,11 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 		if rm.UpdateParticipant.Permission != nil {
 			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
+	case *livekit.RTCNodeMessage_UpdateRoom:
+		logger.Debugw("updating room", "room", roomName)
+		if rm.UpdateRoom.Metadata != "" {
+			room.SetMetadata(rm.UpdateRoom.Metadata)
+		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		for _, p := range room.GetParticipants() {
 			_ = p.Close()
