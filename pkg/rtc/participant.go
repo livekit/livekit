@@ -321,6 +321,12 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
+	if !p.CanPublish() {
+		logger.Warnw("no permission to publish track", nil,
+			"participant", p.Identity(), "pID", p.ID())
+		return
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:   req.Type,
 		Name:   req.Name,
@@ -526,14 +532,15 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	})
 }
 
-func (p *ParticipantImpl) SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error {
+// SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update
+func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error {
 	if !p.IsReady() {
 		return nil
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Speaker{
-			Speaker: &livekit.ActiveSpeakerUpdate{
+		Message: &livekit.SignalResponse_SpeakersChanged{
+			SpeakersChanged: &livekit.SpeakersChanged{
 				Speakers: speakers,
 			},
 		},
@@ -769,6 +776,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 
 	logger.Debugw("mediaTrack added",
+		"kind", track.Kind().String(),
 		"participant", p.Identity(),
 		"pID", p.ID(),
 		"track", track.ID(),

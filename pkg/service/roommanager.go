@@ -227,10 +227,12 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
-		"protocol", pi.ProtocolVersion,
+		"sdk", pi.Client.Sdk,
+		"sdkVersion", pi.Client.Version,
+		"protocol", pi.Client.Protocol,
 	)
 
-	pv := types.ProtocolVersion(pi.ProtocolVersion)
+	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactor())
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{

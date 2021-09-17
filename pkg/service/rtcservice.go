@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -66,7 +67,6 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
-	protocolParam := r.FormValue("protocol")
 	autoSubParam := r.FormValue("auto_subscribe")
 
 	if onlyName != "" {
@@ -79,12 +79,10 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
+		Client:        s.parseClientInfo(r.Form),
 	}
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
-	}
-	if pv, err := strconv.Atoi(protocolParam); err == nil {
-		pi.ProtocolVersion = int32(pv)
 	}
 	pi.Permission = permissionFromGrant(claims.Video)
 
@@ -134,7 +132,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sigConn := NewWSSignalConnection(conn)
-	if types.ProtocolVersion(pi.ProtocolVersion).SupportsProtobuf() {
+	if types.ProtocolVersion(pi.Client.Protocol).SupportsProtobuf() {
 		sigConn.useJSON = false
 	}
 
@@ -200,4 +198,24 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"connID", connId)
 		}
 	}
+}
+
+func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
+	ci := &livekit.ClientInfo{}
+	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
+		ci.Protocol = int32(pv)
+	}
+	sdkString := values.Get("sdk")
+	switch sdkString {
+	case "js":
+		ci.Sdk = livekit.ClientInfo_JS
+	case "ios":
+		ci.Sdk = livekit.ClientInfo_IOS
+	case "android":
+		ci.Sdk = livekit.ClientInfo_ANDROID
+	case "flutter":
+		ci.Sdk = livekit.ClientInfo_FLUTTER
+	}
+	ci.Version = values.Get("version")
+	return ci
 }

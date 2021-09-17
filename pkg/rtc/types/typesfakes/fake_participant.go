@@ -290,17 +290,6 @@ type FakeParticipant struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
-	SendActiveSpeakersStub        func([]*livekit.SpeakerInfo) error
-	sendActiveSpeakersMutex       sync.RWMutex
-	sendActiveSpeakersArgsForCall []struct {
-		arg1 []*livekit.SpeakerInfo
-	}
-	sendActiveSpeakersReturns struct {
-		result1 error
-	}
-	sendActiveSpeakersReturnsOnCall map[int]struct {
-		result1 error
-	}
 	SendDataPacketStub        func(*livekit.DataPacket) error
 	sendDataPacketMutex       sync.RWMutex
 	sendDataPacketArgsForCall []struct {
@@ -334,6 +323,17 @@ type FakeParticipant struct {
 		result1 error
 	}
 	sendParticipantUpdateReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendSpeakerUpdateStub        func([]*livekit.SpeakerInfo) error
+	sendSpeakerUpdateMutex       sync.RWMutex
+	sendSpeakerUpdateArgsForCall []struct {
+		arg1 []*livekit.SpeakerInfo
+	}
+	sendSpeakerUpdateReturns struct {
+		result1 error
+	}
+	sendSpeakerUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SetMetadataStub        func(string)
@@ -1917,72 +1917,6 @@ func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) SendActiveSpeakers(arg1 []*livekit.SpeakerInfo) error {
-	var arg1Copy []*livekit.SpeakerInfo
-	if arg1 != nil {
-		arg1Copy = make([]*livekit.SpeakerInfo, len(arg1))
-		copy(arg1Copy, arg1)
-	}
-	fake.sendActiveSpeakersMutex.Lock()
-	ret, specificReturn := fake.sendActiveSpeakersReturnsOnCall[len(fake.sendActiveSpeakersArgsForCall)]
-	fake.sendActiveSpeakersArgsForCall = append(fake.sendActiveSpeakersArgsForCall, struct {
-		arg1 []*livekit.SpeakerInfo
-	}{arg1Copy})
-	stub := fake.SendActiveSpeakersStub
-	fakeReturns := fake.sendActiveSpeakersReturns
-	fake.recordInvocation("SendActiveSpeakers", []interface{}{arg1Copy})
-	fake.sendActiveSpeakersMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) SendActiveSpeakersCallCount() int {
-	fake.sendActiveSpeakersMutex.RLock()
-	defer fake.sendActiveSpeakersMutex.RUnlock()
-	return len(fake.sendActiveSpeakersArgsForCall)
-}
-
-func (fake *FakeParticipant) SendActiveSpeakersCalls(stub func([]*livekit.SpeakerInfo) error) {
-	fake.sendActiveSpeakersMutex.Lock()
-	defer fake.sendActiveSpeakersMutex.Unlock()
-	fake.SendActiveSpeakersStub = stub
-}
-
-func (fake *FakeParticipant) SendActiveSpeakersArgsForCall(i int) []*livekit.SpeakerInfo {
-	fake.sendActiveSpeakersMutex.RLock()
-	defer fake.sendActiveSpeakersMutex.RUnlock()
-	argsForCall := fake.sendActiveSpeakersArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) SendActiveSpeakersReturns(result1 error) {
-	fake.sendActiveSpeakersMutex.Lock()
-	defer fake.sendActiveSpeakersMutex.Unlock()
-	fake.SendActiveSpeakersStub = nil
-	fake.sendActiveSpeakersReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeParticipant) SendActiveSpeakersReturnsOnCall(i int, result1 error) {
-	fake.sendActiveSpeakersMutex.Lock()
-	defer fake.sendActiveSpeakersMutex.Unlock()
-	fake.SendActiveSpeakersStub = nil
-	if fake.sendActiveSpeakersReturnsOnCall == nil {
-		fake.sendActiveSpeakersReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.sendActiveSpeakersReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeParticipant) SendDataPacket(arg1 *livekit.DataPacket) error {
 	fake.sendDataPacketMutex.Lock()
 	ret, specificReturn := fake.sendDataPacketReturnsOnCall[len(fake.sendDataPacketArgsForCall)]
@@ -2179,6 +2113,72 @@ func (fake *FakeParticipant) SendParticipantUpdateReturnsOnCall(i int, result1 e
 		})
 	}
 	fake.sendParticipantUpdateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdate(arg1 []*livekit.SpeakerInfo) error {
+	var arg1Copy []*livekit.SpeakerInfo
+	if arg1 != nil {
+		arg1Copy = make([]*livekit.SpeakerInfo, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.sendSpeakerUpdateMutex.Lock()
+	ret, specificReturn := fake.sendSpeakerUpdateReturnsOnCall[len(fake.sendSpeakerUpdateArgsForCall)]
+	fake.sendSpeakerUpdateArgsForCall = append(fake.sendSpeakerUpdateArgsForCall, struct {
+		arg1 []*livekit.SpeakerInfo
+	}{arg1Copy})
+	stub := fake.SendSpeakerUpdateStub
+	fakeReturns := fake.sendSpeakerUpdateReturns
+	fake.recordInvocation("SendSpeakerUpdate", []interface{}{arg1Copy})
+	fake.sendSpeakerUpdateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdateCallCount() int {
+	fake.sendSpeakerUpdateMutex.RLock()
+	defer fake.sendSpeakerUpdateMutex.RUnlock()
+	return len(fake.sendSpeakerUpdateArgsForCall)
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdateCalls(stub func([]*livekit.SpeakerInfo) error) {
+	fake.sendSpeakerUpdateMutex.Lock()
+	defer fake.sendSpeakerUpdateMutex.Unlock()
+	fake.SendSpeakerUpdateStub = stub
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdateArgsForCall(i int) []*livekit.SpeakerInfo {
+	fake.sendSpeakerUpdateMutex.RLock()
+	defer fake.sendSpeakerUpdateMutex.RUnlock()
+	argsForCall := fake.sendSpeakerUpdateArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdateReturns(result1 error) {
+	fake.sendSpeakerUpdateMutex.Lock()
+	defer fake.sendSpeakerUpdateMutex.Unlock()
+	fake.SendSpeakerUpdateStub = nil
+	fake.sendSpeakerUpdateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SendSpeakerUpdateReturnsOnCall(i int, result1 error) {
+	fake.sendSpeakerUpdateMutex.Lock()
+	defer fake.sendSpeakerUpdateMutex.Unlock()
+	fake.SendSpeakerUpdateStub = nil
+	if fake.sendSpeakerUpdateReturnsOnCall == nil {
+		fake.sendSpeakerUpdateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendSpeakerUpdateReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -2669,14 +2669,14 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
-	fake.sendActiveSpeakersMutex.RLock()
-	defer fake.sendActiveSpeakersMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()
 	defer fake.sendDataPacketMutex.RUnlock()
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
+	fake.sendSpeakerUpdateMutex.RLock()
+	defer fake.sendSpeakerUpdateMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
 	defer fake.setMetadataMutex.RUnlock()
 	fake.setPermissionMutex.RLock()

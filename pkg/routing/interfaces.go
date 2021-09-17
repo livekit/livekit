@@ -25,13 +25,13 @@ type MessageSource interface {
 }
 
 type ParticipantInit struct {
-	Identity        string
-	Metadata        string
-	Reconnect       bool
-	Permission      *livekit.ParticipantPermission
-	ProtocolVersion int32
-	AutoSubscribe   bool
-	Hidden          bool
+	Identity      string
+	Metadata      string
+	Reconnect     bool
+	Permission    *livekit.ParticipantPermission
+	AutoSubscribe bool
+	Hidden        bool
+	Client        *livekit.ClientInfo
 }
 
 type NewParticipantCallback func(ctx context.Context, roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
