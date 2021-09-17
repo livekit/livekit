@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"sync"
 
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pkg/errors"
@@ -77,28 +76,9 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 				DeleteRoom: req,
 			},
 		})
-	} else {
-		var err2 error
-		wg := sync.WaitGroup{}
-		wg.Add(2)
-		// clear routing information
-		go func() {
-			defer wg.Done()
-			err = s.router.ClearRoomState(ctx, req.Room)
-		}()
-		// also delete room from db
-		go func() {
-			defer wg.Done()
-			err2 = s.roomStore.DeleteRoom(ctx, req.Room)
-		}()
-
-		wg.Wait()
-		if err2 != nil {
-			err = err2
+		if err != nil {
+			return nil, err
 		}
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	return &livekit.DeleteRoomResponse{}, nil
