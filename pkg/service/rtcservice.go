@@ -215,6 +215,8 @@ func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
 		ci.Sdk = livekit.ClientInfo_ANDROID
 	case "flutter":
 		ci.Sdk = livekit.ClientInfo_FLUTTER
+	case "go":
+		ci.Sdk = livekit.ClientInfo_GO
 	}
 	ci.Version = values.Get("version")
 	return ci
