@@ -29,7 +29,7 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, selector routi
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
-// it'll also monitor fits state, and cleans it up when appropriate
+// it'll also monitor its state, and cleans it up when appropriate
 func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
 	token, err := r.roomStore.LockRoom(ctx, req.Name, 5*time.Second)
 	if err != nil {
