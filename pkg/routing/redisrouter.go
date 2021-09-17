@@ -150,12 +150,12 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 		Identity: pi.Identity,
 		Metadata: pi.Metadata,
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:    connectionId,
-		Reconnect:       pi.Reconnect,
-		Permission:      pi.Permission,
-		ProtocolVersion: pi.ProtocolVersion,
-		AutoSubscribe:   pi.AutoSubscribe,
-		Hidden:          pi.Hidden,
+		ConnectionId:  connectionId,
+		Reconnect:     pi.Reconnect,
+		Permission:    pi.Permission,
+		AutoSubscribe: pi.AutoSubscribe,
+		Hidden:        pi.Hidden,
+		Client:        pi.Client,
 	})
 	if err != nil {
 		return
@@ -219,13 +219,13 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	pi := ParticipantInit{
-		Identity:        ss.Identity,
-		Metadata:        ss.Metadata,
-		Reconnect:       ss.Reconnect,
-		Permission:      ss.Permission,
-		ProtocolVersion: ss.ProtocolVersion,
-		AutoSubscribe:   ss.AutoSubscribe,
-		Hidden:          ss.Hidden,
+		Identity:      ss.Identity,
+		Metadata:      ss.Metadata,
+		Reconnect:     ss.Reconnect,
+		Permission:    ss.Permission,
+		Client:        ss.Client,
+		AutoSubscribe: ss.AutoSubscribe,
+		Hidden:        ss.Hidden,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)

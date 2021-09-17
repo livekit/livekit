@@ -531,14 +531,15 @@ func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.Particip
 	})
 }
 
-func (p *ParticipantImpl) SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error {
+// SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update
+func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error {
 	if !p.IsReady() {
 		return nil
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Speaker{
-			Speaker: &livekit.ActiveSpeakerUpdate{
+		Message: &livekit.SignalResponse_SpeakersChanged{
+			SpeakersChanged: &livekit.SpeakersChanged{
 				Speakers: speakers,
 			},
 		},

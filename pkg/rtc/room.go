@@ -532,7 +532,8 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 	}
 }
 
-func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
+// for protocol 2, send all active speakers
+func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 	dp := &livekit.DataPacket{
 		Kind: livekit.DataPacket_LOSSY,
 		Value: &livekit.DataPacket_Speaker{
@@ -543,10 +544,17 @@ func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 	}
 
 	for _, p := range r.GetParticipants() {
-		if p.ProtocolVersion().HandlesDataPackets() {
+		if p.ProtocolVersion().HandlesDataPackets() && !p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendDataPacket(dp)
-		} else {
-			_ = p.SendActiveSpeakers(speakers)
+		}
+	}
+}
+
+// for protocol 3, send only changed updates
+func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
+	for _, p := range r.GetParticipants() {
+		if p.ProtocolVersion().SupportsSpeakerChanged() {
+			_ = p.SendSpeakerUpdate(speakers)
 		}
 	}
 }
@@ -562,15 +570,15 @@ func (r *Room) audioUpdateWorker() {
 		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
 	}
 
-	var lastActiveSpeakers []*livekit.SpeakerInfo
+	lastActiveMap := make(map[string]*livekit.SpeakerInfo)
 	for {
 		if r.isClosed.Get() {
 			return
 		}
 
-		speakers := r.GetActiveSpeakers()
+		activeSpeakers := r.GetActiveSpeakers()
 		if smoothValues != nil {
-			for _, speaker := range speakers {
+			for _, speaker := range activeSpeakers {
 				sid := speaker.Sid
 				level := smoothValues[sid]
 				delete(smoothValues, sid)
@@ -584,7 +592,7 @@ func (r *Room) audioUpdateWorker() {
 				delete(smoothValues, sid)
 				level += -level * smoothFactor
 				if level > activeThreshold {
-					speakers = append(speakers, &livekit.SpeakerInfo{
+					activeSpeakers = append(activeSpeakers, &livekit.SpeakerInfo{
 						Sid:    sid,
 						Level:  level,
 						Active: true,
@@ -593,33 +601,45 @@ func (r *Room) audioUpdateWorker() {
 			}
 
 			// smoothValues map is drained, now repopulate it back
-			for _, speaker := range speakers {
+			for _, speaker := range activeSpeakers {
 				smoothValues[speaker.Sid] = speaker.Level
 			}
 
-			sort.Slice(speakers, func(i, j int) bool {
-				return speakers[i].Level > speakers[j].Level
+			sort.Slice(activeSpeakers, func(i, j int) bool {
+				return activeSpeakers[i].Level > activeSpeakers[j].Level
 			})
 		}
 
 		const invAudioLevelQuantization = 1.0 / AudioLevelQuantization
-		for _, speaker := range speakers {
+		for _, speaker := range activeSpeakers {
 			speaker.Level = float32(math.Ceil(float64(speaker.Level*AudioLevelQuantization)) * invAudioLevelQuantization)
 		}
 
-		// see if an update is needed
-		if len(speakers) == len(lastActiveSpeakers) {
-			for i, speaker := range speakers {
-				if speaker.Level != lastActiveSpeakers[i].Level || speaker.Sid != lastActiveSpeakers[i].Sid {
-					r.sendSpeakerUpdates(speakers)
-					break
-				}
+		changedSpeakers := make([]*livekit.SpeakerInfo, 0, len(activeSpeakers))
+		nextActiveMap := make(map[string]*livekit.SpeakerInfo, len(activeSpeakers))
+		for _, speaker := range activeSpeakers {
+			prev := lastActiveMap[speaker.Sid]
+			if prev == nil || prev.Level != speaker.Level {
+				changedSpeakers = append(changedSpeakers, speaker)
 			}
-		} else {
-			r.sendSpeakerUpdates(speakers)
+			nextActiveMap[speaker.Sid] = speaker
+		}
+		// changedSpeakers need to include previous speakers that are no longer speaking
+		for sid, speaker := range lastActiveMap {
+			if nextActiveMap[sid] == nil {
+				speaker.Level = 0
+				speaker.Active = false
+				changedSpeakers = append(changedSpeakers, speaker)
+			}
 		}
 
-		lastActiveSpeakers = speakers
+		// see if an update is needed
+		if len(changedSpeakers) > 0 {
+			r.sendActiveSpeakers(activeSpeakers)
+			r.sendSpeakerChanges(changedSpeakers)
+		}
+
+		lastActiveMap = nextActiveMap
 
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
 	}
