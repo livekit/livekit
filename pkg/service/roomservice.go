@@ -13,16 +13,19 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	router      routing.Router
-	roomManager RoomManager
-	roomStore   RoomStore
+	router        routing.Router
+	selector      routing.NodeSelector
+	roomManager   RoomManager
+	roomAllocator *RoomAllocator
+	roomStore     RoomStore
 }
 
-func NewRoomService(roomManager RoomManager, roomStore RoomStore, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(rm RoomManager, ra *RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
 	svc = &RoomService{
-		router:      router,
-		roomManager: roomManager,
-		roomStore:   roomStore,
+		router:        router,
+		roomManager:   rm,
+		roomAllocator: ra,
+		roomStore:     rs,
 	}
 	return
 }
@@ -32,7 +35,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	rm, err = s.roomManager.CreateRoom(ctx, req)
+	rm, err = s.roomAllocator.CreateRoom(ctx, req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
 	}

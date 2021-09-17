@@ -33,13 +33,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(localRoomManager, roomStore, router)
+	roomAllocator := NewRoomAllocator(conf, router, nodeSelector, roomStore)
+	roomService, err := NewRoomService(localRoomManager, roomAllocator, roomStore, router)
 	if err != nil {
 		return nil, err
 	}
 	messageBus := utils.NewRedisMessageBus(client)
 	recordingService := NewRecordingService(messageBus)
-	rtcService := NewRTCService(conf, localRoomManager, router, currentNode)
+	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
 	server, err := NewTurnServer(conf, roomStore, currentNode)
 	if err != nil {
 		return nil, err
