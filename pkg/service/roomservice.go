@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pkg/errors"
@@ -13,14 +14,17 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	router      routing.Router
-	roomManager RoomManager
+	router        routing.Router
+	selector      routing.NodeSelector
+	roomAllocator *RoomAllocator
+	roomStore     RoomStore
 }
 
-func NewRoomService(roomManager RoomManager, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(ra *RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
 	svc = &RoomService{
-		router:      router,
-		roomManager: roomManager,
+		router:        router,
+		roomAllocator: ra,
+		roomStore:     rs,
 	}
 	return
 }
@@ -30,7 +34,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	rm, err = s.roomManager.CreateRoom(ctx, req)
+	rm, err = s.roomAllocator.CreateRoom(ctx, req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
 	}
@@ -44,7 +48,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 		return nil, twirpAuthError(err)
 	}
 
-	rooms, err := s.roomManager.ListRooms(ctx)
+	rooms, err := s.roomStore.ListRooms(ctx)
 	if err != nil {
 		// TODO: translate error codes to twirp
 		return
@@ -62,26 +66,39 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 	// if the room is currently active, RTC node needs to disconnect clients
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(participants) > 0 {
-		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
+		err = s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
 			Message: &livekit.RTCNodeMessage_DeleteRoom{
 				DeleteRoom: req,
 			},
 		})
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		// if a room hasn't started, delete locally
-		if err = s.roomManager.DeleteRoom(ctx, req.Room); err != nil {
-			err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
-			return nil, err
+		var err2 error
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+		// clear routing information
+		go func() {
+			defer wg.Done()
+			err = s.router.ClearRoomState(ctx, req.Room)
+		}()
+		// also delete room from db
+		go func() {
+			defer wg.Done()
+			err2 = s.roomStore.DeleteRoom(ctx, req.Room)
+		}()
+
+		wg.Wait()
+		if err2 != nil {
+			err = err2
 		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return &livekit.DeleteRoomResponse{}, nil
@@ -92,7 +109,7 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return
 	}
@@ -108,7 +125,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return
 	}
@@ -136,7 +153,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +192,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, err
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +216,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +240,7 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 		return twirpAuthError(err)
 	}
 
-	_, err := s.roomManager.LoadParticipant(ctx, room, identity)
+	_, err := s.roomStore.LoadParticipant(ctx, room, identity)
 	if err != nil {
 		return err
 	}

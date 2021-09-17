@@ -119,7 +119,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	waitForServerToStart(server)
 
 	finishFunc = func() {
-		server.Stop()
+		server.Stop(true)
 		testServer.Stop()
 	}
 	return

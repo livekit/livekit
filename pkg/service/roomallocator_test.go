@@ -15,17 +15,17 @@ import (
 )
 
 func TestCreateRoom(t *testing.T) {
-	manager, conf := newTestRoomManager(t)
+	ra, conf := newTestRoomAllocator(t)
 
 	t.Run("ensure default room settings are applied", func(t *testing.T) {
-		room, err := manager.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
+		room, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
 		require.NotEmpty(t, room.EnabledCodecs)
 	})
 }
 
-func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config) {
+func newTestRoomAllocator(t *testing.T) (*service.RoomAllocator, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
@@ -37,8 +37,6 @@ func newTestRoomManager(t *testing.T) (*service.LocalRoomManager, *config.Config
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	rm, err := service.NewLocalRoomManager(store, router, node, selector, nil, conf)
-	require.NoError(t, err)
-
-	return rm, conf
+	ra := service.NewRoomAllocator(conf, router, selector, store)
+	return ra, conf
 }

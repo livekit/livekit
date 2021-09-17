@@ -258,6 +258,11 @@ func (r *RedisRouter) Start() error {
 	}
 }
 
+func (r *RedisRouter) PreStop() {
+	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
+	r.RegisterNode()
+}
+
 func (r *RedisRouter) Stop() {
 	if !r.isStarted.TrySet(false) {
 		return

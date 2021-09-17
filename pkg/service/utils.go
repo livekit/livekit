@@ -29,6 +29,7 @@ var ServiceSet = wire.NewSet(
 	CreateWebhookNotifier,
 	CreateNodeSelector,
 	NewRecordingService,
+	NewRoomAllocator,
 	NewRoomService,
 	NewRTCService,
 	NewLivekitServer,
