@@ -540,15 +540,15 @@ func (c *RTCClient) ensurePublisherConnected() error {
 	}
 
 	dcOpen := utils.AtomicFlag{}
-	c.lossyDC.OnOpen(func() {
+	c.reliableDC.OnOpen(func() {
 		dcOpen.TrySet(true)
 	})
-	if c.lossyDC.ReadyState() == webrtc.DataChannelStateOpen {
+	if c.reliableDC.ReadyState() == webrtc.DataChannelStateOpen {
 		dcOpen.TrySet(true)
 	}
 
-	// wait until connected
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// wait until connected, increase wait time since it takes more than 10s sometimes on GH
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for {
 		select {
