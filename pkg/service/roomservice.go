@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pkg/errors"
@@ -15,15 +16,13 @@ import (
 type RoomService struct {
 	router        routing.Router
 	selector      routing.NodeSelector
-	roomManager   RoomManager
 	roomAllocator *RoomAllocator
 	roomStore     RoomStore
 }
 
-func NewRoomService(rm RoomManager, ra *RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(ra *RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
-		roomManager:   rm,
 		roomAllocator: ra,
 		roomStore:     rs,
 	}
@@ -73,20 +72,33 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	if len(participants) > 0 {
-		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
+		err = s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
 			Message: &livekit.RTCNodeMessage_DeleteRoom{
 				DeleteRoom: req,
 			},
 		})
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		// if a room hasn't started, delete locally
-		if err = s.roomManager.DeleteRoom(ctx, req.Room); err != nil {
-			err = twirp.WrapError(twirp.InternalError("could not delete room"), err)
-			return nil, err
+		var err2 error
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+		// clear routing information
+		go func() {
+			defer wg.Done()
+			err = s.router.ClearRoomState(ctx, req.Room)
+		}()
+		// also delete room from db
+		go func() {
+			defer wg.Done()
+			err2 = s.roomStore.DeleteRoom(ctx, req.Room)
+		}()
+
+		wg.Wait()
+		if err2 != nil {
+			err = err2
 		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return &livekit.DeleteRoomResponse{}, nil
