@@ -15,12 +15,14 @@ import (
 type RoomService struct {
 	router      routing.Router
 	roomManager RoomManager
+	roomStore   RoomStore
 }
 
-func NewRoomService(roomManager RoomManager, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(roomManager RoomManager, roomStore RoomStore, router routing.Router) (svc *RoomService, err error) {
 	svc = &RoomService{
 		router:      router,
 		roomManager: roomManager,
+		roomStore:   roomStore,
 	}
 	return
 }
@@ -44,7 +46,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 		return nil, twirpAuthError(err)
 	}
 
-	rooms, err := s.roomManager.ListRooms(ctx)
+	rooms, err := s.roomStore.ListRooms(ctx)
 	if err != nil {
 		// TODO: translate error codes to twirp
 		return
@@ -62,7 +64,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 	// if the room is currently active, RTC node needs to disconnect clients
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +94,7 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return
 	}
@@ -108,7 +110,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return
 	}
@@ -136,7 +138,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, err
 	}
 
-	participant, err := s.roomManager.LoadParticipant(ctx, req.Room, req.Identity)
+	participant, err := s.roomStore.LoadParticipant(ctx, req.Room, req.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +201,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomManager.ListParticipants(ctx, req.Room)
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +225,7 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 		return twirpAuthError(err)
 	}
 
-	_, err := s.roomManager.LoadParticipant(ctx, room, identity)
+	_, err := s.roomStore.LoadParticipant(ctx, room, identity)
 	if err != nil {
 		return err
 	}
