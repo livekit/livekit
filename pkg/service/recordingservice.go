@@ -25,7 +25,9 @@ func NewRecordingService(mb utils.MessageBus, notifier *webhook.Notifier) *Recor
 		mb:       mb,
 		notifier: notifier,
 	}
-	go s.resultsWorker()
+	if s.mb != nil {
+		go s.resultsWorker()
+	}
 	return s
 }
 
