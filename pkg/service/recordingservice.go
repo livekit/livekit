@@ -3,19 +3,28 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/proto"
 )
 
 type RecordingService struct {
-	mb utils.MessageBus
+	mb       utils.MessageBus
+	notifier *webhook.Notifier
 }
 
-func NewRecordingService(mb utils.MessageBus) *RecordingService {
-	return &RecordingService{mb: mb}
+func NewRecordingService(mb utils.MessageBus, notifier *webhook.Notifier) *RecordingService {
+	s := &RecordingService{
+		mb:       mb,
+		notifier: notifier,
+	}
+	go s.resultsWorker()
+	return s
 }
 
 func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.RecordingResponse, error) {
@@ -86,4 +95,58 @@ func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRec
 	}
 
 	return &livekit.RecordingResponse{RecordingId: req.RecordingId}, nil
+}
+
+func (s *RecordingService) resultsWorker() {
+	sub, err := s.mb.Subscribe(context.Background(), utils.RecordingResultChannel)
+	if err != nil {
+		logger.Errorw("failed to subscribe to results channel", err)
+		return
+	}
+
+	resChan := sub.Channel()
+	for {
+		msg := <-resChan
+		b := sub.Payload(msg)
+
+		res := &livekit.RecordingResult{}
+		if err = proto.Unmarshal(b, res); err != nil {
+			logger.Errorw("failed to read results", err)
+			continue
+		}
+		s.notify(res)
+	}
+}
+
+func (s *RecordingService) notify(res *livekit.RecordingResult) {
+	acquired, err := s.mb.Lock(context.Background(), res.Id, time.Second*5)
+	if err != nil {
+		logger.Errorw("failed to lock", err)
+		return
+	}
+	if !acquired {
+		return
+	}
+
+	// log results
+	if res.Error != "" {
+		logger.Errorw("recording failed", errors.New(res.Error), "id", res.Id)
+	} else {
+		logger.Infow("recording complete",
+			"id", res.Id,
+			"duration", fmt.Sprint(time.Duration(res.Duration*1e6)),
+			"location", res.Location,
+		)
+	}
+
+	// webhook
+	if s.notifier != nil {
+		event := webhook.EventRecordingFinished
+		if err := s.notifier.Notify(&livekit.WebhookEvent{
+			Event:           event,
+			RecordingResult: res,
+		}); err != nil {
+			logger.Warnw("could not notify webhook", err, "event", event)
+		}
+	}
 }
