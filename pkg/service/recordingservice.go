@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const lockExpiration = time.Second * 5
+
 type RecordingService struct {
 	mb       utils.MessageBus
 	notifier *webhook.Notifier
@@ -119,7 +121,7 @@ func (s *RecordingService) resultsWorker() {
 }
 
 func (s *RecordingService) notify(res *livekit.RecordingResult) {
-	acquired, err := s.mb.Lock(context.Background(), res.Id, time.Second*5)
+	acquired, err := s.mb.Lock(context.Background(), res.Id, lockExpiration)
 	if err != nil {
 		logger.Errorw("failed to lock", err)
 		return
