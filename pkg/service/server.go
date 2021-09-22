@@ -25,8 +25,7 @@ import (
 
 type LivekitServer struct {
 	config      *config.Config
-	roomServer  livekit.TwirpServer
-	recServer   livekit.TwirpServer
+	recService  *RecordingService
 	rtcService  *RTCService
 	httpServer  *http.Server
 	promServer  *http.Server
@@ -41,7 +40,7 @@ type LivekitServer struct {
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
-	recService livekit.RecordingService,
+	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -51,8 +50,7 @@ func NewLivekitServer(conf *config.Config,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:      conf,
-		roomServer:  livekit.NewRoomServiceServer(roomService),
-		recServer:   livekit.NewRecordingServiceServer(recService),
+		recService:  recService,
 		rtcService:  rtcService,
 		router:      router,
 		roomManager: roomManager,
@@ -70,9 +68,12 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
+	roomServer := livekit.NewRoomServiceServer(roomService)
+	recServer := livekit.NewRecordingServiceServer(recService)
+
 	mux := http.NewServeMux()
-	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
-	mux.Handle(s.recServer.PathPrefix(), s.recServer)
+	mux.Handle(roomServer.PathPrefix(), roomServer)
+	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
@@ -116,6 +117,7 @@ func (s *LivekitServer) Start() error {
 	if s.running.Get() {
 		return errors.New("already running")
 	}
+	s.doneChan = make(chan struct{})
 
 	if err := s.router.RegisterNode(); err != nil {
 		return err
@@ -130,7 +132,7 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	s.doneChan = make(chan struct{})
+	s.recService.Start()
 
 	// ensure we could listen
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
@@ -194,6 +196,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
+	s.recService.Stop()
 
 	close(s.closedChan)
 	return nil

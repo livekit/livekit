@@ -22,7 +22,7 @@ import (
 
 var ServiceSet = wire.NewSet(
 	createRedisClient,
-	utils.NewRedisMessageBus,
+	createMessageBus,
 	createRouter,
 	createStore,
 	CreateKeyProvider,
@@ -37,7 +37,6 @@ var ServiceSet = wire.NewSet(
 	NewTurnServer,
 	config.GetAudioConfig,
 	wire.Bind(new(RoomManager), new(*LocalRoomManager)),
-	wire.Bind(new(livekit.RecordingService), new(*RecordingService)),
 	wire.Bind(new(livekit.RoomService), new(*RoomService)),
 )
 
@@ -108,6 +107,13 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	}
 
 	return rc, nil
+}
+
+func createMessageBus(rc *redis.Client) utils.MessageBus {
+	if rc == nil {
+		return nil
+	}
+	return utils.NewRedisMessageBus(rc)
 }
 
 func createRouter(rc *redis.Client, node routing.LocalNode) routing.Router {

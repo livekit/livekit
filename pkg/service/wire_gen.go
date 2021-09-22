@@ -8,7 +8,6 @@ package service
 import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/protocol/utils"
 )
 
 // Injectors from wire.go:
@@ -26,9 +25,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	messageBus := utils.NewRedisMessageBus(client)
-	recordingService := NewRecordingService(messageBus)
-	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
+	messageBus := createMessageBus(client)
 	keyProvider, err := CreateKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -37,6 +34,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	recordingService := NewRecordingService(messageBus, notifier)
+	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
 	localRoomManager, err := NewLocalRoomManager(roomStore, router, currentNode, nodeSelector, notifier, conf)
 	if err != nil {
 		return nil, err
