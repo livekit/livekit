@@ -30,7 +30,7 @@ type LocalRoomManager struct {
 	selector    routing.NodeSelector
 	router      routing.Router
 	currentNode routing.LocalNode
-	notifier    *webhook.Notifier
+	notifier    webhook.Notifier
 	rtcConfig   *rtc.WebRTCConfig
 	config      *config.Config
 	webhookPool *workerpool.WorkerPool
@@ -38,7 +38,7 @@ type LocalRoomManager struct {
 }
 
 func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector,
-	notifier *webhook.Notifier, conf *config.Config) (*LocalRoomManager, error) {
+	notifier webhook.Notifier, conf *config.Config) (*LocalRoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err

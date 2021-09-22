@@ -17,11 +17,11 @@ const lockExpiration = time.Second * 5
 
 type RecordingService struct {
 	mb       utils.MessageBus
-	notifier *webhook.Notifier
+	notifier webhook.Notifier
 	shutdown chan struct{}
 }
 
-func NewRecordingService(mb utils.MessageBus, notifier *webhook.Notifier) *RecordingService {
+func NewRecordingService(mb utils.MessageBus, notifier webhook.Notifier) *RecordingService {
 	return &RecordingService{
 		mb:       mb,
 		notifier: notifier,
@@ -110,7 +110,7 @@ func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRec
 }
 
 func (s *RecordingService) resultsWorker() {
-	sub, err := s.mb.Subscribe(context.Background(), utils.RecordingResultChannel)
+	sub, err := s.mb.SubscribeQueue(context.Background(), utils.RecordingResultChannel)
 	if err != nil {
 		logger.Errorw("failed to subscribe to results channel", err)
 		return
@@ -129,22 +129,13 @@ func (s *RecordingService) resultsWorker() {
 			}
 			s.notify(res)
 		case <-s.shutdown:
-			sub.Close()
+			_ = sub.Close()
 			return
 		}
 	}
 }
 
 func (s *RecordingService) notify(res *livekit.RecordingResult) {
-	acquired, err := s.mb.Lock(context.Background(), res.Id, lockExpiration)
-	if err != nil {
-		logger.Errorw("failed to lock", err)
-		return
-	}
-	if !acquired {
-		return
-	}
-
 	// log results
 	if res.Error != "" {
 		logger.Errorw("recording failed", errors.New(res.Error), "id", res.Id)

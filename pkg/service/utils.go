@@ -65,7 +65,7 @@ func CreateKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 	return auth.NewFileBasedKeyProviderFromMap(conf.Keys), nil
 }
 
-func CreateWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (*webhook.Notifier, error) {
+func CreateWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
 	wc := conf.WebHook
 	if len(wc.URLs) == 0 {
 		return nil, nil
