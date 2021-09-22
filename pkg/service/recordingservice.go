@@ -18,17 +18,25 @@ const lockExpiration = time.Second * 5
 type RecordingService struct {
 	mb       utils.MessageBus
 	notifier *webhook.Notifier
+	shutdown chan struct{}
 }
 
 func NewRecordingService(mb utils.MessageBus, notifier *webhook.Notifier) *RecordingService {
-	s := &RecordingService{
+	return &RecordingService{
 		mb:       mb,
 		notifier: notifier,
+		shutdown: make(chan struct{}, 1),
 	}
+}
+
+func (s *RecordingService) Start() {
 	if s.mb != nil {
 		go s.resultsWorker()
 	}
-	return s
+}
+
+func (s *RecordingService) Stop() {
+	s.shutdown <- struct{}{}
 }
 
 func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.RecordingResponse, error) {
@@ -110,15 +118,20 @@ func (s *RecordingService) resultsWorker() {
 
 	resChan := sub.Channel()
 	for {
-		msg := <-resChan
-		b := sub.Payload(msg)
+		select {
+		case msg := <-resChan:
+			b := sub.Payload(msg)
 
-		res := &livekit.RecordingResult{}
-		if err = proto.Unmarshal(b, res); err != nil {
-			logger.Errorw("failed to read results", err)
-			continue
+			res := &livekit.RecordingResult{}
+			if err = proto.Unmarshal(b, res); err != nil {
+				logger.Errorw("failed to read results", err)
+				continue
+			}
+			s.notify(res)
+		case <-s.shutdown:
+			sub.Close()
+			return
 		}
-		s.notify(res)
 	}
 }
 
