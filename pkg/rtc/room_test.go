@@ -520,6 +520,20 @@ func TestHiddenParticipants(t *testing.T) {
 	})
 }
 
+func TestRoomUpdate(t *testing.T) {
+	t.Run("participants should receive metadata update", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
+		defer rm.Close()
+
+		rm.SetMetadata("test metadata...")
+
+		for _, op := range rm.GetParticipants() {
+			fp := op.(*typesfakes.FakeParticipant)
+			require.Equal(t, 1, fp.SendRoomUpdateCallCount())
+		}
+	})
+}
+
 type testRoomOpts struct {
 	num                  int
 	numHidden            int
