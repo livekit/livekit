@@ -216,6 +216,10 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 }
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
+	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
 	room, err := s.roomStore.LoadRoom(ctx, req.Room)
 	if err != nil {
 		return nil, err
