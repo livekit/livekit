@@ -359,6 +359,8 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 				return
 			}
 		case obj := <-requestSource.ReadChan():
+			// In single node mode, the request source is directly tied to the signal message channel
+			// this means ICE restart isn't possible in single node mode
 			if obj == nil {
 				return
 			}

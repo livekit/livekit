@@ -2,20 +2,19 @@ package routing
 
 import (
 	"google.golang.org/protobuf/proto"
-
-	"github.com/livekit/protocol/utils"
 )
 
 type MessageChannel struct {
-	msgChan  chan proto.Message
-	isClosed utils.AtomicFlag
-	onClose  func()
+	msgChan chan proto.Message
+	closed  chan struct{}
+	onClose func()
 }
 
 func NewMessageChannel() *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
 		msgChan: make(chan proto.Message, 200),
+		closed:  make(chan struct{}),
 	}
 }
 
@@ -23,12 +22,23 @@ func (m *MessageChannel) OnClose(f func()) {
 	m.onClose = f
 }
 
+func (m *MessageChannel) IsClosed() bool {
+	select {
+	case <-m.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 func (m *MessageChannel) WriteMessage(msg proto.Message) error {
-	if m.isClosed.Get() {
+	if m.IsClosed() {
 		return ErrChannelClosed
 	}
 
 	select {
+	case <-m.closed:
+		return ErrChannelClosed
 	case m.msgChan <- msg:
 		// published
 		return nil
@@ -43,9 +53,10 @@ func (m *MessageChannel) ReadChan() <-chan proto.Message {
 }
 
 func (m *MessageChannel) Close() {
-	if !m.isClosed.TrySet(true) {
+	if m.IsClosed() {
 		return
 	}
+	close(m.closed)
 	close(m.msgChan)
 	if m.onClose != nil {
 		m.onClose()
