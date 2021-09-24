@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.9.3
+	github.com/livekit/protocol v0.9.4
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0

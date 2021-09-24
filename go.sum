@@ -246,8 +246,8 @@ github.com/lithammer/shortuuid/v3 v3.0.6 h1:pr15YQyvhiSX/qPxncFtqk+v4xLEpOZObbsY
 github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
 github.com/livekit/ion-sfu v1.20.9 h1:Ih+tE5CXqdL1o6iXfZn+uBoddBXWceaOKVIun6aVuZM=
 github.com/livekit/ion-sfu v1.20.9/go.mod h1:g8hwobZI5fvX1RXvayf4ZXkgP7spV5YGE4yTSsumpB4=
-github.com/livekit/protocol v0.9.3 h1:rzJwes4AddFF/h47G6kU1/GQF8/meqZ3uihFIKPPxz0=
-github.com/livekit/protocol v0.9.3/go.mod h1:MEKn847Iu/2U8ClZyUmEm2oHn8k9fnSHy81Wv8kkSDo=
+github.com/livekit/protocol v0.9.4 h1:1vA49MwawrriOS3VvPqYfLiFI94XWvYGaWfkHN6ah6Y=
+github.com/livekit/protocol v0.9.4/go.mod h1:MEKn847Iu/2U8ClZyUmEm2oHn8k9fnSHy81Wv8kkSDo=
 github.com/lucsky/cuid v1.0.2 h1:z4XlExeoderxoPj2/dxKOyPxe9RCOu7yNq9/XWxIUMQ=
 github.com/lucsky/cuid v1.0.2/go.mod h1:QaaJqckboimOmhRSJXSx/+IT+VTfxfPGSo/6mfgUfmE=
 github.com/lyft/protoc-gen-validate v0.0.13/go.mod h1:XbGvPuh87YZc5TdIa2/I4pLk0QoUACkjt2znoq26NVQ=
