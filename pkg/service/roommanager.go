@@ -482,9 +482,7 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 		room.SendDataPacket(up, rm.SendData.Kind)
 	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
 		logger.Debugw("updating room", "room", roomName)
-		if rm.UpdateRoomMetadata.Metadata != "" {
-			room.SetMetadata(rm.UpdateRoomMetadata.Metadata)
-		}
+		room.SetMetadata(rm.UpdateRoomMetadata.Metadata)
 	}
 }
 

@@ -225,6 +225,8 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
+	room.Metadata = req.Metadata
+
 	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
 	if err != nil {
 		return nil, err
@@ -241,7 +243,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		}
 	}
 
-	room.Metadata = req.Metadata
 	return room, nil
 }
 

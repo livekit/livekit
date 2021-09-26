@@ -579,10 +579,6 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
-	if !p.IsReady() {
-		return nil
-	}
-
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RoomUpdate{
 			RoomUpdate: &livekit.RoomUpdate{
