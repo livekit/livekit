@@ -562,6 +562,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
 		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true})
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		participant.IsReadyReturns(true)
 		require.NoError(t, err)
 	}
 	return rm
