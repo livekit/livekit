@@ -4,15 +4,21 @@ packer {
       version = ">= 0.0.2"
       source  = "github.com/hashicorp/amazon"
     }
+    # digitalocean = {
+    #   version = ">= 1.0.0"
+    #   source  = "github.com/hashicorp/digitalocean"
+    # }
   }
 }
 
-locals {
-  livekit_server_version = "v0.13"
-}
+
+# # Config provided by cloud-init
+# locals {
+#   livekit_server_version = "latest"
+# }
 
 source "amazon-ebs" "amazon-linux-2" {
-  ami_name      = "livekit-server amzn2 {{timestamp}}"
+  ami_name      = "livekit-amzn2-{{timestamp}}"
   instance_type = "t2.micro"
   region        = "us-west-2"
   source_ami_filter {
@@ -28,12 +34,12 @@ source "amazon-ebs" "amazon-linux-2" {
 }
 
 build {
-  name = "livekit"
+  name = "livekit-centos"
   sources = [
     "source.amazon-ebs.amazon-linux-2"
   ]
 
-  # # Config should be provided during cloud-init
+  # # Config provided by cloud-init
   # provisioner "file" {
   #   source      = "config.yaml"
   #   destination = "/tmp/config.yaml"
@@ -57,10 +63,12 @@ build {
       "sudo mv /tmp/docker.livekit-server@.service /etc/systemd/system/docker.livekit-server@.service",
       "sudo chown root:root /etc/systemd/system/docker.livekit-server@.service",
       "sudo mkdir /opt/livekit-server",
+
+      # # Config provided by cloud-init
       # "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
       # "sudo chown root:root /opt/livekit-server/config.yaml",
-      "sudo systemctl enable docker.livekit-server@${local.livekit_server_version}",
-      "sudo systemctl start docker.livekit-server@${local.livekit_server_version}",
+      # "sudo systemctl enable docker.livekit-server@${local.livekit_server_version}",
+      # "sudo systemctl start docker.livekit-server@${local.livekit_server_version}",
     ]
   }
 

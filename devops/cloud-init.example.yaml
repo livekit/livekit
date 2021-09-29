@@ -1,0 +1,11 @@
+#cloud-config
+write_files:
+  - path: /opt/livekit-server/config.yaml
+    content: |
+      keys:
+        fake: key
+
+runcmd:
+  - export LIVEKIT_IMAGE_VERSION=v0.13
+  - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
+  - systemctl start docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
