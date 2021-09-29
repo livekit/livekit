@@ -12,11 +12,11 @@ write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
       keys:
-        fake: key
+        key1: secret1
 
 runcmd:
   - export LIVEKIT_IMAGE_VERSION=v0.13 # set LiveKit version
-  - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/packer/docker.livekit-server%40.service
+  - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/docker.livekit-server%40.service
   - systemctl enable docker
   - systemctl start docker
   - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}

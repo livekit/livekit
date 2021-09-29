@@ -12,12 +12,12 @@ packer {
 }
 
 
-# # Config provided by cloud-init
+# # Uncomment if not using cloud-init
 # locals {
-#   livekit_server_version = "latest"
+#   livekit_server_version = "v0.13"
 # }
 
-source "amazon-ebs" "amazon-linux-2" {
+source "amazon-ebs" "amzn2" {
   ami_name      = "livekit-amzn2-{{timestamp}}"
   instance_type = "t2.micro"
   region        = "us-west-2"
@@ -36,10 +36,10 @@ source "amazon-ebs" "amazon-linux-2" {
 build {
   name = "livekit-centos"
   sources = [
-    "source.amazon-ebs.amazon-linux-2"
+    "source.amazon-ebs.amzn2"
   ]
 
-  # # Config provided by cloud-init
+  # # Uncomment if not using cloud-init
   # provisioner "file" {
   #   source      = "config.yaml"
   #   destination = "/tmp/config.yaml"
@@ -64,7 +64,7 @@ build {
       "sudo chown root:root /etc/systemd/system/docker.livekit-server@.service",
       "sudo mkdir /opt/livekit-server",
 
-      # # Config provided by cloud-init
+      # # Uncomment if not using cloud-init
       # "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
       # "sudo chown root:root /opt/livekit-server/config.yaml",
       # "sudo systemctl enable docker.livekit-server@${local.livekit_server_version}",

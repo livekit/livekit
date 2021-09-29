@@ -3,9 +3,9 @@ write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
       keys:
-        fake: key
+        key1: secret1
 
 runcmd:
-  - export LIVEKIT_IMAGE_VERSION=v0.13
+  - export LIVEKIT_IMAGE_VERSION=v0.13 # set LiveKit version
   - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
