@@ -1,0 +1,9 @@
+write_files:
+  - content: |
+      keys:
+        fake: key
+    path: /opt/livekit-server/config.yaml
+runcmd:
+  - [ export, LIVEKIT_IMAGE_VERSION=0.13 ]
+  - [ systemctl, enable, docker.livekit-server@$LIVEKIT_IMAGE_VERSION ]
+  - [ systemctl, start, docker.livekit-server@$LIVEKIT_IMAGE_VERSION ]
