@@ -1,4 +1,13 @@
 #cloud-config
+repo_update: true
+repo_upgrade: all
+
+packages:
+  - docker
+
+bootcmd:
+  - mkdir /opt/livekit-server
+
 write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
@@ -8,5 +17,8 @@ write_files:
 
 runcmd:
   - export LIVEKIT_IMAGE_VERSION=v0.13 # set LiveKit version
+  - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/docker.livekit-server%40.service
+  - systemctl enable docker
+  - systemctl start docker
   - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_IMAGE_VERSION}

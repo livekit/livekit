@@ -1,9 +1,9 @@
 #cloud-config
-repo_update: true
-repo_upgrade: all
+package_update: true
+package_upgrade: all
 
 packages:
-  - docker
+  - docker.io
 
 bootcmd:
   - mkdir /opt/livekit-server
@@ -11,6 +11,7 @@ bootcmd:
 write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
+      log_level: info
       keys:
         key1: secret1
 
