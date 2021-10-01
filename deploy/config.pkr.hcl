@@ -86,6 +86,8 @@ build {
       # nginx
       "sudo amazon-linux-extras install -y nginx1",
       "sudo mv /tmp/livekit-nginx.conf /etc/nginx/conf.d/livekit.conf"
+      "sudo systemctl enable nginx",
+      "sudo systemctl start nginx",
 
       # # Uncomment when creating a custom image without cloud-init
       # "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
@@ -95,8 +97,7 @@ build {
       #
       # "sudo mv /tmp/server.crt /etc/pki/nginx/livekit.crt",
       # "sudo mv /tmp/server.key /etc/pki/nginx/private/livekit.key",
-      # "sudo systemctl enable nginx",
-      # "sudo systemctl start nginx",
+      # "sudo systemctl reload nginx",
     ]
   }
 

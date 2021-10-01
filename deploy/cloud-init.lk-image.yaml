@@ -16,5 +16,4 @@ runcmd:
   - export LIVEKIT_VERSION=v0.13 # LiveKit Docker image tag
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
-  - systemctl enable nginx
-  - systemctl start nginx
+  - systemctl reload nginx
