@@ -1,12 +1,12 @@
 # LiveKit Server Deployment
 
-This document covers setting up LiveKit server. You should already have a LiveKit server config.yaml file, with a valid self-generated API key by following the instructions in top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md). If you need SSL termination, you will also need an SSL certificate and key.
+This document covers setting up LiveKit server. You should already have a LiveKit server config.yaml file, with a valid self-generated API key by following the instructions in the top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md). If you need SSL termination, you will also need an SSL certificate and key.
 
 ## Deployment
 You have the choice of deploying LiveKit using [Cloud Init](#cloud-init) or with a [Custom Built Cloud Image](#custom-built-cloud-image). If you prefer to deploy LiveKit on Kubernetes, see https://github.com/livekit/livekit-helm instead.
 
 ### Cloud Init
-You can deploy a LiveKit server using a vanilla Linux image and [Cloud Init](#cloud-init) configuration file.
+You can deploy a LiveKit server using a vanilla Linux image and Cloud Init configuration file.
 
 #### AWS EC2
 
@@ -24,7 +24,7 @@ Steps:
 
 
 ### Custom Built Cloud Image
-You can build your own custom cloud image, and bake in whatever you like.
+You can build your own custom cloud image, and bake in any configuration you like.
 
 #### AWS EC2
 
