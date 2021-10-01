@@ -391,7 +391,9 @@ func (r *Room) SetMetadata(metadata string) {
 		}
 	}
 
-	r.onMetadataUpdate(metadata)
+	if r.onParticipantChanged != nil {
+		r.onMetadataUpdate(metadata)
+	}
 }
 
 func (r *Room) OnMetadataUpdate(f func(metadata string)) {
