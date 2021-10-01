@@ -97,7 +97,7 @@ build {
       #
       # "sudo mv /tmp/server.crt /etc/pki/nginx/livekit.crt",
       # "sudo mv /tmp/server.key /etc/pki/nginx/private/livekit.key",
-      # "sudo systemctl reload nginx",
+      # "sudo systemctl restart nginx",
     ]
   }
 

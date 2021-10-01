@@ -14,8 +14,23 @@ write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
       log_level: info
+      port: 7880
+      rtc:
+        use_external_ip: true
+        tcp_port: 7881
+        udp_port: 7882
       keys:
-        key1: secret1
+        APIkey1: secret1
+  - path: /etc/pki/nginx/livekit.crt
+    content: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+  - path: /etc/pki/nginx/private/livekit.key
+    content: |
+      -----BEGIN RSA PRIVATE KEY-----
+      ...
+      -----END RSA PRIVATE KEY-----
   - path: /etc/nginx/conf.d/livekit.conf
     content: |
       server {
@@ -26,15 +41,13 @@ write_files:
         ssl_certificate_key "/etc/pki/nginx/private/livekit.key";
 
         location / {
-          proxy_pass      http://127.0.0.1:7880;
+          proxy_pass http://127.0.0.1:7880;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_read_timeout 86400;
         }
       }
-  - path: /etc/pki/nginx/livekit.crt
-    content: |
-      <SSL CERT GOES HERE>
-  - path: /etc/pki/nginx/private/livekit.key
-    content: |
-      <SSL KEY GOES HERE>
 
 runcmd:
   - export LIVEKIT_VERSION=v0.13 # set LiveKit version

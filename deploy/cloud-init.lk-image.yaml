@@ -3,17 +3,26 @@ write_files:
   - path: /opt/livekit-server/config.yaml
     content: |
       log_level: info
+      port: 7880
+      rtc:
+        use_external_ip: true
+        tcp_port: 7881
+        udp_port: 7882
       keys:
-        key1: secret1
+        APIkey1: secret1
   - path: /etc/pki/nginx/livekit.crt
     content: |
-      <SSL CERT GOES HERE>
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
   - path: /etc/pki/nginx/private/livekit.key
     content: |
-      <SSL KEY GOES HERE>
+      -----BEGIN RSA PRIVATE KEY-----
+      ...
+      -----END RSA PRIVATE KEY-----
 
 runcmd:
   - export LIVEKIT_VERSION=v0.13 # LiveKit Docker image tag
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
-  - systemctl reload nginx
+  - systemctl restart nginx

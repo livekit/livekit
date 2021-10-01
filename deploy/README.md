@@ -1,9 +1,11 @@
 # LiveKit Server Deployment
 
-This document covers setting up LiveKit server. You should already have a LiveKit server config.yaml file, with a valid self-generated API key by following the instructions in the top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md). If you need SSL termination, you will also need an SSL certificate and key.
+This document covers setting up LiveKit server. You should already have a LiveKit server config.yaml file, with a valid self-generated API key by following the instructions in the top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md). You will also need an SSL certificate and private key, which can be purchased anywhere that sells SSL certificates.
 
 ## Deployment
-You have the choice of deploying LiveKit using [Cloud Init](#cloud-init) or with a [Custom Built Cloud Image](#custom-built-cloud-image). If you prefer to deploy LiveKit on Kubernetes, see https://github.com/livekit/livekit-helm instead.
+You have the choice of deploying LiveKit using [Cloud Init](#cloud-init) or with a [Custom Built Cloud Image](#custom-built-cloud-image). All custom configuration can go into the Cloud Init config, or you can SSH into your LiveKit server instance after it has been created. The LiveKit `config.yaml` file is located at `/opt/livekit-server/config.yaml`.
+
+If you prefer to deploy LiveKit on Kubernetes, see https://github.com/livekit/livekit-helm instead.
 
 ### Cloud Init
 You can deploy a LiveKit server using a vanilla Linux image and Cloud Init configuration file.
@@ -45,6 +47,7 @@ packer build .
 
 ## Firewall
 After you have [deployed](#deployment) LiveKit using one of the methods above, make sure your AWS Security Group is configured to allow the following ports to your LiveKit Instance:
+  - TCP 22   - SSH
   - TPC 443  - SSL terminated WebSocket
   - TCP 7880 - Plaintext WebSocket
   - TCP 7881 - RTC TCP
