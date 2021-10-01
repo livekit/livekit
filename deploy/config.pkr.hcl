@@ -4,6 +4,8 @@ packer {
       version = ">= 0.0.2"
       source  = "github.com/hashicorp/amazon"
     }
+
+    # # TODO: build a LiveKit image on DigitalOcean
     # digitalocean = {
     #   version = ">= 1.0.0"
     #   source  = "github.com/hashicorp/digitalocean"
@@ -12,9 +14,9 @@ packer {
 }
 
 
-# # Uncomment if not using cloud-init
+# # Uncomment when creating a custom image without cloud-init
 # locals {
-#   livekit_server_version = "v0.13"
+#   livekit_version = "v0.13"
 # }
 
 source "amazon-ebs" "amzn2" {
@@ -39,16 +41,33 @@ build {
     "source.amazon-ebs.amzn2"
   ]
 
-  # # Uncomment if not using cloud-init
-  # provisioner "file" {
-  #   source      = "config.yaml"
-  #   destination = "/tmp/config.yaml"
-  # }
 
   provisioner "file" {
     source      = "docker.livekit-server@.service"
     destination = "/tmp/docker.livekit-server@.service"
   }
+
+  provisioner "file" {
+    source      = "livekit-nginx.conf"
+    destination = "/tmp/livekit-livekit.conf"
+  }
+
+  # # Uncomment when creating a custom image without cloud-init
+  # provisioner "file" {
+  #   source      = "config.yaml" # LiveKit config
+  #   destination = "/tmp/config.yaml"
+  # }
+  #
+  # provisioner "file" {
+  #   source      = "server.crt" # SSL cert
+  #   destination = "/tmp/server.crt"
+  # }
+  #
+  # provisioner "file" {
+  #   source      = "server.key" # SSL key
+  #   destination = "/tmp/server.key"
+  # }
+
 
   provisioner "shell" {
     environment_vars = []
@@ -64,11 +83,20 @@ build {
       "sudo chown root:root /etc/systemd/system/docker.livekit-server@.service",
       "sudo mkdir /opt/livekit-server",
 
-      # # Uncomment if not using cloud-init
+      # nginx
+      "sudo amazon-linux-extras install -y nginx1",
+      "sudo mv /tmp/livekit-nginx.conf /etc/nginx/conf.d/livekit.conf"
+
+      # # Uncomment when creating a custom image without cloud-init
       # "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
       # "sudo chown root:root /opt/livekit-server/config.yaml",
-      # "sudo systemctl enable docker.livekit-server@${local.livekit_server_version}",
-      # "sudo systemctl start docker.livekit-server@${local.livekit_server_version}",
+      # "sudo systemctl enable docker.livekit-server@${local.livekit_version}",
+      # "sudo systemctl start docker.livekit-server@${local.livekit_version}",
+      #
+      # "sudo mv /tmp/server.crt /etc/pki/nginx/livekit.crt",
+      # "sudo mv /tmp/server.key /etc/pki/nginx/private/livekit.key",
+      # "sudo systemctl enable nginx",
+      # "sudo systemctl start nginx",
     ]
   }
 

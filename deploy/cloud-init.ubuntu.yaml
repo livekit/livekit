@@ -16,9 +16,9 @@ write_files:
         key1: secret1
 
 runcmd:
-  - export LIVEKIT_IMAGE_VERSION=v0.13 # set LiveKit version
+  - export LIVEKIT_VERSION=v0.13 # LiveKit Docker image tag
   - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/docker.livekit-server%40.service
   - systemctl enable docker
   - systemctl start docker
-  - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
-  - systemctl start docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
+  - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
+  - systemctl start docker.livekit-server@${LIVEKIT_VERSION}

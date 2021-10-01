@@ -5,8 +5,16 @@ write_files:
       log_level: info
       keys:
         key1: secret1
+  - path: /etc/pki/nginx/livekit.crt
+    content: |
+      <SSL CERT GOES HERE>
+  - path: /etc/pki/nginx/private/livekit.key
+    content: |
+      <SSL KEY GOES HERE>
 
 runcmd:
-  - export LIVEKIT_IMAGE_VERSION=v0.13 # set LiveKit version
-  - systemctl enable docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
-  - systemctl start docker.livekit-server@${LIVEKIT_IMAGE_VERSION}
+  - export LIVEKIT_VERSION=v0.13 # LiveKit Docker image tag
+  - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
+  - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
+  - systemctl enable nginx
+  - systemctl start nginx
