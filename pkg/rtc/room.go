@@ -47,6 +47,7 @@ type Room struct {
 	statsReporter *stats.RoomStatsReporter
 
 	onParticipantChanged func(p types.Participant)
+	onMetadataUpdate     func(metadata string)
 	onClose              func()
 }
 
@@ -389,6 +390,12 @@ func (r *Room) SetMetadata(metadata string) {
 			logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
 		}
 	}
+
+	r.onMetadataUpdate(metadata)
+}
+
+func (r *Room) OnMetadataUpdate(f func(metadata string)) {
+	r.onMetadataUpdate = f
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
