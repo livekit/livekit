@@ -17,7 +17,7 @@ LiveKit Server can be deployed with either Amazon Linux 2 or Ubuntu. Use the `cl
   - For Ubuntu, use [cloud-init.ubuntu.yaml](https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/cloud-init.ubuntu.yaml)
 
 Steps: 
-  1. Download one of the above `cloud-init.<platform>.yaml` files, and edit it to include your LiveKit Server configuration. Your `config.yaml` goes under the first `write_files` item `contents`.
+  1. Download one of the above `cloud-init.<platform>.yaml` files. Edit it to include your LiveKit Server configuration, SSL certificate, and SSL private key.
   2. Open the [AWS Console](https://console.aws.amazon.com/ec2) and navigate to EC2.
   3. Launch an instance.
   4. Choose the latest "Amazon Linux 2" AMI.
