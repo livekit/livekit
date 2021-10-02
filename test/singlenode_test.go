@@ -80,7 +80,7 @@ func TestSinglePublisher(t *testing.T) {
 
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
-	success = testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
+	success = testutils.WithTimeout(t, "c3 should receive two tracks", func() bool {
 		if len(c3.SubscribedTracks()) == 0 {
 			return false
 		}
