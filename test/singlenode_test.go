@@ -119,28 +119,27 @@ func TestSinglePublisher(t *testing.T) {
 	})
 }
 
-func TestAutoSubDisabled(t *testing.T) {
+func Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestAutoSubDisabled", testRoom)
+	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks", testRoom)
 	defer finish()
 
 	opts := testclient.Options{AutoSubscribe: false}
-	c1 := createRTCClient("c1", defaultServerPort, &opts)
-	c2 := createRTCClient("c2", defaultServerPort, &opts)
-	defer c1.Stop()
-	defer c2.Stop()
-	waitUntilConnected(t, c1, c2)
+	publisher := createRTCClient("publisher", defaultServerPort, &opts)
+	client := createRTCClient("client", defaultServerPort, &opts)
+	defer publisher.Stop()
+	defer client.Stop()
+	waitUntilConnected(t, publisher, client)
 
-	// c2 should not receive any tracks c1 publishes
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	track, err := publisher.AddStaticTrack("audio/opus", "audio", "webcam")
 	require.NoError(t, err)
-	defer t1.Stop()
+	defer track.Stop()
 
 	time.Sleep(syncDelay)
 
-	require.Empty(t, c2.SubscribedTracks()[c1.ID()])
+	require.Empty(t, client.SubscribedTracks()[publisher.ID()])
 }
