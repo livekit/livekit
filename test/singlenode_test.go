@@ -57,9 +57,6 @@ func TestSinglePublisher(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	// a new client joins and should get the initial stream
-	c3 := createRTCClient("c3", defaultServerPort, nil)
-
 	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
@@ -77,6 +74,9 @@ func TestSinglePublisher(t *testing.T) {
 	if !success {
 		t.FailNow()
 	}
+
+	// a new client joins and should get the initial stream
+	c3 := createRTCClient("c3", defaultServerPort, nil)
 
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
