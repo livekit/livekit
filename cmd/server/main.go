@@ -208,15 +208,15 @@ func startServer(c *cli.Context) error {
 	return server.Start()
 }
 
-func getConfigString(configFile string, configBody string) (string, error) {
-	if configBody == "" {
-		if configFile != "" {
-			content, err := ioutil.ReadFile(configFile)
-			if err != nil {
-				return "", err
-			}
-			configBody = string(content)
-		}
+func getConfigString(configFile string, inConfigBody string) (string, error) {
+	if inConfigBody != "" || configFile == "" {
+		return inConfigBody, nil
 	}
-	return configBody, nil
+
+	outConfigBody, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return "", err
+	}
+
+	return string(outConfigBody), nil
 }
