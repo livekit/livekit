@@ -215,6 +215,37 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 	return &livekit.SendDataResponse{}, nil
 }
 
+func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
+	if err := EnsureAdminPermission(ctx, req.Room); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	room, err := s.roomStore.LoadRoom(ctx, req.Room)
+	if err != nil {
+		return nil, err
+	}
+
+	room.Metadata = req.Metadata
+
+	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(participants) > 0 {
+		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
+			Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
+				UpdateRoomMetadata: req,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return room, nil
+}
+
 func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return twirpAuthError(err)

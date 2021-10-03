@@ -47,6 +47,7 @@ type Room struct {
 	statsReporter *stats.RoomStatsReporter
 
 	onParticipantChanged func(p types.Participant)
+	onMetadataUpdate     func(metadata string)
 	onClose              func()
 }
 
@@ -73,6 +74,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 	}
 	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
+
 	return r
 }
 
@@ -372,6 +374,30 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 		},
 	}
 	r.onDataPacket(nil, dp)
+}
+
+func (r *Room) SetMetadata(metadata string) {
+	r.Room.Metadata = metadata
+
+	// Send update to participants
+	for _, p := range r.GetParticipants() {
+		if !p.IsReady() {
+			continue
+		}
+
+		err := p.SendRoomUpdate(r.Room)
+		if err != nil {
+			logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
+		}
+	}
+
+	if r.onMetadataUpdate != nil {
+		r.onMetadataUpdate(metadata)
+	}
+}
+
+func (r *Room) OnMetadataUpdate(f func(metadata string)) {
+	r.onMetadataUpdate = f
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired

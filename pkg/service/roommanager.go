@@ -304,6 +304,12 @@ func (r *LocalRoomManager) getOrCreateRoom(ctx context.Context, roomName string)
 			"outgoingStats", room.GetOutgoingStats().Copy(),
 		)
 	})
+	room.OnMetadataUpdate(func(metadata string) {
+		err := r.StoreRoom(ctx, room.Room)
+		if err != nil {
+			logger.Errorw("could not handle metadata update", err)
+		}
+	})
 	room.OnParticipantChanged(func(p types.Participant) {
 		var err error
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
@@ -482,6 +488,9 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 			DestinationSids: rm.SendData.DestinationSids,
 		}
 		room.SendDataPacket(up, rm.SendData.Kind)
+	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
+		logger.Debugw("updating room", "room", roomName)
+		room.SetMetadata(rm.UpdateRoomMetadata.Metadata)
 	}
 }
 

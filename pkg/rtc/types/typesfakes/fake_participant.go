@@ -325,6 +325,17 @@ type FakeParticipant struct {
 	sendParticipantUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SendRoomUpdateStub        func(*livekit.Room) error
+	sendRoomUpdateMutex       sync.RWMutex
+	sendRoomUpdateArgsForCall []struct {
+		arg1 *livekit.Room
+	}
+	sendRoomUpdateReturns struct {
+		result1 error
+	}
+	sendRoomUpdateReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SendSpeakerUpdateStub        func([]*livekit.SpeakerInfo) error
 	sendSpeakerUpdateMutex       sync.RWMutex
 	sendSpeakerUpdateArgsForCall []struct {
@@ -2117,6 +2128,67 @@ func (fake *FakeParticipant) SendParticipantUpdateReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
+func (fake *FakeParticipant) SendRoomUpdate(arg1 *livekit.Room) error {
+	fake.sendRoomUpdateMutex.Lock()
+	ret, specificReturn := fake.sendRoomUpdateReturnsOnCall[len(fake.sendRoomUpdateArgsForCall)]
+	fake.sendRoomUpdateArgsForCall = append(fake.sendRoomUpdateArgsForCall, struct {
+		arg1 *livekit.Room
+	}{arg1})
+	stub := fake.SendRoomUpdateStub
+	fakeReturns := fake.sendRoomUpdateReturns
+	fake.recordInvocation("SendRoomUpdate", []interface{}{arg1})
+	fake.sendRoomUpdateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SendRoomUpdateCallCount() int {
+	fake.sendRoomUpdateMutex.RLock()
+	defer fake.sendRoomUpdateMutex.RUnlock()
+	return len(fake.sendRoomUpdateArgsForCall)
+}
+
+func (fake *FakeParticipant) SendRoomUpdateCalls(stub func(*livekit.Room) error) {
+	fake.sendRoomUpdateMutex.Lock()
+	defer fake.sendRoomUpdateMutex.Unlock()
+	fake.SendRoomUpdateStub = stub
+}
+
+func (fake *FakeParticipant) SendRoomUpdateArgsForCall(i int) *livekit.Room {
+	fake.sendRoomUpdateMutex.RLock()
+	defer fake.sendRoomUpdateMutex.RUnlock()
+	argsForCall := fake.sendRoomUpdateArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SendRoomUpdateReturns(result1 error) {
+	fake.sendRoomUpdateMutex.Lock()
+	defer fake.sendRoomUpdateMutex.Unlock()
+	fake.SendRoomUpdateStub = nil
+	fake.sendRoomUpdateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) SendRoomUpdateReturnsOnCall(i int, result1 error) {
+	fake.sendRoomUpdateMutex.Lock()
+	defer fake.sendRoomUpdateMutex.Unlock()
+	fake.SendRoomUpdateStub = nil
+	if fake.sendRoomUpdateReturnsOnCall == nil {
+		fake.sendRoomUpdateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendRoomUpdateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) SendSpeakerUpdate(arg1 []*livekit.SpeakerInfo) error {
 	var arg1Copy []*livekit.SpeakerInfo
 	if arg1 != nil {
@@ -2675,6 +2747,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
+	fake.sendRoomUpdateMutex.RLock()
+	defer fake.sendRoomUpdateMutex.RUnlock()
 	fake.sendSpeakerUpdateMutex.RLock()
 	defer fake.sendSpeakerUpdateMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
