@@ -52,17 +52,29 @@ func (w *rtpReporterWriter) Write(p []byte) (n int, err error) {
 	return w.ReadWriteCloser.Write(p)
 }
 
+// StatsInterceptorFactory is created for each participant to keep of track of outgoing stats
+// it adheres to Pion interceptor.Factory interface
+type StatsInterceptorFactory struct {
+	reporter *RoomStatsReporter
+}
+
+func NewStatsInterceptorFactory(reporter *RoomStatsReporter) *StatsInterceptorFactory {
+	return &StatsInterceptorFactory{
+		reporter: reporter,
+	}
+}
+
+func (f *StatsInterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
+	return &StatsInterceptor{
+		reporter: f.reporter,
+	}, nil
+}
+
 // StatsInterceptor is created for each participant to keep of track of outgoing stats
 // it adheres to Pion interceptor interface
 type StatsInterceptor struct {
 	interceptor.NoOp
 	reporter *RoomStatsReporter
-}
-
-func NewStatsInterceptor(reporter *RoomStatsReporter) *StatsInterceptor {
-	return &StatsInterceptor{
-		reporter: reporter,
-	}
 }
 
 // BindRTCPWriter lets you modify any outgoing RTCP packets. It is called once per PeerConnection. The returned method
