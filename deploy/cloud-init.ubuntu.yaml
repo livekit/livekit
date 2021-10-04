@@ -36,5 +36,5 @@ runcmd:
   - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/docker.livekit-server%40.service
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
-  - curl -o /etc/nginx/conf.d/livekit.conf -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/livekit-nginx.conf
+  - curl -o /etc/nginx/conf.d/livekit.conf -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/livekit.nginx.conf
   - systemctl restart nginx

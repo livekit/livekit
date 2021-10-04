@@ -48,8 +48,8 @@ build {
   }
 
   provisioner "file" {
-    source      = "livekit-nginx.conf"
-    destination = "/tmp/livekit-livekit.conf"
+    source      = "livekit.nginx.conf"
+    destination = "/tmp/livekit.nginx.conf"
   }
 
   # # Uncomment when creating a custom image without cloud-init
@@ -84,7 +84,7 @@ build {
 
       # nginx
       "sudo amazon-linux-extras install -y nginx1",
-      "sudo mv /tmp/livekit-nginx.conf /etc/nginx/conf.d/livekit.conf"
+      "sudo mv /tmp/livekit.nginx.conf /etc/nginx/conf.d/livekit.conf",
       "sudo systemctl enable nginx",
 
       # # Uncomment when creating a custom image without cloud-init

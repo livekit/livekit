@@ -38,6 +38,6 @@ runcmd:
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
   - amazon-linux-extras install -y nginx1
-  - curl -o /etc/nginx/conf.d/livekit.conf -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/livekit-nginx.conf
+  - curl -o /etc/nginx/conf.d/livekit.conf -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/livekit.nginx.conf
   - systemctl enable nginx
   - systemctl start nginx
