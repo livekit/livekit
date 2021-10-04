@@ -1,6 +1,9 @@
 # LiveKit Server Deployment
 
-This document covers setting up LiveKit server. You should already have a LiveKit server config.yaml file, with a valid self-generated API key by following the instructions in the top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md). You will also need an SSL certificate and private key, which can be purchased anywhere that sells SSL certificates.
+This document covers setting up LiveKit server. Prerequesits are:
+  - A valid self-generated LiveKit API key, following the instructions in the top level [README.md](https://github.com/livekit/livekit-server/blob/master/README.md).
+  - A valid SSL certificate and private key, which can be purchased anywhere that sells SSL certificates such as [Namecheap](https://www.namecheap.com/security/ssl-certificates/).
+  - Ability to add a DNS record pointing to your new LiveKit server.
 
 ## Deployment
 You have the choice of deploying LiveKit using [Cloud Init](#cloud-init) or with a [Custom Built Cloud Image](#custom-built-cloud-image). All custom configuration can go into the Cloud Init config, or you can SSH into your LiveKit server instance after it has been created. The LiveKit `config.yaml` file is located at `/opt/livekit-server/config.yaml`.

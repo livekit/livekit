@@ -7,7 +7,7 @@ packages:
   - nginx
 
 bootcmd:
-  - mkdir /opt/livekit-server
+  - mkdir /opt/livekit-server/ssl
 
 write_files:
   - path: /opt/livekit-server/config.yaml
@@ -19,39 +19,22 @@ write_files:
         tcp_port: 7881
         udp_port: 7882
       keys:
-        APIkey1: secret1
-  - path: /etc/ssl/cert/livekit.crt
+        APIkey: secret
+  - path: /opt/livekit-server/ssl/server.crt
     content: |
-      -----BEGIN CERTIFICATE-----
+      -----BEGIN CERTIFICATE----- 
       ...
       -----END CERTIFICATE-----
-  - path: /etc/ssl/private/livekit.key
+  - path: /opt/livekit-server/ssl/server.key
     content: |
-      -----BEGIN RSA PRIVATE KEY-----
+      -----BEGIN PRIVATE KEY-----
       ...
-      -----END RSA PRIVATE KEY-----
-  - path: /etc/nginx/sites-available/livekit
-    content: |
-      server {
-        listen       443 ssl http2;
-        listen       [::]:443 ssl http2;
-
-        ssl_certificate "/etc/ssl/cert/livekit.crt";
-        ssl_certificate_key "/etc/ssl/private/livekit.key";
-
-        location / {
-          proxy_pass http://127.0.0.1:7880;
-          proxy_http_version 1.1;
-          proxy_set_header Upgrade $http_upgrade;
-          proxy_set_header Connection "upgrade";
-          proxy_read_timeout 86400;
-        }
-      }
+      -----END PRIVATE KEY-----
 
 runcmd:
   - export LIVEKIT_VERSION=v0.13 # set LiveKit version
   - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/docker.livekit-server%40.service
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
   - systemctl start docker.livekit-server@${LIVEKIT_VERSION}
-  - ln -s /etc/nginx/sites-available/livekit /etc/nginx/sites-enabled/livekit
+  - curl -o /etc/nginx/conf.d/livekit.conf -O https://raw.githubusercontent.com/livekit/livekit-server/master/deploy/livekit-nginx.conf
   - systemctl restart nginx

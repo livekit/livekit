@@ -10,12 +10,12 @@ write_files:
         udp_port: 7882
       keys:
         APIkey1: secret1
-  - path: /etc/pki/nginx/livekit.crt
+  - path: /opt/livekit-server/ssl/server.crt
     content: |
       -----BEGIN CERTIFICATE-----
       ...
       -----END CERTIFICATE-----
-  - path: /etc/pki/nginx/private/livekit.key
+  - path: /opt/livekit-server/ssl/server.key
     content: |
       -----BEGIN RSA PRIVATE KEY-----
       ...

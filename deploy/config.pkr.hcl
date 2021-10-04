@@ -80,7 +80,7 @@ build {
       # livekit
       "sudo mv /tmp/docker.livekit-server@.service /etc/systemd/system/docker.livekit-server@.service",
       "sudo chown root:root /etc/systemd/system/docker.livekit-server@.service",
-      "sudo mkdir /opt/livekit-server",
+      "sudo mkdir -p /opt/livekit-server/ssl",
 
       # nginx
       "sudo amazon-linux-extras install -y nginx1",
@@ -93,8 +93,10 @@ build {
       # "sudo systemctl enable docker.livekit-server@${local.livekit_version}",
       # "sudo systemctl start docker.livekit-server@${local.livekit_version}",
       #
-      # "sudo mv /tmp/server.crt /etc/pki/nginx/livekit.crt",
-      # "sudo mv /tmp/server.key /etc/pki/nginx/private/livekit.key",
+      # "sudo mv /tmp/server.crt /opt/livekit-server/ssl/server.crt",
+      # "sudo mv /tmp/server.key /opt/livekit-server/ssl/server.key",
+      # "sudo chown root:root /opt/livekit-server/ssl/*"
+      # "sudo chown 600 /opt/livekit-server/ssl/*"
     ]
   }
 
