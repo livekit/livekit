@@ -9,7 +9,7 @@ bootcmd:
   - mkdir /opt/livekit-server/ssl
 
 write_files:
-  - path: /opt/livekit-server/ssl/server.crt
+  - path: /opt/livekit-server/config.yaml
     content: |
       log_level: info
       port: 7880
@@ -32,7 +32,7 @@ write_files:
 
 runcmd:
   - export LIVEKIT_VERSION=v0.13 # set LiveKit version
-  - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/livekit-server/matkam/cloud-images/deploy/docker.livekit-server%40.service
+  - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/master/cloud-images/deploy/docker.livekit-server%40.service
   - systemctl enable docker
   - systemctl start docker
   - systemctl enable docker.livekit-server@${LIVEKIT_VERSION}
