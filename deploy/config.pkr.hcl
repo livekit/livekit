@@ -14,13 +14,13 @@ packer {
 }
 
 
-# # Uncomment when creating a custom image without cloud-init
-# locals {
-#   livekit_version = "v0.13"
-# }
+# Uncomment when creating a custom image without cloud-init
+locals {
+  livekit_version = "v0.13"
+}
 
 source "amazon-ebs" "amzn2" {
-  ami_name      = "livekit-amzn2-{{timestamp}}"
+  ami_name      = "livekit-${local.livekit_version}-amzn2-{{timestamp}}"
   instance_type = "t2.micro"
   region        = "us-west-2"
   source_ami_filter {
@@ -36,41 +36,43 @@ source "amazon-ebs" "amzn2" {
 }
 
 build {
-  name = "livekit-centos"
+  name = "livekit-amzn2"
   sources = [
     "source.amazon-ebs.amzn2"
   ]
 
-
+  # LiveKit Systemd unit
   provisioner "file" {
     source      = "docker.livekit-server@.service"
     destination = "/tmp/docker.livekit-server@.service"
   }
 
+  # LiveKit config
+  provisioner "file" {
+    source      = "config.yaml"
+    destination = "/tmp/config.yaml"
+  }
+
+  # Nginx conf
   provisioner "file" {
     source      = "livekit.nginx.conf"
     destination = "/tmp/livekit.nginx.conf"
   }
 
-  # # Uncomment when creating a custom image without cloud-init
-  # provisioner "file" {
-  #   source      = "config.yaml" # LiveKit config
-  #   destination = "/tmp/config.yaml"
-  # }
-  #
-  # provisioner "file" {
-  #   source      = "server.crt" # SSL cert
-  #   destination = "/tmp/server.crt"
-  # }
-  #
-  # provisioner "file" {
-  #   source      = "server.key" # SSL key
-  #   destination = "/tmp/server.key"
-  # }
+  # SSL cert
+  provisioner "file" {
+    source      = "server.crt"
+    destination = "/tmp/server.crt"
+  }
+
+  # SSL key
+  provisioner "file" {
+    source      = "server.key"
+    destination = "/tmp/server.key"
+  }
 
 
   provisioner "shell" {
-    environment_vars = []
     inline = [
       # docker
       "sudo yum update -y",
@@ -81,22 +83,18 @@ build {
       "sudo mv /tmp/docker.livekit-server@.service /etc/systemd/system/docker.livekit-server@.service",
       "sudo chown root:root /etc/systemd/system/docker.livekit-server@.service",
       "sudo mkdir -p /opt/livekit-server/ssl",
+      "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
+      "sudo chown root:root /opt/livekit-server/config.yaml",
+      "sudo systemctl enable docker.livekit-server@${local.livekit_version}",
 
       # nginx
       "sudo amazon-linux-extras install -y nginx1",
       "sudo mv /tmp/livekit.nginx.conf /etc/nginx/conf.d/livekit.conf",
+      "sudo mv /tmp/server.crt /opt/livekit-server/ssl/server.crt",
+      "sudo mv /tmp/server.key /opt/livekit-server/ssl/server.key",
+      "sudo chown root:root /opt/livekit-server/ssl/*",
+      "sudo chown 600 /opt/livekit-server/ssl/*",
       "sudo systemctl enable nginx",
-
-      # # Uncomment when creating a custom image without cloud-init
-      # "sudo mv /tmp/config.yaml /opt/livekit-server/config.yaml",
-      # "sudo chown root:root /opt/livekit-server/config.yaml",
-      # "sudo systemctl enable docker.livekit-server@${local.livekit_version}",
-      # "sudo systemctl start docker.livekit-server@${local.livekit_version}",
-      #
-      # "sudo mv /tmp/server.crt /opt/livekit-server/ssl/server.crt",
-      # "sudo mv /tmp/server.key /opt/livekit-server/ssl/server.key",
-      # "sudo chown root:root /opt/livekit-server/ssl/*"
-      # "sudo chown 600 /opt/livekit-server/ssl/*"
     ]
   }
 
