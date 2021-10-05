@@ -136,7 +136,7 @@ func main() {
 }
 
 func getConfig(c *cli.Context) (*config.Config, error) {
-	confString, err := getConfigString(c)
+	confString, err := getConfigString(c.String("config"), c.String("config-body"))
 	if err != nil {
 		return nil, err
 	}
@@ -208,17 +208,15 @@ func startServer(c *cli.Context) error {
 	return server.Start()
 }
 
-func getConfigString(c *cli.Context) (string, error) {
-	configFile := c.String("config")
-	configBody := c.String("config-body")
-	if configBody == "" {
-		if configFile != "" {
-			content, err := ioutil.ReadFile(configFile)
-			if err != nil {
-				return "", err
-			}
-			configBody = string(content)
-		}
+func getConfigString(configFile string, inConfigBody string) (string, error) {
+	if inConfigBody != "" || configFile == "" {
+		return inConfigBody, nil
 	}
-	return configBody, nil
+
+	outConfigBody, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return "", err
+	}
+
+	return string(outConfigBody), nil
 }
