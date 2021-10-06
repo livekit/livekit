@@ -1,10 +1,11 @@
-package routing
+package selector
 
 import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/thoas/go-funk"
 )
 
+// RandomSelector selects an available node at random
 type RandomSelector struct {
 }
 

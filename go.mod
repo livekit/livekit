@@ -47,3 +47,5 @@ require (
 )
 
 replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.11
+
+replace github.com/livekit/protocol => github.com/livekit/protocol v0.9.6-0.20211006235141-c785be2288fd

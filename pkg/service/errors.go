@@ -9,4 +9,5 @@ var (
 	ErrParticipantNotFound  = errors.New("participant does not exist")
 	ErrTrackNotFound        = errors.New("track is not found")
 	ErrWebHookMissingAPIKey = errors.New("api_key is required to use webhooks")
+	ErrUnsupportedSelector  = errors.New("unsupported node selector")
 )

@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -29,6 +30,7 @@ type Config struct {
 	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
 	KeyFile        string             `yaml:"key_file"`
 	Keys           map[string]string  `yaml:"keys"`
+	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
 
 	Development bool `yaml:"development"`
@@ -109,8 +111,9 @@ type WebHookConfig struct {
 }
 
 type NodeSelectorConfig struct {
-	Kind         string  `yaml:"kind"`
-	SysloadLimit float32 `yaml:"sysload_limit"`
+	Kind         string                  `yaml:"kind"`
+	SysloadLimit float32                 `yaml:"sysload_limit"`
+	Regions      []selector.RegionConfig `yaml:"regions"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {

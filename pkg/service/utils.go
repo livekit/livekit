@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
@@ -78,14 +79,27 @@ func CreateWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
-func CreateNodeSelector(conf *config.Config) routing.NodeSelector {
-	switch conf.NodeSelector.Kind {
+func CreateNodeSelector(conf *config.Config) (routing.NodeSelector, error) {
+	kind := conf.NodeSelector.Kind
+	if kind == "" {
+		kind = "random"
+	}
+	switch kind {
 	case "sysload":
-		return &routing.SystemLoadSelector{
+		return &selector.SystemLoadSelector{
 			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		}, nil
+	case "regionaware":
+		s, err := selector.NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions)
+		if err != nil {
+			return nil, err
 		}
+		s.SysloadLimit = conf.NodeSelector.SysloadLimit
+		return s, nil
+	case "random":
+		return &selector.RandomSelector{}, nil
 	default:
-		return &routing.RandomSelector{}
+		return nil, ErrUnsupportedSelector
 	}
 }
 
