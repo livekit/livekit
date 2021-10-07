@@ -213,7 +213,7 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	}
 	if c.IsSet("keys") {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
-			return errors.New("Could not parse keys, it needs to be \"key: secret\", one per line")
+			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
 	}
 	if c.IsSet("redis-host") {

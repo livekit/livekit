@@ -20,7 +20,7 @@ func generateKeys(c *cli.Context) error {
 	apiKey := utils.NewGuid(utils.APIKeyPrefix)
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)
-	fmt.Println("Secret Key: ", secret)
+	fmt.Println("API Secret: ", secret)
 	return nil
 }
 
