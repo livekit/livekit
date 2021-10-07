@@ -19,3 +19,9 @@ livekit-server
 # vendor/
 bin/
 proto/
+
+# Mac
+.DS_Store
+
+# IDE
+.idea/jsonSchemas.xml

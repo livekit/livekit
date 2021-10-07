@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -64,7 +65,7 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 		return err
 	}
 	for _, n := range nodes {
-		if !IsAvailable(n) {
+		if !selector.IsAvailable(n) {
 			if err := r.rc.HDel(context.Background(), NodesKey, n.Id).Err(); err != nil {
 				return err
 			}

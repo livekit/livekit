@@ -1,13 +1,12 @@
-package routing_test
+package selector_test
 
 import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 var (
@@ -31,7 +30,7 @@ var (
 )
 
 func TestSystemLoadSelector_SelectNode(t *testing.T) {
-	selector := routing.SystemLoadSelector{SysloadLimit: 1.0}
+	selector := selector.SystemLoadSelector{SysloadLimit: 1.0}
 
 	nodes := []*livekit.Node{}
 	_, err := selector.SelectNode(nodes, nil)

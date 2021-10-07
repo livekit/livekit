@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -70,7 +71,7 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 	}
 
 	// keep it on that node
-	if err == nil && routing.IsAvailable(node) {
+	if err == nil && selector.IsAvailable(node) {
 		return rm, nil
 	}
 
