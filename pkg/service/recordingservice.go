@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
@@ -90,7 +91,7 @@ func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.Remove
 	return &emptypb.Empty{}, nil
 }
 
-func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResult, error) {
+func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*emptypb.Empty, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
@@ -108,7 +109,7 @@ func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRec
 		return nil, err
 	}
 
-	return &livekit.RecordingResult{Id: req.RecordingId}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func (s *RecordingService) resultsWorker() {
@@ -139,16 +140,16 @@ func (s *RecordingService) resultsWorker() {
 
 func (s *RecordingService) notify(res *livekit.RecordingResult) {
 	// log results
+	values := []interface{}{"id", res.Id}
 	if res.Error != "" {
-		logger.Errorw("recording failed", errors.New(res.Error), "id", res.Id)
+		values = append(values, "error", res.Error)
 	} else {
-		logger.Infow("recording complete",
-			"recordingId", res.Id,
-			"error", res.Error,
-			"duration", res.Duration,
-			"url", res.DownloadUrl,
-		)
+		values = append(values, "duration", time.Duration(res.Duration*1e9))
+		if res.DownloadUrl != "" {
+			values = append(values, "url", res.DownloadUrl)
+		}
 	}
+	logger.Debugw("received recording result", values...)
 
 	// webhook
 	if s.notifier != nil {
