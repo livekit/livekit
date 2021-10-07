@@ -28,11 +28,7 @@ func TestClientCouldConnect(t *testing.T) {
 
 	// ensure they both see each other
 	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
-		if len(c1.RemoteParticipants()) == 0 || len(c2.RemoteParticipants()) == 0 {
-			return false
-		}
-		//require.Equal()
-		return true
+		return len(c1.RemoteParticipants()) != 0 && len(c2.RemoteParticipants()) != 0
 	})
 }
 
