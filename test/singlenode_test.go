@@ -103,7 +103,7 @@ func TestSinglePublisher(t *testing.T) {
 	// when c3 disconnects.. ensure subscriber is cleaned up correctly
 	c3.Stop()
 
-	success = testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+	testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
 		room := s.RoomManager().GetRoom(context.Background(), testRoom)
 		require.NotNil(t, room)
 
