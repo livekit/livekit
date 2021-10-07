@@ -3,34 +3,32 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-	"time"
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/recording"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const lockExpiration = time.Second * 5
-
 type RecordingService struct {
-	mb       utils.MessageBus
+	bus      utils.MessageBus
 	notifier webhook.Notifier
 	shutdown chan struct{}
 }
 
 func NewRecordingService(mb utils.MessageBus, notifier webhook.Notifier) *RecordingService {
 	return &RecordingService{
-		mb:       mb,
+		bus:      mb,
 		notifier: notifier,
 		shutdown: make(chan struct{}, 1),
 	}
 }
 
 func (s *RecordingService) Start() {
-	if s.mb != nil {
+	if s.bus != nil {
 		go s.resultsWorker()
 	}
 }
@@ -39,78 +37,82 @@ func (s *RecordingService) Stop() {
 	s.shutdown <- struct{}{}
 }
 
-func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.RecordingResponse, error) {
+func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.StartRecordingResponse, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
-	if s.mb == nil {
+	if s.bus == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
 	// reserve a recorder
-	recordingID, err := s.reserveRecorder(ctx, req)
+	recordingId := utils.NewGuid(utils.RecordingPrefix)
+	err := recording.ReserveRecorder(recordingId, s.bus)
 	if err != nil {
 		return nil, err
 	}
 
 	// start the recording
-	err = s.mb.Publish(ctx, utils.StartRecordingChannel(recordingID), nil)
+	err = recording.RPC(ctx, s.bus, recordingId, &livekit.RecordingRequest{
+		Request: &livekit.RecordingRequest_Start{
+			Start: req,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &livekit.RecordingResponse{RecordingId: recordingID}, nil
+	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
 }
 
-func (s *RecordingService) reserveRecorder(ctx context.Context, req *livekit.StartRecordingRequest) (string, error) {
-	id := utils.NewGuid(utils.RecordingPrefix)
-	reservation := &livekit.RecordingReservation{
-		Id:          id,
-		SubmittedAt: time.Now().UnixNano(),
-		Request:     req,
-	}
-	b, err := proto.Marshal(reservation)
+func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutputRequest) (*emptypb.Empty, error) {
+	err := recording.RPC(ctx, s.bus, req.RecordingId, &livekit.RecordingRequest{
+		Request: &livekit.RecordingRequest_AddOutput{
+			AddOutput: req,
+		},
+	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	sub, err := s.mb.Subscribe(ctx, utils.ReservationResponseChannel(id))
-	if err != nil {
-		return "", err
-	}
-	defer sub.Close()
-
-	if err = s.mb.Publish(ctx, utils.ReservationChannel, string(b)); err != nil {
-		return "", err
-	}
-
-	select {
-	case <-sub.Channel():
-		return id, nil
-	case <-time.After(utils.RecorderTimeout):
-		return "", errors.New("recording request failed")
-	}
+	return &emptypb.Empty{}, nil
 }
 
-func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResponse, error) {
+func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.RemoveOutputRequest) (*emptypb.Empty, error) {
+	err := recording.RPC(ctx, s.bus, req.RecordingId, &livekit.RecordingRequest{
+		Request: &livekit.RecordingRequest_RemoveOutput{
+			RemoveOutput: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*livekit.RecordingResult, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
-	if s.mb == nil {
+	if s.bus == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
-	if err := s.mb.Publish(ctx, utils.EndRecordingChannel(req.RecordingId), nil); err != nil {
+	err := recording.RPC(ctx, s.bus, req.RecordingId, &livekit.RecordingRequest{
+		Request: &livekit.RecordingRequest_End{
+			End: req,
+		},
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &livekit.RecordingResponse{RecordingId: req.RecordingId}, nil
+	return &livekit.RecordingResult{Id: req.RecordingId}, nil
 }
 
 func (s *RecordingService) resultsWorker() {
-	sub, err := s.mb.SubscribeQueue(context.Background(), utils.RecordingResultChannel)
+	sub, err := s.bus.SubscribeQueue(context.Background(), recording.ResultChannel)
 	if err != nil {
 		logger.Errorw("failed to subscribe to results channel", err)
 		return
@@ -141,9 +143,10 @@ func (s *RecordingService) notify(res *livekit.RecordingResult) {
 		logger.Errorw("recording failed", errors.New(res.Error), "id", res.Id)
 	} else {
 		logger.Infow("recording complete",
-			"id", res.Id,
-			"duration", fmt.Sprint(time.Duration(res.Duration*1e6)),
-			"location", res.Location,
+			"recordingId", res.Id,
+			"error", res.Error,
+			"duration", res.Duration,
+			"url", res.DownloadUrl,
 		)
 	}
 
