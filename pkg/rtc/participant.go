@@ -748,6 +748,9 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 		return nil
 	}
 	sink := p.params.Sink
+	if sink == nil {
+		return nil
+	}
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		logger.Warnw("could not send message to participant", err,

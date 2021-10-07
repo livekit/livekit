@@ -407,6 +407,9 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		r.lock.RLock()
 		requestChan := r.requestChannels[pKey]
 		r.lock.RUnlock()
+		if requestChan == nil {
+			return ErrChannelClosed
+		}
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
 		}
