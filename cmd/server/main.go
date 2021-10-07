@@ -91,7 +91,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:   "generate-keys",
-				Usage:  "generates a pair of API & secret keys",
+				Usage:  "generates an API key and secret pair",
 				Action: generateKeys,
 			},
 			{
