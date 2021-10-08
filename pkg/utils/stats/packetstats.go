@@ -15,31 +15,33 @@ var (
 	atomicPacketsOut uint64
 	atomicNackTotal  uint64
 
+	promPacketLabels = []string{"direction"}
+
 	promPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "packet",
 		Name:      "total",
-	}, promLabels)
+	}, promPacketLabels)
 	promPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "packet",
 		Name:      "bytes",
-	}, promLabels)
+	}, promPacketLabels)
 	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "nack",
 		Name:      "total",
-	}, promLabels)
+	}, promPacketLabels)
 	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "pli",
 		Name:      "total",
-	}, promLabels)
+	}, promPacketLabels)
 	promFirTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "fir",
 		Name:      "total",
-	}, promLabels)
+	}, promPacketLabels)
 )
 
 func initPacketStats() {
