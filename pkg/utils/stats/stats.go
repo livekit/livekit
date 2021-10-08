@@ -9,15 +9,25 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/transport/packetio"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const livekitNamespace = "livekit"
 
 var (
-	promLabels = []string{"direction"}
+	PromMessageCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: livekitNamespace,
+			Subsystem: "node",
+			Name:      "messages",
+		},
+		[]string{"type", "status"},
+	)
 )
 
 func init() {
+	prometheus.MustRegister(PromMessageCounter)
+
 	initPacketStats()
 	initRoomStatsReporter()
 }
