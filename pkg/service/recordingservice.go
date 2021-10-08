@@ -42,14 +42,12 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-
 	if s.bus == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
-	// reserve a recorder
-	recordingId := utils.NewGuid(utils.RecordingPrefix)
-	err := recording.ReserveRecorder(recordingId, s.bus)
+	// reserve a recorde
+	recordingId, err := recording.ReserveRecorder(s.bus)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +66,13 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 }
 
 func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutputRequest) (*emptypb.Empty, error) {
+	if err := EnsureRecordPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.bus == nil {
+		return nil, errors.New("recording not configured (redis required)")
+	}
+
 	err := recording.RPC(ctx, s.bus, req.RecordingId, &livekit.RecordingRequest{
 		Request: &livekit.RecordingRequest_AddOutput{
 			AddOutput: req,
@@ -80,6 +85,13 @@ func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutput
 }
 
 func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.RemoveOutputRequest) (*emptypb.Empty, error) {
+	if err := EnsureRecordPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.bus == nil {
+		return nil, errors.New("recording not configured (redis required)")
+	}
+
 	err := recording.RPC(ctx, s.bus, req.RecordingId, &livekit.RecordingRequest{
 		Request: &livekit.RecordingRequest_RemoveOutput{
 			RemoveOutput: req,
@@ -95,7 +107,6 @@ func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRec
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-
 	if s.bus == nil {
 		return nil, errors.New("recording not configured (redis required)")
 	}
