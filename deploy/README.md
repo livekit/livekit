@@ -1,5 +1,5 @@
 # LiveKit Server Deployment
 
  Deployment Guides:
-- [Simple Single Instance](https://docs.livekit.io/guides/deploy/instance)
-- [Kubernetes](https://docs.livekit.io/guides/deploy/kubernetes)
+- [Deploy to a VM](https://docs.livekit.io/deploy/vm)
+- [Deploy to Kubernetes](https://docs.livekit.io/deploy/kubernetes)
