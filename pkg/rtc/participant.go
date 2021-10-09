@@ -1117,8 +1117,12 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 
 	transceivers := p.publisher.pc.GetTransceivers()
 	for _, transceiver := range transceivers {
+		if transceiver.Kind() != webrtc.RTPCodecTypeAudio {
+			continue
+		}
+
 		receiver := transceiver.Receiver()
-		if receiver == nil || len(receiver.Tracks()) != 0 {
+		if receiver == nil || receiver.Track() != nil {
 			continue
 		}
 
