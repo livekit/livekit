@@ -1118,7 +1118,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	transceivers := p.publisher.pc.GetTransceivers()
 	for _, transceiver := range transceivers {
 		receiver := transceiver.Receiver()
-		if receiver == nil {
+		if receiver == nil || len(receiver.Tracks()) != 0 {
 			continue
 		}
 
