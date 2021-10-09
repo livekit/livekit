@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"strings"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -280,6 +281,8 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		return
 	}
 
+	p.configureReceiverDTX()
+
 	answer, err = p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
 		err = errors.Wrap(err, "could not create answer")
@@ -293,7 +296,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 	logger.Debugw("sending answer to client",
 		"participant", p.Identity(), "pID", p.ID(),
-		//"sdp", sdp.SDP,
+		//"answer sdp", answer.SDP,
 	)
 	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -334,6 +337,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		Width:  req.Width,
 		Height: req.Height,
 		Muted:  req.Muted,
+		DisableDtx: req.DisableDtx,
 	}
 	p.pendingTracks[req.Cid] = ti
 
@@ -1057,6 +1061,101 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 				logger.Errorw("could not write RTCP to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
 			}
+		}
+	}
+}
+
+func (p *ParticipantImpl) configureReceiverDTX() {
+	//
+	// DTX (Discontinuous Transmission) allows audio bandwidth saving
+	// by not sending packets during silence periods.
+	//
+	// Publisher side DTX can enabled by included `usedtx=1` in
+	// the `fmtp` line corresponding to audio codec (Opus) in SDP.
+	// By doing this in the SDP `answer`, it can be controlled from
+	// server side and avoid doing it in all the client SDKs.
+	//
+	// Ideally, a publisher should be able to specify per audio
+	// track if DTX should be enabled. But, translating the
+	// DTX preference of publisher to the correct transceiver
+	// is non-deterministic due to the lack of a synchronizing id
+	// like the track id. The codec preference to set DTX needs
+	// to be done
+	//   - after calling `SetRemoteDescription` which sets up
+	//     the transceivers, but there are no tracks in the
+	//     transceiver yet
+	//   - before calling `CreateAnswer`
+	// Due to the absensce of tracks when it is required to set DTX,
+	// it is not possible to cross reference against a pending track
+	// with the same track id.
+	//
+	// Due to the restriction above and given that in practice
+	// most of the time there is going to be only one audio track
+	// that is published, do the following
+	//    - if there is no pending audio track, no-op
+	//    - if there are no audio transceivers without tracks, no-op
+	//    - else, apply the DTX setting from pending audio track
+	//      to the audio transceiver without no tracks
+	//
+	// NOTE: The above logic will fail if there is an `offer` SDP with
+	// multiple audio tracks. At that point, there might be a need to
+	// rely on something like order of tracks. TODO
+	//
+	var pendingTrack *livekit.TrackInfo
+	p.lock.RLock()
+	for _, track := range p.pendingTracks {
+		if track.Type == livekit.TrackType_AUDIO {
+			pendingTrack = track
+			break
+		}
+	}
+	p.lock.RUnlock()
+
+	if pendingTrack == nil {
+		return
+	}
+
+	transceivers := p.publisher.pc.GetTransceivers()
+	for _, transceiver := range transceivers {
+		receiver := transceiver.Receiver()
+		if receiver == nil {
+			continue
+		}
+
+		codecs := []webrtc.RTPCodecParameters{}
+
+		receiverCodecs := receiver.GetParameters().Codecs
+		for _, receiverCodec := range receiverCodecs {
+			if receiverCodec.MimeType == "audio/opus" {
+				fmtpUseDTX := "usedtx=1"
+				// remove occurrence in the middle
+				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX + ";", "")
+				// remove occurrence at the end
+				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpUseDTX, "")
+				if !pendingTrack.DisableDtx {
+					sdpFmtpLine += ";" + fmtpUseDTX
+				}
+				receiverCodec.SDPFmtpLine = sdpFmtpLine
+			}
+			codecs = append(codecs, receiverCodec)
+		}
+
+		//
+		// As `SetCodecPreferences` on a transceiver replaces all codecs,
+		// cycle through sender codecs also and add them before calling
+		// `SetCodecPreferences`
+		//
+		sender := transceiver.Sender()
+		if sender != nil {
+			senderCodecs := sender.GetParameters().Codecs
+			for _, senderCodec := range senderCodecs {
+				codecs = append(codecs, senderCodec)
+			}
+		}
+
+		err := transceiver.SetCodecPreferences(codecs)
+		if err != nil {
+			logger.Debugw("SetCodecPreferences error: %+v\n", err)
 		}
 	}
 }
