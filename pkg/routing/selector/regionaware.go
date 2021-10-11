@@ -69,6 +69,7 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node, room *livekit.Ro
 	for _, node := range nodes {
 		if node.Region == nearestRegion {
 			nearestNodes = append(nearestNodes, node)
+			minDist = 0
 			continue
 		}
 		if dist, ok := s.regionDistances[node.Region]; ok {

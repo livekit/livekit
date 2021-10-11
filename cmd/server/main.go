@@ -50,6 +50,11 @@ func main() {
 				EnvVars: []string{"LIVEKIT_KEYS"},
 			},
 			&cli.StringFlag{
+				Name:    "region",
+				Usage:   "region of the current node. Used by regionaware node selector",
+				EnvVars: []string{"LIVEKIT_REGION"},
+			},
+			&cli.StringFlag{
 				Name:    "node-ip",
 				Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
 				EnvVars: []string{"NODE_IP"},

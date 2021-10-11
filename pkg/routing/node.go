@@ -28,6 +28,7 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 		Id:      fmt.Sprintf("%s%s", utils.NodePrefix, HashedID(hostname)[:8]),
 		Ip:      conf.RTC.NodeIP,
 		NumCpus: uint32(runtime.NumCPU()),
+		Region:  conf.Region,
 		State:   livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{
 			StartedAt: time.Now().Unix(),

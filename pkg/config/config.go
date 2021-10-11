@@ -216,6 +216,9 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
 	}
+	if c.IsSet("region") {
+		conf.Region = c.String("region")
+	}
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")
 	}
