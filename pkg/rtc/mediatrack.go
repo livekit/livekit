@@ -298,6 +298,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				onclose()
 			}
 		})
+		t.receiver.OnFractionLostFB(func(lost uint8) {
+			buff.SetLastFractionLostReport(lost)
+		})
 		t.params.Stats.AddPublishedTrack(t.kind.String())
 	}
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
