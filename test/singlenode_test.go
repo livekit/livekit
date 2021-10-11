@@ -28,11 +28,7 @@ func TestClientCouldConnect(t *testing.T) {
 
 	// ensure they both see each other
 	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
-		if len(c1.RemoteParticipants()) == 0 || len(c2.RemoteParticipants()) == 0 {
-			return false
-		}
-		//require.Equal()
-		return true
+		return len(c1.RemoteParticipants()) != 0 && len(c2.RemoteParticipants()) != 0
 	})
 }
 
@@ -103,7 +99,7 @@ func TestSinglePublisher(t *testing.T) {
 	// when c3 disconnects.. ensure subscriber is cleaned up correctly
 	c3.Stop()
 
-	success = testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+	testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
 		room := s.RoomManager().GetRoom(context.Background(), testRoom)
 		require.NotNil(t, room)
 
