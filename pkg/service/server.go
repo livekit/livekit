@@ -157,6 +157,9 @@ func (s *LivekitServer) Start() error {
 			"nodeIP", s.currentNode.Ip,
 			"version", version.Version,
 		}
+		if s.config.Region != "" {
+			values = append(values, "region", s.config.Region)
+		}
 		if s.config.RTC.TCPPort != 0 {
 			values = append(values, "rtc.portTCP", s.config.RTC.TCPPort)
 		}
