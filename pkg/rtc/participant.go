@@ -1135,7 +1135,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 
 		receiverCodecs := receiver.GetParameters().Codecs
 		for _, receiverCodec := range receiverCodecs {
-			if receiverCodec.MimeType == "audio/opus" {
+			if receiverCodec.MimeType == webrtc.MimeTypeOpus {
 				fmtpUseDTX := "usedtx=1"
 				// remove occurrence in the middle
 				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX + ";", "")
@@ -1162,7 +1162,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 
 		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
 		if err != nil {
-			logger.Debugw("SetCodecPreferences error: %+v\n", err)
+			logger.Warnw("SetCodecPreferences error: %+v\n", err)
 		}
 	}
 }
