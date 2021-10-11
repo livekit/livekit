@@ -97,6 +97,24 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.Equal(t, expectedNode, node)
 	})
 
+	t.Run("handles multiple nodes in same region", func(t *testing.T) {
+		expectedNode := newTestNodeInRegion(regionWest, true)
+		nodes := []*livekit.Node{
+			newTestNodeInRegion(regionSeattle, false),
+			newTestNodeInRegion(regionEast, true),
+			newTestNodeInRegion(regionEast, true),
+			expectedNode,
+			expectedNode,
+		}
+		s, err := selector.NewRegionAwareSelector(regionSeattle, rc)
+		require.NoError(t, err)
+		s.SysloadLimit = loadLimit
+
+		node, err := s.SelectNode(nodes, nil)
+		require.NoError(t, err)
+		require.Equal(t, expectedNode, node)
+	})
+
 	t.Run("functions when current region is full", func(t *testing.T) {
 		nodes := []*livekit.Node{
 			newTestNodeInRegion(regionWest, true),
