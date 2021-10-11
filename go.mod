@@ -40,10 +40,11 @@ require (
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.19.1
-	golang.org/x/mod v0.5.0 // indirect
-	golang.org/x/sys v0.0.0-20210816183151-1e6c022a8912 // indirect
+	golang.org/x/mod v0.5.1 // indirect
+	golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac // indirect
+	golang.org/x/tools v0.1.7 // indirect
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
-replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.11
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.12
