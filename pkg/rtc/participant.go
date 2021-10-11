@@ -1101,19 +1101,24 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	// multiple audio tracks. At that point, there might be a need to
 	// rely on something like order of tracks. TODO
 	//
-	var pendingTrack *livekit.TrackInfo
+	enableDTX := false
+
 	p.lock.RLock()
+	var pendingTrack *livekit.TrackInfo
 	for _, track := range p.pendingTracks {
 		if track.Type == livekit.TrackType_AUDIO {
 			pendingTrack = track
 			break
 		}
 	}
-	p.lock.RUnlock()
 
 	if pendingTrack == nil {
+		p.lock.RUnlock()
 		return
 	}
+
+	enableDTX = !pendingTrack.DisableDtx
+	p.lock.RUnlock()
 
 	transceivers := p.publisher.pc.GetTransceivers()
 	for _, transceiver := range transceivers {
@@ -1126,7 +1131,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			continue
 		}
 
-		codecs := []webrtc.RTPCodecParameters{}
+		modifiedReceiverCodecs := []webrtc.RTPCodecParameters{}
 
 		receiverCodecs := receiver.GetParameters().Codecs
 		for _, receiverCodec := range receiverCodecs {
@@ -1136,12 +1141,12 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX + ";", "")
 				// remove occurrence at the end
 				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpUseDTX, "")
-				if !pendingTrack.DisableDtx {
+				if enableDTX {
 					sdpFmtpLine += ";" + fmtpUseDTX
 				}
 				receiverCodec.SDPFmtpLine = sdpFmtpLine
 			}
-			codecs = append(codecs, receiverCodec)
+			modifiedReceiverCodecs = append(modifiedReceiverCodecs, receiverCodec)
 		}
 
 		//
@@ -1149,15 +1154,13 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 		// cycle through sender codecs also and add them before calling
 		// `SetCodecPreferences`
 		//
+		senderCodecs := []webrtc.RTPCodecParameters{}
 		sender := transceiver.Sender()
 		if sender != nil {
-			senderCodecs := sender.GetParameters().Codecs
-			for _, senderCodec := range senderCodecs {
-				codecs = append(codecs, senderCodec)
-			}
+			senderCodecs = sender.GetParameters().Codecs
 		}
 
-		err := transceiver.SetCodecPreferences(codecs)
+		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
 		if err != nil {
 			logger.Debugw("SetCodecPreferences error: %+v\n", err)
 		}
