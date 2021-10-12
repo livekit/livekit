@@ -277,16 +277,19 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return
 	}
 
 	answer, err = p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		err = errors.Wrap(err, "could not create answer")
 		return
 	}
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		err = errors.Wrap(err, "could not set local description")
 		return
 	}
@@ -301,12 +304,15 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		},
 	})
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
+	stats.PromServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+
 	return
 }
 
@@ -775,11 +781,16 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		//"sdp", offer.SDP,
 	)
 
-	_ = p.writeMessage(&livekit.SignalResponse{
+	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
+	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
+	} else {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+	}
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -948,6 +959,7 @@ func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnection
 	// logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity, "pID", p.ID())
 	if state == webrtc.ICEConnectionStateConnected {
+		stats.PromServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
