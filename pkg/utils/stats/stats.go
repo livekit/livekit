@@ -36,6 +36,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(PromMessageCounter)
+	prometheus.MustRegister(PromServiceOperationCounter)
 
 	initPacketStats()
 	initRoomStatsReporter()
