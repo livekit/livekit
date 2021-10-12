@@ -166,14 +166,30 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 	subTrack := NewSubscribedTrack(downTrack)
 
-	transceiver, err := sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
-	})
+	//
+	// AddTrack will create a new transceiver or re-use an unused one
+	// if the attributes match. This prevents SDP from bloating
+	// because of dormant transceivers buidling up.
+	//
+	sender, err := sub.SubscriberPC().AddTrack(downTrack)
 	if err != nil {
 		return err
 	}
 
-	downTrack.SetTransceiver(transceiver)
+	// as there is no way to get transceiver from sender, search
+	var matchedTransceiver *webrtc.RTPTransceiver
+	for _, transceiver := range sub.SubscriberPC().GetTransceivers() {
+		if transceiver.Sender() == sender {
+			matchedTransceiver = transceiver
+			break
+		}
+	}
+	if matchedTransceiver == nil {
+		// cannot add, no transceiver
+		return errors.New("cannot subscribe without a transceiver in place")
+	}
+
+	downTrack.SetTransceiver(matchedTransceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
 		go t.sendDownTrackBindingReports(sub)
@@ -194,10 +210,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 			// if the source has been terminated, we'll need to terminate all of the subscribedtracks
 			// however, if the dest sub has disconnected, then we can skip
-			sender := transceiver.Sender()
-			if sender == nil {
-				return
-			}
 			logger.Debugw("removing peerconnection track",
 				"track", t.params.TrackID,
 				"pIDs", []string{t.params.ParticipantID, sub.ID()},
