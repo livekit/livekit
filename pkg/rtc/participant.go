@@ -277,18 +277,19 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer_response", "error", "remote_description").Add(1)
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return
 	}
 
 	answer, err = p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		err = errors.Wrap(err, "could not create answer")
 		return
 	}
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer_response", "error", "local_description").Add(1)
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		err = errors.Wrap(err, "could not set local description")
 		return
 	}
@@ -303,14 +304,14 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		},
 	})
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer_response", "error", "write_message").Add(1)
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
-	stats.PromServiceOperationCounter.WithLabelValues("offer_response", "success", "").Add(1)
+	stats.PromServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return
 }
