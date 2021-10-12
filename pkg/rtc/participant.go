@@ -948,6 +948,7 @@ func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnection
 	// logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity, "pID", p.ID())
 	if state == webrtc.ICEConnectionStateConnected {
+		stats.PromServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect

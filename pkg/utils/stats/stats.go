@@ -23,6 +23,15 @@ var (
 		},
 		[]string{"type", "status"},
 	)
+
+	PromServiceOperationCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: livekitNamespace,
+			Subsystem: "node",
+			Name:      "service_operation",
+		},
+		[]string{"type", "status", "error_type"},
+	)
 )
 
 func init() {
