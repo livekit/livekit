@@ -1162,7 +1162,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 
 		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
 		if err != nil {
-			logger.Warnw("SetCodecPreferences error: %+v\n", err)
+			logger.Warnw("failed to SetCodecPreferences", err)
 		}
 	}
 }
