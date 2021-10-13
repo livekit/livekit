@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"strings"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -277,23 +278,28 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return
 	}
 
+	p.configureReceiverDTX()
+
 	answer, err = p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		err = errors.Wrap(err, "could not create answer")
 		return
 	}
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		err = errors.Wrap(err, "could not set local description")
 		return
 	}
 
 	logger.Debugw("sending answer to client",
 		"participant", p.Identity(), "pID", p.ID(),
-		//"sdp", sdp.SDP,
+		//"answer sdp", answer.SDP,
 	)
 	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -301,12 +307,15 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		},
 	})
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
+	stats.PromServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+
 	return
 }
 
@@ -334,6 +343,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		Width:  req.Width,
 		Height: req.Height,
 		Muted:  req.Muted,
+		DisableDtx: req.DisableDtx,
 	}
 	p.pendingTracks[req.Cid] = ti
 
@@ -775,11 +785,16 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		//"sdp", offer.SDP,
 	)
 
-	_ = p.writeMessage(&livekit.SignalResponse{
+	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
+	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
+	} else {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+	}
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -948,6 +963,7 @@ func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnection
 	// logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity, "pID", p.ID())
 	if state == webrtc.ICEConnectionStateConnected {
+		stats.PromServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
@@ -1057,6 +1073,108 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 				logger.Errorw("could not write RTCP to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
 			}
+		}
+	}
+}
+
+func (p *ParticipantImpl) configureReceiverDTX() {
+	//
+	// DTX (Discontinuous Transmission) allows audio bandwidth saving
+	// by not sending packets during silence periods.
+	//
+	// Publisher side DTX can enabled by included `usedtx=1` in
+	// the `fmtp` line corresponding to audio codec (Opus) in SDP.
+	// By doing this in the SDP `answer`, it can be controlled from
+	// server side and avoid doing it in all the client SDKs.
+	//
+	// Ideally, a publisher should be able to specify per audio
+	// track if DTX should be enabled. But, translating the
+	// DTX preference of publisher to the correct transceiver
+	// is non-deterministic due to the lack of a synchronizing id
+	// like the track id. The codec preference to set DTX needs
+	// to be done
+	//   - after calling `SetRemoteDescription` which sets up
+	//     the transceivers, but there are no tracks in the
+	//     transceiver yet
+	//   - before calling `CreateAnswer`
+	// Due to the absensce of tracks when it is required to set DTX,
+	// it is not possible to cross reference against a pending track
+	// with the same track id.
+	//
+	// Due to the restriction above and given that in practice
+	// most of the time there is going to be only one audio track
+	// that is published, do the following
+	//    - if there is no pending audio track, no-op
+	//    - if there are no audio transceivers without tracks, no-op
+	//    - else, apply the DTX setting from pending audio track
+	//      to the audio transceiver without no tracks
+	//
+	// NOTE: The above logic will fail if there is an `offer` SDP with
+	// multiple audio tracks. At that point, there might be a need to
+	// rely on something like order of tracks. TODO
+	//
+	enableDTX := false
+
+	p.lock.RLock()
+	var pendingTrack *livekit.TrackInfo
+	for _, track := range p.pendingTracks {
+		if track.Type == livekit.TrackType_AUDIO {
+			pendingTrack = track
+			break
+		}
+	}
+
+	if pendingTrack == nil {
+		p.lock.RUnlock()
+		return
+	}
+
+	enableDTX = !pendingTrack.DisableDtx
+	p.lock.RUnlock()
+
+	transceivers := p.publisher.pc.GetTransceivers()
+	for _, transceiver := range transceivers {
+		if transceiver.Kind() != webrtc.RTPCodecTypeAudio {
+			continue
+		}
+
+		receiver := transceiver.Receiver()
+		if receiver == nil || receiver.Track() != nil {
+			continue
+		}
+
+		modifiedReceiverCodecs := []webrtc.RTPCodecParameters{}
+
+		receiverCodecs := receiver.GetParameters().Codecs
+		for _, receiverCodec := range receiverCodecs {
+			if receiverCodec.MimeType == webrtc.MimeTypeOpus {
+				fmtpUseDTX := "usedtx=1"
+				// remove occurrence in the middle
+				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX + ";", "")
+				// remove occurrence at the end
+				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpUseDTX, "")
+				if enableDTX {
+					sdpFmtpLine += ";" + fmtpUseDTX
+				}
+				receiverCodec.SDPFmtpLine = sdpFmtpLine
+			}
+			modifiedReceiverCodecs = append(modifiedReceiverCodecs, receiverCodec)
+		}
+
+		//
+		// As `SetCodecPreferences` on a transceiver replaces all codecs,
+		// cycle through sender codecs also and add them before calling
+		// `SetCodecPreferences`
+		//
+		senderCodecs := []webrtc.RTPCodecParameters{}
+		sender := transceiver.Sender()
+		if sender != nil {
+			senderCodecs = sender.GetParameters().Codecs
+		}
+
+		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
+		if err != nil {
+			logger.Warnw("failed to SetCodecPreferences", err)
 		}
 	}
 }

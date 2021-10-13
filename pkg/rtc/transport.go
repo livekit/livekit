@@ -204,6 +204,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		if iceRestart && currentSD != nil {
 			logger.Debugw("recovering from client negotiation state")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
+				stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 				return err
 			}
 		} else {
@@ -218,12 +219,14 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
 		logger.Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		logger.Errorw("could not set local description", err)
 		return err
 	}
