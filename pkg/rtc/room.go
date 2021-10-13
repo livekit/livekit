@@ -141,6 +141,7 @@ func (r *Room) LastLeftAt() int64 {
 
 func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) error {
 	if r.isClosed.Get() {
+		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
 
@@ -148,10 +149,12 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	defer r.lock.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
 		return ErrAlreadyJoined
 	}
 
 	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
+		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}
 
@@ -221,6 +224,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	})
 
 	if err := participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers); err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
 
@@ -228,6 +232,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		// initiates sub connection as primary
 		participant.Negotiate()
 	}
+
+	stats.PromServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 
 	return nil
 }

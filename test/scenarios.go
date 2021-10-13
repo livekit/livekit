@@ -154,7 +154,7 @@ func scenarioWSReconnect(t *testing.T) {
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
 	var writers []*testclient.TrackWriter
-	for i, _ := range clients {
+	for i := range clients {
 		c := clients[i]
 		tw, err := c.AddStaticTrack("audio/opus", "audio", "webcam")
 		require.NoError(t, err)

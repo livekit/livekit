@@ -152,7 +152,7 @@ func listNodes(c *cli.Context) error {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
-		"ID", "IP Address",
+		"ID", "IP Address", "Region",
 		"CPUs", "Load",
 		"Clients", "Rooms", "Tracks In/Out",
 		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
@@ -180,7 +180,7 @@ func listNodes(c *cli.Context) error {
 		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
 
 		table.Append([]string{
-			node.Id, node.Ip,
+			node.Id, node.Ip, node.Region,
 			cpus, loadAvg,
 			clients, rooms, tracks,
 			bytes, packets, nack, bps, packetsPerSec, nackPerSec,

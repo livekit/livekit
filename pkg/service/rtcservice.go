@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
 type RTCService struct {
@@ -92,6 +93,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject non websocket requests
 	if !websocket.IsWebSocketUpgrade(r) {
+		stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "error", "reject").Add(1)
 		w.WriteHeader(404)
 		return
 	}
@@ -105,6 +107,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// create room if it doesn't exist, also assigns an RTC node for the room
 	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -112,6 +115,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// this needs to be started first *before* using router functions on this node
 	connId, reqSink, resSource, err := s.router.StartParticipantSignal(r.Context(), roomName, pi)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "error", "start_signal").Add(1)
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
@@ -127,6 +131,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
 		logger.Warnw("could not upgrade to WS", err)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -136,6 +141,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sigConn.useJSON = false
 	}
 
+	stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
 	logger.Infow("new client WS connected",
 		"connID", connId,
 		"roomID", rm.Sid,

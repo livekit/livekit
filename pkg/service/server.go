@@ -170,6 +170,9 @@ func (s *LivekitServer) Start() error {
 		if s.config.PrometheusPort != 0 {
 			values = append(values, "portPrometheus", s.config.PrometheusPort)
 		}
+		if s.config.Region != "" {
+			values = append(values, "region", s.config.Region)
+		}
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)

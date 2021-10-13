@@ -64,7 +64,7 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node, room *livekit.Ro
 
 	// find nodes nearest to current region
 	var nearestNodes []*livekit.Node
-	nearestRegion := s.CurrentRegion
+	nearestRegion := ""
 	minDist := math.MaxFloat64
 	for _, node := range nodes {
 		if node.Region == nearestRegion {

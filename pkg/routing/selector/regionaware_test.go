@@ -64,12 +64,47 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.Equal(t, expectedNode, node)
 	})
 
+	t.Run("picks available nodes in same region when current node is first in the list", func(t *testing.T) {
+		expectedNode := newTestNodeInRegion(regionEast, true)
+		nodes := []*livekit.Node{
+			expectedNode,
+			newTestNodeInRegion(regionSeattle, true),
+			newTestNodeInRegion(regionWest, true),
+			newTestNodeInRegion(regionEast, false),
+		}
+		s, err := selector.NewRegionAwareSelector(regionEast, rc)
+		require.NoError(t, err)
+		s.SysloadLimit = loadLimit
+
+		node, err := s.SelectNode(nodes, nil)
+		require.NoError(t, err)
+		require.Equal(t, expectedNode, node)
+	})
+
 	t.Run("picks closest node in a diff region", func(t *testing.T) {
 		expectedNode := newTestNodeInRegion(regionWest, true)
 		nodes := []*livekit.Node{
 			newTestNodeInRegion(regionSeattle, false),
 			expectedNode,
 			newTestNodeInRegion(regionEast, true),
+		}
+		s, err := selector.NewRegionAwareSelector(regionSeattle, rc)
+		require.NoError(t, err)
+		s.SysloadLimit = loadLimit
+
+		node, err := s.SelectNode(nodes, nil)
+		require.NoError(t, err)
+		require.Equal(t, expectedNode, node)
+	})
+
+	t.Run("handles multiple nodes in same region", func(t *testing.T) {
+		expectedNode := newTestNodeInRegion(regionWest, true)
+		nodes := []*livekit.Node{
+			newTestNodeInRegion(regionSeattle, false),
+			newTestNodeInRegion(regionEast, true),
+			newTestNodeInRegion(regionEast, true),
+			expectedNode,
+			expectedNode,
 		}
 		s, err := selector.NewRegionAwareSelector(regionSeattle, rc)
 		require.NoError(t, err)
