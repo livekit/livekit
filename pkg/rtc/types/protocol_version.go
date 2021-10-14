@@ -25,3 +25,8 @@ func (v ProtocolVersion) SubscriberAsPrimary() bool {
 func (v ProtocolVersion) SupportsSpeakerChanged() bool {
 	return v > 2
 }
+
+// SupportsTransceiverReuse - if transceiver reuse is supported, optimizes SDP size
+func (v ProtocolVersion) SupportsTransceiverReuse() bool {
+	return v > 3
+}
