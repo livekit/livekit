@@ -2,8 +2,8 @@ package rtc
 
 import (
 	"fmt"
-	"strings"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -337,13 +337,14 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	}
 
 	ti := &livekit.TrackInfo{
-		Type:   req.Type,
-		Name:   req.Name,
-		Sid:    utils.NewGuid(utils.TrackPrefix),
-		Width:  req.Width,
-		Height: req.Height,
-		Muted:  req.Muted,
+		Type:       req.Type,
+		Name:       req.Name,
+		Sid:        utils.NewGuid(utils.TrackPrefix),
+		Width:      req.Width,
+		Height:     req.Height,
+		Muted:      req.Muted,
 		DisableDtx: req.DisableDtx,
+		Source:     req.Source,
 	}
 	p.pendingTracks[req.Cid] = ti
 
@@ -1150,7 +1151,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			if receiverCodec.MimeType == webrtc.MimeTypeOpus {
 				fmtpUseDTX := "usedtx=1"
 				// remove occurrence in the middle
-				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX + ";", "")
+				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX+";", "")
 				// remove occurrence at the end
 				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpUseDTX, "")
 				if enableDTX {
