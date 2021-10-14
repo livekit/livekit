@@ -12,7 +12,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 const (
@@ -22,7 +21,7 @@ const (
 	livekitRealm    = "livekit"
 )
 
-func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalNode) (*turn.Server, error) {
+func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
 		return nil, nil
@@ -34,11 +33,11 @@ func NewTurnServer(conf *config.Config, roomStore RoomStore, node routing.LocalN
 
 	serverConfig := turn.ServerConfig{
 		Realm:         livekitRealm,
-		AuthHandler:   newTurnAuthHandler(roomStore),
+		AuthHandler:   authHandler,
 		LoggerFactory: serverlogger.LoggerFactory(),
 	}
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
-		RelayAddress: net.ParseIP(node.Ip),
+		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 		Address:      "0.0.0.0",
 		MinPort:      turnMinPort,
 		MaxPort:      turnMaxPort,
