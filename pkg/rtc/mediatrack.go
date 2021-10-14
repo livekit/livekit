@@ -166,11 +166,43 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 	subTrack := NewSubscribedTrack(downTrack)
 
-	transceiver, err := sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
-	})
-	if err != nil {
-		return err
+	var transceiver *webrtc.RTPTransceiver
+	var sender *webrtc.RTPSender
+	if sub.ProtocolVersion().SupportsTransceiverReuse() {
+		//
+		// AddTrack will create a new transceiver or re-use an unused one
+		// if the attributes match. This prevents SDP from bloating
+		// because of dormant transceivers buidling up.
+		//
+		sender, err = sub.SubscriberPC().AddTrack(downTrack)
+		if err != nil {
+			return err
+		}
+
+		// as there is no way to get transceiver from sender, search
+		for _, tr := range sub.SubscriberPC().GetTransceivers() {
+			if tr.Sender() == sender {
+				transceiver = tr
+				break
+			}
+		}
+		if transceiver == nil {
+			// cannot add, no transceiver
+			return errors.New("cannot subscribe without a transceiver in place")
+		}
+	} else {
+		transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendonly,
+		})
+		if err != nil {
+			return err
+		}
+
+		sender = transceiver.Sender()
+		if sender == nil {
+			// cannot add, no sender
+			return errors.New("cannot subscribe without a sender in place")
+		}
 	}
 
 	downTrack.SetTransceiver(transceiver)
@@ -194,7 +226,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 			// if the source has been terminated, we'll need to terminate all of the subscribedtracks
 			// however, if the dest sub has disconnected, then we can skip
-			sender := transceiver.Sender()
 			if sender == nil {
 				return
 			}
