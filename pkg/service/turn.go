@@ -18,7 +18,7 @@ const (
 	allocateRetries = 50
 	turnMinPort     = 1024
 	turnMaxPort     = 30000
-	livekitRealm    = "livekit"
+	LivekitRealm    = "livekit"
 )
 
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
@@ -32,7 +32,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	}
 
 	serverConfig := turn.ServerConfig{
-		Realm:         livekitRealm,
+		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
 		LoggerFactory: serverlogger.LoggerFactory(),
 	}
@@ -102,6 +102,6 @@ func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
 			return nil, false
 		}
 
-		return turn.GenerateAuthKey(username, livekitRealm, rm.TurnPassword), true
+		return turn.GenerateAuthKey(username, LivekitRealm, rm.TurnPassword), true
 	}
 }
