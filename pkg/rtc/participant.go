@@ -1144,7 +1144,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			continue
 		}
 
-		modifiedReceiverCodecs := []webrtc.RTPCodecParameters{}
+		var modifiedReceiverCodecs []webrtc.RTPCodecParameters
 
 		receiverCodecs := receiver.GetParameters().Codecs
 		for _, receiverCodec := range receiverCodecs {
@@ -1167,7 +1167,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 		// cycle through sender codecs also and add them before calling
 		// `SetCodecPreferences`
 		//
-		senderCodecs := []webrtc.RTPCodecParameters{}
+		var senderCodecs []webrtc.RTPCodecParameters
 		sender := transceiver.Sender()
 		if sender != nil {
 			senderCodecs = sender.GetParameters().Codecs
