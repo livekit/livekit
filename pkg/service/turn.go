@@ -50,7 +50,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			return nil, errors.New("TURN domain required")
 		}
 
-		if IsValidDomain(turnConf.Domain) == false {
+		if !IsValidDomain(turnConf.Domain) {
 			return nil, errors.New("TURN domain is not correct")
 		}
 
