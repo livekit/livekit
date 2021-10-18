@@ -5,12 +5,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 var DefaultStunServers = []string{
@@ -197,6 +198,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			return nil, err
 		}
 	}
+
 	return conf, nil
 }
 

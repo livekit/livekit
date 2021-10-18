@@ -43,7 +43,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	server, err := NewTurnServer(conf, roomStore, currentNode)
+	authHandler := newTurnAuthHandler(roomStore)
+	server, err := NewTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
