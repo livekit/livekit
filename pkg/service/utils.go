@@ -36,7 +36,6 @@ var ServiceSet = wire.NewSet(
 	NewLivekitServer,
 	NewLocalRoomManager,
 	newTurnAuthHandler,
-	newTurnAuthHandler,
 	NewTurnServer,
 	config.GetAudioConfig,
 	wire.Bind(new(RoomManager), new(*LocalRoomManager)),
