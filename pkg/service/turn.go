@@ -11,14 +11,15 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	logging "github.com/livekit/livekit-server/pkg/logger"
 )
 
 const (
+	LivekitRealm = "livekit"
+
 	allocateRetries = 50
 	turnMinPort     = 1024
 	turnMaxPort     = 30000
-	LivekitRealm    = "livekit"
 )
 
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
@@ -34,7 +35,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
-		LoggerFactory: serverlogger.LoggerFactory(),
+		LoggerFactory: logging.LoggerFactory(),
 	}
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),

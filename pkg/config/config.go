@@ -2,16 +2,16 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 var DefaultStunServers = []string{
@@ -101,8 +101,6 @@ type TURNConfig struct {
 	Domain   string `yaml:"domain"`
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
-	Cert     string `yaml:"cert"`
-	Key      string `yaml:"key"`
 	TLSPort  int    `yaml:"tls_port"`
 	UDPPort  int    `yaml:"udp_port"`
 }
@@ -201,13 +199,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		}
 	}
 
-	if conf.TURN.Cert != "" && conf.TURN.CertFile != "" {
-		writeToFile(conf.TURN.CertFile, conf.TURN.Cert, false)
-	}
-	if conf.TURN.Key != "" && conf.TURN.KeyFile != "" {
-		writeToFile(conf.TURN.KeyFile, conf.TURN.Key, false)
-	}
-
 	return conf, nil
 }
 
@@ -267,14 +258,4 @@ func (conf *Config) unmarshalKeys(keys string) error {
 
 func GetAudioConfig(conf *Config) AudioConfig {
 	return conf.Audio
-}
-
-func writeToFile(path, content string, overwrite bool) {
-	if !overwrite {
-		// check if file exists
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-	}
-	ioutil.WriteFile(path, []byte(content), 0600)
 }
