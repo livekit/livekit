@@ -9,7 +9,7 @@ import (
 type RandomSelector struct {
 }
 
-func (s *RandomSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error) {
+func (s *RandomSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
 	nodes = GetAvailableNodes(nodes)
 	if len(nodes) == 0 {
 		return nil, ErrNoAvailableNodes

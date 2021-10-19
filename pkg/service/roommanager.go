@@ -27,7 +27,6 @@ type LocalRoomManager struct {
 	RoomStore
 
 	lock        sync.RWMutex
-	selector    routing.NodeSelector
 	router      routing.Router
 	currentNode routing.LocalNode
 	notifier    webhook.Notifier
@@ -37,20 +36,20 @@ type LocalRoomManager struct {
 	rooms       map[string]*rtc.Room
 }
 
-func NewLocalRoomManager(rp RoomStore, router routing.Router, currentNode routing.LocalNode, selector routing.NodeSelector,
-	notifier webhook.Notifier, conf *config.Config) (*LocalRoomManager, error) {
+func NewLocalRoomManager(conf *config.Config, rs RoomStore, router routing.Router, currentNode routing.LocalNode,
+	notifier webhook.Notifier) (*LocalRoomManager, error) {
+
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
 		return nil, err
 	}
 
 	r := &LocalRoomManager{
-		RoomStore:   rp,
+		RoomStore:   rs,
 		lock:        sync.RWMutex{},
 		rtcConfig:   rtcConf,
 		config:      conf,
 		router:      router,
-		selector:    selector,
 		notifier:    notifier,
 		currentNode: currentNode,
 		webhookPool: workerpool.New(1),

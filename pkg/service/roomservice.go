@@ -14,7 +14,6 @@ import (
 // A rooms service that supports a single node
 type RoomService struct {
 	router        routing.Router
-	selector      routing.NodeSelector
 	roomAllocator *RoomAllocator
 	roomStore     RoomStore
 }

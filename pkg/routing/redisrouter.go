@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 
 	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
@@ -26,6 +27,8 @@ const (
 // Because
 type RedisRouter struct {
 	LocalRouter
+
+	selector  selector.NodeSelector
 	rc        *redis.Client
 	ctx       context.Context
 	isStarted utils.AtomicFlag
@@ -34,9 +37,10 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
+func NewRedisRouter(currentNode LocalNode, ns selector.NodeSelector, rc *redis.Client) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: *NewLocalRouter(currentNode),
+		selector:    ns,
 		rc:          rc,
 	}
 	rr.ctx, rr.cancel = context.WithCancel(context.Background())
@@ -85,8 +89,30 @@ func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*liv
 	return r.GetNode(nodeId)
 }
 
-func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error {
-	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
+func (r *RedisRouter) SelectNodeForRoom(ctx context.Context, room *livekit.Room) error {
+	existing, err := r.GetNodeForRoom(ctx, room.Name)
+	if err != ErrNotFound && err != nil {
+		return err
+	}
+
+	// if already assigned and still available, keep it on that node
+	if err == nil && selector.IsAvailable(existing) {
+		return nil
+	}
+
+	// select a new node
+	nodes, err := r.ListNodes()
+	if err != nil {
+		return err
+	}
+
+	node, err := r.selector.SelectNode(nodes)
+	if err != nil {
+		return err
+	}
+
+	logger.Debugw("selected node for room", "room", room.Name, "roomID", room.Sid, "nodeID", node.Id)
+	return r.rc.HSet(r.ctx, NodeRoomKey, room.Name, node.Id).Err()
 }
 
 func (r *RedisRouter) ClearRoomState(ctx context.Context, roomName string) error {
@@ -259,7 +285,7 @@ func (r *RedisRouter) Start() error {
 	}
 }
 
-func (r *RedisRouter) PreStop() {
+func (r *RedisRouter) Drain() {
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
 	r.RegisterNode()
 }

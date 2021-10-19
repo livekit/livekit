@@ -13,7 +13,6 @@ import (
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 // encapsulates CRUD operations for room settings
-// look up participant
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
 	StoreRoom(ctx context.Context, room *livekit.Room) error

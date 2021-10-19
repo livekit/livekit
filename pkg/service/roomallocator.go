@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 
@@ -16,15 +14,13 @@ import (
 type RoomAllocator struct {
 	config    *config.Config
 	router    routing.Router
-	selector  routing.NodeSelector
 	roomStore RoomStore
 }
 
-func NewRoomAllocator(conf *config.Config, router routing.Router, selector routing.NodeSelector, rs RoomStore) *RoomAllocator {
+func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) *RoomAllocator {
 	return &RoomAllocator{
 		config:    conf,
 		router:    router,
-		selector:  selector,
 		roomStore: rs,
 	}
 }
@@ -64,35 +60,8 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 		return nil, err
 	}
 
-	// Is that node still available?
-	node, err := r.router.GetNodeForRoom(ctx, rm.Name)
-	if err != routing.ErrNotFound && err != nil {
-		return nil, err
-	}
-
-	// keep it on that node
-	if err == nil && selector.IsAvailable(node) {
-		return rm, nil
-	}
-
-	// select a new node
-	nodeId := req.NodeId
-	if nodeId == "" {
-		// select a node for room
-		nodes, err := r.router.ListNodes()
-		if err != nil {
-			return nil, err
-		}
-
-		node, err := r.selector.SelectNode(nodes, rm)
-		if err != nil {
-			return nil, err
-		}
-		nodeId = node.Id
-	}
-
-	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeId)
-	if err := r.router.SetNodeForRoom(ctx, req.Name, nodeId); err != nil {
+	err = r.router.SelectNodeForRoom(ctx, rm)
+	if err != nil {
 		return nil, err
 	}
 

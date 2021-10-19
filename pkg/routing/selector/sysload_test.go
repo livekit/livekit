@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 var (
@@ -33,19 +34,19 @@ func TestSystemLoadSelector_SelectNode(t *testing.T) {
 	selector := selector.SystemLoadSelector{SysloadLimit: 1.0}
 
 	nodes := []*livekit.Node{}
-	_, err := selector.SelectNode(nodes, nil)
+	_, err := selector.SelectNode(nodes)
 	require.Error(t, err, "should error no available nodes")
 
 	// Select a node with high load when no nodes with low load are available
 	nodes = []*livekit.Node{nodeLoadHigh}
-	if _, err := selector.SelectNode(nodes, nil); err != nil {
+	if _, err := selector.SelectNode(nodes); err != nil {
 		t.Error(err)
 	}
 
 	// Select a node with low load when available
 	nodes = []*livekit.Node{nodeLoadLow, nodeLoadHigh}
 	for i := 0; i < 5; i++ {
-		node, err := selector.SelectNode(nodes, nil)
+		node, err := selector.SelectNode(nodes)
 		if err != nil {
 			t.Error(err)
 		}

@@ -10,8 +10,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
-
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 var DefaultStunServers = []string{
@@ -112,9 +110,17 @@ type WebHookConfig struct {
 }
 
 type NodeSelectorConfig struct {
-	Kind         string                  `yaml:"kind"`
-	SysloadLimit float32                 `yaml:"sysload_limit"`
-	Regions      []selector.RegionConfig `yaml:"regions"`
+	Kind         string         `yaml:"kind"`
+	SysloadLimit float32        `yaml:"sysload_limit"`
+	Regions      []RegionConfig `yaml:"regions"`
+}
+
+// RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
+// regions that are closer
+type RegionConfig struct {
+	Name string  `yaml:"name"`
+	Lat  float64 `yaml:"lat"`
+	Lon  float64 `yaml:"lon"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -254,8 +260,4 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
-}
-
-func GetAudioConfig(conf *Config) AudioConfig {
-	return conf.Audio
 }
