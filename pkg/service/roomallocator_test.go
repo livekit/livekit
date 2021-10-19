@@ -36,6 +36,7 @@ func newTestRoomAllocator(t *testing.T) (*service.RoomAllocator, *config.Config)
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	ra := service.NewRoomAllocator(conf, router, store)
+	ra, err := service.NewRoomAllocator(conf, router, store)
+	require.NoError(t, err)
 	return ra, conf
 }
