@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
-
 	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
