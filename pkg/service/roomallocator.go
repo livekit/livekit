@@ -81,19 +81,23 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 	}
 
 	// select a new node
-	nodes, err := r.router.ListNodes()
-	if err != nil {
-		return nil, err
+	nodeId := req.NodeId
+	if nodeId == "" {
+		nodes, err := r.router.ListNodes()
+		if err != nil {
+			return nil, err
+		}
+
+		node, err := r.selector.SelectNode(nodes)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeId = node.Id
 	}
 
-	node, err := r.selector.SelectNode(nodes)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", node.Id)
-
-	err = r.router.SetNodeForRoom(ctx, rm.Name, node.Id)
+	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeId)
+	err = r.router.SetNodeForRoom(ctx, rm.Name, nodeId)
 	if err != nil {
 		return nil, err
 	}
