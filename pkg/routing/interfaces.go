@@ -9,7 +9,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -53,7 +52,7 @@ type Router interface {
 	ListNodes() ([]*livekit.Node, error)
 
 	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
-	SelectNodeForRoom(ctx context.Context, room *livekit.Room) error
+	SetNodeForRoom(ctx context.Context, roomName, nodeId string) error
 	ClearRoomState(ctx context.Context, roomName string) error
 
 	// StartParticipantSignal participant signal connection is ready to start
@@ -73,16 +72,12 @@ type Router interface {
 	Stop()
 }
 
-func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) (Router, error) {
+func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) Router {
 	if rc != nil {
-		s, err := selector.CreateNodeSelector(conf)
-		if err != nil {
-			return nil, err
-		}
-		return NewRedisRouter(node, s, rc), nil
+		return NewRedisRouter(node, rc)
 	}
 
 	// local routing and store
 	logger.Infow("using single-node routing")
-	return NewLocalRouter(node), nil
+	return NewLocalRouter(node)
 }

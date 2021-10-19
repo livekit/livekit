@@ -4,25 +4,34 @@ import (
 	"context"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 type RoomAllocator struct {
 	config    *config.Config
 	router    routing.Router
+	selector  selector.NodeSelector
 	roomStore RoomStore
 }
 
-func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) *RoomAllocator {
+func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) (*RoomAllocator, error) {
+	ns, err := selector.CreateNodeSelector(conf)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RoomAllocator{
 		config:    conf,
 		router:    router,
+		selector:  ns,
 		roomStore: rs,
-	}
+	}, nil
 }
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
@@ -60,7 +69,31 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 		return nil, err
 	}
 
-	err = r.router.SelectNodeForRoom(ctx, rm)
+	// check if room already assigned
+	existing, err := r.router.GetNodeForRoom(ctx, rm.Name)
+	if err != routing.ErrNotFound && err != nil {
+		return nil, err
+	}
+
+	// if already assigned and still available, keep it on that node
+	if err == nil && selector.IsAvailable(existing) {
+		return rm, nil
+	}
+
+	// select a new node
+	nodes, err := r.router.ListNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	node, err := r.selector.SelectNode(nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", node.Id)
+
+	err = r.router.SetNodeForRoom(ctx, rm.Name, node.Id)
 	if err != nil {
 		return nil, err
 	}
