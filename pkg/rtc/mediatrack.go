@@ -205,6 +205,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		}
 	}
 
+	sendParameters := sender.GetParameters()
+	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
+
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
