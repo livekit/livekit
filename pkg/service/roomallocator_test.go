@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
@@ -32,12 +31,12 @@ func newTestRoomAllocator(t *testing.T) (*service.RoomAllocator, *config.Config)
 	router := &routingfakes.FakeRouter{}
 	conf, err := config.NewConfig("", nil)
 	require.NoError(t, err)
-	selector := &selector.RandomSelector{}
 	node, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	ra := service.NewRoomAllocator(conf, router, selector, store)
+	ra, err := service.NewRoomAllocator(conf, router, store)
+	require.NoError(t, err)
 	return ra, conf
 }

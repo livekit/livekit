@@ -4,10 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 const (
@@ -18,7 +20,7 @@ const (
 )
 
 func TestRegionAwareRouting(t *testing.T) {
-	rc := []selector.RegionConfig{
+	rc := []config.RegionConfig{
 		{
 			Name: regionWest,
 			Lat:  37.64046607830567,
@@ -42,7 +44,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		s, err := selector.NewRegionAwareSelector(regionEast, nil)
 		require.NoError(t, err)
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.NotNil(t, node)
 	})
@@ -59,7 +61,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.Equal(t, expectedNode, node)
 	})
@@ -76,7 +78,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.Equal(t, expectedNode, node)
 	})
@@ -92,7 +94,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.Equal(t, expectedNode, node)
 	})
@@ -110,7 +112,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.Equal(t, expectedNode, node)
 	})
@@ -122,7 +124,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		s, err := selector.NewRegionAwareSelector(regionEast, rc)
 		require.NoError(t, err)
 
-		node, err := s.SelectNode(nodes, nil)
+		node, err := s.SelectNode(nodes)
 		require.NoError(t, err)
 		require.NotNil(t, node)
 	})

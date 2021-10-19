@@ -5,25 +5,19 @@ import (
 
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/thoas/go-funk"
-)
 
-// RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
-// regions that are closer
-type RegionConfig struct {
-	Name string  `yaml:"name"`
-	Lat  float64 `yaml:"lat"`
-	Lon  float64 `yaml:"lon"`
-}
+	"github.com/livekit/livekit-server/pkg/config"
+)
 
 // RegionAwareSelector prefers available nodes that are closest to the region of the current instance
 type RegionAwareSelector struct {
 	SystemLoadSelector
 	CurrentRegion   string
 	regionDistances map[string]float64
-	regions         []RegionConfig
+	regions         []config.RegionConfig
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []RegionConfig) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
@@ -34,7 +28,7 @@ func NewRegionAwareSelector(currentRegion string, regions []RegionConfig) (*Regi
 		regions:         regions,
 	}
 
-	var currentRC *RegionConfig
+	var currentRC *config.RegionConfig
 
 	for _, region := range regions {
 		if region.Name == currentRegion {
@@ -56,7 +50,7 @@ func NewRegionAwareSelector(currentRegion string, regions []RegionConfig) (*Regi
 	return s, nil
 }
 
-func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error) {
+func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
 	nodes, err := s.SystemLoadSelector.filterNodes(nodes)
 	if err != nil {
 		return nil, err

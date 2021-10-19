@@ -207,7 +207,7 @@ func (s *LivekitServer) Start() error {
 
 func (s *LivekitServer) Stop(force bool) {
 	// wait for all participants to exit
-	s.router.PreStop()
+	s.router.Drain()
 	partTicker := time.NewTicker(5 * time.Second)
 	waitingForParticipants := !force && s.roomManager.HasParticipants()
 	for waitingForParticipants {

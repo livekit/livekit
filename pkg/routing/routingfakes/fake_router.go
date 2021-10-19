@@ -22,6 +22,10 @@ type FakeRouter struct {
 	clearRoomStateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	DrainStub        func()
+	drainMutex       sync.RWMutex
+	drainArgsForCall []struct {
+	}
 	GetNodeStub        func(string) (*livekit.Node, error)
 	getNodeMutex       sync.RWMutex
 	getNodeArgsForCall []struct {
@@ -70,10 +74,6 @@ type FakeRouter struct {
 	onRTCMessageMutex       sync.RWMutex
 	onRTCMessageArgsForCall []struct {
 		arg1 routing.RTCMessageCallback
-	}
-	PreStopStub        func()
-	preStopMutex       sync.RWMutex
-	preStopArgsForCall []struct {
 	}
 	RegisterNodeStub        func() error
 	registerNodeMutex       sync.RWMutex
@@ -229,6 +229,30 @@ func (fake *FakeRouter) ClearRoomStateReturnsOnCall(i int, result1 error) {
 	fake.clearRoomStateReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeRouter) Drain() {
+	fake.drainMutex.Lock()
+	fake.drainArgsForCall = append(fake.drainArgsForCall, struct {
+	}{})
+	stub := fake.DrainStub
+	fake.recordInvocation("Drain", []interface{}{})
+	fake.drainMutex.Unlock()
+	if stub != nil {
+		fake.DrainStub()
+	}
+}
+
+func (fake *FakeRouter) DrainCallCount() int {
+	fake.drainMutex.RLock()
+	defer fake.drainMutex.RUnlock()
+	return len(fake.drainArgsForCall)
+}
+
+func (fake *FakeRouter) DrainCalls(stub func()) {
+	fake.drainMutex.Lock()
+	defer fake.drainMutex.Unlock()
+	fake.DrainStub = stub
 }
 
 func (fake *FakeRouter) GetNode(arg1 string) (*livekit.Node, error) {
@@ -478,30 +502,6 @@ func (fake *FakeRouter) OnRTCMessageArgsForCall(i int) routing.RTCMessageCallbac
 	defer fake.onRTCMessageMutex.RUnlock()
 	argsForCall := fake.onRTCMessageArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeRouter) PreStop() {
-	fake.preStopMutex.Lock()
-	fake.preStopArgsForCall = append(fake.preStopArgsForCall, struct {
-	}{})
-	stub := fake.PreStopStub
-	fake.recordInvocation("PreStop", []interface{}{})
-	fake.preStopMutex.Unlock()
-	if stub != nil {
-		fake.PreStopStub()
-	}
-}
-
-func (fake *FakeRouter) PreStopCallCount() int {
-	fake.preStopMutex.RLock()
-	defer fake.preStopMutex.RUnlock()
-	return len(fake.preStopArgsForCall)
-}
-
-func (fake *FakeRouter) PreStopCalls(stub func()) {
-	fake.preStopMutex.Lock()
-	defer fake.preStopMutex.Unlock()
-	fake.PreStopStub = stub
 }
 
 func (fake *FakeRouter) RegisterNode() error {
@@ -944,6 +944,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.clearRoomStateMutex.RLock()
 	defer fake.clearRoomStateMutex.RUnlock()
+	fake.drainMutex.RLock()
+	defer fake.drainMutex.RUnlock()
 	fake.getNodeMutex.RLock()
 	defer fake.getNodeMutex.RUnlock()
 	fake.getNodeForRoomMutex.RLock()
@@ -954,8 +956,6 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.onNewParticipantRTCMutex.RUnlock()
 	fake.onRTCMessageMutex.RLock()
 	defer fake.onRTCMessageMutex.RUnlock()
-	fake.preStopMutex.RLock()
-	defer fake.preStopMutex.RUnlock()
 	fake.registerNodeMutex.RLock()
 	defer fake.registerNodeMutex.RUnlock()
 	fake.removeDeadNodesMutex.RLock()

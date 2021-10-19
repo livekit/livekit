@@ -33,7 +33,7 @@ func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node
 	return nodes, nil
 }
 
-func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node, room *livekit.Room) (*livekit.Node, error) {
+func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
 	nodes, err := s.filterNodes(nodes)
 	if err != nil {
 		return nil, err

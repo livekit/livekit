@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
@@ -26,6 +26,7 @@ const (
 // Because
 type RedisRouter struct {
 	LocalRouter
+
 	rc        *redis.Client
 	ctx       context.Context
 	isStarted utils.AtomicFlag
@@ -85,7 +86,7 @@ func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*liv
 	return r.GetNode(nodeId)
 }
 
-func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error {
+func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName, nodeId string) error {
 	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
 }
 
@@ -259,7 +260,7 @@ func (r *RedisRouter) Start() error {
 	}
 }
 
-func (r *RedisRouter) PreStop() {
+func (r *RedisRouter) Drain() {
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
 	r.RegisterNode()
 }
