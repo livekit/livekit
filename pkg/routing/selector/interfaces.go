@@ -8,15 +8,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+var ErrUnsupportedSelector = errors.New("unsupported node selector")
 
 // NodeSelector selects an appropriate node to run the current session
-//counterfeiter:generate . NodeSelector
 type NodeSelector interface {
 	SelectNode(nodes []*livekit.Node) (*livekit.Node, error)
 }
-
-var ErrUnsupportedSelector = errors.New("unsupported node selector")
 
 func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 	kind := conf.NodeSelector.Kind
