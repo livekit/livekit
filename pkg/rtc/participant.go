@@ -850,7 +850,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		delete(p.pendingTracks, signalCid)
 
 		newTrack = true
-		fmt.Printf("\n\nCreating new track\n\n") // REMOVE
 	}
 	p.lock.Unlock()
 
