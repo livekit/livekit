@@ -33,9 +33,7 @@ var (
 type MediaTrack struct {
 	params      MediaTrackParams
 	ssrc        webrtc.SSRC
-	name        string
 	streamID    string
-	kind        livekit.TrackType
 	codec       webrtc.RTPCodecParameters
 	muted       utils.AtomicFlag
 	numUpTracks uint32
@@ -54,15 +52,13 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	TrackID        string
+	TrackInfo      *livekit.TrackInfo
 	ParticipantID  string
 	RTCPChan       chan []rtcp.Packet
 	BufferFactory  *buffer.Factory
 	ReceiverConfig ReceiverConfig
 	AudioConfig    config.AudioConfig
 	Stats          *stats.RoomStatsReporter
-	Width          uint32
-	Height         uint32
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -70,11 +66,13 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		params:           params,
 		ssrc:             track.SSRC(),
 		streamID:         track.StreamID(),
-		kind:             ToProtoTrackKind(track.Kind()),
 		codec:            track.Codec(),
 		subscribedTracks: make(map[string]*SubscribedTrack),
 	}
 
+	if params.TrackInfo.Muted {
+		t.SetMuted(true)
+	}
 	return t
 }
 
@@ -82,15 +80,15 @@ func (t *MediaTrack) Start() {
 }
 
 func (t *MediaTrack) ID() string {
-	return t.params.TrackID
+	return t.params.TrackInfo.Sid
 }
 
 func (t *MediaTrack) Kind() livekit.TrackType {
-	return t.kind
+	return t.params.TrackInfo.Type
 }
 
 func (t *MediaTrack) Name() string {
-	return t.name
+	return t.params.TrackInfo.Name
 }
 
 func (t *MediaTrack) IsMuted() bool {
@@ -220,7 +218,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Stats.SubSubscribedTrack(t.kind.String())
+			t.params.Stats.SubSubscribedTrack(t.Kind().String())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -233,7 +231,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				return
 			}
 			logger.Debugw("removing peerconnection track",
-				"track", t.params.TrackID,
+				"track", t.ID(),
 				"pIDs", []string{t.params.ParticipantID, sub.ID()},
 				"participant", sub.Identity(),
 			)
@@ -263,7 +261,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		sub.Negotiate()
 	}()
 
-	t.params.Stats.AddSubscribedTrack(t.kind.String())
+	t.params.Stats.AddSubscribedTrack(t.Kind().String())
 	return nil
 }
 
@@ -327,7 +325,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Stats.SubPublishedTrack(t.kind.String())
+			t.params.Stats.SubPublishedTrack(t.Kind().String())
 			if onclose != nil {
 				onclose()
 			}
@@ -335,10 +333,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.receiver.OnFractionLostFB(func(lost uint8) {
 			buff.SetLastFractionLostReport(lost)
 		})
-		t.params.Stats.AddPublishedTrack(t.kind.String())
+		t.params.Stats.AddPublishedTrack(t.Kind().String())
 	}
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
 	// when RID is set, track is simulcasted
+	// TODO: how does this work with FF, SSRC based simulcast?
 	t.simulcasted = track.RID() != ""
 	atomic.AddUint32(&t.numUpTracks, 1)
 
@@ -359,7 +358,7 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
-	logger.Debugw("removing all subscribers", "track", t.params.TrackID)
+	logger.Debugw("removing all subscribers", "track", t.ID())
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	for _, subTrack := range t.subscribedTracks {
@@ -369,15 +368,10 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	return &livekit.TrackInfo{
-		Sid:       t.ID(),
-		Type:      t.Kind(),
-		Name:      t.Name(),
-		Muted:     t.IsMuted(),
-		Width:     t.params.Width,
-		Height:    t.params.Height,
-		Simulcast: t.simulcasted,
-	}
+	info := t.params.TrackInfo
+	info.Muted = t.IsMuted()
+	info.Simulcast = t.simulcasted
+	return info
 }
 
 // this function assumes caller holds lock
@@ -430,7 +424,7 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":       t.ID(),
 		"SSRC":     t.ssrc,
-		"Kind":     t.kind.String(),
+		"Kind":     t.Kind().String(),
 		"PubMuted": t.muted.Get(),
 	}
 
