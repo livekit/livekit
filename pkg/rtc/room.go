@@ -28,7 +28,6 @@ const (
 type Room struct {
 	Room       *livekit.Room
 	config     WebRTCConfig
-	iceServers []*livekit.ICEServer
 	lock       sync.RWMutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
@@ -55,11 +54,10 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioConfig *config.AudioConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
 		config:          config,
-		iceServers:      iceServers,
 		audioConfig:     audioConfig,
 		statsReporter:   stats.NewRoomStatsReporter(room.Name),
 		participants:    make(map[string]types.Participant),
@@ -139,7 +137,7 @@ func (r *Room) LastLeftAt() int64 {
 	return 0
 }
 
-func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) error {
+func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
 	if r.isClosed.Get() {
 		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
@@ -223,7 +221,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers); err != nil {
+	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers); err != nil {
 		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}

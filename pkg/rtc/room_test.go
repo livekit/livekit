@@ -26,6 +26,8 @@ func init() {
 	serverlogger.InitDevelopment("")
 }
 
+var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
+
 func TestJoinedState(t *testing.T) {
 	t.Run("new room should return joinedAt 0", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
@@ -61,7 +63,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		pNew := newMockParticipant("new", types.DefaultProtocol, false)
 
-		rm.Join(pNew, nil)
+		rm.Join(pNew, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
@@ -76,7 +78,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := newMockParticipant("new", types.DefaultProtocol, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true})
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -130,7 +132,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.Room.MaxParticipants = 1
 		p := newMockParticipant("second", types.ProtocolVersion(0), false)
 
-		err := rm.Join(p, nil)
+		err := rm.Join(p, nil, iceServersForRoom)
 		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
 	})
 }
@@ -211,7 +213,7 @@ func TestRoomClosure(t *testing.T) {
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
 
-		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil))
+		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil, iceServersForRoom))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -485,7 +487,7 @@ func TestHiddenParticipants(t *testing.T) {
 		defer rm.Close()
 
 		pNew := newMockParticipant("new", types.DefaultProtocol, false)
-		rm.Join(pNew, nil)
+		rm.Join(pNew, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
@@ -499,7 +501,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		p := newMockParticipant("new", types.DefaultProtocol, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true})
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -545,13 +547,6 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	rm := rtc.NewRoom(
 		&livekit.Room{Name: "room"},
 		rtc.WebRTCConfig{},
-		[]*livekit.ICEServer{
-			{
-				Urls: []string{
-					"stun:stun.l.google.com:19302",
-				},
-			},
-		},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
@@ -560,7 +555,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := fmt.Sprintf("p%d", i)
 		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
-		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true})
+		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)
 		require.NoError(t, err)
