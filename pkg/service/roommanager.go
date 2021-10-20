@@ -261,7 +261,7 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err := room.Join(participant, &opts); err != nil {
+	if err := room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		logger.Errorw("could not join room", err)
 		return
 	}
@@ -286,7 +286,7 @@ func (r *LocalRoomManager) getOrCreateRoom(ctx context.Context, roomName string)
 	}
 
 	// construct ice servers
-	room = rtc.NewRoom(ri, *r.rtcConfig, r.iceServersForRoom(ri), &r.config.Audio)
+	room = rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio)
 	room.OnClose(func() {
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			logger.Errorw("could not delete room", err)
