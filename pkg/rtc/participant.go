@@ -825,8 +825,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	// use existing mediatrack to handle simulcast
 	p.lock.Lock()
-	mt := p.getPublishedTrackBySdpCid(track.ID())
-	if mt == nil {
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
+	if !ok {
 		signalCid, sdpCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			p.lock.Unlock()
@@ -850,6 +850,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		delete(p.pendingTracks, signalCid)
 
 		newTrack = true
+		fmt.Printf("\n\nCreating new track\n\n") // REMOVE
 	}
 	p.lock.Unlock()
 
@@ -889,12 +890,10 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 }
 
 // should be called with lock held
-func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) *MediaTrack {
+func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.PublishedTrack {
 	for _, publishedTrack := range p.publishedTracks {
-		if trk, ok := publishedTrack.(*MediaTrack); ok {
-			if trk.SignalCid() == clientId {
-				return trk
-			}
+		if publishedTrack.SignalCid() == clientId {
+			return publishedTrack
 		}
 	}
 
@@ -902,12 +901,10 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) *MediaTr
 }
 
 // should be called with lock held
-func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) *MediaTrack {
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
 	for _, publishedTrack := range p.publishedTracks {
-		if trk, ok := publishedTrack.(*MediaTrack); ok {
-			if trk.SdpCid() == clientId {
-				return trk
-			}
+		if publishedTrack.SdpCid() == clientId {
+			return publishedTrack
 		}
 	}
 
