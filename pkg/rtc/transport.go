@@ -8,6 +8,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/utils/stats"
@@ -71,6 +72,12 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 		// only capture subscriber for outbound streams
 		f := stats.NewStatsInterceptorFactory(params.Stats)
 		ir.Add(f)
+	}
+	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+		f, err := twcc.NewHeaderExtensionInterceptor()
+		if err == nil {
+			ir.Add(f)
+		}
 	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),

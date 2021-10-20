@@ -90,6 +90,7 @@ func createSubMediaEngine() (*webrtc.MediaEngine, error) {
 
 	for _, extension := range []string{
 		sdp.ABSSendTimeURI,
+		sdp.TransportCCURI,
 	} {
 		if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: extension}, webrtc.RTPCodecTypeVideo); err != nil {
 			return nil, err
