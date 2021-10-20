@@ -963,6 +963,12 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
+	p.lock.Lock()
+	if _, ok := p.publishedTracks[track.ID()]; !ok {
+		p.publishedTracks[track.ID()] = track
+	}
+	p.lock.Unlock()
+
 	track.Start()
 
 	track.OnClose(func() {

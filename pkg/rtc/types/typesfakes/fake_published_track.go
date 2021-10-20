@@ -85,10 +85,30 @@ type FakePublishedTrack struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
+	SdpCidStub        func() string
+	sdpCidMutex       sync.RWMutex
+	sdpCidArgsForCall []struct {
+	}
+	sdpCidReturns struct {
+		result1 string
+	}
+	sdpCidReturnsOnCall map[int]struct {
+		result1 string
+	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
 		arg1 bool
+	}
+	SignalCidStub        func() string
+	signalCidMutex       sync.RWMutex
+	signalCidArgsForCall []struct {
+	}
+	signalCidReturns struct {
+		result1 string
+	}
+	signalCidReturnsOnCall map[int]struct {
+		result1 string
 	}
 	StartStub        func()
 	startMutex       sync.RWMutex
@@ -530,6 +550,59 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
+func (fake *FakePublishedTrack) SdpCid() string {
+	fake.sdpCidMutex.Lock()
+	ret, specificReturn := fake.sdpCidReturnsOnCall[len(fake.sdpCidArgsForCall)]
+	fake.sdpCidArgsForCall = append(fake.sdpCidArgsForCall, struct {
+	}{})
+	stub := fake.SdpCidStub
+	fakeReturns := fake.sdpCidReturns
+	fake.recordInvocation("SdpCid", []interface{}{})
+	fake.sdpCidMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) SdpCidCallCount() int {
+	fake.sdpCidMutex.RLock()
+	defer fake.sdpCidMutex.RUnlock()
+	return len(fake.sdpCidArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SdpCidCalls(stub func() string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = stub
+}
+
+func (fake *FakePublishedTrack) SdpCidReturns(result1 string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = nil
+	fake.sdpCidReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) SdpCidReturnsOnCall(i int, result1 string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = nil
+	if fake.sdpCidReturnsOnCall == nil {
+		fake.sdpCidReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.sdpCidReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakePublishedTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -560,6 +633,59 @@ func (fake *FakePublishedTrack) SetMutedArgsForCall(i int) bool {
 	defer fake.setMutedMutex.RUnlock()
 	argsForCall := fake.setMutedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) SignalCid() string {
+	fake.signalCidMutex.Lock()
+	ret, specificReturn := fake.signalCidReturnsOnCall[len(fake.signalCidArgsForCall)]
+	fake.signalCidArgsForCall = append(fake.signalCidArgsForCall, struct {
+	}{})
+	stub := fake.SignalCidStub
+	fakeReturns := fake.signalCidReturns
+	fake.recordInvocation("SignalCid", []interface{}{})
+	fake.signalCidMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) SignalCidCallCount() int {
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
+	return len(fake.signalCidArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SignalCidCalls(stub func() string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = stub
+}
+
+func (fake *FakePublishedTrack) SignalCidReturns(result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	fake.signalCidReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) SignalCidReturnsOnCall(i int, result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	if fake.signalCidReturnsOnCall == nil {
+		fake.signalCidReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.signalCidReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
 }
 
 func (fake *FakePublishedTrack) Start() {
@@ -660,8 +786,12 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.sdpCidMutex.RLock()
+	defer fake.sdpCidMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	fake.toProtoMutex.RLock()
