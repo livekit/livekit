@@ -833,18 +833,14 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		mt = trk
 	} else {
 		mt = NewMediaTrack(track, MediaTrackParams{
-			TrackID:        ti.Sid,
+			TrackInfo:      ti,
 			ParticipantID:  p.id,
 			RTCPChan:       p.rtcpCh,
 			BufferFactory:  p.params.Config.BufferFactory,
 			ReceiverConfig: p.params.Config.Receiver,
 			AudioConfig:    p.params.AudioConfig,
 			Stats:          p.params.Stats,
-			Width:          ti.Width,
-			Height:         ti.Height,
 		})
-		mt.name = ti.Name
-		mt.SetMuted(ti.Muted)
 		newTrack = true
 	}
 
