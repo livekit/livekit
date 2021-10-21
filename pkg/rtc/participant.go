@@ -329,7 +329,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	if p.getPublishedTrackBySignalCid(req.Cid) != nil {
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil {
 		return
 	}
 
@@ -827,7 +827,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	p.lock.Lock()
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, sdpCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			p.lock.Unlock()
 			return
@@ -836,7 +836,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		mt = NewMediaTrack(track, MediaTrackParams{
 			TrackInfo:      ti,
 			SignalCid:      signalCid,
-			SdpCid:         sdpCid,
+			SdpCid:         track.ID(),
 			ParticipantID:  p.id,
 			RTCPChan:       p.rtcpCh,
 			BufferFactory:  p.params.Config.BufferFactory,
@@ -911,9 +911,8 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Publi
 }
 
 // should be called with lock held
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, string, *livekit.TrackInfo) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
 	signalCid := clientId
-	sdpCid := clientId
 	ti := p.pendingTracks[clientId]
 
 	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
@@ -923,7 +922,6 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 			if info.Type == kind {
 				ti = info
 				signalCid = cid
-				sdpCid = clientId
 				break
 			}
 		}
@@ -933,7 +931,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	if ti == nil {
 		logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	}
-	return signalCid, sdpCid, ti
+	return signalCid, ti
 }
 
 func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
