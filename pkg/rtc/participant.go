@@ -29,7 +29,6 @@ const (
 	lossyDataChannel    = "_lossy"
 	reliableDataChannel = "_reliable"
 	sdBatchSize         = 20
-	trackCleanupDelay   = 5 * time.Second
 )
 
 type ParticipantParams struct {
@@ -327,6 +326,10 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 
 	// if track is already published, reject
 	if p.pendingTracks[req.Cid] != nil {
+		return
+	}
+
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil {
 		return
 	}
 
@@ -809,7 +812,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"participant", p.Identity(),
 		"pID", p.ID(),
 		"track", track.ID(),
-		"rid", track.RID())
+		"rid", track.RID(),
+		"SSRC", track.SSRC())
 
 	if !p.CanPublish() {
 		logger.Warnw("no permission to publish mediaTrack", nil,
@@ -817,23 +821,22 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
+	var newTrack bool
+
 	// use existing mediatrack to handle simulcast
 	p.lock.Lock()
-	cid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
-	if ti == nil {
-		p.lock.Unlock()
-		return
-	}
-	ptrack := p.publishedTracks[ti.Sid]
-	p.lock.Unlock()
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
+	if !ok {
+		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
+		if ti == nil {
+			p.lock.Unlock()
+			return
+		}
 
-	var mt *MediaTrack
-	var newTrack bool
-	if trk, ok := ptrack.(*MediaTrack); ok {
-		mt = trk
-	} else {
 		mt = NewMediaTrack(track, MediaTrackParams{
 			TrackInfo:      ti,
+			SignalCid:      signalCid,
+			SdpCid:         track.ID(),
 			ParticipantID:  p.id,
 			RTCPChan:       p.rtcpCh,
 			BufferFactory:  p.params.Config.BufferFactory,
@@ -841,8 +844,14 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			AudioConfig:    p.params.AudioConfig,
 			Stats:          p.params.Stats,
 		})
+
+		// add to published and clean up pending
+		p.publishedTracks[mt.ID()] = mt
+		delete(p.pendingTracks, signalCid)
+
 		newTrack = true
 	}
+	p.lock.Unlock()
 
 	ssrc := uint32(track.SSRC())
 	p.pliThrottle.addTrack(ssrc, track.RID())
@@ -853,14 +862,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		})
 	}
 	mt.AddReceiver(rtpReceiver, track, p.twcc)
-
-	// cleanup pendingTracks
-	defer func() {
-		time.Sleep(trackCleanupDelay)
-		p.lock.Lock()
-		delete(p.pendingTracks, cid)
-		p.lock.Unlock()
-	}()
 
 	if newTrack {
 		p.handleTrackPublished(mt)
@@ -887,7 +888,31 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	}
 }
 
+// should be called with lock held
+func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.PublishedTrack {
+	for _, publishedTrack := range p.publishedTracks {
+		if publishedTrack.SignalCid() == clientId {
+			return publishedTrack
+		}
+	}
+
+	return nil
+}
+
+// should be called with lock held
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
+	for _, publishedTrack := range p.publishedTracks {
+		if publishedTrack.SdpCid() == clientId {
+			return publishedTrack
+		}
+	}
+
+	return nil
+}
+
+// should be called with lock held
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
+	signalCid := clientId
 	ti := p.pendingTracks[clientId]
 
 	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
@@ -896,7 +921,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		for cid, info := range p.pendingTracks {
 			if info.Type == kind {
 				ti = info
-				clientId = cid
+				signalCid = cid
 				break
 			}
 		}
@@ -906,7 +931,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	if ti == nil {
 		logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	}
-	return clientId, ti
+	return signalCid, ti
 }
 
 func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
@@ -932,9 +957,10 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
-	// fill in
 	p.lock.Lock()
-	p.publishedTracks[track.ID()] = track
+	if _, ok := p.publishedTracks[track.ID()]; !ok {
+		p.publishedTracks[track.ID()] = track
+	}
 	p.lock.Unlock()
 
 	track.Start()

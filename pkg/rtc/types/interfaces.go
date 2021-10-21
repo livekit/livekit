@@ -91,6 +91,8 @@ type Participant interface {
 type PublishedTrack interface {
 	Start()
 	ID() string
+	SignalCid() string
+	SdpCid() string
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool

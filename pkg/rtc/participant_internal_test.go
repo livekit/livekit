@@ -131,6 +131,40 @@ func TestTrackPublishing(t *testing.T) {
 
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
+
+	t.Run("should not allow adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		track := &typesfakes.FakePublishedTrack{}
+		track.SignalCidReturns("cid")
+		// directly add to publishedTracks without lock - for testing purpose only
+		p.publishedTracks["cid"] = track
+
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+	})
+
+	t.Run("should not allow adding of duplicate tracks if already published by client id in sdp", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		track := &typesfakes.FakePublishedTrack{}
+		track.SdpCidReturns("cid")
+		// directly add to publishedTracks without lock - for testing purpose only
+		p.publishedTracks["cid"] = track
+
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+	})
 }
 
 // after disconnection, things should continue to function and not panic

@@ -53,6 +53,8 @@ type MediaTrack struct {
 
 type MediaTrackParams struct {
 	TrackInfo      *livekit.TrackInfo
+	SignalCid      string
+	SdpCid         string
 	ParticipantID  string
 	RTCPChan       chan []rtcp.Packet
 	BufferFactory  *buffer.Factory
@@ -81,6 +83,14 @@ func (t *MediaTrack) Start() {
 
 func (t *MediaTrack) ID() string {
 	return t.params.TrackInfo.Sid
+}
+
+func (t *MediaTrack) SignalCid() string {
+	return t.params.SignalCid
+}
+
+func (t *MediaTrack) SdpCid() string {
+	return t.params.SdpCid
 }
 
 func (t *MediaTrack) Kind() livekit.TrackType {
