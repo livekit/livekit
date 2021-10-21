@@ -423,8 +423,6 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 				}
 			case *livekit.SignalRequest_Leave:
 				_ = participant.Close()
-			case *livekit.SignalRequest_Simulcast:
-				// deprecated
 			}
 		}
 	}
