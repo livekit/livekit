@@ -57,15 +57,16 @@ type StreamAllocator struct {
 
 type Track struct {
 	downTrack       *sfu.DownTrack
-	packetsSent     uint64
-	packetsLost     uint64
-	lastPacketsSend uint64
-	lastPacketsLost uint64
+	highestSN       uint32
+	packetsLost     uint32
+	lastHighestSN   uint32
+	lastPacketsLost uint32
 }
 
 func NewStreamAllocator() *StreamAllocator {
 	s := &StreamAllocator{
 		estimatedChannelCapacity: InitialChannelCapacity,
+		tracks:                   make(map[string]*Track),
 	}
 
 	return s
@@ -85,15 +86,14 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack) {
 	s.tracks[downTrack.ID()] = &Track{
 		downTrack: downTrack,
 	}
-	//
-	// RAJA_TODO Potentially add the following callbacks to sfu.DownTrack
-	//   - OnRTCPREMB
-	//   - OnRTCPReceiverReport
-	//
+
+	downTrack.OnREMB(s.onEstimatedChannelCapacity)
+	downTrack.OnReceiverReport(s.onReceiverReport)
+
 	s.realloc()
 }
 
-func (s *StreamAllocator) RemoveDownTrack(downTrack *sfu.DownTrack) {
+func (s *StreamAllocator) RemoveTrack(downTrack *sfu.DownTrack) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
@@ -112,7 +112,7 @@ func (s *StreamAllocator) RemoveDownTrack(downTrack *sfu.DownTrack) {
 // But, REMB can fire a lot in a very bursty fashion. So, something
 // to keep an eye on.
 //
-func (s *StreamAllocator) SetEstimatedChannelCapacity(estimatedChannelCapacity uint64) {
+func (s *StreamAllocator) onEstimatedChannelCapacity(estimatedChannelCapacity uint64) {
 	if s.estimatedChannelCapacity == estimatedChannelCapacity {
 		return
 	}
@@ -129,12 +129,12 @@ func (s *StreamAllocator) SetEstimatedChannelCapacity(estimatedChannelCapacity u
 // sfu.DownTrack should callback upon receiving RTCP receiver recport from
 // the remote side.
 //
-func (s *StreamAllocator) SetPacketStats(downTrack *sfu.DownTrack, packetsSent uint64, packetsLost uint64) {
+func (s *StreamAllocator) onReceiverReport(downTrack *sfu.DownTrack, highestSN uint32, packetsLost uint32) {
 	s.tracksMu.Lock()
 	defer s.tracksMu.Unlock()
 
 	if track, ok := s.tracks[downTrack.ID()]; ok {
-		track.packetsSent = packetsSent
+		track.highestSN = highestSN
 		track.packetsLost = packetsLost
 	}
 }
@@ -261,7 +261,7 @@ func (s *StreamAllocator) realloc() {
 		// bitrate information from receiver (i. e. publisher) and
 		// determine forwarding parameters.
 		//
-		bandwidthUsed, isFitting := track.downTrack.adjustAllocation(availableChannelCapacity)
+		bandwidthUsed, isFitting := track.downTrack.AdjustAllocation(availableChannelCapacity)
 		if !isFitting {
 			//
 			// Assuming this is a prioritized list of tracks
