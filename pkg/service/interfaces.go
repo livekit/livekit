@@ -35,7 +35,6 @@ type RoomManager interface {
 	RoomStore
 
 	GetRoom(ctx context.Context, roomName string) *rtc.Room
-	DeleteRoom(ctx context.Context, roomName string) error
 	StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 	CleanupRooms() error
 	CloseIdleRooms()
