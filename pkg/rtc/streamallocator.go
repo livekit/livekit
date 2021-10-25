@@ -89,6 +89,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack) {
 
 	downTrack.OnREMB(s.onEstimatedChannelCapacity)
 	downTrack.OnReceiverReport(s.onReceiverReport)
+	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 
 	s.realloc()
 }
@@ -112,7 +113,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *sfu.DownTrack) {
 // But, REMB can fire a lot in a very bursty fashion. So, something
 // to keep an eye on.
 //
-func (s *StreamAllocator) onEstimatedChannelCapacity(estimatedChannelCapacity uint64) {
+func (s *StreamAllocator) onEstimatedChannelCapacity(downTrack *sfu.DownTrack, estimatedChannelCapacity uint64) {
 	if s.estimatedChannelCapacity == estimatedChannelCapacity {
 		return
 	}
@@ -137,6 +138,13 @@ func (s *StreamAllocator) onReceiverReport(downTrack *sfu.DownTrack, highestSN u
 		track.highestSN = highestSN
 		track.packetsLost = packetsLost
 	}
+}
+
+// called when feeding track's simulcast layer availability changes
+func (s *StreamAllocator) onAvailableLayersChanged(downTrack *sfu.DownTrack) {
+	s.tracksMu.Lock()
+	s.realloc()
+	s.tracksMu.Unlock()
 }
 
 func (s *StreamAllocator) realloc() {
