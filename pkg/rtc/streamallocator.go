@@ -269,8 +269,8 @@ func (s *StreamAllocator) realloc() {
 		// bitrate information from receiver (i. e. publisher) and
 		// determine forwarding parameters.
 		//
-		bandwidthUsed, isFitting := track.downTrack.AdjustAllocation(availableChannelCapacity)
-		if !isFitting {
+		bandwidthUsed, optimalBandwidthNeeded := track.downTrack.AdjustAllocation(availableChannelCapacity)
+		if optimalBandwidthNeeded > 0 && bandwidthUsed < optimalBandwidthNeeded {
 			//
 			// Assuming this is a prioritized list of tracks
 			// and we are walking down in that priority order.
