@@ -10,6 +10,7 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils/stats"
 )
 
@@ -36,6 +37,9 @@ type PCTransport struct {
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	negotiationState      int
+
+	// stream allocator for subscriber PC
+	streamAllocator *StreamAllocator
 }
 
 type TransportParams struct {
@@ -92,6 +96,9 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		me:                 me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
+	}
+	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+		t.streamAllocator = NewStreamAllocator()
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
@@ -238,4 +245,20 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	go t.onOffer(offer)
 	return nil
+}
+
+func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.AddTrack(subTrack.DownTrack())
+}
+
+func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }

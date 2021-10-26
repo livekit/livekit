@@ -80,9 +80,6 @@ type ParticipantImpl struct {
 	lock sync.RWMutex
 	once sync.Once
 
-	// stream allocator for subscriber PC
-	streamAllocator *StreamAllocator
-
 	// callbacks & handlers
 	onTrackPublished func(types.Participant, types.PublishedTrack)
 	onTrackUpdated   func(types.Participant, types.PublishedTrack)
@@ -104,7 +101,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
 		connectedAt:      time.Now(),
-		streamAllocator:  NewStreamAllocator(),
 	}
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.updateAfterActive.Store(false)
@@ -710,7 +706,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.Subscr
 	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
 	p.lock.Unlock()
 
-	p.streamAllocator.AddTrack(subTrack.DownTrack());
+	p.subscriber.AddTrack(subTrack)
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
@@ -718,7 +714,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.Sub
 	logger.Debugw("removed subscribedTrack", "pIDs", []string{pubId, p.ID()},
 		"participant", p.Identity(), "track", subTrack.ID())
 
-	p.streamAllocator.RemoveTrack(subTrack.DownTrack())
+	p.subscriber.RemoveTrack(subTrack)
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
