@@ -52,15 +52,16 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	TrackInfo      *livekit.TrackInfo
-	SignalCid      string
-	SdpCid         string
-	ParticipantID  string
-	RTCPChan       chan []rtcp.Packet
-	BufferFactory  *buffer.Factory
-	ReceiverConfig ReceiverConfig
-	AudioConfig    config.AudioConfig
-	Stats          *stats.RoomStatsReporter
+	TrackInfo           *livekit.TrackInfo
+	SignalCid           string
+	SdpCid              string
+	ParticipantID       string
+	ParticipantIdentity string
+	RTCPChan            chan []rtcp.Packet
+	BufferFactory       *buffer.Factory
+	ReceiverConfig      ReceiverConfig
+	AudioConfig         config.AudioConfig
+	Stats               *stats.RoomStatsReporter
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -172,7 +173,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(downTrack)
+	subTrack := NewSubscribedTrack(t.params.ParticipantIdentity, downTrack)
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
@@ -382,6 +383,36 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.simulcasted
 	return info
+}
+
+// GetQualityForDimension finds the closest quality to use for desired dimensions
+// affords a 10% tolerance on dimension
+func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
+	quality := livekit.VideoQuality_HIGH
+	if t.Kind() == livekit.TrackType_AUDIO || t.params.TrackInfo.Height == 0 {
+		return quality
+	}
+	origSize := t.params.TrackInfo.Height
+	requestedSize := height
+	if t.params.TrackInfo.Width < t.params.TrackInfo.Height {
+		// for portrait videos
+		origSize = t.params.TrackInfo.Width
+		requestedSize = width
+	}
+
+	// representing qualities low - high
+	layerSizes := []uint32{180, 360, origSize}
+
+	// finds the lowest layer that could satisfy client demands
+	requestedSize = uint32(float32(requestedSize) * 0.9)
+	for i, s := range layerSizes {
+		quality = livekit.VideoQuality(i)
+		if s >= requestedSize {
+			break
+		}
+	}
+
+	return quality
 }
 
 // this function assumes caller holds lock

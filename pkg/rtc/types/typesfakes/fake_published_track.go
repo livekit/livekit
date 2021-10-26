@@ -20,6 +20,18 @@ type FakePublishedTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetQualityForDimensionStub        func(uint32, uint32) livekit.VideoQuality
+	getQualityForDimensionMutex       sync.RWMutex
+	getQualityForDimensionArgsForCall []struct {
+		arg1 uint32
+		arg2 uint32
+	}
+	getQualityForDimensionReturns struct {
+		result1 livekit.VideoQuality
+	}
+	getQualityForDimensionReturnsOnCall map[int]struct {
+		result1 livekit.VideoQuality
+	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -186,6 +198,68 @@ func (fake *FakePublishedTrack) AddSubscriberReturnsOnCall(i int, result1 error)
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimension(arg1 uint32, arg2 uint32) livekit.VideoQuality {
+	fake.getQualityForDimensionMutex.Lock()
+	ret, specificReturn := fake.getQualityForDimensionReturnsOnCall[len(fake.getQualityForDimensionArgsForCall)]
+	fake.getQualityForDimensionArgsForCall = append(fake.getQualityForDimensionArgsForCall, struct {
+		arg1 uint32
+		arg2 uint32
+	}{arg1, arg2})
+	stub := fake.GetQualityForDimensionStub
+	fakeReturns := fake.getQualityForDimensionReturns
+	fake.recordInvocation("GetQualityForDimension", []interface{}{arg1, arg2})
+	fake.getQualityForDimensionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionCallCount() int {
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
+	return len(fake.getQualityForDimensionArgsForCall)
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionCalls(stub func(uint32, uint32) livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = stub
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionArgsForCall(i int) (uint32, uint32) {
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
+	argsForCall := fake.getQualityForDimensionArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionReturns(result1 livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = nil
+	fake.getQualityForDimensionReturns = struct {
+		result1 livekit.VideoQuality
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionReturnsOnCall(i int, result1 livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = nil
+	if fake.getQualityForDimensionReturnsOnCall == nil {
+		fake.getQualityForDimensionReturnsOnCall = make(map[int]struct {
+			result1 livekit.VideoQuality
+		})
+	}
+	fake.getQualityForDimensionReturnsOnCall[i] = struct {
+		result1 livekit.VideoQuality
 	}{result1}
 }
 
@@ -770,6 +844,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()

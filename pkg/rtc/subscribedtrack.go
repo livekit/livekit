@@ -15,21 +15,27 @@ const (
 )
 
 type SubscribedTrack struct {
-	dt        *sfu.DownTrack
-	subMuted  utils.AtomicFlag
-	pubMuted  utils.AtomicFlag
-	debouncer func(func())
+	dt                *sfu.DownTrack
+	publisherIdentity string
+	subMuted          utils.AtomicFlag
+	pubMuted          utils.AtomicFlag
+	debouncer         func(func())
 }
 
-func NewSubscribedTrack(dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
-		dt:        dt,
-		debouncer: debounce.New(subscriptionDebounceInterval),
+		publisherIdentity: publisherIdentity,
+		dt:                dt,
+		debouncer:         debounce.New(subscriptionDebounceInterval),
 	}
 }
 
 func (t *SubscribedTrack) ID() string {
 	return t.dt.ID()
+}
+
+func (t *SubscribedTrack) PublisherIdentity() string {
+	return t.publisherIdentity
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
@@ -63,6 +69,13 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(enabled bool, quality livekit
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
 	t.dt.Mute(muted)
+}
+
+// GetQualityForDimension finds the closest quality to use for desired dimensions
+// affords a 10% tolerance on dimension
+func GetQualityForDimension(width, height uint32) livekit.VideoQuality {
+	// currently the layers are set to 180p/360p/original res, we should re
+	return livekit.VideoQuality_HIGH
 }
 
 func spatialLayerForQuality(quality livekit.VideoQuality) int32 {
