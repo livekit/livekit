@@ -54,7 +54,7 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 			CreationTime: time.Now().Unix(),
 			TurnPassword: utils.RandomSecret(),
 		}
-		applyDefaultRoomConfig(rm, &r.config.Room)
+		r.roomStore.ApplyDefaultRoomConfig(ctx, rm, &r.config.Room)
 	} else if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 
 	livekit "github.com/livekit/protocol/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 )
@@ -29,6 +30,7 @@ type RoomStore interface {
 	LoadParticipant(ctx context.Context, roomName, identity string) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName string) ([]*livekit.ParticipantInfo, error)
 	DeleteParticipant(ctx context.Context, roomName, identity string) error
+	ApplyDefaultRoomConfig(ctx context.Context, room *livekit.Room, conf *config.RoomConfig)
 }
 
 type RoomManager interface {

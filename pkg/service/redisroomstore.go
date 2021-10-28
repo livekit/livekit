@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/config"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
@@ -218,4 +219,16 @@ func (p *RedisRoomStore) DeleteParticipant(ctx context.Context, roomName, identi
 	key := RoomParticipantsPrefix + roomName
 
 	return p.rc.HDel(p.ctx, key, identity).Err()
+}
+
+// TODO: retrieve a list of enabled codecs from redis
+func (p *RedisRoomStore) ApplyDefaultRoomConfig(ctx context.Context, room *livekit.Room, conf *config.RoomConfig) {
+	room.EmptyTimeout = conf.EmptyTimeout
+	room.MaxParticipants = conf.MaxParticipants
+	for _, codec := range conf.EnabledCodecs {
+		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
+			Mime:     codec.Mime,
+			FmtpLine: codec.FmtpLine,
+		})
+	}
 }

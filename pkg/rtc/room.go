@@ -26,9 +26,9 @@ const (
 )
 
 type Room struct {
-	Room       *livekit.Room
-	config     WebRTCConfig
-	lock       sync.RWMutex
+	Room   *livekit.Room
+	config WebRTCConfig
+	lock   sync.RWMutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions

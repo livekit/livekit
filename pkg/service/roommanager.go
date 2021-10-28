@@ -537,17 +537,6 @@ func (r *LocalRoomManager) notifyEvent(event *livekit.WebhookEvent) {
 	})
 }
 
-func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
-	room.EmptyTimeout = conf.EmptyTimeout
-	room.MaxParticipants = conf.MaxParticipants
-	for _, codec := range conf.EnabledCodecs {
-		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
-			Mime:     codec.Mime,
-			FmtpLine: codec.FmtpLine,
-		})
-	}
-}
-
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
 	iceServer := &livekit.ICEServer{}
 	for _, stunServer := range servers {

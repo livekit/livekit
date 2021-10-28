@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	livekit "github.com/livekit/protocol/proto"
 )
 
@@ -147,4 +148,15 @@ func (p *LocalRoomStore) DeleteParticipant(ctx context.Context, roomName, identi
 		delete(roomParticipants, identity)
 	}
 	return nil
+}
+
+func (p *LocalRoomStore) ApplyDefaultRoomConfig(ctx context.Context, room *livekit.Room, conf *config.RoomConfig) {
+	room.EmptyTimeout = conf.EmptyTimeout
+	room.MaxParticipants = conf.MaxParticipants
+	for _, codec := range conf.EnabledCodecs {
+		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
+			Mime:     codec.Mime,
+			FmtpLine: codec.FmtpLine,
+		})
+	}
 }
