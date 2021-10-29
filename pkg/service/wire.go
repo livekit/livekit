@@ -1,4 +1,5 @@
-//+build wireinject
+//go:build wireinject
+// +build wireinject
 
 package service
 
@@ -37,6 +38,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newTurnAuthHandler,
 		NewTurnServer,
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
+		wire.Bind(new(RoomAllocator), new(*StandardRoomAllocator)),
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
