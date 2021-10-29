@@ -34,6 +34,7 @@ type RoomStore interface {
 type RoomManager interface {
 	RoomStore
 
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
 	GetRoom(ctx context.Context, roomName string) *rtc.Room
 	StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 	CleanupRooms() error

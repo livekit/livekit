@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/webhook"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -25,7 +26,7 @@ func TestCreateRoom(t *testing.T) {
 	})
 }
 
-func newTestRoomAllocator(t *testing.T) (*service.RoomAllocator, *config.Config) {
+func newTestRoomAllocator(t *testing.T) (service.RoomManager, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
@@ -33,10 +34,11 @@ func newTestRoomAllocator(t *testing.T) (*service.RoomAllocator, *config.Config)
 	require.NoError(t, err)
 	node, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
+	notifier := webhook.NewNotifier("", "", nil)
 
 	router.GetNodeForRoomReturns(node, nil)
 
-	ra, err := service.NewRoomAllocator(conf, router, store)
+	ra, err := service.NewLocalRoomManager(conf, store, router, node, notifier)
 	require.NoError(t, err)
 	return ra, conf
 }

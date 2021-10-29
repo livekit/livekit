@@ -20,20 +20,20 @@ import (
 )
 
 type RTCService struct {
-	router        routing.Router
-	roomAllocator *RoomAllocator
-	upgrader      websocket.Upgrader
-	currentNode   routing.LocalNode
-	isDev         bool
+	router      routing.Router
+	roomManager RoomManager
+	upgrader    websocket.Upgrader
+	currentNode routing.LocalNode
+	isDev       bool
 }
 
-func NewRTCService(conf *config.Config, ra *RoomAllocator, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, rm RoomManager, router routing.Router, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
-		router:        router,
-		roomAllocator: ra,
-		upgrader:      websocket.Upgrader{},
-		currentNode:   currentNode,
-		isDev:         conf.Development,
+		router:      router,
+		roomManager: rm,
+		upgrader:    websocket.Upgrader{},
+		currentNode: currentNode,
+		isDev:       conf.Development,
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -105,7 +105,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
-	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
+	rm, err := s.roomManager.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
 	if err != nil {
 		stats.PromServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
 		handleError(w, http.StatusInternalServerError, err.Error())

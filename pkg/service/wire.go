@@ -1,4 +1,5 @@
-//+build wireinject
+//go:build wireinject
+// +build wireinject
 
 package service
 
@@ -30,13 +31,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		routing.CreateRouter,
 		NewRecordingService,
-		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		NewTurnServer,
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
+		wire.Bind(new(RoomManager), new(*LocalRoomManager)),
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
