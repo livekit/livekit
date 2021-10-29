@@ -29,11 +29,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	router := routing.CreateRouter(conf, client, currentNode)
 	roomStore := createStore(client)
-	standardRoomAllocator, err := NewRoomAllocator(conf, router, roomStore)
+	roomAllocator, err := NewRoomAllocator(conf, router, roomStore)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(standardRoomAllocator, roomStore, router)
+	roomService, err := NewRoomService(roomAllocator, roomStore, router)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	recordingService := NewRecordingService(messageBus, notifier)
-	rtcService := NewRTCService(conf, standardRoomAllocator, router, currentNode)
+	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
 	localRoomManager, err := NewLocalRoomManager(conf, roomStore, router, currentNode, notifier)
 	if err != nil {
 		return nil, err
