@@ -13,20 +13,20 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
-type RoomAllocator struct {
+type StandardRoomAllocator struct {
 	config    *config.Config
 	router    routing.Router
 	selector  selector.NodeSelector
 	roomStore RoomStore
 }
 
-func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) (*RoomAllocator, error) {
+func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) (RoomAllocator, error) {
 	ns, err := selector.CreateNodeSelector(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	return &RoomAllocator{
+	return &StandardRoomAllocator{
 		config:    conf,
 		router:    router,
 		selector:  ns,
@@ -36,7 +36,7 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) 
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
-func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
+func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
 	token, err := r.roomStore.LockRoom(ctx, req.Name, 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -103,4 +103,15 @@ func (r *RoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomR
 	}
 
 	return rm, nil
+}
+
+func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
+	room.EmptyTimeout = conf.EmptyTimeout
+	room.MaxParticipants = conf.MaxParticipants
+	for _, codec := range conf.EnabledCodecs {
+		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
+			Mime:     codec.Mime,
+			FmtpLine: codec.FmtpLine,
+		})
+	}
 }
