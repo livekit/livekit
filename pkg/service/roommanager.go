@@ -47,6 +47,11 @@ func NewLocalRoomManager(conf *config.Config, rs RoomStore, router routing.Route
 		return nil, err
 	}
 
+	ns, err := selector.CreateNodeSelector(conf)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &LocalRoomManager{
 		RoomStore:   rs,
 		lock:        sync.RWMutex{},
@@ -57,6 +62,7 @@ func NewLocalRoomManager(conf *config.Config, rs RoomStore, router routing.Route
 		currentNode: currentNode,
 		webhookPool: workerpool.New(1),
 		rooms:       make(map[string]*rtc.Room),
+		selector:    ns,
 	}
 
 	// hook up to router
