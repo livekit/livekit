@@ -25,7 +25,7 @@ func TestCreateRoom(t *testing.T) {
 	})
 }
 
-func newTestRoomAllocator(t *testing.T) (*service.StandardRoomAllocator, *config.Config) {
+func newTestRoomAllocator(t *testing.T) (service.RoomAllocator, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
