@@ -40,6 +40,16 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	PublisherIdentityStub        func() string
+	publisherIdentityMutex       sync.RWMutex
+	publisherIdentityArgsForCall []struct {
+	}
+	publisherIdentityReturns struct {
+		result1 string
+	}
+	publisherIdentityReturnsOnCall map[int]struct {
+		result1 string
+	}
 	SetPublisherMutedStub        func(bool)
 	setPublisherMutedMutex       sync.RWMutex
 	setPublisherMutedArgsForCall []struct {
@@ -214,6 +224,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeSubscribedTrack) PublisherIdentity() string {
+	fake.publisherIdentityMutex.Lock()
+	ret, specificReturn := fake.publisherIdentityReturnsOnCall[len(fake.publisherIdentityArgsForCall)]
+	fake.publisherIdentityArgsForCall = append(fake.publisherIdentityArgsForCall, struct {
+	}{})
+	stub := fake.PublisherIdentityStub
+	fakeReturns := fake.publisherIdentityReturns
+	fake.recordInvocation("PublisherIdentity", []interface{}{})
+	fake.publisherIdentityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityCallCount() int {
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
+	return len(fake.publisherIdentityArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityCalls(stub func() string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = stub
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityReturns(result1 string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	fake.publisherIdentityReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityReturnsOnCall(i int, result1 string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	if fake.publisherIdentityReturnsOnCall == nil {
+		fake.publisherIdentityReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.publisherIdentityReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) SetPublisherMuted(arg1 bool) {
 	fake.setPublisherMutedMutex.Lock()
 	fake.setPublisherMutedArgsForCall = append(fake.setPublisherMutedArgsForCall, struct {
@@ -288,6 +351,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
 	fake.updateSubscriberSettingsMutex.RLock()
