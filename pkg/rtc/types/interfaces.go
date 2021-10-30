@@ -82,7 +82,6 @@ type Participant interface {
 	AddSubscribedTrack(participantId string, st SubscribedTrack)
 	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
-	UpdateAfterActive() bool
 
 	DebugInfo() map[string]interface{}
 }

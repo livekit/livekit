@@ -26,9 +26,9 @@ const (
 )
 
 type Room struct {
-	Room       *livekit.Room
-	config     WebRTCConfig
-	lock       sync.RWMutex
+	Room   *livekit.Room
+	config WebRTCConfig
+	lock   sync.RWMutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -174,10 +174,6 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			if p.UpdateAfterActive() {
-				_ = p.SendParticipantUpdate(ToProtoParticipants(r.GetParticipants()))
-			}
-
 			// subscribe participant to existing publishedTracks
 			r.subscribeToExistingTracks(p)
 

@@ -435,16 +435,6 @@ type FakeParticipant struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
 	}
-	UpdateAfterActiveStub        func() bool
-	updateAfterActiveMutex       sync.RWMutex
-	updateAfterActiveArgsForCall []struct {
-	}
-	updateAfterActiveReturns struct {
-		result1 bool
-	}
-	updateAfterActiveReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -2765,59 +2755,6 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) UpdateAfterActive() bool {
-	fake.updateAfterActiveMutex.Lock()
-	ret, specificReturn := fake.updateAfterActiveReturnsOnCall[len(fake.updateAfterActiveArgsForCall)]
-	fake.updateAfterActiveArgsForCall = append(fake.updateAfterActiveArgsForCall, struct {
-	}{})
-	stub := fake.UpdateAfterActiveStub
-	fakeReturns := fake.updateAfterActiveReturns
-	fake.recordInvocation("UpdateAfterActive", []interface{}{})
-	fake.updateAfterActiveMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveCallCount() int {
-	fake.updateAfterActiveMutex.RLock()
-	defer fake.updateAfterActiveMutex.RUnlock()
-	return len(fake.updateAfterActiveArgsForCall)
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveCalls(stub func() bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = stub
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveReturns(result1 bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = nil
-	fake.updateAfterActiveReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveReturnsOnCall(i int, result1 bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = nil
-	if fake.updateAfterActiveReturnsOnCall == nil {
-		fake.updateAfterActiveReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.updateAfterActiveReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -2917,8 +2854,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriberPCMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
-	fake.updateAfterActiveMutex.RLock()
-	defer fake.updateAfterActiveMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
