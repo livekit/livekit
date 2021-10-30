@@ -60,11 +60,10 @@ type RoomStatsReporter struct {
 	Outgoing  *PacketStats
 }
 
-func NewRoomStatsReporter(roomName string) *RoomStatsReporter {
+func NewRoomStatsReporter() *RoomStatsReporter {
 	return &RoomStatsReporter{
-		roomName: roomName,
-		Incoming: newPacketStats(roomName, "incoming"),
-		Outgoing: newPacketStats(roomName, "outgoing"),
+		Incoming: newPacketStats("incoming"),
+		Outgoing: newPacketStats("outgoing"),
 	}
 }
 

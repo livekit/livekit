@@ -60,7 +60,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		Room:            proto.Clone(room).(*livekit.Room),
 		config:          config,
 		audioConfig:     audioConfig,
-		statsReporter:   stats.NewRoomStatsReporter(room.Name),
+		statsReporter:   stats.NewRoomStatsReporter(),
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),

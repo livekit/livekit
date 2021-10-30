@@ -53,7 +53,6 @@ func initPacketStats() {
 }
 
 type PacketStats struct {
-	roomName  string
 	direction string // incoming or outgoing
 
 	PacketBytes uint64 `json:"packetBytes"`
@@ -63,9 +62,8 @@ type PacketStats struct {
 	FIRTotal    uint64 `json:"firTotal"`
 }
 
-func newPacketStats(room, direction string) *PacketStats {
+func newPacketStats(direction string) *PacketStats {
 	return &PacketStats{
-		roomName:  room,
 		direction: direction,
 	}
 }
@@ -121,7 +119,6 @@ func (s *PacketStats) HandleRTCP(pkts []rtcp.Packet) {
 
 func (s PacketStats) Copy() *PacketStats {
 	return &PacketStats{
-		roomName:    s.roomName,
 		direction:   s.direction,
 		PacketBytes: atomic.LoadUint64(&s.PacketBytes),
 		PacketTotal: atomic.LoadUint64(&s.PacketTotal),
