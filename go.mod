@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.9.10
+	github.com/livekit/protocol v0.9.11
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -31,8 +31,7 @@ require (
 	github.com/pion/turn/v2 v2.0.5
 	github.com/pion/webrtc/v3 v3.1.5
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.10.0
-	github.com/prometheus/common v0.19.0 // indirect
+	github.com/prometheus/client_golang v1.11.0
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/thoas/go-funk v0.8.0

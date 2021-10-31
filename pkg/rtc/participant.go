@@ -70,8 +70,8 @@ type ParticipantImpl struct {
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
-	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
-	subscribedTracks map[string][]types.SubscribedTrack
+	// tracks the current participant is subscribed to, map of sid => DownTrack
+	subscribedTracks map[string]types.SubscribedTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
@@ -97,7 +97,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		id:               utils.NewGuid(utils.ParticipantPrefix),
 		rtcpCh:           make(chan []rtcp.Packet, 50),
 		pliThrottle:      newPLIThrottle(params.ThrottleConfig),
-		subscribedTracks: make(map[string][]types.SubscribedTrack),
+		subscribedTracks: make(map[string]types.SubscribedTrack),
 		publishedTracks:  make(map[string]types.PublishedTrack, 0),
 		pendingTracks:    make(map[string]*livekit.TrackInfo),
 		connectedAt:      time.Now(),
@@ -361,16 +361,6 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	})
 }
 
-func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
-	for _, t := range p.publishedTracks {
-		tracks = append(tracks, t)
-	}
-	return tracks
-}
-
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
 func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
@@ -429,10 +419,8 @@ func (p *ParticipantImpl) Close() error {
 	}
 
 	var downtracksToClose []*sfu.DownTrack
-	for _, tracks := range p.subscribedTracks {
-		for _, st := range tracks {
-			downtracksToClose = append(downtracksToClose, st.DownTrack())
-		}
+	for _, st := range p.subscribedTracks {
+		downtracksToClose = append(downtracksToClose, st.DownTrack())
 	}
 	p.lock.Unlock()
 
@@ -686,14 +674,34 @@ func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
 
+func (p *ParticipantImpl) GetPublishedTrack(sid string) types.PublishedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.publishedTracks[sid]
+}
+
+func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
+	for _, t := range p.publishedTracks {
+		tracks = append(tracks, t)
+	}
+	return tracks
+}
+
+func (p *ParticipantImpl) GetSubscribedTrack(sid string) types.SubscribedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.subscribedTracks[sid]
+}
+
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	subscribed := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
-	for _, pTracks := range p.subscribedTracks {
-		for _, t := range pTracks {
-			subscribed = append(subscribed, t)
-		}
+	for _, st := range p.subscribedTracks {
+		subscribed = append(subscribed, st)
 	}
 	return subscribed
 }
@@ -703,7 +711,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.Subscr
 	logger.Debugw("added subscribedTrack", "pIDs", []string{pubId, p.ID()},
 		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
-	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
+	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
 
 	p.subscriber.AddTrack(subTrack)
@@ -717,14 +725,8 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.Sub
 	p.subscriber.RemoveTrack(subTrack)
 
 	p.lock.Lock()
-	defer p.lock.Unlock()
-	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks[pubId]))
-	for _, tr := range p.subscribedTracks[pubId] {
-		if tr != subTrack {
-			tracks = append(tracks, tr)
-		}
-	}
-	p.subscribedTracks[pubId] = tracks
+	delete(p.subscribedTracks, subTrack.ID())
+	p.lock.Unlock()
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
@@ -839,15 +841,16 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		}
 
 		mt = NewMediaTrack(track, MediaTrackParams{
-			TrackInfo:      ti,
-			SignalCid:      signalCid,
-			SdpCid:         track.ID(),
-			ParticipantID:  p.id,
-			RTCPChan:       p.rtcpCh,
-			BufferFactory:  p.params.Config.BufferFactory,
-			ReceiverConfig: p.params.Config.Receiver,
-			AudioConfig:    p.params.AudioConfig,
-			Stats:          p.params.Stats,
+			TrackInfo:           ti,
+			SignalCid:           signalCid,
+			SdpCid:              track.ID(),
+			ParticipantID:       p.id,
+			ParticipantIdentity: p.Identity(),
+			RTCPChan:            p.rtcpCh,
+			BufferFactory:       p.params.Config.BufferFactory,
+			ReceiverConfig:      p.params.Config.Receiver,
+			AudioConfig:         p.params.AudioConfig,
+			Stats:               p.params.Stats,
 		})
 
 		// add to published and clean up pending
@@ -1018,16 +1021,14 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
-		for _, tracks := range p.subscribedTracks {
-			for _, subTrack := range tracks {
-				sr := subTrack.DownTrack().CreateSenderReport()
-				chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
-				if sr == nil || chunks == nil {
-					continue
-				}
-				srs = append(srs, sr)
-				sd = append(sd, chunks...)
+		for _, subTrack := range p.subscribedTracks {
+			sr := subTrack.DownTrack().CreateSenderReport()
+			chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
+			if sr == nil || chunks == nil {
+				continue
 			}
+			srs = append(srs, sr)
+			sd = append(sd, chunks...)
 		}
 		p.lock.RUnlock()
 
@@ -1230,14 +1231,10 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 		}
 	}
 
-	for pubID, tracks := range p.subscribedTracks {
-		trackInfo := make([]map[string]interface{}, 0, len(tracks))
-		for _, track := range tracks {
-			dt := track.DownTrack().DebugInfo()
-			dt["SubMuted"] = track.IsMuted()
-			trackInfo = append(trackInfo, dt)
-		}
-		subscribedTrackInfo[pubID] = trackInfo
+	for _, track := range p.subscribedTracks {
+		dt := track.DownTrack().DebugInfo()
+		dt["SubMuted"] = track.IsMuted()
+		subscribedTrackInfo[track.ID()] = dt
 	}
 
 	for clientID, track := range p.pendingTracks {

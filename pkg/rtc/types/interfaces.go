@@ -39,7 +39,9 @@ type Participant interface {
 	ICERestart() error
 
 	AddTrack(req *livekit.AddTrackRequest)
+	GetPublishedTrack(sid string) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
+	GetSubscribedTrack(sid string) SubscribedTrack
 	GetSubscribedTracks() []SubscribedTrack
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
@@ -101,6 +103,8 @@ type PublishedTrack interface {
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	// returns quality information that's appropriate for width & height
+	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 	ToProto() *livekit.TrackInfo
 
 	// callbacks
@@ -110,6 +114,7 @@ type PublishedTrack interface {
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	ID() string
+	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)

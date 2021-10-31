@@ -409,17 +409,51 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 						"subscribe", msg.Subscription.Subscribe)
 				}
 			case *livekit.SignalRequest_TrackSetting:
-				for _, subTrack := range participant.GetSubscribedTracks() {
-					for _, sid := range msg.TrackSetting.TrackSids {
-						if subTrack.ID() != sid {
-							continue
-						}
-						logger.Debugw("updating track settings",
+				for _, sid := range msg.TrackSetting.TrackSids {
+					subTrack := participant.GetSubscribedTrack(sid)
+					if subTrack == nil {
+						logger.Warnw("unable to find SubscribedTrack",
+							nil,
 							"participant", participant.Identity(),
 							"pID", participant.ID(),
-							"settings", msg.TrackSetting)
-						subTrack.UpdateSubscriberSettings(!msg.TrackSetting.Disabled, msg.TrackSetting.Quality)
+							"track", sid)
+						continue
 					}
+
+					// find the source PublishedTrack
+					publisher := room.GetParticipant(subTrack.PublisherIdentity())
+					if publisher == nil {
+						logger.Warnw("unable to find publisher of SubscribedTrack",
+							nil,
+							"participant", participant.Identity(),
+							"pID", participant.ID(),
+							"publisher", subTrack.PublisherIdentity(),
+							"track", sid)
+						continue
+					}
+
+					pubTrack := publisher.GetPublishedTrack(sid)
+					if pubTrack == nil {
+						logger.Warnw("unable to find PublishedTrack",
+							nil,
+							"participant", publisher.Identity(),
+							"pID", publisher.ID(),
+							"track", sid)
+						continue
+					}
+					if msg.TrackSetting.Width > 0 {
+						msg.TrackSetting.Quality = pubTrack.GetQualityForDimension(msg.TrackSetting.Width, msg.TrackSetting.Height)
+					}
+
+					// find quality for published track
+					logger.Debugw("updating track settings",
+						"participant", participant.Identity(),
+						"pID", participant.ID(),
+						"settings", msg.TrackSetting)
+					subTrack.UpdateSubscriberSettings(
+						!msg.TrackSetting.Disabled,
+						msg.TrackSetting.Quality,
+					)
 				}
 			case *livekit.SignalRequest_Leave:
 				_ = participant.Close()
@@ -535,17 +569,6 @@ func (r *LocalRoomManager) notifyEvent(event *livekit.WebhookEvent) {
 			logger.Warnw("could not notify webhook", err, "event", event.Event)
 		}
 	})
-}
-
-func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {
-	room.EmptyTimeout = conf.EmptyTimeout
-	room.MaxParticipants = conf.MaxParticipants
-	for _, codec := range conf.EnabledCodecs {
-		room.EnabledCodecs = append(room.EnabledCodecs, &livekit.Codec{
-			Mime:     codec.Mime,
-			FmtpLine: codec.FmtpLine,
-		})
-	}
 }
 
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
