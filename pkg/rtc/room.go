@@ -26,9 +26,10 @@ const (
 )
 
 type Room struct {
-	Room   *livekit.Room
-	config WebRTCConfig
-	lock   sync.RWMutex
+	Room          *livekit.Room
+	config        WebRTCConfig
+	lock          sync.RWMutex
+	broadcastLock sync.Mutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -542,8 +543,18 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 		return
 	}
 
-	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
+
+	// lock to ensure sequential publishing. in larger rooms, it's possible to have two goroutines attempting to broadcast
+	// updates to the room at the same time. We'd want to avoid the following condition:
+	// 1. goroutine1 starts with older information
+	// 2. goroutine2 starts with newer information
+	// 3. goroutine2 is processing faster than goroutine1
+	// 4. for some receiving participants, they are getting older track information *after* newer data
+	// when 4 happens, it'll cause "track missing" on clients.
+	r.broadcastLock.Lock()
+	defer r.broadcastLock.Unlock()
+	updates := ToProtoParticipants([]types.Participant{p})
 	for _, op := range participants {
 		// skip itself && closed participants
 		if (skipSource && p.ID() == op.ID()) || op.State() == livekit.ParticipantInfo_DISCONNECTED {
