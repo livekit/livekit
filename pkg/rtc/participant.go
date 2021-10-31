@@ -78,8 +78,9 @@ type ParticipantImpl struct {
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
 
-	lock sync.RWMutex
-	once sync.Once
+	lock       sync.RWMutex
+	once       sync.Once
+	updateLock sync.Mutex
 
 	// callbacks & handlers
 	onTrackPublished func(types.Participant, types.PublishedTrack)
@@ -517,6 +518,8 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, updatedAt time.Time) error {
 	if len(participantsToUpdate) == 1 {
+		p.updateLock.Lock()
+		defer p.updateLock.Unlock()
 		pi := participantsToUpdate[0]
 		if val, ok := p.updateCache.Get(pi.Sid); ok {
 			if lastUpdatedAt, ok := val.(time.Time); ok {
