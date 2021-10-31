@@ -37,7 +37,7 @@ type MediaTrack struct {
 	codec       webrtc.RTPCodecParameters
 	muted       utils.AtomicFlag
 	numUpTracks uint32
-	simulcasted bool
+	simulcasted utils.AtomicFlag
 
 	// channel to send RTCP packets to the source
 	lock sync.RWMutex
@@ -349,7 +349,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
 	// when RID is set, track is simulcasted
 	// TODO: how does this work with FF, SSRC based simulcast?
-	t.simulcasted = track.RID() != ""
+	t.simulcasted.TrySet(track.RID() != "")
 	atomic.AddUint32(&t.numUpTracks, 1)
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
@@ -381,7 +381,7 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.params.TrackInfo
 	info.Muted = t.IsMuted()
-	info.Simulcast = t.simulcasted
+	info.Simulcast = t.simulcasted.Get()
 	return info
 }
 

@@ -839,7 +839,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 		newTrack = true
 	}
-	p.lock.Unlock()
 
 	ssrc := uint32(track.SSRC())
 	p.pliThrottle.addTrack(ssrc, track.RID())
@@ -849,6 +848,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			_ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
 		})
 	}
+	p.lock.Unlock()
+
 	mt.AddReceiver(rtpReceiver, track, p.twcc)
 
 	if newTrack {

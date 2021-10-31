@@ -182,15 +182,20 @@ func TestParticipantUpdate(t *testing.T) {
 			sender := rm.GetParticipants()[0]
 			test.action(sender)
 
-			// go through the other participants, make sure they've received update
-			for _, p := range rm.GetParticipants() {
-				expected := callCounts[p.ID()]
-				if p != sender || test.sendToSender {
-					expected += 1
+			testutils.WithTimeout(t, "waiting for "+test.name, func() bool {
+				// go through the other participants, make sure they've received update
+				for _, p := range rm.GetParticipants() {
+					expected := callCounts[p.ID()]
+					if p != sender || test.sendToSender {
+						expected += 1
+					}
+					fp := p.(*typesfakes.FakeParticipant)
+					if expected != fp.SendParticipantUpdateCallCount() {
+						return false
+					}
 				}
-				fp := p.(*typesfakes.FakeParticipant)
-				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
-			}
+				return true
+			})
 		})
 	}
 }
