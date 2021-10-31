@@ -13,6 +13,7 @@ require (
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
 	github.com/livekit/protocol v0.9.11
 	github.com/magefile/mage v1.11.0

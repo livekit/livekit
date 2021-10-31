@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -44,16 +45,16 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
-	params            ParticipantParams
-	id                string
-	publisher         *PCTransport
-	subscriber        *PCTransport
-	isClosed          utils.AtomicFlag
-	permission        *livekit.ParticipantPermission
-	state             atomic.Value // livekit.ParticipantInfo_State
-	updateAfterActive atomic.Value // bool
-	rtcpCh            chan []rtcp.Packet
-	pliThrottle       *pliThrottle
+	params      ParticipantParams
+	id          string
+	publisher   *PCTransport
+	subscriber  *PCTransport
+	isClosed    utils.AtomicFlag
+	permission  *livekit.ParticipantPermission
+	state       atomic.Value // livekit.ParticipantInfo_State
+	rtcpCh      chan []rtcp.Packet
+	pliThrottle *pliThrottle
+	updateCache *lru.Cache
 
 	// reliable and unreliable data channels
 	reliableDC    *webrtc.DataChannel
@@ -77,8 +78,9 @@ type ParticipantImpl struct {
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
 
-	lock sync.RWMutex
-	once sync.Once
+	lock       sync.RWMutex
+	once       sync.Once
+	updateLock sync.Mutex
 
 	// callbacks & handlers
 	onTrackPublished func(types.Participant, types.PublishedTrack)
@@ -103,9 +105,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		connectedAt:      time.Now(),
 	}
 	p.state.Store(livekit.ParticipantInfo_JOINING)
-	p.updateAfterActive.Store(false)
 
 	var err error
+	// keep last participants and when updates were sent
+	if p.updateCache, err = lru.New(32); err != nil {
+		return nil, err
+	}
 	p.publisher, err = NewPCTransport(TransportParams{
 		Target:        livekit.SignalTarget_PUBLISHER,
 		Config:        params.Config,
@@ -177,10 +182,6 @@ func (p *ParticipantImpl) Identity() string {
 
 func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 	return p.state.Load().(livekit.ParticipantInfo_State)
-}
-
-func (p *ParticipantImpl) UpdateAfterActive() bool {
-	return p.updateAfterActive.Load().(bool)
 }
 
 func (p *ParticipantImpl) ProtocolVersion() types.ProtocolVersion {
@@ -515,16 +516,22 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 	})
 }
 
-func (p *ParticipantImpl) SendParticipantUpdate(participants []*livekit.ParticipantInfo) error {
-	participantsToUpdate := participants
-	if p.State() == livekit.ParticipantInfo_JOINING {
-		// have not fully joined, it will not know how to handle updates
-		// make a note so that Room could resend updates once fully joined
-		p.updateAfterActive.Store(true)
-		return nil
+func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, updatedAt time.Time) error {
+	if len(participantsToUpdate) == 1 {
+		p.updateLock.Lock()
+		defer p.updateLock.Unlock()
+		pi := participantsToUpdate[0]
+		if val, ok := p.updateCache.Get(pi.Sid); ok {
+			if lastUpdatedAt, ok := val.(time.Time); ok {
+				// this is a message delivered out of order, a more recent version of the message had already been
+				// sent.
+				if lastUpdatedAt.After(updatedAt) {
+					return nil
+				}
+			}
+		}
+		p.updateCache.Add(pi.Sid, updatedAt)
 	}
-
-	p.updateAfterActive.Store(false)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
@@ -854,7 +861,6 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 		newTrack = true
 	}
-	p.lock.Unlock()
 
 	ssrc := uint32(track.SSRC())
 	p.pliThrottle.addTrack(ssrc, track.RID())
@@ -864,6 +870,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			_ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
 		})
 	}
+	p.lock.Unlock()
+
 	mt.AddReceiver(rtpReceiver, track, p.twcc)
 
 	if newTrack {

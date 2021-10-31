@@ -336,10 +336,11 @@ type FakeParticipant struct {
 	sendJoinResponseReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendParticipantUpdateStub        func([]*livekit.ParticipantInfo) error
+	SendParticipantUpdateStub        func([]*livekit.ParticipantInfo, time.Time) error
 	sendParticipantUpdateMutex       sync.RWMutex
 	sendParticipantUpdateArgsForCall []struct {
 		arg1 []*livekit.ParticipantInfo
+		arg2 time.Time
 	}
 	sendParticipantUpdateReturns struct {
 		result1 error
@@ -434,16 +435,6 @@ type FakeParticipant struct {
 	}
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
-	}
-	UpdateAfterActiveStub        func() bool
-	updateAfterActiveMutex       sync.RWMutex
-	updateAfterActiveArgsForCall []struct {
-	}
-	updateAfterActiveReturns struct {
-		result1 bool
-	}
-	updateAfterActiveReturnsOnCall map[int]struct {
-		result1 bool
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -2206,7 +2197,7 @@ func (fake *FakeParticipant) SendJoinResponseReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
-func (fake *FakeParticipant) SendParticipantUpdate(arg1 []*livekit.ParticipantInfo) error {
+func (fake *FakeParticipant) SendParticipantUpdate(arg1 []*livekit.ParticipantInfo, arg2 time.Time) error {
 	var arg1Copy []*livekit.ParticipantInfo
 	if arg1 != nil {
 		arg1Copy = make([]*livekit.ParticipantInfo, len(arg1))
@@ -2216,13 +2207,14 @@ func (fake *FakeParticipant) SendParticipantUpdate(arg1 []*livekit.ParticipantIn
 	ret, specificReturn := fake.sendParticipantUpdateReturnsOnCall[len(fake.sendParticipantUpdateArgsForCall)]
 	fake.sendParticipantUpdateArgsForCall = append(fake.sendParticipantUpdateArgsForCall, struct {
 		arg1 []*livekit.ParticipantInfo
-	}{arg1Copy})
+		arg2 time.Time
+	}{arg1Copy, arg2})
 	stub := fake.SendParticipantUpdateStub
 	fakeReturns := fake.sendParticipantUpdateReturns
-	fake.recordInvocation("SendParticipantUpdate", []interface{}{arg1Copy})
+	fake.recordInvocation("SendParticipantUpdate", []interface{}{arg1Copy, arg2})
 	fake.sendParticipantUpdateMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -2236,17 +2228,17 @@ func (fake *FakeParticipant) SendParticipantUpdateCallCount() int {
 	return len(fake.sendParticipantUpdateArgsForCall)
 }
 
-func (fake *FakeParticipant) SendParticipantUpdateCalls(stub func([]*livekit.ParticipantInfo) error) {
+func (fake *FakeParticipant) SendParticipantUpdateCalls(stub func([]*livekit.ParticipantInfo, time.Time) error) {
 	fake.sendParticipantUpdateMutex.Lock()
 	defer fake.sendParticipantUpdateMutex.Unlock()
 	fake.SendParticipantUpdateStub = stub
 }
 
-func (fake *FakeParticipant) SendParticipantUpdateArgsForCall(i int) []*livekit.ParticipantInfo {
+func (fake *FakeParticipant) SendParticipantUpdateArgsForCall(i int) ([]*livekit.ParticipantInfo, time.Time) {
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
 	argsForCall := fake.sendParticipantUpdateArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) SendParticipantUpdateReturns(result1 error) {
@@ -2765,59 +2757,6 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) UpdateAfterActive() bool {
-	fake.updateAfterActiveMutex.Lock()
-	ret, specificReturn := fake.updateAfterActiveReturnsOnCall[len(fake.updateAfterActiveArgsForCall)]
-	fake.updateAfterActiveArgsForCall = append(fake.updateAfterActiveArgsForCall, struct {
-	}{})
-	stub := fake.UpdateAfterActiveStub
-	fakeReturns := fake.updateAfterActiveReturns
-	fake.recordInvocation("UpdateAfterActive", []interface{}{})
-	fake.updateAfterActiveMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveCallCount() int {
-	fake.updateAfterActiveMutex.RLock()
-	defer fake.updateAfterActiveMutex.RUnlock()
-	return len(fake.updateAfterActiveArgsForCall)
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveCalls(stub func() bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = stub
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveReturns(result1 bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = nil
-	fake.updateAfterActiveReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeParticipant) UpdateAfterActiveReturnsOnCall(i int, result1 bool) {
-	fake.updateAfterActiveMutex.Lock()
-	defer fake.updateAfterActiveMutex.Unlock()
-	fake.UpdateAfterActiveStub = nil
-	if fake.updateAfterActiveReturnsOnCall == nil {
-		fake.updateAfterActiveReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.updateAfterActiveReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -2917,8 +2856,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriberPCMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
-	fake.updateAfterActiveMutex.RLock()
-	defer fake.updateAfterActiveMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
