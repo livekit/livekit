@@ -8,6 +8,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
+	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -39,7 +40,7 @@ type PCTransport struct {
 	negotiationState      int
 
 	// stream allocator for subscriber PC
-	streamAllocator *StreamAllocator
+	streamAllocator *sfu.StreamAllocator
 }
 
 type TransportParams struct {
@@ -98,7 +99,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		negotiationState:   negotiationStateNone,
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
-		t.streamAllocator = NewStreamAllocator()
+		t.streamAllocator = sfu.NewStreamAllocator()
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
