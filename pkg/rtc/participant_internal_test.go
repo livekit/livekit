@@ -167,6 +167,31 @@ func TestTrackPublishing(t *testing.T) {
 	})
 }
 
+func TestOutOfOrderUpdates(t *testing.T) {
+	p := newParticipantForTest("test")
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	pi := &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "123",
+	}
+	earlierTs := time.Now()
+	laterTs := time.Now()
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, laterTs))
+
+	pi = &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "456",
+	}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, earlierTs))
+
+	// only sent once, and it's the earlier message
+	require.Equal(t, 1, sink.WriteMessageCallCount())
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+	require.Equal(t, "123", sent.GetUpdate().Participants[0].Metadata)
+}
+
 // after disconnection, things should continue to function and not panic
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {

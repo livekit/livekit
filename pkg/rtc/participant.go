@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -53,6 +54,7 @@ type ParticipantImpl struct {
 	state       atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh      chan []rtcp.Packet
 	pliThrottle *pliThrottle
+	updateCache *lru.Cache
 
 	// reliable and unreliable data channels
 	reliableDC    *webrtc.DataChannel
@@ -104,6 +106,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	var err error
+	// keep last participants and when updates were sent
+	if p.updateCache, err = lru.New(32); err != nil {
+		return nil, err
+	}
 	p.publisher, err = NewPCTransport(TransportParams{
 		Target:        livekit.SignalTarget_PUBLISHER,
 		Config:        params.Config,
@@ -509,7 +515,20 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 	})
 }
 
-func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, updatedAt time.Time) error {
+	if len(participantsToUpdate) == 1 {
+		pi := participantsToUpdate[0]
+		if val, ok := p.updateCache.Get(pi.Sid); ok {
+			if lastUpdatedAt, ok := val.(time.Time); ok {
+				// this is a message delivered out of order, a more recent version of the message had already been
+				// sent.
+				if lastUpdatedAt.After(updatedAt) {
+					return nil
+				}
+			}
+		}
+		p.updateCache.Add(pi.Sid, updatedAt)
+	}
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{

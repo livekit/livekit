@@ -186,20 +186,8 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			// close previous sink, and link to new one
-			prevSink := participant.GetResponseSink()
-			if prevSink != nil {
-				prevSink.Close()
-			}
-			participant.SetResponseSink(responseSink)
-
-			if err := participant.SendParticipantUpdate(rtc.ToProtoParticipants(room.GetParticipants())); err != nil {
-				logger.Warnw("failed to send participant update", err,
-					"participant", pi.Identity)
-			}
-
-			if err := participant.ICERestart(); err != nil {
-				logger.Warnw("could not restart ICE", err,
+			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+				logger.Warnw("could not resume participant", err,
 					"participant", pi.Identity)
 			}
 			return

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/ion-sfu/pkg/buffer"
@@ -31,7 +32,6 @@ type Room struct {
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
-	updateChan      chan updateJob
 	bufferFactory   *buffer.Factory
 
 	// time the first participant joined the room
@@ -55,11 +55,6 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-type updateJob struct {
-	participant types.Participant
-	skipSource  bool
-}
-
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
@@ -70,7 +65,6 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
 		closed:          make(chan struct{}),
-		updateChan:      make(chan updateJob, 16),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
@@ -80,7 +74,6 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	}
 	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
-	go r.participantUpdateWorker()
 
 	return r
 }
@@ -179,7 +172,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
 		}
-		r.updateChan <- updateJob{p, true}
+		r.broadcastParticipantState(p, true)
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
@@ -241,6 +234,24 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	return nil
 }
 
+func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink) error {
+	// close previous sink, and link to new one
+	if prevSink := p.GetResponseSink(); prevSink != nil {
+		prevSink.Close()
+	}
+	p.SetResponseSink(responseSink)
+
+	updates := ToProtoParticipants(r.GetParticipants())
+	if err := p.SendParticipantUpdate(updates, time.Now()); err != nil {
+		return err
+	}
+
+	if err := p.ICERestart(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *Room) RemoveParticipant(identity string) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
@@ -276,7 +287,7 @@ func (r *Room) RemoveParticipant(identity string) {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(p)
 		}
-		r.updateChan <- updateJob{p, true}
+		r.broadcastParticipantState(p, true)
 	}
 }
 
@@ -435,7 +446,7 @@ func (r *Room) autoSubscribe(participant types.Participant) bool {
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackPublished(participant types.Participant, track types.PublishedTrack) {
 	// publish participant update, since track state is changed
-	r.updateChan <- updateJob{participant, true}
+	r.broadcastParticipantState(participant, true)
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
@@ -473,14 +484,14 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 
 func (r *Room) onTrackUpdated(p types.Participant, _ types.PublishedTrack) {
 	// send track updates to everyone, especially if track was updated by admin
-	r.updateChan <- updateJob{p, false}
+	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
 }
 
 func (r *Room) onParticipantMetadataUpdate(p types.Participant) {
-	r.updateChan <- updateJob{p, false}
+	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
@@ -545,13 +556,15 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 }
 
 // broadcast an update about participant p
-// this should be called only by participantUpdateWorker, to ensure synchronization
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	r.lock.Lock()
+	updatedAt := time.Now()
+	updates := ToProtoParticipants([]types.Participant{p})
+	r.lock.Unlock()
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant
-			updates := ToProtoParticipants([]types.Participant{p})
-			err := p.SendParticipantUpdate(updates)
+			err := p.SendParticipantUpdate(updates, updatedAt)
 			if err != nil {
 				logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
@@ -561,14 +574,13 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 	}
 
 	participants := r.GetParticipants()
-	updates := ToProtoParticipants([]types.Participant{p})
 	for _, op := range participants {
 		// skip itself && closed participants
 		if (skipSource && p.ID() == op.ID()) || op.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
 		}
 
-		err := op.SendParticipantUpdate(updates)
+		err := op.SendParticipantUpdate(updates, updatedAt)
 		if err != nil {
 			logger.Errorw("could not send update to participant", err,
 				"participant", p.Identity(), "pID", p.ID())
@@ -599,21 +611,6 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendSpeakerUpdate(speakers)
-		}
-	}
-}
-
-func (r *Room) participantUpdateWorker() {
-	// use worker goroutine to ensure sequential publishing. when we process each update fully before the next
-	// it ensures that we don't get into a state that two subsequent jobs are being sent in different orders to
-	// other participants in the room.
-	// our protocol requires updates to be sequential, i.e. the most current state must be sent last
-	for {
-		select {
-		case <-r.closed:
-			return
-		case update := <-r.updateChan:
-			r.broadcastParticipantState(update.participant, update.skipSource)
 		}
 	}
 }

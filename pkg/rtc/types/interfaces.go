@@ -49,7 +49,7 @@ type Participant interface {
 	AddSubscriber(op Participant) (int, error)
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant, iceServers []*livekit.ICEServer) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
+	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
