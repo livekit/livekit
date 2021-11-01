@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
 
@@ -26,9 +26,9 @@ const (
 )
 
 type Room struct {
-	Room       *livekit.Room
-	config     WebRTCConfig
-	lock       sync.RWMutex
+	Room   *livekit.Room
+	config WebRTCConfig
+	lock   sync.RWMutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -37,8 +37,9 @@ type Room struct {
 	// time the first participant joined the room
 	joinedAt atomic.Value
 	// time that the last participant left the room
-	leftAt   atomic.Value
-	isClosed utils.AtomicFlag
+	leftAt    atomic.Value
+	closed    chan struct{}
+	closeOnce sync.Once
 
 	// for active speaker updates
 	audioConfig *config.AudioConfig
@@ -63,6 +64,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
+		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
@@ -138,7 +140,7 @@ func (r *Room) LastLeftAt() int64 {
 }
 
 func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
-	if r.isClosed.Get() {
+	if r.IsClosed() {
 		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
@@ -174,10 +176,6 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			if p.UpdateAfterActive() {
-				_ = p.SendParticipantUpdate(ToProtoParticipants(r.GetParticipants()))
-			}
-
 			// subscribe participant to existing publishedTracks
 			r.subscribeToExistingTracks(p)
 
@@ -233,6 +231,24 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 
 	stats.PromServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 
+	return nil
+}
+
+func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink) error {
+	// close previous sink, and link to new one
+	if prevSink := p.GetResponseSink(); prevSink != nil {
+		prevSink.Close()
+	}
+	p.SetResponseSink(responseSink)
+
+	updates := ToProtoParticipants(r.GetParticipants())
+	if err := p.SendParticipantUpdate(updates, time.Now()); err != nil {
+		return err
+	}
+
+	if err := p.ICERestart(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -306,9 +322,18 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []str
 	return nil
 }
 
+func (r *Room) IsClosed() bool {
+	select {
+	case <-r.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
-	if r.isClosed.Get() {
+	if r.IsClosed() {
 		return
 	}
 
@@ -343,15 +368,15 @@ func (r *Room) CloseIfEmpty() {
 }
 
 func (r *Room) Close() {
-	if !r.isClosed.TrySet(true) {
-		return
-	}
-	logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
+	r.closeOnce.Do(func() {
+		close(r.closed)
+		logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
 
-	r.statsReporter.RoomEnded()
-	if r.onClose != nil {
-		r.onClose()
-	}
+		r.statsReporter.RoomEnded()
+		if r.onClose != nil {
+			r.onClose()
+		}
+	})
 }
 
 func (r *Room) GetIncomingStats() stats.PacketStats {
@@ -427,7 +452,6 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 	defer r.lock.RUnlock()
 
 	// subscribe all existing participants to this PublishedTrack
-	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
 			// skip publishing participant
@@ -533,11 +557,14 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	r.lock.Lock()
+	updatedAt := time.Now()
+	updates := ToProtoParticipants([]types.Participant{p})
+	r.lock.Unlock()
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant
-			updates := ToProtoParticipants([]types.Participant{p})
-			err := p.SendParticipantUpdate(updates)
+			err := p.SendParticipantUpdate(updates, updatedAt)
 			if err != nil {
 				logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
@@ -546,7 +573,6 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 		return
 	}
 
-	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
 	for _, op := range participants {
 		// skip itself && closed participants
@@ -554,7 +580,7 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 			continue
 		}
 
-		err := op.SendParticipantUpdate(updates)
+		err := op.SendParticipantUpdate(updates, updatedAt)
 		if err != nil {
 			logger.Errorw("could not send update to participant", err,
 				"participant", p.Identity(), "pID", p.ID())
@@ -602,7 +628,7 @@ func (r *Room) audioUpdateWorker() {
 
 	lastActiveMap := make(map[string]*livekit.SpeakerInfo)
 	for {
-		if r.isClosed.Get() {
+		if r.IsClosed() {
 			return
 		}
 
