@@ -91,6 +91,21 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		logValues = append(logValues, "turn.portUDP", turnConf.UDPPort)
 	}
 
+	if turnConf.TCPPort > 0 {
+		tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort))
+		if err != nil {
+			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+		}
+
+		listenerConfig := turn.ListenerConfig{
+			Listener:              tcpListener,
+			RelayAddressGenerator: relayAddrGen,
+		}
+
+		serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
+		logValues = append(logValues, "turn.portTCP", turnConf.TCPPort)
+	}
+
 	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
 }

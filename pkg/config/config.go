@@ -101,6 +101,7 @@ type TURNConfig struct {
 	KeyFile  string `yaml:"key_file"`
 	TLSPort  int    `yaml:"tls_port"`
 	UDPPort  int    `yaml:"udp_port"`
+	TCPPort  int    `yaml:"tcp_port"`
 }
 
 type WebHookConfig struct {
