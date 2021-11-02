@@ -118,6 +118,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Config:        params.Config,
 		Stats:         p.params.Stats,
 		EnabledCodecs: p.params.EnabledCodecs,
+		Logger:        params.Logger,
 	})
 	if err != nil {
 		return nil, err
@@ -126,6 +127,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Target: livekit.SignalTarget_SUBSCRIBER,
 		Config: params.Config,
 		Stats:  p.params.Stats,
+		Logger: params.Logger,
 	})
 	if err != nil {
 		return nil, err

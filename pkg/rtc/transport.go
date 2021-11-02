@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
@@ -36,6 +37,7 @@ type PCTransport struct {
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	negotiationState      int
+	logger                logr.Logger
 }
 
 type TransportParams struct {
@@ -43,6 +45,7 @@ type TransportParams struct {
 	Config        *WebRTCConfig
 	Stats         *stats.RoomStatsReporter
 	EnabledCodecs []*livekit.Codec
+	Logger        logr.Logger
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -92,6 +95,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		me:                 me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
+		logger:             params.Logger,
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
@@ -99,9 +103,9 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				t.lock.Lock()
 				defer t.lock.Unlock()
 				if t.restartAfterGathering {
-					logger.Debugw("restarting ICE after ICE gathering")
+					logger.WithLogger(params.Logger).Debugw("restarting ICE after ICE gathering")
 					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-						logger.Warnw("could not restart ICE", err)
+						logger.WithLogger(params.Logger).Warnw("could not restart ICE", err)
 					}
 				}
 			}()
@@ -151,9 +155,9 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 
 	// only initiate when we are the offerer
 	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
-		logger.Debugw("re-negotiate after answering")
+		logger.WithLogger(t.logger).Debugw("re-negotiate after answering")
 		if err := t.createAndSendOffer(nil); err != nil {
-			logger.Errorw("could not negotiate", err)
+			logger.WithLogger(t.logger).Errorw("could not negotiate", err)
 		}
 	}
 	return nil
@@ -167,7 +171,7 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 func (t *PCTransport) Negotiate() {
 	t.debouncedNegotiate(func() {
 		if err := t.CreateAndSendOffer(nil); err != nil {
-			logger.Errorw("could not negotiate", err)
+			logger.WithLogger(t.logger).Errorw("could not negotiate", err)
 		}
 	})
 }
@@ -192,24 +196,24 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
 		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-			logger.Debugw("restart ICE after gathering")
+			logger.WithLogger(t.logger).Debugw("restart ICE after gathering")
 			t.restartAfterGathering = true
 			return nil
 		}
-		logger.Debugw("restarting ICE")
+		logger.WithLogger(t.logger).Debugw("restarting ICE")
 	}
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if t.negotiationState == negotiationStateClient {
 		currentSD := t.pc.CurrentRemoteDescription()
 		if iceRestart && currentSD != nil {
-			logger.Debugw("recovering from client negotiation state")
+			logger.WithLogger(t.logger).Debugw("recovering from client negotiation state")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
 				stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 				return err
 			}
 		} else {
-			logger.Debugw("skipping negotiation, trying again later")
+			logger.WithLogger(t.logger).Debugw("skipping negotiation, trying again later")
 			t.negotiationState = negotiationRetry
 			return nil
 		}
@@ -221,14 +225,14 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
 		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
-		logger.Errorw("could not create offer", err)
+		logger.WithLogger(t.logger).Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
-		logger.Errorw("could not set local description", err)
+		logger.WithLogger(t.logger).Errorw("could not set local description", err)
 		return err
 	}
 
