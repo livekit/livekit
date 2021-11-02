@@ -232,6 +232,7 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 		ThrottleConfig:  r.config.RTC.PLIThrottle,
 		EnabledCodecs:   room.Room.EnabledCodecs,
 		Hidden:          pi.Hidden,
+		Logger:          logger.WithLogger(logger.GetLogger().WithValues("room", roomName)),
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)
