@@ -42,7 +42,7 @@ type ParticipantParams struct {
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
-	Logger          *logger.Logger
+	Logger          logger.Logger
 }
 
 type ParticipantImpl struct {

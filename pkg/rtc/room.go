@@ -27,7 +27,7 @@ const (
 
 type Room struct {
 	Room   *livekit.Room
-	Logger *logger.Logger
+	Logger logger.Logger
 	config WebRTCConfig
 	lock   sync.RWMutex
 	// map of identity -> Participant
@@ -59,7 +59,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          logger.WithLogger(logger.GetLogger().WithValues("room", room.Name)),
+		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
 		statsReporter:   stats.NewRoomStatsReporter(room.Name),

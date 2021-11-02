@@ -36,7 +36,7 @@ type PCTransport struct {
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	negotiationState      int
-	logger                *logger.Logger
+	logger                logger.Logger
 }
 
 type TransportParams struct {
@@ -44,7 +44,7 @@ type TransportParams struct {
 	Config        *WebRTCConfig
 	Stats         *stats.RoomStatsReporter
 	EnabledCodecs []*livekit.Codec
-	Logger        *logger.Logger
+	Logger        logger.Logger
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
