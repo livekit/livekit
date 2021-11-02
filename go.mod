@@ -15,7 +15,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.9.11
+	github.com/livekit/protocol v0.9.12-0.20211102204637-f3bd2c316e7b
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -48,3 +48,5 @@ require (
 )
 
 replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.14
+
+// replace github.com/livekit/protocol => ../protocol

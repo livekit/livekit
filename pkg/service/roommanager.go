@@ -232,6 +232,7 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 		ThrottleConfig:  r.config.RTC.PLIThrottle,
 		EnabledCodecs:   room.Room.EnabledCodecs,
 		Hidden:          pi.Hidden,
+		Logger:          room.Logger,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)
@@ -368,29 +369,45 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
-				logger.Debugw("add track request", "participant", participant.Identity(), "pID", participant.ID(),
+				logger.Debugw("add track request",
+					"room", room.Room.Name,
+					"participant", participant.Identity(),
+					"pID", participant.ID(),
 					"track", msg.AddTrack.Cid)
 				participant.AddTrack(msg.AddTrack)
 			case *livekit.SignalRequest_Answer:
 				sd := rtc.FromProtoSessionDescription(msg.Answer)
 				if err := participant.HandleAnswer(sd); err != nil {
-					logger.Errorw("could not handle answer", err, "participant", participant.Identity(), "pID", participant.ID())
+					logger.Errorw("could not handle answer", err,
+						"room", room.Room.Name,
+						"participant", participant.Identity(),
+						"pID", participant.ID(),
+					)
 				}
 			case *livekit.SignalRequest_Trickle:
 				candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
 				if err != nil {
-					logger.Errorw("could not decode trickle", err, "participant", participant.Identity(), "pID", participant.ID())
+					logger.Errorw("could not decode trickle", err,
+						"room", room.Room.Name,
+						"participant", participant.Identity(),
+						"pID", participant.ID(),
+					)
 					break
 				}
 				// logger.Debugw("adding peer candidate", "participant", participant.Identity())
 				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-					logger.Errorw("could not handle trickle", err, "participant", participant.Identity(), "pID", participant.ID())
+					logger.Errorw("could not handle trickle", err,
+						"room", room.Room.Name,
+						"participant", participant.Identity(),
+						"pID", participant.ID(),
+					)
 				}
 			case *livekit.SignalRequest_Mute:
 				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
 			case *livekit.SignalRequest_Subscription:
 				if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
 					logger.Warnw("could not update subscription", err,
+						"room", room.Room.Name,
 						"participant", participant.Identity(),
 						"pID", participant.ID(),
 						"tracks", msg.Subscription.TrackSids,
@@ -400,8 +417,8 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 				for _, sid := range msg.TrackSetting.TrackSids {
 					subTrack := participant.GetSubscribedTrack(sid)
 					if subTrack == nil {
-						logger.Warnw("unable to find SubscribedTrack",
-							nil,
+						logger.Warnw("unable to find SubscribedTrack", nil,
+							"room", room.Room.Name,
 							"participant", participant.Identity(),
 							"pID", participant.ID(),
 							"track", sid)
@@ -411,8 +428,8 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 					// find the source PublishedTrack
 					publisher := room.GetParticipant(subTrack.PublisherIdentity())
 					if publisher == nil {
-						logger.Warnw("unable to find publisher of SubscribedTrack",
-							nil,
+						logger.Warnw("unable to find publisher of SubscribedTrack", nil,
+							"room", room.Room.Name,
 							"participant", participant.Identity(),
 							"pID", participant.ID(),
 							"publisher", subTrack.PublisherIdentity(),
@@ -422,8 +439,7 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 
 					pubTrack := publisher.GetPublishedTrack(sid)
 					if pubTrack == nil {
-						logger.Warnw("unable to find PublishedTrack",
-							nil,
+						logger.Warnw("unable to find PublishedTrack", nil,
 							"participant", publisher.Identity(),
 							"pID", publisher.ID(),
 							"track", sid)
@@ -435,6 +451,7 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 
 					// find quality for published track
 					logger.Debugw("updating track settings",
+						"room", room.Room.Name,
 						"participant", participant.Identity(),
 						"pID", participant.ID(),
 						"settings", msg.TrackSetting)

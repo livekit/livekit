@@ -27,6 +27,7 @@ const (
 
 type Room struct {
 	Room   *livekit.Room
+	Logger logger.Logger
 	config WebRTCConfig
 	lock   sync.RWMutex
 	// map of identity -> Participant
@@ -58,6 +59,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
+		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
 		statsReporter:   stats.NewRoomStatsReporter(room.Name),
@@ -167,7 +169,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
+		r.Logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
 			"oldState", oldState)
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
@@ -190,7 +192,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
 	participant.OnDataPacket(r.onDataPacket)
-	logger.Infow("new participant joined",
+	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"protocol", participant.ProtocolVersion(),
@@ -370,7 +372,7 @@ func (r *Room) CloseIfEmpty() {
 func (r *Room) Close() {
 	r.closeOnce.Do(func() {
 		close(r.closed)
-		logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
+		r.Logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
 
 		r.statsReporter.RoomEnded()
 		if r.onClose != nil {
@@ -416,7 +418,7 @@ func (r *Room) SetMetadata(metadata string) {
 
 		err := p.SendRoomUpdate(r.Room)
 		if err != nil {
-			logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
+			r.Logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
 		}
 	}
 
@@ -465,12 +467,12 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 			continue
 		}
 
-		logger.Debugw("subscribing to new track",
+		r.Logger.Debugw("subscribing to new track",
 			"participants", []string{participant.Identity(), existingParticipant.Identity()},
 			"pIDs", []string{participant.ID(), existingParticipant.ID()},
 			"track", track.ID())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
-			logger.Errorw("could not subscribe to remoteTrack", err,
+			r.Logger.Errorw("could not subscribe to remoteTrack", err,
 				"participants", []string{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []string{participant.ID(), existingParticipant.ID()},
 				"track", track.ID())
@@ -543,7 +545,7 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		}
 		if n, err := op.AddSubscriber(p); err != nil {
 			// TODO: log error? or disconnect?
-			logger.Errorw("could not subscribe to participant", err,
+			r.Logger.Errorw("could not subscribe to participant", err,
 				"participants", []string{op.Identity(), p.Identity()},
 				"pIDs", []string{op.ID(), p.ID()})
 		} else {
@@ -551,7 +553,7 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		}
 	}
 	if tracksAdded > 0 {
-		logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
+		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
 	}
 }
 
@@ -566,7 +568,7 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 			// send update only to hidden participant
 			err := p.SendParticipantUpdate(updates, updatedAt)
 			if err != nil {
-				logger.Errorw("could not send update to participant", err,
+				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
 			}
 		}
@@ -582,7 +584,7 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 
 		err := op.SendParticipantUpdate(updates, updatedAt)
 		if err != nil {
-			logger.Errorw("could not send update to participant", err,
+			r.Logger.Errorw("could not send update to participant", err,
 				"participant", p.Identity(), "pID", p.ID())
 		}
 	}
