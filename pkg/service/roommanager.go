@@ -365,7 +365,11 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 			case *livekit.SignalRequest_Offer:
 				_, err := participant.HandleOffer(rtc.FromProtoSessionDescription(msg.Offer))
 				if err != nil {
-					logger.Errorw("could not handle offer", err, "participant", participant.Identity(), "pID", participant.ID())
+					logger.Errorw("could not handle offer", err,
+						"room", room.Room.Name,
+						"participant", participant.Identity(),
+						"pID", participant.ID(),
+					)
 					return
 				}
 			case *livekit.SignalRequest_AddTrack:
@@ -440,6 +444,7 @@ func (r *LocalRoomManager) rtcSessionWorker(room *rtc.Room, participant types.Pa
 					pubTrack := publisher.GetPublishedTrack(sid)
 					if pubTrack == nil {
 						logger.Warnw("unable to find PublishedTrack", nil,
+							"room", room.Room.Name,
 							"participant", publisher.Identity(),
 							"pID", publisher.ID(),
 							"track", sid)
