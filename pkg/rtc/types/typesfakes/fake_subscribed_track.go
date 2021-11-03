@@ -55,6 +55,16 @@ type FakeSubscribedTrack struct {
 	setPublisherMutedArgsForCall []struct {
 		arg1 bool
 	}
+	SubscribeLossPercentageStub        func() uint32
+	subscribeLossPercentageMutex       sync.RWMutex
+	subscribeLossPercentageArgsForCall []struct {
+	}
+	subscribeLossPercentageReturns struct {
+		result1 uint32
+	}
+	subscribeLossPercentageReturnsOnCall map[int]struct {
+		result1 uint32
+	}
 	UpdateSubscriberSettingsStub        func(bool, livekit.VideoQuality)
 	updateSubscriberSettingsMutex       sync.RWMutex
 	updateSubscriberSettingsArgsForCall []struct {
@@ -309,6 +319,59 @@ func (fake *FakeSubscribedTrack) SetPublisherMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeSubscribedTrack) SubscribeLossPercentage() uint32 {
+	fake.subscribeLossPercentageMutex.Lock()
+	ret, specificReturn := fake.subscribeLossPercentageReturnsOnCall[len(fake.subscribeLossPercentageArgsForCall)]
+	fake.subscribeLossPercentageArgsForCall = append(fake.subscribeLossPercentageArgsForCall, struct {
+	}{})
+	stub := fake.SubscribeLossPercentageStub
+	fakeReturns := fake.subscribeLossPercentageReturns
+	fake.recordInvocation("SubscribeLossPercentage", []interface{}{})
+	fake.subscribeLossPercentageMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageCallCount() int {
+	fake.subscribeLossPercentageMutex.RLock()
+	defer fake.subscribeLossPercentageMutex.RUnlock()
+	return len(fake.subscribeLossPercentageArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageCalls(stub func() uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = stub
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturns(result1 uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = nil
+	fake.subscribeLossPercentageReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturnsOnCall(i int, result1 uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = nil
+	if fake.subscribeLossPercentageReturnsOnCall == nil {
+		fake.subscribeLossPercentageReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.subscribeLossPercentageReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 bool, arg2 livekit.VideoQuality) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	fake.updateSubscriberSettingsArgsForCall = append(fake.updateSubscriberSettingsArgsForCall, struct {
@@ -355,6 +418,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
+	fake.subscribeLossPercentageMutex.RLock()
+	defer fake.subscribeLossPercentageMutex.RUnlock()
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
