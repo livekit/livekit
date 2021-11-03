@@ -100,6 +100,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator()
+		t.streamAllocator.Start()
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
@@ -135,6 +136,10 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 }
 
 func (t *PCTransport) Close() {
+	if t.streamAllocator != nil {
+		t.streamAllocator.Stop()
+	}
+
 	_ = t.pc.Close()
 }
 
