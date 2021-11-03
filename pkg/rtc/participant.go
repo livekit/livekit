@@ -711,7 +711,7 @@ func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
 	}
 
 	avgLoss := (pubLoss + subLoss) / 2
-	if avgLoss >= 5 {
+	if avgLoss >= 4 {
 		return livekit.ConnectionQuality_POOR
 	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
 		return livekit.ConnectionQuality_EXCELLENT
@@ -939,6 +939,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
 			Stats:               p.params.Stats,
+			Logger:              p.params.Logger,
 		})
 
 		// add to published and clean up pending

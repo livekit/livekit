@@ -75,6 +75,7 @@ type MediaTrackParams struct {
 	ReceiverConfig      ReceiverConfig
 	AudioConfig         config.AudioConfig
 	Stats               *stats.RoomStatsReporter
+	Logger              logger.Logger
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -258,7 +259,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			if sender == nil {
 				return
 			}
-			logger.Debugw("removing peerconnection track",
+			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
 				"pIDs", []string{t.params.ParticipantID, sub.ID()},
 				"participant", sub.Identity(),
@@ -269,7 +270,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					return
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					logger.Warnw("could not remove remoteTrack from forwarder", err,
+					t.params.Logger.Warnw("could not remove remoteTrack from forwarder", err,
 						"participant", sub.Identity(), "pID", sub.ID())
 				}
 			}
@@ -298,17 +299,22 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	numRegistered := atomic.LoadUint32(&t.numUpTracks)
-	numPublished := uint32(0)
-	t.lock.RLock()
-	if t.receiver != nil {
-		for i := int32(0); i < 3; i++ {
-			if t.receiver.HasSpatialLayer(i) {
-				numPublished += 1
+	numPublishing := uint32(0)
+	if t.simulcasted.Get() {
+		t.lock.RLock()
+		if t.receiver != nil {
+			for i := int32(0); i < 3; i++ {
+				if t.receiver.HasSpatialLayer(i) {
+					numPublishing += 1
+				}
 			}
 		}
+		t.lock.RUnlock()
+	} else {
+		numPublishing = 1
 	}
-	t.lock.RUnlock()
-	return numPublished, numRegistered
+
+	return numPublishing, numRegistered
 }
 
 // AddReceiver adds a new RTP receiver to the track
@@ -335,7 +341,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
-			logger.Errorw("could not unmarshal RTCP", err)
+			t.params.Logger.Errorw("could not unmarshal RTCP", err)
 			return
 		}
 
@@ -395,7 +401,7 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
-	logger.Debugw("removing all subscribers", "track", t.ID())
+	t.params.Logger.Debugw("removing all subscribers", "track", t.ID())
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	for _, subTrack := range t.subscribedTracks {
@@ -475,7 +481,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 		i := 0
 		for {
 			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				logger.Errorw("could not write RTCP", err)
+				t.params.Logger.Errorw("could not write RTCP", err)
 				return
 			}
 			if i > 5 {

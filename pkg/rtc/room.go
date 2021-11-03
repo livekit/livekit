@@ -712,29 +712,32 @@ func (r *Room) connectionQualityWorker() {
 		}
 
 		participants := r.GetParticipants()
-		updates := make(map[string]*livekit.ConnectionQualityUpdate, len(participants))
+		connectionInfos := make(map[string]*livekit.ConnectionQualityInfo, len(participants))
 
 		for _, p := range participants {
-			updates[p.Identity()] = &livekit.ConnectionQualityUpdate{
-				Identity: p.Identity(),
-				Quality:  p.GetConnectionQuality(),
+			connectionInfos[p.Identity()] = &livekit.ConnectionQualityInfo{
+				ParticipantSid: p.ID(),
+				Quality:        p.GetConnectionQuality(),
 			}
 		}
 
 		for _, op := range participants {
+			update := &livekit.ConnectionQualityUpdate{}
+
 			// send to user itself
-			if update, ok := updates[op.Identity()]; ok {
-				if err := op.SendConnectionQualityUpdate(update); err != nil {
-					// TODO: log errors
-				}
+			if info, ok := connectionInfos[op.Identity()]; ok {
+				update.Updates = append(update.Updates, info)
 			}
 
+			// send to other participants its subscribed to
 			for _, identity := range op.GetSubscribedParticipants() {
-				if update, ok := updates[identity]; ok {
-					if err := op.SendConnectionQualityUpdate(update); err != nil {
-						// TODO: log errors
-					}
+				if info, ok := connectionInfos[identity]; ok {
+					update.Updates = append(update.Updates, info)
 				}
+			}
+			if err := op.SendConnectionQualityUpdate(update); err != nil {
+				r.Logger.Warnw("could not send connection quality update", err,
+					"participant", op.Identity())
 			}
 		}
 
