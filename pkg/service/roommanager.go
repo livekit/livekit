@@ -524,7 +524,7 @@ func (r *LocalRoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICESer
 			hasSTUN = true
 			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
 		}
-		if r.config.TURN.TLSPort > 0 || r.config.TURN.TCPPort > 0 {
+		if r.config.TURN.TLSPort > 0 {
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
 		}
 		if len(urls) > 0 {

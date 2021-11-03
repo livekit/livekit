@@ -85,11 +85,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 				Listener:              tcpListener,
 				RelayAddressGenerator: relayAddrGen,
 			}
-
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 		}
 		logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
-
 	}
 
 	if turnConf.UDPPort > 0 {
