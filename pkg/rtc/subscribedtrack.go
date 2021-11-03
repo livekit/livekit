@@ -19,7 +19,8 @@ type SubscribedTrack struct {
 	publisherIdentity string
 	subMuted          utils.AtomicFlag
 	pubMuted          utils.AtomicFlag
-	debouncer         func(func())
+
+	debouncer func(func())
 }
 
 func NewSubscribedTrack(publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
@@ -40,6 +41,10 @@ func (t *SubscribedTrack) PublisherIdentity() string {
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.dt
+}
+
+func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {
+	return FixedPointToPercent(t.DownTrack().CurrentMaxLossFraction())
 }
 
 // has subscriber indicated it wants to mute this track

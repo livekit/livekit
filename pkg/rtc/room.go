@@ -74,6 +74,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	}
 	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
+	go r.connectionQualityWorker()
 
 	return r
 }
@@ -698,6 +699,44 @@ func (r *Room) audioUpdateWorker() {
 		lastActiveMap = nextActiveMap
 
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
+	}
+}
+
+func (r *Room) connectionQualityWorker() {
+	// send updates to only users that are subscribed to each other
+	for {
+		if r.IsClosed() {
+			return
+		}
+
+		participants := r.GetParticipants()
+		updates := make(map[string]*livekit.ConnectionQualityUpdate, len(participants))
+
+		for _, p := range participants {
+			updates[p.Identity()] = &livekit.ConnectionQualityUpdate{
+				Identity: p.Identity(),
+				Quality:  p.GetConnectionQuality(),
+			}
+		}
+
+		for _, op := range participants {
+			// send to user itself
+			if update, ok := updates[op.Identity()]; ok {
+				if err := op.SendConnectionQualityUpdate(update); err != nil {
+					// TODO: log errors
+				}
+			}
+
+			for _, identity := range op.GetSubscribedParticipants() {
+				if update, ok := updates[identity]; ok {
+					if err := op.SendConnectionQualityUpdate(update); err != nil {
+						// TODO: log errors
+					}
+				}
+			}
+		}
+
+		time.Sleep(time.Second * 5)
 	}
 }
 

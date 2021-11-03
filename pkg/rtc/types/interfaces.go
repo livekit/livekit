@@ -53,8 +53,13 @@ type Participant interface {
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
+	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
+	GetConnectionQuality() livekit.ConnectionQuality
+	IsSubscribedTo(identity string) bool
+	// returns list of participant identities that the current participant is subscribed to
+	GetSubscribedParticipants() []string
 
 	// permissions
 
@@ -78,9 +83,8 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
-
-	AddSubscribedTrack(participantId string, st SubscribedTrack)
-	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
+	AddSubscribedTrack(st SubscribedTrack)
+	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
 
 	DebugInfo() map[string]interface{}
@@ -104,6 +108,9 @@ type PublishedTrack interface {
 	RemoveAllSubscribers()
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+	// returns number of uptracks that are publishing, registered
+	NumUpTracks() (uint32, uint32)
+	PublishLossPercentage() uint32
 	ToProto() *livekit.TrackInfo
 
 	// callbacks
@@ -118,6 +125,7 @@ type SubscribedTrack interface {
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality)
+	SubscribeLossPercentage() uint32
 }
 
 // interface for properties of webrtc.TrackRemote
