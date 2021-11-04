@@ -28,6 +28,10 @@ var (
 		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
 )
 
+const (
+	lostUpdateDelta = time.Second
+)
+
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements the PublishedTrack interface
 type MediaTrack struct {
@@ -38,6 +42,7 @@ type MediaTrack struct {
 	muted       utils.AtomicFlag
 	numUpTracks uint32
 	simulcasted utils.AtomicFlag
+	buffer      *buffer.Buffer
 
 	// channel to send RTCP packets to the source
 	lock sync.RWMutex
@@ -47,6 +52,14 @@ type MediaTrack struct {
 	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
 	lastPLI          time.Time
+
+	// track audio fraction lost
+	fracLostLock      sync.Mutex
+	maxDownFracLost   uint8
+	maxDownFracLostTs time.Time
+	currentUpFracLost uint32
+	maxUpFracLost     uint8
+	maxUpFracLostTs   time.Time
 
 	onClose func()
 }
@@ -62,6 +75,7 @@ type MediaTrackParams struct {
 	ReceiverConfig      ReceiverConfig
 	AudioConfig         config.AudioConfig
 	Stats               *stats.RoomStatsReporter
+	Logger              logger.Logger
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -128,6 +142,10 @@ func (t *MediaTrack) IsSubscriber(subId string) bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 	return t.subscribedTracks[subId] != nil
+}
+
+func (t *MediaTrack) PublishLossPercentage() uint32 {
+	return FixedPointToPercent(uint8(atomic.LoadUint32(&t.currentUpFracLost)))
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
@@ -241,7 +259,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			if sender == nil {
 				return
 			}
-			logger.Debugw("removing peerconnection track",
+			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
 				"pIDs", []string{t.params.ParticipantID, sub.ID()},
 				"participant", sub.Identity(),
@@ -252,15 +270,18 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					return
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					logger.Warnw("could not remove remoteTrack from forwarder", err,
+					t.params.Logger.Warnw("could not remove remoteTrack from forwarder", err,
 						"participant", sub.Identity(), "pID", sub.ID())
 				}
 			}
 
-			sub.RemoveSubscribedTrack(t.params.ParticipantID, subTrack)
+			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()
 	})
+	if t.Kind() == livekit.TrackType_AUDIO {
+		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
+	}
 
 	t.subscribedTracks[sub.ID()] = subTrack
 	subTrack.SetPublisherMuted(t.IsMuted())
@@ -268,7 +289,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.receiver.AddDownTrack(downTrack, t.shouldStartWithBestQuality())
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		sub.AddSubscribedTrack(t.params.ParticipantID, subTrack)
+		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
 
@@ -276,8 +297,24 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	return nil
 }
 
-func (t *MediaTrack) NumUpTracks() uint32 {
-	return atomic.LoadUint32(&t.numUpTracks)
+func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
+	numRegistered := atomic.LoadUint32(&t.numUpTracks)
+	numPublishing := uint32(0)
+	if t.simulcasted.Get() {
+		t.lock.RLock()
+		if t.receiver != nil {
+			for i := int32(0); i < 3; i++ {
+				if t.receiver.HasSpatialLayer(i) {
+					numPublishing += 1
+				}
+			}
+		}
+		t.lock.RUnlock()
+	} else {
+		numPublishing = 1
+	}
+
+	return numPublishing, numRegistered
 }
 
 // AddReceiver adds a new RTP receiver to the track
@@ -286,13 +323,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
-	buff.OnFeedback(func(fb []rtcp.Packet) {
-		if t.params.Stats != nil {
-			t.params.Stats.Incoming.HandleRTCP(fb)
-		}
-		// feedback for the source RTCP
-		t.params.RTCPChan <- fb
-	})
+	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
@@ -310,7 +341,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
-			logger.Errorw("could not unmarshal RTCP", err)
+			t.params.Logger.Errorw("could not unmarshal RTCP", err)
 			return
 		}
 
@@ -341,16 +372,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				onclose()
 			}
 		})
-		t.receiver.OnFractionLostFB(func(lost uint8) {
-			buff.SetLastFractionLostReport(lost)
-		})
 		t.params.Stats.AddPublishedTrack(t.Kind().String())
+
+		if t.Kind() == livekit.TrackType_AUDIO {
+			t.buffer = buff
+		}
 	}
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
-	// when RID is set, track is simulcasted
-	// TODO: how does this work with FF, SSRC based simulcast?
-	t.simulcasted.TrySet(track.RID() != "")
 	atomic.AddUint32(&t.numUpTracks, 1)
+	if atomic.LoadUint32(&t.numUpTracks) > 1 {
+		t.simulcasted.TrySet(true)
+	}
 
 	buff.Bind(receiver.GetParameters(), buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
@@ -369,7 +401,7 @@ func (t *MediaTrack) RemoveSubscriber(participantId string) {
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
-	logger.Debugw("removing all subscribers", "track", t.ID())
+	t.params.Logger.Debugw("removing all subscribers", "track", t.ID())
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	for _, subTrack := range t.subscribedTracks {
@@ -449,7 +481,7 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 		i := 0
 		for {
 			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				logger.Errorw("could not write RTCP", err)
+				t.params.Logger.Errorw("could not write RTCP", err)
 				return
 			}
 			if i > 5 {
@@ -459,6 +491,72 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
+}
+
+func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
+	var maxLost uint8
+	var hasSenderReport bool
+	for _, p := range packets {
+		switch pkt := p.(type) {
+		case *rtcp.SenderReport:
+			for _, rr := range pkt.Reports {
+				if rr.FractionLost > maxLost {
+					maxLost = rr.FractionLost
+				}
+				hasSenderReport = true
+			}
+		}
+	}
+
+	if hasSenderReport {
+		t.fracLostLock.Lock()
+		if maxLost > t.maxUpFracLost {
+			t.maxUpFracLost = maxLost
+		}
+
+		now := time.Now()
+		if now.Sub(t.maxUpFracLostTs) > lostUpdateDelta {
+			atomic.StoreUint32(&t.currentUpFracLost, uint32(t.maxUpFracLost))
+			t.maxUpFracLost = 0
+			t.maxUpFracLostTs = now
+		}
+		t.fracLostLock.Unlock()
+	}
+
+	if t.params.Stats != nil {
+		t.params.Stats.Incoming.HandleRTCP(packets)
+	}
+	// also look for sender reports
+	// feedback for the source RTCP
+	t.params.RTCPChan <- packets
+}
+
+// handles max loss for audio packets
+func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
+	var (
+		shouldUpdate bool
+		maxLost      uint8
+	)
+	t.fracLostLock.Lock()
+	for _, rr := range report.Reports {
+		if t.maxDownFracLost < rr.FractionLost {
+			t.maxDownFracLost = rr.FractionLost
+		}
+	}
+
+	now := time.Now()
+	if now.Sub(t.maxDownFracLostTs) > lostUpdateDelta {
+		shouldUpdate = true
+		maxLost = t.maxDownFracLost
+		t.maxDownFracLost = 0
+		t.maxDownFracLostTs = now
+	}
+	t.fracLostLock.Unlock()
+
+	if shouldUpdate && t.buffer != nil {
+		// ok to access buffer since receivers are added before subscribers
+		t.buffer.SetLastFractionLostReport(maxLost)
+	}
 }
 
 func (t *MediaTrack) DebugInfo() map[string]interface{} {

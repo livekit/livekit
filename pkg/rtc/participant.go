@@ -78,6 +78,8 @@ type ParticipantImpl struct {
 	publishedTracks map[string]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
+	// keep track of other publishers identities that we are subscribed to
+	subscribedTo sync.Map // string => struct{}
 
 	lock       sync.RWMutex
 	once       sync.Once
@@ -600,6 +602,14 @@ func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
 	})
 }
 
+func (p *ParticipantImpl) SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_ConnectionQuality{
+			ConnectionQuality: update,
+		},
+	})
+}
+
 func (p *ParticipantImpl) SetTrackMuted(trackId string, muted bool, fromAdmin bool) {
 	isPending := false
 	p.lock.RLock()
@@ -664,6 +674,68 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	return
 }
 
+func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
+	// avg loss across all tracks, weigh published the same as subscribed
+	var pubLoss, subLoss uint32
+	var reducedQualityPub bool
+	var reducedQualitySub bool
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, pubTrack := range p.publishedTracks {
+		if pubTrack.IsMuted() {
+			continue
+		}
+		pubLoss += pubTrack.PublishLossPercentage()
+		publishing, registered := pubTrack.NumUpTracks()
+		if registered > 0 && publishing != registered {
+			reducedQualityPub = true
+		}
+	}
+	numTracks := uint32(len(p.publishedTracks))
+	if numTracks > 0 {
+		pubLoss /= numTracks
+	}
+
+	for _, subTrack := range p.subscribedTracks {
+		if subTrack.IsMuted() {
+			continue
+		}
+		if subTrack.DownTrack().TargetSpatialLayer() < subTrack.DownTrack().MaxSpatialLayer() {
+			reducedQualitySub = true
+		}
+		subLoss += subTrack.SubscribeLossPercentage()
+	}
+	numTracks = uint32(len(p.subscribedTracks))
+	if numTracks > 0 {
+		subLoss /= numTracks
+	}
+
+	avgLoss := (pubLoss + subLoss) / 2
+	if avgLoss >= 4 {
+		return livekit.ConnectionQuality_POOR
+	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
+		return livekit.ConnectionQuality_EXCELLENT
+	}
+
+	return livekit.ConnectionQuality_GOOD
+}
+
+func (p *ParticipantImpl) IsSubscribedTo(identity string) bool {
+	_, ok := p.subscribedTo.Load(identity)
+	return ok
+}
+
+func (p *ParticipantImpl) GetSubscribedParticipants() []string {
+	var identities []string
+	p.subscribedTo.Range(func(key, _ interface{}) bool {
+		if identity, ok := key.(string); ok {
+			identities = append(identities, identity)
+		}
+		return true
+	})
+	return identities
+}
+
 func (p *ParticipantImpl) CanPublish() bool {
 	return p.permission == nil || p.permission.CanPublish
 }
@@ -717,21 +789,32 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 }
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
-func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("added subscribedTrack", "pIDs", []string{pubId, p.ID()},
+func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
+	p.params.Logger.Debugw("added subscribedTrack", "publisher", subTrack.PublisherIdentity(),
 		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
+	p.subscribedTo.Store(subTrack.PublisherIdentity(), struct{}{})
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
-func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("removed subscribedTrack", "pIDs", []string{pubId, p.ID()},
+func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
+	p.params.Logger.Debugw("removed subscribedTrack", "publisher", subTrack.PublisherIdentity(),
 		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
 	delete(p.subscribedTracks, subTrack.ID())
+	// remove from subscribed map
+	numRemaining := 0
+	for _, st := range p.subscribedTracks {
+		if st.PublisherIdentity() == subTrack.PublisherIdentity() {
+			numRemaining++
+		}
+	}
 	p.lock.Unlock()
+	if numRemaining == 0 {
+		p.subscribedTo.Delete(subTrack.PublisherIdentity())
+	}
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
@@ -856,6 +939,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
 			Stats:               p.params.Stats,
+			Logger:              p.params.Logger,
 		})
 
 		// add to published and clean up pending

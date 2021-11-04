@@ -62,7 +62,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
-		statsReporter:   stats.NewRoomStatsReporter(room.Name),
+		statsReporter:   stats.NewRoomStatsReporter(),
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
@@ -76,6 +76,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	}
 	r.statsReporter.RoomStarted()
 	go r.audioUpdateWorker()
+	go r.connectionQualityWorker()
 
 	return r
 }
@@ -700,6 +701,47 @@ func (r *Room) audioUpdateWorker() {
 		lastActiveMap = nextActiveMap
 
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
+	}
+}
+
+func (r *Room) connectionQualityWorker() {
+	// send updates to only users that are subscribed to each other
+	for {
+		if r.IsClosed() {
+			return
+		}
+
+		participants := r.GetParticipants()
+		connectionInfos := make(map[string]*livekit.ConnectionQualityInfo, len(participants))
+
+		for _, p := range participants {
+			connectionInfos[p.Identity()] = &livekit.ConnectionQualityInfo{
+				ParticipantSid: p.ID(),
+				Quality:        p.GetConnectionQuality(),
+			}
+		}
+
+		for _, op := range participants {
+			update := &livekit.ConnectionQualityUpdate{}
+
+			// send to user itself
+			if info, ok := connectionInfos[op.Identity()]; ok {
+				update.Updates = append(update.Updates, info)
+			}
+
+			// send to other participants its subscribed to
+			for _, identity := range op.GetSubscribedParticipants() {
+				if info, ok := connectionInfos[identity]; ok {
+					update.Updates = append(update.Updates, info)
+				}
+			}
+			if err := op.SendConnectionQualityUpdate(update); err != nil {
+				r.Logger.Warnw("could not send connection quality update", err,
+					"participant", op.Identity())
+			}
+		}
+
+		time.Sleep(time.Second * 5)
 	}
 }
 

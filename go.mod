@@ -7,7 +7,7 @@ require (
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/gammazero/workerpool v1.1.2
-	github.com/go-logr/logr v1.1.0
+	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/zapr v1.1.0
 	github.com/go-redis/redis/v8 v8.11.3
 	github.com/google/subcommands v1.2.0 // indirect
@@ -15,7 +15,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.9.12-0.20211102204637-f3bd2c316e7b
+	github.com/livekit/protocol v0.10.0
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -42,11 +42,8 @@ require (
 	go.uber.org/zap v1.19.1
 	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac // indirect
-	golang.org/x/tools v0.1.7 // indirect
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
-replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.14
-
-// replace github.com/livekit/protocol => ../protocol
+replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.16
