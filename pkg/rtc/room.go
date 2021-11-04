@@ -722,6 +722,9 @@ func (r *Room) connectionQualityWorker() {
 		}
 
 		for _, op := range participants {
+			if !op.ProtocolVersion().SupportsConnectionQuality() {
+				continue
+			}
 			update := &livekit.ConnectionQualityUpdate{}
 
 			// send to user itself

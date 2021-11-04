@@ -30,3 +30,8 @@ func (v ProtocolVersion) SupportsSpeakerChanged() bool {
 func (v ProtocolVersion) SupportsTransceiverReuse() bool {
 	return v > 3
 }
+
+// SupportsConnectionQuality - avoid sending frequent ConnectionQuality updates for lower protocol versions
+func (v ProtocolVersion) SupportsConnectionQuality() bool {
+	return v > 4
+}
