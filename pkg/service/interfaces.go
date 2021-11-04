@@ -16,9 +16,9 @@ import (
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
 	StoreRoom(ctx context.Context, room *livekit.Room) error
-	LoadRoom(ctx context.Context, idOrName string) (*livekit.Room, error)
+	LoadRoom(ctx context.Context, name string) (*livekit.Room, error)
 	ListRooms(ctx context.Context) ([]*livekit.Room, error)
-	DeleteRoom(ctx context.Context, idOrName string) error
+	DeleteRoom(ctx context.Context, name string) error
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)

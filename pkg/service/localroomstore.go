@@ -10,10 +10,8 @@ import (
 
 // encapsulates CRUD operations for room settings
 type LocalRoomStore struct {
-	// map of roomId => room
+	// map of roomName => room
 	rooms map[string]*livekit.Room
-	// map of roomName => roomId
-	roomIds map[string]string
 	// map of roomName => { identity: participant }
 	participants map[string]map[string]*livekit.ParticipantInfo
 	lock         sync.RWMutex
@@ -23,7 +21,6 @@ type LocalRoomStore struct {
 func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
 		rooms:        make(map[string]*livekit.Room),
-		roomIds:      make(map[string]string),
 		participants: make(map[string]map[string]*livekit.ParticipantInfo),
 		lock:         sync.RWMutex{},
 	}
@@ -34,21 +31,16 @@ func (p *LocalRoomStore) StoreRoom(ctx context.Context, room *livekit.Room) erro
 		room.CreationTime = time.Now().Unix()
 	}
 	p.lock.Lock()
-	p.rooms[room.Sid] = room
-	p.roomIds[room.Name] = room.Sid
+	p.rooms[room.Name] = room
 	p.lock.Unlock()
 	return nil
 }
 
-func (p *LocalRoomStore) LoadRoom(ctx context.Context, idOrName string) (*livekit.Room, error) {
+func (p *LocalRoomStore) LoadRoom(ctx context.Context, name string) (*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	// see if it's an id or name
-	if p.rooms[idOrName] == nil {
-		idOrName = p.roomIds[idOrName]
-	}
 
-	room := p.rooms[idOrName]
+	room := p.rooms[name]
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
@@ -65,8 +57,8 @@ func (p *LocalRoomStore) ListRooms(ctx context.Context) ([]*livekit.Room, error)
 	return rooms, nil
 }
 
-func (p *LocalRoomStore) DeleteRoom(ctx context.Context, idOrName string) error {
-	room, err := p.LoadRoom(ctx, idOrName)
+func (p *LocalRoomStore) DeleteRoom(ctx context.Context, name string) error {
+	room, err := p.LoadRoom(ctx, name)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {
@@ -77,8 +69,7 @@ func (p *LocalRoomStore) DeleteRoom(ctx context.Context, idOrName string) error 
 	defer p.lock.Unlock()
 
 	delete(p.participants, room.Name)
-	delete(p.roomIds, room.Name)
-	delete(p.rooms, room.Sid)
+	delete(p.rooms, room.Name)
 	return nil
 }
 

@@ -44,6 +44,11 @@ func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label s
 	return
 }
 
+// converts a fixed point number to the number part of %
+func FixedPointToPercent(frac uint8) uint32 {
+	return (uint32(frac) * 100) >> 8
+}
+
 func ToProtoParticipants(participants []types.Participant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {
