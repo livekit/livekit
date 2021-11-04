@@ -243,6 +243,34 @@ func TestMuteSetting(t *testing.T) {
 	})
 }
 
+func TestConnectionQuality(t *testing.T) {
+	testPublishedTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
+		t := &typesfakes.FakePublishedTrack{}
+		t.PublishLossPercentageReturns(loss)
+		t.NumUpTracksReturns(numPublishing, numRegistered)
+		return t
+	}
+
+	// TODO: this test is rather limited since we cannot mock DownTrack's Target & Max spatial layers
+	// to improve this after split
+
+	t.Run("smooth sailing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality())
+	})
+
+	t.Run("reduced publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(3, 2, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(3, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality())
+	})
+}
+
 func newParticipantForTest(identity string) *ParticipantImpl {
 	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
