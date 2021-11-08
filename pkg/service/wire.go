@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -30,6 +31,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createKeyProvider,
 		createWebhookNotifier,
 		routing.CreateRouter,
+		telemetry.NewTelemetryService,
 		NewRecordingService,
 		NewRoomAllocator,
 		NewRoomService,

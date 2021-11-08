@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
@@ -551,6 +552,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
 		},
+		telemetry.NewTelemetryService(nil),
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := fmt.Sprintf("p%d", i)
