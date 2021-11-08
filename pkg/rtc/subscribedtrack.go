@@ -76,13 +76,6 @@ func (t *SubscribedTrack) updateDownTrackMute() {
 	t.dt.Mute(muted)
 }
 
-// GetQualityForDimension finds the closest quality to use for desired dimensions
-// affords a 10% tolerance on dimension
-func GetQualityForDimension(width, height uint32) livekit.VideoQuality {
-	// currently the layers are set to 180p/360p/original res, we should re
-	return livekit.VideoQuality_HIGH
-}
-
 func spatialLayerForQuality(quality livekit.VideoQuality) int32 {
 	switch quality {
 	case livekit.VideoQuality_LOW:
