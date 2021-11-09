@@ -24,4 +24,4 @@ proto/
 .DS_Store
 
 # IDE
-.idea/jsonSchemas.xml
+.idea

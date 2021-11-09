@@ -57,15 +57,21 @@ func initPacketStats() {
 	prometheus.MustRegister(promFirTotal)
 }
 
-func IncrementPackets(direction Direction, pktLen uint64) {
-	promPacketTotal.WithLabelValues(string(direction)).Add(1)
-	promPacketBytes.WithLabelValues(string(direction)).Add(float64(pktLen))
+func IncrementPackets(direction Direction, count uint64) {
+	promPacketTotal.WithLabelValues(string(direction)).Add(float64(count))
 	if direction == Incoming {
-		atomic.AddUint64(&atomicPacketsIn, 1)
-		atomic.AddUint64(&atomicBytesIn, pktLen)
+		atomic.AddUint64(&atomicPacketsIn, count)
 	} else {
-		atomic.AddUint64(&atomicPacketsOut, 1)
-		atomic.AddUint64(&atomicBytesOut, pktLen)
+		atomic.AddUint64(&atomicPacketsOut, count)
+	}
+}
+
+func IncrementBytes(direction Direction, count uint64) {
+	promPacketBytes.WithLabelValues(string(direction)).Add(float64(count))
+	if direction == Incoming {
+		atomic.AddUint64(&atomicBytesIn, count)
+	} else {
+		atomic.AddUint64(&atomicBytesOut, count)
 	}
 }
 
