@@ -49,14 +49,13 @@ const (
 
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
-	peerID   string
-	trackID  string
-	streamID string
-	kind     webrtc.RTPCodecType
-	stream   string
-	receiver *webrtc.RTPReceiver
-	codec    webrtc.RTPCodecParameters
-	// stats           [3]*stats.Stream
+	peerID          string
+	trackID         string
+	streamID        string
+	kind            webrtc.RTPCodecType
+	stream          string
+	receiver        *webrtc.RTPReceiver
+	codec           webrtc.RTPCodecParameters
 	nackWorker      *workerpool.WorkerPool
 	isSimulcast     bool
 	availableLayers atomic.Value
