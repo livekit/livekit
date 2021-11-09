@@ -252,6 +252,11 @@ func (r *LocalRoomManager) StartSession(ctx context.Context, roomName string, pi
 		return
 	}
 
+	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
+	participant.OnClose(func(p types.Participant) {
+		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
+	})
+
 	go r.rtcSessionWorker(room, participant, requestSource)
 }
 
@@ -273,7 +278,10 @@ func (r *LocalRoomManager) getOrCreateRoom(ctx context.Context, roomName string)
 
 	// construct ice servers
 	room = rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
+	r.telemetry.RoomStarted(ctx, room.Room)
+
 	room.OnClose(func() {
+		r.telemetry.RoomEnded(ctx, room.Room)
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			logger.Errorw("could not delete room", err)
 		}

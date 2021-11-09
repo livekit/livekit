@@ -62,7 +62,7 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, err
 	}
 
-	s.telemetry.RecordingStarted(recordingId)
+	s.telemetry.RecordingStarted(ctx, recordingId, req)
 	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
 }
 

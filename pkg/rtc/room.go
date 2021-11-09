@@ -75,7 +75,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	if r.Room.CreationTime == 0 {
 		r.Room.CreationTime = time.Now().Unix()
 	}
-	r.telemetry.RoomStarted(r.Room)
+
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
 
@@ -161,8 +161,6 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
-
-	r.telemetry.ParticipantJoined(r.Room, participant.ToProto())
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -263,7 +261,6 @@ func (r *Room) RemoveParticipant(identity string) {
 	if !ok {
 		return
 	}
-	r.telemetry.ParticipantLeft(r.Room, p.ToProto())
 
 	// send broadcast only if it's not already closed
 	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
@@ -371,8 +368,6 @@ func (r *Room) Close() {
 	r.closeOnce.Do(func() {
 		close(r.closed)
 		r.Logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
-
-		r.telemetry.RoomEnded(r.Room)
 		if r.onClose != nil {
 			r.onClose()
 		}
