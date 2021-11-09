@@ -1,6 +1,7 @@
+//go:build !linux
 // +build !linux
 
-package stats
+package prometheus
 
 import livekit "github.com/livekit/protocol/proto"
 
