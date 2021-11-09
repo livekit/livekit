@@ -1,10 +1,9 @@
-package stats
+package prometheus
 
 import (
 	"sync/atomic"
 	"time"
 
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -44,7 +43,7 @@ var (
 	}, []string{"kind"})
 )
 
-func initRoomStatsReporter() {
+func initRoomStats() {
 	prometheus.MustRegister(promRoomTotal)
 	prometheus.MustRegister(promRoomDuration)
 	prometheus.MustRegister(promParticipantTotal)
@@ -52,68 +51,45 @@ func initRoomStatsReporter() {
 	prometheus.MustRegister(promTrackSubscribedTotal)
 }
 
-// RoomStatsReporter is created for each room
-type RoomStatsReporter struct {
-	roomName  string
-	startedAt time.Time
-	Incoming  *PacketStats
-	Outgoing  *PacketStats
-}
-
-func NewRoomStatsReporter() *RoomStatsReporter {
-	return &RoomStatsReporter{
-		Incoming: newPacketStats("incoming"),
-		Outgoing: newPacketStats("outgoing"),
-	}
-}
-
-func (r *RoomStatsReporter) RoomStarted() {
-	r.startedAt = time.Now()
+func RoomStarted() {
 	promRoomTotal.Add(1)
 	atomic.AddInt32(&atomicRoomTotal, 1)
 }
 
-func (r *RoomStatsReporter) RoomEnded() {
-	if !r.startedAt.IsZero() {
-		promRoomDuration.Observe(float64(time.Now().Sub(r.startedAt)) / float64(time.Second))
+func RoomEnded(startedAt time.Time) {
+	if !startedAt.IsZero() {
+		promRoomDuration.Observe(float64(time.Now().Sub(startedAt)) / float64(time.Second))
 	}
 	promRoomTotal.Sub(1)
 	atomic.AddInt32(&atomicRoomTotal, -1)
 }
 
-func (r *RoomStatsReporter) AddParticipant() {
+func AddParticipant() {
 	promParticipantTotal.Add(1)
 	atomic.AddInt32(&atomicParticipantTotal, 1)
 }
 
-func (r *RoomStatsReporter) SubParticipant() {
+func SubParticipant() {
 	promParticipantTotal.Sub(1)
 	atomic.AddInt32(&atomicParticipantTotal, -1)
 }
 
-func (r *RoomStatsReporter) AddPublishedTrack(kind string) {
+func AddPublishedTrack(kind string) {
 	promTrackPublishedTotal.WithLabelValues(kind).Add(1)
 	atomic.AddInt32(&atomicTrackPublishedTotal, 1)
 }
 
-func (r *RoomStatsReporter) SubPublishedTrack(kind string) {
+func SubPublishedTrack(kind string) {
 	promTrackPublishedTotal.WithLabelValues(kind).Sub(1)
 	atomic.AddInt32(&atomicTrackPublishedTotal, -1)
 }
 
-func (r *RoomStatsReporter) AddSubscribedTrack(kind string) {
+func AddSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Add(1)
 	atomic.AddInt32(&atomicTrackSubscribedTotal, 1)
 }
 
-func (r *RoomStatsReporter) SubSubscribedTrack(kind string) {
+func SubSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Sub(1)
 	atomic.AddInt32(&atomicTrackSubscribedTotal, -1)
-}
-
-func updateCurrentNodeRoomStats(nodeStats *livekit.NodeStats) {
-	nodeStats.NumClients = atomic.LoadInt32(&atomicParticipantTotal)
-	nodeStats.NumRooms = atomic.LoadInt32(&atomicRoomTotal)
-	nodeStats.NumTracksIn = atomic.LoadInt32(&atomicTrackPublishedTotal)
-	nodeStats.NumTracksOut = atomic.LoadInt32(&atomicTrackSubscribedTotal)
 }

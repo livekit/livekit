@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -312,7 +312,7 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
-			if err := stats.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
+			if err := prometheus.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
 				logger.Errorw("could not update node stats", err, "nodeID", r.currentNode.Id)
 			}
 			if err := r.RegisterNode(); err != nil {
@@ -345,28 +345,28 @@ func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 			sm := livekit.SignalNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &sm); err != nil {
 				logger.Errorw("could not unmarshal signal message on sigchan", err)
-				stats.PromMessageCounter.WithLabelValues("signal", "failure").Add(1)
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				continue
 			}
 			if err := r.handleSignalMessage(&sm); err != nil {
 				logger.Errorw("error processing signal message", err)
-				stats.PromMessageCounter.WithLabelValues("signal", "failure").Add(1)
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				continue
 			}
-			stats.PromMessageCounter.WithLabelValues("signal", "success").Add(1)
+			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
 		} else if msg.Channel == rtcChannel {
 			rm := livekit.RTCNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &rm); err != nil {
 				logger.Errorw("could not unmarshal RTC message on rtcchan", err)
-				stats.PromMessageCounter.WithLabelValues("rtc", "failure").Add(1)
+				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
 				continue
 			}
 			if err := r.handleRTCMessage(&rm); err != nil {
 				logger.Errorw("error processing RTC message", err)
-				stats.PromMessageCounter.WithLabelValues("rtc", "failure").Add(1)
+				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
 				continue
 			}
-			stats.PromMessageCounter.WithLabelValues("rtc", "success").Add(1)
+			prometheus.MessageCounter.WithLabelValues("rtc", "success").Add(1)
 		}
 	}
 }

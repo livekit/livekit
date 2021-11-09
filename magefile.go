@@ -149,7 +149,7 @@ func Clean() {
 
 // regenerate code
 func Generate() error {
-	mg.Deps(installDeps)
+	mg.Deps(installDeps, generateWire)
 
 	fmt.Println("generating...")
 
