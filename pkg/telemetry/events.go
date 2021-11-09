@@ -51,12 +51,8 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	if w := t.workers[participant.Sid]; w != nil {
 		w.Close()
 		delete(t.workers, participant.Sid)
-		t.Unlock()
-	} else {
-		logger.Errorw("missing stats worker", nil, "participantID", participant.Sid)
-		t.Unlock()
-		return
 	}
+	t.Unlock()
 
 	prometheus.SubParticipant()
 
