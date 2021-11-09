@@ -13,8 +13,8 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/pion/ion-sfu/pkg/buffer"
-	"github.com/pion/ion-sfu/pkg/stats"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/stats"
 )
 
 // Logger is an implementation of logr.Logger. If is not provided - will be turned off.

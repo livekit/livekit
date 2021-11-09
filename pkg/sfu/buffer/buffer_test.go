@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/ion-sfu/pkg/sfu/logger"
+	"github.com/livekit/livekit-server/pkg/sfu/logger"
 	"github.com/pion/rtcp"
 
 	"github.com/pion/rtp"

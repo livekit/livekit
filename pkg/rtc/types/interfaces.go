@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 

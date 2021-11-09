@@ -14,7 +14,7 @@ type pliThrottle struct {
 	lastSent map[uint32]int64
 }
 
-// github.com/pion/ion-sfu/pkg/sfu/simulcast.go
+// github.com/livekit/livekit-server/pkg/sfu/simulcast.go
 const (
 	fullResolution    = "f"
 	halfResolution    = "h"

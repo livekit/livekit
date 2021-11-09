@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/pion/ion-sfu/pkg/relay"
-	"github.com/pion/ion-sfu/pkg/sfu/logger"
+	"github.com/livekit/livekit-server/pkg/sfu/logger"
+	"github.com/livekit/livekit-server/pkg/sfu/relay"
 )
 
 // Session represents a set of peers. Transports inside a SessionLocal

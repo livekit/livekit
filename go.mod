@@ -24,7 +24,6 @@ require (
 	github.com/pion/dtls/v2 v2.0.10
 	github.com/pion/ice/v2 v2.1.12
 	github.com/pion/interceptor v0.1.0
-	github.com/pion/ion-sfu v1.10.5
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.8
 	github.com/pion/rtp v1.7.2
@@ -46,6 +45,3 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
-
-// replace github.com/pion/ion-sfu => github.com/livekit/ion-sfu v1.20.16
-replace github.com/pion/ion-sfu => ./

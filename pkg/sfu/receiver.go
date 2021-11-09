@@ -14,8 +14,8 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
 
-	"github.com/pion/ion-sfu/pkg/buffer"
-	"github.com/pion/ion-sfu/pkg/stats"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/stats"
 )
 
 // Receiver defines a interface for a track receivers

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/pion/ice/v2"
-	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"

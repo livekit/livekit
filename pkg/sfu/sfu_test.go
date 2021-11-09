@@ -11,7 +11,7 @@ import (
 	med "github.com/pion/webrtc/v3/pkg/media"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/pion/ion-sfu/pkg/sfu/logger"
+	"github.com/livekit/livekit-server/pkg/sfu/logger"
 )
 
 // Init test helpers
