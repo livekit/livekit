@@ -9,19 +9,16 @@ require (
 	github.com/gammazero/workerpool v1.1.2
 	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/zapr v1.1.0
-	github.com/go-logr/zerologr v1.2.0
 	github.com/go-redis/redis/v8 v8.11.3
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
 	github.com/livekit/protocol v0.10.1-0.20211109000312-b3847c8d35ff
-	github.com/lucsky/cuid v1.2.1
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/dtls/v2 v2.0.10
 	github.com/pion/ice/v2 v2.1.12
 	github.com/pion/interceptor v0.1.0
 	github.com/pion/logging v0.2.2
@@ -41,7 +38,6 @@ require (
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.19.1
-	google.golang.org/grpc v1.42.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
