@@ -73,7 +73,7 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	// TODO: analytics service
 }
 
-func (t *TelemetryService) PublishedTrack(participantID, identity string, track *livekit.TrackInfo, buff *buffer.Buffer) {
+func (t *TelemetryService) TrackPublished(participantID, identity string, track *livekit.TrackInfo, buff *buffer.Buffer) {
 	t.RLock()
 	if w := t.workers[participantID]; w != nil {
 		w.AddBuffer(buff)
@@ -85,7 +85,7 @@ func (t *TelemetryService) PublishedTrack(participantID, identity string, track 
 	// TODO: analytics service
 }
 
-func (t *TelemetryService) UnpublishedTrack(participantID, identity string, track *livekit.TrackInfo, ssrc uint32) {
+func (t *TelemetryService) TrackUnpublished(participantID, identity string, track *livekit.TrackInfo, ssrc uint32) {
 	t.RLock()
 	if w := t.workers[participantID]; w != nil {
 		w.RemoveBuffer(ssrc)
@@ -97,13 +97,13 @@ func (t *TelemetryService) UnpublishedTrack(participantID, identity string, trac
 	// TODO: analytics service
 }
 
-func (t *TelemetryService) SubscribedTrack(participantID, identity string, track *livekit.TrackInfo) {
+func (t *TelemetryService) TrackSubscribed(participantID, identity string, track *livekit.TrackInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
 	// TODO: analytics service
 }
 
-func (t *TelemetryService) UnsubscribedTrack(participantID, identity string, track *livekit.TrackInfo) {
+func (t *TelemetryService) TrackUnsubscribed(participantID, identity string, track *livekit.TrackInfo) {
 	prometheus.SubSubscribedTrack(track.Type.String())
 
 	// TODO: analytics service
