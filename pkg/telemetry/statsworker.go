@@ -53,7 +53,6 @@ func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
 
 func (s *StatsWorker) Calc() *buffer.Stats {
 	s.RLock()
-	numTracks := len(s.buffers)
 	total := &buffer.Stats{}
 	for _, buff := range s.buffers {
 		stats := buff.GetStats()
@@ -61,12 +60,11 @@ func (s *StatsWorker) Calc() *buffer.Stats {
 		total.TotalByte += stats.TotalByte
 		total.LastExpected += stats.LastExpected
 		total.LastReceived += stats.LastReceived
-		total.LostRate += stats.LostRate
-		total.Jitter += stats.Jitter
+		if stats.Jitter > total.Jitter {
+			total.Jitter = stats.Jitter
+		}
 	}
 	s.RUnlock()
-	total.LostRate /= float32(numTracks)
-	total.Jitter /= float64(numTracks)
 
 	var diff *buffer.Stats
 	if s.lastStats != nil {
@@ -75,12 +73,12 @@ func (s *StatsWorker) Calc() *buffer.Stats {
 			LastReceived: total.LastReceived - s.lastStats.LastReceived,
 			PacketCount:  total.PacketCount - s.lastStats.PacketCount,
 			TotalByte:    total.TotalByte - s.lastStats.TotalByte,
-			LostRate:     total.LostRate,
 			Jitter:       total.Jitter,
 		}
 	} else {
 		diff = total
 	}
+	diff.LostRate = float32(diff.LastExpected-diff.LastReceived) / float32(diff.LastExpected)
 
 	s.lastStats = diff
 	return diff

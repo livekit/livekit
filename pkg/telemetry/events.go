@@ -35,14 +35,6 @@ func (t *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 }
 
 func (t *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	t.Lock()
-	if t.workers[participant.Sid] == nil {
-		t.workers[participant.Sid] = NewStatsWorker(func(diff *buffer.Stats) {
-			t.HandleIncomingRTP(participant.Sid, participant.Identity, diff)
-		})
-	}
-	t.Unlock()
-
 	prometheus.AddParticipant()
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
@@ -59,8 +51,12 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	if w := t.workers[participant.Sid]; w != nil {
 		w.Close()
 		delete(t.workers, participant.Sid)
+		t.Unlock()
+	} else {
+		logger.Errorw("missing stats worker", nil, "participantID", participant.Sid)
+		t.Unlock()
+		return
 	}
-	t.Unlock()
 
 	prometheus.SubParticipant()
 
@@ -74,11 +70,14 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 }
 
 func (t *TelemetryService) TrackPublished(participantID, identity string, track *livekit.TrackInfo, buff *buffer.Buffer) {
-	t.RLock()
-	if w := t.workers[participantID]; w != nil {
-		w.AddBuffer(buff)
+	t.Lock()
+	if t.workers[participantID] == nil {
+		t.workers[participantID] = NewStatsWorker(func(diff *buffer.Stats) {
+			t.HandleIncomingRTP(participantID, identity, diff)
+		})
 	}
-	t.RUnlock()
+	t.workers[participantID].AddBuffer(buff)
+	t.Unlock()
 
 	prometheus.AddPublishedTrack(track.Type.String())
 
@@ -89,8 +88,12 @@ func (t *TelemetryService) TrackUnpublished(participantID, identity string, trac
 	t.RLock()
 	if w := t.workers[participantID]; w != nil {
 		w.RemoveBuffer(ssrc)
+		t.RUnlock()
+	} else {
+		logger.Errorw("missing stats worker", nil, "participantID", participantID)
+		t.RUnlock()
+		return
 	}
-	t.RUnlock()
 
 	prometheus.SubPublishedTrack(track.Type.String())
 
