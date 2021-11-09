@@ -939,7 +939,7 @@ func (s *StreamAllocator) isTimeToBoost() bool {
 }
 
 func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.UnixMilli(0)
+	s.lastBoostTime = time.Unix(0, 0)
 	s.boostedChannelCapacity = 0
 }
 

@@ -8,13 +8,14 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-func (s *TelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
-	s.pool.Submit(prometheus.RoomStarted)
+func (t *TelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
+	prometheus.RoomStarted()
 
-	s.notifyEvent(ctx, &livekit.WebhookEvent{
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event: webhook.EventRoomStarted,
 		Room:  room,
 	})
@@ -22,12 +23,10 @@ func (s *TelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) 
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
-	s.pool.Submit(func() {
-		prometheus.RoomEnded(time.Unix(room.CreationTime, 0))
-	})
+func (t *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
+	prometheus.RoomEnded(time.Unix(room.CreationTime, 0))
 
-	s.notifyEvent(ctx, &livekit.WebhookEvent{
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event: webhook.EventRoomFinished,
 		Room:  room,
 	})
@@ -35,10 +34,18 @@ func (s *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	s.pool.Submit(prometheus.AddParticipant)
+func (t *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+	t.Lock()
+	if t.workers[participant.Sid] == nil {
+		t.workers[participant.Sid] = NewStatsWorker(func(diff *buffer.Stats) {
+			t.HandleIncomingRTP(participant.Sid, participant.Identity, diff)
+		})
+	}
+	t.Unlock()
 
-	s.notifyEvent(ctx, &livekit.WebhookEvent{
+	prometheus.AddParticipant()
+
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event:       webhook.EventParticipantJoined,
 		Room:        room,
 		Participant: participant,
@@ -47,10 +54,17 @@ func (s *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	s.pool.Submit(prometheus.SubParticipant)
+func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+	t.Lock()
+	if w := t.workers[participant.Sid]; w != nil {
+		w.Close()
+		delete(t.workers, participant.Sid)
+	}
+	t.Unlock()
 
-	s.notifyEvent(ctx, &livekit.WebhookEvent{
+	prometheus.SubParticipant()
+
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event:       webhook.EventParticipantLeft,
 		Room:        room,
 		Participant: participant,
@@ -59,42 +73,44 @@ func (s *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) PublishedTrack(SID, identity string, track *livekit.TrackInfo) {
-	s.pool.Submit(func() {
-		prometheus.AddPublishedTrack(track.Type.String())
-	})
+func (t *TelemetryService) PublishedTrack(participantID, identity string, track *livekit.TrackInfo, buff *buffer.Buffer) {
+	t.RLock()
+	if w := t.workers[participantID]; w != nil {
+		w.AddBuffer(buff)
+	}
+	t.RUnlock()
+
+	prometheus.AddPublishedTrack(track.Type.String())
 
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) UnpublishedTrack(SID, identity string, track *livekit.TrackInfo) {
-	s.pool.Submit(func() {
-		prometheus.SubPublishedTrack(track.Type.String())
-	})
+func (t *TelemetryService) UnpublishedTrack(participantID, identity string, track *livekit.TrackInfo, ssrc uint32) {
+	t.RLock()
+	if w := t.workers[participantID]; w != nil {
+		w.RemoveBuffer(ssrc)
+	}
+	t.RUnlock()
+
+	prometheus.SubPublishedTrack(track.Type.String())
 
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) SubscribedTrack(SID, identity string, track *livekit.TrackInfo) {
-	s.pool.Submit(func() {
-		prometheus.AddSubscribedTrack(track.Type.String())
-	})
+func (t *TelemetryService) SubscribedTrack(participantID, identity string, track *livekit.TrackInfo) {
+	prometheus.AddSubscribedTrack(track.Type.String())
 
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) UnsubscribedTrack(SID, identity string, track *livekit.TrackInfo) {
-	s.pool.Submit(func() {
-		prometheus.SubSubscribedTrack(track.Type.String())
-	})
+func (t *TelemetryService) UnsubscribedTrack(participantID, identity string, track *livekit.TrackInfo) {
+	prometheus.SubSubscribedTrack(track.Type.String())
 
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) RecordingStarted(ctx context.Context, recordingID string, req *livekit.StartRecordingRequest) {
-	logger.Debugw("recording started", "recordingID", recordingID)
-
-	s.notifyEvent(ctx, &livekit.WebhookEvent{
+func (t *TelemetryService) RecordingStarted(ctx context.Context, recordingID string, req *livekit.StartRecordingRequest) {
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event: webhook.EventRecordingStarted,
 		RecordingInfo: &livekit.RecordingInfo{
 			Id:      recordingID,
@@ -105,20 +121,8 @@ func (s *TelemetryService) RecordingStarted(ctx context.Context, recordingID str
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) RecordingEnded(res *livekit.RecordingResult) {
-	// log results
-	values := []interface{}{"recordingID", res.Id}
-	if res.Error != "" {
-		values = append(values, "error", res.Error)
-	} else {
-		values = append(values, "duration", time.Duration(res.Duration*1e9))
-		if res.DownloadUrl != "" {
-			values = append(values, "url", res.DownloadUrl)
-		}
-	}
-	logger.Debugw("recording ended", values...)
-
-	s.notifyEvent(context.Background(), &livekit.WebhookEvent{
+func (t *TelemetryService) RecordingEnded(res *livekit.RecordingResult) {
+	t.notifyEvent(context.Background(), &livekit.WebhookEvent{
 		Event:           webhook.EventRecordingFinished,
 		RecordingResult: res,
 	})
@@ -126,13 +130,13 @@ func (s *TelemetryService) RecordingEnded(res *livekit.RecordingResult) {
 	// TODO: analytics service
 }
 
-func (s *TelemetryService) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
-	if s.notifier == nil {
+func (t *TelemetryService) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
+	if t.notifier == nil {
 		return
 	}
 
-	s.pool.Submit(func() {
-		if err := s.notifier.Notify(ctx, event); err != nil {
+	t.webhookPool.Submit(func() {
+		if err := t.notifier.Notify(ctx, event); err != nil {
 			logger.Warnw("failed to notify webhook", err, "event", event.Event)
 		}
 	})

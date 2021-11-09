@@ -6,9 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -18,6 +15,9 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -127,7 +127,7 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	if t.receiver != nil {
 		t.receiver.SetUpTrackPaused(muted)
 	}
-	// mute all of the subscribedtracks
+	// mute all subscribed tracks
 	for _, st := range t.subscribedTracks {
 		st.SetPublisherMuted(muted)
 	}
@@ -367,12 +367,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Telemetry.UnpublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto())
+			t.params.Telemetry.UnpublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), uint32(track.SSRC()))
 			if onclose != nil {
 				onclose()
 			}
 		})
-		t.params.Telemetry.PublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto())
+		t.params.Telemetry.PublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), buff)
 
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
