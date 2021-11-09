@@ -84,12 +84,8 @@ func (t *TelemetryService) TrackUnpublished(participantID, identity string, trac
 	t.RLock()
 	if w := t.workers[participantID]; w != nil {
 		w.RemoveBuffer(ssrc)
-		t.RUnlock()
-	} else {
-		logger.Errorw("missing stats worker", nil, "participantID", participantID)
-		t.RUnlock()
-		return
 	}
+	t.RUnlock()
 
 	prometheus.SubPublishedTrack(track.Type.String())
 
