@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"encoding/binary"
 	"strings"
 	"time"
 
@@ -15,57 +14,11 @@ var (
 
 type ntpTime uint64
 
-// LK-TODO: CLEANUP-REMOVE-FUNCTION
-// setVp8TemporalLayer is a helper to detect and modify accordingly the vp8 payload to reflect
-// temporal changes in the SFU.
-// VP8 temporal layers implemented according https://tools.ietf.org/html/rfc7741
-func setVP8TemporalLayer(p *buffer.ExtPacket, d *DownTrack) (buf []byte, picID uint16, tlz0Idx uint8, drop bool) {
-	pkt, ok := p.Payload.(buffer.VP8)
-	if !ok {
-		return
-	}
-
-	layer := d.temporalLayer.get()
-	currentLayer := uint16(layer)
-	currentTargetLayer := uint16(layer >> 16)
-	// Check if temporal getLayer is requested
-	if currentTargetLayer != currentLayer {
-		if pkt.TID <= uint8(currentTargetLayer) {
-			d.temporalLayer.set(int32(currentTargetLayer)<<16 | int32(currentTargetLayer))
-		}
-	} else if pkt.TID > uint8(currentLayer) {
-		drop = true
-		return
-	}
-
-	buf = *d.payload
-	buf = buf[:len(p.Packet.Payload)]
-	copy(buf, p.Packet.Payload)
-
-	picID = pkt.PictureID - d.simulcast.refPicID.get() + d.simulcast.pRefPicID.get() + 1
-	tlz0Idx = pkt.TL0PICIDX - d.simulcast.refTlZIdx.get() + d.simulcast.pRefTlZIdx.get() + 1
-
-	if p.Head {
-		d.simulcast.lPicID.set(picID)
-		d.simulcast.lTlZIdx.set(tlz0Idx)
-	}
-
-	modifyVP8TemporalPayload(buf, pkt.PicIDIdx, pkt.TlzIdx, picID, tlz0Idx, pkt.MBit)
-
-	return
-}
-
-// LK-TODO: CLEANUP-REMOVE-FUNCTION
-func modifyVP8TemporalPayload(payload []byte, picIDIdx, tlz0Idx int, picID uint16, tlz0ID uint8, mBit bool) {
-	pid := make([]byte, 2)
-	binary.BigEndian.PutUint16(pid, picID)
-	payload[picIDIdx] = pid[0]
-	if mBit {
-		payload[picIDIdx] |= 0x80
-		payload[picIDIdx+1] = pid[1]
-	}
-	payload[tlz0Idx] = tlz0ID
-}
+const (
+	quarterResolution = "q"
+	halfResolution    = "h"
+	fullResolution    = "f"
+)
 
 // Do a fuzzy find for a codec in the list of codecs
 // Used for lookup up a codec in an existing list to find a match
