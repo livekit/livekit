@@ -1,7 +1,7 @@
 package rtc
 
 import (
-	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu"
 )
 
 // wrapper around WebRTC receiver, overriding its ID

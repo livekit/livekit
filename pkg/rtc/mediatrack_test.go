@@ -38,6 +38,35 @@ func TestTrackInfo(t *testing.T) {
 	require.Equal(t, ti.Simulcast, outInfo.Simulcast)
 
 	// make it simulcasted
-	mt.simulcasted = true
+	mt.simulcasted.TrySet(true)
 	require.True(t, mt.ToProto().Simulcast)
+}
+
+func TestGetQualityForDimension(t *testing.T) {
+	t.Run("landscape source", func(t *testing.T) {
+		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+		}})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 200))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(200, 250))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(700, 480))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(500, 1000))
+	})
+
+	t.Run("portrait source", func(t *testing.T) {
+		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  540,
+			Height: 960,
+		}})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(200, 400))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(400, 400))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(400, 700))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(600, 900))
+	})
 }

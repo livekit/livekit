@@ -14,9 +14,10 @@ import (
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
 	params := TransportParams{
-		Target: livekit.SignalTarget_PUBLISHER,
-		Config: &WebRTCConfig{},
-		Stats:  nil,
+		ParticipantID:       "id",
+		ParticipantIdentity: "identity",
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config:              &WebRTCConfig{},
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -64,9 +65,10 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 
 func TestNegotiationTiming(t *testing.T) {
 	params := TransportParams{
-		Target: livekit.SignalTarget_SUBSCRIBER,
-		Config: &WebRTCConfig{},
-		Stats:  nil,
+		ParticipantID:       "id",
+		ParticipantIdentity: "identity",
+		Target:              livekit.SignalTarget_SUBSCRIBER,
+		Config:              &WebRTCConfig{},
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)

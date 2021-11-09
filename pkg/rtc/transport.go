@@ -11,7 +11,8 @@ import (
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -37,13 +38,17 @@ type PCTransport struct {
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	negotiationState      int
+	logger                logger.Logger
 }
 
 type TransportParams struct {
-	Target        livekit.SignalTarget
-	Config        *WebRTCConfig
-	Stats         *stats.RoomStatsReporter
-	EnabledCodecs []*livekit.Codec
+	ParticipantID       string
+	ParticipantIdentity string
+	Target              livekit.SignalTarget
+	Config              *WebRTCConfig
+	Telemetry           *telemetry.TelemetryService
+	EnabledCodecs       []*livekit.Codec
+	Logger              logger.Logger
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -59,18 +64,10 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	}
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
-	if params.Stats != nil && se.BufferFactory != nil {
-		wrapper := &stats.StatsBufferWrapper{
-			CreateBufferFunc: se.BufferFactory,
-			Stats:            params.Stats.Incoming,
-		}
-		se.BufferFactory = wrapper.CreateBuffer
-	}
 
 	ir := &interceptor.Registry{}
-	if params.Stats != nil && params.Target == livekit.SignalTarget_SUBSCRIBER {
-		// only capture subscriber for outbound streams
-		f := stats.NewStatsInterceptorFactory(params.Stats)
+	if params.Telemetry != nil {
+		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
 		ir.Add(f)
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
@@ -99,6 +96,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		me:                 me,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
+		logger:             params.Logger,
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
@@ -106,9 +104,9 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				t.lock.Lock()
 				defer t.lock.Unlock()
 				if t.restartAfterGathering {
-					logger.Debugw("restarting ICE after ICE gathering")
+					params.Logger.Debugw("restarting ICE after ICE gathering")
 					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-						logger.Warnw("could not restart ICE", err)
+						params.Logger.Warnw("could not restart ICE", err)
 					}
 				}
 			}()
@@ -158,9 +156,9 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 
 	// only initiate when we are the offerer
 	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
-		logger.Debugw("re-negotiate after answering")
+		t.logger.Debugw("re-negotiate after answering")
 		if err := t.createAndSendOffer(nil); err != nil {
-			logger.Errorw("could not negotiate", err)
+			t.logger.Errorw("could not negotiate", err)
 		}
 	}
 	return nil
@@ -174,7 +172,7 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 func (t *PCTransport) Negotiate() {
 	t.debouncedNegotiate(func() {
 		if err := t.CreateAndSendOffer(nil); err != nil {
-			logger.Errorw("could not negotiate", err)
+			t.logger.Errorw("could not negotiate", err)
 		}
 	})
 }
@@ -199,24 +197,24 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
 		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-			logger.Debugw("restart ICE after gathering")
+			t.logger.Debugw("restart ICE after gathering")
 			t.restartAfterGathering = true
 			return nil
 		}
-		logger.Debugw("restarting ICE")
+		t.logger.Debugw("restarting ICE")
 	}
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if t.negotiationState == negotiationStateClient {
 		currentSD := t.pc.CurrentRemoteDescription()
 		if iceRestart && currentSD != nil {
-			logger.Debugw("recovering from client negotiation state")
+			t.logger.Debugw("recovering from client negotiation state")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
-				stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
+				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 				return err
 			}
 		} else {
-			logger.Debugw("skipping negotiation, trying again later")
+			t.logger.Debugw("skipping negotiation, trying again later")
 			t.negotiationState = negotiationRetry
 			return nil
 		}
@@ -227,15 +225,15 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
-		logger.Errorw("could not create offer", err)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
+		t.logger.Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
-		logger.Errorw("could not set local description", err)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
+		t.logger.Errorw("could not set local description", err)
 		return err
 	}
 

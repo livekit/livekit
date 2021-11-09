@@ -167,6 +167,31 @@ func TestTrackPublishing(t *testing.T) {
 	})
 }
 
+func TestOutOfOrderUpdates(t *testing.T) {
+	p := newParticipantForTest("test")
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	pi := &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "123",
+	}
+	earlierTs := time.Now()
+	laterTs := time.Now()
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, laterTs))
+
+	pi = &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "456",
+	}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, earlierTs))
+
+	// only sent once, and it's the earlier message
+	require.Equal(t, 1, sink.WriteMessageCallCount())
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+	require.Equal(t, "123", sent.GetUpdate().Participants[0].Metadata)
+}
+
 // after disconnection, things should continue to function and not panic
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
@@ -215,6 +240,34 @@ func TestMuteSetting(t *testing.T) {
 		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
+	})
+}
+
+func TestConnectionQuality(t *testing.T) {
+	testPublishedTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
+		t := &typesfakes.FakePublishedTrack{}
+		t.PublishLossPercentageReturns(loss)
+		t.NumUpTracksReturns(numPublishing, numRegistered)
+		return t
+	}
+
+	// TODO: this test is rather limited since we cannot mock DownTrack's Target & Max spatial layers
+	// to improve this after split
+
+	t.Run("smooth sailing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality())
+	})
+
+	t.Run("reduced publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(3, 2, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(3, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality())
 	})
 }
 
