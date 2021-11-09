@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/logger"
 	"github.com/pion/rtcp"
 
 	"github.com/pion/rtp"
@@ -51,8 +50,7 @@ func TestNack(t *testing.T) {
 			return &b
 		},
 	}
-	logger.SetGlobalOptions(logger.GlobalConfig{V: 1}) // 2 - TRACE
-	logger := logger.New()
+	logger := Logger
 
 	t.Run("nack normal", func(t *testing.T) {
 		buff := NewBuffer(123, pool, pool, logger)
@@ -224,8 +222,7 @@ func TestNewBuffer(t *testing.T) {
 					return &b
 				},
 			}
-			logger.SetGlobalOptions(logger.GlobalConfig{V: 2}) // 2 - TRACE
-			logger := logger.New()
+			logger := Logger
 			buff := NewBuffer(123, pool, pool, logger)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			assert.NotNil(t, buff)
@@ -262,8 +259,7 @@ func TestFractionLostReport(t *testing.T) {
 			return &b
 		},
 	}
-	logger.SetGlobalOptions(logger.GlobalConfig{V: 1}) // 2 - TRACE
-	buff := NewBuffer(123, pool, pool, logger.New())
+	buff := NewBuffer(123, pool, pool, Logger)
 	buff.codecType = webrtc.RTPCodecTypeVideo
 	assert.NotNil(t, buff)
 	var wg sync.WaitGroup

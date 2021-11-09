@@ -39,6 +39,13 @@ var (
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
 )
 
+type simulcastTrackHelpers struct {
+	switchDelay       time.Time
+	temporalSupported bool
+	temporalEnabled   bool
+	lTSCalc           atomicInt64
+}
+
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 // DownTrack  implements TrackLocal, is the track used to write packets

@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/stats"
 )
 
 // Receiver defines a interface for a track receivers
@@ -50,14 +49,14 @@ const (
 
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
-	peerID          string
-	trackID         string
-	streamID        string
-	kind            webrtc.RTPCodecType
-	stream          string
-	receiver        *webrtc.RTPReceiver
-	codec           webrtc.RTPCodecParameters
-	stats           [3]*stats.Stream
+	peerID   string
+	trackID  string
+	streamID string
+	kind     webrtc.RTPCodecType
+	stream   string
+	receiver *webrtc.RTPReceiver
+	codec    webrtc.RTPCodecParameters
+	// stats           [3]*stats.Stream
 	nackWorker      *workerpool.WorkerPool
 	isSimulcast     bool
 	availableLayers atomic.Value
