@@ -8,11 +8,12 @@ import (
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/interceptor"
-	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -46,11 +47,13 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Target        livekit.SignalTarget
-	Config        *WebRTCConfig
-	Stats         *stats.RoomStatsReporter
-	EnabledCodecs []*livekit.Codec
-	Logger        logger.Logger
+	ParticipantID       string
+	ParticipantIdentity string
+	Target              livekit.SignalTarget
+	Config              *WebRTCConfig
+	Telemetry           *telemetry.TelemetryService
+	EnabledCodecs       []*livekit.Codec
+	Logger              logger.Logger
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -66,18 +69,10 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	}
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
-	if params.Stats != nil && se.BufferFactory != nil {
-		wrapper := &stats.StatsBufferWrapper{
-			CreateBufferFunc: se.BufferFactory,
-			Stats:            params.Stats.Incoming,
-		}
-		se.BufferFactory = wrapper.CreateBuffer
-	}
 
 	ir := &interceptor.Registry{}
-	if params.Stats != nil && params.Target == livekit.SignalTarget_SUBSCRIBER {
-		// only capture subscriber for outbound streams
-		f := stats.NewStatsInterceptorFactory(params.Stats)
+	if params.Telemetry != nil {
+		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
 		ir.Add(f)
 	}
 	api := webrtc.NewAPI(
@@ -222,7 +217,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		if iceRestart && currentSD != nil {
 			t.logger.Debugw("recovering from client negotiation state")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
-				stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
+				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 				return err
 			}
 		} else {
@@ -237,14 +232,14 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
 		t.logger.Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		t.logger.Errorw("could not set local description", err)
 		return err
 	}

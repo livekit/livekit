@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/protocol/proto"
-	"github.com/pion/ion-sfu/pkg/sfu"
 )
 
 type FakeSubscribedTrack struct {

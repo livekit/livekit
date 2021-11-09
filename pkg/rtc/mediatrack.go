@@ -6,19 +6,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
-	"github.com/pion/ion-sfu/pkg/buffer"
-	"github.com/pion/ion-sfu/pkg/sfu"
-	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 var (
@@ -74,7 +74,7 @@ type MediaTrackParams struct {
 	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	AudioConfig         config.AudioConfig
-	Stats               *stats.RoomStatsReporter
+	Telemetry           *telemetry.TelemetryService
 	Logger              logger.Logger
 }
 
@@ -247,7 +247,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Stats.SubSubscribedTrack(t.Kind().String())
+			t.params.Telemetry.UnsubscribedTrack(sub.ID(), sub.Identity(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -293,7 +293,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		sub.Negotiate()
 	}()
 
-	t.params.Stats.AddSubscribedTrack(t.Kind().String())
+	t.params.Telemetry.SubscribedTrack(sub.ID(), sub.Identity(), t.ToProto())
 	return nil
 }
 
@@ -367,12 +367,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Stats.SubPublishedTrack(t.Kind().String())
+			t.params.Telemetry.UnpublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto())
 			if onclose != nil {
 				onclose()
 			}
 		})
-		t.params.Stats.AddPublishedTrack(t.Kind().String())
+		t.params.Telemetry.PublishedTrack(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto())
 
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
@@ -523,9 +523,6 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		t.fracLostLock.Unlock()
 	}
 
-	if t.params.Stats != nil {
-		t.params.Stats.Incoming.HandleRTCP(packets)
-	}
 	// also look for sender reports
 	// feedback for the source RTCP
 	t.params.RTCPChan <- packets

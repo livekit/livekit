@@ -9,11 +9,11 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
-	"github.com/pion/ion-sfu/pkg/sfu"
-	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
@@ -22,7 +22,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -38,7 +39,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Stats           *stats.RoomStatsReporter
+	Telemetry       *telemetry.TelemetryService
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
@@ -115,20 +116,24 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 	p.publisher, err = NewPCTransport(TransportParams{
-		Target:        livekit.SignalTarget_PUBLISHER,
-		Config:        params.Config,
-		Stats:         p.params.Stats,
-		EnabledCodecs: p.params.EnabledCodecs,
-		Logger:        params.Logger,
+		ParticipantID:       p.id,
+		ParticipantIdentity: p.params.Identity,
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config:              params.Config,
+		Telemetry:           p.params.Telemetry,
+		EnabledCodecs:       p.params.EnabledCodecs,
+		Logger:              params.Logger,
 	})
 	if err != nil {
 		return nil, err
 	}
 	p.subscriber, err = NewPCTransport(TransportParams{
-		Target: livekit.SignalTarget_SUBSCRIBER,
-		Config: params.Config,
-		Stats:  p.params.Stats,
-		Logger: params.Logger,
+		ParticipantID:       p.id,
+		ParticipantIdentity: p.params.Identity,
+		Target:              livekit.SignalTarget_SUBSCRIBER,
+		Config:              params.Config,
+		Telemetry:           p.params.Telemetry,
+		Logger:              params.Logger,
 	})
 	if err != nil {
 		return nil, err
@@ -283,7 +288,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return
 	}
 
@@ -291,13 +296,13 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 	answer, err = p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		err = errors.Wrap(err, "could not create answer")
 		return
 	}
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		err = errors.Wrap(err, "could not set local description")
 		return
 	}
@@ -312,14 +317,14 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		},
 	})
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
-	stats.PromServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return
 }
@@ -895,9 +900,9 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		},
 	})
 	if err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 	} else {
-		stats.PromServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
 	}
 }
 
@@ -943,7 +948,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			BufferFactory:       p.params.Config.BufferFactory,
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
-			Stats:               p.params.Stats,
+			Telemetry:           p.params.Telemetry,
 			Logger:              p.params.Logger,
 		})
 
@@ -1089,7 +1094,7 @@ func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnection
 	// p.params.Logger.Debugw("ICE connection state changed", "state", state.String(),
 	//	"participant", p.identity, "pID", p.ID())
 	if state == webrtc.ICEConnectionStateConnected {
-		stats.PromServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.ICEConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect

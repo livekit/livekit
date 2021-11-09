@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
-	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -45,7 +46,7 @@ type Room struct {
 	// for active speaker updates
 	audioConfig *config.AudioConfig
 
-	statsReporter *stats.RoomStatsReporter
+	telemetry *telemetry.TelemetryService
 
 	onParticipantChanged func(p types.Participant)
 	onMetadataUpdate     func(metadata string)
@@ -56,13 +57,13 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry *telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
 		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
-		statsReporter:   stats.NewRoomStatsReporter(),
+		telemetry:       telemetry,
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
@@ -74,7 +75,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	if r.Room.CreationTime == 0 {
 		r.Room.CreationTime = time.Now().Unix()
 	}
-	r.statsReporter.RoomStarted()
+
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
 
@@ -118,10 +119,6 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
-func (r *Room) GetStatsReporter() *stats.RoomStatsReporter {
-	return r.statsReporter
-}
-
 func (r *Room) GetBufferFactor() *buffer.Factory {
 	return r.bufferFactory
 }
@@ -144,7 +141,7 @@ func (r *Room) LastLeftAt() int64 {
 
 func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
 	if r.IsClosed() {
-		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
 
@@ -152,20 +149,18 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	defer r.lock.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
 		return ErrAlreadyJoined
 	}
 
 	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
-		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}
 
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
-
-	r.statsReporter.AddParticipant()
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -223,7 +218,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	})
 
 	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers); err != nil {
-		stats.PromServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
 
@@ -232,7 +227,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		participant.Negotiate()
 	}
 
-	stats.PromServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
+	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 
 	return nil
 }
@@ -266,7 +261,6 @@ func (r *Room) RemoveParticipant(identity string) {
 	if !ok {
 		return
 	}
-	r.statsReporter.SubParticipant()
 
 	// send broadcast only if it's not already closed
 	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
@@ -374,20 +368,10 @@ func (r *Room) Close() {
 	r.closeOnce.Do(func() {
 		close(r.closed)
 		r.Logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
-
-		r.statsReporter.RoomEnded()
 		if r.onClose != nil {
 			r.onClose()
 		}
 	})
-}
-
-func (r *Room) GetIncomingStats() stats.PacketStats {
-	return *r.statsReporter.Incoming
-}
-
-func (r *Room) GetOutgoingStats() stats.PacketStats {
-	return *r.statsReporter.Outgoing
 }
 
 func (r *Room) OnClose(f func()) {
