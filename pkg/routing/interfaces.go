@@ -60,6 +60,7 @@ type Router interface {
 
 	// WriteRTCMessage sends a message to the RTC node
 	WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
+	WriteRTCNodeMessage(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)
