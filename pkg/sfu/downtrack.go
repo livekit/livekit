@@ -830,7 +830,7 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	payload := extPkt.Packet.Payload
 
 	var translatedVP8 *buffer.VP8
-	if d.vp8Munger != nil {
+	if d.vp8Munger != nil && len(payload) > 0 {
 		// LK-TODO-START
 		// Errors below do not update sequence number. That is a problem if the stream
 		// is expected to continue past the error. The translation should not error out.
@@ -1482,6 +1482,8 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 
 	// clear missing picture ids on layer switch
 	v.missingPictureIds = orderedmap.NewOrderedMap()
+
+	v.lastDroppedPictureId = -1
 }
 
 func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumberOrdering, maxTemporalLayer int32) (*buffer.VP8, error) {
