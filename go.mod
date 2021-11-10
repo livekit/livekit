@@ -21,16 +21,16 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.1.12
+	github.com/pion/ice/v2 v2.1.13
 	github.com/pion/interceptor v0.1.0
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.8
-	github.com/pion/rtp v1.7.2
+	github.com/pion/rtp v1.7.4
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.12.3
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.1.5
+	github.com/pion/webrtc/v3 v3.1.8
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/zerolog v1.26.0
@@ -42,7 +42,6 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/mod v0.5.1 // indirect
-	golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac // indirect
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
