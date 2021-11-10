@@ -176,6 +176,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 		Metadata: "123",
 	}
 	earlierTs := time.Now()
+	time.Sleep(time.Millisecond)
 	laterTs := time.Now()
 	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, laterTs))
 
