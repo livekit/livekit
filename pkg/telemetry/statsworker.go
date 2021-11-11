@@ -14,20 +14,32 @@ type StatsWorker struct {
 	sync.RWMutex
 	buffers   map[uint32]*buffer.Buffer
 	drain     map[uint32]bool
-	lastStats *buffer.Stats
-	onUpdate  func(diff *buffer.Stats)
-	close     chan struct{}
+	lastStats *ParticipantStats
+	nackTotal int32
+	pliTotal  int32
+	firTotal  int32
+	onUpdate  func(diff *ParticipantStats)
+
+	running bool
+	close   chan struct{}
 }
 
-func NewStatsWorker(onUpdate func(*buffer.Stats)) *StatsWorker {
-	s := &StatsWorker{
+type ParticipantStats struct {
+	Packets   uint32
+	Bytes     uint64
+	Jitter    float64
+	NackCount int32
+	PliCount  int32
+	FirCount  int32
+}
+
+func NewStatsWorker(onUpdate func(*ParticipantStats)) *StatsWorker {
+	return &StatsWorker{
 		buffers:  make(map[uint32]*buffer.Buffer),
 		drain:    make(map[uint32]bool),
 		onUpdate: onUpdate,
 		close:    make(chan struct{}, 1),
 	}
-	go s.run()
-	return s
 }
 
 func (s *StatsWorker) run() {
@@ -46,18 +58,32 @@ func (s *StatsWorker) run() {
 func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
 	s.Lock()
 	s.buffers[buffer.GetMediaSSRC()] = buffer
+	if !s.running {
+		s.running = true
+		go s.run()
+	}
 	s.Unlock()
 }
 
-func (s *StatsWorker) Calc() *buffer.Stats {
+func (s *StatsWorker) AddRTCP(nack, pli, fir int32) {
+	s.Lock()
+	s.nackTotal += nack
+	s.pliTotal += pli
+	s.firTotal += fir
+	s.Unlock()
+}
+
+func (s *StatsWorker) Calc() *ParticipantStats {
 	s.RLock()
-	total := &buffer.Stats{}
+	total := &ParticipantStats{
+		NackCount: s.nackTotal,
+		PliCount:  s.pliTotal,
+		FirCount:  s.firTotal,
+	}
 	for _, buff := range s.buffers {
 		stats := buff.GetStats()
-		total.PacketCount += stats.PacketCount
-		total.TotalByte += stats.TotalByte
-		total.LastExpected += stats.LastExpected
-		total.LastReceived += stats.LastReceived
+		total.Packets += stats.PacketCount
+		total.Bytes += stats.TotalByte
 		if stats.Jitter > total.Jitter {
 			total.Jitter = stats.Jitter
 		}
@@ -74,21 +100,21 @@ func (s *StatsWorker) Calc() *buffer.Stats {
 		s.Unlock()
 	}
 
-	var diff *buffer.Stats
+	var diff *ParticipantStats
 	if s.lastStats != nil {
-		diff = &buffer.Stats{
-			LastExpected: total.LastExpected - s.lastStats.LastExpected,
-			LastReceived: total.LastReceived - s.lastStats.LastReceived,
-			PacketCount:  total.PacketCount - s.lastStats.PacketCount,
-			TotalByte:    total.TotalByte - s.lastStats.TotalByte,
-			Jitter:       total.Jitter,
+		diff = &ParticipantStats{
+			Packets:   total.Packets - s.lastStats.Packets,
+			Bytes:     total.Bytes - s.lastStats.Bytes,
+			Jitter:    total.Jitter,
+			NackCount: total.NackCount - s.lastStats.NackCount,
+			PliCount:  total.PliCount - s.lastStats.PliCount,
+			FirCount:  total.FirCount - s.lastStats.FirCount,
 		}
 	} else {
 		diff = total
 	}
-	diff.LostRate = float32(diff.LastExpected-diff.LastReceived) / float32(diff.LastExpected)
+	s.lastStats = total
 
-	s.lastStats = diff
 	return diff
 }
 

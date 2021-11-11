@@ -44,6 +44,12 @@ func (t *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 }
 
 func (t *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+	t.Lock()
+	t.workers[participant.Sid] = NewStatsWorker(func(diff *ParticipantStats) {
+		t.UpdateStats(room.Sid, participant.Sid, diff)
+	})
+	t.Unlock()
+
 	prometheus.AddParticipant()
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
@@ -82,15 +88,12 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	})
 }
 
-func (t *TelemetryService) TrackPublished(participantID, identity string, track *livekit.TrackInfo, buff *buffer.Buffer) {
-	t.Lock()
-	if t.workers[participantID] == nil {
-		t.workers[participantID] = NewStatsWorker(func(diff *buffer.Stats) {
-			t.HandleIncomingRTP(participantID, identity, diff)
-		})
+func (t *TelemetryService) TrackPublished(participantID string, track *livekit.TrackInfo, buff *buffer.Buffer) {
+	t.RLock()
+	if w := t.workers[participantID]; w != nil {
+		w.AddBuffer(buff)
 	}
-	t.workers[participantID].AddBuffer(buff)
-	t.Unlock()
+	t.RUnlock()
 
 	prometheus.AddPublishedTrack(track.Type.String())
 

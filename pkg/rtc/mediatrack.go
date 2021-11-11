@@ -351,7 +351,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			// do nothing for now
 			case *rtcp.SenderReport:
 				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
-				logger.Infow("rtcpReader Sender report", "ssrc", pkt.SSRC, "reports", len(pkt.Reports))
 			}
 		}
 	})
@@ -373,7 +372,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				onclose()
 			}
 		})
-		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), buff)
+		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto(), buff)
 
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff

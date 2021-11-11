@@ -32,7 +32,7 @@ type StatsInterceptor struct {
 // change in the future. The returned method will be called once per packet batch.
 func (s *StatsInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interceptor.RTCPReader {
 	return interceptor.RTCPReaderFunc(func(bytes []byte, attributes interceptor.Attributes) (int, interceptor.Attributes, error) {
-		s.t.HandleIncomingRTCP(s.participantID, s.identity, bytes)
+		s.t.HandleIncomingRTCP(s.participantID, bytes)
 		return reader.Read(bytes, attributes)
 	})
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/pion/rtcp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
@@ -24,6 +23,7 @@ type TelemetryService struct {
 
 	analyticsEnabled bool
 	authToken        string
+	nodeID           string
 	events           livekit.AnalyticsRecorderService_IngestEventsClient
 	stats            livekit.AnalyticsRecorderService_IngestStatsClient
 }
@@ -45,34 +45,32 @@ func (t *TelemetryService) NewStatsInterceptorFactory(participantID, identity st
 	}
 }
 
-func (t *TelemetryService) HandleIncomingRTP(participantID, identity string, diff *buffer.Stats) {
-	prometheus.IncrementPackets(prometheus.Incoming, uint64(diff.PacketCount))
-	prometheus.IncrementBytes(prometheus.Incoming, diff.TotalByte)
-
-	// TODO: analytics service
-	// diff.LastExpected, diff.LastReceived, diff.Jitter, diff.LostRate
-}
-
-// TODO: skip unmarshal by getting this from receiver instead?
-func (t *TelemetryService) HandleIncomingRTCP(participantID, identity string, bytes []byte) {
+func (t *TelemetryService) HandleIncomingRTCP(participantID string, bytes []byte) {
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
 		logger.Errorw("Interceptor failed to unmarshal rtcp packets", err)
 		return
 	}
 
+	var nack, pli, fir int32
 	for _, pkt := range pkts {
 		switch pkt.(type) {
 		case *rtcp.TransportLayerNack:
-			prometheus.IncrementNack(prometheus.Incoming)
+			nack++
 		case *rtcp.PictureLossIndication:
-			prometheus.IncrementPLI(prometheus.Incoming)
+			pli++
 		case *rtcp.FullIntraRequest:
-			prometheus.IncrementFIR(prometheus.Incoming)
+			fir++
 		}
 	}
 
-	// TODO: analytics service
+	prometheus.IncrementRTCP(prometheus.Incoming, nack, pli, fir)
+
+	t.RLock()
+	if w := t.workers[participantID]; w != nil {
+		w.AddRTCP(nack, pli, fir)
+	}
+	t.RUnlock()
 }
 
 func (t *TelemetryService) HandleOutgoingRTP(participantID, identity string, pktLen uint64) {
@@ -83,33 +81,39 @@ func (t *TelemetryService) HandleOutgoingRTP(participantID, identity string, pkt
 }
 
 func (t *TelemetryService) HandleOutgoingRTCP(participantID, identity string, pkts []rtcp.Packet) {
+	var nack, pli, fir int32
 	for _, pkt := range pkts {
-		switch pkt.(type) {
+		switch pkt := pkt.(type) {
 		case *rtcp.TransportLayerNack:
-			prometheus.IncrementNack(prometheus.Outgoing)
+			nack++
 		case *rtcp.PictureLossIndication:
-			prometheus.IncrementPLI(prometheus.Outgoing)
+			pli++
 		case *rtcp.FullIntraRequest:
-			prometheus.IncrementFIR(prometheus.Outgoing)
+			fir++
+		case *rtcp.SenderReport:
+			logger.Debugw("outgoing reception report", "report", pkt)
 		}
 	}
 
-	t.sendStats(&livekit.AnalyticsStat{
-		Kind:          livekit.StreamType_DOWNSTREAM,
-		TimeStamp:     timestamppb.Now(),
-		Node:          "",
-		Sid:           nil,
-		ProjectId:     nil,
-		ParticipantId: nil,
-		RoomName:      nil,
-		Jitter:        nil,
-		PacketLost:    nil,
-		RrTime:        nil,
-		BytesSent:     nil,
-		BytesReceived: nil,
-		AuthToken:     &t.authToken,
-	})
+	prometheus.IncrementRTCP(prometheus.Outgoing, nack, pli, fir)
+
 	// TODO: analytics service
+}
+
+func (t *TelemetryService) UpdateStats(roomID, participantID string, diff *ParticipantStats) {
+	prometheus.IncrementPackets(prometheus.Incoming, uint64(diff.Packets))
+	prometheus.IncrementBytes(prometheus.Incoming, diff.Bytes)
+
+	t.sendStats(&livekit.AnalyticsStat{
+		AuthToken:     &t.authToken,
+		Kind:          livekit.StreamType_UPSTREAM,
+		TimeStamp:     timestamppb.Now(),
+		Node:          t.nodeID,
+		Sid:           &roomID,
+		ParticipantId: &participantID,
+		Jitter:        &diff.Jitter,
+		BytesSent:     &diff.Bytes,
+	})
 }
 
 func (t *TelemetryService) sendStats(stats *livekit.AnalyticsStat) {
