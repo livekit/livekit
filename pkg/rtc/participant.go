@@ -808,7 +808,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("removed subscribedTrack", "publisher", subTrack.PublisherIdentity(),
-		"participant", p.Identity(), "track", subTrack.ID())
+		"participant", p.Identity(), "track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
 
 	p.subscriber.RemoveTrack(subTrack)
 

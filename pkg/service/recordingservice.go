@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
@@ -62,7 +63,9 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, err
 	}
 
+	logger.Debugw("recording started", "recordingID", recordingId)
 	s.telemetry.RecordingStarted(ctx, recordingId, req)
+
 	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
 }
 
@@ -142,6 +145,19 @@ func (s *RecordingService) resultsWorker() {
 				logger.Errorw("failed to read results", err)
 				continue
 			}
+
+			// log results
+			values := []interface{}{"recordingID", res.Id}
+			if res.Error != "" {
+				values = append(values, "error", res.Error)
+			} else {
+				values = append(values, "duration", time.Duration(res.Duration*1e9))
+				if res.DownloadUrl != "" {
+					values = append(values, "url", res.DownloadUrl)
+				}
+			}
+			logger.Debugw("recording ended", values...)
+
 			s.telemetry.RecordingEnded(res)
 		case <-s.shutdown:
 			_ = sub.Close()

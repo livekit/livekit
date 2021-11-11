@@ -165,6 +165,19 @@ type FakeRouter struct {
 	writeRTCMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
+	WriteRTCNodeMessageStub        func(context.Context, string, *livekit.RTCNodeMessage) error
+	writeRTCNodeMessageMutex       sync.RWMutex
+	writeRTCNodeMessageArgsForCall []struct {
+		arg1 context.Context
+		arg2 string
+		arg3 *livekit.RTCNodeMessage
+	}
+	writeRTCNodeMessageReturns struct {
+		result1 error
+	}
+	writeRTCNodeMessageReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -939,6 +952,69 @@ func (fake *FakeRouter) WriteRTCMessageReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeRouter) WriteRTCNodeMessage(arg1 context.Context, arg2 string, arg3 *livekit.RTCNodeMessage) error {
+	fake.writeRTCNodeMessageMutex.Lock()
+	ret, specificReturn := fake.writeRTCNodeMessageReturnsOnCall[len(fake.writeRTCNodeMessageArgsForCall)]
+	fake.writeRTCNodeMessageArgsForCall = append(fake.writeRTCNodeMessageArgsForCall, struct {
+		arg1 context.Context
+		arg2 string
+		arg3 *livekit.RTCNodeMessage
+	}{arg1, arg2, arg3})
+	stub := fake.WriteRTCNodeMessageStub
+	fakeReturns := fake.writeRTCNodeMessageReturns
+	fake.recordInvocation("WriteRTCNodeMessage", []interface{}{arg1, arg2, arg3})
+	fake.writeRTCNodeMessageMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRouter) WriteRTCNodeMessageCallCount() int {
+	fake.writeRTCNodeMessageMutex.RLock()
+	defer fake.writeRTCNodeMessageMutex.RUnlock()
+	return len(fake.writeRTCNodeMessageArgsForCall)
+}
+
+func (fake *FakeRouter) WriteRTCNodeMessageCalls(stub func(context.Context, string, *livekit.RTCNodeMessage) error) {
+	fake.writeRTCNodeMessageMutex.Lock()
+	defer fake.writeRTCNodeMessageMutex.Unlock()
+	fake.WriteRTCNodeMessageStub = stub
+}
+
+func (fake *FakeRouter) WriteRTCNodeMessageArgsForCall(i int) (context.Context, string, *livekit.RTCNodeMessage) {
+	fake.writeRTCNodeMessageMutex.RLock()
+	defer fake.writeRTCNodeMessageMutex.RUnlock()
+	argsForCall := fake.writeRTCNodeMessageArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRouter) WriteRTCNodeMessageReturns(result1 error) {
+	fake.writeRTCNodeMessageMutex.Lock()
+	defer fake.writeRTCNodeMessageMutex.Unlock()
+	fake.WriteRTCNodeMessageStub = nil
+	fake.writeRTCNodeMessageReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRouter) WriteRTCNodeMessageReturnsOnCall(i int, result1 error) {
+	fake.writeRTCNodeMessageMutex.Lock()
+	defer fake.writeRTCNodeMessageMutex.Unlock()
+	fake.WriteRTCNodeMessageStub = nil
+	if fake.writeRTCNodeMessageReturnsOnCall == nil {
+		fake.writeRTCNodeMessageReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.writeRTCNodeMessageReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -972,6 +1048,8 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.unregisterNodeMutex.RUnlock()
 	fake.writeRTCMessageMutex.RLock()
 	defer fake.writeRTCMessageMutex.RUnlock()
+	fake.writeRTCNodeMessageMutex.RLock()
+	defer fake.writeRTCNodeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -176,7 +176,13 @@ func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 	}
 
 	rtcSink := NewRTCNodeSink(r.rc, rtcNode, pkey)
-	return r.writeRTCMessage(roomName, identity, msg, rtcSink)
+	msg.ParticipantKey = participantKey(roomName, identity)
+	return r.writeRTCMessage(rtcSink, msg)
+}
+
+func (r *RedisRouter) WriteRTCNodeMessage(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
+	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, "")
+	return r.writeRTCMessage(rtcSink, msg)
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
@@ -189,7 +195,8 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	if rtcNode.Id != r.currentNode.Id {
 		err = ErrIncorrectRTCNode
 		logger.Errorw("called participant on incorrect node", err,
-			"rtcNode", rtcNode, "nodeID", r.currentNode.Id)
+			"rtcNode", rtcNode,
+		)
 		return err
 	}
 
@@ -312,16 +319,14 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
-			if err := prometheus.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
-				logger.Errorw("could not update node stats", err, "nodeID", r.currentNode.Id)
-			}
-			if err := r.RegisterNode(); err != nil {
-				logger.Errorw("could not update node", err, "nodeID", r.currentNode.Id)
-			}
+			r.WriteRTCNodeMessage(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
+				Message: &livekit.RTCNodeMessage_KeepAlive{},
+			})
 		case <-r.ctx.Done():
 			return
 		}
 	}
+
 }
 
 // worker that consumes redis messages intended for this node
@@ -419,6 +424,19 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
+		}
+
+	case *livekit.RTCNodeMessage_KeepAlive:
+		if time.Now().Sub(time.Unix(rm.SenderTime, 0)) > statsUpdateInterval {
+			logger.Infow("keep alive too old, skipping", "senderTime", rm.SenderTime)
+			break
+		}
+
+		if err := prometheus.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
+			logger.Errorw("could not update node stats", err)
+		}
+		if err := r.RegisterNode(); err != nil {
+			logger.Errorw("could not update node", err)
 		}
 
 	default:
