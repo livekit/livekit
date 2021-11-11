@@ -115,12 +115,21 @@ func (r *LocalRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
 	}
-	return r.writeRTCMessage(roomName, identity, msg, r.rtcMessageChan)
+	msg.ParticipantKey = participantKey(roomName, identity)
+	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
-func (r *LocalRouter) writeRTCMessage(roomName, identity string, msg *livekit.RTCNodeMessage, sink MessageSink) error {
+func (r *LocalRouter) WriteRTCNodeMessage(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error {
+	if r.rtcMessageChan.IsClosed() {
+		// create a new one
+		r.rtcMessageChan = NewMessageChannel()
+	}
+	return r.writeRTCMessage(r.rtcMessageChan, msg)
+}
+
+func (r *LocalRouter) writeRTCMessage(sink MessageSink, msg *livekit.RTCNodeMessage) error {
 	defer sink.Close()
-	msg.ParticipantKey = participantKey(roomName, identity)
+	msg.SenderTime = time.Now().Unix()
 	return sink.WriteMessage(msg)
 }
 

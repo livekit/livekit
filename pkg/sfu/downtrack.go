@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/elliotchance/orderedmap"
+
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
@@ -27,6 +29,16 @@ const (
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
+	RTPBlankFramesMax             = 6
+)
+
+type SequenceNumberOrdering int
+
+const (
+	SequenceNumberOrderingContiguous SequenceNumberOrdering = iota
+	SequenceNumberOrderingOutOfOrder
+	SequenceNumberOrderingGap
+	SequenceNumberOrderingUnknown
 )
 
 var (
@@ -38,6 +50,17 @@ var (
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
 )
+
+var (
+	VP8KeyFrame1x1 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0b, 0xc7, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x3f, 0x82, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xe6, 0xb5, 0x00}
+)
+
+type simulcastTrackHelpers struct {
+	switchDelay       time.Time
+	temporalSupported bool
+	temporalEnabled   bool
+	lTSCalc           atomicInt64
+}
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
@@ -115,7 +138,7 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
-	return &DownTrack{
+	d := &DownTrack{
 		id:            r.TrackID(),
 		peerID:        peerID,
 		maxTrack:      mt,
@@ -124,7 +147,12 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, p
 		receiver:      r,
 		codec:         c,
 		munger:        NewMunger(),
-	}, nil
+	}
+	if strings.ToLower(c.MimeType) == "video/vp8" {
+		d.vp8Munger = NewVP8Munger()
+	}
+
+	return d, nil
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
@@ -316,7 +344,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			size = RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize
 		}
 
-		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs()
+		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs(false)
 		if err != nil {
 			return bytesSent
 		}
@@ -403,8 +431,15 @@ func (d *DownTrack) Mute(val bool) {
 // Close track
 func (d *DownTrack) Close() {
 	d.enabled.set(false)
+
+	// write blank frames after disabling so that other frames do not interfere.
+	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
+	// Otherwise, with transceiver re-use last frame from previous stream is held in the
+	// display buffer and there could be a brief moment where the previous stream is displayed.
+	d.writeBlankFrameRTP()
+
 	d.closeOnce.Do(func() {
-		Logger.V(1).Info("Closing sender", "peer_id", d.peerID)
+		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.Kind())
 		if d.payload != nil {
 			packetFactory.Put(d.payload)
 		}
@@ -784,13 +819,6 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 			d.munger.UpdateSnTsOffsets(extPkt, 1, 1)
 		} else {
 			d.munger.SetLastSnTs(extPkt)
-			if d.mime == "video/vp8" {
-				if vp8, ok := extPkt.Payload.(buffer.VP8); ok {
-					if vp8.TIDPresent == 1 {
-						d.vp8Munger = NewVP8Munger()
-					}
-				}
-			}
 			if d.vp8Munger != nil {
 				d.vp8Munger.SetLast(extPkt)
 			}
@@ -799,12 +827,19 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 		d.reSync.set(false)
 	}
 
+	newSN, newTS, ordering, err := d.munger.UpdateAndGetSnTs(extPkt)
+	if err != nil {
+		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			return nil
+		}
+
+		d.pktsDropped.add(1)
+		return err
+	}
+
 	payload := extPkt.Packet.Payload
 
-	var (
-		translatedVP8 *buffer.VP8
-		err           error
-	)
+	var translatedVP8 *buffer.VP8
 	if d.vp8Munger != nil && len(payload) > 0 {
 		// LK-TODO-START
 		// Errors below do not update sequence number. That is a problem if the stream
@@ -813,7 +848,7 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 		// that, the sequence numbers should be updated to ensure that subsequent packet
 		// translations works fine and produce proper translated sequence numbers.
 		// LK-TODO-END
-		translatedVP8, err = d.vp8Munger.UpdateAndGet(extPkt, d.temporalLayer.get()>>16)
+		translatedVP8, err = d.vp8Munger.UpdateAndGet(extPkt, ordering, d.temporalLayer.get()>>16)
 		if err != nil {
 			if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
 				if err == ErrFilteredVP8TemporalLayer {
@@ -841,18 +876,9 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 		}
 	}
 
-	newSN, newTS, err := d.munger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return nil
-		}
-
-		d.pktsDropped.add(1)
-		return err
-	}
 	if d.sequencer != nil {
 		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, newSN, newTS, 0, extPkt.Head)
-		if meta != nil && d.vp8Munger != nil {
+		if meta != nil && translatedVP8 != nil {
 			meta.packVP8(translatedVP8)
 		}
 	}
@@ -946,23 +972,24 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 		}
 	} else if lTSCalc == 0 {
 		d.munger.SetLastSnTs(extPkt)
-		if d.mime == "video/vp8" {
-			if _, ok := extPkt.Payload.(buffer.VP8); ok {
-				// need a munger for simulcast with or without temporal filtering
-				d.vp8Munger = NewVP8Munger()
-			}
-		}
 		if d.vp8Munger != nil {
 			d.vp8Munger.SetLast(extPkt)
 		}
 	}
 
+	newSN, newTS, ordering, err := d.munger.UpdateAndGetSnTs(extPkt)
+	if err != nil {
+		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			return nil
+		}
+
+		d.pktsDropped.add(1)
+		return err
+	}
+
 	payload := extPkt.Packet.Payload
 
-	var (
-		translatedVP8 *buffer.VP8
-		err           error
-	)
+	var translatedVP8 *buffer.VP8
 	if d.vp8Munger != nil && len(payload) > 0 {
 		// LK-TODO-START
 		// Errors below do not update sequence number. That is a problem if the stream
@@ -971,7 +998,7 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 		// that, the sequence numbers should be updated to ensure that subsequent packet
 		// translations works fine and produce proper translated sequence numbers.
 		// LK-TODO-END
-		translatedVP8, err = d.vp8Munger.UpdateAndGet(extPkt, d.temporalLayer.get()>>16)
+		translatedVP8, err = d.vp8Munger.UpdateAndGet(extPkt, ordering, d.temporalLayer.get()>>16)
 		if err != nil {
 			if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
 				if err == ErrFilteredVP8TemporalLayer {
@@ -999,18 +1026,9 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 		}
 	}
 
-	newSN, newTS, err := d.munger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return nil
-		}
-
-		d.pktsDropped.add(1)
-		return err
-	}
 	if d.sequencer != nil {
 		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, newSN, newTS, uint8(csl), extPkt.Head)
-		if meta != nil && d.vp8Munger != nil {
+		if meta != nil && translatedVP8 != nil {
 			meta.packVP8(translatedVP8)
 		}
 	}
@@ -1040,6 +1058,87 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 
 	return err
 }
+
+func (d *DownTrack) writeBlankFrameRTP() error {
+	// don't send if nothing has been sent
+	if d.packetCount.get() == 0 {
+		return nil
+	}
+
+	// LK-TODO: Support other video codecs
+	if d.Kind() == webrtc.RTPCodecTypeAudio || d.mime != "video/vp8" {
+		return nil
+	}
+
+	// send a number of blank frames just in case there is loss.
+	// Intentionally ignoring check for mute or bandwidth constrained mute
+	// as this is used to clear client side buffer.
+	i := 0
+	for {
+		frameEndNeeded := false
+		if !d.munger.IsOnFrameBoundary() {
+			frameEndNeeded = true
+		}
+
+		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs(frameEndNeeded)
+		if err != nil {
+			return err
+		}
+
+		adjustedTs := ts + uint32(i+1)*(d.codec.ClockRate/30) // assume 30 fps
+		if frameEndNeeded {
+			adjustedTs = ts
+		}
+		hdr := rtp.Header{
+			Version:        2,
+			Padding:        false,
+			Marker:         true,
+			PayloadType:    d.payloadType,
+			SequenceNumber: sn,
+			Timestamp:      adjustedTs,
+			SSRC:           d.ssrc,
+			CSRC:           []uint32{},
+		}
+
+		err = d.WriteRTPHeaderExtensions(&hdr)
+		if err != nil {
+			return err
+		}
+
+		blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+		if err != nil {
+			return err
+		}
+
+		// 1x1 key frame
+		// Used even when closing out a previous frame. Looks like receivers
+		// do not care about content (it will probably end up being an undecodable
+		// frame, but that should be okay as there are key frames following)
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
+		vp8Header := payload[:blankVP8.HeaderSize]
+		err = blankVP8.MarshalTo(vp8Header)
+		if err != nil {
+			return err
+		}
+
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
+
+		_, err = d.writeStream.WriteRTP(&hdr, payload)
+		if err != nil {
+			return err
+		}
+		if !frameEndNeeded {
+			i++
+		}
+
+		if i >= RTPBlankFramesMax {
+			break
+		}
+	}
+
+	return nil
+}
+
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
@@ -1305,6 +1404,9 @@ func (m *Munger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, ts
 	m.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
 	m.snOffset = extPkt.Packet.SequenceNumber - m.lastSN - snAdjust
 	m.tsOffset = extPkt.Packet.Timestamp - m.lastTS - tsAdjust
+
+	// clear incoming missing sequence numbers on layer switch
+	m.missingSNs = make(map[uint16]uint16, 10)
 }
 
 func (m *Munger) PacketDropped(extPkt *buffer.ExtPacket) {
@@ -1319,7 +1421,7 @@ func (m *Munger) PacketDropped(extPkt *buffer.ExtPacket) {
 	m.snOffset += 1
 }
 
-func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, error) {
+func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, SequenceNumberOrdering, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -1327,32 +1429,33 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, err
 	if !extPkt.Head {
 		snOffset, ok := m.missingSNs[extPkt.Packet.SequenceNumber]
 		if !ok {
-			return 0, 0, ErrOutOfOrderSequenceNumberCacheMiss
+			return 0, 0, SequenceNumberOrderingOutOfOrder, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
 		delete(m.missingSNs, extPkt.Packet.SequenceNumber)
-		return extPkt.Packet.SequenceNumber - snOffset, extPkt.Packet.Timestamp - m.tsOffset, nil
+		return extPkt.Packet.SequenceNumber - snOffset, extPkt.Packet.Timestamp - m.tsOffset, SequenceNumberOrderingOutOfOrder, nil
 	}
+
+	ordering := SequenceNumberOrderingContiguous
 
 	// if there are gaps, record it in missing sequence number cache
 	diff := extPkt.Packet.SequenceNumber - m.highestIncomingSN
 	if diff > 1 {
+		ordering = SequenceNumberOrderingGap
+		var lossStartSN, lossEndSN int
+		lossStartSN = int(m.highestIncomingSN) + 1
 		if extPkt.Packet.SequenceNumber > m.highestIncomingSN {
-			for lostSN := m.highestIncomingSN + 1; lostSN < extPkt.Packet.SequenceNumber; lostSN++ {
-				m.missingSNs[lostSN] = m.snOffset
-			}
+			lossEndSN = int(extPkt.Packet.SequenceNumber) - 1
 		} else {
-			for lostSN := m.highestIncomingSN + 1; lostSN <= uint16(buffer.MaxSN-1); lostSN++ {
-				m.missingSNs[lostSN] = m.snOffset
-			}
-			for lostSN := uint16(0); lostSN < extPkt.Packet.SequenceNumber; lostSN++ {
-				m.missingSNs[lostSN] = m.snOffset
-			}
+			lossEndSN = int(extPkt.Packet.SequenceNumber) - 1 + buffer.MaxSN
+		}
+		for lostSN := lossStartSN; lostSN <= lossEndSN; lostSN++ {
+			m.missingSNs[uint16(lostSN&0xffff)] = m.snOffset
 		}
 	} else {
 		// can get duplicate packet due to FEC
 		if diff == 0 {
-			return 0, 0, ErrDuplicatePacket
+			return 0, 0, SequenceNumberOrderingUnknown, ErrDuplicatePacket
 		}
 
 		// if padding only packet, can be dropped and sequence number adjusted
@@ -1362,7 +1465,7 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, err
 		if len(extPkt.Packet.Payload) == 0 {
 			m.highestIncomingSN = extPkt.Packet.SequenceNumber
 			m.snOffset += 1
-			return 0, 0, ErrPaddingOnlyPacket
+			return 0, 0, SequenceNumberOrderingContiguous, ErrPaddingOnlyPacket
 		}
 	}
 
@@ -1380,14 +1483,14 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, err
 	m.lastTS = mungedTS
 	m.lastMarker = extPkt.Packet.Marker
 
-	return mungedSN, mungedTS, nil
+	return mungedSN, mungedTS, ordering, nil
 }
 
-func (m *Munger) UpdateAndGetPaddingSnTs() (uint16, uint32, error) {
+func (m *Munger) UpdateAndGetPaddingSnTs(forceMarker bool) (uint16, uint32, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if !m.lastMarker {
+	if !m.lastMarker && !forceMarker {
 		return 0, 0, ErrPaddingNotOnFrameBoundary
 	}
 
@@ -1397,7 +1500,18 @@ func (m *Munger) UpdateAndGetPaddingSnTs() (uint16, uint32, error) {
 	m.lastSN = sn
 	m.snOffset -= 1
 
+	if forceMarker {
+		m.lastMarker = true
+	}
+
 	return sn, ts, nil
+}
+
+func (m *Munger) IsOnFrameBoundary() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	return m.lastMarker
 }
 
 //
@@ -1407,12 +1521,17 @@ type VP8MungerParams struct {
 	pictureIdWrapHandler VP8PictureIdWrapHandler
 	extLastPictureId     int32
 	pictureIdOffset      int32
+	pictureIdUsed        int
 	lastTl0PicIdx        uint8
 	tl0PicIdxOffset      uint8
+	tl0PicIdxUsed        int
+	tidUsed              int
 	lastKeyIdx           uint8
 	keyIdxOffset         uint8
+	keyIdxUsed           int
 
-	missingPictureIds map[int32]int32
+	missingPictureIds    *orderedmap.OrderedMap
+	lastDroppedPictureId int32
 }
 
 type VP8Munger struct {
@@ -1423,7 +1542,8 @@ type VP8Munger struct {
 
 func NewVP8Munger() *VP8Munger {
 	return &VP8Munger{VP8MungerParams: VP8MungerParams{
-		missingPictureIds: make(map[int32]int32, 10),
+		missingPictureIds:    orderedmap.NewOrderedMap(),
+		lastDroppedPictureId: -1,
 	}}
 }
 
@@ -1436,10 +1556,25 @@ func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
-	v.extLastPictureId = int32(vp8.PictureID)
-	v.lastTl0PicIdx = vp8.TL0PICIDX
-	v.lastKeyIdx = vp8.KEYIDX
+	v.pictureIdUsed = vp8.PictureIDPresent
+	if v.pictureIdUsed == 1 {
+		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
+		v.extLastPictureId = int32(vp8.PictureID)
+	}
+
+	v.tl0PicIdxUsed = vp8.TL0PICIDXPresent
+	if v.tl0PicIdxUsed == 1 {
+		v.lastTl0PicIdx = vp8.TL0PICIDX
+	}
+
+	v.tidUsed = vp8.TIDPresent
+
+	v.keyIdxUsed = vp8.KEYIDXPresent
+	if v.keyIdxUsed == 1 {
+		v.lastKeyIdx = vp8.KEYIDX
+	}
+
+	v.lastDroppedPictureId = -1
 }
 
 func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
@@ -1451,13 +1586,26 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 		return
 	}
 
-	v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
-	v.pictureIdOffset = int32(vp8.PictureID) - v.extLastPictureId - 1
-	v.tl0PicIdxOffset = vp8.TL0PICIDX - v.lastTl0PicIdx - 1
-	v.keyIdxOffset = (vp8.KEYIDX - v.lastKeyIdx - 1) & 0x1f
+	if v.pictureIdUsed == 1 {
+		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
+		v.pictureIdOffset = int32(vp8.PictureID) - v.extLastPictureId - 1
+	}
+
+	if v.tl0PicIdxUsed == 1 {
+		v.tl0PicIdxOffset = vp8.TL0PICIDX - v.lastTl0PicIdx - 1
+	}
+
+	if v.keyIdxUsed == 1 {
+		v.keyIdxOffset = (vp8.KEYIDX - v.lastKeyIdx - 1) & 0x1f
+	}
+
+	// clear missing picture ids on layer switch
+	v.missingPictureIds = orderedmap.NewOrderedMap()
+
+	v.lastDroppedPictureId = -1
 }
 
-func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, maxTemporalLayer int32) (*buffer.VP8, error) {
+func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumberOrdering, maxTemporalLayer int32) (*buffer.VP8, error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
@@ -1470,12 +1618,17 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, maxTemporalLayer int3
 
 	// if out-of-order, look up missing picture id cache
 	if !newer {
-		pictureIdOffset, ok := v.missingPictureIds[extPictureId]
+		value, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
 			return nil, ErrOutOfOrderVP8PictureIdCacheMiss
 		}
+		pictureIdOffset := value.(int32)
 
-		delete(v.missingPictureIds, extPictureId)
+		// the out-of-order picture id cannot be deleted from the cache
+		// as there could more than one packet in a picture and more
+		// than one packet of a picture could come out-of-order.
+		// To prevent picture id cache from growing, it is truncated
+		// when it reaches a certain size.
 
 		mungedPictureId := uint16((extPictureId - pictureIdOffset) & 0x7fff)
 		vp8Packet := &buffer.VP8{
@@ -1499,25 +1652,53 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, maxTemporalLayer int3
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
 	v.pictureIdWrapHandler.UpdateMaxPictureId(extPictureId, vp8.MBit)
 
-	// if there are gaps, record it in missing picture id cache
-	// check for > 1 as consecutive packets can have the same picture ID,
-	// i. e. one picture composed of multiple packets
-	if extPictureId-prevMaxPictureId > 1 {
-		for lostPictureId := prevMaxPictureId + 1; lostPictureId < extPictureId; lostPictureId++ {
-			v.missingPictureIds[lostPictureId] = v.pictureIdOffset
+	// if there is a gap in sequence number, record possible pictures that
+	// the missing packets can belong to in missing picture id cache.
+	// The missing picture cache should contain the previous picture id
+	// and the current picture id and all the intervening pictures.
+	// This is to handle a scenario as follows
+	//   o Packet 10 -> Picture ID 10
+	//   o Packet 11 -> missing
+	//   o Packet 12 -> Picture ID 11
+	// In this case, Packet 11 could belong to either Picture ID 10 (last packet of that picture)
+	// or Picture ID 11 (first packet of the current picture). Although in this simple case,
+	// it is possible to deduce that (for example by looking at previous packet's RTP marker
+	// and check if that was the last packet of Picture 10), it could get complicated when
+	// the gap is larger.
+	if ordering == SequenceNumberOrderingGap {
+		// can drop packet if it belongs to the last dropped picture.
+		// Example:
+		//   o Packet 10 - Picture 11 - TID that should be dropped
+		//   o Packet 11 - missing
+		//   o Packet 12 - Picture 11 - will be reported as GAP, but belongs to a picture that was dropped and hence can be dropped
+		// If Packet 11 comes around, it will be reported as OUT_OF_ORDER, but the missing
+		// picture id cache will not have an entry and hence will be dropped.
+		if extPictureId == v.lastDroppedPictureId {
+			return nil, ErrFilteredVP8TemporalLayer
+		} else {
+			for lostPictureId := prevMaxPictureId; lostPictureId <= extPictureId; lostPictureId++ {
+				v.missingPictureIds.Set(lostPictureId, v.pictureIdOffset)
+			}
+
+			// trim cache if necessary
+			for v.missingPictureIds.Len() > 50 {
+				el := v.missingPictureIds.Front()
+				v.missingPictureIds.Delete(el.Key)
+			}
 		}
 	} else {
 		if vp8.TIDPresent == 1 && vp8.TID > uint8(maxTemporalLayer) {
 			// adjust only once per picture as a picture could have multiple packets
 			if vp8.PictureIDPresent == 1 && prevMaxPictureId != extPictureId {
+				v.lastDroppedPictureId = extPictureId
 				v.pictureIdOffset += 1
 			}
 			return nil, ErrFilteredVP8TemporalLayer
 		}
 	}
 
-	// in-order incoming picture, may or may not be contiguous.
-	// In the case of loss (i. e. incoming picture number is not contiguous),
+	// in-order incoming sequence number, may or may not be contiguous.
+	// In the case of loss (i. e. incoming sequence number is not contiguous),
 	// forward even if it is a filtered layer. With temporal scalability,
 	// it is unclear if the current packet should be dropped if it is not
 	// contiguous. Hence forward anything that is not contiguous.
@@ -1545,6 +1726,70 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, maxTemporalLayer int3
 		KEYIDX:           mungedKeyIdx,
 		IsKeyFrame:       vp8.IsKeyFrame,
 		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
+	}
+	return vp8Packet, nil
+}
+
+func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) (*buffer.VP8, error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	offset := 0
+	if newPicture {
+		offset = 1
+	}
+
+	headerSize := 1
+	if (v.pictureIdUsed + v.tl0PicIdxUsed + v.tidUsed + v.keyIdxUsed) != 0 {
+		headerSize += 1
+	}
+
+	extPictureId := v.extLastPictureId
+	if v.pictureIdUsed == 1 {
+		extPictureId = v.extLastPictureId + int32(offset)
+		v.extLastPictureId = extPictureId
+		v.pictureIdOffset -= int32(offset)
+		if (extPictureId & 0x7fff) > 127 {
+			headerSize += 2
+		} else {
+			headerSize += 1
+		}
+	}
+	pictureId := uint16(extPictureId & 0x7fff)
+
+	tl0PicIdx := uint8(0)
+	if v.tl0PicIdxUsed == 1 {
+		tl0PicIdx = v.lastTl0PicIdx + uint8(offset)
+		v.lastTl0PicIdx = tl0PicIdx
+		v.tl0PicIdxOffset -= uint8(offset)
+		headerSize += 1
+	}
+
+	if (v.tidUsed + v.keyIdxUsed) != 0 {
+		headerSize += 1
+	}
+
+	keyIdx := uint8(0)
+	if v.keyIdxUsed == 1 {
+		keyIdx = (v.lastKeyIdx + uint8(offset)) & 0x1f
+		v.lastKeyIdx = keyIdx
+		v.keyIdxOffset -= uint8(offset)
+	}
+
+	vp8Packet := &buffer.VP8{
+		FirstByte:        0x10, // partition 0, start of VP8 Partition, reference frame
+		PictureIDPresent: v.pictureIdUsed,
+		PictureID:        pictureId,
+		MBit:             pictureId > 127,
+		TL0PICIDXPresent: v.tl0PicIdxUsed,
+		TL0PICIDX:        tl0PicIdx,
+		TIDPresent:       v.tidUsed,
+		TID:              0,
+		Y:                1,
+		KEYIDXPresent:    v.keyIdxUsed,
+		KEYIDX:           keyIdx,
+		IsKeyFrame:       true,
+		HeaderSize:       headerSize,
 	}
 	return vp8Packet, nil
 }

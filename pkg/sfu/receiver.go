@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/stats"
 )
 
 // Receiver defines a interface for a track receivers
@@ -57,7 +56,6 @@ type WebRTCReceiver struct {
 	stream          string
 	receiver        *webrtc.RTPReceiver
 	codec           webrtc.RTPCodecParameters
-	stats           [3]*stats.Stream
 	nackWorker      *workerpool.WorkerPool
 	isSimulcast     bool
 	availableLayers atomic.Value
@@ -297,6 +295,7 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 		// LK-TODO-END
 		track.SetInitialLayers(0, 0)
 		track.trackType = SimpleDownTrack
+		track.payload = packetFactory.Get().(*[]byte)
 	}
 
 	w.storeDownTrack(track)
