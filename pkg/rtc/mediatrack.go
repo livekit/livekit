@@ -271,7 +271,10 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					return
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					t.params.Logger.Warnw("could not remove remoteTrack from forwarder", err,
+					// most of these are safe to ignore, since the track state might have already
+					// been set to Inactive
+					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+						"error", err,
 						"participant", sub.Identity(), "pID", sub.ID())
 				}
 			}
