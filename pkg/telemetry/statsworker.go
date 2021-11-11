@@ -13,6 +13,7 @@ const updateFrequency = time.Second * 10
 type StatsWorker struct {
 	sync.RWMutex
 	buffers   map[uint32]*buffer.Buffer
+	drain     map[uint32]bool
 	lastStats *buffer.Stats
 	onUpdate  func(diff *buffer.Stats)
 	close     chan struct{}
@@ -21,6 +22,7 @@ type StatsWorker struct {
 func NewStatsWorker(onUpdate func(*buffer.Stats)) *StatsWorker {
 	s := &StatsWorker{
 		buffers:  make(map[uint32]*buffer.Buffer),
+		drain:    make(map[uint32]bool),
 		onUpdate: onUpdate,
 		close:    make(chan struct{}, 1),
 	}
@@ -32,6 +34,8 @@ func (s *StatsWorker) run() {
 	for {
 		select {
 		case <-s.close:
+			// drain
+			s.onUpdate(s.Calc())
 			return
 		case <-time.After(updateFrequency):
 			s.onUpdate(s.Calc())
@@ -42,12 +46,6 @@ func (s *StatsWorker) run() {
 func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
 	s.Lock()
 	s.buffers[buffer.GetMediaSSRC()] = buffer
-	s.Unlock()
-}
-
-func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
-	s.Lock()
-	delete(s.buffers, ssrc)
 	s.Unlock()
 }
 
@@ -64,7 +62,17 @@ func (s *StatsWorker) Calc() *buffer.Stats {
 			total.Jitter = stats.Jitter
 		}
 	}
+	drain := len(s.drain) > 0
 	s.RUnlock()
+
+	if drain {
+		s.Lock()
+		for ssrc := range s.drain {
+			delete(s.buffers, ssrc)
+		}
+		s.drain = make(map[uint32]bool)
+		s.Unlock()
+	}
 
 	var diff *buffer.Stats
 	if s.lastStats != nil {
@@ -82,6 +90,12 @@ func (s *StatsWorker) Calc() *buffer.Stats {
 
 	s.lastStats = diff
 	return diff
+}
+
+func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
+	s.Lock()
+	s.drain[ssrc] = true
+	s.Unlock()
 }
 
 func (s *StatsWorker) Close() {

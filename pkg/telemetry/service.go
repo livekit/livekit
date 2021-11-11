@@ -8,6 +8,7 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -22,6 +23,7 @@ type TelemetryService struct {
 	workers map[string]*StatsWorker
 
 	analyticsEnabled bool
+	authToken        string
 	events           livekit.AnalyticsRecorderService_IngestEventsClient
 	stats            livekit.AnalyticsRecorderService_IngestStatsClient
 }
@@ -51,6 +53,7 @@ func (t *TelemetryService) HandleIncomingRTP(participantID, identity string, dif
 	// diff.LastExpected, diff.LastReceived, diff.Jitter, diff.LostRate
 }
 
+// TODO: skip unmarshal by getting this from receiver instead?
 func (t *TelemetryService) HandleIncomingRTCP(participantID, identity string, bytes []byte) {
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
@@ -91,5 +94,30 @@ func (t *TelemetryService) HandleOutgoingRTCP(participantID, identity string, pk
 		}
 	}
 
+	t.sendStats(&livekit.AnalyticsStat{
+		Kind:          livekit.StreamType_DOWNSTREAM,
+		TimeStamp:     timestamppb.Now(),
+		Node:          "",
+		Sid:           nil,
+		ProjectId:     nil,
+		ParticipantId: nil,
+		RoomName:      nil,
+		Jitter:        nil,
+		PacketLost:    nil,
+		RrTime:        nil,
+		BytesSent:     nil,
+		BytesReceived: nil,
+		AuthToken:     &t.authToken,
+	})
 	// TODO: analytics service
+}
+
+func (t *TelemetryService) sendStats(stats *livekit.AnalyticsStat) {
+	if t.analyticsEnabled {
+		if err := t.stats.Send(&livekit.AnalyticsStats{
+			Stats: []*livekit.AnalyticsStat{stats},
+		}); err != nil {
+			logger.Errorw("failed to send stats", err)
+		}
+	}
 }

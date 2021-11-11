@@ -489,12 +489,11 @@ func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
 		fracLost = uint8((lostInterval << 8) / expectedInterval)
 	}
 	if b.lastFractionLostToReport > fracLost {
-		// If fractionlost from subscriber is bigger than sfu received, use it.
+		// If fraction lost from subscriber is bigger than sfu received, use it.
 		fracLost = b.lastFractionLostToReport
 	}
 
 	var dlsr uint32
-
 	if b.lastSRRecv != 0 {
 		delayMS := uint32((time.Now().UnixNano() - b.lastSRRecv) / 1e6)
 		dlsr = (delayMS / 1e3) << 16

@@ -351,6 +351,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			// do nothing for now
 			case *rtcp.SenderReport:
 				buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime)
+				logger.Infow("rtcpReader Sender report", "ssrc", pkt.SSRC, "reports", len(pkt.Reports))
 			}
 		}
 	})
@@ -499,6 +500,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	for _, p := range packets {
 		switch pkt := p.(type) {
 		case *rtcp.SenderReport:
+			logger.Infow("MediaTrack Sender report", "ssrc", pkt.SSRC, "numReports", len(pkt.Reports))
 			for _, rr := range pkt.Reports {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
