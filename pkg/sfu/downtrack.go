@@ -40,6 +40,10 @@ var (
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
 )
 
+var (
+	VP8KeyFrame1x1 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0b, 0xc7, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x3f, 0x82, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xe6, 0xb5, 0x00}
+)
+
 type simulcastTrackHelpers struct {
 	switchDelay       time.Time
 	temporalSupported bool
@@ -443,16 +447,14 @@ func (d *DownTrack) WriteBlankFrameRTP() error {
 		// Used even when closing out a previous frame. Looks like receivers
 		// do not care about content (it will probably end up being an undecodable
 		// frame, but that should be okay as there are key frames following)
-		vp8PayloadHeader := []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0b, 0xc7, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x3f, 0x82, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xe6, 0xb5, 0x00}
-
-		payload := make([]byte, blankVP8.HeaderSize+len(vp8PayloadHeader))
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
 		vp8Header := payload[:blankVP8.HeaderSize]
 		err = blankVP8.MarshalTo(vp8Header)
 		if err != nil {
 			return err
 		}
 
-		copy(payload[blankVP8.HeaderSize:], vp8PayloadHeader)
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
 
 		_, err = d.writeStream.WriteRTP(&hdr, payload)
 		if err != nil {
