@@ -1655,7 +1655,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// if there is a gap in sequence number, record possible pictures that
 	// the missing packets can belong to in missing picture id cache.
 	// The missing picture cache should contain the previous picture id
-	// and the current picture id and all the intervening pictures in between.
+	// and the current picture id and all the intervening pictures.
 	// This is to handle a scenario as follows
 	//   o Packet 10 -> Picture ID 10
 	//   o Packet 11 -> missing
