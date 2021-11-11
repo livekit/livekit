@@ -295,6 +295,7 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 		// LK-TODO-END
 		track.SetInitialLayers(0, 0)
 		track.trackType = SimpleDownTrack
+		track.payload = packetFactory.Get().(*[]byte)
 	}
 
 	w.storeDownTrack(track)
