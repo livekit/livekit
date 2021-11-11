@@ -35,10 +35,10 @@ const (
 type SequenceNumberOrdering int
 
 const (
-	SequenceNumberOrdering_CONTIGUOUS SequenceNumberOrdering = iota
-	SequenceNumberOrdering_OUT_OF_ORDER
-	SequenceNumberOrdering_GAP
-	SequenceNumberOrdering_UNKNOWN
+	SequenceNumberOrderingContiguous SequenceNumberOrdering = iota
+	SequenceNumberOrderingOutOfOrder
+	SequenceNumberOrderingGap
+	SequenceNumberOrderingUnknown
 )
 
 var (
@@ -1429,19 +1429,19 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, Seq
 	if !extPkt.Head {
 		snOffset, ok := m.missingSNs[extPkt.Packet.SequenceNumber]
 		if !ok {
-			return 0, 0, SequenceNumberOrdering_OUT_OF_ORDER, ErrOutOfOrderSequenceNumberCacheMiss
+			return 0, 0, SequenceNumberOrderingOutOfOrder, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
 		delete(m.missingSNs, extPkt.Packet.SequenceNumber)
-		return extPkt.Packet.SequenceNumber - snOffset, extPkt.Packet.Timestamp - m.tsOffset, SequenceNumberOrdering_OUT_OF_ORDER, nil
+		return extPkt.Packet.SequenceNumber - snOffset, extPkt.Packet.Timestamp - m.tsOffset, SequenceNumberOrderingOutOfOrder, nil
 	}
 
-	ordering := SequenceNumberOrdering_CONTIGUOUS
+	ordering := SequenceNumberOrderingContiguous
 
 	// if there are gaps, record it in missing sequence number cache
 	diff := extPkt.Packet.SequenceNumber - m.highestIncomingSN
 	if diff > 1 {
-		ordering = SequenceNumberOrdering_GAP
+		ordering = SequenceNumberOrderingGap
 		var lossStartSN, lossEndSN int
 		lossStartSN = int(m.highestIncomingSN) + 1
 		if extPkt.Packet.SequenceNumber > m.highestIncomingSN {
@@ -1455,7 +1455,7 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, Seq
 	} else {
 		// can get duplicate packet due to FEC
 		if diff == 0 {
-			return 0, 0, SequenceNumberOrdering_UNKNOWN, ErrDuplicatePacket
+			return 0, 0, SequenceNumberOrderingUnknown, ErrDuplicatePacket
 		}
 
 		// if padding only packet, can be dropped and sequence number adjusted
@@ -1465,7 +1465,7 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, Seq
 		if len(extPkt.Packet.Payload) == 0 {
 			m.highestIncomingSN = extPkt.Packet.SequenceNumber
 			m.snOffset += 1
-			return 0, 0, SequenceNumberOrdering_CONTIGUOUS, ErrPaddingOnlyPacket
+			return 0, 0, SequenceNumberOrderingContiguous, ErrPaddingOnlyPacket
 		}
 	}
 
@@ -1665,7 +1665,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// it is possible to deduce that (for example by looking at previous packet's RTP marker
 	// and check if that was the last packet of Picture 10), it could get complicated when
 	// the gap is larger.
-	if ordering == SequenceNumberOrdering_GAP {
+	if ordering == SequenceNumberOrderingGap {
 		// can drop packet if it belongs to the last dropped picture.
 		// Example:
 		//   o Packet 10 - Picture 11 - TID that should be dropped
