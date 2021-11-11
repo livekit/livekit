@@ -397,81 +397,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	return bytesSent
 }
 
-func (d *DownTrack) WriteBlankFrameRTP() error {
-	// LK-TODO: Support other video codecs
-	if d.Kind() == webrtc.RTPCodecTypeAudio || d.mime != "video/vp8" {
-		return nil
-	}
-
-	// send a number of blank frames just in case there is loss.
-	// Intentionally ignoring check for mute or bandwidth constrained mute
-	// as this is used to clear client side buffer.
-	i := 0
-	for {
-		frameEndNeeded := false
-		if !d.munger.IsOnFrameBoundary() {
-			frameEndNeeded = true
-		}
-
-		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs(frameEndNeeded)
-		if err != nil {
-			return err
-		}
-
-		adjustedTs := ts + uint32(i+1)*(d.codec.ClockRate/30) // assume 30 fps
-		if frameEndNeeded {
-			adjustedTs = ts
-		}
-		hdr := rtp.Header{
-			Version:        2,
-			Padding:        false,
-			Marker:         true,
-			PayloadType:    d.payloadType,
-			SequenceNumber: sn,
-			Timestamp:      adjustedTs,
-			SSRC:           d.ssrc,
-			CSRC:           []uint32{},
-		}
-
-		err = d.WriteRTPHeaderExtensions(&hdr)
-		if err != nil {
-			return err
-		}
-
-		blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
-		if err != nil {
-			return err
-		}
-
-		// 1x1 key frame
-		// Used even when closing out a previous frame. Looks like receivers
-		// do not care about content (it will probably end up being an undecodable
-		// frame, but that should be okay as there are key frames following)
-		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
-		vp8Header := payload[:blankVP8.HeaderSize]
-		err = blankVP8.MarshalTo(vp8Header)
-		if err != nil {
-			return err
-		}
-
-		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
-
-		_, err = d.writeStream.WriteRTP(&hdr, payload)
-		if err != nil {
-			return err
-		}
-		if !frameEndNeeded {
-			i++
-		}
-
-		if i >= RTPBlankFramesMax {
-			break
-		}
-	}
-
-	return nil
-}
-
 func (d *DownTrack) Enabled() bool {
 	return d.enabled.get()
 }
@@ -500,7 +425,7 @@ func (d *DownTrack) Close() {
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
 	// Otherwise, with transceiver re-use last frame from previous stream is held in the
 	// display buffer and there could be a brief moment where the previous stream is displayed.
-	d.WriteBlankFrameRTP()
+	d.writeBlankFrameRTP()
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.Kind())
@@ -1126,6 +1051,87 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 
 	return err
 }
+
+func (d *DownTrack) writeBlankFrameRTP() error {
+	// don't send if nothing has been sent
+	if d.packetCount.get() == 0 {
+		return nil
+	}
+
+	// LK-TODO: Support other video codecs
+	if d.Kind() == webrtc.RTPCodecTypeAudio || d.mime != "video/vp8" {
+		return nil
+	}
+
+	// send a number of blank frames just in case there is loss.
+	// Intentionally ignoring check for mute or bandwidth constrained mute
+	// as this is used to clear client side buffer.
+	i := 0
+	for {
+		frameEndNeeded := false
+		if !d.munger.IsOnFrameBoundary() {
+			frameEndNeeded = true
+		}
+
+		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs(frameEndNeeded)
+		if err != nil {
+			return err
+		}
+
+		adjustedTs := ts + uint32(i+1)*(d.codec.ClockRate/30) // assume 30 fps
+		if frameEndNeeded {
+			adjustedTs = ts
+		}
+		hdr := rtp.Header{
+			Version:        2,
+			Padding:        false,
+			Marker:         true,
+			PayloadType:    d.payloadType,
+			SequenceNumber: sn,
+			Timestamp:      adjustedTs,
+			SSRC:           d.ssrc,
+			CSRC:           []uint32{},
+		}
+
+		err = d.WriteRTPHeaderExtensions(&hdr)
+		if err != nil {
+			return err
+		}
+
+		blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+		if err != nil {
+			return err
+		}
+
+		// 1x1 key frame
+		// Used even when closing out a previous frame. Looks like receivers
+		// do not care about content (it will probably end up being an undecodable
+		// frame, but that should be okay as there are key frames following)
+		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
+		vp8Header := payload[:blankVP8.HeaderSize]
+		err = blankVP8.MarshalTo(vp8Header)
+		if err != nil {
+			return err
+		}
+
+		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
+
+		_, err = d.writeStream.WriteRTP(&hdr, payload)
+		if err != nil {
+			return err
+		}
+		if !frameEndNeeded {
+			i++
+		}
+
+		if i >= RTPBlankFramesMax {
+			break
+		}
+	}
+
+	return nil
+}
+
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
