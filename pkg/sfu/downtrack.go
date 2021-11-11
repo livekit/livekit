@@ -35,7 +35,7 @@ const (
 type SequenceNumberOrdering int
 
 const (
-	SequenceNumberOrdering_CONTIGUOUS = iota
+	SequenceNumberOrdering_CONTIGUOUS SequenceNumberOrdering = iota
 	SequenceNumberOrdering_OUT_OF_ORDER
 	SequenceNumberOrdering_GAP
 	SequenceNumberOrdering_UNKNOWN
@@ -1483,7 +1483,7 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, Seq
 	m.lastTS = mungedTS
 	m.lastMarker = extPkt.Packet.Marker
 
-	return mungedSN, mungedTS, SequenceNumberOrdering(ordering), nil
+	return mungedSN, mungedTS, ordering, nil
 }
 
 func (m *Munger) UpdateAndGetPaddingSnTs(forceMarker bool) (uint16, uint32, error) {
@@ -1683,12 +1683,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			// trim cache if necessary
 			for v.missingPictureIds.Len() > 50 {
 				el := v.missingPictureIds.Front()
-				key, ok := el.Key.(int32)
-				if !ok {
-					break
-				}
-
-				v.missingPictureIds.Delete(key)
+				v.missingPictureIds.Delete(el.Key)
 			}
 		}
 	} else {
