@@ -247,7 +247,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Telemetry.TrackUnsubscribed(sub.ID(), sub.Identity(), t.ToProto())
+			t.params.Telemetry.TrackUnsubscribed(sub.ID(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -293,7 +293,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(sub.ID(), sub.Identity(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(sub.ID(), t.ToProto())
 	return nil
 }
 
@@ -367,7 +367,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), uint32(track.SSRC()))
+			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			if onclose != nil {
 				onclose()
 			}

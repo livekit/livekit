@@ -5,6 +5,7 @@ import (
 
 	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/logger"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
 
@@ -19,13 +20,18 @@ type TelemetryService struct {
 	sync.RWMutex
 	// one worker per participant
 	workers map[string]*StatsWorker
+
+	analyticsEnabled bool
+	events           livekit.AnalyticsRecorderService_IngestEventsClient
+	stats            livekit.AnalyticsRecorderService_IngestStatsClient
 }
 
 func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
 	return &TelemetryService{
-		notifier:    notifier,
-		webhookPool: workerpool.New(1),
-		workers:     make(map[string]*StatsWorker),
+		notifier:         notifier,
+		webhookPool:      workerpool.New(1),
+		workers:          make(map[string]*StatsWorker),
+		analyticsEnabled: false, // TODO
 	}
 }
 
