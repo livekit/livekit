@@ -1660,7 +1660,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	//   o Packet 10 -> Picture ID 10
 	//   o Packet 11 -> missing
 	//   o Packet 12 -> Picture ID 11
-	// In this case, Packet 11 could belong either Picture ID 10 (last packet of that picture)
+	// In this case, Packet 11 could belong to either Picture ID 10 (last packet of that picture)
 	// or Picture ID 11 (first packet of the current picture). Although in this simple case,
 	// it is possible to deduce that (for example by looking at previous packet's RTP marker
 	// and check if that was the last packet of Picture 10), it could get complicated when
