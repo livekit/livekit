@@ -269,6 +269,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				"track", t.ID(),
 				"pIDs", []string{t.params.ParticipantID, sub.ID()},
 				"participant", sub.Identity(),
+				"kind", t.Kind(),
 			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
 				if err == webrtc.ErrConnectionClosed {

@@ -63,21 +63,18 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 	// if the room is currently active, RTC node needs to disconnect clients
-	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
+	node, err := s.router.GetNodeForRoom(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(participants) > 0 {
-		err = s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
-			Message: &livekit.RTCNodeMessage_DeleteRoom{
-				DeleteRoom: req,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
+	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_DeleteRoom{
+			DeleteRoom: req,
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &livekit.DeleteRoomResponse{}, nil
@@ -195,20 +192,18 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
 	// here we are using any user's identity, due to how it works with routing
-	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
+	node, err := s.router.GetNodeForRoom(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(participants) > 0 {
-		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
-			Message: &livekit.RTCNodeMessage_SendData{
-				SendData: req,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
+	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_SendData{
+			SendData: req,
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &livekit.SendDataResponse{}, nil
@@ -226,20 +221,18 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	room.Metadata = req.Metadata
 
-	participants, err := s.roomStore.ListParticipants(ctx, req.Room)
+	node, err := s.router.GetNodeForRoom(ctx, req.Room)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(participants) > 0 {
-		err := s.writeMessage(ctx, req.Room, participants[0].Identity, &livekit.RTCNodeMessage{
-			Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
-				UpdateRoomMetadata: req,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
+	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
+			UpdateRoomMetadata: req,
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return room, nil

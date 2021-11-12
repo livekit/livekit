@@ -256,7 +256,18 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
+	var updatedAt time.Time
+	if s.Node().Stats != nil {
+		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
+	}
+	if time.Now().Sub(updatedAt) > 4*time.Second {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte([]byte("OK")))
 }
 
 // worker to perform periodic tasks per node
