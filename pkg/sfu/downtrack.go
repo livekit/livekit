@@ -237,7 +237,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 }
 
 func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
-	if d.vp8Munger == nil {
+	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
 		return nil
 	}
 
