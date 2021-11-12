@@ -176,8 +176,12 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			Kind:         "random",
 			SysloadLimit: 0.7,
 		},
-		Keys:        map[string]string{},
-		KeyProvider: "file",
+		KeyProvider: KeyProviderConfig{
+			Kind: "env",
+			Keys: map[string]string{},
+			Path: "",
+			RedisKey: "",
+		},
 	}
 	if confString != "" {
 		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
@@ -192,11 +196,11 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	}
 
 	// expand env vars in filenames
-	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
+	file, err := homedir.Expand(os.ExpandEnv(conf.KeyProvider.Path))
 	if err != nil {
 		return nil, err
 	}
-	conf.KeyFile = file
+	conf.KeyProvider.Path = file
 
 	// set defaults for ports if none are set
 	if conf.RTC.UDPPort == 0 && conf.RTC.ICEPortRangeStart == 0 {
@@ -228,7 +232,7 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 		conf.Development = c.Bool("dev")
 	}
 	if c.IsSet("key-file") {
-		conf.KeyFile = c.String("key-file")
+		conf.KeyProvider.Path = c.String("key-file")
 	}
 	if c.IsSet("keys") {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
@@ -253,6 +257,9 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("node-ip") {
 		conf.RTC.NodeIP = c.String("node-ip")
 	}
+	if c.IsSet("key-provider-kind") {
+		conf.KeyProvider.Kind = c.String("key-provider-kind")
+	}
 
 	return nil
 }
@@ -263,11 +270,11 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		return err
 	}
 
-	conf.Keys = make(map[string]string, len(temp))
+	conf.KeyProvider.Keys = make(map[string]string, len(temp))
 
 	for key, val := range temp {
 		if secret, ok := val.(string); ok {
-			conf.Keys[key] = secret
+			conf.KeyProvider.Keys[key] = secret
 		}
 	}
 	return nil
