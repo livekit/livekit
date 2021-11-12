@@ -29,7 +29,7 @@ type Config struct {
 	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
-	KeyProvider    string             `yaml:"key_provider"`
+	KeyProvider    KeyProviderConfig  `yaml:"key_provider"`
 
 	Development bool `yaml:"development"`
 }
