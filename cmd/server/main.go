@@ -91,6 +91,11 @@ func main() {
 				Usage:   "tls key file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_KEY"},
 			},
+			&cli.StringFlag{
+				Name:  "key-provider-kind",
+				Usage: "kind of key provider",
+				EnvVars: []string{"KEY_PROVIDER_KIND"},
+			},
 		},
 		Action: startServer,
 		Commands: []*cli.Command{
