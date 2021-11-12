@@ -124,6 +124,7 @@ type DownTrack struct {
 	bandwidthConstrainedMuted atomicBool
 
 	// RTCP callbacks
+	onRTCP func([]rtcp.Packet)
 	onREMB func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 
 	// simulcast layer availability change callback
@@ -133,7 +134,7 @@ type DownTrack struct {
 	onSubscriptionChanged func(dt *DownTrack)
 
 	// packet sent callback
-	onPacketSent func(dt *DownTrack, size int)
+	onPacketSent []func(dt *DownTrack, size int)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -588,6 +589,10 @@ func (d *DownTrack) OnBind(fn func()) {
 	d.onBind = fn
 }
 
+func (d *DownTrack) OnRTCP(fn func([]rtcp.Packet)) {
+	d.onRTCP = fn
+}
+
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
 	d.onREMB = fn
 }
@@ -611,7 +616,7 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 }
 
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
-	d.onPacketSent = fn
+	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
 func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, uint64) {
@@ -769,7 +774,6 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		diff = 0
 	}
 	octets, packets := d.getSRStats()
-
 	return &rtcp.SenderReport{
 		SSRC:        d.ssrc,
 		NTPTime:     uint64(nowNTP),
@@ -898,8 +902,10 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err
@@ -1052,8 +1058,10 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err
@@ -1142,13 +1150,21 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
-	if !d.enabled.get() {
+	enabled := d.enabled.get()
+	if !enabled && d.onRTCP == nil {
 		return
 	}
 
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
 		Logger.Error(err, "Unmarshal rtcp receiver packets err")
+	}
+
+	if d.onRTCP != nil {
+		d.onRTCP(pkts)
+		if !enabled {
+			return
+		}
 	}
 
 	var fwdPkts []rtcp.Packet

@@ -240,6 +240,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.OnBind(func() {
 		go t.sendDownTrackBindingReports(sub)
 	})
+	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+	})
+	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
+	})
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
@@ -247,7 +253,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Telemetry.TrackUnsubscribed(sub.ID(), sub.Identity(), t.ToProto())
+			t.params.Telemetry.TrackUnsubscribed(sub.ID(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -297,7 +303,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(sub.ID(), sub.Identity(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(sub.ID(), t.ToProto())
 	return nil
 }
 
@@ -378,18 +384,20 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), uint32(track.SSRC()))
+			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			if onclose != nil {
 				onclose()
 			}
 		})
-		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), buff)
-
+		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto())
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
 	}
+
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
+	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
+
 	atomic.AddUint32(&t.numUpTracks, 1)
 	if atomic.LoadUint32(&t.numUpTracks) > 1 {
 		t.simulcasted.TrySet(true)
