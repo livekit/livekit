@@ -86,13 +86,7 @@ func (t *TelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	})
 }
 
-func (t *TelemetryService) TrackPublished(participantID string, track *livekit.TrackInfo, buff *buffer.Buffer) {
-	t.RLock()
-	if w := t.workers[participantID]; w != nil {
-		w.AddBuffer(buff)
-	}
-	t.RUnlock()
-
+func (t *TelemetryService) TrackPublished(participantID string, track *livekit.TrackInfo) {
 	prometheus.AddPublishedTrack(track.Type.String())
 
 	t.sendEvent(&livekit.AnalyticsEvent{
@@ -103,12 +97,22 @@ func (t *TelemetryService) TrackPublished(participantID string, track *livekit.T
 	})
 }
 
+func (t *TelemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
+		w.AddBuffer(buff)
+	}
+}
+
 func (t *TelemetryService) TrackUnpublished(participantID string, track *livekit.TrackInfo, ssrc uint32) {
 	t.RLock()
-	if w := t.workers[participantID]; w != nil {
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
 		w.RemoveBuffer(ssrc)
 	}
-	t.RUnlock()
 
 	prometheus.SubPublishedTrack(track.Type.String())
 

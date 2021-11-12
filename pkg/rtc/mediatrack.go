@@ -240,6 +240,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.OnBind(func() {
 		go t.sendDownTrackBindingReports(sub)
 	})
+	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
 		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
 	})
@@ -375,13 +378,15 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				onclose()
 			}
 		})
-		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto(), buff)
-
+		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto())
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
 	}
+
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
+	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
+
 	atomic.AddUint32(&t.numUpTracks, 1)
 	if atomic.LoadUint32(&t.numUpTracks) > 1 {
 		t.simulcasted.TrySet(true)

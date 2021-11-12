@@ -118,7 +118,7 @@ type DownTrack struct {
 	onSubscriptionChanged func(dt *DownTrack)
 
 	// packet sent callback
-	onPacketSent func(dt *DownTrack, size int)
+	onPacketSent []func(dt *DownTrack, size int)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -588,7 +588,7 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 }
 
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
-	d.onPacketSent = fn
+	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
 func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, uint64) {
@@ -883,8 +883,10 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err
@@ -1045,8 +1047,10 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err

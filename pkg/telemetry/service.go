@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/gammazero/workerpool"
@@ -48,6 +47,15 @@ func (t *TelemetryService) NewStatsInterceptorFactory(participantID, identity st
 	}
 }
 
+func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
+		w.OnDownstreamPacket(bytes)
+	}
+}
+
 func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
 	stats := &ParticipantStats{}
 	for _, pkt := range pkts {
@@ -79,32 +87,35 @@ func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participant
 	prometheus.IncrementRTCP(direction, stats.NackCount, stats.PliCount, stats.FirCount)
 
 	t.RLock()
-	if w := t.workers[participantID]; w != nil {
-		w.AddRTCP(streamType, stats)
-	}
+	w := t.workers[participantID]
 	t.RUnlock()
+	if w != nil {
+		w.OnRTCP(streamType, stats)
+	}
 }
 
-func (t *TelemetryService) Report(stats *livekit.AnalyticsStat) {
-	direction := prometheus.Incoming
-	if stats.Kind == livekit.StreamType_DOWNSTREAM {
-		direction = prometheus.Outgoing
-	}
+func (t *TelemetryService) Report(stats []*livekit.AnalyticsStat) {
+	for _, stat := range stats {
+		direction := prometheus.Incoming
+		if stat.Kind == livekit.StreamType_DOWNSTREAM {
+			direction = prometheus.Outgoing
+		}
 
-	prometheus.IncrementPackets(direction, stats.TotalPackets)
-	prometheus.IncrementBytes(direction, stats.TotalBytes)
+		prometheus.IncrementPackets(direction, stat.TotalPackets)
+		prometheus.IncrementBytes(direction, stat.TotalBytes)
+	}
 
 	t.sendStats(stats)
 }
 
-func (t *TelemetryService) sendStats(stats *livekit.AnalyticsStat) {
-	fmt.Printf("%+v\n", stats)
+func (t *TelemetryService) sendStats(stats []*livekit.AnalyticsStat) {
 	if t.analyticsEnabled {
-		stats.AuthToken = t.authToken
-		stats.Node = t.nodeID
-		if err := t.stats.Send(&livekit.AnalyticsStats{
-			Stats: []*livekit.AnalyticsStat{stats},
-		}); err != nil {
+		for _, stat := range stats {
+			stat.AuthToken = t.authToken
+			stat.Node = t.nodeID
+		}
+
+		if err := t.stats.Send(&livekit.AnalyticsStats{Stats: stats}); err != nil {
 			logger.Errorw("failed to send stats", err)
 		}
 	}
