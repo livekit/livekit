@@ -74,12 +74,12 @@ func createToken(c *cli.Context) error {
 	}
 
 	// use the first API key from config
-	if len(conf.Keys) == 0 {
+	if len(conf.KeyProvider.Keys) == 0 {
 		// try to load from file
-		if _, err := os.Stat(conf.KeyFile); err != nil {
+		if _, err := os.Stat(conf.KeyProvider.Path); err != nil {
 			return err
 		}
-		f, err := os.Open(conf.KeyFile)
+		f, err := os.Open(conf.KeyProvider.Path)
 		if err != nil {
 			return err
 		}
@@ -87,18 +87,18 @@ func createToken(c *cli.Context) error {
 			_ = f.Close()
 		}()
 		decoder := yaml.NewDecoder(f)
-		if err = decoder.Decode(conf.Keys); err != nil {
+		if err = decoder.Decode(conf.KeyProvider.Keys); err != nil {
 			return err
 		}
 
-		if len(conf.Keys) == 0 {
+		if len(conf.KeyProvider.Keys) == 0 {
 			return fmt.Errorf("keys are not configured")
 		}
 	}
 
 	var apiKey string
 	var apiSecret string
-	for k, v := range conf.Keys {
+	for k, v := range conf.KeyProvider.Keys {
 		apiKey = k
 		apiSecret = v
 		break
