@@ -327,6 +327,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
+	if buff == nil || rtcpReader == nil {
+		logger.Errorw("could not retrieve buffer pair", nil,
+			"participant", t.params.ParticipantIdentity,
+			"participantID", t.params.ParticipantID,
+			"track", t.ID())
+		return
+	}
 	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
