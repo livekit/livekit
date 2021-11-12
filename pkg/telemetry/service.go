@@ -57,7 +57,7 @@ func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
 }
 
 func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
-	stats := &ParticipantStats{}
+	stats := &livekit.AnalyticsStat{}
 	for _, pkt := range pkts {
 		switch pkt := pkt.(type) {
 		case *rtcp.TransportLayerNack:
@@ -68,13 +68,13 @@ func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participant
 			stats.FirCount++
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
-				if rr.Delay > stats.Delay {
-					stats.Delay = rr.Delay
+				if delay := uint64(rr.Delay); delay > stats.Delay {
+					stats.Delay = delay
 				}
-				if rr.Jitter > stats.Jitter {
-					stats.Jitter = rr.Jitter
+				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
+					stats.Jitter = jitter
 				}
-				stats.TotalLost += rr.TotalLost
+				stats.PacketLost += uint64(rr.TotalLost)
 			}
 		}
 	}

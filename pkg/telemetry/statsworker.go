@@ -22,30 +22,19 @@ type StatsWorker struct {
 	buffers map[uint32]*buffer.Buffer
 	drain   map[uint32]bool
 
-	incoming *DirectionalStats
-	outgoing *DirectionalStats
+	incoming *Stats
+	outgoing *Stats
 
 	close chan struct{}
 }
 
-type DirectionalStats struct {
+type Stats struct {
 	sync.Mutex
-	next         *ParticipantStats
+	next         *livekit.AnalyticsStat
 	totalPackets uint32
 	prevPackets  uint32
 	totalBytes   uint64
 	prevBytes    uint64
-}
-
-type ParticipantStats struct {
-	Packets   uint32
-	Bytes     uint64
-	Delay     uint32
-	Jitter    uint32
-	TotalLost uint32
-	NackCount int32
-	PliCount  int32
-	FirCount  int32
 }
 
 func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWorker {
@@ -57,8 +46,16 @@ func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWor
 		buffers: make(map[uint32]*buffer.Buffer),
 		drain:   make(map[uint32]bool),
 
-		incoming: &DirectionalStats{next: &ParticipantStats{}},
-		outgoing: &DirectionalStats{next: &ParticipantStats{}},
+		incoming: &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_UPSTREAM,
+			RoomId:        roomID,
+			ParticipantId: participantID,
+		}},
+		outgoing: &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_DOWNSTREAM,
+			RoomId:        roomID,
+			ParticipantId: participantID,
+		}},
 
 		close: make(chan struct{}, 1),
 	}
@@ -94,7 +91,7 @@ func (s *StatsWorker) OnDownstreamPacket(bytes int) {
 	s.outgoing.totalBytes += uint64(bytes)
 }
 
-func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *ParticipantStats) {
+func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *livekit.AnalyticsStat) {
 	ds := s.incoming
 	if direction == livekit.StreamType_DOWNSTREAM {
 		ds = s.outgoing
@@ -109,7 +106,7 @@ func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *ParticipantSta
 	if stats.Jitter > ds.next.Jitter {
 		ds.next.Jitter = stats.Jitter
 	}
-	ds.next.TotalLost += stats.TotalLost
+	ds.next.PacketLost += stats.PacketLost
 	ds.next.NackCount += stats.NackCount
 	ds.next.PliCount += stats.PliCount
 	ds.next.FirCount += stats.FirCount
@@ -141,54 +138,41 @@ func (s *StatsWorker) Update() {
 	s.incoming.Unlock()
 
 	stats := make([]*livekit.AnalyticsStat, 0, 2)
-	upstream := s.update(livekit.StreamType_UPSTREAM, ts)
+	upstream := s.update(s.incoming, ts)
 	if upstream != nil {
 		stats = append(stats, upstream)
 	}
-	downstream := s.update(livekit.StreamType_DOWNSTREAM, ts)
+	downstream := s.update(s.outgoing, ts)
 	if downstream != nil {
 		stats = append(stats, downstream)
 	}
+
 	s.t.Report(stats)
 }
 
-func (s *StatsWorker) update(direction livekit.StreamType, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
-	var ds *DirectionalStats
-	if direction == livekit.StreamType_UPSTREAM {
-		ds = s.incoming
-	} else {
-		ds = s.outgoing
-	}
-
-	if ds.totalBytes == 0 {
+func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
+	if stats.totalBytes == 0 {
 		return nil
 	}
 
-	ds.Lock()
-	defer ds.Unlock()
+	stats.Lock()
+	defer stats.Unlock()
 
-	next := ds.next
-	ds.next = &ParticipantStats{}
-
-	next.Packets = ds.totalPackets - ds.prevPackets
-	ds.prevPackets = ds.totalPackets
-	next.Bytes = ds.totalBytes - ds.prevBytes
-	ds.prevBytes = ds.totalBytes
-
-	return &livekit.AnalyticsStat{
-		Kind:          direction,
-		TimeStamp:     ts,
+	next := stats.next
+	stats.next = &livekit.AnalyticsStat{
+		Kind:          next.Kind,
 		RoomId:        s.roomID,
 		ParticipantId: s.participantID,
-		Jitter:        float64(next.Jitter),
-		TotalPackets:  uint64(next.Packets),
-		PacketLost:    uint64(next.TotalLost),
-		Delay:         uint64(next.Delay),
-		TotalBytes:    next.Bytes,
-		NackCount:     next.NackCount,
-		PliCount:      next.PliCount,
-		FirCount:      next.FirCount,
 	}
+
+	next.TimeStamp = ts
+	next.TotalPackets = uint64(stats.totalPackets - stats.prevPackets)
+	next.TotalBytes = stats.totalBytes - stats.prevBytes
+
+	stats.prevPackets = stats.totalPackets
+	stats.prevBytes = stats.totalBytes
+
+	return next
 }
 
 func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
