@@ -507,8 +507,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var hasSenderReport bool
 	for _, p := range packets {
 		switch pkt := p.(type) {
-		case *rtcp.SenderReport:
-			logger.Infow("MediaTrack Sender report", "ssrc", pkt.SSRC, "numReports", len(pkt.Reports))
+		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
