@@ -507,6 +507,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var hasSenderReport bool
 	for _, p := range packets {
 		switch pkt := p.(type) {
+		// sfu.Buffer generates ReceiverReports for the publisher
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
 				if rr.FractionLost > maxLost {
