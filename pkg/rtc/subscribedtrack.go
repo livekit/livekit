@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
-	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -15,16 +15,19 @@ const (
 )
 
 type SubscribedTrack struct {
-	dt        *sfu.DownTrack
-	subMuted  utils.AtomicFlag
-	pubMuted  utils.AtomicFlag
+	dt                *sfu.DownTrack
+	publisherIdentity string
+	subMuted          utils.AtomicFlag
+	pubMuted          utils.AtomicFlag
+
 	debouncer func(func())
 }
 
-func NewSubscribedTrack(dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
-		dt:        dt,
-		debouncer: debounce.New(subscriptionDebounceInterval),
+		publisherIdentity: publisherIdentity,
+		dt:                dt,
+		debouncer:         debounce.New(subscriptionDebounceInterval),
 	}
 }
 
@@ -32,8 +35,16 @@ func (t *SubscribedTrack) ID() string {
 	return t.dt.ID()
 }
 
+func (t *SubscribedTrack) PublisherIdentity() string {
+	return t.publisherIdentity
+}
+
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.dt
+}
+
+func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {
+	return FixedPointToPercent(t.DownTrack().CurrentMaxLossFraction())
 }
 
 // has subscriber indicated it wants to mute this track

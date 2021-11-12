@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/pion/ice/v2"
-	"github.com/pion/ion-sfu/pkg/buffer"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 )
 
 const (
@@ -41,7 +41,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 	s := webrtc.SettingEngine{
-		LoggerFactory: logger.LoggerFactory(),
+		LoggerFactory: serverlogger.LoggerFactory(),
 	}
 
 	if externalIP != "" {

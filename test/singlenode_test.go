@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -27,11 +28,7 @@ func TestClientCouldConnect(t *testing.T) {
 
 	// ensure they both see each other
 	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
-		if len(c1.RemoteParticipants()) == 0 || len(c2.RemoteParticipants()) == 0 {
-			return false
-		}
-		//require.Equal()
-		return true
+		return len(c1.RemoteParticipants()) != 0 && len(c2.RemoteParticipants()) != 0
 	})
 }
 
@@ -56,9 +53,6 @@ func TestSinglePublisher(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	// a new client joins and should get the initial stream
-	c3 := createRTCClient("c3", defaultServerPort, nil)
-
 	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
@@ -69,16 +63,20 @@ func TestSinglePublisher(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		require.Equal(t, c1.ID(), tr1.StreamID())
+		participantId, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), participantId)
 		return true
 	})
 	if !success {
 		t.FailNow()
 	}
 
+	// a new client joins and should get the initial stream
+	c3 := createRTCClient("c3", defaultServerPort, nil)
+
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
-	success = testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
+	success = testutils.WithTimeout(t, "c3 should receive two tracks", func() bool {
 		if len(c3.SubscribedTracks()) == 0 {
 			return false
 		}
@@ -101,7 +99,7 @@ func TestSinglePublisher(t *testing.T) {
 	// when c3 disconnects.. ensure subscriber is cleaned up correctly
 	c3.Stop()
 
-	success = testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+	testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
 		room := s.RoomManager().GetRoom(context.Background(), testRoom)
 		require.NotNil(t, room)
 
@@ -117,28 +115,27 @@ func TestSinglePublisher(t *testing.T) {
 	})
 }
 
-func TestAutoSubDisabled(t *testing.T) {
+func Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestAutoSubDisabled", testRoom)
+	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks", testRoom)
 	defer finish()
 
 	opts := testclient.Options{AutoSubscribe: false}
-	c1 := createRTCClient("c1", defaultServerPort, &opts)
-	c2 := createRTCClient("c2", defaultServerPort, &opts)
-	defer c1.Stop()
-	defer c2.Stop()
-	waitUntilConnected(t, c1, c2)
+	publisher := createRTCClient("publisher", defaultServerPort, &opts)
+	client := createRTCClient("client", defaultServerPort, &opts)
+	defer publisher.Stop()
+	defer client.Stop()
+	waitUntilConnected(t, publisher, client)
 
-	// c2 should not receive any tracks c1 publishes
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	track, err := publisher.AddStaticTrack("audio/opus", "audio", "webcam")
 	require.NoError(t, err)
-	defer t1.Stop()
+	defer track.Stop()
 
 	time.Sleep(syncDelay)
 
-	require.Empty(t, c2.SubscribedTracks()[c1.ID()])
+	require.Empty(t, client.SubscribedTracks()[publisher.ID()])
 }

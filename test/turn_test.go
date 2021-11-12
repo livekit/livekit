@@ -32,7 +32,7 @@ func testTurnServer(t *testing.T) {
 	require.NoError(t, err)
 	go s.Start()
 	waitForServerToStart(s)
-	defer s.Stop()
+	defer s.Stop(true)
 
 	time.Sleep(syncDelay)
 

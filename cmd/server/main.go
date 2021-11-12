@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/urfave/cli/v2"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
@@ -47,6 +48,11 @@ func main() {
 				Name:    "keys",
 				Usage:   "api keys (key: secret\\n)",
 				EnvVars: []string{"LIVEKIT_KEYS"},
+			},
+			&cli.StringFlag{
+				Name:    "region",
+				Usage:   "region of the current node. Used by regionaware node selector",
+				EnvVars: []string{"LIVEKIT_REGION"},
 			},
 			&cli.StringFlag{
 				Name:    "node-ip",
@@ -90,7 +96,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:   "generate-keys",
-				Usage:  "generates a pair of API & secret keys",
+				Usage:  "generates an API key and secret pair",
 				Action: generateKeys,
 			},
 			{
@@ -135,7 +141,7 @@ func main() {
 }
 
 func getConfig(c *cli.Context) (*config.Config, error) {
-	confString, err := getConfigString(c)
+	confString, err := getConfigString(c.String("config"), c.String("config-body"))
 	if err != nil {
 		return nil, err
 	}
@@ -155,9 +161,9 @@ func startServer(c *cli.Context) error {
 	}
 
 	if conf.Development {
-		logger.InitDevelopment(conf.LogLevel)
+		serverlogger.InitDevelopment(conf.LogLevel)
 	} else {
-		logger.InitProduction(conf.LogLevel)
+		serverlogger.InitProduction(conf.LogLevel)
 	}
 
 	if cpuProfile != "" {
@@ -191,7 +197,6 @@ func startServer(c *cli.Context) error {
 	}
 
 	server, err := service.InitializeServer(conf, currentNode)
-
 	if err != nil {
 		return err
 	}
@@ -202,23 +207,21 @@ func startServer(c *cli.Context) error {
 	go func() {
 		sig := <-sigChan
 		logger.Infow("exit requested, shutting down", "signal", sig)
-		server.Stop()
+		server.Stop(false)
 	}()
 
 	return server.Start()
 }
 
-func getConfigString(c *cli.Context) (string, error) {
-	configFile := c.String("config")
-	configBody := c.String("config-body")
-	if configBody == "" {
-		if configFile != "" {
-			content, err := ioutil.ReadFile(configFile)
-			if err != nil {
-				return "", err
-			}
-			configBody = string(content)
-		}
+func getConfigString(configFile string, inConfigBody string) (string, error) {
+	if inConfigBody != "" || configFile == "" {
+		return inConfigBody, nil
 	}
-	return configBody, nil
+
+	outConfigBody, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return "", err
+	}
+
+	return string(outConfigBody), nil
 }

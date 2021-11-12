@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 // Because
 type RedisRouter struct {
 	LocalRouter
+
 	rc        *redis.Client
 	ctx       context.Context
 	isStarted utils.AtomicFlag
@@ -64,7 +66,7 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 		return err
 	}
 	for _, n := range nodes {
-		if !IsAvailable(n) {
+		if !selector.IsAvailable(n) {
 			if err := r.rc.HDel(context.Background(), NodesKey, n.Id).Err(); err != nil {
 				return err
 			}
@@ -84,7 +86,7 @@ func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*liv
 	return r.GetNode(nodeId)
 }
 
-func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName string, nodeId string) error {
+func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName, nodeId string) error {
 	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeId).Err()
 }
 
@@ -150,12 +152,12 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 		Identity: pi.Identity,
 		Metadata: pi.Metadata,
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:    connectionId,
-		Reconnect:       pi.Reconnect,
-		Permission:      pi.Permission,
-		ProtocolVersion: pi.ProtocolVersion,
-		AutoSubscribe:   pi.AutoSubscribe,
-		Hidden:          pi.Hidden,
+		ConnectionId:  connectionId,
+		Reconnect:     pi.Reconnect,
+		Permission:    pi.Permission,
+		AutoSubscribe: pi.AutoSubscribe,
+		Hidden:        pi.Hidden,
+		Client:        pi.Client,
 	})
 	if err != nil {
 		return
@@ -174,7 +176,13 @@ func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 	}
 
 	rtcSink := NewRTCNodeSink(r.rc, rtcNode, pkey)
-	return r.writeRTCMessage(roomName, identity, msg, rtcSink)
+	msg.ParticipantKey = participantKey(roomName, identity)
+	return r.writeRTCMessage(rtcSink, msg)
+}
+
+func (r *RedisRouter) WriteRTCNodeMessage(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
+	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, "")
+	return r.writeRTCMessage(rtcSink, msg)
 }
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
@@ -187,7 +195,8 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	if rtcNode.Id != r.currentNode.Id {
 		err = ErrIncorrectRTCNode
 		logger.Errorw("called participant on incorrect node", err,
-			"rtcNode", rtcNode, "nodeID", r.currentNode.Id)
+			"rtcNode", rtcNode,
+		)
 		return err
 	}
 
@@ -219,13 +228,13 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	pi := ParticipantInit{
-		Identity:        ss.Identity,
-		Metadata:        ss.Metadata,
-		Reconnect:       ss.Reconnect,
-		Permission:      ss.Permission,
-		ProtocolVersion: ss.ProtocolVersion,
-		AutoSubscribe:   ss.AutoSubscribe,
-		Hidden:          ss.Hidden,
+		Identity:      ss.Identity,
+		Metadata:      ss.Metadata,
+		Reconnect:     ss.Reconnect,
+		Permission:    ss.Permission,
+		Client:        ss.Client,
+		AutoSubscribe: ss.AutoSubscribe,
+		Hidden:        ss.Hidden,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
@@ -256,6 +265,11 @@ func (r *RedisRouter) Start() error {
 	case <-time.After(3 * time.Second):
 		return errors.New("Unable to start redis router")
 	}
+}
+
+func (r *RedisRouter) Drain() {
+	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
+	r.RegisterNode()
 }
 
 func (r *RedisRouter) Stop() {
@@ -305,16 +319,14 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
-			if err := stats.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
-				logger.Errorw("could not update node stats", err, "nodeID", r.currentNode.Id)
-			}
-			if err := r.RegisterNode(); err != nil {
-				logger.Errorw("could not update node", err, "nodeID", r.currentNode.Id)
-			}
+			r.WriteRTCNodeMessage(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
+				Message: &livekit.RTCNodeMessage_KeepAlive{},
+			})
 		case <-r.ctx.Done():
 			return
 		}
 	}
+
 }
 
 // worker that consumes redis messages intended for this node
@@ -338,22 +350,28 @@ func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 			sm := livekit.SignalNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &sm); err != nil {
 				logger.Errorw("could not unmarshal signal message on sigchan", err)
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				continue
 			}
 			if err := r.handleSignalMessage(&sm); err != nil {
 				logger.Errorw("error processing signal message", err)
+				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
 				continue
 			}
+			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
 		} else if msg.Channel == rtcChannel {
 			rm := livekit.RTCNodeMessage{}
 			if err := proto.Unmarshal([]byte(msg.Payload), &rm); err != nil {
 				logger.Errorw("could not unmarshal RTC message on rtcchan", err)
+				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
 				continue
 			}
 			if err := r.handleRTCMessage(&rm); err != nil {
 				logger.Errorw("error processing RTC message", err)
+				prometheus.MessageCounter.WithLabelValues("rtc", "failure").Add(1)
 				continue
 			}
+			prometheus.MessageCounter.WithLabelValues("rtc", "success").Add(1)
 		}
 	}
 }
@@ -401,8 +419,24 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		r.lock.RLock()
 		requestChan := r.requestChannels[pKey]
 		r.lock.RUnlock()
+		if requestChan == nil {
+			return ErrChannelClosed
+		}
 		if err := requestChan.WriteMessage(rmb.Request); err != nil {
 			return err
+		}
+
+	case *livekit.RTCNodeMessage_KeepAlive:
+		if time.Now().Sub(time.Unix(rm.SenderTime, 0)) > statsUpdateInterval {
+			logger.Infow("keep alive too old, skipping", "senderTime", rm.SenderTime)
+			break
+		}
+
+		if err := prometheus.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
+			logger.Errorw("could not update node stats", err)
+		}
+		if err := r.RegisterNode(); err != nil {
+			logger.Errorw("could not update node", err)
 		}
 
 	default:

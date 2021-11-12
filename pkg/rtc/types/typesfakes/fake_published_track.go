@@ -20,6 +20,18 @@ type FakePublishedTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetQualityForDimensionStub        func(uint32, uint32) livekit.VideoQuality
+	getQualityForDimensionMutex       sync.RWMutex
+	getQualityForDimensionArgsForCall []struct {
+		arg1 uint32
+		arg2 uint32
+	}
+	getQualityForDimensionReturns struct {
+		result1 livekit.VideoQuality
+	}
+	getQualityForDimensionReturnsOnCall map[int]struct {
+		result1 livekit.VideoQuality
+	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -71,10 +83,32 @@ type FakePublishedTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	NumUpTracksStub        func() (uint32, uint32)
+	numUpTracksMutex       sync.RWMutex
+	numUpTracksArgsForCall []struct {
+	}
+	numUpTracksReturns struct {
+		result1 uint32
+		result2 uint32
+	}
+	numUpTracksReturnsOnCall map[int]struct {
+		result1 uint32
+		result2 uint32
+	}
 	OnCloseStub        func(func())
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
 		arg1 func()
+	}
+	PublishLossPercentageStub        func() uint32
+	publishLossPercentageMutex       sync.RWMutex
+	publishLossPercentageArgsForCall []struct {
+	}
+	publishLossPercentageReturns struct {
+		result1 uint32
+	}
+	publishLossPercentageReturnsOnCall map[int]struct {
+		result1 uint32
 	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
@@ -85,10 +119,30 @@ type FakePublishedTrack struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 string
 	}
+	SdpCidStub        func() string
+	sdpCidMutex       sync.RWMutex
+	sdpCidArgsForCall []struct {
+	}
+	sdpCidReturns struct {
+		result1 string
+	}
+	sdpCidReturnsOnCall map[int]struct {
+		result1 string
+	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
 		arg1 bool
+	}
+	SignalCidStub        func() string
+	signalCidMutex       sync.RWMutex
+	signalCidArgsForCall []struct {
+	}
+	signalCidReturns struct {
+		result1 string
+	}
+	signalCidReturnsOnCall map[int]struct {
+		result1 string
 	}
 	StartStub        func()
 	startMutex       sync.RWMutex
@@ -166,6 +220,68 @@ func (fake *FakePublishedTrack) AddSubscriberReturnsOnCall(i int, result1 error)
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimension(arg1 uint32, arg2 uint32) livekit.VideoQuality {
+	fake.getQualityForDimensionMutex.Lock()
+	ret, specificReturn := fake.getQualityForDimensionReturnsOnCall[len(fake.getQualityForDimensionArgsForCall)]
+	fake.getQualityForDimensionArgsForCall = append(fake.getQualityForDimensionArgsForCall, struct {
+		arg1 uint32
+		arg2 uint32
+	}{arg1, arg2})
+	stub := fake.GetQualityForDimensionStub
+	fakeReturns := fake.getQualityForDimensionReturns
+	fake.recordInvocation("GetQualityForDimension", []interface{}{arg1, arg2})
+	fake.getQualityForDimensionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionCallCount() int {
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
+	return len(fake.getQualityForDimensionArgsForCall)
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionCalls(stub func(uint32, uint32) livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = stub
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionArgsForCall(i int) (uint32, uint32) {
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
+	argsForCall := fake.getQualityForDimensionArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionReturns(result1 livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = nil
+	fake.getQualityForDimensionReturns = struct {
+		result1 livekit.VideoQuality
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetQualityForDimensionReturnsOnCall(i int, result1 livekit.VideoQuality) {
+	fake.getQualityForDimensionMutex.Lock()
+	defer fake.getQualityForDimensionMutex.Unlock()
+	fake.GetQualityForDimensionStub = nil
+	if fake.getQualityForDimensionReturnsOnCall == nil {
+		fake.getQualityForDimensionReturnsOnCall = make(map[int]struct {
+			result1 livekit.VideoQuality
+		})
+	}
+	fake.getQualityForDimensionReturnsOnCall[i] = struct {
+		result1 livekit.VideoQuality
 	}{result1}
 }
 
@@ -442,6 +558,62 @@ func (fake *FakePublishedTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakePublishedTrack) NumUpTracks() (uint32, uint32) {
+	fake.numUpTracksMutex.Lock()
+	ret, specificReturn := fake.numUpTracksReturnsOnCall[len(fake.numUpTracksArgsForCall)]
+	fake.numUpTracksArgsForCall = append(fake.numUpTracksArgsForCall, struct {
+	}{})
+	stub := fake.NumUpTracksStub
+	fakeReturns := fake.numUpTracksReturns
+	fake.recordInvocation("NumUpTracks", []interface{}{})
+	fake.numUpTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakePublishedTrack) NumUpTracksCallCount() int {
+	fake.numUpTracksMutex.RLock()
+	defer fake.numUpTracksMutex.RUnlock()
+	return len(fake.numUpTracksArgsForCall)
+}
+
+func (fake *FakePublishedTrack) NumUpTracksCalls(stub func() (uint32, uint32)) {
+	fake.numUpTracksMutex.Lock()
+	defer fake.numUpTracksMutex.Unlock()
+	fake.NumUpTracksStub = stub
+}
+
+func (fake *FakePublishedTrack) NumUpTracksReturns(result1 uint32, result2 uint32) {
+	fake.numUpTracksMutex.Lock()
+	defer fake.numUpTracksMutex.Unlock()
+	fake.NumUpTracksStub = nil
+	fake.numUpTracksReturns = struct {
+		result1 uint32
+		result2 uint32
+	}{result1, result2}
+}
+
+func (fake *FakePublishedTrack) NumUpTracksReturnsOnCall(i int, result1 uint32, result2 uint32) {
+	fake.numUpTracksMutex.Lock()
+	defer fake.numUpTracksMutex.Unlock()
+	fake.NumUpTracksStub = nil
+	if fake.numUpTracksReturnsOnCall == nil {
+		fake.numUpTracksReturnsOnCall = make(map[int]struct {
+			result1 uint32
+			result2 uint32
+		})
+	}
+	fake.numUpTracksReturnsOnCall[i] = struct {
+		result1 uint32
+		result2 uint32
+	}{result1, result2}
+}
+
 func (fake *FakePublishedTrack) OnClose(arg1 func()) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
@@ -472,6 +644,59 @@ func (fake *FakePublishedTrack) OnCloseArgsForCall(i int) func() {
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
+	fake.publishLossPercentageMutex.Lock()
+	ret, specificReturn := fake.publishLossPercentageReturnsOnCall[len(fake.publishLossPercentageArgsForCall)]
+	fake.publishLossPercentageArgsForCall = append(fake.publishLossPercentageArgsForCall, struct {
+	}{})
+	stub := fake.PublishLossPercentageStub
+	fakeReturns := fake.publishLossPercentageReturns
+	fake.recordInvocation("PublishLossPercentage", []interface{}{})
+	fake.publishLossPercentageMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) PublishLossPercentageCallCount() int {
+	fake.publishLossPercentageMutex.RLock()
+	defer fake.publishLossPercentageMutex.RUnlock()
+	return len(fake.publishLossPercentageArgsForCall)
+}
+
+func (fake *FakePublishedTrack) PublishLossPercentageCalls(stub func() uint32) {
+	fake.publishLossPercentageMutex.Lock()
+	defer fake.publishLossPercentageMutex.Unlock()
+	fake.PublishLossPercentageStub = stub
+}
+
+func (fake *FakePublishedTrack) PublishLossPercentageReturns(result1 uint32) {
+	fake.publishLossPercentageMutex.Lock()
+	defer fake.publishLossPercentageMutex.Unlock()
+	fake.PublishLossPercentageStub = nil
+	fake.publishLossPercentageReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) PublishLossPercentageReturnsOnCall(i int, result1 uint32) {
+	fake.publishLossPercentageMutex.Lock()
+	defer fake.publishLossPercentageMutex.Unlock()
+	fake.PublishLossPercentageStub = nil
+	if fake.publishLossPercentageReturnsOnCall == nil {
+		fake.publishLossPercentageReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.publishLossPercentageReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
 }
 
 func (fake *FakePublishedTrack) RemoveAllSubscribers() {
@@ -530,6 +755,59 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
+func (fake *FakePublishedTrack) SdpCid() string {
+	fake.sdpCidMutex.Lock()
+	ret, specificReturn := fake.sdpCidReturnsOnCall[len(fake.sdpCidArgsForCall)]
+	fake.sdpCidArgsForCall = append(fake.sdpCidArgsForCall, struct {
+	}{})
+	stub := fake.SdpCidStub
+	fakeReturns := fake.sdpCidReturns
+	fake.recordInvocation("SdpCid", []interface{}{})
+	fake.sdpCidMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) SdpCidCallCount() int {
+	fake.sdpCidMutex.RLock()
+	defer fake.sdpCidMutex.RUnlock()
+	return len(fake.sdpCidArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SdpCidCalls(stub func() string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = stub
+}
+
+func (fake *FakePublishedTrack) SdpCidReturns(result1 string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = nil
+	fake.sdpCidReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) SdpCidReturnsOnCall(i int, result1 string) {
+	fake.sdpCidMutex.Lock()
+	defer fake.sdpCidMutex.Unlock()
+	fake.SdpCidStub = nil
+	if fake.sdpCidReturnsOnCall == nil {
+		fake.sdpCidReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.sdpCidReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakePublishedTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -560,6 +838,59 @@ func (fake *FakePublishedTrack) SetMutedArgsForCall(i int) bool {
 	defer fake.setMutedMutex.RUnlock()
 	argsForCall := fake.setMutedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) SignalCid() string {
+	fake.signalCidMutex.Lock()
+	ret, specificReturn := fake.signalCidReturnsOnCall[len(fake.signalCidArgsForCall)]
+	fake.signalCidArgsForCall = append(fake.signalCidArgsForCall, struct {
+	}{})
+	stub := fake.SignalCidStub
+	fakeReturns := fake.signalCidReturns
+	fake.recordInvocation("SignalCid", []interface{}{})
+	fake.signalCidMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) SignalCidCallCount() int {
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
+	return len(fake.signalCidArgsForCall)
+}
+
+func (fake *FakePublishedTrack) SignalCidCalls(stub func() string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = stub
+}
+
+func (fake *FakePublishedTrack) SignalCidReturns(result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	fake.signalCidReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) SignalCidReturnsOnCall(i int, result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	if fake.signalCidReturnsOnCall == nil {
+		fake.signalCidReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.signalCidReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
 }
 
 func (fake *FakePublishedTrack) Start() {
@@ -644,6 +975,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.getQualityForDimensionMutex.RLock()
+	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
@@ -654,14 +987,22 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.numUpTracksMutex.RLock()
+	defer fake.numUpTracksMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
+	fake.publishLossPercentageMutex.RLock()
+	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.sdpCidMutex.RLock()
+	defer fake.sdpCidMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	fake.toProtoMutex.RLock()

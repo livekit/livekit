@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/protocol/proto"
-	"github.com/pion/ion-sfu/pkg/sfu"
 )
 
 type FakeSubscribedTrack struct {
@@ -40,10 +40,30 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	PublisherIdentityStub        func() string
+	publisherIdentityMutex       sync.RWMutex
+	publisherIdentityArgsForCall []struct {
+	}
+	publisherIdentityReturns struct {
+		result1 string
+	}
+	publisherIdentityReturnsOnCall map[int]struct {
+		result1 string
+	}
 	SetPublisherMutedStub        func(bool)
 	setPublisherMutedMutex       sync.RWMutex
 	setPublisherMutedArgsForCall []struct {
 		arg1 bool
+	}
+	SubscribeLossPercentageStub        func() uint32
+	subscribeLossPercentageMutex       sync.RWMutex
+	subscribeLossPercentageArgsForCall []struct {
+	}
+	subscribeLossPercentageReturns struct {
+		result1 uint32
+	}
+	subscribeLossPercentageReturnsOnCall map[int]struct {
+		result1 uint32
 	}
 	UpdateSubscriberSettingsStub        func(bool, livekit.VideoQuality)
 	updateSubscriberSettingsMutex       sync.RWMutex
@@ -214,6 +234,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeSubscribedTrack) PublisherIdentity() string {
+	fake.publisherIdentityMutex.Lock()
+	ret, specificReturn := fake.publisherIdentityReturnsOnCall[len(fake.publisherIdentityArgsForCall)]
+	fake.publisherIdentityArgsForCall = append(fake.publisherIdentityArgsForCall, struct {
+	}{})
+	stub := fake.PublisherIdentityStub
+	fakeReturns := fake.publisherIdentityReturns
+	fake.recordInvocation("PublisherIdentity", []interface{}{})
+	fake.publisherIdentityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityCallCount() int {
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
+	return len(fake.publisherIdentityArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityCalls(stub func() string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = stub
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityReturns(result1 string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	fake.publisherIdentityReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) PublisherIdentityReturnsOnCall(i int, result1 string) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	if fake.publisherIdentityReturnsOnCall == nil {
+		fake.publisherIdentityReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.publisherIdentityReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) SetPublisherMuted(arg1 bool) {
 	fake.setPublisherMutedMutex.Lock()
 	fake.setPublisherMutedArgsForCall = append(fake.setPublisherMutedArgsForCall, struct {
@@ -244,6 +317,59 @@ func (fake *FakeSubscribedTrack) SetPublisherMutedArgsForCall(i int) bool {
 	defer fake.setPublisherMutedMutex.RUnlock()
 	argsForCall := fake.setPublisherMutedArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentage() uint32 {
+	fake.subscribeLossPercentageMutex.Lock()
+	ret, specificReturn := fake.subscribeLossPercentageReturnsOnCall[len(fake.subscribeLossPercentageArgsForCall)]
+	fake.subscribeLossPercentageArgsForCall = append(fake.subscribeLossPercentageArgsForCall, struct {
+	}{})
+	stub := fake.SubscribeLossPercentageStub
+	fakeReturns := fake.subscribeLossPercentageReturns
+	fake.recordInvocation("SubscribeLossPercentage", []interface{}{})
+	fake.subscribeLossPercentageMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageCallCount() int {
+	fake.subscribeLossPercentageMutex.RLock()
+	defer fake.subscribeLossPercentageMutex.RUnlock()
+	return len(fake.subscribeLossPercentageArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageCalls(stub func() uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = stub
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturns(result1 uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = nil
+	fake.subscribeLossPercentageReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturnsOnCall(i int, result1 uint32) {
+	fake.subscribeLossPercentageMutex.Lock()
+	defer fake.subscribeLossPercentageMutex.Unlock()
+	fake.SubscribeLossPercentageStub = nil
+	if fake.subscribeLossPercentageReturnsOnCall == nil {
+		fake.subscribeLossPercentageReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.subscribeLossPercentageReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
 }
 
 func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 bool, arg2 livekit.VideoQuality) {
@@ -288,8 +414,12 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
+	fake.subscribeLossPercentageMutex.RLock()
+	defer fake.subscribeLossPercentageMutex.RUnlock()
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

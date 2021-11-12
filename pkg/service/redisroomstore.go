@@ -15,9 +15,6 @@ const (
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey = "rooms"
 
-	// RoomIdMap is hash of room_id => room name
-	RoomIdMap = "room_id_map"
-
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
 	// a key for each room, with expiration
 	RoomParticipantsPrefix = "room_participants:"
@@ -49,7 +46,6 @@ func (p *RedisRoomStore) StoreRoom(ctx context.Context, room *livekit.Room) erro
 	}
 
 	pp := p.rc.Pipeline()
-	pp.HSet(p.ctx, RoomIdMap, room.Sid, room.Name)
 	pp.HSet(p.ctx, RoomsKey, room.Name, data)
 
 	if _, err = pp.Exec(p.ctx); err != nil {
@@ -58,13 +54,7 @@ func (p *RedisRoomStore) StoreRoom(ctx context.Context, room *livekit.Room) erro
 	return nil
 }
 
-func (p *RedisRoomStore) LoadRoom(ctx context.Context, idOrName string) (*livekit.Room, error) {
-	// see if matches any ids
-	name, err := p.rc.HGet(p.ctx, RoomIdMap, idOrName).Result()
-	if err != nil {
-		name = idOrName
-	}
-
+func (p *RedisRoomStore) LoadRoom(ctx context.Context, name string) (*livekit.Room, error) {
 	data, err := p.rc.HGet(p.ctx, RoomsKey, name).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -101,23 +91,13 @@ func (p *RedisRoomStore) ListRooms(ctx context.Context) ([]*livekit.Room, error)
 	return rooms, nil
 }
 
-func (p *RedisRoomStore) DeleteRoom(ctx context.Context, idOrName string) error {
-	room, err := p.LoadRoom(ctx, idOrName)
-	var sid, name string
-
+func (p *RedisRoomStore) DeleteRoom(ctx context.Context, name string) error {
+	_, err := p.LoadRoom(ctx, name)
 	if err == ErrRoomNotFound {
-		// try to clean up as best as we could
-		sid = idOrName
-		name = idOrName
-	} else if err == nil {
-		sid = room.Sid
-		name = room.Name
-	} else {
-		return err
+		return nil
 	}
 
 	pp := p.rc.Pipeline()
-	pp.HDel(p.ctx, RoomIdMap, sid)
 	pp.HDel(p.ctx, RoomsKey, name)
 	pp.Del(p.ctx, RoomParticipantsPrefix+name)
 

@@ -29,6 +29,7 @@ type Config struct {
 	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
 	KeyFile        string             `yaml:"key_file"`
 	Keys           map[string]string  `yaml:"keys"`
+	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
 	KeyProvider    string             `yaml:"key_provider"`
 
@@ -110,8 +111,17 @@ type WebHookConfig struct {
 }
 
 type NodeSelectorConfig struct {
-	Kind         string  `yaml:"kind"`
-	SysloadLimit float32 `yaml:"sysload_limit"`
+	Kind         string         `yaml:"kind"`
+	SysloadLimit float32        `yaml:"sysload_limit"`
+	Regions      []RegionConfig `yaml:"regions"`
+}
+
+// RegionConfig lists available regions and their latitude/longitude, so the selector would prefer
+// regions that are closer
+type RegionConfig struct {
+	Name string  `yaml:"name"`
+	Lat  float64 `yaml:"lat"`
+	Lon  float64 `yaml:"lon"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -196,6 +206,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			return nil, err
 		}
 	}
+
 	return conf, nil
 }
 
@@ -212,8 +223,11 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	}
 	if c.IsSet("keys") {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
-			return errors.New("Could not parse keys, it needs to be \"key: secret\", one per line")
+			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
+	}
+	if c.IsSet("region") {
+		conf.Region = c.String("region")
 	}
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")
@@ -248,8 +262,4 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
-}
-
-func GetAudioConfig(conf *Config) AudioConfig {
-	return conf.Audio
 }

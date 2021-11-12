@@ -7,15 +7,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
-	"github.com/livekit/protocol/utils"
-	"github.com/pion/ion-sfu/pkg/buffer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/utils/stats"
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -25,10 +27,10 @@ const (
 )
 
 type Room struct {
-	Room       *livekit.Room
-	config     WebRTCConfig
-	iceServers []*livekit.ICEServer
-	lock       sync.RWMutex
+	Room   *livekit.Room
+	Logger logger.Logger
+	config WebRTCConfig
+	lock   sync.RWMutex
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -37,15 +39,17 @@ type Room struct {
 	// time the first participant joined the room
 	joinedAt atomic.Value
 	// time that the last participant left the room
-	leftAt   atomic.Value
-	isClosed utils.AtomicFlag
+	leftAt    atomic.Value
+	closed    chan struct{}
+	closeOnce sync.Once
 
 	// for active speaker updates
 	audioConfig *config.AudioConfig
 
-	statsReporter *stats.RoomStatsReporter
+	telemetry *telemetry.TelemetryService
 
 	onParticipantChanged func(p types.Participant)
+	onMetadataUpdate     func(metadata string)
 	onClose              func()
 }
 
@@ -53,16 +57,17 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICEServer, audioConfig *config.AudioConfig) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry *telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
+		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
 		config:          config,
-		iceServers:      iceServers,
 		audioConfig:     audioConfig,
-		statsReporter:   stats.NewRoomStatsReporter(room.Name),
+		telemetry:       telemetry,
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logger.GetLogger()),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
+		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
 		r.Room.EmptyTimeout = DefaultEmptyTimeout
@@ -70,8 +75,10 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, iceServers []*livekit.ICES
 	if r.Room.CreationTime == 0 {
 		r.Room.CreationTime = time.Now().Unix()
 	}
-	r.statsReporter.RoomStarted()
+
 	go r.audioUpdateWorker()
+	go r.connectionQualityWorker()
+
 	return r
 }
 
@@ -112,10 +119,6 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
-func (r *Room) GetStatsReporter() *stats.RoomStatsReporter {
-	return r.statsReporter
-}
-
 func (r *Room) GetBufferFactor() *buffer.Factory {
 	return r.bufferFactory
 }
@@ -136,8 +139,9 @@ func (r *Room) LastLeftAt() int64 {
 	return 0
 }
 
-func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) error {
-	if r.isClosed.Get() {
+func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+	if r.IsClosed() {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
 
@@ -145,10 +149,12 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	defer r.lock.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
 		return ErrAlreadyJoined
 	}
 
 	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}
 
@@ -156,12 +162,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	r.statsReporter.AddParticipant()
-
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
+		r.Logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
 			"oldState", oldState)
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
@@ -170,10 +174,6 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			if p.UpdateAfterActive() {
-				_ = p.SendParticipantUpdate(ToProtoParticipants(r.GetParticipants()))
-			}
-
 			// subscribe participant to existing publishedTracks
 			r.subscribeToExistingTracks(p)
 
@@ -188,9 +188,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
 	participant.OnDataPacket(r.onDataPacket)
-	logger.Infow("new participant joined",
+	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
+		"protocol", participant.ProtocolVersion(),
 		"room", r.Room.Name,
 		"roomID", r.Room.Sid)
 
@@ -216,7 +217,37 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions) err
 		}
 	})
 
-	return participant.SendJoinResponse(r.Room, otherParticipants, r.iceServers)
+	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		return err
+	}
+
+	if participant.ProtocolVersion().SubscriberAsPrimary() {
+		// initiates sub connection as primary
+		participant.Negotiate()
+	}
+
+	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
+
+	return nil
+}
+
+func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink) error {
+	// close previous sink, and link to new one
+	if prevSink := p.GetResponseSink(); prevSink != nil {
+		prevSink.Close()
+	}
+	p.SetResponseSink(responseSink)
+
+	updates := ToProtoParticipants(r.GetParticipants())
+	if err := p.SendParticipantUpdate(updates, time.Now()); err != nil {
+		return err
+	}
+
+	if err := p.ICERestart(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Room) RemoveParticipant(identity string) {
@@ -230,7 +261,6 @@ func (r *Room) RemoveParticipant(identity string) {
 	if !ok {
 		return
 	}
-	r.statsReporter.SubParticipant()
 
 	// send broadcast only if it's not already closed
 	sendUpdates := p.State() != livekit.ParticipantInfo_DISCONNECTED
@@ -289,9 +319,18 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []str
 	return nil
 }
 
+func (r *Room) IsClosed() bool {
+	select {
+	case <-r.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
-	if r.isClosed.Get() {
+	if r.IsClosed() {
 		return
 	}
 
@@ -326,23 +365,13 @@ func (r *Room) CloseIfEmpty() {
 }
 
 func (r *Room) Close() {
-	if !r.isClosed.TrySet(true) {
-		return
-	}
-	logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
-
-	r.statsReporter.RoomEnded()
-	if r.onClose != nil {
-		r.onClose()
-	}
-}
-
-func (r *Room) GetIncomingStats() stats.PacketStats {
-	return *r.statsReporter.Incoming
-}
-
-func (r *Room) GetOutgoingStats() stats.PacketStats {
-	return *r.statsReporter.Outgoing
+	r.closeOnce.Do(func() {
+		close(r.closed)
+		r.Logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
+		if r.onClose != nil {
+			r.onClose()
+		}
+	})
 }
 
 func (r *Room) OnClose(f func()) {
@@ -361,6 +390,30 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 		},
 	}
 	r.onDataPacket(nil, dp)
+}
+
+func (r *Room) SetMetadata(metadata string) {
+	r.Room.Metadata = metadata
+
+	// Send update to participants
+	for _, p := range r.GetParticipants() {
+		if !p.IsReady() {
+			continue
+		}
+
+		err := p.SendRoomUpdate(r.Room)
+		if err != nil {
+			r.Logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
+		}
+	}
+
+	if r.onMetadataUpdate != nil {
+		r.onMetadataUpdate(metadata)
+	}
+}
+
+func (r *Room) OnMetadataUpdate(f func(metadata string)) {
+	r.onMetadataUpdate = f
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
@@ -386,7 +439,6 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 	defer r.lock.RUnlock()
 
 	// subscribe all existing participants to this PublishedTrack
-	// this is the default behavior. in the future this could be more selective
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
 			// skip publishing participant
@@ -400,12 +452,12 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 			continue
 		}
 
-		logger.Debugw("subscribing to new track",
+		r.Logger.Debugw("subscribing to new track",
 			"participants", []string{participant.Identity(), existingParticipant.Identity()},
 			"pIDs", []string{participant.ID(), existingParticipant.ID()},
 			"track", track.ID())
 		if err := track.AddSubscriber(existingParticipant); err != nil {
-			logger.Errorw("could not subscribe to remoteTrack", err,
+			r.Logger.Errorw("could not subscribe to remoteTrack", err,
 				"participants", []string{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []string{participant.ID(), existingParticipant.ID()},
 				"track", track.ID())
@@ -478,7 +530,7 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		}
 		if n, err := op.AddSubscriber(p); err != nil {
 			// TODO: log error? or disconnect?
-			logger.Errorw("could not subscribe to participant", err,
+			r.Logger.Errorw("could not subscribe to participant", err,
 				"participants", []string{op.Identity(), p.Identity()},
 				"pIDs", []string{op.ID(), p.ID()})
 		} else {
@@ -486,26 +538,28 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		}
 	}
 	if tracksAdded > 0 {
-		logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
+		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
 	}
 }
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	r.lock.Lock()
+	updatedAt := time.Now()
+	updates := ToProtoParticipants([]types.Participant{p})
+	r.lock.Unlock()
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant
-			updates := ToProtoParticipants([]types.Participant{p})
-			err := p.SendParticipantUpdate(updates)
+			err := p.SendParticipantUpdate(updates, updatedAt)
 			if err != nil {
-				logger.Errorw("could not send update to participant", err,
+				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
 			}
 		}
 		return
 	}
 
-	updates := ToProtoParticipants([]types.Participant{p})
 	participants := r.GetParticipants()
 	for _, op := range participants {
 		// skip itself && closed participants
@@ -513,15 +567,16 @@ func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
 			continue
 		}
 
-		err := op.SendParticipantUpdate(updates)
+		err := op.SendParticipantUpdate(updates, updatedAt)
 		if err != nil {
-			logger.Errorw("could not send update to participant", err,
+			r.Logger.Errorw("could not send update to participant", err,
 				"participant", p.Identity(), "pID", p.ID())
 		}
 	}
 }
 
-func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
+// for protocol 2, send all active speakers
+func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 	dp := &livekit.DataPacket{
 		Kind: livekit.DataPacket_LOSSY,
 		Value: &livekit.DataPacket_Speaker{
@@ -532,10 +587,17 @@ func (r *Room) sendSpeakerUpdates(speakers []*livekit.SpeakerInfo) {
 	}
 
 	for _, p := range r.GetParticipants() {
-		if p.ProtocolVersion().HandlesDataPackets() {
+		if p.ProtocolVersion().HandlesDataPackets() && !p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendDataPacket(dp)
-		} else {
-			_ = p.SendActiveSpeakers(speakers)
+		}
+	}
+}
+
+// for protocol 3, send only changed updates
+func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
+	for _, p := range r.GetParticipants() {
+		if p.ProtocolVersion().SupportsSpeakerChanged() {
+			_ = p.SendSpeakerUpdate(speakers)
 		}
 	}
 }
@@ -551,15 +613,15 @@ func (r *Room) audioUpdateWorker() {
 		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
 	}
 
-	var lastActiveSpeakers []*livekit.SpeakerInfo
+	lastActiveMap := make(map[string]*livekit.SpeakerInfo)
 	for {
-		if r.isClosed.Get() {
+		if r.IsClosed() {
 			return
 		}
 
-		speakers := r.GetActiveSpeakers()
+		activeSpeakers := r.GetActiveSpeakers()
 		if smoothValues != nil {
-			for _, speaker := range speakers {
+			for _, speaker := range activeSpeakers {
 				sid := speaker.Sid
 				level := smoothValues[sid]
 				delete(smoothValues, sid)
@@ -573,7 +635,7 @@ func (r *Room) audioUpdateWorker() {
 				delete(smoothValues, sid)
 				level += -level * smoothFactor
 				if level > activeThreshold {
-					speakers = append(speakers, &livekit.SpeakerInfo{
+					activeSpeakers = append(activeSpeakers, &livekit.SpeakerInfo{
 						Sid:    sid,
 						Level:  level,
 						Active: true,
@@ -582,35 +644,91 @@ func (r *Room) audioUpdateWorker() {
 			}
 
 			// smoothValues map is drained, now repopulate it back
-			for _, speaker := range speakers {
+			for _, speaker := range activeSpeakers {
 				smoothValues[speaker.Sid] = speaker.Level
 			}
 
-			sort.Slice(speakers, func(i, j int) bool {
-				return speakers[i].Level > speakers[j].Level
+			sort.Slice(activeSpeakers, func(i, j int) bool {
+				return activeSpeakers[i].Level > activeSpeakers[j].Level
 			})
 		}
 
 		const invAudioLevelQuantization = 1.0 / AudioLevelQuantization
-		for _, speaker := range speakers {
+		for _, speaker := range activeSpeakers {
 			speaker.Level = float32(math.Ceil(float64(speaker.Level*AudioLevelQuantization)) * invAudioLevelQuantization)
 		}
 
-		// see if an update is needed
-		if len(speakers) == len(lastActiveSpeakers) {
-			for i, speaker := range speakers {
-				if speaker.Level != lastActiveSpeakers[i].Level || speaker.Sid != lastActiveSpeakers[i].Sid {
-					r.sendSpeakerUpdates(speakers)
-					break
-				}
+		changedSpeakers := make([]*livekit.SpeakerInfo, 0, len(activeSpeakers))
+		nextActiveMap := make(map[string]*livekit.SpeakerInfo, len(activeSpeakers))
+		for _, speaker := range activeSpeakers {
+			prev := lastActiveMap[speaker.Sid]
+			if prev == nil || prev.Level != speaker.Level {
+				changedSpeakers = append(changedSpeakers, speaker)
 			}
-		} else {
-			r.sendSpeakerUpdates(speakers)
+			nextActiveMap[speaker.Sid] = speaker
+		}
+		// changedSpeakers need to include previous speakers that are no longer speaking
+		for sid, speaker := range lastActiveMap {
+			if nextActiveMap[sid] == nil {
+				speaker.Level = 0
+				speaker.Active = false
+				changedSpeakers = append(changedSpeakers, speaker)
+			}
 		}
 
-		lastActiveSpeakers = speakers
+		// see if an update is needed
+		if len(changedSpeakers) > 0 {
+			r.sendActiveSpeakers(activeSpeakers)
+			r.sendSpeakerChanges(changedSpeakers)
+		}
+
+		lastActiveMap = nextActiveMap
 
 		time.Sleep(time.Duration(r.audioConfig.UpdateInterval) * time.Millisecond)
+	}
+}
+
+func (r *Room) connectionQualityWorker() {
+	// send updates to only users that are subscribed to each other
+	for {
+		if r.IsClosed() {
+			return
+		}
+
+		participants := r.GetParticipants()
+		connectionInfos := make(map[string]*livekit.ConnectionQualityInfo, len(participants))
+
+		for _, p := range participants {
+			connectionInfos[p.Identity()] = &livekit.ConnectionQualityInfo{
+				ParticipantSid: p.ID(),
+				Quality:        p.GetConnectionQuality(),
+			}
+		}
+
+		for _, op := range participants {
+			if !op.ProtocolVersion().SupportsConnectionQuality() {
+				continue
+			}
+			update := &livekit.ConnectionQualityUpdate{}
+
+			// send to user itself
+			if info, ok := connectionInfos[op.Identity()]; ok {
+				update.Updates = append(update.Updates, info)
+			}
+
+			// send to other participants its subscribed to
+			for _, identity := range op.GetSubscribedParticipants() {
+				if info, ok := connectionInfos[identity]; ok {
+					update.Updates = append(update.Updates, info)
+				}
+			}
+			if err := op.SendConnectionQualityUpdate(update); err != nil {
+				r.Logger.Warnw("could not send connection quality update", err,
+					"participant", op.Identity())
+			}
+		}
+
+		time.Sleep(time.Second * 5)
 	}
 }
 

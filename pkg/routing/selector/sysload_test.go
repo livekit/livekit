@@ -1,4 +1,4 @@
-package routing_test
+package selector_test
 
 import (
 	"testing"
@@ -7,11 +7,12 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
 var (
 	nodeLoadLow = &livekit.Node{
+		State: livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
@@ -20,6 +21,7 @@ var (
 	}
 
 	nodeLoadHigh = &livekit.Node{
+		State: livekit.NodeState_SERVING,
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
@@ -29,22 +31,22 @@ var (
 )
 
 func TestSystemLoadSelector_SelectNode(t *testing.T) {
-	selector := routing.SystemLoadSelector{SysloadLimit: 1.0}
+	selector := selector.SystemLoadSelector{SysloadLimit: 1.0}
 
 	nodes := []*livekit.Node{}
-	_, err := selector.SelectNode(nodes, nil)
+	_, err := selector.SelectNode(nodes)
 	require.Error(t, err, "should error no available nodes")
 
 	// Select a node with high load when no nodes with low load are available
 	nodes = []*livekit.Node{nodeLoadHigh}
-	if _, err := selector.SelectNode(nodes, nil); err != nil {
+	if _, err := selector.SelectNode(nodes); err != nil {
 		t.Error(err)
 	}
 
 	// Select a node with low load when available
 	nodes = []*livekit.Node{nodeLoadLow, nodeLoadHigh}
 	for i := 0; i < 5; i++ {
-		node, err := selector.SelectNode(nodes, nil)
+		node, err := selector.SelectNode(nodes)
 		if err != nil {
 			t.Error(err)
 		}

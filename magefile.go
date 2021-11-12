@@ -1,3 +1,4 @@
+//go:build mage
 // +build mage
 
 package main
@@ -94,27 +95,18 @@ func BuildLinux() error {
 	return nil
 }
 
-// builds docker image for LiveKit server
-func Docker() error {
-	mg.Deps(generateWire)
-	cmd := exec.Command("docker", "build", ".", "-t", fmt.Sprintf("%s:v%s", imageName, version.Version))
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	return nil
-}
-
+// builds and publish snapshot docker image
 func PublishDocker() error {
-	mg.Deps(Docker)
-
 	// don't publish snapshot versions as latest or minor version
 	if !strings.Contains(version.Version, "SNAPSHOT") {
 		return errors.New("Cannot publish non-snapshot versions")
 	}
 
 	versionImg := fmt.Sprintf("%s:v%s", imageName, version.Version)
-	cmd := exec.Command("docker", "push", versionImg)
+	cmd := exec.Command("docker", "buildx", "build",
+		"--push", "--platform", "linux/amd64,linux/arm64",
+		"--tag", versionImg,
+		".")
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
@@ -124,6 +116,7 @@ func PublishDocker() error {
 
 // run unit tests, skipping integration
 func Test() error {
+	mg.Deps(generateWire)
 	cmd := exec.Command("go", "test", "-short", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -131,8 +124,9 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
+	mg.Deps(generateWire)
 	// "-v", "-race",
-	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=3m")
+	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m")
 	connectStd(cmd)
 	return cmd.Run()
 }
@@ -146,7 +140,7 @@ func Clean() {
 
 // regenerate code
 func Generate() error {
-	mg.Deps(installDeps)
+	mg.Deps(installDeps, generateWire)
 
 	fmt.Println("generating...")
 

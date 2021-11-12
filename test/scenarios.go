@@ -4,20 +4,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
+	"github.com/livekit/protocol/logger"
+	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
 func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
-	firstPort := ports[0]
-	lastPort := ports[len(ports)-1]
-	c1 := createRTCClient("puj_1", firstPort, nil)
-	c2 := createRTCClient("puj_2", lastPort, &testclient.Options{AutoSubscribe: true})
-	c3 := createRTCClient("puj_3", firstPort, &testclient.Options{AutoSubscribe: true})
+	c1 := createRTCClient("puj_1", defaultServerPort, nil)
+	c2 := createRTCClient("puj_2", secondServerPort, &testclient.Options{AutoSubscribe: true})
+	c3 := createRTCClient("puj_3", defaultServerPort, &testclient.Options{AutoSubscribe: true})
 	defer stopClients(c1, c2, c3)
 
 	waitUntilConnected(t, c1, c2, c3)
@@ -66,7 +66,7 @@ func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
 
 	logger.Infow("c2 reconnecting")
 	// connect to a diff port
-	c2 = createRTCClient("puj_2", firstPort, nil)
+	c2 = createRTCClient("puj_2", defaultServerPort, nil)
 	defer c2.Stop()
 	waitUntilConnected(t, c2)
 	writers = publishTracksForClients(t, c2)
@@ -119,6 +119,28 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	require.Empty(t, c1.RemoteParticipants())
 }
 
+func scenarioDataPublish(t *testing.T) {
+	c1 := createRTCClient("dp1", defaultServerPort, nil)
+	c2 := createRTCClient("dp2", secondServerPort, nil)
+	waitUntilConnected(t, c1, c2)
+	defer stopClients(c1, c2)
+
+	payload := "test bytes"
+
+	received := utils.AtomicFlag{}
+	c2.OnDataReceived = func(data []byte, sid string) {
+		if string(data) == payload && sid == c1.ID() {
+			received.TrySet(true)
+		}
+	}
+
+	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
+
+	testutils.WithTimeout(t, "waiting for c2 to receive data", func() bool {
+		return received.Get()
+	})
+}
+
 // websocket reconnects
 func scenarioWSReconnect(t *testing.T) {
 	c1 := createRTCClient("wsr_1", defaultServerPort, nil)
@@ -132,7 +154,7 @@ func scenarioWSReconnect(t *testing.T) {
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
 	var writers []*testclient.TrackWriter
-	for i, _ := range clients {
+	for i := range clients {
 		c := clients[i]
 		tw, err := c.AddStaticTrack("audio/opus", "audio", "webcam")
 		require.NoError(t, err)

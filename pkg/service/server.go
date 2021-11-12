@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
@@ -18,15 +19,13 @@ import (
 	"github.com/urfave/negroni"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
 	config      *config.Config
-	roomServer  livekit.TwirpServer
-	recServer   livekit.TwirpServer
+	recService  *RecordingService
 	rtcService  *RTCService
 	httpServer  *http.Server
 	promServer  *http.Server
@@ -41,7 +40,7 @@ type LivekitServer struct {
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
-	recService livekit.RecordingService,
+	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -51,8 +50,7 @@ func NewLivekitServer(conf *config.Config,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:      conf,
-		roomServer:  livekit.NewRoomServiceServer(roomService),
-		recServer:   livekit.NewRecordingServiceServer(recService),
+		recService:  recService,
 		rtcService:  rtcService,
 		router:      router,
 		roomManager: roomManager,
@@ -70,9 +68,12 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
+	roomServer := livekit.NewRoomServiceServer(roomService)
+	recServer := livekit.NewRecordingServiceServer(recService)
+
 	mux := http.NewServeMux()
-	mux.Handle(s.roomServer.PathPrefix(), s.roomServer)
-	mux.Handle(s.recServer.PathPrefix(), s.recServer)
+	mux.Handle(roomServer.PathPrefix(), roomServer)
+	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
@@ -116,6 +117,7 @@ func (s *LivekitServer) Start() error {
 	if s.running.Get() {
 		return errors.New("already running")
 	}
+	s.doneChan = make(chan struct{})
 
 	if err := s.router.RegisterNode(); err != nil {
 		return err
@@ -130,7 +132,7 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	s.doneChan = make(chan struct{})
+	s.recService.Start()
 
 	// ensure we could listen
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
@@ -168,10 +170,13 @@ func (s *LivekitServer) Start() error {
 		if s.config.PrometheusPort != 0 {
 			values = append(values, "portPrometheus", s.config.PrometheusPort)
 		}
+		if s.config.Region != "" {
+			values = append(values, "region", s.config.Region)
+		}
 		logger.Infow("starting LiveKit server", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)
-			s.Stop()
+			s.Stop(true)
 		}
 	}()
 
@@ -184,10 +189,6 @@ func (s *LivekitServer) Start() error {
 
 	<-s.doneChan
 
-	if err := s.router.UnregisterNode(); err != nil {
-		logger.Errorw("could not unregister node", err)
-	}
-
 	// wait for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -198,12 +199,26 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
+	s.recService.Stop()
 
 	close(s.closedChan)
 	return nil
 }
 
-func (s *LivekitServer) Stop() {
+func (s *LivekitServer) Stop(force bool) {
+	// wait for all participants to exit
+	s.router.Drain()
+	partTicker := time.NewTicker(5 * time.Second)
+	waitingForParticipants := !force && s.roomManager.HasParticipants()
+	for waitingForParticipants {
+		select {
+		case <-partTicker.C:
+			logger.Infow("waiting for participants to exit")
+			waitingForParticipants = s.roomManager.HasParticipants()
+		}
+	}
+	partTicker.Stop()
+
 	if !s.running.TrySet(false) {
 		return
 	}
@@ -241,7 +256,18 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
+	var updatedAt time.Time
+	if s.Node().Stats != nil {
+		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
+	}
+	if time.Now().Sub(updatedAt) > 4*time.Second {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte([]byte("OK")))
 }
 
 // worker to perform periodic tasks per node

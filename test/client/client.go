@@ -18,11 +18,16 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/thoas/go-funk"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/rtc"
+)
+
+const (
+	lossyDataChannel    = "_lossy"
+	reliableDataChannel = "_reliable"
 )
 
 type RTCClient struct {
@@ -43,11 +48,18 @@ type RTCClient struct {
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
+	reliableDC         *webrtc.DataChannel
+	reliableDCSub      *webrtc.DataChannel
+	lossyDC            *webrtc.DataChannel
+	lossyDCSub         *webrtc.DataChannel
+	publisherConnected utils.AtomicFlag
+
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
 
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
+	OnDataReceived      func(data []byte, sid string)
 
 	// map of track Id and last packet
 	lastPackets   map[string]*rtp.Packet
@@ -75,7 +87,7 @@ type Options struct {
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc")
+	u, err := url.Parse(host + "/rtc?protocol=3")
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +96,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s?auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
@@ -138,6 +150,22 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		return nil, err
 	}
 
+	ordered := true
+	c.reliableDC, err = c.publisher.PeerConnection().CreateDataChannel(reliableDataChannel,
+		&webrtc.DataChannelInit{Ordered: &ordered},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	maxRetransmits := uint16(0)
+	c.lossyDC, err = c.publisher.PeerConnection().CreateDataChannel(lossyDataChannel,
+		&webrtc.DataChannelInit{Ordered: &ordered, MaxRetransmits: &maxRetransmits},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	c.publisher.PeerConnection().OnICECandidate(func(ic *webrtc.ICECandidate) {
 		if ic == nil {
 			return
@@ -155,12 +183,20 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		go c.processTrack(track)
 	})
 	c.subscriber.PeerConnection().OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() == reliableDataChannel {
+			c.reliableDCSub = channel
+		} else if channel.Label() == lossyDataChannel {
+			c.lossyDCSub = channel
+		} else {
+			return
+		}
+		channel.OnMessage(c.handleDataMessage)
 	})
 
 	c.publisher.OnOffer(c.onOffer)
 
-	c.publisher.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		logger.Debugw("ICE state has changed", "state", connectionState.String(),
+	c.subscriber.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+		logger.Infow("subscriber ICE state has changed", "state", connectionState.String(),
 			"participant", c.localParticipant.Identity)
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			// flush peers
@@ -168,7 +204,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 			defer c.lock.Unlock()
 			for _, tw := range c.pendingTrackWriters {
 				if err := tw.Start(); err != nil {
-					logger.Debugw("track writer error", "err", err)
+					logger.Errorw("track writer error", err)
 				}
 			}
 
@@ -179,6 +215,16 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 			if initialConnect && c.OnConnected != nil {
 				go c.OnConnected()
 			}
+		}
+	})
+
+	c.publisher.PeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.Infow("publisher ICE state changed", "state", state.String(),
+			"participant", c.localParticipant.Identity)
+		if state == webrtc.ICEConnectionStateConnected {
+			c.publisherConnected.TrySet(true)
+		} else {
+			c.publisherConnected.TrySet(false)
 		}
 	})
 
@@ -198,71 +244,35 @@ func (c *RTCClient) Run() error {
 		return nil
 	})
 
-	// create a data channel, in order to work
-	_, err := c.publisher.PeerConnection().CreateDataChannel("_lossy", nil)
-	if err != nil {
-		return err
-	}
-
 	// run the session
 	for {
 		res, err := c.ReadResponse()
 		if errors.Is(io.EOF, err) {
 			return nil
 		} else if err != nil {
+			logger.Errorw("error while reading", err)
 			return err
 		}
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
 			c.localParticipant = msg.Join.Participant
 			c.id = msg.Join.Participant.Sid
-
 			c.lock.Lock()
 			for _, p := range msg.Join.OtherParticipants {
 				c.remoteParticipants[p.Sid] = p
 			}
 			c.lock.Unlock()
 
-			logger.Debugw("join accepted, sending offer..", "participant", msg.Join.Participant.Identity)
-			logger.Debugw("other participants", "count", len(msg.Join.OtherParticipants))
-
-			// Create an offer to send to the other process
-			offer, err := c.publisher.PeerConnection().CreateOffer(nil)
-			if err != nil {
-				return err
-			}
-
-			logger.Debugw("created offer",
-				"participant", c.localParticipant.Identity,
-				//"sdp", offer.SDP,
-			)
-
-			// Sets the LocalDescription, and starts our UDP listeners
-			// Note: this will start the gathering of ICE candidates
-			if err = c.publisher.PeerConnection().SetLocalDescription(offer); err != nil {
-				return err
-			}
-
-			// send the offer to remote
-			req := &livekit.SignalRequest{
-				Message: &livekit.SignalRequest_Offer{
-					Offer: rtc.ToProtoSessionDescription(offer),
-				},
-			}
-			if err = c.SendRequest(req); err != nil {
-				return err
-			}
-
-			defer c.Stop()
+			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
 		case *livekit.SignalResponse_Answer:
 			//logger.Debugw("received server answer",
 			//	"participant", c.localParticipant.Identity,
 			//	"answer", msg.Answer.Sdp)
 			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
 		case *livekit.SignalResponse_Offer:
-			//logger.Debugw("received server offer",
-			//	"participant", c.localParticipant.Identity,
-			//	"sdp", msg.Offer.Sdp)
+			logger.Infow("received server offer",
+				"participant", c.localParticipant.Identity,
+			)
 			desc := rtc.FromProtoSessionDescription(msg.Offer)
 			if err := c.handleOffer(desc); err != nil {
 				return err
@@ -341,12 +351,8 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 			// protobuf encoded
 			err := proto.Unmarshal(payload, msg)
 			return msg, err
-		case websocket.TextMessage:
-			// json encoded, also write back JSON
-			err := protojson.Unmarshal(payload, msg)
-			return msg, err
 		default:
-			return nil, nil
+			return nil, fmt.Errorf("unexpected message received: %v", messageType)
 		}
 	}
 }
@@ -369,6 +375,7 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 }
 
 func (c *RTCClient) Stop() {
+	logger.Infow("stopping client", "ID", c.ID())
 	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Leave{
 			Leave: &livekit.LeaveRequest{},
@@ -383,14 +390,14 @@ func (c *RTCClient) Stop() {
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {
-	payload, err := protojson.Marshal(msg)
+	payload, err := proto.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
 	c.wsLock.Lock()
 	defer c.wsLock.Unlock()
-	return c.conn.WriteMessage(websocket.TextMessage, payload)
+	return c.conn.WriteMessage(websocket.BinaryMessage, payload)
 }
 
 func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
@@ -499,6 +506,75 @@ func (c *RTCClient) SendAddTrack(cid string, name string, trackType livekit.Trac
 	})
 }
 
+func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error {
+	if err := c.ensurePublisherConnected(); err != nil {
+		return err
+	}
+
+	dp := &livekit.DataPacket{
+		Kind: kind,
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{Payload: data},
+		},
+	}
+	payload, err := proto.Marshal(dp)
+	if err != nil {
+		return err
+	}
+
+	if kind == livekit.DataPacket_RELIABLE {
+		return c.reliableDC.Send(payload)
+	} else {
+		return c.lossyDC.Send(payload)
+	}
+}
+
+func (c *RTCClient) ensurePublisherConnected() error {
+	if c.publisherConnected.Get() {
+		return nil
+	}
+
+	if c.publisher.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateNew {
+		// start negotiating
+		c.publisher.Negotiate()
+	}
+
+	dcOpen := utils.AtomicFlag{}
+	c.reliableDC.OnOpen(func() {
+		dcOpen.TrySet(true)
+	})
+	if c.reliableDC.ReadyState() == webrtc.DataChannelStateOpen {
+		dcOpen.TrySet(true)
+	}
+
+	// wait until connected, increase wait time since it takes more than 10s sometimes on GH
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("could not connect publisher after timeout")
+		case <-time.After(10 * time.Millisecond):
+			if c.publisherConnected.Get() && dcOpen.Get() {
+				return nil
+			}
+		}
+	}
+}
+
+func (c *RTCClient) handleDataMessage(msg webrtc.DataChannelMessage) {
+	dp := &livekit.DataPacket{}
+	err := proto.Unmarshal(msg.Data, dp)
+	if err != nil {
+		return
+	}
+	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
+		if c.OnDataReceived != nil {
+			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
+		}
+	}
+}
+
 // handles a server initiated offer, handle on subscriber PC
 func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	if err := c.subscriber.SetRemoteDescription(desc); err != nil {
@@ -516,7 +592,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	}
 
 	// send remote an answer
-	logger.Debugw("sending subscriber answer",
+	logger.Infow("sending subscriber answer",
 		"participant", c.localParticipant.Identity,
 		//"sdp", answer,
 	)
@@ -529,7 +605,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 
 // the client handles answer on the publisher PC
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
-	logger.Debugw("handling server answer", "participant", c.localParticipant.Identity)
+	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
 	// remote answered the offer, establish connection
 	err := c.publisher.SetRemoteDescription(desc)
 	if err != nil {
@@ -545,7 +621,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 
 func (c *RTCClient) onOffer(offer webrtc.SessionDescription) {
 	if c.localParticipant != nil {
-		logger.Debugw("starting negotiation", "participant", c.localParticipant.Identity)
+		logger.Infow("starting negotiation", "participant", c.localParticipant.Identity)
 	}
 	_ = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{
@@ -556,13 +632,15 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription) {
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
-	pId := track.StreamID()
-	trackId := track.ID()
+	pId, trackId := rtc.UnpackStreamID(track.StreamID())
+	if trackId == "" {
+		trackId = track.ID()
+	}
 	c.lock.Lock()
 	c.subscribedTracks[pId] = append(c.subscribedTracks[pId], track)
 	c.lock.Unlock()
 
-	logger.Debugw("client added track", "participant", c.localParticipant.Identity,
+	logger.Infow("client added track", "participant", c.localParticipant.Identity,
 		"pID", pId,
 		"track", trackId,
 	)
@@ -583,7 +661,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			break
 		}
 		if err != nil {
-			logger.Debugw("error reading RTP", "err", err)
+			logger.Warnw("error reading RTP", err)
 			continue
 		}
 		c.lock.Lock()
@@ -592,7 +670,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		c.lock.Unlock()
 		numBytes += pkt.MarshalSize()
 		if time.Now().Sub(lastUpdate) > 30*time.Second {
-			logger.Debugw("consumed from participant",
+			logger.Infow("consumed from participant",
 				"track", trackId, "pID", pId,
 				"size", numBytes)
 			lastUpdate = time.Now()

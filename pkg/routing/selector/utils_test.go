@@ -1,13 +1,12 @@
-package routing_test
+package selector_test
 
 import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 func TestIsAvailable(t *testing.T) {
@@ -17,7 +16,7 @@ func TestIsAvailable(t *testing.T) {
 				UpdatedAt: time.Now().Unix() - 3,
 			},
 		}
-		require.True(t, routing.IsAvailable(n))
+		require.True(t, selector.IsAvailable(n))
 	})
 
 	t.Run("expired", func(t *testing.T) {
@@ -26,6 +25,6 @@ func TestIsAvailable(t *testing.T) {
 				UpdatedAt: time.Now().Unix() - 20,
 			},
 		}
-		require.False(t, routing.IsAvailable(n))
+		require.False(t, selector.IsAvailable(n))
 	})
 }

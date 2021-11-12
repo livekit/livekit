@@ -13,13 +13,12 @@ import (
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 // encapsulates CRUD operations for room settings
-// look up participant
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
 	StoreRoom(ctx context.Context, room *livekit.Room) error
-	LoadRoom(ctx context.Context, idOrName string) (*livekit.Room, error)
+	LoadRoom(ctx context.Context, name string) (*livekit.Room, error)
 	ListRooms(ctx context.Context) ([]*livekit.Room, error)
-	DeleteRoom(ctx context.Context, idOrName string) error
+	DeleteRoom(ctx context.Context, name string) error
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)
@@ -35,11 +34,14 @@ type RoomStore interface {
 type RoomManager interface {
 	RoomStore
 
-	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
 	GetRoom(ctx context.Context, roomName string) *rtc.Room
-	DeleteRoom(ctx context.Context, roomName string) error
 	StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink)
 	CleanupRooms() error
 	CloseIdleRooms()
+	HasParticipants() bool
 	Stop()
+}
+
+type RoomAllocator interface {
+	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
 }

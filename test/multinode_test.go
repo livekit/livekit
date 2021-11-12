@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/stretchr/testify/require"
 
@@ -47,7 +48,8 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		require.Equal(t, c1.ID(), tr1.StreamID())
+		streamId, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), streamId)
 		return true
 	})
 }
@@ -115,7 +117,7 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	stopClients(c1, c2)
 
 	// stop s2, and connect to room again
-	s2.Stop()
+	s2.Stop(true)
 
 	time.Sleep(syncDelay)
 
@@ -123,4 +125,14 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	waitUntilConnected(t, c3)
 }
 
-// TODO: test room with protocol version 1 and 0 participants
+func TestMultinodeDataPublishing(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("TestMultinodeDataPublishing")
+	defer finish()
+
+	scenarioDataPublish(t)
+}

@@ -4,34 +4,36 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type RTCService struct {
-	router      routing.Router
-	roomManager RoomManager
-	upgrader    websocket.Upgrader
-	currentNode routing.LocalNode
-	isDev       bool
+	router        routing.Router
+	roomAllocator RoomAllocator
+	upgrader      websocket.Upgrader
+	currentNode   routing.LocalNode
+	isDev         bool
 }
 
-func NewRTCService(conf *config.Config, roomManager RoomManager, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.Router, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
-		router:      router,
-		roomManager: roomManager,
-		upgrader:    websocket.Upgrader{},
-		currentNode: currentNode,
-		isDev:       conf.Development,
+		router:        router,
+		roomAllocator: ra,
+		upgrader:      websocket.Upgrader{},
+		currentNode:   currentNode,
+		isDev:         conf.Development,
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -66,7 +68,6 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
-	protocolParam := r.FormValue("protocol")
 	autoSubParam := r.FormValue("auto_subscribe")
 
 	if onlyName != "" {
@@ -79,12 +80,10 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
+		Client:        s.parseClientInfo(r.Form),
 	}
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
-	}
-	if pv, err := strconv.Atoi(protocolParam); err == nil {
-		pi.ProtocolVersion = int32(pv)
 	}
 	pi.Permission = permissionFromGrant(claims.Video)
 
@@ -94,6 +93,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reject non websocket requests
 	if !websocket.IsWebSocketUpgrade(r) {
+		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "reject").Add(1)
 		w.WriteHeader(404)
 		return
 	}
@@ -105,8 +105,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
-	rm, err := s.roomManager.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
+	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
 	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -114,6 +115,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// this needs to be started first *before* using router functions on this node
 	connId, reqSink, resSource, err := s.router.StartParticipantSignal(r.Context(), roomName, pi)
 	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "start_signal").Add(1)
 		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
 		return
 	}
@@ -121,7 +123,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		logger.Infow("WS connection closed", "participant", pi.Identity, "connID", connId)
+		logger.Infow("server closing WS connection", "participant", pi.Identity, "connID", connId)
 		reqSink.Close()
 		close(done)
 	}()
@@ -129,15 +131,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
 		logger.Warnw("could not upgrade to WS", err)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	sigConn := NewWSSignalConnection(conn)
-	if types.ProtocolVersion(pi.ProtocolVersion).SupportsProtobuf() {
+	if types.ProtocolVersion(pi.Client.Protocol).SupportsProtobuf() {
 		sigConn.useJSON = false
 	}
 
+	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
 	logger.Infow("new client WS connected",
 		"connID", connId,
 		"roomID", rm.Sid,
@@ -150,7 +154,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
-			conn.Close()
+			_ = conn.Close()
 		}()
 		defer rtc.Recover()
 		for {
@@ -200,4 +204,26 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"connID", connId)
 		}
 	}
+}
+
+func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
+	ci := &livekit.ClientInfo{}
+	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
+		ci.Protocol = int32(pv)
+	}
+	sdkString := values.Get("sdk")
+	switch sdkString {
+	case "js":
+		ci.Sdk = livekit.ClientInfo_JS
+	case "ios":
+		ci.Sdk = livekit.ClientInfo_IOS
+	case "android":
+		ci.Sdk = livekit.ClientInfo_ANDROID
+	case "flutter":
+		ci.Sdk = livekit.ClientInfo_FLUTTER
+	case "go":
+		ci.Sdk = livekit.ClientInfo_GO
+	}
+	ci.Version = values.Get("version")
+	return ci
 }

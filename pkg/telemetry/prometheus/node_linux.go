@@ -1,6 +1,7 @@
+//go:build linux
 // +build linux
 
-package stats
+package prometheus
 
 import (
 	linuxproc "github.com/c9s/goprocinfo/linux"

@@ -54,7 +54,7 @@ func TestICEStateChange(t *testing.T) {
 		p.onClose = func(participant types.Participant) {
 			close(closeChan)
 		}
-		p.handlePublisherICEStateChange(webrtc.ICEConnectionStateFailed)
+		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)
 
 		select {
 		case <-closeChan:
@@ -131,6 +131,66 @@ func TestTrackPublishing(t *testing.T) {
 
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
+
+	t.Run("should not allow adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		track := &typesfakes.FakePublishedTrack{}
+		track.SignalCidReturns("cid")
+		// directly add to publishedTracks without lock - for testing purpose only
+		p.publishedTracks["cid"] = track
+
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+	})
+
+	t.Run("should not allow adding of duplicate tracks if already published by client id in sdp", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		track := &typesfakes.FakePublishedTrack{}
+		track.SdpCidReturns("cid")
+		// directly add to publishedTracks without lock - for testing purpose only
+		p.publishedTracks["cid"] = track
+
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+	})
+}
+
+func TestOutOfOrderUpdates(t *testing.T) {
+	p := newParticipantForTest("test")
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	pi := &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "123",
+	}
+	earlierTs := time.Now()
+	time.Sleep(time.Millisecond)
+	laterTs := time.Now()
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, laterTs))
+
+	pi = &livekit.ParticipantInfo{
+		Sid:      "PA_test2",
+		Identity: "test2",
+		Metadata: "456",
+	}
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, earlierTs))
+
+	// only sent once, and it's the earlier message
+	require.Equal(t, 1, sink.WriteMessageCallCount())
+	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+	require.Equal(t, "123", sent.GetUpdate().Participants[0].Metadata)
 }
 
 // after disconnection, things should continue to function and not panic
@@ -178,9 +238,37 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
+		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
+	})
+}
+
+func TestConnectionQuality(t *testing.T) {
+	testPublishedTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
+		t := &typesfakes.FakePublishedTrack{}
+		t.PublishLossPercentageReturns(loss)
+		t.NumUpTracksReturns(numPublishing, numRegistered)
+		return t
+	}
+
+	// TODO: this test is rather limited since we cannot mock DownTrack's Target & Max spatial layers
+	// to improve this after split
+
+	t.Run("smooth sailing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality())
+	})
+
+	t.Run("reduced publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["video"] = testPublishedTrack(3, 2, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(3, 1, 1)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality())
 	})
 }
 

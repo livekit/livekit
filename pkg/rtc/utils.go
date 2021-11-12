@@ -6,10 +6,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
@@ -42,6 +42,11 @@ func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label s
 	trackId = parts[1]
 	label = parts[2]
 	return
+}
+
+// converts a fixed point number to the number part of %
+func FixedPointToPercent(frac uint8) uint32 {
+	return (uint32(frac) * 100) >> 8
 }
 
 func ToProtoParticipants(participants []types.Participant) []*livekit.ParticipantInfo {

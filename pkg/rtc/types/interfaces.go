@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"github.com/pion/ion-sfu/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
@@ -39,7 +39,9 @@ type Participant interface {
 	ICERestart() error
 
 	AddTrack(req *livekit.AddTrackRequest)
+	GetPublishedTrack(sid string) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
+	GetSubscribedTrack(sid string) SubscribedTrack
 	GetSubscribedTracks() []SubscribedTrack
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
@@ -47,11 +49,17 @@ type Participant interface {
 	AddSubscriber(op Participant) (int, error)
 	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []Participant, iceServers []*livekit.ICEServer) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
-	SendActiveSpeakers(speakers []*livekit.SpeakerInfo) error
+	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
+	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
+	SendRoomUpdate(room *livekit.Room) error
+	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
+	GetConnectionQuality() livekit.ConnectionQuality
+	IsSubscribedTo(identity string) bool
+	// returns list of participant identities that the current participant is subscribed to
+	GetSubscribedParticipants() []string
 
 	// permissions
 
@@ -75,11 +83,9 @@ type Participant interface {
 	OnClose(func(Participant))
 
 	// package methods
-
-	AddSubscribedTrack(participantId string, st SubscribedTrack)
-	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
+	AddSubscribedTrack(st SubscribedTrack)
+	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
-	UpdateAfterActive() bool
 
 	DebugInfo() map[string]interface{}
 }
@@ -90,6 +96,8 @@ type Participant interface {
 type PublishedTrack interface {
 	Start()
 	ID() string
+	SignalCid() string
+	SdpCid() string
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool
@@ -98,6 +106,11 @@ type PublishedTrack interface {
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	// returns quality information that's appropriate for width & height
+	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+	// returns number of uptracks that are publishing, registered
+	NumUpTracks() (uint32, uint32)
+	PublishLossPercentage() uint32
 	ToProto() *livekit.TrackInfo
 
 	// callbacks
@@ -107,10 +120,12 @@ type PublishedTrack interface {
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	ID() string
+	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality)
+	SubscribeLossPercentage() uint32
 }
 
 // interface for properties of webrtc.TrackRemote
