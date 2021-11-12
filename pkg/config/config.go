@@ -27,8 +27,6 @@ type Config struct {
 	TURN           TURNConfig         `yaml:"turn"`
 	WebHook        WebHookConfig      `yaml:"webhook"`
 	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
-	KeyFile        string             `yaml:"key_file"`
-	Keys           map[string]string  `yaml:"keys"`
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
 	KeyProvider    string             `yaml:"key_provider"`
