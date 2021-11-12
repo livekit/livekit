@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
@@ -742,7 +741,6 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		diff = 0
 	}
 	octets, packets := d.getSRStats()
-	logger.Infow("Created Sender report", "ssrc", d.ssrc)
 	return &rtcp.SenderReport{
 		SSRC:        d.ssrc,
 		NTPTime:     uint64(nowNTP),

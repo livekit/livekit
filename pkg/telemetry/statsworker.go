@@ -9,16 +9,16 @@ import (
 
 const updateFrequency = time.Second * 10
 
-// StatsWorker handles incoming RTP statistics instead of the stream interceptor
+// StatsWorker handles publisher stats
 type StatsWorker struct {
 	sync.RWMutex
-	buffers   map[uint32]*buffer.Buffer
-	drain     map[uint32]bool
-	lastStats *ParticipantStats
-	nackTotal int32
-	pliTotal  int32
-	firTotal  int32
-	onUpdate  func(diff *ParticipantStats)
+	buffers  map[uint32]*buffer.Buffer
+	drain    map[uint32]bool
+	onUpdate func(diff *ParticipantStats)
+
+	next        *ParticipantStats
+	prevPackets uint32
+	prevBytes   uint64
 
 	running bool
 	close   chan struct{}
@@ -27,7 +27,9 @@ type StatsWorker struct {
 type ParticipantStats struct {
 	Packets   uint32
 	Bytes     uint64
-	Jitter    float64
+	Delay     uint32
+	Jitter    uint32
+	TotalLost uint32
 	NackCount int32
 	PliCount  int32
 	FirCount  int32
@@ -38,6 +40,7 @@ func NewStatsWorker(onUpdate func(*ParticipantStats)) *StatsWorker {
 		buffers:  make(map[uint32]*buffer.Buffer),
 		drain:    make(map[uint32]bool),
 		onUpdate: onUpdate,
+		next:     &ParticipantStats{},
 		close:    make(chan struct{}, 1),
 	}
 }
@@ -57,65 +60,59 @@ func (s *StatsWorker) run() {
 
 func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
 	s.Lock()
+	defer s.Unlock()
+
 	s.buffers[buffer.GetMediaSSRC()] = buffer
 	if !s.running {
 		s.running = true
 		go s.run()
 	}
-	s.Unlock()
 }
 
-func (s *StatsWorker) AddRTCP(nack, pli, fir int32) {
+func (s *StatsWorker) AddRTCP(delay, jitter, totalLost uint32, nack, pli, fir int32) {
 	s.Lock()
-	s.nackTotal += nack
-	s.pliTotal += pli
-	s.firTotal += fir
-	s.Unlock()
+	defer s.Unlock()
+
+	if delay > s.next.Delay {
+		s.next.Delay = delay
+	}
+	if jitter > s.next.Jitter {
+		s.next.Jitter = jitter
+	}
+	s.next.TotalLost += totalLost
+	s.next.NackCount += nack
+	s.next.PliCount += pli
+	s.next.FirCount += fir
 }
 
 func (s *StatsWorker) Calc() *ParticipantStats {
-	s.RLock()
-	total := &ParticipantStats{
-		NackCount: s.nackTotal,
-		PliCount:  s.pliTotal,
-		FirCount:  s.firTotal,
-	}
+	s.Lock()
+	defer s.Unlock()
+
+	var totalPackets uint32
+	var totalBytes uint64
 	for _, buff := range s.buffers {
 		stats := buff.GetStats()
-		total.Packets += stats.PacketCount
-		total.Bytes += stats.TotalByte
-		if stats.Jitter > total.Jitter {
-			total.Jitter = stats.Jitter
-		}
+		totalPackets += stats.PacketCount
+		totalBytes += stats.TotalByte
 	}
-	drain := len(s.drain) > 0
-	s.RUnlock()
 
-	if drain {
-		s.Lock()
+	if len(s.drain) > 0 {
 		for ssrc := range s.drain {
 			delete(s.buffers, ssrc)
 		}
 		s.drain = make(map[uint32]bool)
-		s.Unlock()
 	}
 
-	var diff *ParticipantStats
-	if s.lastStats != nil {
-		diff = &ParticipantStats{
-			Packets:   total.Packets - s.lastStats.Packets,
-			Bytes:     total.Bytes - s.lastStats.Bytes,
-			Jitter:    total.Jitter,
-			NackCount: total.NackCount - s.lastStats.NackCount,
-			PliCount:  total.PliCount - s.lastStats.PliCount,
-			FirCount:  total.FirCount - s.lastStats.FirCount,
-		}
-	} else {
-		diff = total
-	}
-	s.lastStats = total
+	next := s.next
+	s.next = &ParticipantStats{}
 
-	return diff
+	next.Packets = totalPackets - s.prevPackets
+	s.prevPackets = totalPackets
+	next.Bytes = totalBytes - s.prevBytes
+	s.prevBytes = totalBytes
+
+	return next
 }
 
 func (s *StatsWorker) RemoveBuffer(ssrc uint32) {

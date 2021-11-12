@@ -3,7 +3,6 @@ package telemetry
 import (
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 )
 
 type StatsInterceptorFactory struct {
@@ -32,7 +31,7 @@ type StatsInterceptor struct {
 // change in the future. The returned method will be called once per packet batch.
 func (s *StatsInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interceptor.RTCPReader {
 	return interceptor.RTCPReaderFunc(func(bytes []byte, attributes interceptor.Attributes) (int, interceptor.Attributes, error) {
-		s.t.HandleIncomingRTCP(s.participantID, bytes)
+		s.t.HandleOutgoingRTCP(s.participantID, bytes)
 		return reader.Read(bytes, attributes)
 	})
 }
@@ -41,16 +40,16 @@ func (s *StatsInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interce
 // will be called once per packet batch.
 func (s *StatsInterceptor) BindRTCPWriter(writer interceptor.RTCPWriter) interceptor.RTCPWriter {
 	return interceptor.RTCPWriterFunc(func(pkts []rtcp.Packet, attributes interceptor.Attributes) (int, error) {
-		s.t.HandleOutgoingRTCP(s.participantID, s.identity, pkts)
+		s.t.HandleIncomingRTCP(s.participantID, s.identity, pkts)
 		return writer.Write(pkts, attributes)
 	})
 }
 
-// BindLocalStream lets you modify any outgoing RTP packets. It is called once for per LocalStream. The returned method
-// will be called once per rtp packet.
-func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
-	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
-		s.t.HandleOutgoingRTP(s.participantID, s.identity, uint64(len(payload)))
-		return writer.Write(header, payload, attributes)
-	})
-}
+// // BindLocalStream lets you modify any outgoing RTP packets. It is called once for per LocalStream. The returned method
+// // will be called once per rtp packet.
+// func (s *StatsInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
+// 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
+// 		s.t.HandleOutgoingRTP(s.participantID, s.identity, uint64(len(payload)))
+// 		return writer.Write(header, payload, attributes)
+// 	})
+// }
