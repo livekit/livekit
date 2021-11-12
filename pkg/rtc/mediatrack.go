@@ -506,20 +506,21 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
-	var hasSenderReport bool
+	var hasReport bool
 	for _, p := range packets {
 		switch pkt := p.(type) {
-		case *rtcp.SenderReport:
+		// sfu.Buffer generates ReceiverReports for the publisher
+		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
-				hasSenderReport = true
+				hasReport = true
 			}
 		}
 	}
 
-	if hasSenderReport {
+	if hasReport {
 		t.fracLostLock.Lock()
 		if maxLost > t.maxUpFracLost {
 			t.maxUpFracLost = maxLost
