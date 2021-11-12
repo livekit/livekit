@@ -240,6 +240,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.OnBind(func() {
 		go t.sendDownTrackBindingReports(sub)
 	})
+	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
+	})
 
 	downTrack.OnCloseHandler(func() {
 		go func() {

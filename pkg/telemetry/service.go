@@ -9,7 +9,6 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -49,111 +48,60 @@ func (t *TelemetryService) NewStatsInterceptorFactory(participantID, identity st
 	}
 }
 
-func (t *TelemetryService) HandleIncomingRTCP(participantID, identity string, pkts []rtcp.Packet) {
-	var nack, pli, fir int32
-	var delay, jitter, totalLost uint32
+func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
+	stats := &ParticipantStats{}
 	for _, pkt := range pkts {
 		switch pkt := pkt.(type) {
 		case *rtcp.TransportLayerNack:
-			nack++
+			stats.NackCount++
 		case *rtcp.PictureLossIndication:
-			pli++
+			stats.PliCount++
 		case *rtcp.FullIntraRequest:
-			fir++
+			stats.FirCount++
 		case *rtcp.ReceiverReport:
-			// pub -> SFU loss, jitter, and delay
 			for _, rr := range pkt.Reports {
-				if rr.Delay > delay {
-					delay = rr.Delay
+				if rr.Delay > stats.Delay {
+					stats.Delay = rr.Delay
 				}
-				if rr.Jitter > jitter {
-					jitter = rr.Jitter
+				if rr.Jitter > stats.Jitter {
+					stats.Jitter = rr.Jitter
 				}
-				totalLost += rr.TotalLost
-			}
-		case *rtcp.SenderReport:
-			// SFU -> sub packet count
-			logger.Debugw("incoming sender report", "pkt", pkt)
-			for _, rr := range pkt.Reports {
-				logger.Debugw("incoming sender reports", "Report", rr)
+				stats.TotalLost += rr.TotalLost
 			}
 		}
 	}
 
-	prometheus.IncrementRTCP(prometheus.Incoming, nack, pli, fir)
+	direction := prometheus.Incoming
+	if streamType == livekit.StreamType_DOWNSTREAM {
+		direction = prometheus.Outgoing
+	}
+
+	prometheus.IncrementRTCP(direction, stats.NackCount, stats.PliCount, stats.FirCount)
 
 	t.RLock()
 	if w := t.workers[participantID]; w != nil {
-		w.AddRTCP(delay, jitter, totalLost, nack, pli, fir)
+		w.AddRTCP(streamType, stats)
 	}
 	t.RUnlock()
 }
 
-func (t *TelemetryService) ReportIncoming(roomID, participantID string, diff *ParticipantStats) {
-	prometheus.IncrementPackets(prometheus.Incoming, uint64(diff.Packets))
-	prometheus.IncrementBytes(prometheus.Incoming, diff.Bytes)
-
-	jitter := float64(diff.Jitter)
-	rrTime := uint64(diff.Delay)
-	lost := uint64(diff.TotalLost)
-	t.sendStats(&livekit.AnalyticsStat{
-		AuthToken:     &t.authToken,
-		Kind:          livekit.StreamType_UPSTREAM,
-		TimeStamp:     timestamppb.Now(),
-		Node:          t.nodeID,
-		Sid:           &roomID,
-		ParticipantId: &participantID,
-		Jitter:        &jitter,
-		PacketLost:    &lost,
-		RrTime:        &rrTime,
-		BytesReceived: &diff.Bytes,
-	})
-}
-
-func (t *TelemetryService) HandleOutgoingRTP(participantID, identity string, pktLen uint64) {
-	prometheus.IncrementPackets(prometheus.Outgoing, 1)
-	prometheus.IncrementBytes(prometheus.Outgoing, pktLen)
-
-	// TODO: analytics service
-}
-
-func (t *TelemetryService) HandleOutgoingRTCP(participantID string, bytes []byte) {
-	pkts, err := rtcp.Unmarshal(bytes)
-	if err != nil {
-		logger.Errorw("Interceptor failed to unmarshal rtcp packets", err)
-		return
+func (t *TelemetryService) Report(stats *livekit.AnalyticsStat) {
+	direction := prometheus.Incoming
+	if stats.Kind == livekit.StreamType_DOWNSTREAM {
+		direction = prometheus.Outgoing
 	}
 
-	var nack, pli, fir int32
-	for _, pkt := range pkts {
-		switch pkt := pkt.(type) {
-		case *rtcp.TransportLayerNack:
-			nack++
-		case *rtcp.PictureLossIndication:
-			pli++
-		case *rtcp.FullIntraRequest:
-			fir++
-		case *rtcp.ReceiverReport:
-			logger.Debugw("outgoing receiver report", "ssrc", pkt.SSRC)
-			for _, rr := range pkt.Reports {
-				logger.Debugw("outgoing receiver reports", "Report", rr)
-			}
-		case *rtcp.SenderReport:
-			logger.Debugw("outgoing sender report", "ssrc", pkt.SSRC)
-			for _, rr := range pkt.Reports {
-				logger.Debugw("outgoing sender reports", "Report", rr)
-			}
-		}
-	}
+	prometheus.IncrementPackets(direction, stats.TotalPackets)
+	prometheus.IncrementBytes(direction, stats.TotalBytes)
 
-	prometheus.IncrementRTCP(prometheus.Outgoing, nack, pli, fir)
-
-	// TODO: analytics service
+	t.sendStats(stats)
 }
 
 func (t *TelemetryService) sendStats(stats *livekit.AnalyticsStat) {
 	fmt.Printf("%+v\n", stats)
 	if t.analyticsEnabled {
+		stats.AuthToken = t.authToken
+		stats.Node = t.nodeID
 		if err := t.stats.Send(&livekit.AnalyticsStats{
 			Stats: []*livekit.AnalyticsStat{stats},
 		}); err != nil {

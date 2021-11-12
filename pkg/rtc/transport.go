@@ -65,7 +65,8 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	se.DisableMediaEngineCopy(true)
 
 	ir := &interceptor.Registry{}
-	if params.Telemetry != nil {
+	// intercept pub -> SFU rtcp for analytics
+	if params.Telemetry != nil && params.Target == livekit.SignalTarget_PUBLISHER {
 		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
 		ir.Add(f)
 	}

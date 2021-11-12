@@ -108,6 +108,7 @@ type DownTrack struct {
 	bandwidthConstrainedMuted atomicBool
 
 	// RTCP callbacks
+	onRTCP func([]rtcp.Packet)
 	onREMB func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 
 	// simulcast layer availability change callback
@@ -558,6 +559,10 @@ func (d *DownTrack) OnCloseHandler(fn func()) {
 
 func (d *DownTrack) OnBind(fn func()) {
 	d.onBind = fn
+}
+
+func (d *DownTrack) OnRTCP(fn func([]rtcp.Packet)) {
+	d.onRTCP = fn
 }
 
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
@@ -1049,13 +1054,21 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
-	if !d.enabled.get() {
+	enabled := d.enabled.get()
+	if !enabled && d.onRTCP == nil {
 		return
 	}
 
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
 		Logger.Error(err, "Unmarshal rtcp receiver packets err")
+	}
+
+	if d.onRTCP != nil {
+		d.onRTCP(pkts)
+		if !enabled {
+			return
+		}
 	}
 
 	var fwdPkts []rtcp.Packet
