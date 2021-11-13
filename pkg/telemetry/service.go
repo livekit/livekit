@@ -39,14 +39,6 @@ func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
 	}
 }
 
-func (t *TelemetryService) NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory {
-	return &StatsInterceptorFactory{
-		t:             t,
-		participantID: participantID,
-		identity:      identity,
-	}
-}
-
 func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
 	t.RLock()
 	w := t.workers[participantID]

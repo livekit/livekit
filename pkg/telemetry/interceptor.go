@@ -6,6 +6,14 @@ import (
 	"github.com/pion/rtcp"
 )
 
+func (t *TelemetryService) NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory {
+	return &StatsInterceptorFactory{
+		t:             t,
+		participantID: participantID,
+		identity:      identity,
+	}
+}
+
 type StatsInterceptorFactory struct {
 	t             *TelemetryService
 	participantID string
