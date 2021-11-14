@@ -69,6 +69,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
@@ -198,6 +199,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 	}
 
 	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
 		},
@@ -227,6 +229,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
 		},
@@ -249,4 +252,8 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 	}
 
 	return s.router.WriteRTCMessage(ctx, room, identity, msg)
+}
+
+func (s *RoomService) roomParticipantKey(room string) string {
+	return room + "|"
 }
