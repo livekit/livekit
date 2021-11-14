@@ -464,15 +464,18 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 	}
 
 	participant := room.GetParticipant(identity)
-	if participant == nil {
-		return
-	}
 
 	switch rm := msg.Message.(type) {
 	case *livekit.RTCNodeMessage_RemoveParticipant:
+		if participant == nil {
+			return
+		}
 		logger.Infow("removing participant", "room", roomName, "participant", identity)
 		room.RemoveParticipant(identity)
 	case *livekit.RTCNodeMessage_MuteTrack:
+		if participant == nil {
+			return
+		}
 		logger.Debugw("setting track muted", "room", roomName, "participant", identity,
 			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
@@ -481,6 +484,9 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 		}
 		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted, true)
 	case *livekit.RTCNodeMessage_UpdateParticipant:
+		if participant == nil {
+			return
+		}
 		logger.Debugw("updating participant", "room", roomName, "participant", identity)
 		if rm.UpdateParticipant.Metadata != "" {
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
@@ -494,6 +500,9 @@ func (r *LocalRoomManager) handleRTCMessage(ctx context.Context, roomName, ident
 		}
 		room.Close()
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:
+		if participant == nil {
+			return
+		}
 		logger.Debugw("updating participant subscriptions", "room", roomName, "participant", identity)
 		if err := room.UpdateSubscriptions(participant, rm.UpdateSubscriptions.TrackSids, rm.UpdateSubscriptions.Subscribe); err != nil {
 			logger.Warnw("could not update subscription", err,

@@ -181,7 +181,7 @@ func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 }
 
 func (r *RedisRouter) WriteRTCNodeMessage(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, "")
+	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, msg.ParticipantKey)
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
