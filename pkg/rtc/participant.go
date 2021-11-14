@@ -472,12 +472,7 @@ func (p *ParticipantImpl) ICERestart() error {
 
 // AddSubscriber subscribes op to all publishedTracks
 func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
-	p.lock.RLock()
-	tracks := make([]types.PublishedTrack, 0, len(p.publishedTracks))
-	for _, t := range p.publishedTracks {
-		tracks = append(tracks, t)
-	}
-	p.lock.RUnlock()
+	tracks := p.GetPublishedTracks()
 
 	if len(tracks) == 0 {
 		return 0, nil

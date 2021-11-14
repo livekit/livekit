@@ -199,7 +199,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		//
 		// AddTrack will create a new transceiver or re-use an unused one
 		// if the attributes match. This prevents SDP from bloating
-		// because of dormant transceivers buidling up.
+		// because of dormant transceivers building up.
 		//
 		sender, err = sub.SubscriberPC().AddTrack(downTrack)
 		if err != nil {

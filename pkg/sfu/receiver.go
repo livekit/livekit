@@ -461,8 +461,9 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID string) {
 func (w *WebRTCReceiver) SendRTCP(p []rtcp.Packet) {
 	if _, ok := p[0].(*rtcp.PictureLossIndication); ok {
 		w.rtcpMu.Lock()
-		defer w.rtcpMu.Unlock()
-		if time.Now().UnixNano()-w.lastPli.get() < w.pliThrottle {
+		throttled := time.Now().UnixNano()-w.lastPli.get() < w.pliThrottle
+		w.rtcpMu.Unlock()
+		if throttled {
 			return
 		}
 		w.lastPli.set(time.Now().UnixNano())
@@ -568,9 +569,12 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		w.downTrackMu.RLock()
-		if w.lbThreshold == 0 || len(w.downTracks)-len(w.free) < w.lbThreshold {
+		downTracks := w.downTracks
+		free := w.free
+		w.downTrackMu.RUnlock()
+		if w.lbThreshold == 0 || len(downTracks)-len(free) < w.lbThreshold {
 			// serial - not enough down tracks for parallelization to outweigh overhead
-			for _, dt := range w.downTracks {
+			for _, dt := range downTracks {
 				if dt != nil {
 					w.writeRTP(layer, dt, pkt, pli)
 				}
@@ -578,7 +582,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		} else {
 			// parallel - enables much more efficient multi-core utilization
 			start := uint64(0)
-			end := uint64(len(w.downTracks))
+			end := uint64(len(downTracks))
 
 			// 100µs is enough to amortize the overhead and provide sufficient load balancing.
 			// WriteRTP takes about 50µs on average, so we write to 2 down tracks per loop.
@@ -596,7 +600,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 						}
 
 						for i := n - step; i < n && i < end; i++ {
-							if dt := w.downTracks[i]; dt != nil {
+							if dt := downTracks[i]; dt != nil {
 								w.writeRTP(layer, dt, pkt, pli)
 							}
 						}
@@ -605,7 +609,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			}
 			wg.Wait()
 		}
-		w.downTrackMu.RUnlock()
 	}
 }
 
