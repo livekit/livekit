@@ -3,14 +3,12 @@ package types
 import (
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
-
-	livekit "github.com/livekit/protocol/proto"
-
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/sfu"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
