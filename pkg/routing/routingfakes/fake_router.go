@@ -26,19 +26,6 @@ type FakeRouter struct {
 	drainMutex       sync.RWMutex
 	drainArgsForCall []struct {
 	}
-	GetNodeStub        func(string) (*livekit.Node, error)
-	getNodeMutex       sync.RWMutex
-	getNodeArgsForCall []struct {
-		arg1 string
-	}
-	getNodeReturns struct {
-		result1 *livekit.Node
-		result2 error
-	}
-	getNodeReturnsOnCall map[int]struct {
-		result1 *livekit.Node
-		result2 error
-	}
 	GetNodeForRoomStub        func(context.Context, string) (*livekit.Node, error)
 	getNodeForRoomMutex       sync.RWMutex
 	getNodeForRoomArgsForCall []struct {
@@ -266,70 +253,6 @@ func (fake *FakeRouter) DrainCalls(stub func()) {
 	fake.drainMutex.Lock()
 	defer fake.drainMutex.Unlock()
 	fake.DrainStub = stub
-}
-
-func (fake *FakeRouter) GetNode(arg1 string) (*livekit.Node, error) {
-	fake.getNodeMutex.Lock()
-	ret, specificReturn := fake.getNodeReturnsOnCall[len(fake.getNodeArgsForCall)]
-	fake.getNodeArgsForCall = append(fake.getNodeArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.GetNodeStub
-	fakeReturns := fake.getNodeReturns
-	fake.recordInvocation("GetNode", []interface{}{arg1})
-	fake.getNodeMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeRouter) GetNodeCallCount() int {
-	fake.getNodeMutex.RLock()
-	defer fake.getNodeMutex.RUnlock()
-	return len(fake.getNodeArgsForCall)
-}
-
-func (fake *FakeRouter) GetNodeCalls(stub func(string) (*livekit.Node, error)) {
-	fake.getNodeMutex.Lock()
-	defer fake.getNodeMutex.Unlock()
-	fake.GetNodeStub = stub
-}
-
-func (fake *FakeRouter) GetNodeArgsForCall(i int) string {
-	fake.getNodeMutex.RLock()
-	defer fake.getNodeMutex.RUnlock()
-	argsForCall := fake.getNodeArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRouter) GetNodeReturns(result1 *livekit.Node, result2 error) {
-	fake.getNodeMutex.Lock()
-	defer fake.getNodeMutex.Unlock()
-	fake.GetNodeStub = nil
-	fake.getNodeReturns = struct {
-		result1 *livekit.Node
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeRouter) GetNodeReturnsOnCall(i int, result1 *livekit.Node, result2 error) {
-	fake.getNodeMutex.Lock()
-	defer fake.getNodeMutex.Unlock()
-	fake.GetNodeStub = nil
-	if fake.getNodeReturnsOnCall == nil {
-		fake.getNodeReturnsOnCall = make(map[int]struct {
-			result1 *livekit.Node
-			result2 error
-		})
-	}
-	fake.getNodeReturnsOnCall[i] = struct {
-		result1 *livekit.Node
-		result2 error
-	}{result1, result2}
 }
 
 func (fake *FakeRouter) GetNodeForRoom(arg1 context.Context, arg2 string) (*livekit.Node, error) {
@@ -1022,8 +945,6 @@ func (fake *FakeRouter) Invocations() map[string][][]interface{} {
 	defer fake.clearRoomStateMutex.RUnlock()
 	fake.drainMutex.RLock()
 	defer fake.drainMutex.RUnlock()
-	fake.getNodeMutex.RLock()
-	defer fake.getNodeMutex.RUnlock()
 	fake.getNodeForRoomMutex.RLock()
 	defer fake.getNodeForRoomMutex.RUnlock()
 	fake.listNodesMutex.RLock()
