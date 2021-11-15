@@ -133,6 +133,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              params.Config,
 		Telemetry:           p.params.Telemetry,
+		EnabledCodecs:       p.params.EnabledCodecs,
 		Logger:              params.Logger,
 	})
 	if err != nil {

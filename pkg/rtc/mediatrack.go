@@ -169,10 +169,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 
 	codec := t.receiver.Codec()
-	if err := sub.SubscriberMediaEngine().RegisterCodec(codec, t.receiver.Kind()); err != nil {
-		return err
-	}
-
 	// using DownTrack from ion-sfu
 	streamId := t.params.ParticipantID
 	if sub.ProtocolVersion().SupportsPackedStreamId() {

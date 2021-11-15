@@ -56,7 +56,7 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	if params.Target == livekit.SignalTarget_PUBLISHER {
 		me, err = createPubMediaEngine(params.EnabledCodecs)
 	} else {
-		me, err = createSubMediaEngine()
+		me, err = createSubMediaEngine(params.EnabledCodecs)
 	}
 	if err != nil {
 		return nil, nil, err
