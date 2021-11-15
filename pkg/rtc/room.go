@@ -12,11 +12,10 @@ import (
 	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -28,7 +27,7 @@ const (
 )
 
 type Room struct {
-	sync.RWMutex
+	lock sync.RWMutex
 
 	Room   *livekit.Room
 	Logger logger.Logger
@@ -84,14 +83,14 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 }
 
 func (r *Room) GetParticipant(identity string) types.Participant {
-	r.RLock()
-	defer r.RUnlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.participants[identity]
 }
 
 func (r *Room) GetParticipants() []types.Participant {
-	r.RLock()
-	defer r.RUnlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	participants := make([]types.Participant, 0, len(r.participants))
 	for _, p := range r.participants {
 		participants = append(participants, p)
@@ -146,8 +145,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return ErrRoomClosed
 	}
 
-	r.Lock()
-	defer r.Unlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
@@ -252,13 +251,13 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 }
 
 func (r *Room) RemoveParticipant(identity string) {
-	r.Lock()
+	r.lock.Lock()
 	p, ok := r.participants[identity]
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 	}
-	r.Unlock()
+	r.lock.Unlock()
 	if !ok {
 		return
 	}
@@ -275,11 +274,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	// close participant as well
 	_ = p.Close()
 
-	r.RLock()
+	r.lock.RLock()
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
 	}
-	r.RUnlock()
+	r.lock.RUnlock()
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {
@@ -335,14 +334,14 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	r.RLock()
+	r.lock.RLock()
 	visibleParticipants := 0
 	for _, p := range r.participants {
 		if !p.Hidden() {
 			visibleParticipants++
 		}
 	}
-	r.RUnlock()
+	r.lock.RUnlock()
 
 	if visibleParticipants > 0 {
 		return
@@ -436,8 +435,8 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, true)
 
-	r.RLock()
-	defer r.RUnlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 
 	// subscribe all existing participants to this PublishedTrack
 	for _, existingParticipant := range r.participants {
@@ -516,9 +515,9 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 }
 
 func (r *Room) subscribeToExistingTracks(p types.Participant) {
-	r.RLock()
+	r.lock.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
-	r.RUnlock()
+	r.lock.RUnlock()
 	if !shouldSubscribe {
 		return
 	}
@@ -545,10 +544,10 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
-	r.Lock()
+	r.lock.Lock()
 	updatedAt := time.Now()
 	updates := ToProtoParticipants([]types.Participant{p})
-	r.Unlock()
+	r.lock.Unlock()
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant
