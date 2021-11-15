@@ -13,12 +13,12 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	router        routing.Router
+	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	roomStore     RoomStore
+	roomStore     ReadRoomStore
 }
 
-func NewRoomService(ra RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs ReadRoomStore, router routing.MessageRouter) (svc *RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,

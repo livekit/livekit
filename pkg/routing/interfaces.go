@@ -44,16 +44,24 @@ type RTCMessageCallback func(ctx context.Context, roomName, identity string, msg
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
 type Router interface {
+	MessageRouter
+
 	RegisterNode() error
 	UnregisterNode() error
 	RemoveDeadNodes() error
 
-	GetNode(nodeId string) (*livekit.Node, error)
 	ListNodes() ([]*livekit.Node, error)
 
-	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName, nodeId string) error
 	ClearRoomState(ctx context.Context, roomName string) error
+
+	Start() error
+	Drain()
+	Stop()
+}
+
+type MessageRouter interface {
+	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
 
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
@@ -67,10 +75,6 @@ type Router interface {
 
 	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
-
-	Start() error
-	Drain()
-	Stop()
 }
 
 func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) Router {
