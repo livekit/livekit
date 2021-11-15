@@ -67,7 +67,7 @@ type MessageRouter interface {
 
 	// Write a message to a participant, room, or node
 	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
 	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection

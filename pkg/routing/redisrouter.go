@@ -180,12 +180,12 @@ func (r *RedisRouter) WriteParticipantRTC(ctx context.Context, roomName, identit
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
-func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	node, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
 		return err
 	}
-	msg.ParticipantKey = participantKey(roomName, "")
+	msg.ParticipantKey = participantKey(roomName, identity)
 	return r.WriteNodeRTC(ctx, node.Id, msg)
 }
 

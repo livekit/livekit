@@ -119,8 +119,8 @@ func (r *LocalRouter) WriteParticipantRTC(ctx context.Context, roomName, identit
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
-func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error {
-	msg.ParticipantKey = participantKey(roomName, "")
+func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+	msg.ParticipantKey = participantKey(roomName, identity)
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
