@@ -239,12 +239,12 @@ func (s *LivekitServer) debugGoroutines(w http.ResponseWriter, _ *http.Request) 
 }
 
 func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
-	s.roomManager.RLock()
+	s.roomManager.lock.RLock()
 	info := make([]map[string]interface{}, 0, len(s.roomManager.rooms))
 	for _, room := range s.roomManager.rooms {
 		info = append(info, room.DebugInfo())
 	}
-	s.roomManager.RUnlock()
+	s.roomManager.lock.RUnlock()
 
 	b, err := json.Marshal(info)
 	if err != nil {
