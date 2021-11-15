@@ -504,14 +504,14 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 
 // signal connection methods
 
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []types.Participant, iceServers []*livekit.ICEServer) error {
+func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
 				Participant:       p.ToProto(),
-				OtherParticipants: ToProtoParticipants(otherParticipants),
+				OtherParticipants: otherParticipants,
 				ServerVersion:     version.Version,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary

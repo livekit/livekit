@@ -199,10 +199,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	r.participantOpts[participant.Identity()] = opts
 
 	// gather other participants and send join response
-	otherParticipants := make([]types.Participant, 0, len(r.participants))
+	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p)
+			otherParticipants = append(otherParticipants, p.ToProto())
 		}
 	}
 

@@ -3,12 +3,14 @@ package types
 import (
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/sfu"
+
 	livekit "github.com/livekit/protocol/proto"
+
+	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -48,7 +50,7 @@ type Participant interface {
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant) (int, error)
 	RemoveSubscriber(peerId string)
-	SendJoinResponse(info *livekit.Room, otherParticipants []Participant, iceServers []*livekit.ICEServer) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
