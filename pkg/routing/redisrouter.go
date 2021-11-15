@@ -185,6 +185,7 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName string, msg *li
 	if err != nil {
 		return err
 	}
+	msg.ParticipantKey = participantKey(roomName, "")
 	return r.WriteNodeRTC(ctx, node.Id, msg)
 }
 

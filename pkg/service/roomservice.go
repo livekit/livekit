@@ -64,7 +64,6 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	if err := s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
-		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
@@ -187,7 +186,6 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
 	err := s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
-		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
 		},
@@ -212,7 +210,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	room.Metadata = req.Metadata
 
 	err = s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
-		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
 		},
@@ -235,8 +232,4 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 	}
 
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
-}
-
-func (s *RoomService) roomParticipantKey(room string) string {
-	return room + "|"
 }
