@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -27,10 +28,15 @@ const (
 )
 
 type Room struct {
+	sync.RWMutex
+
 	Room   *livekit.Room
 	Logger logger.Logger
-	config WebRTCConfig
-	lock   sync.RWMutex
+
+	config      WebRTCConfig
+	audioConfig *config.AudioConfig
+	telemetry   *telemetry.TelemetryService
+
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -42,11 +48,6 @@ type Room struct {
 	leftAt    atomic.Value
 	closed    chan struct{}
 	closeOnce sync.Once
-
-	// for active speaker updates
-	audioConfig *config.AudioConfig
-
-	telemetry *telemetry.TelemetryService
 
 	onParticipantChanged func(p types.Participant)
 	onMetadataUpdate     func(metadata string)
@@ -66,7 +67,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		telemetry:       telemetry,
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize, logr.Logger{}),
 		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
@@ -83,14 +84,14 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 }
 
 func (r *Room) GetParticipant(identity string) types.Participant {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.RLock()
+	defer r.RUnlock()
 	return r.participants[identity]
 }
 
 func (r *Room) GetParticipants() []types.Participant {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.RLock()
+	defer r.RUnlock()
 	participants := make([]types.Participant, 0, len(r.participants))
 	for _, p := range r.participants {
 		participants = append(participants, p)
@@ -145,8 +146,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return ErrRoomClosed
 	}
 
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.Lock()
+	defer r.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
@@ -251,13 +252,13 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 }
 
 func (r *Room) RemoveParticipant(identity string) {
-	r.lock.Lock()
+	r.Lock()
 	p, ok := r.participants[identity]
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 	}
-	r.lock.Unlock()
+	r.Unlock()
 	if !ok {
 		return
 	}
@@ -274,11 +275,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	// close participant as well
 	_ = p.Close()
 
-	r.lock.RLock()
+	r.RLock()
 	if len(r.participants) == 0 {
 		r.leftAt.Store(time.Now().Unix())
 	}
-	r.lock.RUnlock()
+	r.RUnlock()
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {
@@ -334,14 +335,14 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	r.lock.RLock()
+	r.RLock()
 	visibleParticipants := 0
 	for _, p := range r.participants {
 		if !p.Hidden() {
 			visibleParticipants++
 		}
 	}
-	r.lock.RUnlock()
+	r.RUnlock()
 
 	if visibleParticipants > 0 {
 		return
@@ -435,8 +436,8 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, true)
 
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.RLock()
+	defer r.RUnlock()
 
 	// subscribe all existing participants to this PublishedTrack
 	for _, existingParticipant := range r.participants {
@@ -515,9 +516,9 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 }
 
 func (r *Room) subscribeToExistingTracks(p types.Participant) {
-	r.lock.RLock()
+	r.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
-	r.lock.RUnlock()
+	r.RUnlock()
 	if !shouldSubscribe {
 		return
 	}
@@ -544,10 +545,10 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
-	r.lock.Lock()
+	r.Lock()
 	updatedAt := time.Now()
 	updates := ToProtoParticipants([]types.Participant{p})
-	r.lock.Unlock()
+	r.Unlock()
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant

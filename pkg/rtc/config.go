@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/pion/ice/v2"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (
@@ -28,7 +28,7 @@ type WebRTCConfig struct {
 }
 
 type ReceiverConfig struct {
-	packetBufferSize int
+	PacketBufferSize int
 	maxBitrate       uint64
 }
 
@@ -116,7 +116,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		Configuration: c,
 		SettingEngine: s,
 		Receiver: ReceiverConfig{
-			packetBufferSize: rtcConf.PacketBufferSize,
+			PacketBufferSize: rtcConf.PacketBufferSize,
 			maxBitrate:       rtcConf.MaxBitrate,
 		},
 		UDPMux:         udpMux,
