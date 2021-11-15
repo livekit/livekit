@@ -18,7 +18,7 @@ type RoomService struct {
 	roomStore     ReadRoomStore
 }
 
-func NewRoomService(ra RoomAllocator, rs ReadRoomStore, router routing.MessageRouter) (svc *RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs ReadRoomStore, router routing.MessageRouter) (svc livekit.RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,
