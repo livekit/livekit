@@ -168,7 +168,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return connectionId, sink, resChan, nil
 }
 
-func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	pkey := participantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
@@ -180,7 +180,15 @@ func (r *RedisRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
-func (r *RedisRouter) WriteRTCNodeMessage(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error {
+	node, err := r.GetNodeForRoom(ctx, roomName)
+	if err != nil {
+		return err
+	}
+	return r.WriteNodeRTC(ctx, node.Id, msg)
+}
+
+func (r *RedisRouter) WriteNodeRTC(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
 	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, msg.ParticipantKey)
 	return r.writeRTCMessage(rtcSink, msg)
 }
@@ -319,7 +327,7 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically seconds
 		select {
 		case <-time.After(statsUpdateInterval):
-			r.WriteRTCNodeMessage(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
+			_ = r.WriteNodeRTC(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
 				Message: &livekit.RTCNodeMessage_KeepAlive{},
 			})
 		case <-r.ctx.Done():

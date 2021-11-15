@@ -62,19 +62,13 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	// if the room is currently active, RTC node needs to disconnect clients
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
 
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	if err := s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
 		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -192,13 +186,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 }
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
-	// here we are using any user's identity, due to how it works with routing
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	err := s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
 		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
@@ -223,12 +211,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	room.Metadata = req.Metadata
 
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	err = s.router.WriteRoomRTC(ctx, req.Room, &livekit.RTCNodeMessage{
 		ParticipantKey: s.roomParticipantKey(req.Room),
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
@@ -251,7 +234,7 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 		return err
 	}
 
-	return s.router.WriteRTCMessage(ctx, room, identity, msg)
+	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
 }
 
 func (s *RoomService) roomParticipantKey(room string) string {

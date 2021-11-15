@@ -52,6 +52,7 @@ type Router interface {
 
 	ListNodes() ([]*livekit.Node, error)
 
+	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName, nodeId string) error
 	ClearRoomState(ctx context.Context, roomName string) error
 
@@ -61,14 +62,13 @@ type Router interface {
 }
 
 type MessageRouter interface {
-	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
-
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
-	// WriteRTCMessage sends a message to the RTC node
-	WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
-	WriteRTCNodeMessage(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
+	// Write a message to a participant, room, or node
+	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error
+	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)

@@ -110,7 +110,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return pi.Identity, reqChan, resChan, nil
 }
 
-func (r *LocalRouter) WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
@@ -119,7 +119,11 @@ func (r *LocalRouter) WriteRTCMessage(ctx context.Context, roomName, identity st
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
-func (r *LocalRouter) WriteRTCNodeMessage(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName string, msg *livekit.RTCNodeMessage) error {
+	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
+}
+
+func (r *LocalRouter) WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
