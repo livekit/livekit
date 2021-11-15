@@ -88,7 +88,7 @@ type Buffer struct {
 
 	// callbacks
 	onClose      func()
-	onAudioLevel func(level uint8)
+	onAudioLevel func(level uint8, durationMs uint32)
 	feedbackCB   func([]rtcp.Packet)
 	feedbackTWCC func(sn uint16, timeNS int64, marker bool)
 
@@ -382,11 +382,14 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	}
 	b.lastTransit = transit
 
-	if b.audioLevel {
+	if b.audioLevel && headPkt {
 		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
-				b.onAudioLevel(ext.Level)
+				duration := (int64(p.Timestamp) - int64(latestTimestamp)) * 1e3 / int64(b.clockRate)
+				if duration > 0 {
+					b.onAudioLevel(ext.Level, uint32(duration))
+				}
 			}
 		}
 	}
@@ -607,7 +610,7 @@ func (b *Buffer) OnFeedback(fn func(fb []rtcp.Packet)) {
 	b.feedbackCB = fn
 }
 
-func (b *Buffer) OnAudioLevel(fn func(level uint8)) {
+func (b *Buffer) OnAudioLevel(fn func(level uint8, durationMs uint32)) {
 	b.onAudioLevel = fn
 }
 

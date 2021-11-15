@@ -344,8 +344,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
-		buff.OnAudioLevel(func(level uint8) {
-			t.audioLevel.Observe(level)
+		buff.OnAudioLevel(func(level uint8, duration uint32) {
+			t.audioLevel.Observe(level, duration)
 		})
 	} else if t.Kind() == livekit.TrackType_VIDEO {
 		if twcc != nil {
