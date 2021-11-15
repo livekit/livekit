@@ -15,10 +15,10 @@ import (
 type RoomService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	roomStore     ReadRoomStore
+	roomStore     RORoomStore
 }
 
-func NewRoomService(ra RoomAllocator, rs ReadRoomStore, router routing.MessageRouter) (svc livekit.RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs RORoomStore, router routing.MessageRouter) (svc livekit.RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,

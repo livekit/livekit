@@ -12,7 +12,7 @@ import (
 // encapsulates CRUD operations for room settings
 //counterfeiter:generate . RoomStore
 type RoomStore interface {
-	ReadRoomStore
+	RORoomStore
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)
@@ -26,7 +26,7 @@ type RoomStore interface {
 	DeleteParticipant(ctx context.Context, roomName, identity string) error
 }
 
-type ReadRoomStore interface {
+type RORoomStore interface {
 	LoadRoom(ctx context.Context, name string) (*livekit.Room, error)
 	ListRooms(ctx context.Context) ([]*livekit.Room, error)
 

@@ -27,7 +27,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createRedisClient,
 		createMessageBus,
 		createStore,
-		wire.Bind(new(ReadRoomStore), new(RoomStore)),
+		wire.Bind(new(RORoomStore), new(RoomStore)),
 		createKeyProvider,
 		createWebhookNotifier,
 		routing.CreateRouter,
