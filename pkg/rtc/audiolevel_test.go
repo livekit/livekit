@@ -60,6 +60,6 @@ func TestAudioLevel(t *testing.T) {
 
 func observeSamples(a *rtc.AudioLevel, level uint8, count int) {
 	for i := 0; i < count; i++ {
-		a.Observe(level)
+		a.Observe(level, 20)
 	}
 }
