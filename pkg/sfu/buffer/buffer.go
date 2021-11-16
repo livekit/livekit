@@ -123,11 +123,10 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool, logger logr.Logger) *Buffer {
 	return b
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, o Options) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, o Options) {
 	b.Lock()
 	defer b.Unlock()
 
-	codec := params.Codecs[0]
 	b.clockRate = codec.ClockRate
 	b.maxBitrate = o.MaxBitRate
 	b.mime = strings.ToLower(codec.MimeType)

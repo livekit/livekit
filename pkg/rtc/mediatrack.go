@@ -399,7 +399,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.simulcasted.TrySet(true)
 	}
 
-	buff.Bind(receiver.GetParameters(), buffer.Options{
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
 }
