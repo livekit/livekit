@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	// number of audio frames for observe window
-	observeDuration  = 500 // 500ms matching default UpdateInterval
+	// duration of audio frames for observe window
+	observeDuration  = 500 // ms
 	silentAudioLevel = 127
 )
 
@@ -49,8 +49,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 	if l.observedDuration >= observeDuration {
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
-			const invObserveTimestamp = 1.0 / observeDuration
-			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)*invObserveTimestamp))
+			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(observeDuration)))
 			atomic.StoreUint32(&l.currentLevel, level)
 		} else {
 			atomic.StoreUint32(&l.currentLevel, silentAudioLevel)

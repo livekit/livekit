@@ -382,7 +382,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	}
 	b.lastTransit = transit
 
-	if b.audioLevel && headPkt {
+	if b.audioLevel {
 		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
