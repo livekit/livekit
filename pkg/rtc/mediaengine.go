@@ -12,15 +12,14 @@ const (
 	frameMarking = "urn:ietf:params:rtp-hdrext:framemarking"
 )
 
-func createPubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) {
-	me := &webrtc.MediaEngine{}
+func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec) error {
 	opusCodec := webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: nil}
 	if isCodecEnabled(codecs, opusCodec) {
 		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
 			RTPCodecCapability: opusCodec,
 			PayloadType:        111,
 		}, webrtc.RTPCodecTypeAudio); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -57,11 +56,18 @@ func createPubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) 
 	} {
 		if isCodecEnabled(codecs, codec.RTPCodecCapability) {
 			if err := me.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
+	return nil
+}
 
+func createPubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) {
+	me := &webrtc.MediaEngine{}
+	if err := registerCodecs(me, codecs); err != nil {
+		return nil, err
+	}
 	for _, extension := range []string{
 		sdp.SDESMidURI,
 		sdp.SDESRTPStreamIDURI,
@@ -85,8 +91,11 @@ func createPubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) 
 	return me, nil
 }
 
-func createSubMediaEngine() (*webrtc.MediaEngine, error) {
+func createSubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) {
 	me := &webrtc.MediaEngine{}
+	if err := registerCodecs(me, codecs); err != nil {
+		return nil, err
+	}
 
 	for _, extension := range []string{
 		sdp.ABSSendTimeURI,
