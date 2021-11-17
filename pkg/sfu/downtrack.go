@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,10 +50,17 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
+	ErrNoRequiredBuff                    = errors.New("buff size if less than required")
 )
 
 var (
 	VP8KeyFrame1x1 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0b, 0xc7, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x3f, 0x82, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xe6, 0xb5, 0x00}
+
+	H264KeyFrame2x2SPS = []byte{0x67, 0x42, 0xc0, 0x1f, 0x0f, 0xd9, 0x1f, 0x88, 0x88, 0x84, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x60, 0xc9, 0x20}
+	H264KeyFrame2x2PPS = []byte{0x68, 0x87, 0xcb, 0x83, 0xcb, 0x20}
+	H264KeyFrame2x2IDR = []byte{0x65, 0x88, 0x84, 0x0a, 0xf2, 0x62, 0x80, 0x00, 0xa7, 0xbe}
+
+	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
 type simulcastTrackHelpers struct {
@@ -1074,15 +1082,14 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 	}
 
 	// LK-TODO: Support other video codecs
-	if d.Kind() == webrtc.RTPCodecTypeAudio || d.mime != "video/vp8" {
+	if d.Kind() == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
 		return nil
 	}
 
 	// send a number of blank frames just in case there is loss.
 	// Intentionally ignoring check for mute or bandwidth constrained mute
 	// as this is used to clear client side buffer.
-	i := 0
-	for {
+	for i := 0; i < RTPBlankFramesMax; {
 		frameEndNeeded := false
 		if !d.munger.IsOnFrameBoundary() {
 			frameEndNeeded = true
@@ -1113,40 +1120,64 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			return err
 		}
 
-		blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
-		if err != nil {
-			return err
+		switch d.mime {
+		case "video/vp8":
+			err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
+		case "video/h264":
+			err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
+		default:
+			return nil
 		}
 
-		// 1x1 key frame
-		// Used even when closing out a previous frame. Looks like receivers
-		// do not care about content (it will probably end up being an undecodable
-		// frame, but that should be okay as there are key frames following)
-		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
-		vp8Header := payload[:blankVP8.HeaderSize]
-		err = blankVP8.MarshalTo(vp8Header)
-		if err != nil {
-			return err
-		}
-
-		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
-
-		_, err = d.writeStream.WriteRTP(&hdr, payload)
-		if err != nil {
-			return err
-		}
 		if !frameEndNeeded {
 			i++
 		}
 
-		if i >= RTPBlankFramesMax {
-			break
-		}
 	}
 
 	return nil
 }
 
+func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
+	blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+	if err != nil {
+		return err
+	}
+
+	// 1x1 key frame
+	// Used even when closing out a previous frame. Looks like receivers
+	// do not care about content (it will probably end up being an undecodable
+	// frame, but that should be okay as there are key frames following)
+	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
+	vp8Header := payload[:blankVP8.HeaderSize]
+	err = blankVP8.MarshalTo(vp8Header)
+	if err != nil {
+		return err
+	}
+
+	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
+
+	_, err = d.writeStream.WriteRTP(hdr, payload)
+	return err
+}
+
+func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
+	// TODO - Jie Zeng
+	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
+	// if client only support packetization-mode 0, use single nalu unit packet
+	buf := make([]byte, 1462)
+	offset := 0
+	buf[0] = 0x18 // STAP-A
+	offset++
+	for _, payload := range H264KeyFrame2x2 {
+		binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+		offset += 2
+		copy(buf[offset:offset+len(payload)], payload)
+		offset += len(payload)
+	}
+	_, err := d.writeStream.WriteRTP(hdr, buf[:offset])
+	return err
+}
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
