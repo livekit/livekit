@@ -154,7 +154,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
 				{Mime: webrtc.MimeTypeVP8},
-				// {Mime: webrtc.MimeTypeH264},
+				{Mime: webrtc.MimeTypeH264},
 				// {Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,
