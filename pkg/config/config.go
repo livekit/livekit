@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -31,6 +32,7 @@ type Config struct {
 	Keys           map[string]string  `yaml:"keys"`
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
+	Limit          LimitConfig        `yaml:"limit"`
 
 	Development bool `yaml:"development"`
 }
@@ -123,6 +125,10 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon"`
 }
 
+type LimitConfig struct {
+	NumTracks int32 `yaml:"num_tracks"`
+}
+
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	// start with defaults
 	conf := &Config{
@@ -203,6 +209,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if conf.Limit.NumTracks == 0 {
+		conf.Limit.NumTracks = 200 * int32(runtime.NumCPU())
 	}
 
 	return conf, nil

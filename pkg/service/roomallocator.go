@@ -77,6 +77,11 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 
 	// if already assigned and still available, keep it on that node
 	if err == nil && selector.IsAvailable(existing) {
+		// if node hosting the room is full, deny entry
+		if r.limitsReached(existing.Stats) {
+			return nil, routing.ErrNodeLimitReached
+		}
+
 		return rm, nil
 	}
 
@@ -103,6 +108,19 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	return rm, nil
+}
+
+func (r *StandardRoomAllocator) limitsReached(nodeStats *livekit.NodeStats) bool {
+	if nodeStats == nil {
+		return false
+	}
+
+	limitConfig := r.config.Limit
+	if limitConfig.NumTracks > 0 && limitConfig.NumTracks <= nodeStats.NumTracksIn+nodeStats.NumTracksOut {
+		return true
+	}
+	// TODO: more node limits, like bandwidth, etc
+	return false
 }
 
 func applyDefaultRoomConfig(room *livekit.Room, conf *config.RoomConfig) {

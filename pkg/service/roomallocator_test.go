@@ -15,24 +15,42 @@ import (
 )
 
 func TestCreateRoom(t *testing.T) {
-	ra, conf := newTestRoomAllocator(t)
-
 	t.Run("ensure default room settings are applied", func(t *testing.T) {
+		conf, err := config.NewConfig("", nil)
+		require.NoError(t, err)
+
+		node, err := routing.NewLocalNode(conf)
+		require.NoError(t, err)
+
+		ra, conf := newTestRoomAllocator(t, conf, node)
+
 		room, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"})
 		require.NoError(t, err)
 		require.Equal(t, conf.Room.EmptyTimeout, room.EmptyTimeout)
 		require.NotEmpty(t, room.EnabledCodecs)
 	})
+
+	t.Run("reject new participants when node limits have been reached", func(t *testing.T) {
+		conf, err := config.NewConfig("", nil)
+		require.NoError(t, err)
+		conf.Limit.NumTracks = 10
+
+		node, err := routing.NewLocalNode(conf)
+		require.NoError(t, err)
+		node.Stats.NumTracksIn = 100
+		node.Stats.NumTracksOut = 100
+
+		ra, conf := newTestRoomAllocator(t, conf, node)
+
+		_, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
+		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
+	})
 }
 
-func newTestRoomAllocator(t *testing.T) (service.RoomAllocator, *config.Config) {
+func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node) (service.RoomAllocator, *config.Config) {
 	store := &servicefakes.FakeRoomStore{}
 	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
-	conf, err := config.NewConfig("", nil)
-	require.NoError(t, err)
-	node, err := routing.NewLocalNode(conf)
-	require.NoError(t, err)
 
 	router.GetNodeForRoomReturns(node, nil)
 
