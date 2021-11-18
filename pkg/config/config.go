@@ -13,7 +13,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultMaxNumTracks = 4000
+const (
+	defaultLimitNumTracksPerCPU int32   = 400
+	defaultLimitMaxNumTracks    int32   = 8000
+	defaultLimitBytesPerSec     float32 = 5_000_000
+)
 
 var DefaultStunServers = []string{
 	"stun.l.google.com:19302",
@@ -128,7 +132,8 @@ type RegionConfig struct {
 }
 
 type LimitConfig struct {
-	NumTracks int32 `yaml:"num_tracks"`
+	NumTracks   int32   `yaml:"num_tracks"`
+	BytesPerSec float32 `yaml:"bytes_per_sec"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -214,10 +219,14 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	}
 
 	if conf.Limit.NumTracks == 0 {
-		conf.Limit.NumTracks = 200 * int32(runtime.NumCPU())
-		if conf.Limit.NumTracks > defaultMaxNumTracks {
-			conf.Limit.NumTracks = defaultMaxNumTracks
+		conf.Limit.NumTracks = defaultLimitNumTracksPerCPU * int32(runtime.NumCPU())
+		if conf.Limit.NumTracks > defaultLimitMaxNumTracks {
+			conf.Limit.NumTracks = defaultLimitMaxNumTracks
 		}
+	}
+
+	if conf.Limit.BytesPerSec == 0 {
+		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
 	}
 
 	return conf, nil

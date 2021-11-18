@@ -30,7 +30,7 @@ func TestCreateRoom(t *testing.T) {
 		require.NotEmpty(t, room.EnabledCodecs)
 	})
 
-	t.Run("reject new participants when node limits have been reached", func(t *testing.T) {
+	t.Run("reject new participants when track limit has been reached", func(t *testing.T) {
 		conf, err := config.NewConfig("", nil)
 		require.NoError(t, err)
 		conf.Limit.NumTracks = 10
@@ -39,6 +39,22 @@ func TestCreateRoom(t *testing.T) {
 		require.NoError(t, err)
 		node.Stats.NumTracksIn = 100
 		node.Stats.NumTracksOut = 100
+
+		ra, conf := newTestRoomAllocator(t, conf, node)
+
+		_, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
+		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
+	})
+
+	t.Run("reject new participants when bandwidth limit has been reached", func(t *testing.T) {
+		conf, err := config.NewConfig("", nil)
+		require.NoError(t, err)
+		conf.Limit.BytesPerSec = 100
+
+		node, err := routing.NewLocalNode(conf)
+		require.NoError(t, err)
+		node.Stats.BytesInPerSec = 1000
+		node.Stats.BytesOutPerSec = 1000
 
 		ra, conf := newTestRoomAllocator(t, conf, node)
 

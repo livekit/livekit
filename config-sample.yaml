@@ -139,6 +139,9 @@ keys:
 #       lon: -123.0674908379146
 
 # # node limits
+# # set to -1 to disable a limit
 # limit:
-#   # default: 200 tracks total per CPU
-#   num_tracks: 200
+#   # defaults to 400 tracks in & out per CPU, up to 8000
+#   num_tracks: -1
+#   # defaults to 5_000_000
+#   bytes_per_sec: 5_000_000

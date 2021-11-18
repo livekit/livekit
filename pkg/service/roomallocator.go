@@ -120,7 +120,9 @@ func (r *StandardRoomAllocator) limitsReached(nodeStats *livekit.NodeStats) bool
 	if limitConfig.NumTracks > 0 && limitConfig.NumTracks <= nodeStats.NumTracksIn+nodeStats.NumTracksOut {
 		return true
 	}
-	// TODO: more node limits, like bandwidth, etc
+	if limitConfig.BytesPerSec > 0 && limitConfig.BytesPerSec <= nodeStats.BytesInPerSec + nodeStats.BytesOutPerSec {
+		return true
+	}
 	return false
 }
 
