@@ -137,3 +137,8 @@ keys:
 #     - name: us-west-2
 #       lat: 44.19434095976287
 #       lon: -123.0674908379146
+
+# # node limits
+# limit:
+#   # default: 200 tracks total per CPU
+#   num_tracks: 200
