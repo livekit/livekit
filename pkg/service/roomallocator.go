@@ -115,6 +115,7 @@ func (r *StandardRoomAllocator) limitsReached(nodeStats *livekit.NodeStats) bool
 		return false
 	}
 
+	// TODO: check remote node configured limit, instead of this node's config
 	limitConfig := r.config.Limit
 	if limitConfig.NumTracks > 0 && limitConfig.NumTracks <= nodeStats.NumTracksIn+nodeStats.NumTracksOut {
 		return true
