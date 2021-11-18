@@ -13,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const defaultMaxNumTracks = 4000
+
 var DefaultStunServers = []string{
 	"stun.l.google.com:19302",
 	"stun1.l.google.com:19302",
@@ -213,6 +215,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 
 	if conf.Limit.NumTracks == 0 {
 		conf.Limit.NumTracks = 200 * int32(runtime.NumCPU())
+		if conf.Limit.NumTracks > defaultMaxNumTracks {
+			conf.Limit.NumTracks = defaultMaxNumTracks
+		}
 	}
 
 	return conf, nil
