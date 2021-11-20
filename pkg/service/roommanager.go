@@ -253,9 +253,12 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err := room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		logger.Errorw("could not join room", err)
 		return
+	}
+	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
+		logger.Errorw("could not store participant", err)
 	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
