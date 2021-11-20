@@ -21,7 +21,7 @@ type TelemetryService struct {
 	workers map[string]*StatsWorker
 
 	analyticsEnabled bool
-	authToken        string
+	analyticsKey     string
 	nodeID           string
 	events           livekit.AnalyticsRecorderService_IngestEventsClient
 	stats            livekit.AnalyticsRecorderService_IngestStatsClient
@@ -34,7 +34,7 @@ func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
 		workers:     make(map[string]*StatsWorker),
 
 		analyticsEnabled: false, // TODO
-		authToken:        "",
+		analyticsKey:     "",
 		nodeID:           "",
 	}
 }
@@ -103,7 +103,7 @@ func (t *TelemetryService) Report(stats []*livekit.AnalyticsStat) {
 func (t *TelemetryService) sendStats(stats []*livekit.AnalyticsStat) {
 	if t.analyticsEnabled {
 		for _, stat := range stats {
-			stat.AuthToken = t.authToken
+			stat.AnalyticsKey = t.analyticsKey
 			stat.Node = t.nodeID
 		}
 
