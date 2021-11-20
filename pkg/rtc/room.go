@@ -222,7 +222,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
-	if participant.ProtocolVersion().SubscriberAsPrimary() {
+	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
 		participant.Negotiate()
 	}

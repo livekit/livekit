@@ -155,7 +155,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	primaryPC := p.publisher.pc
 
-	if p.ProtocolVersion().SubscriberAsPrimary() {
+	if p.SubscriberAsPrimary() {
 		primaryPC = p.subscriber.pc
 		ordered := true
 		// also create data channels for subs
@@ -505,7 +505,11 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 
 // signal connection methods
 
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error {
+func (p *ParticipantImpl) SendJoinResponse(
+	roomInfo *livekit.Room,
+	otherParticipants []*livekit.ParticipantInfo,
+	iceServers []*livekit.ICEServer,
+) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
@@ -516,7 +520,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 				ServerVersion:     version.Version,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary
-				SubscriberPrimary: p.ProtocolVersion().SubscriberAsPrimary(),
+				SubscriberPrimary: p.SubscriberAsPrimary(),
 			},
 		},
 	})
@@ -574,13 +578,13 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 
 	var dc *webrtc.DataChannel
 	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.ProtocolVersion().SubscriberAsPrimary() {
+		if p.SubscriberAsPrimary() {
 			dc = p.reliableDCSub
 		} else {
 			dc = p.reliableDC
 		}
 	} else {
-		if p.ProtocolVersion().SubscriberAsPrimary() {
+		if p.SubscriberAsPrimary() {
 			dc = p.lossyDCSub
 		} else {
 			dc = p.lossyDC
@@ -751,6 +755,10 @@ func (p *ParticipantImpl) CanPublishData() bool {
 
 func (p *ParticipantImpl) Hidden() bool {
 	return p.params.Hidden
+}
+
+func (p *ParticipantImpl) SubscriberAsPrimary() bool {
+	return p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
 }
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {

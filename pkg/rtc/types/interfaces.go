@@ -67,6 +67,7 @@ type Participant interface {
 	CanSubscribe() bool
 	CanPublishData() bool
 	Hidden() bool
+	SubscriberAsPrimary() bool
 
 	Start()
 	Close() error
