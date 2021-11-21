@@ -446,6 +446,16 @@ type FakeParticipant struct {
 	stateReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_State
 	}
+	SubscriberAsPrimaryStub        func() bool
+	subscriberAsPrimaryMutex       sync.RWMutex
+	subscriberAsPrimaryArgsForCall []struct {
+	}
+	subscriberAsPrimaryReturns struct {
+		result1 bool
+	}
+	subscriberAsPrimaryReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	SubscriberMediaEngineStub        func() *webrtc.MediaEngine
 	subscriberMediaEngineMutex       sync.RWMutex
 	subscriberMediaEngineArgsForCall []struct {
@@ -2864,6 +2874,59 @@ func (fake *FakeParticipant) StateReturnsOnCall(i int, result1 livekit.Participa
 	}{result1}
 }
 
+func (fake *FakeParticipant) SubscriberAsPrimary() bool {
+	fake.subscriberAsPrimaryMutex.Lock()
+	ret, specificReturn := fake.subscriberAsPrimaryReturnsOnCall[len(fake.subscriberAsPrimaryArgsForCall)]
+	fake.subscriberAsPrimaryArgsForCall = append(fake.subscriberAsPrimaryArgsForCall, struct {
+	}{})
+	stub := fake.SubscriberAsPrimaryStub
+	fakeReturns := fake.subscriberAsPrimaryReturns
+	fake.recordInvocation("SubscriberAsPrimary", []interface{}{})
+	fake.subscriberAsPrimaryMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryCallCount() int {
+	fake.subscriberAsPrimaryMutex.RLock()
+	defer fake.subscriberAsPrimaryMutex.RUnlock()
+	return len(fake.subscriberAsPrimaryArgsForCall)
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryCalls(stub func() bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = stub
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryReturns(result1 bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = nil
+	fake.subscriberAsPrimaryReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryReturnsOnCall(i int, result1 bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = nil
+	if fake.subscriberAsPrimaryReturnsOnCall == nil {
+		fake.subscriberAsPrimaryReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.subscriberAsPrimaryReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeParticipant) SubscriberMediaEngine() *webrtc.MediaEngine {
 	fake.subscriberMediaEngineMutex.Lock()
 	ret, specificReturn := fake.subscriberMediaEngineReturnsOnCall[len(fake.subscriberMediaEngineArgsForCall)]
@@ -3124,6 +3187,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.startMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
+	fake.subscriberAsPrimaryMutex.RLock()
+	defer fake.subscriberAsPrimaryMutex.RUnlock()
 	fake.subscriberMediaEngineMutex.RLock()
 	defer fake.subscriberMediaEngineMutex.RUnlock()
 	fake.subscriberPCMutex.RLock()
