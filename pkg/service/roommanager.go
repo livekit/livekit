@@ -260,11 +260,25 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
 		logger.Errorw("could not store participant", err)
 	}
+	// update roomstore with new numParticipants
+	if !participant.Hidden() {
+		err = r.roomStore.StoreRoom(ctx, room.Room)
+		if err != nil {
+			logger.Errorw("could not store room", err)
+		}
+	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
 	participant.OnClose(func(p types.Participant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			logger.Errorw("could not delete participant", err)
+		}
+		// update roomstore with new numParticipants
+		if !participant.Hidden() {
+			err = r.roomStore.StoreRoom(ctx, room.Room)
+			if err != nil {
+				logger.Errorw("could not store room", err)
+			}
 		}
 		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
 	})

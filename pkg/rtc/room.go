@@ -161,6 +161,9 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
+	if !participant.Hidden() {
+		r.Room.NumParticipants++
+	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -256,7 +259,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
+		if !p.Hidden() {
+			r.Room.NumParticipants--
+		}
 	}
+
 	r.lock.Unlock()
 	if !ok {
 		return
