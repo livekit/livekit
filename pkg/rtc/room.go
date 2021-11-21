@@ -259,9 +259,9 @@ func (r *Room) RemoveParticipant(identity string) {
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
-	}
-	if !p.Hidden() {
-		r.Room.NumParticipants--
+		if !p.Hidden() {
+			r.Room.NumParticipants--
+		}
 	}
 
 	r.lock.Unlock()
