@@ -263,6 +263,9 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
 	participant.OnClose(func(p types.Participant) {
+		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
+			logger.Errorw("could not delete participant", err)
+		}
 		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
 	})
 
@@ -298,20 +301,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName string) (*rt
 		logger.Infow("room closed")
 	})
 	room.OnMetadataUpdate(func(metadata string) {
-		err := r.roomStore.StoreRoom(ctx, room.Room)
-		if err != nil {
+		if err := r.roomStore.StoreRoom(ctx, room.Room); err != nil {
 			logger.Errorw("could not handle metadata update", err)
 		}
 	})
 	room.OnParticipantChanged(func(p types.Participant) {
-		var err error
-		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
-			err = r.roomStore.DeleteParticipant(ctx, roomName, p.Identity())
-		} else {
-			err = r.roomStore.StoreParticipant(ctx, roomName, p.ToProto())
-		}
-		if err != nil {
-			logger.Errorw("could not handle participant change", err)
+		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
+			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
+				logger.Errorw("could not handle participant change", err)
+			}
 		}
 	})
 	r.lock.Lock()
