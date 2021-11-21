@@ -312,7 +312,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName string) (*rt
 			}
 		}
 		// update roomstore with new numParticipants
-		if p.State() == livekit.ParticipantInfo_JOINED || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if !p.Hidden() && (p.State() == livekit.ParticipantInfo_JOINED || p.State() == livekit.ParticipantInfo_DISCONNECTED) {
 			err = r.roomStore.StoreRoom(ctx, room.Room)
 			if err != nil {
 				logger.Errorw("could not handle room update triggered by participant change", err)
