@@ -215,7 +215,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 			if dt != nil {
 				if (bestQualityFirst && layer > dt.CurrentSpatialLayer()) ||
 					(!bestQualityFirst && layer < dt.CurrentSpatialLayer()) {
-					_ = dt.SwitchSpatialLayer(layer, false)
+					_ = dt.switchSpatialLayer(layer)
 				}
 			}
 		}
@@ -281,8 +281,6 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 		w.upTrackMu.RUnlock()
 
 		track.SetInitialLayers(int32(layer), 2)
-		track.maxSpatialLayer.set(2)
-		track.maxTemporalLayer.set(2)
 		track.lastSSRC.set(w.SSRC(layer))
 		track.trackType = SimulcastDownTrack
 		track.payload = packetFactory.Get().(*[]byte)
