@@ -160,11 +160,18 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, p
 		codec:         c,
 		munger:        NewMunger(),
 	}
+
 	if strings.ToLower(c.MimeType) == "video/vp8" {
 		d.vp8Munger = NewVP8Munger()
 	}
-	d.maxSpatialLayer.set(2)
-	d.maxTemporalLayer.set(2)
+
+	if d.Kind() == webrtc.RTPCodecTypeVideo {
+		d.maxSpatialLayer.set(2)
+		d.maxTemporalLayer.set(2)
+	} else {
+		d.maxSpatialLayer.set(-1)
+		d.maxTemporalLayer.set(-1)
+	}
 
 	return d, nil
 }
@@ -483,6 +490,10 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) error {
 		return ErrSpatialNotSupported
 	}
 
+	if spatialLayer == d.MaxSpatialLayer() {
+		return nil
+	}
+
 	d.maxSpatialLayer.set(spatialLayer)
 
 	if d.onSubscribedLayersChanged != nil {
@@ -498,6 +509,10 @@ func (d *DownTrack) MaxSpatialLayer() int32 {
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
+	if temporalLayer == d.MaxTemporalLayer() {
+		return
+	}
+
 	d.maxTemporalLayer.set(temporalLayer)
 
 	if d.onSubscribedLayersChanged != nil {
