@@ -60,6 +60,10 @@ keys:
   key1: secret1
   key2: secret2
 
+# auth details could be stored in Redis. when enabled
+key_provider: redis
+
+
 # Default room config
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
 # precedence over defaults

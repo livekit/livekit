@@ -11,5 +11,5 @@ func TestConfig_UnmarshalKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, conf.unmarshalKeys("key1: secret1"))
-	require.Equal(t, "secret1", conf.Keys["key1"])
+	require.Equal(t, "secret1", conf.KeyProvider.Keys["key1"])
 }

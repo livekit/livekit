@@ -177,6 +177,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 
 	// redis routing and store
 	s, err := service.InitializeServer(conf, currentNode)
+
 	if err != nil {
 		panic(fmt.Sprintf("could not create server: %v", err))
 	}
