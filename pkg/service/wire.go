@@ -14,7 +14,6 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
@@ -28,9 +27,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createRedisClient,
 		createMessageBus,
 		createStore,
+		wire.Bind(new(RORoomStore), new(RoomStore)),
 		createKeyProvider,
 		createWebhookNotifier,
 		routing.CreateRouter,
+		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		telemetry.NewTelemetryService,
 		NewRecordingService,
 		NewRoomAllocator,
@@ -39,7 +40,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewLocalRoomManager,
 		newTurnAuthHandler,
 		NewTurnServer,
-		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil

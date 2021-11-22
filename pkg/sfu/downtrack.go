@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,10 +50,17 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
+	ErrNoRequiredBuff                    = errors.New("buff size if less than required")
 )
 
 var (
 	VP8KeyFrame1x1 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0b, 0xc7, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x3f, 0x82, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xe6, 0xb5, 0x00}
+
+	H264KeyFrame2x2SPS = []byte{0x67, 0x42, 0xc0, 0x1f, 0x0f, 0xd9, 0x1f, 0x88, 0x88, 0x84, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x60, 0xc9, 0x20}
+	H264KeyFrame2x2PPS = []byte{0x68, 0x87, 0xcb, 0x83, 0xcb, 0x20}
+	H264KeyFrame2x2IDR = []byte{0x65, 0x88, 0x84, 0x0a, 0xf2, 0x62, 0x80, 0x00, 0xa7, 0xbe}
+
+	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
 type simulcastTrackHelpers struct {
@@ -124,6 +132,7 @@ type DownTrack struct {
 	bandwidthConstrainedMuted atomicBool
 
 	// RTCP callbacks
+	onRTCP func([]rtcp.Packet)
 	onREMB func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 
 	// simulcast layer availability change callback
@@ -132,8 +141,11 @@ type DownTrack struct {
 	// subscription change callback
 	onSubscriptionChanged func(dt *DownTrack)
 
+	// max layer change callback
+	onSubscribedLayersChanged func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)
+
 	// packet sent callback
-	onPacketSent func(dt *DownTrack, size int)
+	onPacketSent []func(dt *DownTrack, size int)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -151,6 +163,8 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, p
 	if strings.ToLower(c.MimeType) == "video/vp8" {
 		d.vp8Munger = NewVP8Munger()
 	}
+	d.maxSpatialLayer.set(2)
+	d.maxTemporalLayer.set(2)
 
 	return d, nil
 }
@@ -237,7 +251,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 }
 
 func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
-	if d.vp8Munger == nil {
+	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
 		return nil
 	}
 
@@ -463,23 +477,40 @@ func (d *DownTrack) TargetSpatialLayer() int32 {
 	return d.targetSpatialLayer.get()
 }
 
+func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) error {
+	// LK-TODO: support SVC
+	if d.trackType != SimulcastDownTrack {
+		return ErrSpatialNotSupported
+	}
+
+	d.maxSpatialLayer.set(spatialLayer)
+
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, spatialLayer, d.MaxTemporalLayer())
+	}
+
+	// LK-TODO: Remove the following when StreamAllocator is the default way
+	return d.switchSpatialLayer(spatialLayer)
+}
+
 func (d *DownTrack) MaxSpatialLayer() int32 {
 	return d.maxSpatialLayer.get()
 }
 
-// SwitchSpatialLayer switches the current layer
-func (d *DownTrack) SwitchSpatialLayer(targetLayer int32, setAsMax bool) error {
-	// LK-TODO-START
-	// This gets called directly from two places outside.
-	//   1. From livekit-server when suscriber updates TrackSetting
-	//   2. From sfu.Receiver when a new up track is added
-	// Make a method in this struct which allows setting subscriber controls.
-	// StreamAllocator needs to know about subscriber setting changes.
-	// Only the StreamAllocator should be changing forwarded layers.
-	// Make a method `SetMaxSpatialLayer()` and remove `setAsMax` from this.
-	// Trigger callback to StreamAllocator to notify subscription change
-	// in that method.
-	// LK-TODO-END
+func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
+	d.maxTemporalLayer.set(temporalLayer)
+
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, d.MaxSpatialLayer(), temporalLayer)
+	}
+}
+
+func (d *DownTrack) MaxTemporalLayer() int32 {
+	return d.maxTemporalLayer.get()
+}
+
+// switchSpatialLayer switches the current layer
+func (d *DownTrack) switchSpatialLayer(targetLayer int32) error {
 	if d.trackType != SimulcastDownTrack {
 		return ErrSpatialNotSupported
 	}
@@ -492,13 +523,6 @@ func (d *DownTrack) SwitchSpatialLayer(targetLayer int32, setAsMax bool) error {
 	}
 
 	d.targetSpatialLayer.set(targetLayer)
-	if setAsMax {
-		d.maxSpatialLayer.set(targetLayer)
-
-		if d.onSubscriptionChanged != nil {
-			d.onSubscriptionChanged(d)
-		}
-	}
 	return nil
 }
 
@@ -538,7 +562,7 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 			// Available layers change should be signalled to StreamAllocator
 			// and StreamAllocator will take care of adjusting allocations.
 			// LK-TODO-END
-			if err := d.SwitchSpatialLayer(int32(targetLayer), false); err != nil {
+			if err := d.switchSpatialLayer(int32(targetLayer)); err != nil {
 				return int32(targetLayer), err
 			}
 		}
@@ -552,31 +576,21 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 	return -1, fmt.Errorf("downtrack %s does not support simulcast", d.id)
 }
 
-func (d *DownTrack) SwitchTemporalLayer(targetLayer int32, setAsMax bool) {
-	// LK-TODO-START
-	// See note in SwitchSpatialLayer to split out setting max layer
-	// into a separate method and triggering notification to StreamAllocator.
-	// BTW, looks like `setAsMax` is not set to true at any callsite of this API
-	// LK-TODO-END
-	if d.trackType == SimulcastDownTrack {
-		layer := d.temporalLayer.get()
-		currentLayer := uint16(layer)
-		currentTargetLayer := uint16(layer >> 16)
-
-		// Don't switch until previous switch is done or canceled
-		if currentLayer != currentTargetLayer {
-			return
-		}
-
-		d.temporalLayer.set((targetLayer << 16) | int32(currentLayer))
-		if setAsMax {
-			d.maxTemporalLayer.set(targetLayer)
-
-			if d.onSubscriptionChanged != nil {
-				d.onSubscriptionChanged(d)
-			}
-		}
+func (d *DownTrack) switchTemporalLayer(targetLayer int32) {
+	if d.trackType != SimulcastDownTrack {
+		return
 	}
+
+	layer := d.temporalLayer.get()
+	currentLayer := uint16(layer)
+	currentTargetLayer := uint16(layer >> 16)
+
+	// Don't switch until previous switch is done or canceled
+	if currentLayer != currentTargetLayer {
+		return
+	}
+
+	d.temporalLayer.set((targetLayer << 16) | int32(currentLayer))
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -586,6 +600,10 @@ func (d *DownTrack) OnCloseHandler(fn func()) {
 
 func (d *DownTrack) OnBind(fn func()) {
 	d.onBind = fn
+}
+
+func (d *DownTrack) OnRTCP(fn func([]rtcp.Packet)) {
+	d.onRTCP = fn
 }
 
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
@@ -610,8 +628,12 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
 }
 
+func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)) {
+	d.onSubscribedLayersChanged = fn
+}
+
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
-	d.onPacketSent = fn
+	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
 func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, uint64) {
@@ -632,8 +654,8 @@ func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, u
 			}
 			if brs[i][j] < availableChannelCapacity {
 				d.bandwidthConstrainedMute(false) // just in case it was muted
-				d.SwitchSpatialLayer(int32(i), false)
-				d.SwitchTemporalLayer(int32(j), false)
+				d.switchSpatialLayer(int32(i))
+				d.switchTemporalLayer(int32(j))
 
 				return brs[i][j], optimalBandwidthNeeded
 			}
@@ -705,8 +727,8 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 		}
 
 		d.bandwidthConstrainedMute(false)
-		d.SwitchSpatialLayer(int32(0), false)
-		d.SwitchTemporalLayer(int32(0), false)
+		d.switchSpatialLayer(int32(0))
+		d.switchTemporalLayer(int32(0))
 		return true, brs[0][0], optimalBandwidthNeeded
 	}
 
@@ -714,7 +736,7 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 	// LK-TODO currentTemporalLayer may be outside available range because of inital value being out of range, fix it
 	nextTemporalLayer := currentTemporalLayer + 1
 	if nextTemporalLayer <= d.maxTemporalLayer.get() && brs[currentSpatialLayer][nextTemporalLayer] > 0 {
-		d.SwitchTemporalLayer(nextTemporalLayer, false)
+		d.switchTemporalLayer(nextTemporalLayer)
 		return true, brs[currentSpatialLayer][nextTemporalLayer], optimalBandwidthNeeded
 	}
 
@@ -722,8 +744,8 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 	// LK-TODO currentTemporalLayer may be outside available range because of inital value being out of range, fix it
 	nextSpatialLayer := currentSpatialLayer + 1
 	if nextSpatialLayer <= d.maxSpatialLayer.get() && brs[nextSpatialLayer][0] > 0 {
-		d.SwitchSpatialLayer(nextSpatialLayer, false)
-		d.SwitchTemporalLayer(0, false)
+		d.switchSpatialLayer(nextSpatialLayer)
+		d.switchTemporalLayer(0)
 		return true, brs[nextSpatialLayer][0], optimalBandwidthNeeded
 	}
 
@@ -769,7 +791,6 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		diff = 0
 	}
 	octets, packets := d.getSRStats()
-
 	return &rtcp.SenderReport{
 		SSRC:        d.ssrc,
 		NTPTime:     uint64(nowNTP),
@@ -898,8 +919,10 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err
@@ -1052,8 +1075,10 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 	}
 
 	_, err = d.writeStream.WriteRTP(&hdr, payload)
-	if err == nil && d.onPacketSent != nil {
-		d.onPacketSent(d, hdr.MarshalSize()+len(payload))
+	if err == nil {
+		for _, f := range d.onPacketSent {
+			f(d, hdr.MarshalSize()+len(payload))
+		}
 	}
 
 	return err
@@ -1066,15 +1091,14 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 	}
 
 	// LK-TODO: Support other video codecs
-	if d.Kind() == webrtc.RTPCodecTypeAudio || d.mime != "video/vp8" {
+	if d.Kind() == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
 		return nil
 	}
 
 	// send a number of blank frames just in case there is loss.
 	// Intentionally ignoring check for mute or bandwidth constrained mute
 	// as this is used to clear client side buffer.
-	i := 0
-	for {
+	for i := 0; i < RTPBlankFramesMax; {
 		frameEndNeeded := false
 		if !d.munger.IsOnFrameBoundary() {
 			frameEndNeeded = true
@@ -1105,50 +1129,82 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			return err
 		}
 
-		blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
-		if err != nil {
-			return err
+		switch d.mime {
+		case "video/vp8":
+			err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
+		case "video/h264":
+			err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
+		default:
+			return nil
 		}
 
-		// 1x1 key frame
-		// Used even when closing out a previous frame. Looks like receivers
-		// do not care about content (it will probably end up being an undecodable
-		// frame, but that should be okay as there are key frames following)
-		payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
-		vp8Header := payload[:blankVP8.HeaderSize]
-		err = blankVP8.MarshalTo(vp8Header)
-		if err != nil {
-			return err
-		}
-
-		copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
-
-		_, err = d.writeStream.WriteRTP(&hdr, payload)
-		if err != nil {
-			return err
-		}
 		if !frameEndNeeded {
 			i++
 		}
 
-		if i >= RTPBlankFramesMax {
-			break
-		}
 	}
 
 	return nil
 }
 
+func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
+	blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+	if err != nil {
+		return err
+	}
+
+	// 1x1 key frame
+	// Used even when closing out a previous frame. Looks like receivers
+	// do not care about content (it will probably end up being an undecodable
+	// frame, but that should be okay as there are key frames following)
+	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
+	vp8Header := payload[:blankVP8.HeaderSize]
+	err = blankVP8.MarshalTo(vp8Header)
+	if err != nil {
+		return err
+	}
+
+	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame1x1)
+
+	_, err = d.writeStream.WriteRTP(hdr, payload)
+	return err
+}
+
+func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
+	// TODO - Jie Zeng
+	// now use STAP-A to compose sps, pps, idr together, most decoder support packetization-mode 1.
+	// if client only support packetization-mode 0, use single nalu unit packet
+	buf := make([]byte, 1462)
+	offset := 0
+	buf[0] = 0x18 // STAP-A
+	offset++
+	for _, payload := range H264KeyFrame2x2 {
+		binary.BigEndian.PutUint16(buf[offset:], uint16(len(payload)))
+		offset += 2
+		copy(buf[offset:offset+len(payload)], payload)
+		offset += len(payload)
+	}
+	_, err := d.writeStream.WriteRTP(hdr, buf[:offset])
+	return err
+}
 
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	// LK-TODO - should probably handle RTCP even if muted
-	if !d.enabled.get() {
+	enabled := d.enabled.get()
+	if !enabled && d.onRTCP == nil {
 		return
 	}
 
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
 		Logger.Error(err, "Unmarshal rtcp receiver packets err")
+	}
+
+	if d.onRTCP != nil {
+		d.onRTCP(pkts)
+		if !enabled {
+			return
+		}
 	}
 
 	var fwdPkts []rtcp.Packet
@@ -1256,13 +1312,13 @@ func (d *DownTrack) handleLayerChange(maxRatePacketLoss uint8, expectedMinBitrat
 			if maxRatePacketLoss <= 5 {
 				if currentTemporalLayer < mctl && currentTemporalLayer+1 <= d.maxTemporalLayer.get() &&
 					expectedMinBitrate >= 3*cbr/4 {
-					d.SwitchTemporalLayer(currentTemporalLayer+1, false)
+					d.switchTemporalLayer(currentTemporalLayer + 1)
 					d.simulcast.switchDelay = time.Now().Add(3 * time.Second)
 				}
 				if currentTemporalLayer >= mctl && expectedMinBitrate >= 3*cbr/2 && currentSpatialLayer+1 <= d.maxSpatialLayer.get() &&
 					currentSpatialLayer+1 <= 2 {
-					if err := d.SwitchSpatialLayer(currentSpatialLayer+1, false); err == nil {
-						d.SwitchTemporalLayer(0, false)
+					if err := d.switchSpatialLayer(currentSpatialLayer + 1); err == nil {
+						d.switchTemporalLayer(0)
 					}
 					d.simulcast.switchDelay = time.Now().Add(5 * time.Second)
 				}
@@ -1271,12 +1327,12 @@ func (d *DownTrack) handleLayerChange(maxRatePacketLoss uint8, expectedMinBitrat
 				if (expectedMinBitrate <= 5*cbr/8 || currentTemporalLayer == 0) &&
 					currentSpatialLayer > 0 &&
 					brs[currentSpatialLayer-1] != 0 {
-					if err := d.SwitchSpatialLayer(currentSpatialLayer-1, false); err != nil {
-						d.SwitchTemporalLayer(mtl[currentSpatialLayer-1], false)
+					if err := d.switchSpatialLayer(currentSpatialLayer - 1); err != nil {
+						d.switchTemporalLayer(mtl[currentSpatialLayer-1])
 					}
 					d.simulcast.switchDelay = time.Now().Add(10 * time.Second)
 				} else {
-					d.SwitchTemporalLayer(currentTemporalLayer-1, false)
+					d.switchTemporalLayer(currentTemporalLayer - 1)
 					d.simulcast.switchDelay = time.Now().Add(5 * time.Second)
 				}
 			}

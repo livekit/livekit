@@ -4,25 +4,60 @@ import (
 	"sync"
 	"time"
 
+	livekit "github.com/livekit/protocol/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const updateFrequency = time.Second * 10
 
-// StatsWorker handles incoming RTP statistics instead of the stream interceptor
+// StatsWorker handles participant stats
 type StatsWorker struct {
+	t             *TelemetryService
+	roomID        string
+	participantID string
+
 	sync.RWMutex
-	buffers   map[uint32]*buffer.Buffer
-	lastStats *buffer.Stats
-	onUpdate  func(diff *buffer.Stats)
-	close     chan struct{}
+	buffers map[uint32]*buffer.Buffer
+	drain   map[uint32]bool
+
+	incoming *Stats
+	outgoing *Stats
+
+	close chan struct{}
 }
 
-func NewStatsWorker(onUpdate func(*buffer.Stats)) *StatsWorker {
+type Stats struct {
+	sync.Mutex
+	next         *livekit.AnalyticsStat
+	totalPackets uint32
+	prevPackets  uint32
+	totalBytes   uint64
+	prevBytes    uint64
+}
+
+func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWorker {
 	s := &StatsWorker{
-		buffers:  make(map[uint32]*buffer.Buffer),
-		onUpdate: onUpdate,
-		close:    make(chan struct{}, 1),
+		t:             t,
+		roomID:        roomID,
+		participantID: participantID,
+
+		buffers: make(map[uint32]*buffer.Buffer),
+		drain:   make(map[uint32]bool),
+
+		incoming: &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_UPSTREAM,
+			RoomId:        roomID,
+			ParticipantId: participantID,
+		}},
+		outgoing: &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_DOWNSTREAM,
+			RoomId:        roomID,
+			ParticipantId: participantID,
+		}},
+
+		close: make(chan struct{}, 1),
 	}
 	go s.run()
 	return s
@@ -32,56 +67,118 @@ func (s *StatsWorker) run() {
 	for {
 		select {
 		case <-s.close:
+			// drain
+			s.Update()
 			return
 		case <-time.After(updateFrequency):
-			s.onUpdate(s.Calc())
+			s.Update()
 		}
 	}
 }
 
 func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
 	s.Lock()
+	defer s.Unlock()
+
 	s.buffers[buffer.GetMediaSSRC()] = buffer
+}
+
+func (s *StatsWorker) OnDownstreamPacket(bytes int) {
+	s.outgoing.Lock()
+	defer s.outgoing.Unlock()
+
+	s.outgoing.totalPackets++
+	s.outgoing.totalBytes += uint64(bytes)
+}
+
+func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *livekit.AnalyticsStat) {
+	ds := s.incoming
+	if direction == livekit.StreamType_DOWNSTREAM {
+		ds = s.outgoing
+	}
+
+	ds.Lock()
+	defer ds.Unlock()
+
+	if stats.Delay > ds.next.Delay {
+		ds.next.Delay = stats.Delay
+	}
+	if stats.Jitter > ds.next.Jitter {
+		ds.next.Jitter = stats.Jitter
+	}
+	ds.next.PacketLost += stats.PacketLost
+	ds.next.NackCount += stats.NackCount
+	ds.next.PliCount += stats.PliCount
+	ds.next.FirCount += stats.FirCount
+}
+
+func (s *StatsWorker) Update() {
+	var packetsIn uint32
+	var bytesIn uint64
+
+	s.Lock()
+	ts := timestamppb.Now()
+	for _, buff := range s.buffers {
+		stats := buff.GetStats()
+		packetsIn += stats.PacketCount
+		bytesIn += stats.TotalByte
+	}
+
+	if len(s.drain) > 0 {
+		for ssrc := range s.drain {
+			delete(s.buffers, ssrc)
+		}
+		s.drain = make(map[uint32]bool)
+	}
 	s.Unlock()
+
+	s.incoming.Lock()
+	s.incoming.totalPackets = packetsIn
+	s.incoming.totalBytes = bytesIn
+	s.incoming.Unlock()
+
+	stats := make([]*livekit.AnalyticsStat, 0, 2)
+	upstream := s.update(s.incoming, ts)
+	if upstream != nil {
+		stats = append(stats, upstream)
+	}
+	downstream := s.update(s.outgoing, ts)
+	if downstream != nil {
+		stats = append(stats, downstream)
+	}
+
+	s.t.Report(stats)
+}
+
+func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
+	if stats.totalBytes == 0 {
+		return nil
+	}
+
+	stats.Lock()
+	defer stats.Unlock()
+
+	next := stats.next
+	stats.next = &livekit.AnalyticsStat{
+		Kind:          next.Kind,
+		RoomId:        s.roomID,
+		ParticipantId: s.participantID,
+	}
+
+	next.TimeStamp = ts
+	next.TotalPackets = uint64(stats.totalPackets - stats.prevPackets)
+	next.TotalBytes = stats.totalBytes - stats.prevBytes
+
+	stats.prevPackets = stats.totalPackets
+	stats.prevBytes = stats.totalBytes
+
+	return next
 }
 
 func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
 	s.Lock()
-	delete(s.buffers, ssrc)
+	s.drain[ssrc] = true
 	s.Unlock()
-}
-
-func (s *StatsWorker) Calc() *buffer.Stats {
-	s.RLock()
-	total := &buffer.Stats{}
-	for _, buff := range s.buffers {
-		stats := buff.GetStats()
-		total.PacketCount += stats.PacketCount
-		total.TotalByte += stats.TotalByte
-		total.LastExpected += stats.LastExpected
-		total.LastReceived += stats.LastReceived
-		if stats.Jitter > total.Jitter {
-			total.Jitter = stats.Jitter
-		}
-	}
-	s.RUnlock()
-
-	var diff *buffer.Stats
-	if s.lastStats != nil {
-		diff = &buffer.Stats{
-			LastExpected: total.LastExpected - s.lastStats.LastExpected,
-			LastReceived: total.LastReceived - s.lastStats.LastReceived,
-			PacketCount:  total.PacketCount - s.lastStats.PacketCount,
-			TotalByte:    total.TotalByte - s.lastStats.TotalByte,
-			Jitter:       total.Jitter,
-		}
-	} else {
-		diff = total
-	}
-	diff.LostRate = float32(diff.LastExpected-diff.LastReceived) / float32(diff.LastExpected)
-
-	s.lastStats = diff
-	return diff
 }
 
 func (s *StatsWorker) Close() {

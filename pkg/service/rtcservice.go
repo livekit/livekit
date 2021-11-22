@@ -20,14 +20,14 @@ import (
 )
 
 type RTCService struct {
-	router        routing.Router
+	router        routing.MessageRouter
 	roomAllocator RoomAllocator
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
 	isDev         bool
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,

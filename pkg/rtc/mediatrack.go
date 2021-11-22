@@ -169,10 +169,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	}
 
 	codec := t.receiver.Codec()
-	if err := sub.SubscriberMediaEngine().RegisterCodec(codec, t.receiver.Kind()); err != nil {
-		return err
-	}
-
 	// using DownTrack from ion-sfu
 	streamId := t.params.ParticipantID
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
@@ -187,7 +183,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: feedbackTypes,
-	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.packetBufferSize)
+	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err
 	}
@@ -199,7 +195,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		//
 		// AddTrack will create a new transceiver or re-use an unused one
 		// if the attributes match. This prevents SDP from bloating
-		// because of dormant transceivers buidling up.
+		// because of dormant transceivers building up.
 		//
 		sender, err = sub.SubscriberPC().AddTrack(downTrack)
 		if err != nil {
@@ -240,6 +236,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.OnBind(func() {
 		go t.sendDownTrackBindingReports(sub)
 	})
+	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+	})
+	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
+	})
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
@@ -247,7 +249,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Telemetry.TrackUnsubscribed(sub.ID(), sub.Identity(), t.ToProto())
+			t.params.Telemetry.TrackUnsubscribed(sub.ID(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -271,7 +273,10 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					return
 				}
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-					t.params.Logger.Warnw("could not remove remoteTrack from forwarder", err,
+					// most of these are safe to ignore, since the track state might have already
+					// been set to Inactive
+					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+						"error", err,
 						"participant", sub.Identity(), "pID", sub.ID())
 				}
 			}
@@ -294,7 +299,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(sub.ID(), sub.Identity(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(sub.ID(), t.ToProto())
 	return nil
 }
 
@@ -324,12 +329,19 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	defer t.lock.Unlock()
 
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
+	if buff == nil || rtcpReader == nil {
+		logger.Errorw("could not retrieve buffer pair", nil,
+			"participant", t.params.ParticipantIdentity,
+			"participantID", t.params.ParticipantID,
+			"track", t.ID())
+		return
+	}
 	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
-		buff.OnAudioLevel(func(level uint8) {
-			t.audioLevel.Observe(level)
+		buff.OnAudioLevel(func(level uint8, duration uint32) {
+			t.audioLevel.Observe(level, duration)
 		})
 	} else if t.Kind() == livekit.TrackType_VIDEO {
 		if twcc != nil {
@@ -368,24 +380,26 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), uint32(track.SSRC()))
+			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			if onclose != nil {
 				onclose()
 			}
 		})
-		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.params.ParticipantIdentity, t.ToProto(), buff)
-
+		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto())
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
 	}
+
 	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
+	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
+
 	atomic.AddUint32(&t.numUpTracks, 1)
 	if atomic.LoadUint32(&t.numUpTracks) > 1 {
 		t.simulcasted.TrySet(true)
 	}
 
-	buff.Bind(receiver.GetParameters(), buffer.Options{
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
 }
@@ -448,6 +462,7 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
+// LK-TODO: this should probably left up to auto size management and StreamAllocator
 // this function assumes caller holds lock
 func (t *MediaTrack) shouldStartWithBestQuality() bool {
 	return len(t.subscribedTracks) < 10
@@ -496,20 +511,21 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
-	var hasSenderReport bool
+	var hasReport bool
 	for _, p := range packets {
 		switch pkt := p.(type) {
-		case *rtcp.SenderReport:
+		// sfu.Buffer generates ReceiverReports for the publisher
+		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
-				hasSenderReport = true
+				hasReport = true
 			}
 		}
 	}
 
-	if hasSenderReport {
+	if hasReport {
 		t.fracLostLock.Lock()
 		if maxLost > t.maxUpFracLost {
 			t.maxUpFracLost = maxLost

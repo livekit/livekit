@@ -131,6 +131,9 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		{
 			Mime: "video/vp8",
 		},
+		{
+			Mime: "video/h264",
+		},
 	}
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
 		Target:        livekit.SignalTarget_PUBLISHER,
@@ -462,7 +465,11 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 }
 
 func (c *RTCClient) AddStaticTrack(mime string, id string, label string) (writer *TrackWriter, err error) {
-	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: mime}, id, label)
+	return c.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{MimeType: mime}, id, label)
+}
+
+func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id string, label string) (writer *TrackWriter, err error) {
+	track, err := webrtc.NewTrackLocalStaticSample(codec, id, label)
 	if err != nil {
 		return
 	}

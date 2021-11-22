@@ -88,7 +88,7 @@ type Buffer struct {
 
 	// callbacks
 	onClose      func()
-	onAudioLevel func(level uint8)
+	onAudioLevel func(level uint8, durationMs uint32)
 	feedbackCB   func([]rtcp.Packet)
 	feedbackTWCC func(sn uint16, timeNS int64, marker bool)
 
@@ -123,11 +123,10 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool, logger logr.Logger) *Buffer {
 	return b
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, o Options) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, o Options) {
 	b.Lock()
 	defer b.Unlock()
 
-	codec := params.Codecs[0]
 	b.clockRate = codec.ClockRate
 	b.maxBitrate = o.MaxBitRate
 	b.mime = strings.ToLower(codec.MimeType)
@@ -386,7 +385,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
-				b.onAudioLevel(ext.Level)
+				duration := (int64(p.Timestamp) - int64(latestTimestamp)) * 1e3 / int64(b.clockRate)
+				if duration > 0 {
+					b.onAudioLevel(ext.Level, uint32(duration))
+				}
 			}
 		}
 	}
@@ -489,12 +491,11 @@ func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
 		fracLost = uint8((lostInterval << 8) / expectedInterval)
 	}
 	if b.lastFractionLostToReport > fracLost {
-		// If fractionlost from subscriber is bigger than sfu received, use it.
+		// If fraction lost from subscriber is bigger than sfu received, use it.
 		fracLost = b.lastFractionLostToReport
 	}
 
 	var dlsr uint32
-
 	if b.lastSRRecv != 0 {
 		delayMS := uint32((time.Now().UnixNano() - b.lastSRRecv) / 1e6)
 		dlsr = (delayMS / 1e3) << 16
@@ -608,7 +609,7 @@ func (b *Buffer) OnFeedback(fn func(fb []rtcp.Packet)) {
 	b.feedbackCB = fn
 }
 
-func (b *Buffer) OnAudioLevel(fn func(level uint8)) {
+func (b *Buffer) OnAudioLevel(fn func(level uint8, durationMs uint32)) {
 	b.onAudioLevel = fn
 }
 

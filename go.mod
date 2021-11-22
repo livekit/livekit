@@ -6,7 +6,7 @@ require (
 	github.com/bep/debounce v1.2.0
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/elliotchance/orderedmap v1.4.0 // indirect
+	github.com/elliotchance/orderedmap v1.4.0
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
 	github.com/go-logr/logr v1.2.0
@@ -17,21 +17,21 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jxskiss/base62 v0.0.0-20191017122030-4f11678b909b
-	github.com/livekit/protocol v0.10.1-0.20211110010924-91c31dabb096
+	github.com/livekit/protocol v0.10.1
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.1.13
+	github.com/pion/ice/v2 v2.1.14
 	github.com/pion/interceptor v0.1.0
 	github.com/pion/logging v0.2.2
-	github.com/pion/rtcp v1.2.8
+	github.com/pion/rtcp v1.2.9
 	github.com/pion/rtp v1.7.4
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.12.3
 	github.com/pion/turn/v2 v2.0.5
-	github.com/pion/webrtc/v3 v3.1.8
+	github.com/pion/webrtc/v3 v3.1.10
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/zerolog v1.26.0

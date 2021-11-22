@@ -44,33 +44,37 @@ type RTCMessageCallback func(ctx context.Context, roomName, identity string, msg
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
 type Router interface {
+	MessageRouter
+
 	RegisterNode() error
 	UnregisterNode() error
 	RemoveDeadNodes() error
 
-	GetNode(nodeId string) (*livekit.Node, error)
 	ListNodes() ([]*livekit.Node, error)
 
 	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName, nodeId string) error
 	ClearRoomState(ctx context.Context, roomName string) error
 
+	Start() error
+	Drain()
+	Stop()
+}
+
+type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
-	// WriteRTCMessage sends a message to the RTC node
-	WriteRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
-	WriteRTCNodeMessage(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
+	// Write a message to a participant, room, or node
+	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
+	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 
 	// OnNewParticipantRTC is called to start a new participant's RTC connection
 	OnNewParticipantRTC(callback NewParticipantCallback)
 
 	// OnRTCMessage is called to execute actions on the RTC node
 	OnRTCMessage(callback RTCMessageCallback)
-
-	Start() error
-	Drain()
-	Stop()
 }
 
 func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) Router {

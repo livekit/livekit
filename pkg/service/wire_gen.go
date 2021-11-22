@@ -50,7 +50,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	telemetryService := telemetry.NewTelemetryService(notifier)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
-	localRoomManager, err := NewLocalRoomManager(conf, roomStore, router, currentNode, telemetryService)
+	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, localRoomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

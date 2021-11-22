@@ -272,6 +272,36 @@ func TestConnectionQuality(t *testing.T) {
 	})
 }
 
+func TestSubscriberAsPrimary(t *testing.T) {
+	t.Run("protocol 4 uses subs as primary", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.SetPermission(&livekit.ParticipantPermission{
+			CanSubscribe: true,
+			CanPublish:   true,
+		})
+		require.True(t, p.SubscriberAsPrimary())
+	})
+
+	t.Run("protocol 2 uses pub as primary", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.params.ProtocolVersion = 2
+		p.SetPermission(&livekit.ParticipantPermission{
+			CanSubscribe: true,
+			CanPublish:   true,
+		})
+		require.False(t, p.SubscriberAsPrimary())
+	})
+
+	t.Run("publisher only uses pub as primary", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.SetPermission(&livekit.ParticipantPermission{
+			CanSubscribe: false,
+			CanPublish:   true,
+		})
+		require.False(t, p.SubscriberAsPrimary())
+	})
+}
+
 func newParticipantForTest(identity string) *ParticipantImpl {
 	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
@@ -285,7 +315,7 @@ func newParticipantForTest(identity string) *ParticipantImpl {
 		Identity:        identity,
 		Config:          rtcConf,
 		Sink:            &routingfakes.FakeMessageSink{},
-		ProtocolVersion: 0,
+		ProtocolVersion: 4,
 		ThrottleConfig:  conf.RTC.PLIThrottle,
 	})
 	return p

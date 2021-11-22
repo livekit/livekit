@@ -13,12 +13,12 @@ import (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	router        routing.Router
+	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	roomStore     RoomStore
+	roomStore     RORoomStore
 }
 
-func NewRoomService(ra RoomAllocator, rs RoomStore, router routing.Router) (svc *RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs RORoomStore, router routing.MessageRouter) (svc livekit.RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,
@@ -62,18 +62,12 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	// if the room is currently active, RTC node needs to disconnect clients
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
 
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	if err := s.writeRoomMessage(ctx, req.Room, "", &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -111,7 +105,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 }
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.RemoveParticipantResponse, err error) {
-	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+	err = s.writeRoomMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
 		},
@@ -141,7 +135,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirp.NotFoundError(ErrTrackNotFound.Error())
 	}
 
-	err = s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+	err = s.writeParticipantMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},
@@ -159,7 +153,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	err := s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+	err := s.writeRoomMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateParticipant{
 			UpdateParticipant: req,
 		},
@@ -178,7 +172,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 }
 
 func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
-	err := s.writeMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
+	err := s.writeRoomMessage(ctx, req.Room, req.Identity, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,
 		},
@@ -191,13 +185,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 }
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
-	// here we are using any user's identity, due to how it works with routing
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	err := s.writeRoomMessage(ctx, req.Room, "", &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
 		},
@@ -221,12 +209,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	room.Metadata = req.Metadata
 
-	node, err := s.router.GetNodeForRoom(ctx, req.Room)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.router.WriteRTCNodeMessage(ctx, node.Id, &livekit.RTCNodeMessage{
+	err = s.writeRoomMessage(ctx, req.Room, "", &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
 		},
@@ -238,7 +221,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	return room, nil
 }
 
-func (s *RoomService) writeMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
+func (s *RoomService) writeParticipantMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return twirpAuthError(err)
 	}
@@ -248,5 +231,20 @@ func (s *RoomService) writeMessage(ctx context.Context, room, identity string, m
 		return err
 	}
 
-	return s.router.WriteRTCMessage(ctx, room, identity, msg)
+	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
+}
+
+func (s *RoomService) writeRoomMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
+	if err := EnsureAdminPermission(ctx, room); err != nil {
+		return twirpAuthError(err)
+	}
+
+	if identity != "" {
+		_, err := s.roomStore.LoadParticipant(ctx, room, identity)
+		if err != nil {
+			return err
+		}
+	}
+
+	return s.router.WriteRoomRTC(ctx, room, identity, msg)
 }

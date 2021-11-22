@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/pion/webrtc/v3"
@@ -85,10 +86,15 @@ func (w *TrackWriter) Stop() {
 func (w *TrackWriter) writeNull() {
 	defer w.onWriteComplete()
 	sample := media.Sample{Data: []byte{0x0, 0xff, 0xff, 0xff, 0xff}, Duration: 30 * time.Millisecond}
+	h264Sample := media.Sample{Data: []byte{0x5, 0xff, 0xff, 0xff, 0xff}, Duration: 30 * time.Millisecond}
 	for {
 		select {
 		case <-time.After(20 * time.Millisecond):
-			w.track.WriteSample(sample)
+			if strings.EqualFold(w.mime, webrtc.MimeTypeH264) {
+				w.track.WriteSample(h264Sample)
+			} else {
+				w.track.WriteSample(sample)
+			}
 		case <-w.ctx.Done():
 			break
 		}
