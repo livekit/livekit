@@ -143,5 +143,5 @@ keys:
 # limit:
 #   # defaults to 400 tracks in & out per CPU, up to 8000
 #   num_tracks: -1
-#   # defaults to 5_000_000
-#   bytes_per_sec: 5_000_000
+#   # defaults to 1 GB/s, or just under 10 Gbps
+#   bytes_per_sec: 1_000_000_000

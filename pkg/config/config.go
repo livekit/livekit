@@ -16,7 +16,7 @@ import (
 const (
 	defaultLimitNumTracksPerCPU int32   = 400
 	defaultLimitMaxNumTracks    int32   = 8000
-	defaultLimitBytesPerSec     float32 = 5_000_000
+	defaultLimitBytesPerSec     float32 = 1_000_000_000 // just under 10 Gbps
 )
 
 var DefaultStunServers = []string{
