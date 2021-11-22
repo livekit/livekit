@@ -526,10 +526,6 @@ func (d *DownTrack) switchSpatialLayer(targetLayer int32) error {
 	return nil
 }
 
-func (d *DownTrack) SwitchSpatialLayerDone(layer int32) {
-	d.currentSpatialLayer.set(layer)
-}
-
 func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded bool) (int32, error) {
 	if d.trackType == SimulcastDownTrack {
 		currentLayer := uint16(d.CurrentSpatialLayer())
@@ -929,13 +925,40 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 }
 
 func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	// Check if packet SSRC is different from before
-	// if true, the video source changed
+	tsl := d.TargetSpatialLayer()
 	csl := d.CurrentSpatialLayer()
-	if csl != layer {
+	if tsl == layer && csl != tsl {
+		if extPkt.KeyFrame {
+			d.currentSpatialLayer.set(layer)
+			csl = layer
+		} else {
+			d.lastPli.set(time.Now().UnixNano())
+			d.receiver.SendPLI(layer)
+		}
+	}
+
+	if tsl < csl {
+		//
+		// If target layer is lower, it is potentially due to bandwidth
+		// constraints that the layer has been switched down. Continuing
+		// to send higher layer will only exacerbate the situation.
+		// So, drop it.
+		//
+		// In the other direction, it is okay to keep forwarding till
+		// switch point to get a smoother stream till the higher
+		// layer key frame arrives.
+		//
+		d.pktsDropped.add(1)
 		return nil
 	}
 
+	if csl != layer {
+		d.pktsDropped.add(1)
+		return nil
+	}
+
+	// Check if packet SSRC is different from before
+	// if true, the video source changed
 	lastSSRC := d.lastSSRC.get()
 	reSync := d.reSync.get()
 	if lastSSRC != extPkt.Packet.SSRC || reSync {
