@@ -39,7 +39,9 @@
 //     This could happen due to publisher throttling layers due to upstream congestion
 //     in its path.
 //   - OnSubscriptionChanged: called when a down track settings are changed resulting
-//     from client side requests (muting/pausing a video or limiting maximum layer).
+//     from client side requests (muting/unmuting)
+//   - OnSubscribedLayersChanged: called when a down track settings are changed resulting
+//     from client side requests (limiting maximum layer).
 //   - OnPacketSent: called when a media packet is forwarded by the down track. As
 //     this happens once per forwarded packet, processing in this callback should be
 //     kept to a minimum.
@@ -88,7 +90,8 @@
 //  - Signal_AVAILABLE_LAYERS_ADD: Available layers of publisher changed, new layer(s) available.
 //  - Signal_AVAILABLE_LAYERS_REMOVE: Available layers of publisher changed, some previously
 //                                    available layer(s) not available anymore.
-//  - Signal_SUBSCRIPTION_CHANGE: Subscription changed (mute/requested layers changed).
+//  - Signal_SUBSCRIPTION_CHANGE: Subscription changed (mute/unmute)
+//  - Signal_SUBSCRIBED_LAYERS_CHANGE: Subscribed layers changed (requested layers changed).
 //  - Signal_PERIODIC_PING: Periodic ping
 //
 // There are several interesting challenges which are documented in relevant code below.
@@ -144,6 +147,7 @@ const (
 	Signal_AVAILABLE_LAYERS_ADD
 	Signal_AVAILABLE_LAYERS_REMOVE
 	Signal_SUBSCRIPTION_CHANGE
+	Signal_SUBSCRIBED_LAYERS_CHANGE
 	Signal_PERIODIC_PING
 )
 
@@ -232,6 +236,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
 	downTrack.AddReceiverReportListener(s.onReceiverReport)
 	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
+	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
 	downTrack.OnPacketSent(s.onPacketSent)
 
 	s.tracksMu.Lock()
@@ -351,10 +356,16 @@ func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack, layerAd
 	}
 }
 
-// called when subscription settings changes
+// called when subscription settings changes (muting/unmuting of track)
 func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 	// LK-TODO: Look at processing specific downtrack
 	s.postEvent(Signal_SUBSCRIPTION_CHANGE, downTrack)
+}
+
+// called when subscribed layers changes (limiting max layers)
+func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32) {
+	// LK-TODO: Look at processing specific downtrack
+	s.postEvent(Signal_SUBSCRIBED_LAYERS_CHANGE, downTrack)
 }
 
 // called when DownTrack sends a packet
@@ -502,6 +513,8 @@ func (s *StreamAllocator) runStatePreCommit(event Event) {
 		s.allocate()
 	case Signal_SUBSCRIPTION_CHANGE:
 		s.allocate()
+	case Signal_SUBSCRIBED_LAYERS_CHANGE:
+		s.allocate()
 	case Signal_PERIODIC_PING:
 	}
 }
@@ -522,6 +535,8 @@ func (s *StreamAllocator) runStateStable(event Event) {
 	case Signal_AVAILABLE_LAYERS_REMOVE:
 		s.allocate()
 	case Signal_SUBSCRIPTION_CHANGE:
+		s.allocate()
+	case Signal_SUBSCRIBED_LAYERS_CHANGE:
 		s.allocate()
 	case Signal_PERIODIC_PING:
 		// if bandwidth estimate has been stable for a while, maybe gratuitously probe
@@ -566,6 +581,8 @@ func (s *StreamAllocator) runStateDeficient(event Event) {
 		s.allocate()
 	case Signal_SUBSCRIPTION_CHANGE:
 		s.allocate()
+	case Signal_SUBSCRIBED_LAYERS_CHANGE:
+		s.allocate()
 	case Signal_PERIODIC_PING:
 		s.maybeProbe()
 	}
@@ -597,6 +614,9 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 		s.prober.Reset()
 		s.allocate()
 	case Signal_SUBSCRIPTION_CHANGE:
+		s.prober.Reset()
+		s.allocate()
+	case Signal_SUBSCRIBED_LAYERS_CHANGE:
 		s.prober.Reset()
 		s.allocate()
 	case Signal_PERIODIC_PING:
@@ -984,6 +1004,9 @@ type Track struct {
 
 	bandwidthRequested     uint64
 	optimalBandwidthNeeded uint64
+
+	maxSpatialLayer  int32
+	maxTemporalLayer int32
 }
 
 func NewTrack(downTrack *DownTrack) *Track {

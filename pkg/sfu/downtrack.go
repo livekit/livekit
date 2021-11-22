@@ -141,6 +141,9 @@ type DownTrack struct {
 	// subscription change callback
 	onSubscriptionChanged func(dt *DownTrack)
 
+	// max layer change callback
+	onSubscribedLayersChanged func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)
+
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
 }
@@ -160,6 +163,8 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, p
 	if strings.ToLower(c.MimeType) == "video/vp8" {
 		d.vp8Munger = NewVP8Munger()
 	}
+	d.maxSpatialLayer.set(2)
+	d.maxTemporalLayer.set(2)
 
 	return d, nil
 }
@@ -472,23 +477,40 @@ func (d *DownTrack) TargetSpatialLayer() int32 {
 	return d.targetSpatialLayer.get()
 }
 
+func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) error {
+	// LK-TODO: support SVC
+	if d.trackType != SimulcastDownTrack {
+		return ErrSpatialNotSupported
+	}
+
+	d.maxSpatialLayer.set(spatialLayer)
+
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, spatialLayer, d.MaxTemporalLayer())
+	}
+
+	// LK-TODO: Remove the following when StreamAllocator is the default way
+	return d.switchSpatialLayer(spatialLayer)
+}
+
 func (d *DownTrack) MaxSpatialLayer() int32 {
 	return d.maxSpatialLayer.get()
 }
 
-// SwitchSpatialLayer switches the current layer
-func (d *DownTrack) SwitchSpatialLayer(targetLayer int32, setAsMax bool) error {
-	// LK-TODO-START
-	// This gets called directly from two places outside.
-	//   1. From livekit-server when suscriber updates TrackSetting
-	//   2. From sfu.Receiver when a new up track is added
-	// Make a method in this struct which allows setting subscriber controls.
-	// StreamAllocator needs to know about subscriber setting changes.
-	// Only the StreamAllocator should be changing forwarded layers.
-	// Make a method `SetMaxSpatialLayer()` and remove `setAsMax` from this.
-	// Trigger callback to StreamAllocator to notify subscription change
-	// in that method.
-	// LK-TODO-END
+func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
+	d.maxTemporalLayer.set(temporalLayer)
+
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, d.MaxSpatialLayer(), temporalLayer)
+	}
+}
+
+func (d *DownTrack) MaxTemporalLayer() int32 {
+	return d.maxTemporalLayer.get()
+}
+
+// switchSpatialLayer switches the current layer
+func (d *DownTrack) switchSpatialLayer(targetLayer int32) error {
 	if d.trackType != SimulcastDownTrack {
 		return ErrSpatialNotSupported
 	}
@@ -501,13 +523,6 @@ func (d *DownTrack) SwitchSpatialLayer(targetLayer int32, setAsMax bool) error {
 	}
 
 	d.targetSpatialLayer.set(targetLayer)
-	if setAsMax {
-		d.maxSpatialLayer.set(targetLayer)
-
-		if d.onSubscriptionChanged != nil {
-			d.onSubscriptionChanged(d)
-		}
-	}
 	return nil
 }
 
@@ -547,7 +562,7 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 			// Available layers change should be signalled to StreamAllocator
 			// and StreamAllocator will take care of adjusting allocations.
 			// LK-TODO-END
-			if err := d.SwitchSpatialLayer(int32(targetLayer), false); err != nil {
+			if err := d.switchSpatialLayer(int32(targetLayer)); err != nil {
 				return int32(targetLayer), err
 			}
 		}
@@ -561,31 +576,21 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 	return -1, fmt.Errorf("downtrack %s does not support simulcast", d.id)
 }
 
-func (d *DownTrack) SwitchTemporalLayer(targetLayer int32, setAsMax bool) {
-	// LK-TODO-START
-	// See note in SwitchSpatialLayer to split out setting max layer
-	// into a separate method and triggering notification to StreamAllocator.
-	// BTW, looks like `setAsMax` is not set to true at any callsite of this API
-	// LK-TODO-END
-	if d.trackType == SimulcastDownTrack {
-		layer := d.temporalLayer.get()
-		currentLayer := uint16(layer)
-		currentTargetLayer := uint16(layer >> 16)
-
-		// Don't switch until previous switch is done or canceled
-		if currentLayer != currentTargetLayer {
-			return
-		}
-
-		d.temporalLayer.set((targetLayer << 16) | int32(currentLayer))
-		if setAsMax {
-			d.maxTemporalLayer.set(targetLayer)
-
-			if d.onSubscriptionChanged != nil {
-				d.onSubscriptionChanged(d)
-			}
-		}
+func (d *DownTrack) switchTemporalLayer(targetLayer int32) {
+	if d.trackType != SimulcastDownTrack {
+		return
 	}
+
+	layer := d.temporalLayer.get()
+	currentLayer := uint16(layer)
+	currentTargetLayer := uint16(layer >> 16)
+
+	// Don't switch until previous switch is done or canceled
+	if currentLayer != currentTargetLayer {
+		return
+	}
+
+	d.temporalLayer.set((targetLayer << 16) | int32(currentLayer))
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -623,6 +628,10 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
 }
 
+func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)) {
+	d.onSubscribedLayersChanged = fn
+}
+
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
@@ -645,8 +654,8 @@ func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, u
 			}
 			if brs[i][j] < availableChannelCapacity {
 				d.bandwidthConstrainedMute(false) // just in case it was muted
-				d.SwitchSpatialLayer(int32(i), false)
-				d.SwitchTemporalLayer(int32(j), false)
+				d.switchSpatialLayer(int32(i))
+				d.switchTemporalLayer(int32(j))
 
 				return brs[i][j], optimalBandwidthNeeded
 			}
@@ -718,8 +727,8 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 		}
 
 		d.bandwidthConstrainedMute(false)
-		d.SwitchSpatialLayer(int32(0), false)
-		d.SwitchTemporalLayer(int32(0), false)
+		d.switchSpatialLayer(int32(0))
+		d.switchTemporalLayer(int32(0))
 		return true, brs[0][0], optimalBandwidthNeeded
 	}
 
@@ -727,7 +736,7 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 	// LK-TODO currentTemporalLayer may be outside available range because of inital value being out of range, fix it
 	nextTemporalLayer := currentTemporalLayer + 1
 	if nextTemporalLayer <= d.maxTemporalLayer.get() && brs[currentSpatialLayer][nextTemporalLayer] > 0 {
-		d.SwitchTemporalLayer(nextTemporalLayer, false)
+		d.switchTemporalLayer(nextTemporalLayer)
 		return true, brs[currentSpatialLayer][nextTemporalLayer], optimalBandwidthNeeded
 	}
 
@@ -735,8 +744,8 @@ func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
 	// LK-TODO currentTemporalLayer may be outside available range because of inital value being out of range, fix it
 	nextSpatialLayer := currentSpatialLayer + 1
 	if nextSpatialLayer <= d.maxSpatialLayer.get() && brs[nextSpatialLayer][0] > 0 {
-		d.SwitchSpatialLayer(nextSpatialLayer, false)
-		d.SwitchTemporalLayer(0, false)
+		d.switchSpatialLayer(nextSpatialLayer)
+		d.switchTemporalLayer(0)
 		return true, brs[nextSpatialLayer][0], optimalBandwidthNeeded
 	}
 
@@ -1303,13 +1312,13 @@ func (d *DownTrack) handleLayerChange(maxRatePacketLoss uint8, expectedMinBitrat
 			if maxRatePacketLoss <= 5 {
 				if currentTemporalLayer < mctl && currentTemporalLayer+1 <= d.maxTemporalLayer.get() &&
 					expectedMinBitrate >= 3*cbr/4 {
-					d.SwitchTemporalLayer(currentTemporalLayer+1, false)
+					d.switchTemporalLayer(currentTemporalLayer + 1)
 					d.simulcast.switchDelay = time.Now().Add(3 * time.Second)
 				}
 				if currentTemporalLayer >= mctl && expectedMinBitrate >= 3*cbr/2 && currentSpatialLayer+1 <= d.maxSpatialLayer.get() &&
 					currentSpatialLayer+1 <= 2 {
-					if err := d.SwitchSpatialLayer(currentSpatialLayer+1, false); err == nil {
-						d.SwitchTemporalLayer(0, false)
+					if err := d.switchSpatialLayer(currentSpatialLayer + 1); err == nil {
+						d.switchTemporalLayer(0)
 					}
 					d.simulcast.switchDelay = time.Now().Add(5 * time.Second)
 				}
@@ -1318,12 +1327,12 @@ func (d *DownTrack) handleLayerChange(maxRatePacketLoss uint8, expectedMinBitrat
 				if (expectedMinBitrate <= 5*cbr/8 || currentTemporalLayer == 0) &&
 					currentSpatialLayer > 0 &&
 					brs[currentSpatialLayer-1] != 0 {
-					if err := d.SwitchSpatialLayer(currentSpatialLayer-1, false); err != nil {
-						d.SwitchTemporalLayer(mtl[currentSpatialLayer-1], false)
+					if err := d.switchSpatialLayer(currentSpatialLayer - 1); err != nil {
+						d.switchTemporalLayer(mtl[currentSpatialLayer-1])
 					}
 					d.simulcast.switchDelay = time.Now().Add(10 * time.Second)
 				} else {
-					d.SwitchTemporalLayer(currentTemporalLayer-1, false)
+					d.switchTemporalLayer(currentTemporalLayer - 1)
 					d.simulcast.switchDelay = time.Now().Add(5 * time.Second)
 				}
 			}

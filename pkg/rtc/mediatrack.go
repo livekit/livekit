@@ -462,6 +462,7 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
+// LK-TODO: this should probably left up to auto size management and StreamAllocator
 // this function assumes caller holds lock
 func (t *MediaTrack) shouldStartWithBestQuality() bool {
 	return len(t.subscribedTracks) < 10
