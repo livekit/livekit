@@ -75,15 +75,15 @@ func IncrementBytes(direction Direction, count uint64) {
 	}
 }
 
-func IncrementNack(direction Direction) {
-	promNackTotal.WithLabelValues(string(direction)).Add(1)
-	atomic.AddUint64(&atomicNackTotal, 1)
-}
-
-func IncrementPLI(direction Direction) {
-	promPliTotal.WithLabelValues(string(direction)).Add(1)
-}
-
-func IncrementFIR(direction Direction) {
-	promFirTotal.WithLabelValues(string(direction)).Add(1)
+func IncrementRTCP(direction Direction, nack, pli, fir int32) {
+	if nack > 0 {
+		promNackTotal.WithLabelValues(string(direction)).Add(float64(nack))
+		atomic.AddUint64(&atomicNackTotal, uint64(nack))
+	}
+	if pli > 0 {
+		promPliTotal.WithLabelValues(string(direction)).Add(float64(pli))
+	}
+	if fir > 0 {
+		promFirTotal.WithLabelValues(string(direction)).Add(float64(fir))
+	}
 }

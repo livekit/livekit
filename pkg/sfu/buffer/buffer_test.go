@@ -43,6 +43,25 @@ func CreateTestListPackets(snsAndTSs []SequenceNumberAndTimeStamp) (packetList [
 	return packetList
 }
 
+var vp8Codec webrtc.RTPCodecParameters = webrtc.RTPCodecParameters{
+	RTPCodecCapability: webrtc.RTPCodecCapability{
+		MimeType:  "video/vp8",
+		ClockRate: 90000,
+		RTCPFeedback: []webrtc.RTCPFeedback{{
+			Type: "nack",
+		}},
+	},
+	PayloadType: 96,
+}
+
+var opusCodec webrtc.RTPCodecParameters = webrtc.RTPCodecParameters{
+	RTPCodecCapability: webrtc.RTPCodecCapability{
+		MimeType:  "audio/opus",
+		ClockRate: 48000,
+	},
+	PayloadType: 96,
+}
+
 func TestNack(t *testing.T) {
 	pool := &sync.Pool{
 		New: func() interface{} {
@@ -75,19 +94,8 @@ func TestNack(t *testing.T) {
 		})
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
-			Codecs: []webrtc.RTPCodecParameters{
-				{
-					RTPCodecCapability: webrtc.RTPCodecCapability{
-						MimeType:  "video/vp8",
-						ClockRate: 90000,
-						RTCPFeedback: []webrtc.RTCPFeedback{{
-							Type: "nack",
-						}},
-					},
-					PayloadType: 96,
-				},
-			},
-		}, Options{})
+			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
+		}, vp8Codec.RTPCodecCapability, Options{})
 		for i := 0; i < 15; i++ {
 			if i == 1 {
 				continue
@@ -142,19 +150,8 @@ func TestNack(t *testing.T) {
 		})
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
-			Codecs: []webrtc.RTPCodecParameters{
-				{
-					RTPCodecCapability: webrtc.RTPCodecCapability{
-						MimeType:  "video/vp8",
-						ClockRate: 90000,
-						RTCPFeedback: []webrtc.RTCPFeedback{{
-							Type: "nack",
-						}},
-					},
-					PayloadType: 96,
-				},
-			},
-		}, Options{})
+			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
+		}, vp8Codec.RTPCodecCapability, Options{})
 		for i := 0; i < 15; i++ {
 			if i > 0 && i < 5 {
 				continue
@@ -231,15 +228,8 @@ func TestNewBuffer(t *testing.T) {
 			})
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
-				Codecs: []webrtc.RTPCodecParameters{{
-					RTPCodecCapability: webrtc.RTPCodecCapability{
-						MimeType:     "video/vp8",
-						ClockRate:    9600,
-						RTCPFeedback: nil,
-					},
-					PayloadType: 0,
-				}},
-			}, Options{})
+				Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
+			}, vp8Codec.RTPCodecCapability, Options{})
 
 			for _, p := range TestPackets {
 				buf, _ := p.Marshal()
@@ -278,16 +268,8 @@ func TestFractionLostReport(t *testing.T) {
 	})
 	buff.Bind(webrtc.RTPParameters{
 		HeaderExtensions: nil,
-		Codecs: []webrtc.RTPCodecParameters{
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					MimeType:  "audio/opus",
-					ClockRate: 48000,
-				},
-				PayloadType: 96,
-			},
-		},
-	}, Options{})
+		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
+	}, opusCodec.RTPCodecCapability, Options{})
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
 			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},

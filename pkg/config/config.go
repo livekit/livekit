@@ -146,7 +146,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			ActiveLevel:     30, // -30dBov = 0.03
 			MinPercentile:   40,
 			UpdateInterval:  500,
-			SmoothIntervals: 4,
+			SmoothIntervals: 2,
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{
@@ -154,7 +154,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
 				{Mime: webrtc.MimeTypeVP8},
-				// {Mime: webrtc.MimeTypeH264},
+				{Mime: webrtc.MimeTypeH264},
 				// {Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,

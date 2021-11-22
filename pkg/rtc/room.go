@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"google.golang.org/protobuf/proto"
@@ -16,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -27,10 +27,15 @@ const (
 )
 
 type Room struct {
+	lock sync.RWMutex
+
 	Room   *livekit.Room
 	Logger logger.Logger
-	config WebRTCConfig
-	lock   sync.RWMutex
+
+	config      WebRTCConfig
+	audioConfig *config.AudioConfig
+	telemetry   *telemetry.TelemetryService
+
 	// map of identity -> Participant
 	participants    map[string]types.Participant
 	participantOpts map[string]*ParticipantOptions
@@ -42,11 +47,6 @@ type Room struct {
 	leftAt    atomic.Value
 	closed    chan struct{}
 	closeOnce sync.Once
-
-	// for active speaker updates
-	audioConfig *config.AudioConfig
-
-	telemetry *telemetry.TelemetryService
 
 	onParticipantChanged func(p types.Participant)
 	onMetadataUpdate     func(metadata string)
@@ -66,7 +66,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		telemetry:       telemetry,
 		participants:    make(map[string]types.Participant),
 		participantOpts: make(map[string]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.packetBufferSize, logr.Logger{}),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize, logr.Logger{}),
 		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
@@ -161,6 +161,9 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
+	if !participant.Hidden() {
+		r.Room.NumParticipants++
+	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -199,10 +202,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	r.participantOpts[participant.Identity()] = opts
 
 	// gather other participants and send join response
-	otherParticipants := make([]types.Participant, 0, len(r.participants))
+	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p)
+			otherParticipants = append(otherParticipants, p.ToProto())
 		}
 	}
 
@@ -222,7 +225,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
-	if participant.ProtocolVersion().SubscriberAsPrimary() {
+	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
 		participant.Negotiate()
 	}
@@ -256,7 +259,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
+		if !p.Hidden() {
+			r.Room.NumParticipants--
+		}
 	}
+
 	r.lock.Unlock()
 	if !ok {
 		return

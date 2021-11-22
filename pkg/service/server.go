@@ -30,7 +30,7 @@ type LivekitServer struct {
 	httpServer  *http.Server
 	promServer  *http.Server
 	router      routing.Router
-	roomManager *LocalRoomManager
+	roomManager *RoomManager
 	turnServer  *turn.Server
 	currentNode routing.LocalNode
 	running     utils.AtomicFlag
@@ -44,7 +44,7 @@ func NewLivekitServer(conf *config.Config,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
-	roomManager *LocalRoomManager,
+	roomManager *RoomManager,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
@@ -61,7 +61,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	middlewares := []negroni.Handler{
-		// always the first
+		// always first
 		negroni.NewRecovery(),
 	}
 	if keyProvider != nil {
@@ -230,15 +230,15 @@ func (s *LivekitServer) Stop(force bool) {
 	<-s.closedChan
 }
 
-func (s *LivekitServer) RoomManager() RoomManager {
+func (s *LivekitServer) RoomManager() *RoomManager {
 	return s.roomManager
 }
 
-func (s *LivekitServer) debugGoroutines(w http.ResponseWriter, r *http.Request) {
+func (s *LivekitServer) debugGoroutines(w http.ResponseWriter, _ *http.Request) {
 	_ = pprof.Lookup("goroutine").WriteTo(w, 2)
 }
 
-func (s *LivekitServer) debugInfo(w http.ResponseWriter, r *http.Request) {
+func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
 	s.roomManager.lock.RLock()
 	info := make([]map[string]interface{}, 0, len(s.roomManager.rooms))
 	for _, room := range s.roomManager.rooms {
@@ -255,19 +255,19 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *LivekitServer) healthCheck(w http.ResponseWriter, r *http.Request) {
+func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 	var updatedAt time.Time
 	if s.Node().Stats != nil {
 		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
 	}
 	if time.Now().Sub(updatedAt) > 4*time.Second {
 		w.WriteHeader(http.StatusNotAcceptable)
-		w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
+		_, _ = w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte([]byte("OK")))
+	_, _ = w.Write([]byte("OK"))
 }
 
 // worker to perform periodic tasks per node

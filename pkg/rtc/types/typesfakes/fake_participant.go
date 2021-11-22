@@ -363,11 +363,11 @@ type FakeParticipant struct {
 	sendDataPacketReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendJoinResponseStub        func(*livekit.Room, []types.Participant, []*livekit.ICEServer) error
+	SendJoinResponseStub        func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
 		arg1 *livekit.Room
-		arg2 []types.Participant
+		arg2 []*livekit.ParticipantInfo
 		arg3 []*livekit.ICEServer
 	}
 	sendJoinResponseReturns struct {
@@ -445,6 +445,16 @@ type FakeParticipant struct {
 	}
 	stateReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_State
+	}
+	SubscriberAsPrimaryStub        func() bool
+	subscriberAsPrimaryMutex       sync.RWMutex
+	subscriberAsPrimaryArgsForCall []struct {
+	}
+	subscriberAsPrimaryReturns struct {
+		result1 bool
+	}
+	subscriberAsPrimaryReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	SubscriberMediaEngineStub        func() *webrtc.MediaEngine
 	subscriberMediaEngineMutex       sync.RWMutex
@@ -2390,10 +2400,10 @@ func (fake *FakeParticipant) SendDataPacketReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []types.Participant, arg3 []*livekit.ICEServer) error {
-	var arg2Copy []types.Participant
+func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []*livekit.ParticipantInfo, arg3 []*livekit.ICEServer) error {
+	var arg2Copy []*livekit.ParticipantInfo
 	if arg2 != nil {
-		arg2Copy = make([]types.Participant, len(arg2))
+		arg2Copy = make([]*livekit.ParticipantInfo, len(arg2))
 		copy(arg2Copy, arg2)
 	}
 	var arg3Copy []*livekit.ICEServer
@@ -2405,7 +2415,7 @@ func (fake *FakeParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []types.P
 	ret, specificReturn := fake.sendJoinResponseReturnsOnCall[len(fake.sendJoinResponseArgsForCall)]
 	fake.sendJoinResponseArgsForCall = append(fake.sendJoinResponseArgsForCall, struct {
 		arg1 *livekit.Room
-		arg2 []types.Participant
+		arg2 []*livekit.ParticipantInfo
 		arg3 []*livekit.ICEServer
 	}{arg1, arg2Copy, arg3Copy})
 	stub := fake.SendJoinResponseStub
@@ -2427,13 +2437,13 @@ func (fake *FakeParticipant) SendJoinResponseCallCount() int {
 	return len(fake.sendJoinResponseArgsForCall)
 }
 
-func (fake *FakeParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []types.Participant, []*livekit.ICEServer) error) {
+func (fake *FakeParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) error) {
 	fake.sendJoinResponseMutex.Lock()
 	defer fake.sendJoinResponseMutex.Unlock()
 	fake.SendJoinResponseStub = stub
 }
 
-func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []types.Participant, []*livekit.ICEServer) {
+func (fake *FakeParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) {
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	argsForCall := fake.sendJoinResponseArgsForCall[i]
@@ -2864,6 +2874,59 @@ func (fake *FakeParticipant) StateReturnsOnCall(i int, result1 livekit.Participa
 	}{result1}
 }
 
+func (fake *FakeParticipant) SubscriberAsPrimary() bool {
+	fake.subscriberAsPrimaryMutex.Lock()
+	ret, specificReturn := fake.subscriberAsPrimaryReturnsOnCall[len(fake.subscriberAsPrimaryArgsForCall)]
+	fake.subscriberAsPrimaryArgsForCall = append(fake.subscriberAsPrimaryArgsForCall, struct {
+	}{})
+	stub := fake.SubscriberAsPrimaryStub
+	fakeReturns := fake.subscriberAsPrimaryReturns
+	fake.recordInvocation("SubscriberAsPrimary", []interface{}{})
+	fake.subscriberAsPrimaryMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryCallCount() int {
+	fake.subscriberAsPrimaryMutex.RLock()
+	defer fake.subscriberAsPrimaryMutex.RUnlock()
+	return len(fake.subscriberAsPrimaryArgsForCall)
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryCalls(stub func() bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = stub
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryReturns(result1 bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = nil
+	fake.subscriberAsPrimaryReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) SubscriberAsPrimaryReturnsOnCall(i int, result1 bool) {
+	fake.subscriberAsPrimaryMutex.Lock()
+	defer fake.subscriberAsPrimaryMutex.Unlock()
+	fake.SubscriberAsPrimaryStub = nil
+	if fake.subscriberAsPrimaryReturnsOnCall == nil {
+		fake.subscriberAsPrimaryReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.subscriberAsPrimaryReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeParticipant) SubscriberMediaEngine() *webrtc.MediaEngine {
 	fake.subscriberMediaEngineMutex.Lock()
 	ret, specificReturn := fake.subscriberMediaEngineReturnsOnCall[len(fake.subscriberMediaEngineArgsForCall)]
@@ -3124,6 +3187,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.startMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
+	fake.subscriberAsPrimaryMutex.RLock()
+	defer fake.subscriberAsPrimaryMutex.RUnlock()
 	fake.subscriberMediaEngineMutex.RLock()
 	defer fake.subscriberMediaEngineMutex.RUnlock()
 	fake.subscriberPCMutex.RLock()
