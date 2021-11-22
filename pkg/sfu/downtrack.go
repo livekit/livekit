@@ -937,16 +937,25 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 		}
 	}
 
-	if tsl < csl {
+	if tsl < csl && tsl < d.MaxSpatialLayer() {
 		//
-		// If target layer is lower, it is potentially due to bandwidth
-		// constraints that the layer has been switched down. Continuing
-		// to send higher layer will only exacerbate the situation.
-		// So, drop it.
+		// If target layer is lower than both the current and
+		// maximum subscribed layer, it is due to bandwidth
+		// constraints that the target layer has been switched down.
+		// Continuing to send higher layer will only exacerbate the
+		// situation by putting more stress on the channel. So, drop it.
 		//
 		// In the other direction, it is okay to keep forwarding till
 		// switch point to get a smoother stream till the higher
 		// layer key frame arrives.
+		//
+		// Note that in the case of client subscription layer restriction
+		// coinciding with server restriction due to bandwidth limitation,
+		// this will take client subscription as the winning vote and
+		// continue to stream current spatial layer till switch point.
+		// That could lead to congesting the channel.
+		// LK-TODO: Improve the above case, i. e. distinguish server
+		// applied restriction from client requested restriction.
 		//
 		d.pktsDropped.add(1)
 		return nil
