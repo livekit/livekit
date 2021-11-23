@@ -16,6 +16,7 @@ const updateFrequency = time.Second * 10
 type StatsWorker struct {
 	t             *TelemetryService
 	roomID        string
+	roomName      string
 	participantID string
 
 	sync.RWMutex
@@ -37,11 +38,12 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWorker {
+func NewStatsWorker(t *TelemetryService, roomID, participantID, roomName string) *StatsWorker {
 	s := &StatsWorker{
 		t:             t,
 		roomID:        roomID,
 		participantID: participantID,
+		roomName:      roomName,
 
 		buffers: make(map[uint32]*buffer.Buffer),
 		drain:   make(map[uint32]bool),
@@ -50,11 +52,13 @@ func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWor
 			Kind:          livekit.StreamType_UPSTREAM,
 			RoomId:        roomID,
 			ParticipantId: participantID,
+			RoomName:      roomName,
 		}},
 		outgoing: &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_DOWNSTREAM,
 			RoomId:        roomID,
 			ParticipantId: participantID,
+			RoomName:      roomName,
 		}},
 
 		close: make(chan struct{}, 1),
@@ -163,6 +167,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 		Kind:          next.Kind,
 		RoomId:        s.roomID,
 		ParticipantId: s.participantID,
+		RoomName:      s.roomName,
 	}
 
 	next.TimeStamp = ts
