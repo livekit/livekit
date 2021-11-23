@@ -163,6 +163,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, p
 
 	if strings.ToLower(c.MimeType) == "video/vp8" {
 		d.vp8Munger = NewVP8Munger()
+		d.payload = packetFactory.Get().(*[]byte)
 	}
 
 	if d.Kind() == webrtc.RTPCodecTypeVideo {
@@ -182,7 +183,6 @@ func (d *DownTrack) SetTrackType(isSimulcast bool) {
 	} else {
 		d.trackType = SimpleDownTrack
 	}
-	d.payload = packetFactory.Get().(*[]byte)
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
