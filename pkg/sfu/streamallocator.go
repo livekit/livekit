@@ -546,7 +546,7 @@ func (s *StreamAllocator) runStateMachine(event Event) {
 func (s *StreamAllocator) runStatePreCommit(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
@@ -569,7 +569,7 @@ func (s *StreamAllocator) runStatePreCommit(event Event) {
 func (s *StreamAllocator) runStateStable(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
@@ -607,7 +607,7 @@ func (s *StreamAllocator) runStateStable(event Event) {
 func (s *StreamAllocator) runStateDeficient(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.maybeProbe()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
@@ -642,8 +642,7 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 	// to avoid any self-inflicted damaage
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.prober.Reset()
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
