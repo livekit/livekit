@@ -45,7 +45,7 @@ func (t *TelemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 
 func (t *TelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
 	t.Lock()
-	t.workers[participant.Sid] = NewStatsWorker(t, room.Sid, participant.Sid)
+	t.workers[participant.Sid] = NewStatsWorker(t, room.Sid, participant.Sid, room.Name)
 	t.Unlock()
 
 	prometheus.AddParticipant()
