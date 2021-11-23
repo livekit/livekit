@@ -14,26 +14,29 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type RTCService struct {
-	router        routing.MessageRouter
+	router        routing.Router
 	roomAllocator RoomAllocator
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
 	isDev         bool
+	limits        config.LimitConfig
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.Router, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
 		upgrader:      websocket.Upgrader{},
 		currentNode:   currentNode,
 		isDev:         conf.Development,
+		limits:        conf.Limit,
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -72,6 +75,12 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	if onlyName != "" {
 		roomName = onlyName
+	}
+
+	if foundNode, err := s.router.GetNodeForRoom(r.Context(), roomName); err == nil {
+		if selector.LimitsReached(s.limits, foundNode.Stats) {
+			return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+		}
 	}
 
 	pi := routing.ParticipantInit{

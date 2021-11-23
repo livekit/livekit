@@ -137,3 +137,11 @@ keys:
 #     - name: us-west-2
 #       lat: 44.19434095976287
 #       lon: -123.0674908379146
+
+# # node limits
+# # set to -1 to disable a limit
+# limit:
+#   # defaults to 400 tracks in & out per CPU, up to 8000
+#   num_tracks: -1
+#   # defaults to 1 GB/s, or just under 10 Gbps
+#   bytes_per_sec: 1_000_000_000
