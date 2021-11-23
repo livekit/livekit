@@ -62,18 +62,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(enabled bool, quality livekit
 		t.subMuted.TrySet(!enabled)
 		t.updateDownTrackMute()
 		if enabled && t.dt.Kind() == webrtc.RTPCodecTypeVideo {
-			err := t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
-			// LK-TODO-START
-			// For now, this set max calls into switchSpatialLayer and returns the result.
-			// When StreamAllocator becomes the one true way to allocate layers,
-			// there will not a ErrSpatialLayerNotFound error as the allocation
-			// logic will automatically the best available layer under the max layer.
-			// So, this check should be removed when enabling StreamAllocator
-			// LK-TODO-END
-			if err == sfu.ErrSpatialLayerNotFound && quality != livekit.VideoQuality_MEDIUM {
-				// try to switch to middle layer
-				_ = t.dt.SetMaxSpatialLayer(spatialLayerForQuality(livekit.VideoQuality_MEDIUM))
-			}
+			t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
 		}
 	})
 }
