@@ -541,10 +541,6 @@ func (d *DownTrack) switchSpatialLayer(targetLayer int32) error {
 	return nil
 }
 
-func (d *DownTrack) SwitchSpatialLayerDone(layer int32) {
-	d.currentSpatialLayer.set(layer)
-}
-
 func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded bool) (int32, error) {
 	if d.trackType == SimulcastDownTrack {
 		currentLayer := uint16(d.CurrentSpatialLayer())
@@ -944,13 +940,49 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 }
 
 func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	// Check if packet SSRC is different from before
-	// if true, the video source changed
+	tsl := d.TargetSpatialLayer()
 	csl := d.CurrentSpatialLayer()
-	if csl != layer {
+	if tsl == layer && csl != tsl {
+		if extPkt.KeyFrame {
+			d.currentSpatialLayer.set(layer)
+			csl = layer
+		} else {
+			d.lastPli.set(time.Now().UnixNano())
+			d.receiver.SendPLI(layer)
+		}
+	}
+
+	if tsl < csl && tsl < d.MaxSpatialLayer() {
+		//
+		// If target layer is lower than both the current and
+		// maximum subscribed layer, it is due to bandwidth
+		// constraints that the target layer has been switched down.
+		// Continuing to send higher layer will only exacerbate the
+		// situation by putting more stress on the channel. So, drop it.
+		//
+		// In the other direction, it is okay to keep forwarding till
+		// switch point to get a smoother stream till the higher
+		// layer key frame arrives.
+		//
+		// Note that in the case of client subscription layer restriction
+		// coinciding with server restriction due to bandwidth limitation,
+		// this will take client subscription as the winning vote and
+		// continue to stream current spatial layer till switch point.
+		// That could lead to congesting the channel.
+		// LK-TODO: Improve the above case, i. e. distinguish server
+		// applied restriction from client requested restriction.
+		//
+		d.pktsDropped.add(1)
 		return nil
 	}
 
+	if csl != layer {
+		d.pktsDropped.add(1)
+		return nil
+	}
+
+	// Check if packet SSRC is different from before
+	// if true, the video source changed
 	lastSSRC := d.lastSSRC.get()
 	reSync := d.reSync.get()
 	if lastSSRC != extPkt.Packet.SSRC || reSync {
