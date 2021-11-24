@@ -43,6 +43,7 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/mod v0.5.1 // indirect
+	google.golang.org/grpc v1.42.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )

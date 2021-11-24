@@ -41,6 +41,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newTurnAuthHandler,
 		NewTurnServer,
 		NewLivekitServer,
+		config.GetAnalyticsConf,
 	)
 	return &LivekitServer{}, nil
 }
