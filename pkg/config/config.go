@@ -39,6 +39,7 @@ type Config struct {
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
 	Limit          LimitConfig        `yaml:"limit"`
+	Analytics      AnalyticsConfig    `yaml:"analytics"`
 
 	Development bool `yaml:"development"`
 }
@@ -134,6 +135,12 @@ type RegionConfig struct {
 type LimitConfig struct {
 	NumTracks   int32   `yaml:"num_tracks"`
 	BytesPerSec float32 `yaml:"bytes_per_sec"`
+}
+
+// AnalyticsConfig address and port of analytics endpoint to send telemetry to
+type AnalyticsConfig struct {
+	Address      string `yaml:"address"`
+	AnalyticsKey string `yaml:"analytics_key"`
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -284,4 +291,8 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+func GetAnalyticsConf(conf *Config) *AnalyticsConfig {
+	return &conf.Analytics
 }

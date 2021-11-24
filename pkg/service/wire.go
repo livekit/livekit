@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 
+	"google.golang.org/grpc"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
 	"github.com/pkg/errors"
@@ -41,6 +43,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newTurnAuthHandler,
 		NewTurnServer,
 		NewLivekitServer,
+		config.GetAnalyticsConf,
+		createAnalyticsClient,
 	)
 	return &LivekitServer{}, nil
 }
@@ -124,4 +128,13 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
+}
+
+func createAnalyticsClient(conf *config.AnalyticsConfig) (*grpc.ClientConn, error) {
+	if conf == nil || conf.Address == "" {
+		logger.Debugw("No valid config for analytics")
+		return nil, nil
+	}
+	opts := grpc.WithInsecure()
+	return grpc.Dial(conf.Address, opts)
 }

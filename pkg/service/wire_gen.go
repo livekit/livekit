@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc"
 	"os"
 )
 
@@ -47,7 +48,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	telemetryService := telemetry.NewTelemetryService(notifier)
+	analyticsConfig := config.GetAnalyticsConf(conf)
+	clientConn, err := createAnalyticsClient(analyticsConfig)
+	if err != nil {
+		return nil, err
+	}
+	telemetryService := telemetry.NewTelemetryService(notifier, clientConn, analyticsConfig)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
 	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
@@ -146,4 +152,13 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
+}
+
+func createAnalyticsClient(conf *config.AnalyticsConfig) (*grpc.ClientConn, error) {
+	if conf == nil || conf.Address == "" {
+		logger.Debugw("No valid config for analytics")
+		return nil, nil
+	}
+	opts := grpc.WithInsecure()
+	return grpc.Dial(conf.Address, opts)
 }

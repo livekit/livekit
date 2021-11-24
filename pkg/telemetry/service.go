@@ -1,7 +1,12 @@
 package telemetry
 
 import (
+	"context"
 	"sync"
+
+	"github.com/livekit/livekit-server/pkg/config"
+
+	"google.golang.org/grpc"
 
 	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/logger"
@@ -27,8 +32,8 @@ type TelemetryService struct {
 	stats            livekit.AnalyticsRecorderService_IngestStatsClient
 }
 
-func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
-	return &TelemetryService{
+func NewTelemetryService(notifier webhook.Notifier, conn *grpc.ClientConn, conf *config.AnalyticsConfig) *TelemetryService {
+	service := &TelemetryService{
 		notifier:    notifier,
 		webhookPool: workerpool.New(1),
 		workers:     make(map[string]*StatsWorker),
@@ -37,6 +42,30 @@ func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
 		analyticsKey:     "",
 		nodeID:           "",
 	}
+
+	// Setup analytics clients
+	if conn != nil {
+		client := livekit.NewAnalyticsRecorderServiceClient(conn)
+		if client != nil {
+			stats, err := client.IngestStats(context.Background())
+			if err != nil {
+				logger.Errorw("Failed to create analytics stats client", err)
+				return service
+			}
+			events, err := client.IngestEvents(context.Background())
+			if err != nil {
+				logger.Errorw("Failed to create analytics events client", err)
+				return service
+			}
+			service.stats = stats
+			service.events = events
+			service.analyticsEnabled = true
+			if conf.AnalyticsKey != "" {
+				service.analyticsKey = conf.AnalyticsKey
+			}
+		}
+	}
+	return service
 }
 
 func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
