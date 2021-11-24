@@ -180,6 +180,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.subscriber.OnOffer(p.onOffer)
 
+	p.subscriber.OnStreamedTracksChange(p.onStreamedTracksChange)
+
 	return p, nil
 }
 
@@ -1310,6 +1312,40 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			p.params.Logger.Warnw("failed to SetCodecPreferences", err)
 		}
 	}
+}
+
+func (p *ParticipantImpl) onStreamedTracksChange(paused map[string][]string, resumed map[string][]string) error {
+	if len(paused) == 0 && len(resumed) == 0 {
+		return nil
+	}
+
+	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
+	if len(paused) != 0 {
+		for participantId, trackIds := range paused {
+			for _, trackId := range trackIds {
+				streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
+					ParticipantSid: participantId,
+					TrackSid:       trackId,
+				})
+			}
+		}
+	}
+	if len(resumed) != 0 {
+		for participantId, trackIds := range paused {
+			for _, trackId := range trackIds {
+				streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
+					ParticipantSid: participantId,
+					TrackSid:       trackId,
+				})
+			}
+		}
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_StreamedTracksUpdate{
+			StreamedTracksUpdate: streamedTracksUpdate,
+		},
+	})
 }
 
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {

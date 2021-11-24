@@ -647,9 +647,9 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
-func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, uint64) {
+func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (bool, bool, uint64, uint64) {
 	if d.Kind() == webrtc.RTPCodecTypeAudio || !d.enabled.get() {
-		return 0, 0
+		return false, false, 0, 0
 	}
 
 	// LK-TODO for temporal preference, traverse the bitrates array the other way
@@ -664,21 +664,21 @@ func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (uint64, u
 				optimalBandwidthNeeded = brs[i][j]
 			}
 			if brs[i][j] < availableChannelCapacity {
+				wasBandwidthConstrainedMuted := d.bandwidthConstrainedMuted.get()
 				d.bandwidthConstrainedMute(false) // just in case it was muted
 				d.switchSpatialLayer(int32(i))
 				d.switchTemporalLayer(int32(j))
 
-				return brs[i][j], optimalBandwidthNeeded
+				return false, wasBandwidthConstrainedMuted, brs[i][j], optimalBandwidthNeeded
 			}
 		}
 	}
 
 	// no layer fits in the available channel capacity, disable the track
-	// LK-TODO - this should fire some callback to notify an observer that a
-	// track has been disabled/muted due to bandwidth constraints
+	wasBandwidthConstrainedMuted := d.bandwidthConstrainedMuted.get()
 	d.bandwidthConstrainedMute(true)
 
-	return 0, optimalBandwidthNeeded
+	return !wasBandwidthConstrainedMuted, false, 0, optimalBandwidthNeeded
 }
 
 func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {

@@ -99,7 +99,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		logger:             params.Logger,
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
-		t.streamAllocator = sfu.NewStreamAllocator()
+		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
+			ParticipantID: params.ParticipantID,
+			Logger:        params.Logger,
+		})
 		t.streamAllocator.Start()
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
@@ -253,12 +256,20 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return nil
 }
 
+func (t *PCTransport) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.OnStreamedTracksChange(f)
+}
+
 func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}
 
-	t.streamAllocator.AddTrack(subTrack.DownTrack())
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), subTrack.PublisherIdentity())
 }
 
 func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
