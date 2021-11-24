@@ -39,6 +39,7 @@ type Config struct {
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
 	Limit          LimitConfig        `yaml:"limit"`
+	Analytics      AnalyticsConfig    `yaml:"analytics"`
 
 	Development bool `yaml:"development"`
 }
@@ -131,9 +132,15 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon"`
 }
 
+<<<<<<< HEAD
 type LimitConfig struct {
 	NumTracks   int32   `yaml:"num_tracks"`
 	BytesPerSec float32 `yaml:"bytes_per_sec"`
+=======
+// AnalyticsConfig address and port of analytics endpoint to send telemetry to
+type AnalyticsConfig struct {
+	Address string `yaml:"address"`
+>>>>>>> Analytics config to setup telemetry client
 }
 
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
@@ -234,6 +241,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 
 func (conf *Config) HasRedis() bool {
 	return conf.Redis.Address != ""
+}
+
+func (conf *Config) HasAnalytics() bool {
+	return conf.Analytics.Address != ""
 }
 
 func (conf *Config) updateFromCLI(c *cli.Context) error {

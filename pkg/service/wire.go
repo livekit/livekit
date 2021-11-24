@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"google.golang.org/grpc"
 	"os"
 
 	"github.com/go-redis/redis/v8"
@@ -41,6 +42,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newTurnAuthHandler,
 		NewTurnServer,
 		NewLivekitServer,
+		createAnalyticsClient,
 	)
 	return &LivekitServer{}, nil
 }
@@ -124,4 +126,12 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
+}
+
+func createAnalyticsClient(conf *config.Config) (*grpc.ClientConn, error){
+	if ! conf.HasAnalytics() {
+		return nil, nil
+	}
+	opts := grpc.WithInsecure()
+	return grpc.Dial(conf.Analytics.Address, opts)
 }
