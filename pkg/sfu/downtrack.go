@@ -682,7 +682,7 @@ func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (isPausing
 	}
 
 	// no layer fits in the available channel capacity, disable the track
-	isPausing = d.bandwidthConstrainedMuted.get()
+	isPausing = !d.bandwidthConstrainedMuted.get()
 	d.bandwidthConstrainedMute(true)
 	return
 }
