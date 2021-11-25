@@ -417,6 +417,9 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = uint64(remb.Bitrate)
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.logger.Debugw("received new estimate", "pariticpant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+	}
 	signal := s.maybeCommitEstimate()
 	s.estimateMu.Unlock()
 
@@ -764,12 +767,16 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
 	//   2. time.Since(lastCommitTime) > EstimateCommitMs => to catch long oscillating estimate
 	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
-		// too large a change, wait for estimate to settle
-		return Signal_NONE
+		// too large a change, wait for estimate to settle.
+		// Unless estimate has been oscillating for too long.
+		if time.Since(s.lastCommitTime) < EstimateCommitMs {
+			return Signal_NONE
+		}
 	}
 
+	// don't commit too often even if the change is small.
+	// Small changes will also get picked up during periodic check.
 	if time.Since(s.lastCommitTime) < EstimateCommitMs {
-		// don't commit too often
 		return Signal_NONE
 	}
 
@@ -786,6 +793,7 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
+	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
 
 	return signal
 }
@@ -955,11 +963,11 @@ func (s *StreamAllocator) allocate() {
 	}
 
 	if len(pausedTracks) != 0 || len(resumedTracks) != 0 {
-		s.logger.Debugw("streamed tracks changed", "paused", pausedTracks, "resumed", resumedTracks)
+		s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", pausedTracks, "resumed", resumedTracks)
 		if s.onStreamedTracksChange != nil {
 			err := s.onStreamedTracksChange(pausedTracks, resumedTracks)
 			if err != nil {
-				logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+				s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
 			}
 		}
 	}
