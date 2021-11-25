@@ -21,7 +21,7 @@ import (
 )
 
 type RTCService struct {
-	router        routing.Router
+	router        routing.MessageRouter
 	roomAllocator RoomAllocator
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
@@ -29,7 +29,7 @@ type RTCService struct {
 	limits        config.LimitConfig
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.Router, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
@@ -77,9 +77,11 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		roomName = onlyName
 	}
 
-	if foundNode, err := s.router.GetNodeForRoom(r.Context(), roomName); err == nil {
-		if selector.LimitsReached(s.limits, foundNode.Stats) {
-			return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+	if router, ok := s.router.(routing.Router); ok {
+		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
+			if selector.LimitsReached(s.limits, foundNode.Stats) {
+				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+			}
 		}
 	}
 
