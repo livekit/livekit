@@ -5,6 +5,9 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 )
 
 type AnalyticsService interface {
@@ -20,10 +23,10 @@ type analyticsService struct {
 	stats  livekit.AnalyticsRecorderService_IngestStatsClient
 }
 
-func NewAnalyticsService(analyticsKey, nodeID string) AnalyticsService {
+func NewAnalyticsService(conf *config.Config, currentNode routing.LocalNode) AnalyticsService {
 	return &analyticsService{
-		analyticsKey: analyticsKey,
-		nodeID:       nodeID,
+		analyticsKey: "", // TODO: conf.AnalyticsKey
+		nodeID:       currentNode.Id,
 	}
 }
 
