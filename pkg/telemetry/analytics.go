@@ -34,6 +34,7 @@ func (a *analyticsService) SendStats(ctx context.Context, stats []*livekit.Analy
 	if a.stats == nil {
 		return
 	}
+
 	for _, stat := range stats {
 		stat.AnalyticsKey = a.analyticsKey
 		stat.Node = a.nodeID
