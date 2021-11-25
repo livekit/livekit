@@ -16,6 +16,7 @@ import (
 type TelemetryService interface {
 	// stats
 	NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory
+	AddUpTrack(participantID string, buff *buffer.Buffer)
 	OnDownstreamPacket(participantID string, bytes int)
 	HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet)
 	Report(ctx context.Context, stats []*livekit.AnalyticsStat)
@@ -26,7 +27,6 @@ type TelemetryService interface {
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
 	TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo)
-	AddUpTrack(participantID string, buff *buffer.Buffer)
 	TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32)
 	TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
 	TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
@@ -51,6 +51,15 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 		webhookPool: workerpool.New(1),
 		workers:     make(map[string]*StatsWorker),
 		analytics:   analytics,
+	}
+}
+
+func (t *telemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
+		w.AddBuffer(buff)
 	}
 }
 

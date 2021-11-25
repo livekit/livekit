@@ -9,7 +9,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
@@ -95,15 +94,6 @@ func (t *telemetryService) TrackPublished(ctx context.Context, participantID str
 		ParticipantId: participantID,
 		Track:         track,
 	})
-}
-
-func (t *telemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
-	t.RLock()
-	w := t.workers[participantID]
-	t.RUnlock()
-	if w != nil {
-		w.AddBuffer(buff)
-	}
 }
 
 func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
