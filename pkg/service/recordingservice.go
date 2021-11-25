@@ -17,11 +17,11 @@ import (
 
 type RecordingService struct {
 	bus       utils.MessageBus
-	telemetry *telemetry.TelemetryService
+	telemetry telemetry.TelemetryService
 	shutdown  chan struct{}
 }
 
-func NewRecordingService(mb utils.MessageBus, telemetry *telemetry.TelemetryService) *RecordingService {
+func NewRecordingService(mb utils.MessageBus, telemetry telemetry.TelemetryService) *RecordingService {
 	return &RecordingService{
 		bus:       mb,
 		telemetry: telemetry,

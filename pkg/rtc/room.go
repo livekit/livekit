@@ -34,7 +34,7 @@ type Room struct {
 
 	config      WebRTCConfig
 	audioConfig *config.AudioConfig
-	telemetry   *telemetry.TelemetryService
+	telemetry   telemetry.TelemetryService
 
 	// map of identity -> Participant
 	participants    map[string]types.Participant
@@ -57,7 +57,7 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry *telemetry.TelemetryService) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
 		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),

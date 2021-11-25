@@ -45,7 +45,7 @@ type TransportParams struct {
 	ParticipantIdentity string
 	Target              livekit.SignalTarget
 	Config              *WebRTCConfig
-	Telemetry           *telemetry.TelemetryService
+	Telemetry           telemetry.TelemetryService
 	EnabledCodecs       []*livekit.Codec
 	Logger              logger.Logger
 }

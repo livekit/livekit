@@ -39,7 +39,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Telemetry       *telemetry.TelemetryService
+	Telemetry       telemetry.TelemetryService
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
