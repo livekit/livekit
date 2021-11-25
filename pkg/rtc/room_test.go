@@ -552,7 +552,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
 		},
-		telemetry.NewTelemetryService(nil),
+		telemetry.NewTelemetryService(nil, nil),
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := fmt.Sprintf("p%d", i)
