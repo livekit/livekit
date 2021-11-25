@@ -1141,7 +1141,7 @@ func appendTrack(t *Track, m *map[string][]string) {
 	trackID := t.ID()
 	peer, ok := (*m)[peerID]
 	if !ok {
-		peer = make([]string, 2)
+		peer = make([]string, 0, 2)
 	}
 	peer = append(peer, trackID)
 	(*m)[peerID] = peer
