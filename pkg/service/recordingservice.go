@@ -17,11 +17,11 @@ import (
 
 type RecordingService struct {
 	bus       utils.MessageBus
-	telemetry *telemetry.TelemetryService
+	telemetry telemetry.TelemetryService
 	shutdown  chan struct{}
 }
 
-func NewRecordingService(mb utils.MessageBus, telemetry *telemetry.TelemetryService) *RecordingService {
+func NewRecordingService(mb utils.MessageBus, telemetry telemetry.TelemetryService) *RecordingService {
 	return &RecordingService{
 		bus:       mb,
 		telemetry: telemetry,
@@ -158,7 +158,7 @@ func (s *RecordingService) resultsWorker() {
 			}
 			logger.Debugw("recording ended", values...)
 
-			s.telemetry.RecordingEnded(res)
+			s.telemetry.RecordingEnded(context.Background(), res)
 		case <-s.shutdown:
 			_ = sub.Close()
 			return

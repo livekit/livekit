@@ -32,6 +32,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		routing.CreateRouter,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
+		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		NewRecordingService,
 		NewRoomAllocator,
