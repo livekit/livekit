@@ -31,7 +31,7 @@ type TelemetryService interface {
 	TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
 	TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
 	RecordingStarted(ctx context.Context, recordingID string, req *livekit.StartRecordingRequest)
-	RecordingEnded(res *livekit.RecordingResult)
+	RecordingEnded(ctx context.Context, res *livekit.RecordingResult)
 }
 
 type telemetryService struct {

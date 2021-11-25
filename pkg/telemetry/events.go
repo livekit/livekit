@@ -152,8 +152,7 @@ func (t *telemetryService) RecordingStarted(ctx context.Context, recordingID str
 	})
 }
 
-func (t *telemetryService) RecordingEnded(res *livekit.RecordingResult) {
-	ctx := context.Background()
+func (t *telemetryService) RecordingEnded(ctx context.Context, res *livekit.RecordingResult) {
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event:           webhook.EventRecordingFinished,
 		RecordingResult: res,

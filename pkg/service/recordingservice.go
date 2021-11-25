@@ -158,7 +158,7 @@ func (s *RecordingService) resultsWorker() {
 			}
 			logger.Debugw("recording ended", values...)
 
-			s.telemetry.RecordingEnded(res)
+			s.telemetry.RecordingEnded(context.Background(), res)
 		case <-s.shutdown:
 			_ = sub.Close()
 			return
