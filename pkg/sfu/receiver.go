@@ -204,16 +204,23 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
 
-	if w.isSimulcast && w.useTrackers {
-		tracker := NewStreamTracker()
+	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
+		samplesRequired := uint32(5)
+		cyclesRequired := uint64(60) // 30s of continuous stream
+		if layer == 0 {
+			// be very forgiving for base layer
+			samplesRequired = 1
+			cyclesRequired = 4 // 2s of continuous stream
+		}
+		tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
 		w.trackers[layer] = tracker
-		tracker.OnStatusChanged = func(status StreamStatus) {
+		tracker.OnStatusChanged(func(status StreamStatus) {
 			if status == StreamStatusStopped {
 				w.removeAvailableLayer(uint16(layer))
 			} else {
 				w.addAvailableLayer(uint16(layer))
 			}
-		}
+		})
 		tracker.Start()
 	}
 	go w.forwardRTP(layer)
@@ -223,9 +230,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 // this will reflect the "muted" status and will pause streamtracker to ensure we don't turn off
 // the layer
 func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
-	if !w.isSimulcast {
-		return
-	}
 	w.upTrackMu.Lock()
 	defer w.upTrackMu.Unlock()
 	for _, tracker := range w.trackers {
@@ -247,18 +251,15 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 		return
 	}
 
-	if w.isSimulcast {
-		track.SetTrackType(true)
-
+	track.SetTrackType(w.isSimulcast)
+	if w.Kind() == webrtc.RTPCodecTypeVideo {
 		// notify added downtrack of available layers
 		w.upTrackMu.RLock()
 		layers, ok := w.availableLayers.Load().([]uint16)
 		w.upTrackMu.RUnlock()
 		if ok && len(layers) != 0 {
-			_, _ = track.UptrackLayersChange(layers, true)
+			track.UptrackLayersChange(layers, true)
 		}
-	} else {
-		track.SetTrackType(false)
 	}
 
 	w.storeDownTrack(track)
@@ -292,7 +293,7 @@ func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16, layerAdded bool) 
 	defer w.downTrackMu.RUnlock()
 	for _, dt := range w.downTracks {
 		if dt != nil {
-			_, _ = dt.UptrackLayersChange(layers, layerAdded)
+			dt.UptrackLayersChange(layers, layerAdded)
 		}
 	}
 }

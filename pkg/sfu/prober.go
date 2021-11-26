@@ -169,6 +169,7 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 		return
 	}
 
+	fmt.Printf("adding cluster, desired: %d, expected: %d, min: %d, max: %d\n", desiredRateBps, expectedRateBps, minDuration.Milliseconds(), maxDuration.Milliseconds()) // REMOVE
 	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
 	p.logger.Debugw("cluster added", "participant", p.participantID, "cluster", cluster.String())
 
@@ -372,9 +373,9 @@ func (c *Cluster) Process(p *Prober) bool {
 }
 
 func (c *Cluster) String() string {
-	activeTimeMs := time.Duration(0)
+	activeTimeMs := int64(0)
 	if !c.startTime.IsZero() {
-		activeTimeMs = time.Since(c.startTime) * time.Millisecond
+		activeTimeMs = time.Since(c.startTime).Milliseconds()
 	}
 
 	return fmt.Sprintf("bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
@@ -383,6 +384,6 @@ func (c *Cluster) String() string {
 		c.bytesSentNonProbe,
 		c.desiredBytes-c.bytesSentProbe-c.bytesSentNonProbe,
 		activeTimeMs,
-		c.minDuration*time.Millisecond,
-		c.maxDuration*time.Millisecond)
+		c.minDuration.Milliseconds(),
+		c.maxDuration.Milliseconds())
 }
