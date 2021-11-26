@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,17 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
+
+// TrackSender defines a  interface send media to remote peer
+type TrackSender interface {
+	UptrackLayersChange(availableLayers []uint16, layerAdded bool) (int32, error)
+	WriteRTP(p *buffer.ExtPacket, layer int32) error
+	Close()
+	// ID is the globally unique identifier for this Track.
+	ID() string
+	SetTrackType(isSimulcast bool)
+	PeerID() string
+}
 
 // DownTrackType determines the type of track
 type DownTrackType int
@@ -106,7 +118,7 @@ type DownTrack struct {
 
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
-	receiver                Receiver
+	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
 	onCloseHandler          func()
@@ -149,7 +161,7 @@ type DownTrack struct {
 }
 
 // NewDownTrack returns a DownTrack.
-func NewDownTrack(c webrtc.RTPCodecCapability, r Receiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
+func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
 	d := &DownTrack{
 		id:            r.TrackID(),
 		peerID:        peerID,
@@ -234,6 +246,8 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
 
+func (d *DownTrack) PeerID() string { return d.peerID }
+
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
 	d.rtpHeaderExtensions = rtpHeaderExtensions
@@ -266,7 +280,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
-func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
+func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
 	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
 		return nil
 	}
@@ -287,7 +301,7 @@ func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
 }
 
 // Writes RTP header extensions of track
-func (d *DownTrack) WriteRTPHeaderExtensions(hdr *rtp.Header) error {
+func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
 	// clear out extensions that may have been in the forwarded header
 	hdr.Extension = false
 	hdr.ExtensionProfile = 0
@@ -402,7 +416,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			CSRC:           []uint32{},
 		}
 
-		err = d.WriteRTPHeaderExtensions(&hdr)
+		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
 			return bytesSent
 		}
@@ -837,10 +851,8 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	if d.reSync.get() {
 		if d.Kind() == webrtc.RTPCodecTypeVideo {
 			if !extPkt.KeyFrame {
-				d.receiver.SendRTCP([]rtcp.Packet{
-					&rtcp.PictureLossIndication{SenderSSRC: d.ssrc, MediaSSRC: extPkt.Packet.SSRC},
-				})
 				d.lastPli.set(time.Now().UnixNano())
+				d.receiver.SendPLI(0)
 				d.pktsDropped.add(1)
 				return nil
 			}
@@ -930,7 +942,7 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	hdr.SequenceNumber = newSN
 	hdr.SSRC = d.ssrc
 
-	err = d.WriteRTPHeaderExtensions(&hdr)
+	err = d.writeRTPHeaderExtensions(&hdr)
 	if err != nil {
 		return err
 	}
@@ -1001,9 +1013,7 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 			// all the packets to down tracks and down track should be
 			// the only one deciding whether to switch/forward/drop
 			// LK-TODO-END
-			d.receiver.SendRTCP([]rtcp.Packet{
-				&rtcp.PictureLossIndication{SenderSSRC: d.ssrc, MediaSSRC: extPkt.Packet.SSRC},
-			})
+			d.receiver.SendPLI(layer)
 			d.lastPli.set(time.Now().UnixNano())
 			d.pktsDropped.add(1)
 			return nil
@@ -1122,7 +1132,7 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 	hdr.SSRC = d.ssrc
 	hdr.PayloadType = d.payloadType
 
-	err = d.WriteRTPHeaderExtensions(&hdr)
+	err = d.writeRTPHeaderExtensions(&hdr)
 	if err != nil {
 		return err
 	}
@@ -1177,7 +1187,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			CSRC:           []uint32{},
 		}
 
-		err = d.WriteRTPHeaderExtensions(&hdr)
+		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
 			return err
 		}
@@ -1260,9 +1270,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	var fwdPkts []rtcp.Packet
 	pliOnce := true
-	firOnce := true
 
 	var (
 		maxRatePacketLoss uint8
@@ -1273,23 +1281,20 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		return
 	}
 
+	sendPliOnce := func() {
+		if pliOnce {
+			d.lastPli.set(time.Now().UnixNano())
+			d.receiver.SendPLI(d.TargetSpatialLayer())
+			pliOnce = false
+		}
+	}
+
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
-			if pliOnce {
-				d.lastPli.set(time.Now().UnixNano())
-				p.MediaSSRC = ssrc
-				p.SenderSSRC = d.ssrc
-				fwdPkts = append(fwdPkts, p)
-				pliOnce = false
-			}
+			sendPliOnce()
 		case *rtcp.FullIntraRequest:
-			if firOnce {
-				p.MediaSSRC = ssrc
-				p.SenderSSRC = d.ssrc
-				fwdPkts = append(fwdPkts, p)
-				firOnce = false
-			}
+			sendPliOnce()
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if d.onREMB != nil {
 				d.onREMB(d, p)
@@ -1322,14 +1327,49 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			for _, pair := range p.Nacks {
 				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
 			}
-			if err = d.receiver.RetransmitPackets(d, nackedPackets); err != nil {
-				return
-			}
+			go d.retransmitPackets(nackedPackets)
 		}
 	}
+}
 
-	if len(fwdPkts) > 0 {
-		d.receiver.SendRTCP(fwdPkts)
+func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
+	src := packetFactory.Get().(*[]byte)
+	defer packetFactory.Put(src)
+	for _, meta := range nackedPackets {
+		pktBuff := *src
+		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+		var pkt rtp.Packet
+		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
+			continue
+		}
+		pkt.Header.SequenceNumber = meta.targetSeqNo
+		pkt.Header.Timestamp = meta.timestamp
+		pkt.Header.SSRC = d.ssrc
+		pkt.Header.PayloadType = d.payloadType
+
+		err = d.maybeTranslateVP8(&pkt, meta)
+		if err != nil {
+			Logger.Error(err, "translating VP8 packet err")
+			continue
+		}
+
+		err = d.writeRTPHeaderExtensions(&pkt.Header)
+		if err != nil {
+			Logger.Error(err, "writing rtp header extensions err")
+			continue
+		}
+
+		if _, err = d.writeStream.WriteRTP(&pkt.Header, pkt.Payload); err != nil {
+			Logger.Error(err, "Writing rtx packet err")
+		} else {
+			d.UpdateStats(uint32(n))
+		}
 	}
 }
 

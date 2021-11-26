@@ -8,32 +8,38 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gammazero/workerpool"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
+// TrackReceiver defines a interface receive media from remote peer
+type TrackReceiver interface {
+	TrackID() string
+	StreamID() string
+	GetBitrateTemporalCumulative() [3][4]uint64
+	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
+	AddDownTrack(track TrackSender)
+	DeleteDownTrack(peerID string)
+	SendPLI(layer int32)
+	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+}
+
 // Receiver defines a interface for a track receivers
 type Receiver interface {
 	TrackID() string
 	StreamID() string
 	Codec() webrtc.RTPCodecParameters
-	Kind() webrtc.RTPCodecType
-	SSRC(layer int) uint32
-	SetTrackMeta(trackID, streamID string)
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
-	AddDownTrack(track *DownTrack)
+	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() [3][4]uint64
-	RetransmitPackets(track *DownTrack, packets []packetMeta) error
+	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	DeleteDownTrack(peerID string)
 	OnCloseHandler(fn func())
-	SendRTCP(p []rtcp.Packet)
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
 
@@ -58,7 +64,6 @@ type WebRTCReceiver struct {
 	stream          string
 	receiver        *webrtc.RTPReceiver
 	codec           webrtc.RTPCodecParameters
-	nackWorker      *workerpool.WorkerPool
 	isSimulcast     bool
 	availableLayers atomic.Value
 	onCloseHandler  func()
@@ -79,7 +84,7 @@ type WebRTCReceiver struct {
 	upTracks  [3]*webrtc.TrackRemote
 
 	downTrackMu sync.RWMutex
-	downTracks  []*DownTrack
+	downTracks  []TrackSender
 	index       map[string]int
 	free        map[int]struct{}
 	numProcs    int
@@ -129,10 +134,9 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		streamID:    track.StreamID(),
 		codec:       track.Codec(),
 		kind:        track.Kind(),
-		nackWorker:  workerpool.New(1),
 		isSimulcast: len(track.RID()) > 0,
 		pliThrottle: 500e6,
-		downTracks:  make([]*DownTrack, 0),
+		downTracks:  make([]TrackSender, 0),
 		index:       make(map[string]int),
 		free:        make(map[int]struct{}),
 		numProcs:    runtime.NumCPU(),
@@ -231,13 +235,13 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	}
 }
 
-func (w *WebRTCReceiver) AddDownTrack(track *DownTrack) {
+func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	if w.closed.get() {
 		return
 	}
 
 	w.downTrackMu.RLock()
-	_, ok := w.index[track.peerID]
+	_, ok := w.index[track.PeerID()]
 	w.downTrackMu.RUnlock()
 	if ok {
 		return
@@ -413,58 +417,11 @@ func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS u
 	return
 }
 
-func (w *WebRTCReceiver) RetransmitPackets(track *DownTrack, packets []packetMeta) error {
-	if w.nackWorker.Stopped() {
-		return io.ErrClosedPipe
-	}
-	// LK-TODO: should move down track specific bits into there
-	w.nackWorker.Submit(func() {
-		src := packetFactory.Get().(*[]byte)
-		for _, meta := range packets {
-			pktBuff := *src
-			w.bufferMu.RLock()
-			buff := w.buffers[meta.layer]
-			w.bufferMu.RUnlock()
-			if buff == nil {
-				break
-			}
-			i, err := buff.GetPacket(pktBuff, meta.sourceSeqNo)
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				continue
-			}
-			var pkt rtp.Packet
-			if err = pkt.Unmarshal(pktBuff[:i]); err != nil {
-				continue
-			}
-			pkt.Header.SequenceNumber = meta.targetSeqNo
-			pkt.Header.Timestamp = meta.timestamp
-			pkt.Header.SSRC = track.ssrc
-			pkt.Header.PayloadType = track.payloadType
-
-			err = track.MaybeTranslateVP8(&pkt, meta)
-			if err != nil {
-				Logger.Error(err, "translating VP8 packet err")
-				continue
-			}
-
-			err = track.WriteRTPHeaderExtensions(&pkt.Header)
-			if err != nil {
-				Logger.Error(err, "writing rtp header extensions err")
-				continue
-			}
-
-			if _, err = track.writeStream.WriteRTP(&pkt.Header, pkt.Payload); err != nil {
-				Logger.Error(err, "Writing rtx packet err")
-			} else {
-				track.UpdateStats(uint32(i))
-			}
-		}
-		packetFactory.Put(src)
-	})
-	return nil
+func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+	w.bufferMu.RLock()
+	buff := w.buffers[layer]
+	w.bufferMu.RUnlock()
+	return buff.GetPacket(buf, sn)
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
@@ -536,9 +493,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	}
 }
 
-func (w *WebRTCReceiver) writeRTP(layer int32, dt *DownTrack, pkt *buffer.ExtPacket) {
+func (w *WebRTCReceiver) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
 	if err := dt.WriteRTP(pkt, layer); err != nil {
-		log.Error().Err(err).Str("id", dt.id).Msg("Error writing to down track")
+		log.Error().Err(err).Str("id", dt.ID()).Msg("Error writing to down track")
 	}
 }
 
@@ -550,29 +507,28 @@ func (w *WebRTCReceiver) closeTracks() {
 			dt.Close()
 		}
 	}
-	w.downTracks = make([]*DownTrack, 0)
+	w.downTracks = make([]TrackSender, 0)
 	w.index = make(map[string]int)
 	w.free = make(map[int]struct{})
 	w.downTrackMu.Unlock()
 
-	w.nackWorker.StopWait()
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
 	}
 }
 
-func (w *WebRTCReceiver) storeDownTrack(track *DownTrack) {
+func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 	w.downTrackMu.Lock()
 	defer w.downTrackMu.Unlock()
 
 	for idx := range w.free {
-		w.index[track.peerID] = idx
+		w.index[track.PeerID()] = idx
 		w.downTracks[idx] = track
 		delete(w.free, idx)
 		return
 	}
 
-	w.index[track.peerID] = len(w.downTracks)
+	w.index[track.PeerID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
 }
 
