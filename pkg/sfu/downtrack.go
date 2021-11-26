@@ -25,9 +25,7 @@ type TrackSender interface {
 	UptrackLayersChange(availableLayers []uint16, layerAdded bool) (int32, error)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
-	// ID is the unique identifier for this Track. This should be unique for the
-	// stream, but doesn't have to globally unique. A common example would be 'audio' or 'video'
-	// and StreamID would be 'desktop' or 'webcam'
+	// ID is the globally unique identifier for this Track.
 	ID() string
 	SetTrackType(isSimulcast bool)
 	PeerID() string
@@ -282,7 +280,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
-func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
+func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
 	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
 		return nil
 	}
@@ -303,7 +301,7 @@ func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
 }
 
 // Writes RTP header extensions of track
-func (d *DownTrack) WriteRTPHeaderExtensions(hdr *rtp.Header) error {
+func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
 	// clear out extensions that may have been in the forwarded header
 	hdr.Extension = false
 	hdr.ExtensionProfile = 0
@@ -418,7 +416,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			CSRC:           []uint32{},
 		}
 
-		err = d.WriteRTPHeaderExtensions(&hdr)
+		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
 			return bytesSent
 		}
@@ -944,7 +942,7 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 	hdr.SequenceNumber = newSN
 	hdr.SSRC = d.ssrc
 
-	err = d.WriteRTPHeaderExtensions(&hdr)
+	err = d.writeRTPHeaderExtensions(&hdr)
 	if err != nil {
 		return err
 	}
@@ -1134,7 +1132,7 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 	hdr.SSRC = d.ssrc
 	hdr.PayloadType = d.payloadType
 
-	err = d.WriteRTPHeaderExtensions(&hdr)
+	err = d.writeRTPHeaderExtensions(&hdr)
 	if err != nil {
 		return err
 	}
@@ -1189,7 +1187,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			CSRC:           []uint32{},
 		}
 
-		err = d.WriteRTPHeaderExtensions(&hdr)
+		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
 			return err
 		}
@@ -1339,7 +1337,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	defer packetFactory.Put(src)
 	for _, meta := range nackedPackets {
 		pktBuff := *src
-		n, err := d.receiver.ReadSimulcastRTP(pktBuff, meta.layer, meta.sourceSeqNo)
+		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -1355,13 +1353,13 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		err = d.MaybeTranslateVP8(&pkt, meta)
+		err = d.maybeTranslateVP8(&pkt, meta)
 		if err != nil {
 			Logger.Error(err, "translating VP8 packet err")
 			continue
 		}
 
-		err = d.WriteRTPHeaderExtensions(&pkt.Header)
+		err = d.writeRTPHeaderExtensions(&pkt.Header)
 		if err != nil {
 			Logger.Error(err, "writing rtp header extensions err")
 			continue

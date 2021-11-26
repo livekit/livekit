@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gammazero/workerpool"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
@@ -21,7 +20,7 @@ type TrackReceiver interface {
 	TrackID() string
 	StreamID() string
 	GetBitrateTemporalCumulative() [3][4]uint64
-	ReadSimulcastRTP(buf []byte, layer uint8, sn uint16) (int, error)
+	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
 	DeleteDownTrack(peerID string)
 	SendPLI(layer int32)
@@ -38,7 +37,7 @@ type Receiver interface {
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() [3][4]uint64
-	ReadSimulcastRTP(buf []byte, layer uint8, sn uint16) (int, error)
+	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	DeleteDownTrack(peerID string)
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
@@ -65,7 +64,6 @@ type WebRTCReceiver struct {
 	stream          string
 	receiver        *webrtc.RTPReceiver
 	codec           webrtc.RTPCodecParameters
-	nackWorker      *workerpool.WorkerPool
 	isSimulcast     bool
 	availableLayers atomic.Value
 	onCloseHandler  func()
@@ -136,7 +134,6 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		streamID:    track.StreamID(),
 		codec:       track.Codec(),
 		kind:        track.Kind(),
-		nackWorker:  workerpool.New(1),
 		isSimulcast: len(track.RID()) > 0,
 		pliThrottle: 500e6,
 		downTracks:  make([]TrackSender, 0),
@@ -420,7 +417,7 @@ func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS u
 	return
 }
 
-func (w *WebRTCReceiver) ReadSimulcastRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	w.bufferMu.RLock()
 	buff := w.buffers[layer]
 	w.bufferMu.RUnlock()
@@ -515,7 +512,6 @@ func (w *WebRTCReceiver) closeTracks() {
 	w.free = make(map[int]struct{})
 	w.downTrackMu.Unlock()
 
-	w.nackWorker.StopWait()
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
 	}
