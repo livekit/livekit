@@ -10,6 +10,8 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
@@ -37,7 +39,11 @@ type PCTransport struct {
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	negotiationState      int
-	logger                logger.Logger
+
+	// stream allocator for subscriber PC
+	streamAllocator *sfu.StreamAllocator
+
+	logger logger.Logger
 }
 
 type TransportParams struct {
@@ -92,6 +98,13 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		negotiationState:   negotiationStateNone,
 		logger:             params.Logger,
 	}
+	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
+			ParticipantID: params.ParticipantID,
+			Logger:        params.Logger,
+		})
+		t.streamAllocator.Start()
+	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
 			go func() {
@@ -126,6 +139,10 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 }
 
 func (t *PCTransport) Close() {
+	if t.streamAllocator != nil {
+		t.streamAllocator.Stop()
+	}
+
 	_ = t.pc.Close()
 }
 
@@ -237,4 +254,28 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	go t.onOffer(offer)
 	return nil
+}
+
+func (t *PCTransport) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.OnStreamedTracksChange(f)
+}
+
+func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), subTrack.PublisherIdentity())
+}
+
+func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
+	if t.streamAllocator == nil {
+		return
+	}
+
+	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
