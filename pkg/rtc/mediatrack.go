@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -74,7 +75,7 @@ type MediaTrackParams struct {
 	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	AudioConfig         config.AudioConfig
-	Telemetry           *telemetry.TelemetryService
+	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
 
@@ -249,7 +250,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			delete(t.subscribedTracks, sub.ID())
 			t.lock.Unlock()
 
-			t.params.Telemetry.TrackUnsubscribed(sub.ID(), t.ToProto())
+			t.params.Telemetry.TrackUnsubscribed(context.Background(), sub.ID(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -292,29 +293,23 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.subscribedTracks[sub.ID()] = subTrack
 	subTrack.SetPublisherMuted(t.IsMuted())
 
-	t.receiver.AddDownTrack(downTrack, t.shouldStartWithBestQuality())
+	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(sub.ID(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(context.Background(), sub.ID(), t.ToProto())
 	return nil
 }
 
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	numRegistered := atomic.LoadUint32(&t.numUpTracks)
-	numPublishing := uint32(0)
+	var numPublishing uint32
 	if t.simulcasted.Get() {
 		t.lock.RLock()
-		if t.receiver != nil {
-			for i := int32(0); i < 3; i++ {
-				if t.receiver.HasSpatialLayer(i) {
-					numPublishing += 1
-				}
-			}
-		}
+		numPublishing = uint32(t.receiver.NumAvailableSpatialLayers())
 		t.lock.RUnlock()
 	} else {
 		numPublishing = 1
@@ -380,18 +375,18 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			onclose := t.onClose
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
-			t.params.Telemetry.TrackUnpublished(t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
+			t.params.Telemetry.TrackUnpublished(context.Background(), t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			if onclose != nil {
 				onclose()
 			}
 		})
-		t.params.Telemetry.TrackPublished(t.params.ParticipantID, t.ToProto())
+		t.params.Telemetry.TrackPublished(context.Background(), t.params.ParticipantID, t.ToProto())
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
 	}
 
-	t.receiver.AddUpTrack(track, buff, t.shouldStartWithBestQuality())
+	t.receiver.AddUpTrack(track, buff)
 	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
@@ -460,12 +455,6 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	}
 
 	return quality
-}
-
-// LK-TODO: this should probably left up to auto size management and StreamAllocator
-// this function assumes caller holds lock
-func (t *MediaTrack) shouldStartWithBestQuality() bool {
-	return len(t.subscribedTracks) < 10
 }
 
 // TODO: send for all downtracks from the source participant

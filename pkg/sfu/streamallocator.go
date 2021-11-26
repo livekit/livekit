@@ -99,10 +99,13 @@
 package sfu
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -136,6 +139,21 @@ const (
 	State_GRATUITOUS_PROBING
 )
 
+func (s State) String() string {
+	switch s {
+	case State_PRE_COMMIT:
+		return "PRE_COMMIT"
+	case State_STABLE:
+		return "STABLE"
+	case State_DEFICIENT:
+		return "DEFICIENT"
+	case State_GRATUITOUS_PROBING:
+		return "GRATUITOUS_PROBING"
+	default:
+		return fmt.Sprintf("%d", int(s))
+	}
+}
+
 type Signal int
 
 const (
@@ -152,12 +170,52 @@ const (
 	Signal_PERIODIC_PING
 )
 
+func (s Signal) String() string {
+	switch s {
+	case Signal_NONE:
+		return "NONE"
+	case Signal_ADD_TRACK:
+		return "ADD_TRACK"
+	case Signal_REMOVE_TRACK:
+		return "REMOVE_TRACK"
+	case Signal_ESTIMATE_INCREASE:
+		return "ESTIMATE_INCREASE"
+	case Signal_ESTIMATE_DECREASE:
+		return "ESTIMATE_DECREASE"
+	case Signal_RECEIVER_REPORT:
+		return "RECEIVER_REPORT"
+	case Signal_AVAILABLE_LAYERS_ADD:
+		return "AVAILABLE_LAYERS_ADD"
+	case Signal_AVAILABLE_LAYERS_REMOVE:
+		return "AVAILABLE_LAYERS_REMOVE"
+	case Signal_SUBSCRIPTION_CHANGE:
+		return "SUBSCRIPTION_CHANGE"
+	case Signal_SUBSCRIBED_LAYERS_CHANGE:
+		return "SUBSCRIBED_LAYERS_CHANGE"
+	case Signal_PERIODIC_PING:
+		return "PERIODIC_PING"
+	default:
+		return fmt.Sprintf("%d", int(s))
+	}
+}
+
 type BoostMode int
 
 const (
 	BoostMode_LAYER BoostMode = iota
 	BoostMode_BANDWIDTH
 )
+
+func (b BoostMode) String() string {
+	switch b {
+	case BoostMode_LAYER:
+		return "LAYER"
+	case BoostMode_BANDWIDTH:
+		return "BANDWIDTH"
+	default:
+		return fmt.Sprintf("%d", int(b))
+	}
+}
 
 var (
 	// LK-TODO-START
@@ -170,8 +228,17 @@ var (
 	BoostWaitMs           = 3 * 1000 * time.Millisecond // 3 seconds
 )
 
-// LK-TODO add logger and log interesting events
+type StreamAllocatorParams struct {
+	ParticipantID string
+	Logger        logger.Logger
+}
+
 type StreamAllocator struct {
+	participantID string
+	logger        logger.Logger
+
+	onStreamedTracksChange func(paused map[string][]string, resumed map[string][]string) error
+
 	estimateMu               sync.RWMutex
 	trackingSSRC             uint32
 	committedChannelCapacity uint64
@@ -202,18 +269,23 @@ type Event struct {
 	DownTrack *DownTrack
 }
 
-func NewStreamAllocator() *StreamAllocator {
+func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
+		participantID:            params.ParticipantID,
+		logger:                   params.Logger,
 		committedChannelCapacity: InitialChannelCapacity,
 		lastCommitTime:           time.Now(),
 		receivedEstimate:         InitialChannelCapacity,
 		lastEstimateDecreaseTime: time.Now(),
 		boostMode:                BoostMode_LAYER,
 		tracks:                   make(map[string]*Track),
-		prober:                   NewProber(),
-		state:                    State_PRE_COMMIT,
-		eventCh:                  make(chan []Event, 10),
-		runningCh:                make(chan struct{}),
+		prober: NewProber(ProberParams{
+			ParticipantID: params.ParticipantID,
+			Logger:        params.Logger,
+		}),
+		state:     State_PRE_COMMIT,
+		eventCh:   make(chan []Event, 10),
+		runningCh: make(chan struct{}),
 	}
 	s.prober.OnSendProbe(s.onSendProbe)
 
@@ -233,7 +305,11 @@ func (s *StreamAllocator) Stop() {
 	close(s.eventCh)
 }
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
+func (s *StreamAllocator) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+	s.onStreamedTracksChange = f
+}
+
+func (s *StreamAllocator) AddTrack(downTrack *DownTrack, peerID string) {
 	downTrack.OnREMB(s.onREMB)
 	downTrack.AddReceiverReportListener(s.onReceiverReport)
 	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
@@ -242,7 +318,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
 	downTrack.OnPacketSent(s.onPacketSent)
 
 	s.tracksMu.Lock()
-	track := newTrack(downTrack)
+	track := newTrack(downTrack, peerID)
 	s.tracks[downTrack.ID()] = track
 
 	s.tracksSorted = append(s.tracksSorted, track)
@@ -315,8 +391,8 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 	}
 	if !found {
 		if len(remb.SSRCs) == 0 {
-			// LK-TODO - log about REMB wihtout SSRCs
 			s.estimateMu.Unlock()
+			s.logger.Warnw("no SSRC to track REMB", nil, "participant", s.participantID)
 			return
 		}
 
@@ -341,6 +417,9 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = uint64(remb.Bitrate)
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.logger.Debugw("received new estimate", "pariticpant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+	}
 	signal := s.maybeCommitEstimate()
 	s.estimateMu.Unlock()
 
@@ -546,7 +625,7 @@ func (s *StreamAllocator) runStateMachine(event Event) {
 func (s *StreamAllocator) runStatePreCommit(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
@@ -569,7 +648,7 @@ func (s *StreamAllocator) runStatePreCommit(event Event) {
 func (s *StreamAllocator) runStateStable(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
@@ -607,7 +686,7 @@ func (s *StreamAllocator) runStateStable(event Event) {
 func (s *StreamAllocator) runStateDeficient(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.maybeProbe()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
@@ -623,6 +702,8 @@ func (s *StreamAllocator) runStateDeficient(event Event) {
 		s.allocate()
 	case Signal_RECEIVER_REPORT:
 	case Signal_AVAILABLE_LAYERS_ADD:
+		// new track coming online will trigger this.
+		// LK-TODO: probe using the new track rather than trying with existing tracks.
 		s.maybeProbe()
 	case Signal_AVAILABLE_LAYERS_REMOVE:
 		s.allocate()
@@ -642,8 +723,7 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 	// to avoid any self-inflicted damaage
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		s.prober.Reset()
-		s.allocate()
+		// wait for layers add/remove signal
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
@@ -667,17 +747,16 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 		s.prober.Reset()
 		s.allocate()
 	case Signal_PERIODIC_PING:
-		if !s.prober.IsRunning() {
-			// try for more
-			s.maybeGratuitousProbe()
-			// LK-TODO - log about more probing here
+		// try for more
+		if !s.prober.IsRunning() && s.maybeGratuitousProbe() {
+			s.logger.Infow("trying more gratuitous probing", "participant", s.participantID)
 		}
 	}
 }
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		// LK-TODO log state changes
+		s.logger.Infow("state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())
 	}
 
 	s.state = state
@@ -688,12 +767,16 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
 	//   2. time.Since(lastCommitTime) > EstimateCommitMs => to catch long oscillating estimate
 	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
-		// too large a change, wait for estimate to settle
-		return Signal_NONE
+		// too large a change, wait for estimate to settle.
+		// Unless estimate has been oscillating for too long.
+		if time.Since(s.lastCommitTime) < EstimateCommitMs {
+			return Signal_NONE
+		}
 	}
 
+	// don't commit too often even if the change is small.
+	// Small changes will also get picked up during periodic check.
 	if time.Since(s.lastCommitTime) < EstimateCommitMs {
-		// don't commit too often
 		return Signal_NONE
 	}
 
@@ -710,6 +793,7 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
+	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
 
 	return signal
 }
@@ -808,6 +892,9 @@ func (s *StreamAllocator) allocate() {
 	// So, track total requested bandwidth and mark DEFICIENT state if the total is
 	// above the estimated channel capacity even if the optimal signal is true.
 	//
+	var pausedTracks map[string][]string
+	var resumedTracks map[string][]string
+
 	isOptimal := true
 	totalBandwidthRequested := uint64(0)
 	committedChannelCapacity := s.getChannelCapacity()
@@ -833,7 +920,7 @@ func (s *StreamAllocator) allocate() {
 		// be stopped immediately to not further congest the channel.
 		//
 		//
-		bandwidthRequested, optimalBandwidthNeeded := track.AdjustAllocation(availableChannelCapacity)
+		isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded := track.AdjustAllocation(availableChannelCapacity)
 		totalBandwidthRequested += bandwidthRequested
 		if optimalBandwidthNeeded > 0 && bandwidthRequested < optimalBandwidthNeeded {
 			//
@@ -855,6 +942,14 @@ func (s *StreamAllocator) allocate() {
 		} else {
 			availableChannelCapacity -= bandwidthRequested
 		}
+
+		if isPausing {
+			appendTrack(track, &pausedTracks)
+		}
+
+		if isResuming {
+			appendTrack(track, &resumedTracks)
+		}
 	}
 	s.tracksMu.RUnlock()
 
@@ -864,6 +959,16 @@ func (s *StreamAllocator) allocate() {
 		if committedChannelCapacity != InitialChannelCapacity {
 			s.resetBoost()
 			s.setState(State_STABLE)
+		}
+	}
+
+	if len(pausedTracks) != 0 || len(resumedTracks) != 0 {
+		s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", pausedTracks, "resumed", resumedTracks)
+		if s.onStreamedTracksChange != nil {
+			err := s.onStreamedTracksChange(pausedTracks, resumedTracks)
+			if err != nil {
+				s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+			}
 		}
 	}
 
@@ -1010,16 +1115,16 @@ func (s *StreamAllocator) resetBoost() {
 	s.boostedChannelCapacity = 0
 }
 
-func (s *StreamAllocator) maybeGratuitousProbe() {
+func (s *StreamAllocator) maybeGratuitousProbe() bool {
 	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs {
-		return
+		return false
 	}
 
 	committedChannelCapacity := s.getChannelCapacity()
 	expectedRateBps := s.getExpectedBandwidthUsage()
 	headroomBps := committedChannelCapacity - expectedRateBps
 	if headroomBps > GratuitousProbeHeadroomBps {
-		return
+		return false
 	}
 
 	probeRateBps := (committedChannelCapacity * GratuitousProbePct) / 100
@@ -1030,6 +1135,24 @@ func (s *StreamAllocator) maybeGratuitousProbe() {
 	s.prober.AddCluster(int(committedChannelCapacity+probeRateBps), int(expectedRateBps), GratuitousProbeMinDurationMs, GratuitousProbeMaxDurationMs)
 
 	s.setState(State_GRATUITOUS_PROBING)
+	return true
+}
+
+//------------------------------------------------
+
+func appendTrack(t *Track, m *map[string][]string) {
+	if *m == nil {
+		*m = make(map[string][]string)
+	}
+
+	peerID := t.PeerID()
+	trackID := t.ID()
+	peer, ok := (*m)[peerID]
+	if !ok {
+		peer = make([]string, 0, 2)
+	}
+	peer = append(peer, trackID)
+	(*m)[peerID] = peer
 }
 
 //------------------------------------------------
@@ -1045,6 +1168,7 @@ type Track struct {
 	lock sync.RWMutex
 
 	downTrack *DownTrack
+	peerID    string
 
 	highestSN       uint32
 	packetsLost     uint32
@@ -1058,9 +1182,10 @@ type Track struct {
 	maxTemporalLayer int32
 }
 
-func newTrack(downTrack *DownTrack) *Track {
+func newTrack(downTrack *DownTrack, peerID string) *Track {
 	return &Track{
 		downTrack:        downTrack,
+		peerID:           peerID,
 		maxSpatialLayer:  downTrack.MaxSpatialLayer(),
 		maxTemporalLayer: downTrack.MaxTemporalLayer(),
 	}
@@ -1068,6 +1193,14 @@ func newTrack(downTrack *DownTrack) *Track {
 
 func (t *Track) DownTrack() *DownTrack {
 	return t.downTrack
+}
+
+func (t *Track) ID() string {
+	return t.downTrack.ID()
+}
+
+func (t *Track) PeerID() string {
+	return t.peerID
 }
 
 // LK-TODO this should probably be maintained in downTrack and this module can query what it needs
@@ -1104,9 +1237,13 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) AdjustAllocation(availableChannelCapacity uint64) (uint64, uint64) {
-	t.bandwidthRequested, t.optimalBandwidthNeeded = t.downTrack.AdjustAllocation(availableChannelCapacity)
-	return t.bandwidthRequested, t.optimalBandwidthNeeded
+func (t *Track) AdjustAllocation(availableChannelCapacity uint64) (bool, bool, uint64, uint64) {
+	isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded := t.downTrack.AdjustAllocation(availableChannelCapacity)
+
+	t.bandwidthRequested = bandwidthRequested
+	t.optimalBandwidthNeeded = optimalBandwidthNeeded
+
+	return isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded
 }
 
 func (t *Track) IncreaseAllocation() (bool, uint64) {
@@ -1158,7 +1295,7 @@ func (t TrackSorter) Less(i, j int) bool {
 
 	// use track id to keep ordering if nothing else changes
 	// LK-TODO: ideally should be sorting, compare and then re-allocate only if order changed
-	return t[i].downTrack.ID() < t[j].downTrack.ID()
+	return t[i].ID() < t[j].ID()
 }
 
 //------------------------------------------------

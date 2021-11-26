@@ -32,6 +32,7 @@ type StreamTracker struct {
 	CyclesRequired  uint64
 	CycleDuration   time.Duration
 	OnStatusChanged func(StreamStatus)
+	initialized     atomicBool
 	paused          atomicBool
 	status          atomicInt32 // stores StreamStatus
 	countSinceLast  uint32      // number of packets received since last check
@@ -50,7 +51,7 @@ func NewStreamTracker() *StreamTracker {
 		CyclesRequired:  60, // 30s of continuous stream
 		CycleDuration:   500 * time.Millisecond,
 	}
-	s.status.set(int32(StreamStatusActive))
+	s.status.set(int32(StreamStatusStopped))
 	return s
 }
 
@@ -103,6 +104,13 @@ func (s *StreamTracker) Observe(sn uint16) {
 	if s.paused.get() {
 		return
 	}
+
+	if !s.initialized.get() {
+		s.initialized.set(true)
+		// first packet
+		go s.setStatus(StreamStatusActive)
+	}
+
 	// ignore out-of-order SNs
 	if (sn - s.lastSN) > uint16(1<<15) {
 		return
@@ -125,7 +133,7 @@ func (s *StreamTracker) detectWorker() {
 }
 
 func (s *StreamTracker) detectChanges() {
-	if s.paused.get() {
+	if s.paused.get() || !s.initialized.get() {
 		return
 	}
 

@@ -107,13 +107,24 @@
 package sfu
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/gammazero/deque"
+
+	"github.com/livekit/protocol/logger"
 )
 
+type ProberParams struct {
+	ParticipantID string
+	Logger        logger.Logger
+}
+
 type Prober struct {
+	participantID string
+	logger        logger.Logger
+
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque
 	activeCluster *Cluster
@@ -121,8 +132,11 @@ type Prober struct {
 	onSendProbe func(bytesToSend int) int
 }
 
-func NewProber() *Prober {
-	p := &Prober{}
+func NewProber(params ProberParams) *Prober {
+	p := &Prober{
+		participantID: params.ParticipantID,
+		logger:        params.Logger,
+	}
 	p.clusters.SetMinCapacity(2)
 	return p
 }
@@ -136,9 +150,14 @@ func (p *Prober) IsRunning() bool {
 
 func (p *Prober) Reset() {
 	p.clustersMu.Lock()
-	// LK-TODO - log if active cluster is getting reset, maybe log state of all clusters
 	defer p.clustersMu.Unlock()
+
+	if p.activeCluster != nil {
+		p.logger.Debugw("resetting active cluster", "participant", p.participantID, "cluster", p.activeCluster.String())
+	}
+
 	p.clusters.Clear()
+	p.activeCluster = nil
 }
 
 func (p *Prober) OnSendProbe(f func(bytesToSend int) int) {
@@ -151,7 +170,7 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 	}
 
 	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
-	// LK-TODO - log information about added cluster
+	p.logger.Debugw("cluster added", "participant", p.participantID, "cluster", cluster.String())
 
 	p.pushBackClusterAndMaybeStart(cluster)
 }
@@ -228,11 +247,14 @@ func (p *Prober) run() {
 		}
 
 		if !cluster.Process(p) {
+			p.logger.Debugw("cluster finished", "participant", p.participantID, "cluster", cluster.String())
 			p.popFrontCluster(cluster)
 			continue
 		}
 	}
 }
+
+//---------------------------------
 
 type Cluster struct {
 	// LK-TODO-START
@@ -300,7 +322,6 @@ func (c *Cluster) Process(p *Prober) bool {
 	// if already past deadline, end the cluster
 	timeElapsed := time.Since(c.startTime)
 	if timeElapsed > c.maxDuration {
-		// LK-TODO log information about short fall in probing
 		c.lock.RUnlock()
 		return false
 	}
@@ -341,7 +362,6 @@ func (c *Cluster) Process(p *Prober) bool {
 	// do not end cluster until minDuration elapses even if rate is achieved.
 	// Ensures that the next cluster (if any) does not start early.
 	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
-		// LK-TODO - log data about how much time the probe finished compared to min/max
 		c.lock.Unlock()
 		return false
 	}
@@ -349,4 +369,20 @@ func (c *Cluster) Process(p *Prober) bool {
 	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
 	c.lock.Unlock()
 	return true
+}
+
+func (c *Cluster) String() string {
+	activeTimeMs := time.Duration(0)
+	if !c.startTime.IsZero() {
+		activeTimeMs = time.Since(c.startTime) * time.Millisecond
+	}
+
+	return fmt.Sprintf("bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+		c.desiredBytes,
+		c.bytesSentProbe,
+		c.bytesSentNonProbe,
+		c.desiredBytes-c.bytesSentProbe-c.bytesSentNonProbe,
+		activeTimeMs,
+		c.minDuration*time.Millisecond,
+		c.maxDuration*time.Millisecond)
 }

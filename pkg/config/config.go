@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -10,6 +11,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	defaultLimitNumTracksPerCPU int32   = 400
+	defaultLimitMaxNumTracks    int32   = 8000
+	defaultLimitBytesPerSec     float32 = 1_000_000_000 // just under 10 Gbps
 )
 
 var DefaultStunServers = []string{
@@ -31,6 +38,7 @@ type Config struct {
 	Keys           map[string]string  `yaml:"keys"`
 	Region         string             `yaml:"region"`
 	LogLevel       string             `yaml:"log_level"`
+	Limit          LimitConfig        `yaml:"limit"`
 
 	Development bool `yaml:"development"`
 }
@@ -123,6 +131,11 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon"`
 }
 
+type LimitConfig struct {
+	NumTracks   int32   `yaml:"num_tracks"`
+	BytesPerSec float32 `yaml:"bytes_per_sec"`
+}
+
 func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	// start with defaults
 	conf := &Config{
@@ -203,6 +216,17 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if conf.Limit.NumTracks == 0 {
+		conf.Limit.NumTracks = defaultLimitNumTracksPerCPU * int32(runtime.NumCPU())
+		if conf.Limit.NumTracks > defaultLimitMaxNumTracks {
+			conf.Limit.NumTracks = defaultLimitMaxNumTracks
+		}
+	}
+
+	if conf.Limit.BytesPerSec == 0 {
+		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
 	}
 
 	return conf, nil

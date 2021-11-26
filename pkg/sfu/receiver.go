@@ -25,14 +25,11 @@ type Receiver interface {
 	Kind() webrtc.RTPCodecType
 	SSRC(layer int) uint32
 	SetTrackMeta(trackID, streamID string)
-	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer, bestQualityFirst bool)
-	AddDownTrack(track *DownTrack, bestQualityFirst bool)
+	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
+	AddDownTrack(track *DownTrack)
 	SetUpTrackPaused(paused bool)
-	HasSpatialLayer(layer int32) bool
-	GetBitrate() [3]uint64
-	GetBitrateTemporal() [3][4]uint64
+	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() [3][4]uint64
-	GetMaxTemporalLayer() [3]int32
 	RetransmitPackets(track *DownTrack, packets []packetMeta) error
 	DeleteDownTrack(peerID string)
 	OnCloseHandler(fn func())
@@ -46,6 +43,10 @@ type Receiver interface {
 
 const (
 	lostUpdateDelta = 1e9
+)
+
+var (
+	defaultBitratesCumulative = [][]uint64{{60000, 90000, 150000, 0}, {200000, 300000, 500000, 0}, {400000, 600000, 1000000, 0}}
 )
 
 // WebRTCReceiver receives a video track
@@ -176,7 +177,7 @@ func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
 }
 
-func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer, bestQualityFirst bool) {
+func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
 	if w.closed.get() {
 		return
 	}
@@ -199,42 +200,17 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
 
-	if w.isSimulcast {
-		w.addAvailableLayer(uint16(layer), false)
-
-		w.downTrackMu.RLock()
-		// LK-TODO-START
-		// DownTrack layer change should not happen directly from here.
-		// Layer switching should be controlled by StreamAllocator. So, this
-		// should call into DownTrack to notify availability of a new layer.
-		// One challenge to think about is that the layer bitrate is not available
-		// for a second after start up as sfu.Buffer reports at that cadence.
-		// One possibility is to initialize sfu.Buffer with default bitrate
-		// based on layer.
-		// LK-TODO-END
-		for _, dt := range w.downTracks {
-			if dt != nil {
-				if (bestQualityFirst && layer > dt.CurrentSpatialLayer()) ||
-					(!bestQualityFirst && layer < dt.CurrentSpatialLayer()) {
-					_ = dt.switchSpatialLayer(layer)
-				}
+	if w.isSimulcast && w.useTrackers {
+		tracker := NewStreamTracker()
+		w.trackers[layer] = tracker
+		tracker.OnStatusChanged = func(status StreamStatus) {
+			if status == StreamStatusStopped {
+				w.removeAvailableLayer(uint16(layer))
+			} else {
+				w.addAvailableLayer(uint16(layer))
 			}
 		}
-		w.downTrackMu.RUnlock()
-
-		// always publish lowest layer
-		if layer != 0 && w.useTrackers {
-			tracker := NewStreamTracker()
-			w.trackers[layer] = tracker
-			tracker.OnStatusChanged = func(status StreamStatus) {
-				if status == StreamStatusStopped {
-					w.removeAvailableLayer(uint16(layer))
-				} else {
-					w.addAvailableLayer(uint16(layer), true)
-				}
-			}
-			tracker.Start()
-		}
+		tracker.Start()
 	}
 	go w.forwardRTP(layer)
 }
@@ -255,12 +231,10 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	}
 }
 
-func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
+func (w *WebRTCReceiver) AddDownTrack(track *DownTrack) {
 	if w.closed.get() {
 		return
 	}
-
-	layer := 0
 
 	w.downTrackMu.RLock()
 	_, ok := w.index[track.peerID]
@@ -270,37 +244,23 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 	}
 
 	if w.isSimulcast {
-		w.upTrackMu.RLock()
-		for i, t := range w.upTracks {
-			if t != nil && w.HasSpatialLayer(int32(i)) {
-				layer = i
-				if !bestQualityFirst {
-					break
-				}
-			}
-		}
-		w.upTrackMu.RUnlock()
+		track.SetTrackType(true)
 
-		track.SetInitialLayers(int32(layer), 2)
-		track.lastSSRC.set(w.SSRC(layer))
-		track.trackType = SimulcastDownTrack
-		track.payload = packetFactory.Get().(*[]byte)
+		// notify added downtrack of available layers
+		w.upTrackMu.RLock()
+		layers, ok := w.availableLayers.Load().([]uint16)
+		w.upTrackMu.RUnlock()
+		if ok && len(layers) != 0 {
+			_, _ = track.UptrackLayersChange(layers, true)
+		}
 	} else {
-		// LK-TODO-START
-		// check if any webrtc client does more than one temporal layer when not simulcasting.
-		// Maybe okay to just set the max temporal layer to 2 even in this case.
-		// Don't think there is any harm is setting it at 2 if the upper layers are
-		// not going to be there.
-		// LK-TODO-END
-		track.SetInitialLayers(0, 0)
-		track.trackType = SimpleDownTrack
-		track.payload = packetFactory.Get().(*[]byte)
+		track.SetTrackType(false)
 	}
 
 	w.storeDownTrack(track)
 }
 
-func (w *WebRTCReceiver) HasSpatialLayer(layer int32) bool {
+func (w *WebRTCReceiver) hasSpatialLayer(layer int32) bool {
 	layers, ok := w.availableLayers.Load().([]uint16)
 	if !ok {
 		return false
@@ -314,6 +274,15 @@ func (w *WebRTCReceiver) HasSpatialLayer(layer int32) bool {
 	return false
 }
 
+func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
+	layers, ok := w.availableLayers.Load().([]uint16)
+	if !ok {
+		return 0
+	}
+
+	return len(layers)
+}
+
 func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16, layerAdded bool) {
 	w.downTrackMu.RLock()
 	defer w.downTrackMu.RUnlock()
@@ -324,7 +293,7 @@ func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16, layerAdded bool) 
 	}
 }
 
-func (w *WebRTCReceiver) addAvailableLayer(layer uint16, updateDownTrack bool) {
+func (w *WebRTCReceiver) addAvailableLayer(layer uint16) {
 	w.upTrackMu.Lock()
 	layers, ok := w.availableLayers.Load().([]uint16)
 	if !ok {
@@ -343,9 +312,7 @@ func (w *WebRTCReceiver) addAvailableLayer(layer uint16, updateDownTrack bool) {
 	w.availableLayers.Store(layers)
 	w.upTrackMu.Unlock()
 
-	if updateDownTrack {
-		w.downtrackLayerChange(layers, true)
-	}
+	w.downtrackLayerChange(layers, true)
 }
 
 func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
@@ -367,41 +334,6 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 	w.downtrackLayerChange(newLayers, false)
 }
 
-func (w *WebRTCReceiver) GetBitrate() [3]uint64 {
-	var br [3]uint64
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-	for i, buff := range w.buffers {
-		if buff != nil {
-			if w.HasSpatialLayer(int32(i)) {
-				br[i] = buff.Bitrate()
-			} else {
-				br[i] = 0
-			}
-		}
-	}
-	return br
-}
-
-func (w *WebRTCReceiver) GetBitrateTemporal() [3][4]uint64 {
-	var br [3][4]uint64
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-	for i, buff := range w.buffers {
-		if buff != nil {
-			tls := make([]uint64, 4)
-			if w.HasSpatialLayer(int32(i)) {
-				tls = buff.BitrateTemporal()
-			}
-
-			for j := 0; j < len(br[i]); j++ {
-				br[i][j] = tls[j]
-			}
-		}
-	}
-	return br
-}
-
 func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]uint64 {
 	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
 	var br [3][4]uint64
@@ -410,8 +342,9 @@ func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]uint64 {
 	for i, buff := range w.buffers {
 		if buff != nil {
 			tls := make([]uint64, 4)
-			if w.HasSpatialLayer(int32(i)) {
+			if w.hasSpatialLayer(int32(i)) {
 				tls = buff.BitrateTemporalCumulative()
+				w.maybeUseDefaultBitrate(tls, i)
 			}
 
 			for j := 0; j < len(br[i]); j++ {
@@ -420,18 +353,6 @@ func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]uint64 {
 		}
 	}
 	return br
-}
-
-func (w *WebRTCReceiver) GetMaxTemporalLayer() [3]int32 {
-	var tls [3]int32
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-	for i, buff := range w.buffers {
-		if buff != nil {
-			tls[i] = buff.MaxTemporalLayer()
-		}
-	}
-	return tls
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -653,6 +574,32 @@ func (w *WebRTCReceiver) storeDownTrack(track *DownTrack) {
 
 	w.index[track.peerID] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
+}
+
+func (w *WebRTCReceiver) maybeUseDefaultBitrate(tlbs []uint64, layer int) {
+	for _, tlb := range tlbs {
+		if tlb != uint64(0) {
+			// some layer has data
+			return
+		}
+	}
+
+	//
+	// Before measured bitrate is available, initialize with some sane default values.
+	// Note that not all clients send temporal layers or have same number of temporal layers.
+	//   o Safari 15 - does not do temporal layers
+	//   o Chrome 95 - does two temporal layers
+	//   o Firefox 94 - does three temporal layers
+	// Default initialization is to ensure that StreamAllocator has some data and can
+	// forward tracks as soon as available.
+	//
+	// Measured bitrate will be available periodically starting shortly after stream
+	// starts flowing (see `reportDelta` in buffer.go). Once that information becomes
+	// available, it will be used for stream allocation.
+	//
+	for i := 0; i < len(tlbs); i++ {
+		tlbs[i] = defaultBitratesCumulative[layer][i]
+	}
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {

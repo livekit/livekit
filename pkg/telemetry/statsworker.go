@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -14,8 +15,10 @@ const updateFrequency = time.Second * 10
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
-	t             *TelemetryService
+	ctx           context.Context
+	t             TelemetryService
 	roomID        string
+	roomName      string
 	participantID string
 
 	sync.RWMutex
@@ -37,10 +40,12 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWorker {
+func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, participantID string) *StatsWorker {
 	s := &StatsWorker{
+		ctx:           ctx,
 		t:             t,
 		roomID:        roomID,
+		roomName:      roomName,
 		participantID: participantID,
 
 		buffers: make(map[uint32]*buffer.Buffer),
@@ -50,11 +55,13 @@ func NewStatsWorker(t *TelemetryService, roomID, participantID string) *StatsWor
 			Kind:          livekit.StreamType_UPSTREAM,
 			RoomId:        roomID,
 			ParticipantId: participantID,
+			RoomName:      roomName,
 		}},
 		outgoing: &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_DOWNSTREAM,
 			RoomId:        roomID,
 			ParticipantId: participantID,
+			RoomName:      roomName,
 		}},
 
 		close: make(chan struct{}, 1),
@@ -147,7 +154,7 @@ func (s *StatsWorker) Update() {
 		stats = append(stats, downstream)
 	}
 
-	s.t.Report(stats)
+	s.t.Report(s.ctx, stats)
 }
 
 func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
@@ -163,6 +170,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 		Kind:          next.Kind,
 		RoomId:        s.roomID,
 		ParticipantId: s.participantID,
+		RoomName:      s.roomName,
 	}
 
 	next.TimeStamp = ts
