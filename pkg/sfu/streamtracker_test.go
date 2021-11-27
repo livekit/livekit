@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"testing"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 
@@ -11,10 +12,10 @@ import (
 func TestStreamTracker(t *testing.T) {
 	t.Run("flips to active on first observe", func(t *testing.T) {
 		callbackCalled := atomicBool(0)
-		tracker := NewStreamTracker()
-		tracker.OnStatusChanged = func(status StreamStatus) {
+		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		tracker.OnStatusChanged(func(status StreamStatus) {
 			callbackCalled.set(true)
-		}
+		})
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		// observe first packet
@@ -29,7 +30,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("flips to inactive immediately", func(t *testing.T) {
-		tracker := NewStreamTracker()
+		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
@@ -38,9 +39,9 @@ func TestStreamTracker(t *testing.T) {
 		})
 
 		callbackCalled := atomicBool(0)
-		tracker.OnStatusChanged = func(status StreamStatus) {
+		tracker.OnStatusChanged(func(status StreamStatus) {
 			callbackCalled.set(true)
-		}
+		})
 		require.Equal(t, StreamStatusActive, tracker.Status())
 
 		// run a single interation
@@ -50,7 +51,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("flips back to active after iterations", func(t *testing.T) {
-		tracker := NewStreamTracker()
+		tracker := NewStreamTracker(1, 2, 500*time.Millisecond)
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
@@ -58,9 +59,7 @@ func TestStreamTracker(t *testing.T) {
 			return tracker.Status() == StreamStatusActive
 		})
 
-		tracker.CyclesRequired = 2
-		tracker.SamplesRequired = 1
-		tracker.setStatus(StreamStatusStopped)
+		tracker.maybeSetStopped()
 
 		tracker.Observe(2)
 		tracker.detectChanges()
@@ -72,7 +71,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("does not change to inactive when paused", func(t *testing.T) {
-		tracker := NewStreamTracker()
+		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Observe(1)
 		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
 			return tracker.Status() == StreamStatusActive

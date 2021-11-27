@@ -123,8 +123,8 @@ const (
 	GratuitousProbeHeadroomBps   = 1 * 1000 * 1000 // if headroom is more than 1 Mbps, don't probe
 	GratuitousProbePct           = 10
 	GratuitousProbeMaxBps        = 300 * 1000 // 300 kbps
-	GratuitousProbeMinDurationMs = 500
-	GratuitousProbeMaxDurationMs = 600
+	GratuitousProbeMinDurationMs = 500 * time.Millisecond
+	GratuitousProbeMaxDurationMs = 600 * time.Millisecond
 
 	AudioLossWeight = 0.75
 	VideoLossWeight = 0.25
@@ -418,7 +418,7 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = uint64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate", "pariticpant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
 	}
 	signal := s.maybeCommitEstimate()
 	s.estimateMu.Unlock()
@@ -617,21 +617,52 @@ func (s *StreamAllocator) runStateMachine(event Event) {
 	}
 }
 
-// LK-TODO-START
-// Signal_ADD_TRACK is not useful. Probably can get rid of it.
-// AVAILABLE_LAYERS_ADD/REMOVE should be how track start should
-// be getting an allocation.
-// LK-TODO-END
+// LK-TODO: ADD_TRACK should not reallocate if added track is audio
 func (s *StreamAllocator) runStatePreCommit(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		// wait for layers add/remove signal
+		s.allocate()
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
-		s.allocate()
+		// should never happen as the intialized capacity is very high
+		s.setState(State_STABLE)
 	case Signal_ESTIMATE_DECREASE:
-		s.allocate()
+		// first estimate could be off as things are ramping up.
+		//
+		// Basically, an initial channel capacity of InitialChannelCapacity
+		// which is very high is used  so that there is no throttling before
+		// getting an estimate. The first estimate happens 6 - 8 seconds
+		// after streaming starts. With screen share like stream, the traffic
+		// is sparse/spikey depending on the content. So, the estimate could
+		// be small and still ramping up. So, doing an allocation could result
+		// in stream being paused.
+		//
+		// This is one of the significant challenges here, i. e. time alignment.
+		// Estimate was potentially measured using data from a little while back.
+		// But, that estimate is used to allocate based on current bitrate.
+		// So, in the intervening period if there was movement on the screen,
+		// the bitrate could have spiked and the REMB value is probably stale.
+		//
+		// A few options to consider
+		//   o what is implemented here (i. e. change to STABLE state and
+		//     let further streaming drive the esimation and move the state
+		//     machine in whichever direction it needs to go)
+		//   o Forward padding packets also. But, that could have an adverse
+		//     effect on the channel when a new stream comes on line and
+		//     starts probing, i. e. it could affect existing flows if it
+		//     congests the channel because of the spurt of padding packets.
+		//   o Do probing downstream in the first few seconds in addition to
+		//     forwarding any streams and get a better estimate of the channel.
+		//   o Measure up stream bitrates over a much longer window to smooth
+		//     out spikes and get a more steady-state rate and use it in
+		//     allocations.
+		//
+		// A good challenge. Basically, the goal should be to aviod re-allocation
+		// of streams. Any re-allocation means potential for estimate and current
+		// state of up streams not being in sync because of time differences resulting
+		// in streams getting paused unnecessarily.
+		s.setState(State_STABLE)
 	case Signal_RECEIVER_REPORT:
 	case Signal_AVAILABLE_LAYERS_ADD:
 		s.allocate()
@@ -648,7 +679,7 @@ func (s *StreamAllocator) runStatePreCommit(event Event) {
 func (s *StreamAllocator) runStateStable(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		// wait for layers add/remove signal
+		s.allocate()
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
@@ -666,7 +697,9 @@ func (s *StreamAllocator) runStateStable(event Event) {
 		s.allocate()
 	case Signal_PERIODIC_PING:
 		// if bandwidth estimate has been stable for a while, maybe gratuitously probe
-		s.maybeGratuitousProbe()
+		if s.maybeGratuitousProbe() {
+			s.setState(State_GRATUITOUS_PROBING)
+		}
 	}
 }
 
@@ -686,16 +719,13 @@ func (s *StreamAllocator) runStateStable(event Event) {
 func (s *StreamAllocator) runStateDeficient(event Event) {
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		// wait for layers add/remove signal
+		s.allocate()
 	case Signal_REMOVE_TRACK:
 		s.allocate()
 	case Signal_ESTIMATE_INCREASE:
 		// as long as estimate is increasing, keep going.
-		// Switch to STABLE state if estimate exceeds optimal bandwidth needed.
-		if s.getChannelCapacity() > s.getOptimalBandwidthUsage() {
-			s.resetBoost()
-			s.setState(State_STABLE)
-		}
+		// try an allocation to check if state can move to STABLE
+		s.allocate()
 	case Signal_ESTIMATE_DECREASE:
 		// stop using the boosted estimate
 		s.resetBoost()
@@ -723,7 +753,7 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 	// to avoid any self-inflicted damaage
 	switch event.Signal {
 	case Signal_ADD_TRACK:
-		// wait for layers add/remove signal
+		s.allocate()
 	case Signal_REMOVE_TRACK:
 		// LK-TODO - may want to re-calculate channel usage?
 	case Signal_ESTIMATE_INCREASE:
@@ -748,8 +778,12 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 		s.allocate()
 	case Signal_PERIODIC_PING:
 		// try for more
-		if !s.prober.IsRunning() && s.maybeGratuitousProbe() {
-			s.logger.Infow("trying more gratuitous probing", "participant", s.participantID)
+		if !s.prober.IsRunning() {
+			if s.maybeGratuitousProbe() {
+				s.logger.Debugw("trying more gratuitous probing", "participant", s.participantID)
+			} else {
+				s.setState(State_STABLE)
+			}
 		}
 	}
 }
@@ -798,11 +832,11 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 	return signal
 }
 
-func (s *StreamAllocator) getChannelCapacity() uint64 {
+func (s *StreamAllocator) getChannelCapacity() (uint64, uint64) {
 	s.estimateMu.RLock()
 	defer s.estimateMu.RUnlock()
 
-	return s.committedChannelCapacity
+	return s.committedChannelCapacity, s.receivedEstimate
 }
 
 func (s *StreamAllocator) allocate() {
@@ -892,12 +926,13 @@ func (s *StreamAllocator) allocate() {
 	// So, track total requested bandwidth and mark DEFICIENT state if the total is
 	// above the estimated channel capacity even if the optimal signal is true.
 	//
+	// LK-TODO make protocol friendly structures
 	var pausedTracks map[string][]string
 	var resumedTracks map[string][]string
 
 	isOptimal := true
 	totalBandwidthRequested := uint64(0)
-	committedChannelCapacity := s.getChannelCapacity()
+	committedChannelCapacity, _ := s.getChannelCapacity()
 	availableChannelCapacity := committedChannelCapacity
 	if availableChannelCapacity < s.boostedChannelCapacity {
 		availableChannelCapacity = s.boostedChannelCapacity
@@ -1079,7 +1114,7 @@ func (s *StreamAllocator) maybeBoostLayer() {
 func (s *StreamAllocator) maybeBoostBandwidth() {
 	// temporarily boost estimate for probing.
 	// Boost either the committed channel capacity or previous boost point if there is one
-	baseBps := s.getChannelCapacity()
+	baseBps, _ := s.getChannelCapacity()
 	if baseBps < s.boostedChannelCapacity {
 		baseBps = s.boostedChannelCapacity
 	}
@@ -1116,25 +1151,32 @@ func (s *StreamAllocator) resetBoost() {
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
+	// LK-TODO: do not probe if there are no video tracks
 	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs {
 		return false
 	}
 
-	committedChannelCapacity := s.getChannelCapacity()
+	// use last received estimate for gratuitous probing base as
+	// more updates may have been received since the last commit
+	_, receivedEstimate := s.getChannelCapacity()
 	expectedRateBps := s.getExpectedBandwidthUsage()
-	headroomBps := committedChannelCapacity - expectedRateBps
+	headroomBps := receivedEstimate - expectedRateBps
 	if headroomBps > GratuitousProbeHeadroomBps {
 		return false
 	}
 
-	probeRateBps := (committedChannelCapacity * GratuitousProbePct) / 100
+	probeRateBps := (receivedEstimate * GratuitousProbePct) / 100
 	if probeRateBps > GratuitousProbeMaxBps {
 		probeRateBps = GratuitousProbeMaxBps
 	}
 
-	s.prober.AddCluster(int(committedChannelCapacity+probeRateBps), int(expectedRateBps), GratuitousProbeMinDurationMs, GratuitousProbeMaxDurationMs)
+	s.prober.AddCluster(
+		int(receivedEstimate+probeRateBps),
+		int(expectedRateBps),
+		GratuitousProbeMinDurationMs,
+		GratuitousProbeMaxDurationMs,
+	)
 
-	s.setState(State_GRATUITOUS_PROBING)
 	return true
 }
 
