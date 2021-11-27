@@ -57,6 +57,14 @@ const (
 	SequenceNumberOrderingDuplicate
 )
 
+type ForwardingStatus int
+
+const (
+	ForwardingStatusOff ForwardingStatus = iota
+	ForwardingStatusPartial
+	ForwardingStatusOptimal
+)
+
 var (
 	ErrUnknownKind                       = errors.New("unknown kind of codec")
 	ErrOutOfOrderSequenceNumberCacheMiss = errors.New("out-of-order sequence number not found in cache")
@@ -110,6 +118,7 @@ type DownTrack struct {
 	id            string
 	peerID        string
 	bound         atomicBool
+	kind          webrtc.RTPCodecType
 	mime          string
 	ssrc          uint32
 	streamID      string
@@ -120,25 +129,7 @@ type DownTrack struct {
 	bufferFactory *buffer.Factory
 	payload       *[]byte
 
-	// translationMu protection start
-	translationMu sync.RWMutex
-	muted         bool
-
-	started  bool
-	lastSSRC uint32
-	lTSCalc  int64
-
-	maxSpatialLayer     int32
-	currentSpatialLayer int32
-	targetSpatialLayer  int32
-
-	maxTemporalLayer     int32
-	currentTemporalLayer int32
-	targetTemporalLayer  int32
-
-	munger    *Munger
-	vp8Munger *VP8Munger
-	// translationMu protection end
+	forwarder *Forwarder
 
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
@@ -180,6 +171,16 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
+	var kind webrtc.RTPCodecType
+	switch {
+	case strings.HasPrefix(c.MimeType, "audio/"):
+		kind = webrtc.RTPCodecTypeAudio
+	case strings.HasPrefix(c.MimeType, "video/"):
+		kind = webrtc.RTPCodecTypeVideo
+	default:
+		kind = webrtc.RTPCodecType(0)
+	}
+
 	d := &DownTrack{
 		id:            r.TrackID(),
 		peerID:        peerID,
@@ -188,29 +189,13 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		bufferFactory: bf,
 		receiver:      r,
 		codec:         c,
-		munger:        NewMunger(),
+		kind:          kind,
+		forwarder:     NewForwarder(c, kind),
 	}
 
 	if strings.ToLower(c.MimeType) == "video/vp8" {
-		d.vp8Munger = NewVP8Munger()
 		d.payload = packetFactory.Get().(*[]byte)
 	}
-
-	if d.Kind() == webrtc.RTPCodecTypeVideo {
-		d.maxSpatialLayer = 2
-		d.maxTemporalLayer = 2
-	} else {
-		d.maxSpatialLayer = InvalidSpatialLayer
-		d.maxTemporalLayer = InvalidTemporalLayer
-	}
-
-	// start off with nothing, let streamallocator set things
-	d.currentSpatialLayer = InvalidSpatialLayer
-	d.targetSpatialLayer = InvalidSpatialLayer
-
-	// start off with nothing, let streamallocator set things
-	d.currentTemporalLayer = InvalidTemporalLayer
-	d.targetTemporalLayer = InvalidTemporalLayer
 
 	return d, nil
 }
@@ -278,14 +263,7 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 
 // Kind controls if this TrackLocal is audio or video
 func (d *DownTrack) Kind() webrtc.RTPCodecType {
-	switch {
-	case strings.HasPrefix(d.codec.MimeType, "audio/"):
-		return webrtc.RTPCodecTypeAudio
-	case strings.HasPrefix(d.codec.MimeType, "video/"):
-		return webrtc.RTPCodecTypeVideo
-	default:
-		return webrtc.RTPCodecType(0)
-	}
+	return d.kind
 }
 
 func (d *DownTrack) SSRC() uint32 {
@@ -311,7 +289,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return nil
 	}
 
-	tp, err := d.getTranslationParams(extPkt, layer)
+	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
 		d.lastPli.set(time.Now().UnixNano())
 		d.receiver.SendPLI(layer)
@@ -322,7 +300,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	payload := extPkt.Packet.Payload
-	if tp.vp8 != nil && tp.vp8.header != nil {
+	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
 		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, tp.vp8.header)
 		if err != nil {
@@ -333,7 +311,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	if d.sequencer != nil {
 		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, 0, extPkt.Head)
-		if meta != nil && tp.vp8 != nil && tp.vp8.header != nil {
+		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.header)
 		}
 	}
@@ -373,19 +351,16 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	// padding is mainly used to probe for excess available bandwidth.
 	// So, to be safe, limit to video tracks
 	// LK-TODO-END
-	if d.Kind() == webrtc.RTPCodecTypeAudio {
+	if d.kind == webrtc.RTPCodecTypeAudio {
 		return 0
 	}
 
-	d.translationMu.Lock()
 	// LK-TODO-START
 	// Potentially write padding even if muted. Given that padding
 	// can be sent only on frame boudaries, writing on disabled tracks
-	// will give more options. But, it is possible that forwarding stopped
-	// on a non-frame boundary when the track is muted.
+	// will give more options.
 	// LK-TODO-END
-	if d.muted {
-		d.translationMu.Unlock()
+	if d.forwarder.Muted() {
 		return 0
 	}
 
@@ -393,25 +368,17 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	// Use 20 byte as estimate of RTP header size (12 byte header + 8 byte extension)
 	num := (bytesToSend + RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize - 1) / (RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize)
 	if num == 0 {
-		d.translationMu.Unlock()
 		return 0
 	}
 
-	// padding is used for probing. Padding packets should be
-	// at frame boundaries only to ensure decoder sequencer does
-	// not get out-of-sync. But, when a stream is paused,
-	// force a frame marker as a restart of the stream will
-	// start with a key frame which will reset the decoder.
-	snts, err := d.munger.UpdateAndGetPaddingSnTs(num, 0, 0, d.targetSpatialLayer == InvalidSpatialLayer)
+	snts, err := d.forwarder.GetSnTsForPadding(num)
 	if err != nil {
-		d.translationMu.Unlock()
 		return 0
 	}
-	d.translationMu.Unlock()
 
 	// LK-TODO Look at load balancing a la sfu.Receiver to spread across available CPUs
 	bytesSent := 0
-	for i := 0; i < num; i++ {
+	for i := 0; i < len(snts); i++ {
 		// LK-TODO-START
 		// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
 		// That is definitive proof that the remote side knows about this RTP stream.
@@ -463,14 +430,10 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 // Mute enables or disables media forwarding
 func (d *DownTrack) Mute(val bool) {
-	d.translationMu.Lock()
-	if d.muted == val {
-		d.translationMu.Unlock()
+	changed := d.forwarder.Mute(val)
+	if !changed {
 		return
 	}
-
-	d.muted = val
-	d.translationMu.Unlock()
 
 	if val {
 		d.lossFraction.set(0)
@@ -483,7 +446,7 @@ func (d *DownTrack) Mute(val bool) {
 
 // Close track
 func (d *DownTrack) Close() {
-	d.Mute(true)
+	d.forwarder.Mute(true)
 
 	// write blank frames after disabling so that other frames do not interfere.
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
@@ -492,7 +455,7 @@ func (d *DownTrack) Close() {
 	d.writeBlankFrameRTP()
 
 	d.closeOnce.Do(func() {
-		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.Kind())
+		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
 		if d.payload != nil {
 			packetFactory.Put(d.payload)
 		}
@@ -503,55 +466,37 @@ func (d *DownTrack) Close() {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	d.translationMu.Lock()
-	if spatialLayer == d.maxSpatialLayer {
-		d.translationMu.Unlock()
+	changed := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	if !changed {
 		return
 	}
 
-	d.maxSpatialLayer = spatialLayer
-	muted := d.muted
-	maxTemporalLayer := d.maxTemporalLayer
-	d.translationMu.Unlock()
-
-	if !muted && d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, spatialLayer, maxTemporalLayer)
+	if !d.forwarder.Muted() && d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, spatialLayer, d.forwarder.MaxTemporalLayer())
 	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	d.translationMu.Lock()
-	if temporalLayer == d.maxTemporalLayer {
-		d.translationMu.Unlock()
+	changed := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	if !changed {
 		return
 	}
 
-	d.maxTemporalLayer = temporalLayer
-	muted := d.muted
-	maxSpatialLayer := d.maxSpatialLayer
-	d.translationMu.Unlock()
-
-	if !muted && d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxSpatialLayer, temporalLayer)
+	if !d.forwarder.Muted() && d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, d.forwarder.MaxSpatialLayer(), temporalLayer)
 	}
 }
 
 func (d *DownTrack) MaxLayers() (int32, int32) {
-	d.translationMu.RLock()
-	defer d.translationMu.RUnlock()
-
-	return d.maxSpatialLayer, d.maxTemporalLayer
+	return d.forwarder.MaxLayers()
 }
 
-func (d *DownTrack) IsForwardingOptimal() bool {
-	d.translationMu.RLock()
-	defer d.translationMu.RUnlock()
-
-	return d.targetSpatialLayer == d.maxSpatialLayer
+func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
+	return d.forwarder.GetForwardingStatus()
 }
 
 func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded bool) {
-	if d.onAvailableLayersChanged != nil {
+	if !d.forwarder.Muted() && d.onAvailableLayersChanged != nil {
 		d.onAvailableLayersChanged(d, layerAdded)
 	}
 }
@@ -599,150 +544,12 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
-// should be called with translationMu held
-func (d *DownTrack) disableSend() {
-	d.currentSpatialLayer = InvalidSpatialLayer
-	d.targetSpatialLayer = InvalidSpatialLayer
-
-	d.currentTemporalLayer = InvalidTemporalLayer
-	d.targetTemporalLayer = InvalidTemporalLayer
+func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (bool, bool, uint64, uint64) {
+	return d.forwarder.AdjustAllocation(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (isPausing, isResuming bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
-	isPausing = false
-	isResuming = false
-	bandwidthRequested = 0
-	optimalBandwidthNeeded = 0
-
-	d.translationMu.Lock()
-	if d.Kind() == webrtc.RTPCodecTypeAudio || d.muted {
-		d.translationMu.Unlock()
-		return
-	}
-	d.translationMu.Unlock()
-
-	brs := d.receiver.GetBitrateTemporalCumulative()
-
-	d.translationMu.Lock()
-	optimalBandwidthNeeded = uint64(0)
-	// LK-TODO for temporal preference, traverse the bitrates array the other way
-	for i := d.maxSpatialLayer; i >= 0; i-- {
-		for j := d.maxTemporalLayer; j >= 0; j-- {
-			if brs[i][j] == 0 {
-				continue
-			}
-			if optimalBandwidthNeeded == 0 {
-				optimalBandwidthNeeded = brs[i][j]
-			}
-			if brs[i][j] < availableChannelCapacity {
-				isResuming = d.targetSpatialLayer == InvalidSpatialLayer
-				bandwidthRequested = brs[i][j]
-
-				d.targetSpatialLayer = int32(i)
-				d.targetTemporalLayer = int32(j)
-				d.translationMu.Unlock()
-				return
-			}
-		}
-	}
-
-	if optimalBandwidthNeeded != 0 {
-		// no layer fits in the available channel capacity, disable the track
-		isPausing = d.targetSpatialLayer != InvalidSpatialLayer
-		d.disableSend()
-	}
-	d.translationMu.Unlock()
-	return
-}
-
-func (d *DownTrack) IncreaseAllocation() (increased bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
-	increased = false
-	bandwidthRequested = uint64(0)
-	optimalBandwidthNeeded = uint64(0)
-
-	// LK-TODO-START
-	// This is mainly used in probing to try a slightly higher layer.
-	// But, if down track is not a simulcast track, then the next
-	// available layer (i. e. the only layer of simple track) may boost
-	// things by a lot (it could happen in simulcast jumps too).
-	// May need to take in a layer increase threshold as an argument
-	// (in terms of bps) and increase layer only if the jump is within
-	// that threshold.
-	// LK-TODO-END
-	d.translationMu.Lock()
-	if d.Kind() == webrtc.RTPCodecTypeAudio || d.muted {
-		d.translationMu.Unlock()
-		return
-	}
-
-	// if targets are still pending, don't increase
-	if d.targetSpatialLayer != InvalidSpatialLayer {
-		if d.targetSpatialLayer != d.currentSpatialLayer || d.targetTemporalLayer != d.currentTemporalLayer {
-			d.translationMu.Unlock()
-			return
-		}
-	}
-	d.translationMu.Unlock()
-
-	brs := d.receiver.GetBitrateTemporalCumulative()
-
-	d.translationMu.Lock()
-	// move to the next available layer
-	for i := d.maxSpatialLayer; i >= 0; i-- {
-		for j := d.maxTemporalLayer; j >= 0; j-- {
-			if brs[i][j] == 0 {
-				continue
-			}
-			if optimalBandwidthNeeded == 0 {
-				optimalBandwidthNeeded = brs[i][j]
-				break
-			}
-		}
-
-		if optimalBandwidthNeeded != 0 {
-			break
-		}
-	}
-	if optimalBandwidthNeeded == 0 {
-		// feed is dry
-		d.translationMu.Unlock()
-		return
-	}
-
-	// try moving temporal layer up in the current spatial layer
-	// LK-TODO currentTemporalLayer may be outside available range because of inital value being out of range, fix it
-	nextTemporalLayer := d.currentTemporalLayer + 1
-	currentSpatialLayer := d.currentSpatialLayer
-	if currentSpatialLayer == InvalidSpatialLayer {
-		currentSpatialLayer = 0
-	}
-	if nextTemporalLayer <= d.maxTemporalLayer && brs[currentSpatialLayer][nextTemporalLayer] > 0 {
-		d.targetSpatialLayer = currentSpatialLayer
-		d.targetTemporalLayer = nextTemporalLayer
-
-		increased = true
-		bandwidthRequested = brs[d.currentSpatialLayer][nextTemporalLayer]
-
-		d.translationMu.Unlock()
-		return
-	}
-
-	// try moving spatial layer up if already at max temporal layer of current spatial layer
-	// LK-TODO currentSpatialLayer may be outside available range because of inital value being out of range, fix it
-	nextSpatialLayer := d.currentSpatialLayer + 1
-	if nextSpatialLayer <= d.maxSpatialLayer && brs[nextSpatialLayer][0] > 0 {
-		d.targetSpatialLayer = nextSpatialLayer
-		d.targetTemporalLayer = 0
-
-		increased = true
-		bandwidthRequested = brs[nextSpatialLayer][0]
-
-		d.translationMu.Unlock()
-		return
-	}
-
-	d.translationMu.Unlock()
-	return
+func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
+	return d.forwarder.IncreaseAllocation(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
@@ -771,9 +578,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	d.translationMu.RLock()
-	currentSpatialLayer := d.currentSpatialLayer
-	d.translationMu.RUnlock()
+	currentSpatialLayer := d.forwarder.CurrentSpatialLayer()
 	if currentSpatialLayer == InvalidSpatialLayer {
 		return nil
 	}
@@ -812,27 +617,19 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 	}
 
 	// LK-TODO: Support other video codecs
-	if d.Kind() == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
+	if d.kind == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
 		return nil
 	}
 
-	d.translationMu.Lock()
-	num := RTPBlankFramesMax
-	frameEndNeeded := !d.munger.IsOnFrameBoundary()
-	if frameEndNeeded {
-		num++
-	}
-	snts, err := d.munger.UpdateAndGetPaddingSnTs(num, d.codec.ClockRate, 30, frameEndNeeded)
+	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames()
 	if err != nil {
-		d.translationMu.Unlock()
 		return err
 	}
-	d.translationMu.Unlock()
 
 	// send a number of blank frames just in case there is loss.
 	// Intentionally ignoring check for mute or bandwidth constrained mute
 	// as this is used to clear client side buffer.
-	for i := 0; i < num; i++ {
+	for i := 0; i < len(snts); i++ {
 		hdr := rtp.Header{
 			Version:        2,
 			Padding:        false,
@@ -857,19 +654,20 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 		default:
 			return nil
 		}
+
+		// only the first frame will need frameEndNeeded to close out the
+		// previous picture, rest are small key frames
+		frameEndNeeded = false
 	}
 
 	return nil
 }
 
 func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
-	d.translationMu.Lock()
-	blankVP8, err := d.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+	blankVP8, err := d.forwarder.GetPaddingVP8(frameEndNeeded)
 	if err != nil {
-		d.translationMu.Unlock()
 		return err
 	}
-	d.translationMu.Unlock()
 
 	// 1x1 key frame
 	// Used even when closing out a previous frame. Looks like receivers
@@ -920,9 +718,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		if pliOnce {
-			d.translationMu.RLock()
-			targetSpatialLayer := d.targetSpatialLayer
-			d.translationMu.RUnlock()
+			targetSpatialLayer := d.forwarder.TargetSpatialLayer()
 			if targetSpatialLayer != InvalidSpatialLayer {
 				d.lastPli.set(time.Now().UnixNano())
 				d.receiver.SendPLI(targetSpatialLayer)
@@ -976,7 +772,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 }
 
 func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
-	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
+	if d.mime != "video/vp8" || len(pkt.Payload) == 0 {
 		return nil
 	}
 
@@ -1040,189 +836,6 @@ func (d *DownTrack) getSRStats() (octets, packets uint32) {
 	return d.octetCount.get(), d.packetCount.get()
 }
 
-func (d *DownTrack) getTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	d.translationMu.Lock()
-	defer d.translationMu.Unlock()
-
-	if d.muted {
-		return &TranslationParams{
-			shouldDrop: true,
-		}, nil
-	}
-
-	switch d.Kind() {
-	case webrtc.RTPCodecTypeAudio:
-		return d.getTranslationParamsAudio(extPkt)
-	case webrtc.RTPCodecTypeVideo:
-		return d.getTranslationParamsVideo(extPkt, layer)
-	}
-
-	return nil, ErrUnknownKind
-}
-
-// should be called with translationMu held
-func (d *DownTrack) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
-	if d.lastSSRC != extPkt.Packet.SSRC {
-		if !d.started {
-			// start of stream
-			d.started = true
-			d.munger.SetLastSnTs(extPkt)
-		} else {
-			// LK-TODO-START
-			// TS offset of 1 is not accurate. It should ideally
-			// be driven by packetization of the incoming track.
-			// LK-TODO-END
-			d.munger.UpdateSnTsOffsets(extPkt, 1, 1)
-		}
-
-		d.lastSSRC = extPkt.Packet.SSRC
-	}
-
-	tp := &TranslationParams{}
-
-	tpRTP, err := d.munger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		tp.shouldDrop = true
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return tp, nil
-		}
-
-		return tp, err
-	}
-
-	tp.rtp = tpRTP
-	return tp, nil
-}
-
-// should be called with translationMu held
-func (d *DownTrack) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
-	tp := &TranslationParams{}
-
-	if d.targetSpatialLayer == InvalidSpatialLayer {
-		// stream is paused by streamallocator
-		tp.shouldDrop = true
-		return tp, nil
-	}
-
-	tp.shouldSendPLI = false
-	if d.targetSpatialLayer != d.currentSpatialLayer {
-		if d.targetSpatialLayer == layer {
-			if extPkt.KeyFrame {
-				// lock to target layer
-				d.currentSpatialLayer = d.targetSpatialLayer
-			} else {
-				tp.shouldSendPLI = true
-			}
-		}
-	}
-
-	if d.currentSpatialLayer != layer {
-		tp.shouldDrop = true
-		return tp, nil
-	}
-
-	if d.targetSpatialLayer < d.currentSpatialLayer && d.targetSpatialLayer < d.maxSpatialLayer {
-		//
-		// If target layer is lower than both the current and
-		// maximum subscribed layer, it is due to bandwidth
-		// constraints that the target layer has been switched down.
-		// Continuing to send higher layer will only exacerbate the
-		// situation by putting more stress on the channel. So, drop it.
-		//
-		// In the other direction, it is okay to keep forwarding till
-		// switch point to get a smoother stream till the higher
-		// layer key frame arrives.
-		//
-		// Note that in the case of client subscription layer restriction
-		// coinciding with server restriction due to bandwidth limitation,
-		// this will take client subscription as the winning vote and
-		// continue to stream current spatial layer till switch point.
-		// That could lead to congesting the channel.
-		// LK-TODO: Improve the above case, i. e. distinguish server
-		// applied restriction from client requested restriction.
-		//
-		tp.shouldDrop = true
-		return tp, nil
-	}
-
-	if d.lastSSRC != extPkt.Packet.SSRC {
-		if !d.started {
-			d.started = true
-			d.munger.SetLastSnTs(extPkt)
-			if d.vp8Munger != nil {
-				d.vp8Munger.SetLast(extPkt)
-			}
-		} else {
-			// LK-TODO-START
-			// The below offset calculation is not technically correct.
-			// Timestamps based on the system time of an intermediate box like
-			// SFU is not going to be accurate. Packets arrival/processing
-			// are subject to vagaries of network delays, SFU processing etc.
-			// But, the correct way is a lot harder. Will have to
-			// look at RTCP SR to get timestamps and figure out alignment
-			// of layers and use that during layer switch. That can
-			// get tricky. Given the complexity of that approach, maybe
-			// this is just fine till it is not :-).
-			// LK-TODO-END
-
-			// Compute how much time passed between the old RTP extPkt
-			// and the current packet, and fix timestamp on source change
-			tDiffMs := (extPkt.Arrival - d.lTSCalc) / 1e6
-			td := uint32((tDiffMs * (int64(d.codec.ClockRate) / 1000)) / 1000)
-			if td == 0 {
-				td = 1
-			}
-			d.munger.UpdateSnTsOffsets(extPkt, 1, td)
-			if d.vp8Munger != nil {
-				d.vp8Munger.UpdateOffsets(extPkt)
-			}
-		}
-
-		d.lastSSRC = extPkt.Packet.SSRC
-	}
-	d.lTSCalc = extPkt.Arrival
-
-	tpRTP, err := d.munger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		tp.shouldDrop = true
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			return tp, nil
-		}
-
-		return tp, err
-	}
-
-	if d.vp8Munger == nil {
-		tp.rtp = tpRTP
-		return tp, nil
-	}
-
-	tpVP8, err := d.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, d.currentTemporalLayer)
-	if err != nil {
-		tp.shouldDrop = true
-		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
-			if err == ErrFilteredVP8TemporalLayer {
-				// filtered temporal layer, update sequence number offset to prevent holes
-				d.munger.PacketDropped(extPkt)
-			}
-			return tp, nil
-		}
-
-		return tp, err
-	}
-
-	// catch up temporal layer if necessary
-	if tpVP8.header != nil && d.currentTemporalLayer != d.targetTemporalLayer {
-		if tpVP8.header.TIDPresent == 1 && tpVP8.header.TID <= uint8(d.targetTemporalLayer) {
-			d.currentTemporalLayer = d.targetTemporalLayer
-		}
-	}
-
-	tp.rtp = tpRTP
-	tp.vp8 = tpVP8
-	return tp, nil
-}
-
 // writes RTP header extensions of track
 func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
 	// clear out extensions that may have been in the forwarded header
@@ -1281,14 +894,14 @@ func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
-	mungerParams := d.munger.getParams()
+	rtpMungerParams := d.forwarder.GetRTPMungerParams()
 	stats := map[string]interface{}{
-		"HighestIncomingSN": mungerParams.highestIncomingSN,
-		"LastSN":            mungerParams.lastSN,
-		"SNOffset":          mungerParams.snOffset,
-		"LastTS":            mungerParams.lastTS,
-		"TSOffset":          mungerParams.tsOffset,
-		"LastMarker":        mungerParams.lastMarker,
+		"HighestIncomingSN": rtpMungerParams.highestIncomingSN,
+		"LastSN":            rtpMungerParams.lastSN,
+		"SNOffset":          rtpMungerParams.snOffset,
+		"LastTS":            rtpMungerParams.lastTS,
+		"TSOffset":          rtpMungerParams.tsOffset,
+		"LastMarker":        rtpMungerParams.lastMarker,
 		"LastRTP":           d.lastRTP.get(),
 		"LastPli":           d.lastPli.get(),
 		"PacketsDropped":    d.pktsDropped.get(),
@@ -1308,8 +921,8 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"SSRC":                d.ssrc,
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.get(),
-		"Muted":               d.muted,
-		"CurrentSpatialLayer": d.currentSpatialLayer,
+		"Muted":               d.forwarder.Muted(),
+		"CurrentSpatialLayer": d.forwarder.CurrentSpatialLayer,
 		"Stats":               stats,
 	}
 }
@@ -1317,9 +930,514 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 //---------------------------------------------------
 
 //
-// munger
+// Forwarder
 //
-type MungerParams struct {
+type Forwarder struct {
+	lock  sync.RWMutex
+	codec webrtc.RTPCodecCapability
+	kind  webrtc.RTPCodecType
+
+	muted bool
+
+	started  bool
+	lastSSRC uint32
+	lTSCalc  int64
+
+	maxSpatialLayer     int32
+	currentSpatialLayer int32
+	targetSpatialLayer  int32
+
+	maxTemporalLayer     int32
+	currentTemporalLayer int32
+	targetTemporalLayer  int32
+
+	rtpMunger *RTPMunger
+	vp8Munger *VP8Munger
+}
+
+func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+	f := &Forwarder{
+		codec: codec,
+		kind:  kind,
+
+		// start off with nothing, let streamallocator set things
+		currentSpatialLayer:  InvalidSpatialLayer,
+		targetSpatialLayer:   InvalidSpatialLayer,
+		currentTemporalLayer: InvalidTemporalLayer,
+		targetTemporalLayer:  InvalidTemporalLayer,
+
+		rtpMunger: NewRTPMunger(),
+	}
+
+	if strings.ToLower(codec.MimeType) == "video/vp8" {
+		f.vp8Munger = NewVP8Munger()
+	}
+
+	if f.kind == webrtc.RTPCodecTypeVideo {
+		f.maxSpatialLayer = 2
+		f.maxTemporalLayer = 2
+	} else {
+		f.maxSpatialLayer = InvalidSpatialLayer
+		f.maxTemporalLayer = InvalidTemporalLayer
+	}
+
+	fmt.Printf("RAJA f: %+v\n", f) // REMOVE
+	return f
+}
+
+func (f *Forwarder) Mute(val bool) bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.muted == val {
+		return false
+	}
+
+	f.muted = val
+	return true
+}
+
+func (f *Forwarder) Muted() bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.muted
+}
+
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if spatialLayer == f.maxSpatialLayer {
+		return false
+	}
+
+	f.maxSpatialLayer = spatialLayer
+	return true
+}
+
+func (f *Forwarder) MaxSpatialLayer() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.maxSpatialLayer
+}
+
+func (f *Forwarder) CurrentSpatialLayer() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.currentSpatialLayer
+}
+
+func (f *Forwarder) TargetSpatialLayer() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.targetSpatialLayer
+}
+
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if temporalLayer == f.maxTemporalLayer {
+		return false
+	}
+
+	f.maxTemporalLayer = temporalLayer
+	return true
+}
+
+func (f *Forwarder) MaxTemporalLayer() int32 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.maxTemporalLayer
+}
+
+func (f *Forwarder) MaxLayers() (int32, int32) {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.maxSpatialLayer, f.maxTemporalLayer
+}
+
+func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if f.targetSpatialLayer == InvalidSpatialLayer {
+		return ForwardingStatusOff
+	}
+
+	if f.targetSpatialLayer < f.maxSpatialLayer {
+		return ForwardingStatusPartial
+	}
+
+	return ForwardingStatusOptimal
+}
+
+func (f *Forwarder) AdjustAllocation(availableChannelCapacity uint64, brs [3][4]uint64) (isPausing, isResuming bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	isPausing = false
+	isResuming = false
+	bandwidthRequested = 0
+	optimalBandwidthNeeded = 0
+
+	if f.kind == webrtc.RTPCodecTypeAudio || f.muted {
+		return
+	}
+
+	optimalBandwidthNeeded = uint64(0)
+	// LK-TODO for temporal preference, traverse the bitrates array the other way
+	for i := f.maxSpatialLayer; i >= 0; i-- {
+		for j := f.maxTemporalLayer; j >= 0; j-- {
+			if brs[i][j] == 0 {
+				continue
+			}
+			if optimalBandwidthNeeded == 0 {
+				optimalBandwidthNeeded = brs[i][j]
+			}
+			if brs[i][j] < availableChannelCapacity {
+				isResuming = f.targetSpatialLayer == InvalidSpatialLayer
+				bandwidthRequested = brs[i][j]
+
+				f.targetSpatialLayer = int32(i)
+				f.targetTemporalLayer = int32(j)
+				return
+			}
+		}
+	}
+
+	if optimalBandwidthNeeded != 0 {
+		// no layer fits in the available channel capacity, disable the track
+		isPausing = f.targetSpatialLayer != InvalidSpatialLayer
+
+		f.currentSpatialLayer = InvalidSpatialLayer
+		f.targetSpatialLayer = InvalidSpatialLayer
+
+		f.currentTemporalLayer = InvalidTemporalLayer
+		f.targetTemporalLayer = InvalidTemporalLayer
+	}
+	return
+}
+
+func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
+	increased = false
+	bandwidthRequested = uint64(0)
+	optimalBandwidthNeeded = uint64(0)
+
+	// LK-TODO-START
+	// This is mainly used in probing to try a slightly higher layer.
+	// But, if down track is not a simulcast track, then the next
+	// available layer (i. e. the only layer of simple track) may boost
+	// things by a lot (it could happen in simulcast jumps too).
+	// May need to take in a layer increase threshold as an argument
+	// (in terms of bps) and increase layer only if the jump is within
+	// that threshold.
+	// LK-TODO-END
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.kind == webrtc.RTPCodecTypeAudio || f.muted {
+		return
+	}
+
+	// if targets are still pending, don't increase
+	if f.targetSpatialLayer != InvalidSpatialLayer {
+		if f.targetSpatialLayer != f.currentSpatialLayer || f.targetTemporalLayer != f.currentTemporalLayer {
+			return
+		}
+	}
+
+	// move to the next available layer
+	for i := f.maxSpatialLayer; i >= 0; i-- {
+		for j := f.maxTemporalLayer; j >= 0; j-- {
+			if brs[i][j] == 0 {
+				continue
+			}
+			if optimalBandwidthNeeded == 0 {
+				optimalBandwidthNeeded = brs[i][j]
+				break
+			}
+		}
+
+		if optimalBandwidthNeeded != 0 {
+			break
+		}
+	}
+	if optimalBandwidthNeeded == 0 {
+		// feed is dry
+		return
+	}
+
+	// try moving temporal layer up in the current spatial layer
+	nextTemporalLayer := f.currentTemporalLayer + 1
+	currentSpatialLayer := f.currentSpatialLayer
+	if currentSpatialLayer == InvalidSpatialLayer {
+		currentSpatialLayer = 0
+	}
+	if nextTemporalLayer <= f.maxTemporalLayer && brs[currentSpatialLayer][nextTemporalLayer] > 0 {
+		f.targetSpatialLayer = currentSpatialLayer
+		f.targetTemporalLayer = nextTemporalLayer
+
+		increased = true
+		bandwidthRequested = brs[currentSpatialLayer][nextTemporalLayer]
+		return
+	}
+
+	// try moving spatial layer up if already at max temporal layer of current spatial layer
+	nextSpatialLayer := f.currentSpatialLayer + 1
+	if nextSpatialLayer <= f.maxSpatialLayer && brs[nextSpatialLayer][0] > 0 {
+		f.targetSpatialLayer = nextSpatialLayer
+		f.targetTemporalLayer = 0
+
+		increased = true
+		bandwidthRequested = brs[nextSpatialLayer][0]
+		return
+	}
+
+	return
+}
+
+func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.muted {
+		return &TranslationParams{
+			shouldDrop: true,
+		}, nil
+	}
+
+	switch f.kind {
+	case webrtc.RTPCodecTypeAudio:
+		return f.getTranslationParamsAudio(extPkt)
+	case webrtc.RTPCodecTypeVideo:
+		return f.getTranslationParamsVideo(extPkt, layer)
+	}
+
+	return nil, ErrUnknownKind
+}
+
+// should be called with lock held
+func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+	if f.lastSSRC != extPkt.Packet.SSRC {
+		if !f.started {
+			// start of stream
+			f.started = true
+			f.rtpMunger.SetLastSnTs(extPkt)
+		} else {
+			// LK-TODO-START
+			// TS offset of 1 is not accurate. It should ideally
+			// be driven by packetization of the incoming track.
+			// But, on a track switch, won't have any historic data
+			// of a new track though.
+			// LK-TODO-END
+			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, 1)
+		}
+
+		f.lastSSRC = extPkt.Packet.SSRC
+	}
+
+	tp := &TranslationParams{}
+
+	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
+	if err != nil {
+		tp.shouldDrop = true
+		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			return tp, nil
+		}
+
+		return tp, err
+	}
+
+	tp.rtp = tpRTP
+	return tp, nil
+}
+
+// should be called with lock held
+func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
+	tp := &TranslationParams{}
+
+	if f.targetSpatialLayer == InvalidSpatialLayer {
+		// stream is paused by streamallocator
+		tp.shouldDrop = true
+		return tp, nil
+	}
+
+	tp.shouldSendPLI = false
+	if f.targetSpatialLayer != f.currentSpatialLayer {
+		if f.targetSpatialLayer == layer {
+			if extPkt.KeyFrame {
+				// lock to target layer
+				f.currentSpatialLayer = f.targetSpatialLayer
+			} else {
+				tp.shouldSendPLI = true
+			}
+		}
+	}
+
+	if f.currentSpatialLayer != layer {
+		tp.shouldDrop = true
+		return tp, nil
+	}
+
+	if f.targetSpatialLayer < f.currentSpatialLayer && f.targetSpatialLayer < f.maxSpatialLayer {
+		//
+		// If target layer is lower than both the current and
+		// maximum subscribed layer, it is due to bandwidth
+		// constraints that the target layer has been switched down.
+		// Continuing to send higher layer will only exacerbate the
+		// situation by putting more stress on the channel. So, drop it.
+		//
+		// In the other direction, it is okay to keep forwarding till
+		// switch point to get a smoother stream till the higher
+		// layer key frame arrives.
+		//
+		// Note that in the case of client subscription layer restriction
+		// coinciding with server restriction due to bandwidth limitation,
+		// this will take client subscription as the winning vote and
+		// continue to stream current spatial layer till switch point.
+		// That could lead to congesting the channel.
+		// LK-TODO: Improve the above case, i. e. distinguish server
+		// applied restriction from client requested restriction.
+		//
+		tp.shouldDrop = true
+		return tp, nil
+	}
+
+	if f.lastSSRC != extPkt.Packet.SSRC {
+		if !f.started {
+			f.started = true
+			f.rtpMunger.SetLastSnTs(extPkt)
+			if f.vp8Munger != nil {
+				f.vp8Munger.SetLast(extPkt)
+			}
+		} else {
+			// LK-TODO-START
+			// The below offset calculation is not technically correct.
+			// Timestamps based on the system time of an intermediate box like
+			// SFU is not going to be accurate. Packets arrival/processing
+			// are subject to vagaries of network delays, SFU processing etc.
+			// But, the correct way is a lot harder. Will have to
+			// look at RTCP SR to get timestamps and figure out alignment
+			// of layers and use that during layer switch. That can
+			// get tricky. Given the complexity of that approach, maybe
+			// this is just fine till it is not :-).
+			// LK-TODO-END
+
+			// Compute how much time passed between the old RTP extPkt
+			// and the current packet, and fix timestamp on source change
+			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
+			td := uint32((tDiffMs * (int64(f.codec.ClockRate) / 1000)) / 1000)
+			if td == 0 {
+				td = 1
+			}
+			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
+			if f.vp8Munger != nil {
+				f.vp8Munger.UpdateOffsets(extPkt)
+			}
+		}
+
+		f.lastSSRC = extPkt.Packet.SSRC
+	}
+
+	f.lTSCalc = extPkt.Arrival
+
+	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
+	if err != nil {
+		tp.shouldDrop = true
+		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			return tp, nil
+		}
+
+		return tp, err
+	}
+
+	if f.vp8Munger == nil {
+		tp.rtp = tpRTP
+		return tp, nil
+	}
+
+	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.currentTemporalLayer)
+	if err != nil {
+		tp.shouldDrop = true
+		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
+			if err == ErrFilteredVP8TemporalLayer {
+				// filtered temporal layer, update sequence number offset to prevent holes
+				f.rtpMunger.PacketDropped(extPkt)
+			}
+			return tp, nil
+		}
+
+		return tp, err
+	}
+
+	// catch up temporal layer if necessary
+	if tpVP8 != nil && f.currentTemporalLayer != f.targetTemporalLayer {
+		if tpVP8.header.TIDPresent == 1 && tpVP8.header.TID <= uint8(f.targetTemporalLayer) {
+			f.currentTemporalLayer = f.targetTemporalLayer
+		}
+	}
+
+	tp.rtp = tpRTP
+	tp.vp8 = tpVP8
+	return tp, nil
+}
+
+func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	// padding is used for probing. Padding packets should be
+	// at frame boundaries only to ensure decoder sequencer does
+	// not get out-of-sync. But, when a stream is paused,
+	// force a frame marker as a restart of the stream will
+	// start with a key frame which will reset the decoder.
+	forceMarker := false
+	if f.targetSpatialLayer == InvalidSpatialLayer {
+		forceMarker = true
+	}
+	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker)
+}
+
+func (f *Forwarder) GetSnTsForBlankFrames() ([]SnTs, bool, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	num := RTPBlankFramesMax
+	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
+	if frameEndNeeded {
+		num++
+	}
+	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(num, f.codec.ClockRate, 30, frameEndNeeded)
+	return snts, frameEndNeeded, err
+}
+
+func (f *Forwarder) GetPaddingVP8(frameEndNeeded bool) (*buffer.VP8, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	return f.vp8Munger.UpdateAndGetPadding(!frameEndNeeded)
+}
+
+func (f *Forwarder) GetRTPMungerParams() RTPMungerParams {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.rtpMunger.GetParams()
+}
+
+//---------------------------------------------------
+
+//
+// RTPMunger
+//
+type RTPMungerParams struct {
 	highestIncomingSN uint16
 	lastSN            uint16
 	snOffset          uint16
@@ -1330,78 +1448,78 @@ type MungerParams struct {
 	missingSNs map[uint16]uint16
 }
 
-type Munger struct {
-	MungerParams
+type RTPMunger struct {
+	RTPMungerParams
 }
 
-func NewMunger() *Munger {
-	return &Munger{MungerParams: MungerParams{
+func NewRTPMunger() *RTPMunger {
+	return &RTPMunger{RTPMungerParams: RTPMungerParams{
 		missingSNs: make(map[uint16]uint16, 10),
 	}}
 }
 
-func (m *Munger) getParams() MungerParams {
-	return MungerParams{
-		highestIncomingSN: m.highestIncomingSN,
-		lastSN:            m.lastSN,
-		snOffset:          m.snOffset,
-		lastTS:            m.lastTS,
-		tsOffset:          m.tsOffset,
-		lastMarker:        m.lastMarker,
+func (r *RTPMunger) GetParams() RTPMungerParams {
+	return RTPMungerParams{
+		highestIncomingSN: r.highestIncomingSN,
+		lastSN:            r.lastSN,
+		snOffset:          r.snOffset,
+		lastTS:            r.lastTS,
+		tsOffset:          r.tsOffset,
+		lastMarker:        r.lastMarker,
 	}
 }
 
-func (m *Munger) SetLastSnTs(extPkt *buffer.ExtPacket) {
-	m.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	m.lastSN = extPkt.Packet.SequenceNumber
-	m.lastTS = extPkt.Packet.Timestamp
+func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
+	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
+	r.lastSN = extPkt.Packet.SequenceNumber
+	r.lastTS = extPkt.Packet.Timestamp
 }
 
-func (m *Munger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
-	m.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
-	m.snOffset = extPkt.Packet.SequenceNumber - m.lastSN - snAdjust
-	m.tsOffset = extPkt.Packet.Timestamp - m.lastTS - tsAdjust
+func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16, tsAdjust uint32) {
+	r.highestIncomingSN = extPkt.Packet.SequenceNumber - 1
+	r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - snAdjust
+	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
 
 	// clear incoming missing sequence numbers on layer/source switch
-	m.missingSNs = make(map[uint16]uint16, 10)
+	r.missingSNs = make(map[uint16]uint16, 10)
 }
 
-func (m *Munger) PacketDropped(extPkt *buffer.ExtPacket) {
+func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	if !extPkt.Head {
 		return
 	}
 
-	m.highestIncomingSN = extPkt.Packet.SequenceNumber
-	m.snOffset += 1
+	r.highestIncomingSN = extPkt.Packet.SequenceNumber
+	r.snOffset += 1
 }
 
-func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
+func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
 	// if out-of-order, look up missing sequence number cache
 	if !extPkt.Head {
-		snOffset, ok := m.missingSNs[extPkt.Packet.SequenceNumber]
+		snOffset, ok := r.missingSNs[extPkt.Packet.SequenceNumber]
 		if !ok {
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		delete(m.missingSNs, extPkt.Packet.SequenceNumber)
+		delete(r.missingSNs, extPkt.Packet.SequenceNumber)
 		return &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: extPkt.Packet.SequenceNumber - snOffset,
-			timestamp:      extPkt.Packet.Timestamp - m.tsOffset,
+			timestamp:      extPkt.Packet.Timestamp - r.tsOffset,
 		}, nil
 	}
 
 	ordering := SequenceNumberOrderingContiguous
 
 	// if there are gaps, record it in missing sequence number cache
-	diff := extPkt.Packet.SequenceNumber - m.highestIncomingSN
+	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
 
-		for i := m.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber; i++ {
-			m.missingSNs[i] = m.snOffset
+		for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber; i++ {
+			r.missingSNs[i] = r.snOffset
 		}
 	} else {
 		// can get duplicate packet due to FEC
@@ -1416,8 +1534,8 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsR
 		// incoming sequence number and it is a good point to adjust
 		// sequence number offset.
 		if len(extPkt.Packet.Payload) == 0 {
-			m.highestIncomingSN = extPkt.Packet.SequenceNumber
-			m.snOffset += 1
+			r.highestIncomingSN = extPkt.Packet.SequenceNumber
+			r.snOffset += 1
 
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingContiguous,
@@ -1431,13 +1549,13 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsR
 	// it is unclear if the current packet should be dropped if it is not
 	// contiguous. Hence forward anything that is not contiguous.
 	// Reference: http://www.rtcbits.com/2017/04/howto-implement-temporal-scalability.html
-	mungedSN := extPkt.Packet.SequenceNumber - m.snOffset
-	mungedTS := extPkt.Packet.Timestamp - m.tsOffset
+	mungedSN := extPkt.Packet.SequenceNumber - r.snOffset
+	mungedTS := extPkt.Packet.Timestamp - r.tsOffset
 
-	m.highestIncomingSN = extPkt.Packet.SequenceNumber
-	m.lastSN = mungedSN
-	m.lastTS = mungedTS
-	m.lastMarker = extPkt.Packet.Marker
+	r.highestIncomingSN = extPkt.Packet.SequenceNumber
+	r.lastSN = mungedSN
+	r.lastTS = mungedTS
+	r.lastMarker = extPkt.Packet.Marker
 
 	return &TranslationParamsRTP{
 		snOrdering:     ordering,
@@ -1446,39 +1564,39 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsR
 	}, nil
 }
 
-func (m *Munger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool) ([]SnTs, error) {
+func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool) ([]SnTs, error) {
 	tsOffset := 0
-	if !m.lastMarker {
+	if !r.lastMarker {
 		if !forceMarker {
 			return nil, ErrPaddingNotOnFrameBoundary
 		} else {
-			// if forcing frame end, use timestamp of last frame for the first one
+			// if forcing frame end, use timestamp of latest received frame for the first one
 			tsOffset = 1
 		}
 	}
 
 	vals := make([]SnTs, num)
 	for i := 0; i < num; i++ {
-		vals[i].sequenceNumber = m.lastSN + uint16(i) + 1
+		vals[i].sequenceNumber = r.lastSN + uint16(i) + 1
 		if frameRate != 0 {
-			vals[i].timestamp = m.lastTS + uint32(i+1-tsOffset)*(clockRate/frameRate)
+			vals[i].timestamp = r.lastTS + uint32(i+1-tsOffset)*(clockRate/frameRate)
 		} else {
-			vals[i].timestamp = m.lastTS
+			vals[i].timestamp = r.lastTS
 		}
 	}
 
-	m.lastSN = vals[num-1].sequenceNumber
-	m.snOffset -= uint16(num)
+	r.lastSN = vals[num-1].sequenceNumber
+	r.snOffset -= uint16(num)
 
 	if forceMarker {
-		m.lastMarker = true
+		r.lastMarker = true
 	}
 
 	return vals, nil
 }
 
-func (m *Munger) IsOnFrameBoundary() bool {
-	return m.lastMarker
+func (r *RTPMunger) IsOnFrameBoundary() bool {
+	return r.lastMarker
 }
 
 //---------------------------------------------------
@@ -1755,6 +1873,9 @@ func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) (*buffer.VP8, error) {
 
 //-----------------------------
 
+//
+// VP8Munger
+//
 func isWrapping7Bit(val1 int32, val2 int32) bool {
 	return val2 < val1 && (val1-val2) > (1<<6)
 }

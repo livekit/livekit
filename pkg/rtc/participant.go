@@ -707,7 +707,7 @@ func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if !subTrack.DownTrack().IsForwardingOptimal() {
+		if subTrack.DownTrack().GetForwardingStatus() != sfu.ForwardingStatusOptimal {
 			reducedQualitySub = true
 		}
 		subLoss += subTrack.SubscribeLossPercentage()
