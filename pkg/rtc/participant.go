@@ -707,8 +707,7 @@ func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
 		if subTrack.IsMuted() {
 			continue
 		}
-		// LK-TODO: maybe this should check CurrentSpatialLayer as target may not have been achieved
-		if subTrack.DownTrack().TargetSpatialLayer() < subTrack.DownTrack().MaxSpatialLayer() {
+		if !subTrack.DownTrack().IsForwardingOptimal() {
 			reducedQualitySub = true
 		}
 		subLoss += subTrack.SubscribeLossPercentage()
