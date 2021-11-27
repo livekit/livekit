@@ -392,6 +392,11 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			size = RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize
 		}
 
+		// padding is used for probing. Padding packets should be
+		// at frame boundaries only to ensure decoder sequencer does
+		// not get out-of-sync. But, when a stream is paused,
+		// force a frame marker as a restart of the stream will
+		// start with a key frame which will reset the decoder.
 		sn, ts, err := d.munger.UpdateAndGetPaddingSnTs(d.TargetSpatialLayer() == InvalidSpatialLayer)
 		if err != nil {
 			return bytesSent

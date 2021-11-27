@@ -35,10 +35,12 @@ type StreamTracker struct {
 
 	onStatusChanged func(status StreamStatus)
 
-	initialized    atomicBool
 	paused         atomicBool
 	countSinceLast uint32 // number of packets received since last check
 	running        chan struct{}
+
+	initMu      sync.Mutex
+	initialized bool
 
 	statusMu sync.RWMutex
 	status   StreamStatus
@@ -100,7 +102,6 @@ func (s *StreamTracker) maybeSetStopped() {
 }
 
 func (s *StreamTracker) init() {
-	s.initialized.set(true)
 	s.maybeSetActive()
 
 	if s.isRunning() {
@@ -142,12 +143,19 @@ func (s *StreamTracker) Observe(sn uint16) {
 		return
 	}
 
-	if !s.initialized.get() {
-		s.lastSN = sn
+	s.initMu.Lock()
+	if !s.initialized {
 		// first packet
+		s.lastSN = sn
+		s.initialized = true
+		s.initMu.Unlock()
+
+		// declare stream active and start the detect worker
 		go s.init()
+
 		return
 	}
+	s.initMu.Unlock()
 
 	// ignore out-of-order SNs
 	if (sn - s.lastSN) > uint16(1<<15) {

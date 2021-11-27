@@ -628,8 +628,40 @@ func (s *StreamAllocator) runStatePreCommit(event Event) {
 		// should never happen as the intialized capacity is very high
 		s.setState(State_STABLE)
 	case Signal_ESTIMATE_DECREASE:
-		// first estimates could be off as things are ramping up.
-		// Just move to STABLE state and let further streaming drive the state machine
+		// first estimate could be off as things are ramping up.
+		//
+		// Basically, an initial channel capacity of InitialChannelCapacity
+		// which is very high is used  so that there is no throttling before
+		// getting an estimate. The first estimate happens 6 - 8 seconds
+		// after streaming starts. With screen share like stream, the traffic
+		// is sparse/spikey depending on the content. So, the estimate could
+		// be small and still ramping up. So, doing an allocation could result
+		// in stream being paused.
+		//
+		// This is one of the significant challenges here, i. e. time alignment.
+		// Estimate was potentially measured using data from a little while back.
+		// But, that estimate is used to allocate based on current bitrate.
+		// So, in the intervening period if there was movement on the screen,
+		// the bitrate could have spiked and the REMB value is probably stale.
+		//
+		// A few options to consider
+		//   o what is implemented here (i. e. change to STABLE state and
+		//     let further streaming drive the esimation and move the state
+		//     machine in whichever direction it needs to go)
+		//   o Forward padding packets also. But, that could have an adverse
+		//     effect on the channel when a new stream comes on line and
+		//     starts probing, i. e. it could affect existing flows if it
+		//     congests the channel because of the spurt of padding packets.
+		//   o Do probing downstream in the first few seconds in addition to
+		//     forwarding any streams and get a better estimate of the channel.
+		//   o Measure up stream bitrates over a much longer window to smooth
+		//     out spikes and get a more steady-state rate and use it in
+		//     allocations.
+		//
+		// A good challenge. Basically, the goal should be to aviod re-allocation
+		// of streams. Any re-allocation means potential for estimate and current
+		// state of up streams not being in sync because of time differences resulting
+		// in streams getting paused unnecessarily.
 		s.setState(State_STABLE)
 	case Signal_RECEIVER_REPORT:
 	case Signal_AVAILABLE_LAYERS_ADD:
@@ -748,7 +780,7 @@ func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
 		// try for more
 		if !s.prober.IsRunning() {
 			if s.maybeGratuitousProbe() {
-				s.logger.Infow("trying more gratuitous probing", "participant", s.participantID)
+				s.logger.Debugw("trying more gratuitous probing", "participant", s.participantID)
 			} else {
 				s.setState(State_STABLE)
 			}

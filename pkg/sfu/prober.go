@@ -169,7 +169,6 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 		return
 	}
 
-	fmt.Printf("adding cluster, desired: %d, expected: %d, min: %d, max: %d\n", desiredRateBps, expectedRateBps, minDuration.Milliseconds(), maxDuration.Milliseconds()) // REMOVE
 	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
 	p.logger.Debugw("cluster added", "participant", p.participantID, "cluster", cluster.String())
 
