@@ -981,7 +981,6 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 		f.maxTemporalLayer = InvalidTemporalLayer
 	}
 
-	fmt.Printf("RAJA f: %+v\n", f) // REMOVE
 	return f
 }
 
