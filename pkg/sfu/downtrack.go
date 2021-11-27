@@ -1192,7 +1192,7 @@ func (d *DownTrack) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	if d.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
+	if d.vp8Munger == nil {
 		tp.rtp = tpRTP
 		return tp, nil
 	}
