@@ -1197,7 +1197,7 @@ func (d *DownTrack) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	tpVP8, err := d.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, d.targetTemporalLayer)
+	tpVP8, err := d.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, d.currentTemporalLayer)
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
