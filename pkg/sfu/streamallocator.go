@@ -1225,11 +1225,13 @@ type Track struct {
 }
 
 func newTrack(downTrack *DownTrack, peerID string) *Track {
+	maxSpatialLayer, maxTemporalLayer := downTrack.MaxLayers()
+
 	return &Track{
 		downTrack:        downTrack,
 		peerID:           peerID,
-		maxSpatialLayer:  downTrack.MaxSpatialLayer(),
-		maxTemporalLayer: downTrack.MaxTemporalLayer(),
+		maxSpatialLayer:  maxSpatialLayer,
+		maxTemporalLayer: maxTemporalLayer,
 	}
 }
 
