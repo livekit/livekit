@@ -45,17 +45,14 @@ func (a *atomicBool) get() bool {
 			+-+-+-+-+-+-+-+-+
 */
 type VP8 struct {
-	TemporalSupported bool // LK-TODO: CLEANUP-REMOVE
-	FirstByte         byte
+	FirstByte byte
 
 	PictureIDPresent int
 	PictureID        uint16 /* 8 or 16 bits, picture ID */
-	PicIDIdx         int    // LK-TODO: CLEANUP-REMOVE
 	MBit             bool
 
 	TL0PICIDXPresent int
 	TL0PICIDX        uint8 /* 8 bits temporal level zero index */
-	TlzIdx           int   // LK-TODO: CLEANUP-REMOVE
 
 	// Optional Header If either of the T or K bits are set to 1,
 	// the TID/Y/KEYIDX extension field MUST be present.
@@ -100,15 +97,12 @@ func (p *VP8) Unmarshal(payload []byte) error {
 		if L && !T {
 			return errInvalidPacket
 		}
-		// Check if T is present, if not, no temporal layer is available
-		p.TemporalSupported = payload[idx]&0x20 > 0
 		// Check for PictureID
 		if I {
 			idx++
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			p.PicIDIdx = idx
 			p.PictureIDPresent = 1
 			pid := payload[idx] & 0x7f
 			// Check if m is 1, then Picture ID is 15 bits
@@ -129,7 +123,6 @@ func (p *VP8) Unmarshal(payload []byte) error {
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			p.TlzIdx = idx
 			p.TL0PICIDXPresent = 1
 
 			if int(idx) >= payloadLen {

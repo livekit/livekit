@@ -75,7 +75,7 @@ func TestVP8Helper_Unmarshal(t *testing.T) {
 				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if tt.checkTemporal {
-				assert.Equal(t, tt.temporalSupport, p.TemporalSupported)
+				assert.Equal(t, tt.temporalSupport, p.TIDPresent == 1)
 			}
 			if tt.checkKeyFrame {
 				assert.Equal(t, tt.keyFrame, p.IsKeyFrame)
