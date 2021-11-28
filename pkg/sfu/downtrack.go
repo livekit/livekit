@@ -1081,11 +1081,6 @@ func (f *Forwarder) AdjustAllocation(availableChannelCapacity uint64, brs [3][4]
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	isPausing = false
-	isResuming = false
-	bandwidthRequested = 0
-	optimalBandwidthNeeded = 0
-
 	if f.kind == webrtc.RTPCodecTypeAudio || f.muted {
 		return
 	}
@@ -1125,10 +1120,6 @@ func (f *Forwarder) AdjustAllocation(availableChannelCapacity uint64, brs [3][4]
 }
 
 func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
-	increased = false
-	bandwidthRequested = uint64(0)
-	optimalBandwidthNeeded = uint64(0)
-
 	// LK-TODO-START
 	// This is mainly used in probing to try a slightly higher layer.
 	// But, if down track is not a simulcast track, then the next
