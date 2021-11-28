@@ -228,6 +228,16 @@ var (
 	BoostWaitMs           = 3 * 1000 * time.Millisecond // 3 seconds
 )
 
+type StreamedTrack struct {
+	ParticipantSid string
+	TrackSid       string
+}
+
+type StreamedTracksUpdate struct {
+	Paused  []*StreamedTrack
+	Resumed []*StreamedTrack
+}
+
 type StreamAllocatorParams struct {
 	ParticipantID string
 	Logger        logger.Logger
@@ -237,7 +247,7 @@ type StreamAllocator struct {
 	participantID string
 	logger        logger.Logger
 
-	onStreamedTracksChange func(paused map[string][]string, resumed map[string][]string) error
+	onStreamedTracksChange func(update StreamedTracksUpdate) error
 
 	estimateMu               sync.RWMutex
 	trackingSSRC             uint32
@@ -305,11 +315,11 @@ func (s *StreamAllocator) Stop() {
 	close(s.eventCh)
 }
 
-func (s *StreamAllocator) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+func (s *StreamAllocator) OnStreamedTracksChange(f func(update StreamedTracksUpdate) error) {
 	s.onStreamedTracksChange = f
 }
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack, peerID string) {
+func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
 	downTrack.OnREMB(s.onREMB)
 	downTrack.AddReceiverReportListener(s.onReceiverReport)
 	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
@@ -318,7 +328,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, peerID string) {
 	downTrack.OnPacketSent(s.onPacketSent)
 
 	s.tracksMu.Lock()
-	track := newTrack(downTrack, peerID)
+	track := newTrack(downTrack)
 	s.tracks[downTrack.ID()] = track
 
 	s.tracksSorted = append(s.tracksSorted, track)
@@ -927,8 +937,7 @@ func (s *StreamAllocator) allocate() {
 	// above the estimated channel capacity even if the optimal signal is true.
 	//
 	// LK-TODO make protocol friendly structures
-	var pausedTracks map[string][]string
-	var resumedTracks map[string][]string
+	var update StreamedTracksUpdate
 
 	isOptimal := true
 	totalBandwidthRequested := uint64(0)
@@ -979,11 +988,17 @@ func (s *StreamAllocator) allocate() {
 		}
 
 		if isPausing {
-			appendTrack(track, &pausedTracks)
+			update.Paused = append(update.Paused, &StreamedTrack{
+				ParticipantSid: track.PeerID(),
+				TrackSid:       track.ID(),
+			})
 		}
 
 		if isResuming {
-			appendTrack(track, &resumedTracks)
+			update.Resumed = append(update.Resumed, &StreamedTrack{
+				ParticipantSid: track.PeerID(),
+				TrackSid:       track.ID(),
+			})
 		}
 	}
 	s.tracksMu.RUnlock()
@@ -997,10 +1012,10 @@ func (s *StreamAllocator) allocate() {
 		}
 	}
 
-	if len(pausedTracks) != 0 || len(resumedTracks) != 0 {
-		s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", pausedTracks, "resumed", resumedTracks)
+	if len(update.Paused) != 0 || len(update.Resumed) != 0 {
+		s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", update.Paused, "resumed", update.Resumed)
 		if s.onStreamedTracksChange != nil {
-			err := s.onStreamedTracksChange(pausedTracks, resumedTracks)
+			err := s.onStreamedTracksChange(update)
 			if err != nil {
 				s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
 			}
@@ -1182,23 +1197,6 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 
 //------------------------------------------------
 
-func appendTrack(t *Track, m *map[string][]string) {
-	if *m == nil {
-		*m = make(map[string][]string)
-	}
-
-	peerID := t.PeerID()
-	trackID := t.ID()
-	peer, ok := (*m)[peerID]
-	if !ok {
-		peer = make([]string, 0, 2)
-	}
-	peer = append(peer, trackID)
-	(*m)[peerID] = peer
-}
-
-//------------------------------------------------
-
 type Track struct {
 	// LK-TODO-START
 	// Check if we can do without a lock?
@@ -1210,7 +1208,6 @@ type Track struct {
 	lock sync.RWMutex
 
 	downTrack *DownTrack
-	peerID    string
 
 	highestSN       uint32
 	packetsLost     uint32
@@ -1224,12 +1221,11 @@ type Track struct {
 	maxTemporalLayer int32
 }
 
-func newTrack(downTrack *DownTrack, peerID string) *Track {
+func newTrack(downTrack *DownTrack) *Track {
 	maxSpatialLayer, maxTemporalLayer := downTrack.MaxLayers()
 
 	return &Track{
 		downTrack:        downTrack,
-		peerID:           peerID,
 		maxSpatialLayer:  maxSpatialLayer,
 		maxTemporalLayer: maxTemporalLayer,
 	}
@@ -1244,7 +1240,7 @@ func (t *Track) ID() string {
 }
 
 func (t *Track) PeerID() string {
-	return t.peerID
+	return t.downTrack.PeerID()
 }
 
 // LK-TODO this should probably be maintained in downTrack and this module can query what it needs

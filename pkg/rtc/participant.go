@@ -1314,30 +1314,26 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	}
 }
 
-func (p *ParticipantImpl) onStreamedTracksChange(paused map[string][]string, resumed map[string][]string) error {
-	if len(paused) == 0 && len(resumed) == 0 {
+func (p *ParticipantImpl) onStreamedTracksChange(update sfu.StreamedTracksUpdate) error {
+	if len(update.Paused) == 0 && len(update.Resumed) == 0 {
 		return nil
 	}
 
 	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
-	if len(paused) != 0 {
-		for participantId, trackIds := range paused {
-			for _, trackId := range trackIds {
-				streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
-					ParticipantSid: participantId,
-					TrackSid:       trackId,
-				})
-			}
+	if len(update.Paused) != 0 {
+		for _, streamedTrack := range update.Paused {
+			streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
+				ParticipantSid: streamedTrack.ParticipantSid,
+				TrackSid:       streamedTrack.TrackSid,
+			})
 		}
 	}
-	if len(resumed) != 0 {
-		for participantId, trackIds := range paused {
-			for _, trackId := range trackIds {
-				streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
-					ParticipantSid: participantId,
-					TrackSid:       trackId,
-				})
-			}
+	if len(update.Resumed) != 0 {
+		for _, streamedTrack := range update.Resumed {
+			streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
+				ParticipantSid: streamedTrack.ParticipantSid,
+				TrackSid:       streamedTrack.TrackSid,
+			})
 		}
 	}
 
