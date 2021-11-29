@@ -47,12 +47,12 @@ func (b *Bucket) AddPacket(pkt []byte, sn uint16, latest bool) ([]byte, error) {
 func (b *Bucket) GetPacket(buf []byte, sn uint16) (i int, err error) {
 	p := b.get(sn)
 	if p == nil {
-		err = errPacketNotFound
+		err = ErrPacketNotFound
 		return
 	}
 	i = len(p)
 	if cap(buf) < i {
-		err = errBufferTooSmall
+		err = ErrBufferTooSmall
 		return
 	}
 	if len(buf) < i {
@@ -94,7 +94,7 @@ func (b *Bucket) get(sn uint16) []byte {
 
 func (b *Bucket) set(sn uint16, pkt []byte) ([]byte, error) {
 	if b.headSN-sn >= uint16(b.maxSteps+1) {
-		return nil, errPacketTooOld
+		return nil, ErrPacketTooOld
 	}
 	pos := b.step - int(b.headSN-sn+1)
 	if pos < 0 {
@@ -102,11 +102,11 @@ func (b *Bucket) set(sn uint16, pkt []byte) ([]byte, error) {
 	}
 	off := pos * maxPktSize
 	if off > len(b.buf) || off < 0 {
-		return nil, errPacketTooOld
+		return nil, ErrPacketTooOld
 	}
 	// Do not overwrite if packet exist
 	if binary.BigEndian.Uint16(b.buf[off+4:off+6]) == sn {
-		return nil, errRTXPacket
+		return nil, ErrRTXPacket
 	}
 	binary.BigEndian.PutUint16(b.buf[off:], uint16(len(pkt)))
 	copy(b.buf[off+2:], pkt)

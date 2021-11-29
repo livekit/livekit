@@ -22,23 +22,24 @@ type TrackReceiver interface {
 	GetBitrateTemporalCumulative() [3][4]uint64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
-	DeleteDownTrack(peerID string)
+	DeleteDownTrack(ID string)
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+	Codec() webrtc.RTPCodecCapability
 }
 
 // Receiver defines a interface for a track receivers
 type Receiver interface {
 	TrackID() string
 	StreamID() string
-	Codec() webrtc.RTPCodecParameters
+	Codec() webrtc.RTPCodecCapability
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() [3][4]uint64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	DeleteDownTrack(peerID string)
+	DeleteDownTrack(ID string)
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
@@ -46,10 +47,6 @@ type Receiver interface {
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	DebugInfo() map[string]interface{}
 }
-
-const (
-	lostUpdateDelta = 1e9
-)
 
 var (
 	defaultBitratesCumulative = [][]uint64{{60000, 90000, 150000, 0}, {200000, 300000, 500000, 0}, {400000, 600000, 1000000, 0}}
@@ -61,7 +58,6 @@ type WebRTCReceiver struct {
 	trackID         string
 	streamID        string
 	kind            webrtc.RTPCodecType
-	stream          string
 	receiver        *webrtc.RTPReceiver
 	codec           webrtc.RTPCodecParameters
 	isSimulcast     bool
@@ -89,10 +85,6 @@ type WebRTCReceiver struct {
 	free        map[int]struct{}
 	numProcs    int
 	lbThreshold int
-
-	fracLostMu        sync.Mutex
-	maxDownFracLost   uint8
-	maxDownFracLostTs time.Time
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -173,8 +165,8 @@ func (w *WebRTCReceiver) SSRC(layer int) uint32 {
 	return 0
 }
 
-func (w *WebRTCReceiver) Codec() webrtc.RTPCodecParameters {
-	return w.codec
+func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
+	return w.codec.RTPCodecCapability
 }
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
@@ -245,7 +237,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	}
 
 	w.downTrackMu.RLock()
-	_, ok := w.index[track.PeerID()]
+	_, ok := w.index[track.ID()]
 	w.downTrackMu.RUnlock()
 	if ok {
 		return
@@ -349,7 +341,7 @@ func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]uint64 {
 			tls := make([]uint64, 4)
 			if w.hasSpatialLayer(int32(i)) {
 				tls = buff.BitrateTemporalCumulative()
-				w.maybeUseDefaultBitrate(tls, i)
+				MaybeUseDefaultBitrate(tls, i)
 			}
 
 			for j := 0; j < len(br[i]); j++ {
@@ -366,7 +358,7 @@ func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 }
 
 // DeleteDownTrack removes a DownTrack from a Receiver
-func (w *WebRTCReceiver) DeleteDownTrack(peerID string) {
+func (w *WebRTCReceiver) DeleteDownTrack(ID string) {
 	if w.closed.get() {
 		return
 	}
@@ -374,11 +366,11 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID string) {
 	w.downTrackMu.Lock()
 	defer w.downTrackMu.Unlock()
 
-	idx, ok := w.index[peerID]
+	idx, ok := w.index[ID]
 	if !ok {
 		return
 	}
-	delete(w.index, peerID)
+	delete(w.index, ID)
 	w.downTracks[idx] = nil
 	w.free[idx] = struct{}{}
 }
@@ -523,17 +515,17 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 	defer w.downTrackMu.Unlock()
 
 	for idx := range w.free {
-		w.index[track.PeerID()] = idx
+		w.index[track.ID()] = idx
 		w.downTracks[idx] = track
 		delete(w.free, idx)
 		return
 	}
 
-	w.index[track.PeerID()] = len(w.downTracks)
+	w.index[track.ID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
 }
 
-func (w *WebRTCReceiver) maybeUseDefaultBitrate(tlbs []uint64, layer int) {
+func MaybeUseDefaultBitrate(tlbs []uint64, layer int) {
 	for _, tlb := range tlbs {
 		if tlb != uint64(0) {
 			// some layer has data
