@@ -54,9 +54,12 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	return nil, nil
 }
 
-func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
-	// prefer keyfile if set
-	if conf.KeyProvider.Path != "" {
+func createKeyProvider(conf *config.Config, client *redis.Client) (auth.KeyProvider, error) {
+	if conf.KeyProvider.Kind == "file" {
+		if conf.KeyProvider.Path == "" {
+			return nil, errors.New("file Provider must have path of keyfile")
+		}
+
 		if st, err := os.Stat(conf.KeyProvider.Path); err != nil {
 			return nil, err
 		} else if st.Mode().Perm() != 0600 {
@@ -69,11 +72,20 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		defer func() {
 			_ = f.Close()
 		}()
-		return auth.NewFileBasedKeyProviderFromReader(f)
-	}
 
-	if len(conf.KeyProvider.Keys) == 0 {
-		return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+		return auth.NewFileBasedKeyProviderFromReader(f)
+	} else if conf.KeyProvider.Kind == "env" {
+		if len(conf.KeyProvider.Keys) == 0 {
+			return nil, errors.New("one of key-file or keys must be provided in order to support a secure installation")
+		}
+
+		return auth.NewFileBasedKeyProviderFromMap(conf.KeyProvider.Keys), nil
+	} else if conf.KeyProvider.Kind == "redis" {
+		if conf.KeyProvider.RedisKey == "" {
+			return nil, errors.New("redis key is not exists")
+		}
+
+		return NewRedisBasedKeyProvider(client, conf.KeyProvider.RedisKey), nil
 	}
 
 	return auth.NewFileBasedKeyProviderFromMap(conf.KeyProvider.Keys), nil
