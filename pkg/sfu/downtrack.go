@@ -246,7 +246,7 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 func (d *DownTrack) ID() string { return d.id }
 
 // Codec returns current track codec capability
-// func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
+func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
