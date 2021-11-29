@@ -38,9 +38,9 @@ type KeyProviderConfig struct {
 	// env (default), config, file, redis
 	Kind string `yaml:"kind"`
 	// used with config and env. we could migrate the top level keys to here.
-	Keys map[string]string
+	Keys map[string]string `yaml:"keys"`
 	// used with file provider
-	Path string
+	Path string `yaml:"path"`
 	// key to use as the hash to load keys
 	RedisKey string `yaml:"redis_key"`
 }
