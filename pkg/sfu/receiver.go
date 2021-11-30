@@ -22,7 +22,7 @@ type TrackReceiver interface {
 	GetBitrateTemporalCumulative() [3][4]uint64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
-	DeleteDownTrack(ID string)
+	DeleteDownTrack(peerID string)
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
@@ -237,7 +237,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	}
 
 	w.downTrackMu.RLock()
-	_, ok := w.index[track.ID()]
+	_, ok := w.index[track.PeerID()]
 	w.downTrackMu.RUnlock()
 	if ok {
 		return
@@ -358,7 +358,7 @@ func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 }
 
 // DeleteDownTrack removes a DownTrack from a Receiver
-func (w *WebRTCReceiver) DeleteDownTrack(ID string) {
+func (w *WebRTCReceiver) DeleteDownTrack(peerID string) {
 	if w.closed.get() {
 		return
 	}
@@ -366,11 +366,11 @@ func (w *WebRTCReceiver) DeleteDownTrack(ID string) {
 	w.downTrackMu.Lock()
 	defer w.downTrackMu.Unlock()
 
-	idx, ok := w.index[ID]
+	idx, ok := w.index[peerID]
 	if !ok {
 		return
 	}
-	delete(w.index, ID)
+	delete(w.index, peerID)
 	w.downTracks[idx] = nil
 	w.free[idx] = struct{}{}
 }
@@ -515,13 +515,13 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 	defer w.downTrackMu.Unlock()
 
 	for idx := range w.free {
-		w.index[track.ID()] = idx
+		w.index[track.PeerID()] = idx
 		w.downTracks[idx] = track
 		delete(w.free, idx)
 		return
 	}
 
-	w.index[track.ID()] = len(w.downTracks)
+	w.index[track.PeerID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
 }
 

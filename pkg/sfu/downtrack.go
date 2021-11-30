@@ -28,6 +28,8 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SetTrackType(isSimulcast bool)
+	Codec() webrtc.RTPCodecCapability
+	PeerID() string
 }
 
 // DownTrackType determines the type of track
@@ -115,6 +117,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // and SVC Publisher.
 type DownTrack struct {
 	id            string
+	peerID        string
 	bound         atomicBool
 	kind          webrtc.RTPCodecType
 	mime          string
@@ -181,6 +184,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 
 	d := &DownTrack{
 		id:            r.TrackID(),
+		peerID:        peerID,
 		maxTrack:      mt,
 		streamID:      r.StreamID(),
 		bufferFactory: bf,
@@ -236,7 +240,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.set(false)
-	d.receiver.DeleteDownTrack(d.ID())
+	d.receiver.DeleteDownTrack(d.peerID)
 	return nil
 }
 
@@ -250,6 +254,8 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
+
+func (d *DownTrack) PeerID() string { return d.peerID }
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
@@ -450,7 +456,7 @@ func (d *DownTrack) Close() {
 	d.writeBlankFrameRTP()
 
 	d.closeOnce.Do(func() {
-		Logger.V(1).Info("Closing sender", "id", d.id, "kind", d.kind)
+		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
 		if d.payload != nil {
 			PacketFactory.Put(d.payload)
 		}
@@ -907,6 +913,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
+		"PeerID":              d.peerID,
 		"TrackID":             d.id,
 		"StreamID":            d.streamID,
 		"SSRC":                d.ssrc,

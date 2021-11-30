@@ -31,12 +31,12 @@ type pendingPackets struct {
 }
 
 type ExtPacket struct {
-	Head       bool
-	Arrival    int64
-	Packet     rtp.Packet
-	Payload    interface{}
-	KeyFrame   bool
-	RawPayload []byte
+	Head      bool
+	Arrival   int64
+	Packet    rtp.Packet
+	Payload   interface{}
+	KeyFrame  bool
+	RawPacket []byte
 }
 
 // Buffer contains all packets
@@ -317,10 +317,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.stats.PacketCount++
 
 	ep := ExtPacket{
-		Head:       headPkt,
-		Packet:     p,
-		Arrival:    arrivalTime,
-		RawPayload: pb,
+		Head:      headPkt,
+		Packet:    p,
+		Arrival:   arrivalTime,
+		RawPacket: pb,
 	}
 
 	if len(p.Payload) == 0 {
