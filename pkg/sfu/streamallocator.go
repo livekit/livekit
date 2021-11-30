@@ -129,10 +129,10 @@ const (
 	// These constants will definitely require more tweaking.
 	// In fact, simple time tresholded rules most proably will not be enough.
 	// LK-TODO-END
-	EstimateCommitMs      = 2 * 1000 * time.Millisecond // 2 seconds
-	ProbeWaitMs           = 8 * 1000 * time.Millisecond // 8 seconds
-	BoostWaitMs           = 5 * 1000 * time.Millisecond // 5 seconds
-	GratuitousProbeWaitMs = 8 * 1000 * time.Millisecond // 8 seconds
+	EstimateCommitMs          = 2 * 1000 * time.Millisecond // 2 seconds
+	ProbeWaitMs               = 8 * 1000 * time.Millisecond // 8 seconds
+	BoostWaitMs               = 5 * 1000 * time.Millisecond // 5 seconds
+	GratuitousProbeWaitMs     = 8 * 1000 * time.Millisecond // 8 seconds
 	GratuitousProbeMoreWaitMs = 5 * 1000 * time.Millisecond // 8 seconds
 )
 
@@ -209,7 +209,7 @@ type StreamAllocator struct {
 	receivedEstimate         int64
 	lastEstimateDecreaseTime time.Time
 
-	lastBoostTime          time.Time
+	lastBoostTime time.Time
 
 	lastGratuitousProbeTime time.Time
 
@@ -234,10 +234,10 @@ type Event struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		participantID:            params.ParticipantID,
-		logger:                   params.Logger,
-		audioTracks:              make(map[string]*Track),
-		videoTracks:              make(map[string]*Track),
+		participantID: params.ParticipantID,
+		logger:        params.Logger,
+		audioTracks:   make(map[string]*Track),
+		videoTracks:   make(map[string]*Track),
 		prober: NewProber(ProberParams{
 			ParticipantID: params.ParticipantID,
 			Logger:        params.Logger,
@@ -305,18 +305,18 @@ func (s *StreamAllocator) initializeEstimate() {
 // called when a new REMB is received
 func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
 	s.postEvent(Event{
-		Signal: SignalEstimate,
+		Signal:    SignalEstimate,
 		DownTrack: downTrack,
-		Data: remb,
+		Data:      remb,
 	})
 }
 
 // called when a new RTCP Receiver Report is received
 func (s *StreamAllocator) onReceiverReport(downTrack *DownTrack, rr *rtcp.ReceiverReport) {
 	s.postEvent(Event{
-		Signal: SignalReceiverReport,
+		Signal:    SignalReceiverReport,
 		DownTrack: downTrack,
-		Data: rr,
+		Data:      rr,
 	})
 }
 
@@ -341,7 +341,7 @@ func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers
 	s.postEvent(Event{
 		Signal:    SignalSubscribedLayersChange,
 		DownTrack: downTrack,
-		Data: layers,
+		Data:      layers,
 	})
 }
 
@@ -353,8 +353,8 @@ func (s *StreamAllocator) onPacketSent(downTrack *DownTrack, size int) {
 // called when prober wants to send packet(s)
 func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 	s.postEvent(Event{
-		Signal:    SignalSendProbe,
-		Data: bytesToSend,
+		Signal: SignalSendProbe,
+		Data:   bytesToSend,
 	})
 }
 
@@ -452,7 +452,7 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 
 		delete(s.audioTracks, event.DownTrack.ID())
 	case webrtc.RTPCodecTypeVideo:
-		_, ok := s.videoTracks[event.DownTrack.ID()]
+		track, ok := s.videoTracks[event.DownTrack.ID()]
 		if !ok {
 			return
 		}
@@ -475,11 +475,7 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 			return
 		}
 
-/* RAJA-TODO when removing track, when to do allocate
-		if s.state == StateDeficient {
-			s.reallocateTrack(track, false)
-		}
-RAJA-TODO */
+		s.unallocateTrack(track)
 	}
 }
 
@@ -567,7 +563,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
 	var track *Track
 	ok := false
-	switch (event.DownTrack.Kind()) {
+	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
 		track, ok = s.audioTracks[event.DownTrack.ID()]
 	case webrtc.RTPCodecTypeVideo:
@@ -600,12 +596,12 @@ func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
-	layers := event.Data.(VideoLayers)
 	track, ok := s.videoTracks[event.DownTrack.ID()]
 	if !ok {
 		return
 	}
 
+	layers := event.Data.(VideoLayers)
 	track.UpdateMaxLayers(layers)
 	sort.Sort(s.videoTracksSorted)
 
@@ -618,7 +614,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	}
 
 	// catch up on all optimistically streamed tracks
-	// RAJA-TODO catch up quasi stable state -> stable/deficient
+	s.finalizeTracks()
 
 	if s.state == StateDeficient {
 		s.maybeProbe()
@@ -706,11 +702,12 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
-	if s.state != StateDeficient {
+	// if not deficient, free pass allocate track
+	if s.state == StateStable {
 		update := NewStreamedTracksUpdate()
 		result := track.Allocate(ChannelCapacityInfinity)
 		update.HandleStreamingChange(result.change, track)
-		update.Send(s.onStreamedTracksChange)
+		s.maybeSendUpdate(update)
 		return
 	}
 
@@ -720,7 +717,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	for idx, t := range s.videoTracksSorted {
 		if t == track {
 			hpTracks = s.videoTracksSorted[:idx]
-			lpTracks = s.videoTracksSorted[idx + 1:]
+			lpTracks = s.videoTracksSorted[idx+1:]
 		}
 	}
 
@@ -730,30 +727,22 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		lpExpectedBps += t.BandwidthRequested()
 	}
 
-	// note that there might be no lower priority tracks and nothing to steal.
+	//
+	// Note that there might be no lower priority tracks and nothing to steal.
 	// But, a TryAllocate is done irrespective of any stolen bits as the
 	// track may be downgrading due to mute or reduction in subscribed layers
 	// and actually giving back some bits.
+	//
 	update := NewStreamedTracksUpdate()
+
 	result := track.TryAllocate(lpExpectedBps)
+
 	update.HandleStreamingChange(result.change, track)
+
 	delta := result.bandwidthDelta
 	if delta > 0 {
 		// gotten some bits back, check if any deficient higher priority track can make use of it
-		for _, t := range hpTracks {
-			if !t.IsDeficient() {
-				continue
-			}
-
-			result := t.TryAllocate(delta)
-			update.HandleStreamingChange(result.change, t)
-
-			delta -= result.bandwidthDelta
-			if delta <= 0 {
-				// used up all the extra bits
-				break
-			}
-		}
+		delta = s.tryAllocateTracks(hpTracks, delta, update)
 	}
 
 	// allocate all lower priority tracks with left over capacity
@@ -772,9 +761,45 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		}
 	}
 
-	update.Send(s.onStreamedTracksChange)
+	s.maybeSendUpdate(update)
 
 	s.adjustState()
+}
+
+func (s *StreamAllocator) unallocateTrack(track *Track) {
+	if s.state == StateStable {
+		return
+	}
+
+	update := NewStreamedTracksUpdate()
+
+	unallocatedBps := track.BandwidthRequested()
+	if unallocatedBps > 0 {
+		s.tryAllocateTracks(s.videoTracksSorted, unallocatedBps, update)
+	}
+
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
+func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64, update *StreamedTracksUpdate) int64 {
+	for _, t := range tracks {
+		if !t.IsDeficient() {
+			continue
+		}
+
+		result := t.TryAllocate(additionalBps)
+		update.HandleStreamingChange(result.change, t)
+
+		additionalBps -= result.bandwidthDelta
+		if additionalBps <= 0 {
+			// used up all the extra bits
+			break
+		}
+	}
+
+	return additionalBps
 }
 
 func (s *StreamAllocator) allocateAllTracks() {
@@ -813,9 +838,10 @@ func (s *StreamAllocator) allocateAllTracks() {
 		//    - pause if there is not enough capacity for any layer
 		//
 		result := track.Allocate(availableChannelCapacity)
-		if result.bandwidthDelta > 0 {
-			availableChannelCapacity -= result.bandwidthDelta
-		}
+
+		update.HandleStreamingChange(result.change, track)
+
+		availableChannelCapacity -= result.bandwidthRequested
 		if availableChannelCapacity < 0 || result.state == VideoAllocationStateDeficient {
 			//
 			// This is walking down tracks in priortized order.
@@ -832,11 +858,31 @@ func (s *StreamAllocator) allocateAllTracks() {
 			//
 			availableChannelCapacity = 0
 		}
-
-		update.HandleStreamingChange(result.change, track)
 	}
 
-	update.Send(s.onStreamedTracksChange)
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
+func (s *StreamAllocator) maybeSendUpdate(update *StreamedTracksUpdate) {
+	if update.Empty() {
+		return
+	}
+
+	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", update.Paused, "resumed", update.Resumed)
+	if s.onStreamedTracksChange != nil {
+		err := s.onStreamedTracksChange(update)
+		if err != nil {
+			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+		}
+	}
+}
+
+func (s *StreamAllocator) finalizeTracks() {
+	for _, t := range s.videoTracksSorted {
+		t.FinalizeAllocate()
+	}
 
 	s.adjustState()
 }
@@ -889,6 +935,7 @@ func (s *StreamAllocator) maybeProbe() {
 	}
 
 	s.maybeBoostLayer()
+	s.adjustState()
 }
 
 func (s *StreamAllocator) maybeBoostLayer() {
@@ -898,8 +945,7 @@ func (s *StreamAllocator) maybeBoostLayer() {
 			continue
 		}
 
-		boosted := track.AllocateNextHigher()
-		if boosted {
+		if track.AllocateNextHigher() {
 			s.lastBoostTime = time.Now()
 			break
 		}
@@ -961,7 +1007,7 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 
 func (s *StreamAllocator) resetGratuitousProbe() {
 	s.prober.Reset()
-	s.lastGratuitousProbeTime = time.Unix(0, 0)
+	s.lastGratuitousProbeTime = time.Now()
 }
 
 //------------------------------------------------
@@ -985,42 +1031,18 @@ func (s *StreamedTracksUpdate) HandleStreamingChange(change VideoStreamingChange
 	case VideoStreamingChangePausing:
 		s.Paused = append(s.Paused, &StreamedTrack{
 			ParticipantSid: track.PeerID(),
-			TrackSid: track.ID(),
+			TrackSid:       track.ID(),
 		})
 	case VideoStreamingChangeResuming:
 		s.Resumed = append(s.Resumed, &StreamedTrack{
 			ParticipantSid: track.PeerID(),
-			TrackSid: track.ID(),
+			TrackSid:       track.ID(),
 		})
 	}
 }
 
-func (s *StreamedTracksUpdate) AddPaused(participantSid, trackSid string) {
-	s.Paused = append(s.Paused, &StreamedTrack{
-		ParticipantSid: participantSid,
-		TrackSid: trackSid,
-	})
-}
-
-func (s *StreamedTracksUpdate) AddResumed(participantSid, trackSid string) {
-	s.Resumed = append(s.Resumed, &StreamedTrack{
-		ParticipantSid: participantSid,
-		TrackSid: trackSid,
-	})
-}
-
-func (s *StreamedTracksUpdate) Send(f func(update *StreamedTracksUpdate) error) {
-	if len(s.Paused) == 0 && len(s.Resumed) == 0 {
-		return
-	}
-
-	// RAJA-TODO s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", update.Paused, "resumed", update.Resumed)
-	if f != nil {
-		err := f(s)
-		if err != nil {
-			// RAJA-TODO s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
-		}
-	}
+func (s *StreamedTracksUpdate) Empty() bool {
+	return len(s.Paused) == 0 && len(s.Resumed) == 0
 }
 
 //------------------------------------------------
@@ -1062,7 +1084,7 @@ type Track struct {
 
 func newTrack(downTrack *DownTrack) *Track {
 	return &Track{
-		downTrack:        downTrack,
+		downTrack: downTrack,
 		maxLayers: downTrack.MaxLayers(),
 	}
 }
@@ -1114,11 +1136,12 @@ func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocationResu
 	return t.downTrack.TryAllocate(additionalChannelCapacity)
 }
 
-// RAJA-TODO: probe new state requirement?
-func (t *Track) AllocateNextHigher() bool {
-	result := t.downTrack.AllocateNextHigher()
+func (t *Track) FinalizeAllocate() {
+	t.downTrack.FinalizeAllocate()
+}
 
-	return result.boosted
+func (t *Track) AllocateNextHigher() bool {
+	return t.downTrack.AllocateNextHigher()
 }
 
 func (t *Track) IsDeficient() bool {

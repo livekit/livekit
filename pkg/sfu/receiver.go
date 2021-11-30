@@ -303,7 +303,7 @@ func (w *WebRTCReceiver) addAvailableLayer(layer uint16) {
 	if !hasLayer {
 		layers = append(layers, layer)
 	}
-	sort.Slice(layers, func(i, j int) bool {return layers[i] < layers[j]})
+	sort.Slice(layers, func(i, j int) bool { return layers[i] < layers[j] })
 	w.availableLayers.Store(layers)
 	w.upTrackMu.Unlock()
 
@@ -323,7 +323,7 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 			newLayers = append(newLayers, l)
 		}
 	}
-	sort.Slice(newLayers, func(i, j int) bool {return newLayers[i] < newLayers[j]})
+	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
 	w.availableLayers.Store(newLayers)
 	w.upTrackMu.Unlock()
 

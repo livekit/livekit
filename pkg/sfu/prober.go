@@ -255,7 +255,7 @@ func (p *Prober) run() {
 			return
 		}
 
-		cluster.Process(p);
+		cluster.Process(p)
 
 		if cluster.IsFinished() {
 			p.logger.Debugw("cluster finished", "participant", p.participantID, "cluster", cluster.String())
