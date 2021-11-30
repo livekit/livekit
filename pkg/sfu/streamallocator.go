@@ -739,7 +739,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	update.HandleStreamingChange(result.change, track)
 
-	delta := result.bandwidthDelta
+	delta := lpExpectedBps - result.bandwidthDelta
 	if delta > 0 {
 		// gotten some bits back, check if any deficient higher priority track can make use of it
 		delta = s.tryAllocateTracks(hpTracks, delta, update)
