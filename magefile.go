@@ -158,22 +158,17 @@ func generateWire() error {
 
 	fmt.Println("wiring...")
 
-	cmd := exec.Command("go", "generate", "./cmd/...")
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
 	wire, err := getToolPath("wire")
 	if err != nil {
 		return err
 	}
-	cmd = exec.Command(wire)
+	cmd := exec.Command(wire)
 	cmd.Dir = "pkg/service"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
