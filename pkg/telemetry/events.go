@@ -82,6 +82,7 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_PARTICIPANT_LEFT,
 		Timestamp:     timestamppb.Now(),
+		RoomSid:       room.Sid,
 		ParticipantId: participant.Sid,
 	})
 }
@@ -92,16 +93,19 @@ func (t *telemetryService) TrackPublished(ctx context.Context, participantID str
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED,
 		Timestamp:     timestamppb.Now(),
+		RoomSid:       t.getRoomID(participantID),
 		ParticipantId: participantID,
 		Track:         track,
 	})
 }
 
 func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
+	roomID := ""
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
+		roomID = w.roomID
 		w.RemoveBuffer(ssrc)
 	}
 
@@ -110,6 +114,7 @@ func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID s
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_UNPUBLISHED,
 		Timestamp:     timestamppb.Now(),
+		RoomSid:       roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
 	})
@@ -121,6 +126,7 @@ func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID st
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_SUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
+		RoomSid:       t.getRoomID(participantID),
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
 	})
@@ -132,6 +138,7 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
+		RoomSid:       t.getRoomID(participantID),
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
 	})
@@ -164,6 +171,16 @@ func (t *telemetryService) RecordingEnded(ctx context.Context, res *livekit.Reco
 		Timestamp:   timestamppb.Now(),
 		RecordingId: res.Id,
 	})
+}
+
+func (t *telemetryService) getRoomID(participantID string) string {
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
+		return w.roomID
+	}
+	return ""
 }
 
 func (t *telemetryService) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
