@@ -1314,7 +1314,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	}
 }
 
-func (p *ParticipantImpl) onStreamedTracksChange(update sfu.StreamedTracksUpdate) error {
+func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdate) error {
 	if len(update.Paused) == 0 && len(update.Resumed) == 0 {
 		return nil
 	}

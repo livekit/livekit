@@ -256,7 +256,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return nil
 }
 
-func (t *PCTransport) OnStreamedTracksChange(f func(update sfu.StreamedTracksUpdate) error) {
+func (t *PCTransport) OnStreamedTracksChange(f func(update *sfu.StreamedTracksUpdate) error) {
 	if t.streamAllocator == nil {
 		return
 	}

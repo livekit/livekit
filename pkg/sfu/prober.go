@@ -129,7 +129,7 @@ type Prober struct {
 	clusters      deque.Deque
 	activeCluster *Cluster
 
-	onSendProbe func(bytesToSend int) int
+	onSendProbe func(bytesToSend int)
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -160,7 +160,7 @@ func (p *Prober) Reset() {
 	p.activeCluster = nil
 }
 
-func (p *Prober) OnSendProbe(f func(bytesToSend int) int) {
+func (p *Prober) OnSendProbe(f func(bytesToSend int)) {
 	p.onSendProbe = f
 }
 
@@ -182,6 +182,15 @@ func (p *Prober) PacketSent(size int) {
 	}
 
 	cluster.PacketSent(size)
+}
+
+func (p *Prober) ProbeSent(size int) {
+	cluster := p.getFrontCluster()
+	if cluster == nil {
+		return
+	}
+
+	cluster.ProbeSent(size)
 }
 
 func (p *Prober) getFrontCluster() *Cluster {
@@ -246,7 +255,9 @@ func (p *Prober) run() {
 			return
 		}
 
-		if !cluster.Process(p) {
+		cluster.Process(p);
+
+		if cluster.IsFinished() {
 			p.logger.Debugw("cluster finished", "participant", p.participantID, "cluster", cluster.String())
 			p.popFrontCluster(cluster)
 			continue
@@ -316,15 +327,36 @@ func (c *Cluster) PacketSent(size int) {
 	c.bytesSentNonProbe += size
 }
 
-func (c *Cluster) Process(p *Prober) bool {
+func (c *Cluster) ProbeSent(size int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.bytesSentProbe += size
+}
+
+func (c *Cluster) IsFinished() bool {
 	c.lock.RLock()
+	defer c.lock.RUnlock()
 
 	// if already past deadline, end the cluster
 	timeElapsed := time.Since(c.startTime)
 	if timeElapsed > c.maxDuration {
-		c.lock.RUnlock()
-		return false
+		return true
 	}
+
+	// do not end cluster until minDuration elapses even if rate is achieved.
+	// Ensures that the next cluster (if any) does not start early.
+	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
+		return true
+	}
+
+	return false
+}
+
+func (c *Cluster) Process(p *Prober) {
+	c.lock.RLock()
+
+	timeElapsed := time.Since(c.startTime)
 
 	// Calculate number of probe bytes that should have been sent since start.
 	// Overall goal is to send desired number of probe bytes in minDuration.
@@ -351,24 +383,11 @@ func (c *Cluster) Process(p *Prober) bool {
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
 	c.lock.RUnlock()
 
-	bytesSent := 0
 	if bytesShortFall > 0 && p.onSendProbe != nil {
-		bytesSent = p.onSendProbe(bytesShortFall)
-	}
-
-	c.lock.Lock()
-	c.bytesSentProbe += bytesSent
-
-	// do not end cluster until minDuration elapses even if rate is achieved.
-	// Ensures that the next cluster (if any) does not start early.
-	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
-		c.lock.Unlock()
-		return false
+		p.onSendProbe(bytesShortFall)
 	}
 
 	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
-	c.lock.Unlock()
-	return true
 }
 
 func (c *Cluster) String() string {
