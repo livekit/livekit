@@ -133,7 +133,7 @@ const (
 	ProbeWaitMs               = 8 * 1000 * time.Millisecond // 8 seconds
 	BoostWaitMs               = 5 * 1000 * time.Millisecond // 5 seconds
 	GratuitousProbeWaitMs     = 8 * 1000 * time.Millisecond // 8 seconds
-	GratuitousProbeMoreWaitMs = 5 * 1000 * time.Millisecond // 8 seconds
+	GratuitousProbeMoreWaitMs = 5 * 1000 * time.Millisecond // 5 seconds
 )
 
 type State int
