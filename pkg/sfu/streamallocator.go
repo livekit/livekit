@@ -755,7 +755,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		result := t.Allocate(delta)
 		update.HandleStreamingChange(result.change, t)
 
-		delta -= result.bandwidthDelta
+		delta -= result.bandwidthRequested
 		if delta < 0 {
 			delta = 0
 		}
