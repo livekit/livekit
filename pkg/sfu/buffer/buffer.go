@@ -19,7 +19,7 @@ import (
 const (
 	MaxSN = 1 << 16
 
-	reportDelta = 1e9
+	ReportDelta = 1e9
 )
 
 // Logger is an implementation of logr.Logger. If is not provided - will be turned off.
@@ -31,19 +31,19 @@ type pendingPackets struct {
 }
 
 type ExtPacket struct {
-	Head     bool
-	Cycle    uint32
-	Arrival  int64
-	Packet   rtp.Packet
-	Payload  interface{}
-	KeyFrame bool
+	Head      bool
+	Arrival   int64
+	Packet    rtp.Packet
+	Payload   interface{}
+	KeyFrame  bool
+	RawPacket []byte
 }
 
 // Buffer contains all packets
 type Buffer struct {
 	sync.Mutex
 	bucket     *Bucket
-	nacker     *nackQueue
+	nacker     *NackQueue
 	videoPool  *sync.Pool
 	audioPool  *sync.Pool
 	codecType  webrtc.RTPCodecType
@@ -159,7 +159,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				b.twcc = true
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.V(1).Info("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-				b.nacker = newNACKQueue()
+				b.nacker = NewNACKQueue()
 				b.nack = true
 			}
 		}
@@ -215,7 +215,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = errBufferTooSmall
+				err = ErrBufferTooSmall
 				b.Unlock()
 				return
 			}
@@ -281,10 +281,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		if b.nack {
 			if isNewer {
 				for i := b.seqHdlr.MaxSeqNo() + 1; i < extSN; i++ {
-					b.nacker.push(i)
+					b.nacker.Push(i)
 				}
 			} else {
-				b.nacker.remove(extSN)
+				b.nacker.Remove(extSN)
 			}
 		}
 		if isNewer {
@@ -296,7 +296,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	var p rtp.Packet
 	pb, err := b.bucket.AddPacket(pkt, sn, headPkt)
 	if err != nil {
-		if err == errRTXPacket {
+		if err == ErrRTXPacket {
 			return
 		}
 		return
@@ -308,7 +308,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
 	// for bandwidth estimation
 	if b.twcc {
-		if ext := p.GetExtension(b.twccExt); ext != nil && len(ext) > 1 {
+		if ext := p.GetExtension(b.twccExt); len(ext) > 1 {
 			b.feedbackTWCC(binary.BigEndian.Uint16(ext[0:2]), arrivalTime, p.Marker)
 		}
 	}
@@ -317,10 +317,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.stats.PacketCount++
 
 	ep := ExtPacket{
-		Head:    headPkt,
-		Cycle:   b.seqHdlr.Cycles(),
-		Packet:  p,
-		Arrival: arrivalTime,
+		Head:      headPkt,
+		Packet:    p,
+		Arrival:   arrivalTime,
+		RawPacket: pb,
 	}
 
 	if len(p.Payload) == 0 {
@@ -340,7 +340,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		temporalLayer = int32(vp8Packet.TID)
 	case "video/h264":
-		ep.KeyFrame = isH264Keyframe(p.Payload)
+		ep.KeyFrame = IsH264Keyframe(p.Payload)
 	}
 
 	if b.minPacketProbe < 25 {
@@ -401,7 +401,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.bitrateHelper[temporalLayer] += uint64(len(pkt))
 
 	diff := arrivalTime - b.lastReport
-	if diff >= reportDelta {
+	if diff >= ReportDelta {
 		//
 		// As this happens in the data path, if there are no packets received
 		// in an interval, the bitrate will be stuck with the old value.
@@ -413,7 +413,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			bitrates = make([]uint64, len(b.bitrateHelper))
 		}
 		for i := 0; i < len(b.bitrateHelper); i++ {
-			br := (8 * b.bitrateHelper[i] * uint64(reportDelta)) / uint64(diff)
+			br := (8 * b.bitrateHelper[i] * uint64(ReportDelta)) / uint64(diff)
 			bitrates[i] = br
 			b.bitrateHelper[i] = 0
 		}
@@ -424,7 +424,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 }
 
 func (b *Buffer) buildNACKPacket() []rtcp.Packet {
-	if nacks, askKeyframe := b.nacker.pairs(b.seqHdlr.MaxSeqNo()); (nacks != nil && len(nacks) > 0) || askKeyframe {
+	if nacks, askKeyframe := b.nacker.Pairs(b.seqHdlr.MaxSeqNo()); len(nacks) > 0 || askKeyframe {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
@@ -644,7 +644,7 @@ func IsLaterTimestamp(timestamp1 uint32, timestamp2 uint32) bool {
 	return false
 }
 
-func isNewerUint16(val1, val2 uint16) bool {
+func IsNewerUint16(val1, val2 uint16) bool {
 	return val1 != val2 && val1-val2 < 0x8000
 }
 
@@ -666,7 +666,7 @@ func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
 	maxSeqNo := uint16(s.maxSeqNo)
 	delta := int32(seq) - int32(maxSeqNo)
 
-	newer := isNewerUint16(seq, maxSeqNo)
+	newer := IsNewerUint16(seq, maxSeqNo)
 
 	if newer {
 		if delta < 0 {

@@ -28,6 +28,7 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SetTrackType(isSimulcast bool)
+	Codec() webrtc.RTPCodecCapability
 	PeerID() string
 }
 
@@ -194,7 +195,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	if strings.ToLower(c.MimeType) == "video/vp8" {
-		d.payload = packetFactory.Get().(*[]byte)
+		d.payload = PacketFactory.Get().(*[]byte)
 	}
 
 	return d, nil
@@ -457,7 +458,7 @@ func (d *DownTrack) Close() {
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
 		if d.payload != nil {
-			packetFactory.Put(d.payload)
+			PacketFactory.Put(d.payload)
 		}
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
@@ -592,9 +593,6 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	nowNTP := toNtpTime(now)
 
 	diff := (uint64(now.Sub(ntpTime(srNTP).Time())) * uint64(d.codec.ClockRate)) / uint64(time.Second)
-	if diff < 0 {
-		diff = 0
-	}
 	octets, packets := d.getSRStats()
 	return &rtcp.SenderReport{
 		SSRC:        d.ssrc,
@@ -792,8 +790,8 @@ func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
 }
 
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
-	src := packetFactory.Get().(*[]byte)
-	defer packetFactory.Put(src)
+	src := PacketFactory.Get().(*[]byte)
+	defer PacketFactory.Put(src)
 	for _, meta := range nackedPackets {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
