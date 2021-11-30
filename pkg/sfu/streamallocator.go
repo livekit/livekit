@@ -222,7 +222,7 @@ type StreamAllocator struct {
 	state State
 
 	chMu      sync.RWMutex
-	eventCh   chan []Event
+	eventCh   chan Event
 	runningCh chan struct{}
 }
 
@@ -242,7 +242,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 			ParticipantID: params.ParticipantID,
 			Logger:        params.Logger,
 		}),
-		eventCh:   make(chan []Event, 10),
+		eventCh:   make(chan Event, 20),
 		runningCh: make(chan struct{}),
 	}
 
@@ -366,18 +366,12 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
-	s.eventCh <- []Event{event}
+	s.eventCh <- event
 }
 
 func (s *StreamAllocator) processEvents() {
-	for events := range s.eventCh {
-		if events == nil {
-			return
-		}
-
-		for _, event := range events {
-			s.handleEvent(&event)
-		}
+	for event := range s.eventCh {
+		s.handleEvent(&event)
 	}
 }
 
