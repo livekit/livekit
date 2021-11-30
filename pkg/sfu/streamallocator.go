@@ -60,39 +60,38 @@
 //
 //  States:
 //  ------
-//  - State_PRE_COMMIT: Before the first estimate is committed.
-//                        Estimated channel capacity is initialized to some
-//                        arbitrarily high value to start streaming immediately.
-//                        Serves two purposes
-//                        1. Gives the bandwidth estimation algorithms data
-//                        2. Start streaming as soon as a user joins. Imagine
-//                           a user joining a room with 10 participants already
-//                           in it. That user should start receiving streams
-//                           from everybody as soon as possible.
-//  - State_STABLE: When all streams are forwarded at their optimal requested layers.
-//  - State_DEFICIENT: When at least one stream is not able to forward optimal requested layers.
-//  - State_GRATUITOUS_PROBING: When all streams are forwarded at their optimal requested layers,
-//                              but probing for extra capacity to be prepared for cases like
-//                              new participant joining and streaming OR an existing participant
-//                              starting a new stream like enabling camera or screen share.
+//  - StateStable: When all streams are forwarded at their optimal requested layers.
+//
+//                 Before the first estimate is committed, estimated channel capacity
+//                 is initialized to some arbitrarily high value to start streaming
+//                 immediately. Serves two purposes
+//                   1. Gives the bandwidth estimation algorithms data
+//                   2. Start streaming as soon as a user joins. Imagine
+//                      a user joining a room with 10 participants already
+//                      in it. That user should start receiving streams
+//                      from everybody as soon as possible.
+//
+//                 In this state, it is also possible to probe for extra capacity
+//                 to be prepared for cases like new participant joining and streaming OR
+//                 an existing participant starting a new stream like enabling camera or
+//                 screen share.
+//  - StateDeficient: When at least one stream is not able to forward optimal requested layers.
 //
 //  Signals:
 //  -------
 //  Each state should take action based on these signals and advance the state machine based
 //  on the result of the action.
-//  - Signal_ADD_TRACK: A new track has been added.
-//  - Signal_REMOVE_TRACK: An existing track has been removed.
-//  - Signal_ESTIMATE_INCREASE: Estimated channel capacity is increasing.
-//  - Signal_ESTIMATE_DECREASE: Estimated channel capacity is decreasing. Note that when
-//                              channel gets congested, it is possible to get several of these
-//                              in a very short time window.
-//  - Signal_RECEIVER_REPORT: An RTCP Receiver Report received from some down track.
-//  - Signal_AVAILABLE_LAYERS_ADD: Available layers of publisher changed, new layer(s) available.
-//  - Signal_AVAILABLE_LAYERS_REMOVE: Available layers of publisher changed, some previously
-//                                    available layer(s) not available anymore.
-//  - Signal_SUBSCRIPTION_CHANGE: Subscription changed (mute/unmute)
-//  - Signal_SUBSCRIBED_LAYERS_CHANGE: Subscribed layers changed (requested layers changed).
-//  - Signal_PERIODIC_PING: Periodic ping
+//  - SignalAddTrack: A new track has been added.
+//  - SignalRemoveTrack: An existing track has been removed.
+//  - SignalEstimate: A new channel capacity estimate has been received.
+//                    Note that when channel gets congested, it is possible to
+//                    get several of these in a very short time window.
+//  - SignalReceiverReport: An RTCP Receiver Report received from some down track.
+//  - SignalAvailableLayersChange: Available layers of publisher changed.
+//  - SignalSubscriptionChange: Subscription changed (mute/unmute)
+//  - SignalSubscribedLayersChange: Subscribed layers changed (requested layers changed).
+//  - SignalPeriodicPing: Periodic ping.
+//  - SignalSendProbe: Request from Prober to send padding probes.
 //
 // There are several interesting challenges which are documented in relevant code below.
 //
@@ -112,43 +111,44 @@ import (
 )
 
 const (
-	InitialChannelCapacity = 100 * 1000 * 1000 // 100 Mbps
+	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
 
 	EstimateEpsilon = 2000 // 2 kbps
 
-	BoostPct    = 8
-	BoostMinBps = 20 * 1000 // 20 kbps
-	BoostMaxBps = 60 * 1000 // 60 kbps
-
-	GratuitousProbeHeadroomBps   = 1 * 1000 * 1000 // if headroom is more than 1 Mbps, don't probe
+	GratuitousProbeHeadroomBps   = 1 * 1000 * 1000 // if headroom > 1 Mbps, don't probe
 	GratuitousProbePct           = 10
+	GratuitousProbeMinBps        = 100 * 1000 // 100 kbps
 	GratuitousProbeMaxBps        = 300 * 1000 // 300 kbps
 	GratuitousProbeMinDurationMs = 500 * time.Millisecond
 	GratuitousProbeMaxDurationMs = 600 * time.Millisecond
 
 	AudioLossWeight = 0.75
 	VideoLossWeight = 0.25
+
+	// LK-TODO-START
+	// These constants will definitely require more tweaking.
+	// In fact, simple time tresholded rules most proably will not be enough.
+	// LK-TODO-END
+	EstimateCommitMs          = 2 * 1000 * time.Millisecond // 2 seconds
+	ProbeWaitMs               = 8 * 1000 * time.Millisecond // 8 seconds
+	BoostWaitMs               = 5 * 1000 * time.Millisecond // 5 seconds
+	GratuitousProbeWaitMs     = 8 * 1000 * time.Millisecond // 8 seconds
+	GratuitousProbeMoreWaitMs = 5 * 1000 * time.Millisecond // 5 seconds
 )
 
 type State int
 
 const (
-	State_PRE_COMMIT State = iota
-	State_STABLE
-	State_DEFICIENT
-	State_GRATUITOUS_PROBING
+	StateStable State = iota
+	StateDeficient
 )
 
 func (s State) String() string {
 	switch s {
-	case State_PRE_COMMIT:
-		return "PRE_COMMIT"
-	case State_STABLE:
+	case StateStable:
 		return "STABLE"
-	case State_DEFICIENT:
+	case StateDeficient:
 		return "DEFICIENT"
-	case State_GRATUITOUS_PROBING:
-		return "GRATUITOUS_PROBING"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -157,76 +157,39 @@ func (s State) String() string {
 type Signal int
 
 const (
-	Signal_NONE Signal = iota
-	Signal_ADD_TRACK
-	Signal_REMOVE_TRACK
-	Signal_ESTIMATE_INCREASE
-	Signal_ESTIMATE_DECREASE
-	Signal_RECEIVER_REPORT
-	Signal_AVAILABLE_LAYERS_ADD
-	Signal_AVAILABLE_LAYERS_REMOVE
-	Signal_SUBSCRIPTION_CHANGE
-	Signal_SUBSCRIBED_LAYERS_CHANGE
-	Signal_PERIODIC_PING
+	SignalAddTrack Signal = iota
+	SignalRemoveTrack
+	SignalEstimate
+	SignalReceiverReport
+	SignalAvailableLayersChange
+	SignalSubscriptionChange
+	SignalSubscribedLayersChange
+	SignalPeriodicPing
+	SignalSendProbe
 )
 
 func (s Signal) String() string {
 	switch s {
-	case Signal_NONE:
-		return "NONE"
-	case Signal_ADD_TRACK:
+	case SignalAddTrack:
 		return "ADD_TRACK"
-	case Signal_REMOVE_TRACK:
+	case SignalRemoveTrack:
 		return "REMOVE_TRACK"
-	case Signal_ESTIMATE_INCREASE:
-		return "ESTIMATE_INCREASE"
-	case Signal_ESTIMATE_DECREASE:
-		return "ESTIMATE_DECREASE"
-	case Signal_RECEIVER_REPORT:
+	case SignalEstimate:
+		return "ESTIMATE"
+	case SignalReceiverReport:
 		return "RECEIVER_REPORT"
-	case Signal_AVAILABLE_LAYERS_ADD:
-		return "AVAILABLE_LAYERS_ADD"
-	case Signal_AVAILABLE_LAYERS_REMOVE:
-		return "AVAILABLE_LAYERS_REMOVE"
-	case Signal_SUBSCRIPTION_CHANGE:
+	case SignalSubscriptionChange:
 		return "SUBSCRIPTION_CHANGE"
-	case Signal_SUBSCRIBED_LAYERS_CHANGE:
+	case SignalSubscribedLayersChange:
 		return "SUBSCRIBED_LAYERS_CHANGE"
-	case Signal_PERIODIC_PING:
+	case SignalPeriodicPing:
 		return "PERIODIC_PING"
+	case SignalSendProbe:
+		return "SEND_PROBE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
 }
-
-type BoostMode int
-
-const (
-	BoostMode_LAYER BoostMode = iota
-	BoostMode_BANDWIDTH
-)
-
-func (b BoostMode) String() string {
-	switch b {
-	case BoostMode_LAYER:
-		return "LAYER"
-	case BoostMode_BANDWIDTH:
-		return "BANDWIDTH"
-	default:
-		return fmt.Sprintf("%d", int(b))
-	}
-}
-
-var (
-	// LK-TODO-START
-	// These constants will definitely require more tweaking.
-	// In fact, simple time tresholded rules most proably will not be enough.
-	// LK-TODO-END
-	EstimateCommitMs      = 2 * 1000 * time.Millisecond // 2 seconds
-	ProbeWaitMs           = 5 * 1000 * time.Millisecond // 5 seconds
-	GratuitousProbeWaitMs = 8 * 1000 * time.Millisecond // 8 seconds
-	BoostWaitMs           = 3 * 1000 * time.Millisecond // 3 seconds
-)
 
 type StreamAllocatorParams struct {
 	ParticipantID string
@@ -237,56 +200,54 @@ type StreamAllocator struct {
 	participantID string
 	logger        logger.Logger
 
-	onStreamedTracksChange func(paused map[string][]string, resumed map[string][]string) error
+	onStreamedTracksChange func(update *StreamedTracksUpdate) error
 
-	estimateMu               sync.RWMutex
 	trackingSSRC             uint32
-	committedChannelCapacity uint64
+	committedChannelCapacity int64
 	lastCommitTime           time.Time
-	prevReceivedEstimate     uint64
-	receivedEstimate         uint64
+	prevReceivedEstimate     int64
+	receivedEstimate         int64
 	lastEstimateDecreaseTime time.Time
 
-	boostMode              BoostMode
-	boostedChannelCapacity uint64
-	lastBoostTime          time.Time
+	lastBoostTime time.Time
 
-	tracksMu     sync.RWMutex
-	tracks       map[string]*Track
-	tracksSorted TrackSorter
+	lastGratuitousProbeTime time.Time
+
+	audioTracks       map[string]*Track
+	videoTracks       map[string]*Track
+	videoTracksSorted TrackSorter
 
 	prober *Prober
 
 	state State
 
 	chMu      sync.RWMutex
-	eventCh   chan []Event
+	eventCh   chan Event
 	runningCh chan struct{}
 }
 
 type Event struct {
 	Signal    Signal
 	DownTrack *DownTrack
+	Data      interface{}
 }
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		participantID:            params.ParticipantID,
-		logger:                   params.Logger,
-		committedChannelCapacity: InitialChannelCapacity,
-		lastCommitTime:           time.Now(),
-		receivedEstimate:         InitialChannelCapacity,
-		lastEstimateDecreaseTime: time.Now(),
-		boostMode:                BoostMode_LAYER,
-		tracks:                   make(map[string]*Track),
+		participantID: params.ParticipantID,
+		logger:        params.Logger,
+		audioTracks:   make(map[string]*Track),
+		videoTracks:   make(map[string]*Track),
 		prober: NewProber(ProberParams{
 			ParticipantID: params.ParticipantID,
 			Logger:        params.Logger,
 		}),
-		state:     State_PRE_COMMIT,
-		eventCh:   make(chan []Event, 10),
+		eventCh:   make(chan Event, 20),
 		runningCh: make(chan struct{}),
 	}
+
+	s.initializeEstimate()
+
 	s.prober.OnSendProbe(s.onSendProbe)
 
 	return s
@@ -305,223 +266,96 @@ func (s *StreamAllocator) Stop() {
 	close(s.eventCh)
 }
 
-func (s *StreamAllocator) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+func (s *StreamAllocator) OnStreamedTracksChange(f func(update *StreamedTracksUpdate) error) {
 	s.onStreamedTracksChange = f
 }
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack, peerID string) {
-	downTrack.OnREMB(s.onREMB)
-	downTrack.AddReceiverReportListener(s.onReceiverReport)
-	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
-	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
-	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
-	downTrack.OnPacketSent(s.onPacketSent)
-
-	s.tracksMu.Lock()
-	track := newTrack(downTrack, peerID)
-	s.tracks[downTrack.ID()] = track
-
-	s.tracksSorted = append(s.tracksSorted, track)
-	sort.Sort(s.tracksSorted)
-
-	s.tracksMu.Unlock()
-
+func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
 	s.postEvent(Event{
-		Signal:    Signal_ADD_TRACK,
+		Signal:    SignalAddTrack,
 		DownTrack: downTrack,
 	})
+
+	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
+		downTrack.OnREMB(s.onREMB)
+		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
+		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
+		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
+		downTrack.OnPacketSent(s.onPacketSent)
+	}
+	downTrack.AddReceiverReportListener(s.onReceiverReport)
 }
 
 func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
-	s.tracksMu.Lock()
-	if _, ok := s.tracks[downTrack.ID()]; !ok {
-		s.tracksMu.Unlock()
-		return
-	}
-
-	delete(s.tracks, downTrack.ID())
-
-	n := len(s.tracksSorted)
-	for idx, track := range s.tracksSorted {
-		if track.DownTrack() == downTrack {
-			s.tracksSorted[idx] = s.tracksSorted[n-1]
-			s.tracksSorted = s.tracksSorted[:n-1]
-			break
-		}
-	}
-	sort.Sort(s.tracksSorted)
-	s.tracksMu.Unlock()
-
 	s.postEvent(Event{
-		Signal:    Signal_REMOVE_TRACK,
+		Signal:    SignalRemoveTrack,
 		DownTrack: downTrack,
 	})
 }
 
+func (s *StreamAllocator) initializeEstimate() {
+	s.committedChannelCapacity = ChannelCapacityInfinity
+	s.lastCommitTime = time.Now().Add(-EstimateCommitMs)
+	s.receivedEstimate = ChannelCapacityInfinity
+	s.lastEstimateDecreaseTime = time.Now()
+
+	s.state = StateStable
+}
+
+// called when a new REMB is received
 func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
-	// the channel capacity is estimated at a peer connection level. All down tracks
-	// in the peer connection will end up calling this for a REMB report with
-	// the same estimated channel capacity. Use a tracking SSRC to lock onto to
-	// one report. As SSRCs can be dropped over time, update tracking SSRC as needed
-	//
-	// A couple of things to keep in mind
-	//   - REMB reports could be sent gratuitously as a way of providing
-	//     periodic feedback, i. e. even if the estimated capacity does not
-	//     change, there could be REMB packets on the wire. Those gratuitous
-	//     REMBs should not trigger anything bad.
-	//   - As each down track will issue this callback for the same REMB packet
-	//     from the wire, theoretically it is possible that one down track's
-	//     callback from previous REMB comes after another down track's callback
-	//     from the new REMB. REMBs could fire very quickly especially when
-	//     the network is entering congestion.
-	// LK-TODO-START
-	// Need to check if the same SSRC reports can somehow race, i.e. does pion send
-	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
-	// should prevent racing
-	// LK-TODO-END
-
-	s.estimateMu.Lock()
-
-	found := false
-	for _, ssrc := range remb.SSRCs {
-		if ssrc == s.trackingSSRC {
-			found = true
-			break
-		}
-	}
-	if !found {
-		if len(remb.SSRCs) == 0 {
-			s.estimateMu.Unlock()
-			s.logger.Warnw("no SSRC to track REMB", nil, "participant", s.participantID)
-			return
-		}
-
-		// try to lock to track which is sending this update
-		for _, ssrc := range remb.SSRCs {
-			if ssrc == downTrack.SSRC() {
-				s.trackingSSRC = downTrack.SSRC()
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			s.trackingSSRC = remb.SSRCs[0]
-		}
-	}
-
-	if s.trackingSSRC != downTrack.SSRC() {
-		s.estimateMu.Unlock()
-		return
-	}
-
-	s.prevReceivedEstimate = s.receivedEstimate
-	s.receivedEstimate = uint64(remb.Bitrate)
-	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
-	}
-	signal := s.maybeCommitEstimate()
-	s.estimateMu.Unlock()
-
-	if signal != Signal_NONE {
-		s.postEvent(Event{
-			Signal: signal,
-		})
-	}
-}
-
-// LK-TODO-START
-// Receiver report stats are not used in the current implementation.
-//
-// The idea is to use a loss/rtt based estimator and compare against REMB like outlined here
-// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
-//
-// But the implementation could get quite tricky. So, a separate PR dedicated effort for that
-// is required. Something like from Chrome, but hopefully much less complicated :-)
-// https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/modules/congestion_controller/goog_cc/loss_based_bandwidth_estimation.cc;bpv=0;bpt=1
-// LK-TODO-END
-func (s *StreamAllocator) onReceiverReport(downTrack *DownTrack, rr *rtcp.ReceiverReport) {
-	s.tracksMu.RLock()
-	defer s.tracksMu.RUnlock()
-
-	if track, ok := s.tracks[downTrack.ID()]; ok {
-		track.UpdatePacketStats(rr)
-	}
-}
-
-// called when feeding track's simulcast layer availability changes
-func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack, layerAdded bool) {
-	// LK-TODO: Look at processing specific downtrack
-	signal := Signal_AVAILABLE_LAYERS_REMOVE
-	if layerAdded {
-		signal = Signal_AVAILABLE_LAYERS_ADD
-	}
 	s.postEvent(Event{
-		Signal:    signal,
+		Signal:    SignalEstimate,
+		DownTrack: downTrack,
+		Data:      remb,
+	})
+}
+
+// called when a new RTCP Receiver Report is received
+func (s *StreamAllocator) onReceiverReport(downTrack *DownTrack, rr *rtcp.ReceiverReport) {
+	s.postEvent(Event{
+		Signal:    SignalReceiverReport,
+		DownTrack: downTrack,
+		Data:      rr,
+	})
+}
+
+// called when feeding track's layer availability changes
+func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack) {
+	s.postEvent(Event{
+		Signal:    SignalAvailableLayersChange,
 		DownTrack: downTrack,
 	})
 }
 
 // called when subscription settings changes (muting/unmuting of track)
 func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
-	// LK-TODO: Look at processing specific downtrack
 	s.postEvent(Event{
-		Signal:    Signal_SUBSCRIPTION_CHANGE,
+		Signal:    SignalSubscriptionChange,
 		DownTrack: downTrack,
 	})
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32) {
-	// LK-TODO: Look at processing specific downtrack for reallocation
-	s.tracksMu.Lock()
-	track, ok := s.tracks[downTrack.ID()]
-	if !ok {
-		s.tracksMu.Unlock()
-		return
-	}
-
-	track.UpdateMaxLayers(maxSpatialLayer, maxTemporalLayer)
-
-	sort.Sort(s.tracksSorted)
-	s.tracksMu.Unlock()
-
+func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
 	s.postEvent(Event{
-		Signal:    Signal_SUBSCRIBED_LAYERS_CHANGE,
+		Signal:    SignalSubscribedLayersChange,
 		DownTrack: downTrack,
+		Data:      layers,
 	})
 }
 
-// called when DownTrack sends a packet
+// called when a video DownTrack sends a packet
 func (s *StreamAllocator) onPacketSent(downTrack *DownTrack, size int) {
-	// bandwidth allocation is limited to video, so ignore audio
-	if downTrack.Kind() == webrtc.RTPCodecTypeAudio {
-		return
-	}
-
 	s.prober.PacketSent(size)
 }
 
-// called when prober wants to send packets
-func (s *StreamAllocator) onSendProbe(bytesToSend int) int {
-	if bytesToSend <= 0 {
-		return 0
-	}
-
-	s.tracksMu.RLock()
-	defer s.tracksMu.RUnlock()
-
-	bytesSent := 0
-	for _, track := range s.tracks {
-		sent := track.WritePaddingRTP(bytesToSend)
-		bytesSent += sent
-		bytesToSend -= sent
-		if bytesToSend <= 0 {
-			break
-		}
-	}
-
-	return bytesSent
+// called when prober wants to send packet(s)
+func (s *StreamAllocator) onSendProbe(bytesToSend int) {
+	s.postEvent(Event{
+		Signal: SignalSendProbe,
+		Data:   bytesToSend,
+	})
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
@@ -532,18 +366,12 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
-	s.eventCh <- []Event{event}
+	s.eventCh <- event
 }
 
 func (s *StreamAllocator) processEvents() {
-	for events := range s.eventCh {
-		if events == nil {
-			return
-		}
-
-		for _, event := range events {
-			s.runStateMachine(event)
-		}
+	for event := range s.eventCh {
+		s.handleEvent(&event)
 	}
 }
 
@@ -565,226 +393,246 @@ func (s *StreamAllocator) ping() {
 			return
 		}
 
-		s.estimateMu.Lock()
-		signal := s.maybeCommitEstimate()
-		s.estimateMu.Unlock()
-
-		if signal != Signal_NONE {
-			s.postEvent(Event{
-				Signal: signal,
-			})
-		}
-
 		s.postEvent(Event{
-			Signal: Signal_PERIODIC_PING,
+			Signal: SignalPeriodicPing,
 		})
 	}
 }
 
-// LK-TODO-START
-// Typically, in a system like this, there are track priorities.
-// It is either implemented as policy
-//   Examples:
-//     1. active speaker gets hi-res, all else lo-res
-//     2. screen share streams get hi-res, all else lo-res
-// OR it is left up to the clients to subscribe explicitly to the quality they want.
-//
-// When such a policy is implemented, some of the state machine behaviour needs
-// to be changed. For example, in State_DEFICIENT when Signal_ADD_TRACK, it does not
-// allocate immediately (it allocates only if enough time has passed since last
-// estimate decrease or since the last artificial estimate boost). But, if there is
-// a policy and the added track falls in the high priority bucket, an allocation
-// would be required even in State_DEFICIENT to ensure higher priority streams are
-// forwarded without delay.
-// LK-TODO-END
-
-// LK-TODO-START
-// A better implementation would be to handle each signal as for a lot of signals,
-// all the states do the same thing. But, it is written the following way for
-// better readability. Will do the refactor once this code is more stable and
-// more people have a chance to get familiar with it.
-// LK-TODO-END
-func (s *StreamAllocator) runStateMachine(event Event) {
-	switch s.state {
-	case State_PRE_COMMIT:
-		s.runStatePreCommit(event)
-	case State_STABLE:
-		s.runStateStable(event)
-	case State_DEFICIENT:
-		s.runStateDeficient(event)
-	case State_GRATUITOUS_PROBING:
-		s.runStateGratuitousProbing(event)
+func (s *StreamAllocator) handleEvent(event *Event) {
+	switch event.Signal {
+	case SignalAddTrack:
+		s.handleSignalAddTrack(event)
+	case SignalRemoveTrack:
+		s.handleSignalRemoveTrack(event)
+	case SignalEstimate:
+		s.handleSignalEstimate(event)
+	case SignalReceiverReport:
+		s.handleSignalReceiverReport(event)
+	case SignalAvailableLayersChange:
+		s.handleSignalAvailableLayersChange(event)
+	case SignalSubscriptionChange:
+		s.handleSignalSubscriptionChange(event)
+	case SignalSubscribedLayersChange:
+		s.handleSignalSubscribedLayersChange(event)
+	case SignalPeriodicPing:
+		s.handleSignalPeriodicPing(event)
+	case SignalSendProbe:
+		s.handleSignalSendProbe(event)
 	}
 }
 
-// LK-TODO: ADD_TRACK should not reallocate if added track is audio
-func (s *StreamAllocator) runStatePreCommit(event Event) {
-	switch event.Signal {
-	case Signal_ADD_TRACK:
-		s.allocate()
-	case Signal_REMOVE_TRACK:
-		s.allocate()
-	case Signal_ESTIMATE_INCREASE:
-		// should never happen as the intialized capacity is very high
-		s.setState(State_STABLE)
-	case Signal_ESTIMATE_DECREASE:
-		// first estimate could be off as things are ramping up.
-		//
-		// Basically, an initial channel capacity of InitialChannelCapacity
-		// which is very high is used  so that there is no throttling before
-		// getting an estimate. The first estimate happens 6 - 8 seconds
-		// after streaming starts. With screen share like stream, the traffic
-		// is sparse/spikey depending on the content. So, the estimate could
-		// be small and still ramping up. So, doing an allocation could result
-		// in stream being paused.
-		//
-		// This is one of the significant challenges here, i. e. time alignment.
-		// Estimate was potentially measured using data from a little while back.
-		// But, that estimate is used to allocate based on current bitrate.
-		// So, in the intervening period if there was movement on the screen,
-		// the bitrate could have spiked and the REMB value is probably stale.
-		//
-		// A few options to consider
-		//   o what is implemented here (i. e. change to STABLE state and
-		//     let further streaming drive the esimation and move the state
-		//     machine in whichever direction it needs to go)
-		//   o Forward padding packets also. But, that could have an adverse
-		//     effect on the channel when a new stream comes on line and
-		//     starts probing, i. e. it could affect existing flows if it
-		//     congests the channel because of the spurt of padding packets.
-		//   o Do probing downstream in the first few seconds in addition to
-		//     forwarding any streams and get a better estimate of the channel.
-		//   o Measure up stream bitrates over a much longer window to smooth
-		//     out spikes and get a more steady-state rate and use it in
-		//     allocations.
-		//
-		// A good challenge. Basically, the goal should be to aviod re-allocation
-		// of streams. Any re-allocation means potential for estimate and current
-		// state of up streams not being in sync because of time differences resulting
-		// in streams getting paused unnecessarily.
-		s.setState(State_STABLE)
-	case Signal_RECEIVER_REPORT:
-	case Signal_AVAILABLE_LAYERS_ADD:
-		s.allocate()
-	case Signal_AVAILABLE_LAYERS_REMOVE:
-		s.allocate()
-	case Signal_SUBSCRIPTION_CHANGE:
-		s.allocate()
-	case Signal_SUBSCRIBED_LAYERS_CHANGE:
-		s.allocate()
-	case Signal_PERIODIC_PING:
+func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
+	track := newTrack(event.DownTrack)
+	switch event.DownTrack.Kind() {
+	case webrtc.RTPCodecTypeAudio:
+		s.audioTracks[event.DownTrack.ID()] = track
+	case webrtc.RTPCodecTypeVideo:
+		s.videoTracks[event.DownTrack.ID()] = track
+
+		s.videoTracksSorted = append(s.videoTracksSorted, track)
+		sort.Sort(s.videoTracksSorted)
+
+		s.allocateTrack(track)
 	}
 }
 
-func (s *StreamAllocator) runStateStable(event Event) {
-	switch event.Signal {
-	case Signal_ADD_TRACK:
-		s.allocate()
-	case Signal_REMOVE_TRACK:
-		// LK-TODO - may want to re-calculate channel usage?
-	case Signal_ESTIMATE_INCREASE:
-		// streaming optimally, no need to do anything
-	case Signal_ESTIMATE_DECREASE:
-		s.allocate()
-	case Signal_RECEIVER_REPORT:
-	case Signal_AVAILABLE_LAYERS_ADD:
-		s.allocate()
-	case Signal_AVAILABLE_LAYERS_REMOVE:
-		s.allocate()
-	case Signal_SUBSCRIPTION_CHANGE:
-		s.allocate()
-	case Signal_SUBSCRIBED_LAYERS_CHANGE:
-		s.allocate()
-	case Signal_PERIODIC_PING:
-		// if bandwidth estimate has been stable for a while, maybe gratuitously probe
-		if s.maybeGratuitousProbe() {
-			s.setState(State_GRATUITOUS_PROBING)
+func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
+	switch event.DownTrack.Kind() {
+	case webrtc.RTPCodecTypeAudio:
+		if _, ok := s.audioTracks[event.DownTrack.ID()]; !ok {
+			return
 		}
-	}
-}
 
-// LK-TODO-START
-// The current implementation tries to probe using media if the allocation is not optimal.
-//
-// But, another option to try is using padding only to probe even when deficient.
-// In the current impl, starting a new stream or moving stream to a new layer might end up
-// affecting more streams, i.e. in the sense that we started a new stream and user sees
-// that affecting all the streams. Using padding only means a couple of things
-//   1. If padding packets get lost, no issue
-//   2. From a user perspective, it will appear like a network glitch and not due to
-//      starting a new stream. This is not desirable (i. e. just because user does not see
-//      it as a direct effect of starting a stream  does not mean it is preferred).
-//	But, something to keep in mind in terms of user perception.
-// LK-TODO-END
-func (s *StreamAllocator) runStateDeficient(event Event) {
-	switch event.Signal {
-	case Signal_ADD_TRACK:
-		s.allocate()
-	case Signal_REMOVE_TRACK:
-		s.allocate()
-	case Signal_ESTIMATE_INCREASE:
-		// as long as estimate is increasing, keep going.
-		// try an allocation to check if state can move to STABLE
-		s.allocate()
-	case Signal_ESTIMATE_DECREASE:
-		// stop using the boosted estimate
-		s.resetBoost()
-		s.allocate()
-	case Signal_RECEIVER_REPORT:
-	case Signal_AVAILABLE_LAYERS_ADD:
-		// new track coming online will trigger this.
-		// LK-TODO: probe using the new track rather than trying with existing tracks.
-		s.maybeProbe()
-	case Signal_AVAILABLE_LAYERS_REMOVE:
-		s.allocate()
-	case Signal_SUBSCRIPTION_CHANGE:
-		s.allocate()
-	case Signal_SUBSCRIBED_LAYERS_CHANGE:
-		s.allocate()
-	case Signal_PERIODIC_PING:
-		s.maybeProbe()
-	}
-}
+		delete(s.audioTracks, event.DownTrack.ID())
+	case webrtc.RTPCodecTypeVideo:
+		track, ok := s.videoTracks[event.DownTrack.ID()]
+		if !ok {
+			return
+		}
 
-func (s *StreamAllocator) runStateGratuitousProbing(event Event) {
-	// for anything that needs a run of allocation, stop the prober as the traffic
-	// shape will be altered after an allocation. Although prober will take into
-	// account regular traffic, conservatively stop the prober before an allocation
-	// to avoid any self-inflicted damaage
-	switch event.Signal {
-	case Signal_ADD_TRACK:
-		s.allocate()
-	case Signal_REMOVE_TRACK:
-		// LK-TODO - may want to re-calculate channel usage?
-	case Signal_ESTIMATE_INCREASE:
-		// good, got a better estimate. Prober may or may not have finished.
-		// Let it continue if it is still running.
-	case Signal_ESTIMATE_DECREASE:
-		// stop gratuitous probing immediately and allocate
-		s.prober.Reset()
-		s.allocate()
-	case Signal_RECEIVER_REPORT:
-	case Signal_AVAILABLE_LAYERS_ADD:
-		s.prober.Reset()
-		s.allocate()
-	case Signal_AVAILABLE_LAYERS_REMOVE:
-		s.prober.Reset()
-		s.allocate()
-	case Signal_SUBSCRIPTION_CHANGE:
-		s.prober.Reset()
-		s.allocate()
-	case Signal_SUBSCRIBED_LAYERS_CHANGE:
-		s.prober.Reset()
-		s.allocate()
-	case Signal_PERIODIC_PING:
-		// try for more
-		if !s.prober.IsRunning() {
-			if s.maybeGratuitousProbe() {
-				s.logger.Debugw("trying more gratuitous probing", "participant", s.participantID)
-			} else {
-				s.setState(State_STABLE)
+		delete(s.videoTracks, event.DownTrack.ID())
+
+		n := len(s.videoTracksSorted)
+		for idx, videoTrack := range s.videoTracksSorted {
+			if videoTrack.DownTrack() == event.DownTrack {
+				s.videoTracksSorted[idx] = s.videoTracksSorted[n-1]
+				s.videoTracksSorted = s.videoTracksSorted[:n-1]
+				break
 			}
 		}
+		sort.Sort(s.videoTracksSorted)
+
+		// re-initialize estimate if all tracks are removed, let it get a fresh start
+		if len(s.videoTracksSorted) == 0 {
+			s.initializeEstimate()
+			return
+		}
+
+		s.unallocateTrack(track)
+	}
+}
+
+func (s *StreamAllocator) handleSignalEstimate(event *Event) {
+	// the channel capacity is estimated at a peer connection level. All down tracks
+	// in the peer connection will end up calling this for a REMB report with
+	// the same estimated channel capacity. Use a tracking SSRC to lock onto to
+	// one report. As SSRCs can be dropped over time, update tracking SSRC as needed
+	//
+	// A couple of things to keep in mind
+	//   - REMB reports could be sent gratuitously as a way of providing
+	//     periodic feedback, i. e. even if the estimated capacity does not
+	//     change, there could be REMB packets on the wire. Those gratuitous
+	//     REMBs should not trigger anything bad.
+	//   - As each down track will issue this callback for the same REMB packet
+	//     from the wire, theoretically it is possible that one down track's
+	//     callback from previous REMB comes after another down track's callback
+	//     from the new REMB. REMBs could fire very quickly especially when
+	//     the network is entering congestion.
+	// LK-TODO-START
+	// Need to check if the same SSRC reports can somehow race, i.e. does pion send
+	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
+	// should prevent racing
+	// LK-TODO-END
+
+	// if there are no video tracks, ignore any straggler REMB
+	if len(s.videoTracksSorted) == 0 {
+		return
+	}
+
+	remb, _ := event.Data.(*rtcp.ReceiverEstimatedMaximumBitrate)
+
+	found := false
+	for _, ssrc := range remb.SSRCs {
+		if ssrc == s.trackingSSRC {
+			found = true
+			break
+		}
+	}
+	if !found {
+		if len(remb.SSRCs) == 0 {
+			s.logger.Warnw("no SSRC to track REMB", nil, "participant", s.participantID)
+			return
+		}
+
+		// try to lock to track which is sending this update
+		for _, ssrc := range remb.SSRCs {
+			if ssrc == event.DownTrack.SSRC() {
+				s.trackingSSRC = event.DownTrack.SSRC()
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			s.trackingSSRC = remb.SSRCs[0]
+		}
+	}
+
+	if s.trackingSSRC != event.DownTrack.SSRC() {
+		return
+	}
+
+	s.prevReceivedEstimate = s.receivedEstimate
+	s.receivedEstimate = int64(remb.Bitrate)
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+	}
+
+	if s.maybeCommitEstimate() {
+		s.allocateAllTracks()
+	}
+}
+
+// LK-TODO-START
+// Receiver report stats are not used in the current implementation.
+//
+// The idea is to use a loss/rtt based estimator and compare against REMB like outlined here
+// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
+//
+// But the implementation could get quite tricky. So, a separate PR dedicated effort for that
+// is required. Something like from Chrome, but hopefully much less complicated :-)
+// https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/modules/congestion_controller/goog_cc/loss_based_bandwidth_estimation.cc;bpv=0;bpt=1
+// LK-TODO-END
+func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
+	var track *Track
+	ok := false
+	switch event.DownTrack.Kind() {
+	case webrtc.RTPCodecTypeAudio:
+		track, ok = s.audioTracks[event.DownTrack.ID()]
+	case webrtc.RTPCodecTypeVideo:
+		track, ok = s.videoTracks[event.DownTrack.ID()]
+	}
+	if !ok {
+		return
+	}
+
+	rr, _ := event.Data.(*rtcp.ReceiverReport)
+	track.UpdatePacketStats(rr)
+}
+
+func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
+	track, ok := s.videoTracks[event.DownTrack.ID()]
+	if !ok {
+		return
+	}
+
+	s.allocateTrack(track)
+}
+
+func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
+	track, ok := s.videoTracks[event.DownTrack.ID()]
+	if !ok {
+		return
+	}
+
+	s.allocateTrack(track)
+}
+
+func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
+	track, ok := s.videoTracks[event.DownTrack.ID()]
+	if !ok {
+		return
+	}
+
+	layers := event.Data.(VideoLayers)
+	track.UpdateMaxLayers(layers)
+	sort.Sort(s.videoTracksSorted)
+
+	s.allocateTrack(track)
+}
+
+func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
+	if s.maybeCommitEstimate() {
+		s.allocateAllTracks()
+	}
+
+	// catch up on all optimistically streamed tracks
+	s.finalizeTracks()
+
+	if s.state == StateDeficient {
+		s.maybeProbe()
+	}
+}
+
+func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
+	bytesToSend := event.Data.(int)
+	if bytesToSend <= 0 {
+		return
+	}
+
+	bytesSent := 0
+	for _, track := range s.videoTracks {
+		sent := track.WritePaddingRTP(bytesToSend)
+		bytesSent += sent
+		bytesToSend -= sent
+		if bytesToSend <= 0 {
+			break
+		}
+	}
+
+	if bytesSent != 0 {
+		s.prober.ProbeSent(bytesSent)
 	}
 }
 
@@ -796,7 +644,18 @@ func (s *StreamAllocator) setState(state State) {
 	s.state = state
 }
 
-func (s *StreamAllocator) maybeCommitEstimate() Signal {
+func (s *StreamAllocator) adjustState() {
+	for _, videoTrack := range s.videoTracksSorted {
+		if videoTrack.IsDeficient() {
+			s.setState(StateDeficient)
+			return
+		}
+	}
+
+	s.setState(StateStable)
+}
+
+func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	// commit channel capacity estimate under following rules
 	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
 	//   2. time.Since(lastCommitTime) > EstimateCommitMs => to catch long oscillating estimate
@@ -804,102 +663,141 @@ func (s *StreamAllocator) maybeCommitEstimate() Signal {
 		// too large a change, wait for estimate to settle.
 		// Unless estimate has been oscillating for too long.
 		if time.Since(s.lastCommitTime) < EstimateCommitMs {
-			return Signal_NONE
+			return
 		}
 	}
 
 	// don't commit too often even if the change is small.
 	// Small changes will also get picked up during periodic check.
 	if time.Since(s.lastCommitTime) < EstimateCommitMs {
-		return Signal_NONE
+		return
 	}
 
 	if s.receivedEstimate == s.committedChannelCapacity {
 		// no change in estimate, no need to commit
-		return Signal_NONE
+		return
 	}
 
-	signal := Signal_ESTIMATE_INCREASE
-	if s.receivedEstimate < s.committedChannelCapacity {
-		signal = Signal_ESTIMATE_DECREASE
+	if s.committedChannelCapacity > s.receivedEstimate && s.committedChannelCapacity != ChannelCapacityInfinity {
+		// this prevents declaring a decrease when coming out of init state.
+		// But, this bypasses the case where streaming starts on a bunch of
+		// tracks simultaneously (imagine a participant joining a large room
+		// with a lot of video tracks). In that case, it is possible that the
+		// channel is hitting congestion. It will caught on the next estimate
+		// decrease.
 		s.lastEstimateDecreaseTime = time.Now()
+		isDecreasing = true
 	}
-
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
+
 	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
-
-	return signal
+	return
 }
 
-func (s *StreamAllocator) getChannelCapacity() (uint64, uint64) {
-	s.estimateMu.RLock()
-	defer s.estimateMu.RUnlock()
+func (s *StreamAllocator) allocateTrack(track *Track) {
+	// if not deficient, free pass allocate track
+	if s.state == StateStable {
+		update := NewStreamedTracksUpdate()
+		result := track.Allocate(ChannelCapacityInfinity)
+		update.HandleStreamingChange(result.change, track)
+		s.maybeSendUpdate(update)
+		return
+	}
 
-	return s.committedChannelCapacity, s.receivedEstimate
-}
+	// slice into higher priority tracks and lower priority tracks
+	var hpTracks []*Track
+	var lpTracks []*Track
+	for idx, t := range s.videoTracksSorted {
+		if t == track {
+			hpTracks = s.videoTracksSorted[:idx]
+			lpTracks = s.videoTracksSorted[idx+1:]
+		}
+	}
 
-func (s *StreamAllocator) allocate() {
-	// LK-TODO-START
-	// Introduce some rules for allocate. Some thing like
-	//   - When estimate decreases, immediately.
-	//     Maybe have some threshold for decrease case also before triggering.
-	//     o 5% decrease OR 200 kbps absolute decrease
-	//   - When estimate increases
-	//     o 10% increase - conservative in pushing more data
-	//     o even if 10% increase, do it only once every 10/15/30 seconds
-	// When estimate goes up/down, there could be multiple updates. The challenge
-	// is to react quickly, but not too quickly.
+	// check how much can be stolen from lower priority tracks
+	lpExpectedBps := int64(0)
+	for _, t := range lpTracks {
+		lpExpectedBps += t.BandwidthRequested()
+	}
+
 	//
-	// Some of the challenges here are
-	//   - Audio packet loss in subscriber PC should be considered.
-	//     If audio loss is too high, throttle video aggressively as
-	//     audio quality trumps anything else in a conferencing application.
-	//     Note that bandwidth estimation algorithms themselves
-	//     might adjust for it and report estimated capacity.
-	//   - Video packet loss should be taken into consideration too.
-	//   - Especially tricky is video start/stop (either track start/stop
-	//     or Simulcast spatial layer switching (temporal layer switching
-	//     is fine)). That requires a key frame which is usually 10X
-	//     the size of a P-frame. So when channel capacity goes down
-	//     switching to a lower spatial layer could cause a temporary
-	//     spike in bitrate exacerbating the already congested channel
-	//     condition. This is a reason to use a Pacer in the path to
-	//     smooth out spikes. But, a Pacer introduces significant
-	//     overhead both in terms of memory (outgoing packets need to
-	//     be queued) and CPU (a high frequency polling thread to drain
-	//     the queued packets on to the wire at predictable rate)
-	//   - Video retranmission rate should be taken into account while
-	//     allocating to check which layer of publisher will
-	//     fit in available bandwidth.
-	//   - Increasing channel capacity is a tricky one. Some times,
-	//     the bandwidth estimators will not report an increase unless
-	//     the channel is probed with more traffic. So, may have to
-	//     trigger an allocation if the channel is stable for a while
-	//     and send some extra streams. Another option is to just
-	//     send RTP padding only packets to probe the channel which
-	//     can be done on an existing stream without re-enabling a
-	//     stream.
-	//   - There is also the issue of time synchronization. This makes
-	//     debugging/simulating scenarios difficult. Basically, there
-	//     are various kinds of delays in the system. So, when something
-	//     really happened and when we are really responding is always
-	//     going to be offset. So, need to be cognizant of that and
-	//     apply necessary corrections whenever possible. For example
-	//     o Bandwidth estimation itself takes time
-	//     o RTCP packets could be lost
-	//     o RTCP Receiver Report loss could have happened a while back.
-	//       As RTCP RR usually reported once a second or so, if there
-	//       is loss, there is no indication if that loss happened at
-	//       the beginnning of the window or not.
-	//     o When layer switching, there are more round trips needed.
-	//       A PLI has to go to the publisher and publisher has to
-	//       generate a key frame. Another very important event
-	//       (generation of a key frame) happens potentially 100s of ms
-	//       after we asked for it.
-	//     In general, just need to be aware of these and tweak allocation
-	//     to not cause oscillations.
-	// LK-TODO-END
+	// Note that there might be no lower priority tracks and nothing to steal.
+	// But, a TryAllocate is done irrespective of any stolen bits as the
+	// track may be downgrading due to mute or reduction in subscribed layers
+	// and actually giving back some bits.
+	//
+	update := NewStreamedTracksUpdate()
+
+	result := track.TryAllocate(lpExpectedBps)
+
+	update.HandleStreamingChange(result.change, track)
+
+	delta := lpExpectedBps - result.bandwidthDelta
+	if delta > 0 {
+		// gotten some bits back, check if any deficient higher priority track can make use of it
+		delta = s.tryAllocateTracks(hpTracks, delta, update)
+	}
+
+	// allocate all lower priority tracks with left over capacity
+	if delta < 0 {
+		// stolen too much
+		delta = 0
+	}
+
+	for _, t := range lpTracks {
+		result := t.Allocate(delta)
+		update.HandleStreamingChange(result.change, t)
+
+		delta -= result.bandwidthRequested
+		if delta < 0 {
+			delta = 0
+		}
+	}
+
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
+func (s *StreamAllocator) unallocateTrack(track *Track) {
+	if s.state == StateStable {
+		return
+	}
+
+	update := NewStreamedTracksUpdate()
+
+	unallocatedBps := track.BandwidthRequested()
+	if unallocatedBps > 0 {
+		s.tryAllocateTracks(s.videoTracksSorted, unallocatedBps, update)
+	}
+
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
+func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64, update *StreamedTracksUpdate) int64 {
+	for _, t := range tracks {
+		if !t.IsDeficient() {
+			continue
+		}
+
+		result := t.TryAllocate(additionalBps)
+		update.HandleStreamingChange(result.change, t)
+
+		additionalBps -= result.bandwidthDelta
+		if additionalBps <= 0 {
+			// used up all the extra bits
+			break
+		}
+	}
+
+	return additionalBps
+}
+
+func (s *StreamAllocator) allocateAllTracks() {
+	s.resetBoost()
 
 	//
 	// LK-TODO-START
@@ -919,48 +817,28 @@ func (s *StreamAllocator) allocate() {
 	// LK-TODO-END
 	//
 
-	s.tracksMu.RLock()
 	//
 	// Ask down tracks adjust their forwarded layers.
-	// It is possible that tracks might all fit under boosted bandwidth scenarios.
-	// So, track total requested bandwidth and mark DEFICIENT state if the total is
-	// above the estimated channel capacity even if the optimal signal is true.
 	//
-	// LK-TODO make protocol friendly structures
-	var pausedTracks map[string][]string
-	var resumedTracks map[string][]string
+	update := NewStreamedTracksUpdate()
 
-	isOptimal := true
-	totalBandwidthRequested := uint64(0)
-	committedChannelCapacity, _ := s.getChannelCapacity()
-	availableChannelCapacity := committedChannelCapacity
-	if availableChannelCapacity < s.boostedChannelCapacity {
-		availableChannelCapacity = s.boostedChannelCapacity
-	}
-	for _, track := range s.tracksSorted {
-		//
-		// `audio` tracks will do nothing in this method.
+	availableChannelCapacity := s.committedChannelCapacity
+	for _, track := range s.videoTracksSorted {
 		//
 		// `video` tracks could do one of the following
 		//    - no change, i. e. currently forwarding optimal available
 		//      layer and there is enough bandwidth for that.
 		//    - adjust layers up or down
-		//    - mute if there is not enough capacity for any layer
-		// NOTE: When video switches layers, on layer switch up,
-		// the current layer can keep forwarding to ensure smooth
-		// video at the client. As layer up usually means there is
-		// enough bandwidth, the lower layer can keep streaming till
-		// the switch point for higher layer becomes available.
-		// But, in the other direction, higher layer forwarding should
-		// be stopped immediately to not further congest the channel.
+		//    - pause if there is not enough capacity for any layer
 		//
-		//
-		isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded := track.AdjustAllocation(availableChannelCapacity)
-		totalBandwidthRequested += bandwidthRequested
-		if optimalBandwidthNeeded > 0 && bandwidthRequested < optimalBandwidthNeeded {
+		result := track.Allocate(availableChannelCapacity)
+
+		update.HandleStreamingChange(result.change, track)
+
+		availableChannelCapacity -= result.bandwidthRequested
+		if availableChannelCapacity < 0 || result.state == VideoAllocationStateDeficient {
 			//
-			// Assuming this is a prioritized list of tracks
-			// and we are walking down in that priority order.
+			// This is walking down tracks in priortized order.
 			// Once one of those streams do not fit, set
 			// the availableChannelCapacity to 0 so that no
 			// other lower priority stream gets forwarded.
@@ -973,104 +851,68 @@ func (s *StreamAllocator) allocate() {
 			// to decide which streams get priority
 			//
 			availableChannelCapacity = 0
-			isOptimal = false
-		} else {
-			availableChannelCapacity -= bandwidthRequested
-		}
-
-		if isPausing {
-			appendTrack(track, &pausedTracks)
-		}
-
-		if isResuming {
-			appendTrack(track, &resumedTracks)
-		}
-	}
-	s.tracksMu.RUnlock()
-
-	if !isOptimal || totalBandwidthRequested > committedChannelCapacity {
-		s.setState(State_DEFICIENT)
-	} else {
-		if committedChannelCapacity != InitialChannelCapacity {
-			s.resetBoost()
-			s.setState(State_STABLE)
 		}
 	}
 
-	if len(pausedTracks) != 0 || len(resumedTracks) != 0 {
-		s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", pausedTracks, "resumed", resumedTracks)
-		if s.onStreamedTracksChange != nil {
-			err := s.onStreamedTracksChange(pausedTracks, resumedTracks)
-			if err != nil {
-				s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
-			}
-		}
-	}
+	s.maybeSendUpdate(update)
 
-	//
-	// The above loop may become a concern. In a typical conference
-	// kind of scenario, there are probably not that many people, so
-	// the number of down tracks will be limited.
-	//
-	// But, can imagine a case of roomless having a single peer
-	// connection between RTC node and a relay where all the streams
-	// (even spanning multiple rooms) are on a single peer connection.
-	// In that case, I think this should mostly be disabled, i. e.
-	// that peer connection should be looked at as RTC node's publisher
-	// peer connection and any throttling mechanisms should be disabled.
-	//
+	s.adjustState()
 }
 
-func (s *StreamAllocator) getExpectedBandwidthUsage() uint64 {
-	s.tracksMu.RLock()
-	defer s.tracksMu.RUnlock()
+func (s *StreamAllocator) maybeSendUpdate(update *StreamedTracksUpdate) {
+	if update.Empty() {
+		return
+	}
 
-	expected := uint64(0)
-	for _, track := range s.tracks {
+	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", update.Paused, "resumed", update.Resumed)
+	if s.onStreamedTracksChange != nil {
+		err := s.onStreamedTracksChange(update)
+		if err != nil {
+			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+		}
+	}
+}
+
+func (s *StreamAllocator) finalizeTracks() {
+	for _, t := range s.videoTracksSorted {
+		t.FinalizeAllocate()
+	}
+
+	s.adjustState()
+}
+
+func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
+	expected := int64(0)
+	for _, track := range s.videoTracks {
 		expected += track.BandwidthRequested()
 	}
 
 	return expected
 }
 
-func (s *StreamAllocator) getOptimalBandwidthUsage() uint64 {
-	s.tracksMu.RLock()
-	defer s.tracksMu.RUnlock()
-
-	optimal := uint64(0)
-	for _, track := range s.tracks {
-		optimal += track.BandwidthOptimal()
-	}
-
-	return optimal
-}
-
 // LK-TODO: unused till loss based estimation is done, but just a sample impl of weighting audio higher
 func (s *StreamAllocator) calculateLoss() float32 {
-	s.tracksMu.RLock()
-	defer s.tracksMu.RUnlock()
-
 	packetsAudio := uint32(0)
 	packetsLostAudio := uint32(0)
-	packetsVideo := uint32(0)
-	packetsLostVideo := uint32(0)
-	for _, track := range s.tracks {
-		kind, packets, packetsLost := track.GetPacketStats()
+	for _, track := range s.audioTracks {
+		packets, packetsLost := track.GetPacketStats()
 
-		if kind == webrtc.RTPCodecTypeAudio {
-			packetsAudio += packets
-			packetsLostAudio += packetsLost
-		}
-
-		if kind == webrtc.RTPCodecTypeVideo {
-			packetsVideo += packets
-			packetsLostVideo += packetsLost
-		}
+		packetsAudio += packets
+		packetsLostAudio += packetsLost
 	}
 
 	audioLossPct := float32(0.0)
 	if packetsAudio != 0 {
 		audioLossPct = (float32(packetsLostAudio) * 100.0) / float32(packetsAudio)
+	}
+
+	packetsVideo := uint32(0)
+	packetsLostVideo := uint32(0)
+	for _, track := range s.videoTracks {
+		packets, packetsLost := track.GetPacketStats()
+
+		packetsVideo += packets
+		packetsLostVideo += packetsLost
 	}
 
 	videoLossPct := float32(0.0)
@@ -1086,51 +928,22 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 
-	switch s.boostMode {
-	case BoostMode_LAYER:
-		s.maybeBoostLayer()
-	case BoostMode_BANDWIDTH:
-		s.maybeBoostBandwidth()
-	}
+	s.maybeBoostLayer()
+	s.adjustState()
 }
 
 func (s *StreamAllocator) maybeBoostLayer() {
-	s.tracksMu.RLock()
-	for _, track := range s.tracks {
-		boosted, additionalBandwidth := track.IncreaseAllocation()
-		if boosted {
-			if s.boostedChannelCapacity > s.committedChannelCapacity {
-				s.boostedChannelCapacity += additionalBandwidth
-			} else {
-				s.boostedChannelCapacity = s.committedChannelCapacity + additionalBandwidth
-			}
+	// boost first deficient track in priority order
+	for _, track := range s.videoTracksSorted {
+		if !track.IsDeficient() {
+			continue
+		}
+
+		if track.AllocateNextHigher() {
 			s.lastBoostTime = time.Now()
 			break
 		}
 	}
-	s.tracksMu.RUnlock()
-}
-
-func (s *StreamAllocator) maybeBoostBandwidth() {
-	// temporarily boost estimate for probing.
-	// Boost either the committed channel capacity or previous boost point if there is one
-	baseBps, _ := s.getChannelCapacity()
-	if baseBps < s.boostedChannelCapacity {
-		baseBps = s.boostedChannelCapacity
-	}
-
-	boostBps := (baseBps * BoostPct) / 100
-	if boostBps < BoostMinBps {
-		boostBps = BoostMinBps
-	}
-	if boostBps > BoostMaxBps {
-		boostBps = BoostMaxBps
-	}
-
-	s.boostedChannelCapacity = baseBps + boostBps
-	s.lastBoostTime = time.Now()
-
-	s.allocate()
 }
 
 func (s *StreamAllocator) isTimeToBoost() bool {
@@ -1146,92 +959,127 @@ func (s *StreamAllocator) isTimeToBoost() bool {
 }
 
 func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.Unix(0, 0)
-	s.boostedChannelCapacity = 0
+	s.lastBoostTime = time.Now()
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
-	// LK-TODO: do not probe if there are no video tracks
-	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs {
+	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs || len(s.videoTracksSorted) == 0 {
+		return false
+	}
+
+	// don't gratuitously probe too often
+	if time.Since(s.lastGratuitousProbeTime) < GratuitousProbeMoreWaitMs {
 		return false
 	}
 
 	// use last received estimate for gratuitous probing base as
 	// more updates may have been received since the last commit
-	_, receivedEstimate := s.getChannelCapacity()
 	expectedRateBps := s.getExpectedBandwidthUsage()
-	headroomBps := receivedEstimate - expectedRateBps
+	headroomBps := s.receivedEstimate - expectedRateBps
 	if headroomBps > GratuitousProbeHeadroomBps {
 		return false
 	}
 
-	probeRateBps := (receivedEstimate * GratuitousProbePct) / 100
+	probeRateBps := (s.receivedEstimate * GratuitousProbePct) / 100
+	if probeRateBps < GratuitousProbeMinBps {
+		probeRateBps = GratuitousProbeMinBps
+	}
 	if probeRateBps > GratuitousProbeMaxBps {
 		probeRateBps = GratuitousProbeMaxBps
 	}
 
 	s.prober.AddCluster(
-		int(receivedEstimate+probeRateBps),
+		int(s.receivedEstimate+probeRateBps),
 		int(expectedRateBps),
 		GratuitousProbeMinDurationMs,
 		GratuitousProbeMaxDurationMs,
 	)
 
+	s.lastGratuitousProbeTime = time.Now()
 	return true
 }
 
-//------------------------------------------------
-
-func appendTrack(t *Track, m *map[string][]string) {
-	if *m == nil {
-		*m = make(map[string][]string)
-	}
-
-	peerID := t.PeerID()
-	trackID := t.ID()
-	peer, ok := (*m)[peerID]
-	if !ok {
-		peer = make([]string, 0, 2)
-	}
-	peer = append(peer, trackID)
-	(*m)[peerID] = peer
+func (s *StreamAllocator) resetGratuitousProbe() {
+	s.prober.Reset()
+	s.lastGratuitousProbeTime = time.Now()
 }
 
 //------------------------------------------------
 
-type Track struct {
-	// LK-TODO-START
-	// Check if we can do without a lock?
-	//
-	// Packet stats are updated in a different thread.
-	// Maybe a specific lock for that?
-	// There may be more in the future though.
-	// LK-TODO-END
-	lock sync.RWMutex
+type StreamedTrack struct {
+	ParticipantSid string
+	TrackSid       string
+}
 
+type StreamedTracksUpdate struct {
+	Paused  []*StreamedTrack
+	Resumed []*StreamedTrack
+}
+
+func NewStreamedTracksUpdate() *StreamedTracksUpdate {
+	return &StreamedTracksUpdate{}
+}
+
+func (s *StreamedTracksUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
+	switch change {
+	case VideoStreamingChangePausing:
+		s.Paused = append(s.Paused, &StreamedTrack{
+			ParticipantSid: track.PeerID(),
+			TrackSid:       track.ID(),
+		})
+	case VideoStreamingChangeResuming:
+		s.Resumed = append(s.Resumed, &StreamedTrack{
+			ParticipantSid: track.PeerID(),
+			TrackSid:       track.ID(),
+		})
+	}
+}
+
+func (s *StreamedTracksUpdate) Empty() bool {
+	return len(s.Paused) == 0 && len(s.Resumed) == 0
+}
+
+//------------------------------------------------
+
+type ForwardingState int
+
+const (
+	ForwardingStateOptimistic ForwardingState = iota
+	ForwardingStateDryFeed
+	ForwardingStateDeficient
+	ForwardingStateOptimal
+)
+
+func (f ForwardingState) String() string {
+	switch f {
+	case ForwardingStateOptimistic:
+		return "OPTIMISTIC"
+	case ForwardingStateDryFeed:
+		return "DRY_FEED"
+	case ForwardingStateDeficient:
+		return "DEFICIENT"
+	case ForwardingStateOptimal:
+		return "OPTIMAL"
+	default:
+		return fmt.Sprintf("%d", int(f))
+	}
+}
+
+type Track struct {
 	downTrack *DownTrack
-	peerID    string
 
 	highestSN       uint32
 	packetsLost     uint32
 	lastHighestSN   uint32
 	lastPacketsLost uint32
 
-	bandwidthRequested     uint64
-	optimalBandwidthNeeded uint64
-
-	maxSpatialLayer  int32
-	maxTemporalLayer int32
+	maxLayers VideoLayers
 }
 
-func newTrack(downTrack *DownTrack, peerID string) *Track {
-	maxSpatialLayer, maxTemporalLayer := downTrack.MaxLayers()
-
+func newTrack(downTrack *DownTrack) *Track {
 	return &Track{
-		downTrack:        downTrack,
-		peerID:           peerID,
-		maxSpatialLayer:  maxSpatialLayer,
-		maxTemporalLayer: maxTemporalLayer,
+		downTrack: downTrack,
+		maxLayers: downTrack.MaxLayers(),
 	}
 }
 
@@ -1244,14 +1092,11 @@ func (t *Track) ID() string {
 }
 
 func (t *Track) PeerID() string {
-	return t.peerID
+	return t.downTrack.PeerID()
 }
 
 // LK-TODO this should probably be maintained in downTrack and this module can query what it needs
 func (t *Track) UpdatePacketStats(rr *rtcp.ReceiverReport) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
 	t.lastHighestSN = t.highestSN
 	t.lastPacketsLost = t.packetsLost
 
@@ -1265,57 +1110,57 @@ func (t *Track) UpdatePacketStats(rr *rtcp.ReceiverReport) {
 	}
 }
 
-func (t *Track) UpdateMaxLayers(maxSpatialLayer, maxTemporalLayer int32) {
-	t.maxSpatialLayer = maxSpatialLayer
-	t.maxTemporalLayer = maxTemporalLayer
+func (t *Track) UpdateMaxLayers(layers VideoLayers) {
+	t.maxLayers = layers
 }
 
-func (t *Track) GetPacketStats() (webrtc.RTPCodecType, uint32, uint32) {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return t.downTrack.Kind(), t.highestSN - t.lastHighestSN, t.packetsLost - t.lastPacketsLost
+func (t *Track) GetPacketStats() (uint32, uint32) {
+	return t.highestSN - t.lastHighestSN, t.packetsLost - t.lastPacketsLost
 }
 
 func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) AdjustAllocation(availableChannelCapacity uint64) (bool, bool, uint64, uint64) {
-	isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded := t.downTrack.AdjustAllocation(availableChannelCapacity)
-
-	t.bandwidthRequested = bandwidthRequested
-	t.optimalBandwidthNeeded = optimalBandwidthNeeded
-
-	return isPausing, isResuming, bandwidthRequested, optimalBandwidthNeeded
+func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocationResult {
+	return t.downTrack.Allocate(availableChannelCapacity)
 }
 
-func (t *Track) IncreaseAllocation() (bool, uint64) {
-	increased, bandwidthRequested, optimalBandwidthNeeded := t.downTrack.IncreaseAllocation()
-	additionalBandwidth := 0
-	if increased {
-		additionalBandwidth = int(bandwidthRequested) - int(t.bandwidthRequested)
-		if additionalBandwidth < 0 {
-			additionalBandwidth = 0
-		}
-
-		t.bandwidthRequested = bandwidthRequested
-		t.optimalBandwidthNeeded = optimalBandwidthNeeded
-	}
-
-	return increased, uint64(additionalBandwidth)
+func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocationResult {
+	return t.downTrack.TryAllocate(additionalChannelCapacity)
 }
 
-func (t *Track) BandwidthRequested() uint64 {
-	return t.bandwidthRequested
+func (t *Track) FinalizeAllocate() {
+	t.downTrack.FinalizeAllocate()
 }
 
-func (t *Track) BandwidthOptimal() uint64 {
-	return t.optimalBandwidthNeeded
+func (t *Track) AllocateNextHigher() bool {
+	return t.downTrack.AllocateNextHigher()
+}
+
+func (t *Track) IsDeficient() bool {
+	return t.downTrack.AllocationState() == VideoAllocationStateDeficient
+}
+
+func (t *Track) BandwidthRequested() int64 {
+	return t.downTrack.AllocationBandwidth()
 }
 
 //------------------------------------------------
 
+// LK-TODO-START
+// Typically, in a system like this, there are track priorities.
+// It is either implemented as policy
+//   Examples:
+//     1. active speaker gets hi-res, all else lo-res
+//     2. screen share streams get hi-res, all else lo-res
+// OR
+// It is left up to the clients to subscribe explicitly to the quality they want.
+//
+// This sorter is prioritizing tracks by max layer subscribed. But, with simple
+// tracks, there is only one layer. But, it is possible they should be higher
+// priority, for e.g. screen share track.
+// LK-TODO-END
 type TrackSorter []*Track
 
 func (t TrackSorter) Len() int {
@@ -1328,13 +1173,13 @@ func (t TrackSorter) Swap(i, j int) {
 
 func (t TrackSorter) Less(i, j int) bool {
 	// highest spatial layers have higher priority
-	if t[i].maxSpatialLayer != t[j].maxSpatialLayer {
-		return t[i].maxSpatialLayer > t[j].maxSpatialLayer
+	if t[i].maxLayers.spatial != t[j].maxLayers.spatial {
+		return t[i].maxLayers.spatial > t[j].maxLayers.spatial
 	}
 
 	// highest temporal layers have priority if max spatial layers match
-	if t[i].maxTemporalLayer != t[j].maxTemporalLayer {
-		return t[i].maxTemporalLayer > t[j].maxTemporalLayer
+	if t[i].maxLayers.temporal != t[j].maxLayers.temporal {
+		return t[i].maxLayers.temporal > t[j].maxLayers.temporal
 	}
 
 	// use track id to keep ordering if nothing else changes

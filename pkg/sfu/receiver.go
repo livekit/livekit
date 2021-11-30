@@ -4,6 +4,7 @@ import (
 	"io"
 	"math/rand"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,7 @@ import (
 type TrackReceiver interface {
 	TrackID() string
 	StreamID() string
-	GetBitrateTemporalCumulative() [3][4]uint64
+	GetBitrateTemporalCumulative() [3][4]int64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
 	DeleteDownTrack(peerID string)
@@ -37,7 +38,7 @@ type Receiver interface {
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
-	GetBitrateTemporalCumulative() [3][4]uint64
+	GetBitrateTemporalCumulative() [3][4]int64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	DeleteDownTrack(ID string)
 	OnCloseHandler(fn func())
@@ -47,10 +48,6 @@ type Receiver interface {
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	DebugInfo() map[string]interface{}
 }
-
-var (
-	defaultBitratesCumulative = [][]uint64{{60000, 90000, 150000, 0}, {200000, 300000, 500000, 0}, {400000, 600000, 1000000, 0}}
-)
 
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
@@ -250,7 +247,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 		layers, ok := w.availableLayers.Load().([]uint16)
 		w.upTrackMu.RUnlock()
 		if ok && len(layers) != 0 {
-			track.UptrackLayersChange(layers, true)
+			track.UptrackLayersChange(layers)
 		}
 	}
 
@@ -280,12 +277,12 @@ func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
 	return len(layers)
 }
 
-func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16, layerAdded bool) {
+func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16) {
 	w.downTrackMu.RLock()
 	defer w.downTrackMu.RUnlock()
 	for _, dt := range w.downTracks {
 		if dt != nil {
-			dt.UptrackLayersChange(layers, layerAdded)
+			dt.UptrackLayersChange(layers)
 		}
 	}
 }
@@ -306,10 +303,11 @@ func (w *WebRTCReceiver) addAvailableLayer(layer uint16) {
 	if !hasLayer {
 		layers = append(layers, layer)
 	}
+	sort.Slice(layers, func(i, j int) bool { return layers[i] < layers[j] })
 	w.availableLayers.Store(layers)
 	w.upTrackMu.Unlock()
 
-	w.downtrackLayerChange(layers, true)
+	w.downtrackLayerChange(layers)
 }
 
 func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
@@ -325,23 +323,24 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 			newLayers = append(newLayers, l)
 		}
 	}
+	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
 	w.availableLayers.Store(newLayers)
 	w.upTrackMu.Unlock()
+
 	// need to immediately switch off unavailable layers
-	w.downtrackLayerChange(newLayers, false)
+	w.downtrackLayerChange(newLayers)
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]uint64 {
+func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]int64 {
 	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
-	var br [3][4]uint64
+	var br [3][4]int64
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	for i, buff := range w.buffers {
 		if buff != nil {
-			tls := make([]uint64, 4)
+			tls := make([]int64, 4)
 			if w.hasSpatialLayer(int32(i)) {
 				tls = buff.BitrateTemporalCumulative()
-				MaybeUseDefaultBitrate(tls, i)
 			}
 
 			for j := 0; j < len(br[i]); j++ {
@@ -523,32 +522,6 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 
 	w.index[track.PeerID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
-}
-
-func MaybeUseDefaultBitrate(tlbs []uint64, layer int) {
-	for _, tlb := range tlbs {
-		if tlb != uint64(0) {
-			// some layer has data
-			return
-		}
-	}
-
-	//
-	// Before measured bitrate is available, initialize with some sane default values.
-	// Note that not all clients send temporal layers or have same number of temporal layers.
-	//   o Safari 15 - does not do temporal layers
-	//   o Chrome 95 - does two temporal layers
-	//   o Firefox 94 - does three temporal layers
-	// Default initialization is to ensure that StreamAllocator has some data and can
-	// forward tracks as soon as available.
-	//
-	// Measured bitrate will be available periodically starting shortly after stream
-	// starts flowing (see `reportDelta` in buffer.go). Once that information becomes
-	// available, it will be used for stream allocation.
-	//
-	for i := 0; i < len(tlbs); i++ {
-		tlbs[i] = defaultBitratesCumulative[layer][i]
-	}
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {

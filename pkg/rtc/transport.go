@@ -256,7 +256,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return nil
 }
 
-func (t *PCTransport) OnStreamedTracksChange(f func(paused map[string][]string, resumed map[string][]string) error) {
+func (t *PCTransport) OnStreamedTracksChange(f func(update *sfu.StreamedTracksUpdate) error) {
 	if t.streamAllocator == nil {
 		return
 	}
@@ -269,7 +269,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 		return
 	}
 
-	t.streamAllocator.AddTrack(subTrack.DownTrack(), subTrack.PublisherIdentity())
+	t.streamAllocator.AddTrack(subTrack.DownTrack())
 }
 
 func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {

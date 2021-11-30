@@ -22,7 +22,7 @@ import (
 
 // TrackSender defines a  interface send media to remote peer
 type TrackSender interface {
-	UptrackLayersChange(availableLayers []uint16, layerAdded bool)
+	UptrackLayersChange(availableLayers []uint16)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	// ID is the globally unique identifier for this Track.
@@ -110,6 +110,11 @@ type SnTs struct {
 	timestamp      uint32
 }
 
+type VideoLayers struct {
+	spatial  int32
+	temporal int32
+}
+
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 // DownTrack  implements TrackLocal, is the track used to write packets
@@ -158,13 +163,13 @@ type DownTrack struct {
 	onREMB func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 
 	// simulcast layer availability change callback
-	onAvailableLayersChanged func(dt *DownTrack, layerAdded bool)
+	onAvailableLayersChanged func(dt *DownTrack)
 
 	// subscription change callback
 	onSubscriptionChanged func(dt *DownTrack)
 
 	// max layer change callback
-	onSubscribedLayersChanged func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)
+	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
 
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
@@ -467,28 +472,28 @@ func (d *DownTrack) Close() {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
-	if !d.forwarder.Muted() && d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, spatialLayer, d.forwarder.MaxTemporalLayer())
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayers := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
 
-	if !d.forwarder.Muted() && d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, d.forwarder.MaxSpatialLayer(), temporalLayer)
+	if d.onSubscribedLayersChanged != nil {
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
-func (d *DownTrack) MaxLayers() (int32, int32) {
+func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
 }
 
@@ -496,9 +501,11 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }
 
-func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded bool) {
-	if !d.forwarder.Muted() && d.onAvailableLayersChanged != nil {
-		d.onAvailableLayersChanged(d, layerAdded)
+func (d *DownTrack) UptrackLayersChange(availableLayers []uint16) {
+	d.forwarder.UptrackLayersChange(availableLayers)
+
+	if d.onAvailableLayersChanged != nil {
+		d.onAvailableLayersChanged(d)
 	}
 }
 
@@ -529,7 +536,7 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.receiverReportListeners = append(d.receiverReportListeners, listener)
 }
 
-func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack, layerAdded bool)) {
+func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack)) {
 	d.onAvailableLayersChanged = fn
 }
 
@@ -537,7 +544,7 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
 }
 
-func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, maxSpatialLayer int32, maxTemporalLayer int32)) {
+func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
 	d.onSubscribedLayersChanged = fn
 }
 
@@ -545,12 +552,28 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
-func (d *DownTrack) AdjustAllocation(availableChannelCapacity uint64) (bool, bool, uint64, uint64) {
-	return d.forwarder.AdjustAllocation(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocationResult {
+	return d.forwarder.Allocate(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) IncreaseAllocation() (bool, uint64, uint64) {
-	return d.forwarder.IncreaseAllocation(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) TryAllocate(additionalChannelCapacity int64) VideoAllocationResult {
+	return d.forwarder.TryAllocate(additionalChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) FinalizeAllocate() {
+	d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) AllocateNextHigher() bool {
+	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) AllocationState() VideoAllocationState {
+	return d.forwarder.AllocationState()
+}
+
+func (d *DownTrack) AllocationBandwidth() int64 {
+	return d.forwarder.AllocationBandwidth()
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
@@ -930,6 +953,32 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 //
 // Forwarder
 //
+type VideoStreamingChange int
+
+const (
+	VideoStreamingChangeNone VideoStreamingChange = iota
+	VideoStreamingChangePausing
+	VideoStreamingChangeResuming
+)
+
+type VideoAllocationState int
+
+const (
+	VideoAllocationStateNone VideoAllocationState = iota
+	VideoAllocationStateMuted
+	VideoAllocationStateFeedDry
+	VideoAllocationStateAwaitingMeasurement
+	VideoAllocationStateOptimal
+	VideoAllocationStateDeficient
+)
+
+type VideoAllocationResult struct {
+	change             VideoStreamingChange
+	state              VideoAllocationState
+	bandwidthRequested int64
+	bandwidthDelta     int64
+}
+
 type Forwarder struct {
 	lock  sync.RWMutex
 	codec webrtc.RTPCodecCapability
@@ -949,6 +998,11 @@ type Forwarder struct {
 	currentTemporalLayer int32
 	targetTemporalLayer  int32
 
+	lastAllocationState      VideoAllocationState
+	lastAllocationRequestBps int64
+
+	availableLayers []uint16
+
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
 }
@@ -963,6 +1017,8 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 		targetSpatialLayer:   InvalidSpatialLayer,
 		currentTemporalLayer: InvalidTemporalLayer,
 		targetTemporalLayer:  InvalidTemporalLayer,
+
+		lastAllocationState: VideoAllocationStateNone,
 
 		rtpMunger: NewRTPMunger(),
 	}
@@ -1001,23 +1057,20 @@ func (f *Forwarder) Muted() bool {
 	return f.muted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) bool {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if spatialLayer == f.maxSpatialLayer {
-		return false
+		return false, VideoLayers{}
 	}
 
 	f.maxSpatialLayer = spatialLayer
-	return true
-}
 
-func (f *Forwarder) MaxSpatialLayer() int32 {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	return f.maxSpatialLayer
+	return true, VideoLayers{
+		spatial:  f.maxSpatialLayer,
+		temporal: f.maxTemporalLayer,
+	}
 }
 
 func (f *Forwarder) CurrentSpatialLayer() int32 {
@@ -1034,30 +1087,30 @@ func (f *Forwarder) TargetSpatialLayer() int32 {
 	return f.targetSpatialLayer
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) bool {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if temporalLayer == f.maxTemporalLayer {
-		return false
+		return false, VideoLayers{}
 	}
 
 	f.maxTemporalLayer = temporalLayer
-	return true
+
+	return true, VideoLayers{
+		spatial:  f.maxSpatialLayer,
+		temporal: f.maxTemporalLayer,
+	}
 }
 
-func (f *Forwarder) MaxTemporalLayer() int32 {
+func (f *Forwarder) MaxLayers() VideoLayers {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.maxTemporalLayer
-}
-
-func (f *Forwarder) MaxLayers() (int32, int32) {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	return f.maxSpatialLayer, f.maxTemporalLayer
+	return VideoLayers{
+		spatial:  f.maxSpatialLayer,
+		temporal: f.maxTemporalLayer,
+	}
 }
 
 func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
@@ -1075,73 +1128,23 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	return ForwardingStatusOptimal
 }
 
-func (f *Forwarder) AdjustAllocation(availableChannelCapacity uint64, brs [3][4]uint64) (isPausing, isResuming bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
+func (f *Forwarder) UptrackLayersChange(availableLayers []uint16) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.kind == webrtc.RTPCodecTypeAudio || f.muted {
-		return
-	}
-
-	optimalBandwidthNeeded = uint64(0)
-	// LK-TODO for temporal preference, traverse the bitrates array the other way
-	for i := f.maxSpatialLayer; i >= 0; i-- {
-		for j := f.maxTemporalLayer; j >= 0; j-- {
-			if brs[i][j] == 0 {
-				continue
-			}
-			if optimalBandwidthNeeded == 0 {
-				optimalBandwidthNeeded = brs[i][j]
-			}
-			if brs[i][j] < availableChannelCapacity {
-				isResuming = f.targetSpatialLayer == InvalidSpatialLayer
-				bandwidthRequested = brs[i][j]
-
-				f.targetSpatialLayer = int32(i)
-				f.targetTemporalLayer = int32(j)
-				return
-			}
-		}
-	}
-
-	if optimalBandwidthNeeded != 0 {
-		// no layer fits in the available channel capacity, disable the track
-		isPausing = f.targetSpatialLayer != InvalidSpatialLayer
-
-		f.currentSpatialLayer = InvalidSpatialLayer
-		f.targetSpatialLayer = InvalidSpatialLayer
-
-		f.currentTemporalLayer = InvalidTemporalLayer
-		f.targetTemporalLayer = InvalidTemporalLayer
-	}
-	return
+	f.availableLayers = availableLayers
 }
 
-func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwidthRequested, optimalBandwidthNeeded uint64) {
-	// LK-TODO-START
-	// This is mainly used in probing to try a slightly higher layer.
-	// But, if down track is not a simulcast track, then the next
-	// available layer (i. e. the only layer of simple track) may boost
-	// things by a lot (it could happen in simulcast jumps too).
-	// May need to take in a layer increase threshold as an argument
-	// (in terms of bps) and increase layer only if the jump is within
-	// that threshold.
-	// LK-TODO-END
-	f.lock.Lock()
-	defer f.lock.Unlock()
+func (f *Forwarder) disable() {
+	f.currentSpatialLayer = InvalidSpatialLayer
+	f.targetSpatialLayer = InvalidSpatialLayer
 
-	if f.kind == webrtc.RTPCodecTypeAudio || f.muted {
-		return
-	}
+	f.currentTemporalLayer = InvalidTemporalLayer
+	f.targetTemporalLayer = InvalidTemporalLayer
+}
 
-	// if targets are still pending, don't increase
-	if f.targetSpatialLayer != InvalidSpatialLayer {
-		if f.targetSpatialLayer != f.currentSpatialLayer || f.targetTemporalLayer != f.currentTemporalLayer {
-			return
-		}
-	}
-
-	// move to the next available layer
+func (f *Forwarder) getOptimalBandwidthNeeded(brs [3][4]int64) int64 {
+	optimalBandwidthNeeded := int64(0)
 	for i := f.maxSpatialLayer; i >= 0; i-- {
 		for j := f.maxTemporalLayer; j >= 0; j-- {
 			if brs[i][j] == 0 {
@@ -1157,9 +1160,215 @@ func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwi
 			break
 		}
 	}
-	if optimalBandwidthNeeded == 0 {
-		// feed is dry
+
+	return optimalBandwidthNeeded
+}
+
+func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs [3][4]int64) (result VideoAllocationResult) {
+	// should never get called on audio tracks, just for safety
+	if f.kind == webrtc.RTPCodecTypeAudio {
 		return
+	}
+
+	if f.muted {
+		result.state = VideoAllocationStateMuted
+		result.bandwidthRequested = 0
+		result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
+
+		f.lastAllocationState = result.state
+		f.lastAllocationRequestBps = result.bandwidthRequested
+		return
+	}
+
+	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	if optimalBandwidthNeeded == 0 {
+		if len(f.availableLayers) == 0 {
+			// feed is dry
+			result.state = VideoAllocationStateFeedDry
+			result.bandwidthRequested = 0
+			result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
+
+			f.lastAllocationState = result.state
+			f.lastAllocationRequestBps = result.bandwidthRequested
+			return
+		}
+
+		// feed bitrate is not yet calculated
+		result.state = VideoAllocationStateAwaitingMeasurement
+		f.lastAllocationState = result.state
+
+		if availableChannelCapacity == ChannelCapacityInfinity {
+			// channel capacity allows a free pass.
+			// So, resume with the highest layer available <= max subscribed layer
+
+			// if already optimistically started, nothing else to do
+			if f.targetSpatialLayer != InvalidSpatialLayer {
+				return
+			}
+
+			f.targetSpatialLayer = int32(f.availableLayers[len(f.availableLayers)-1])
+			if f.targetSpatialLayer > f.maxSpatialLayer {
+				f.targetSpatialLayer = f.maxSpatialLayer
+			}
+
+			f.targetTemporalLayer = f.maxTemporalLayer
+			if f.targetTemporalLayer == InvalidTemporalLayer {
+				f.targetTemporalLayer = 0
+			}
+
+			result.change = VideoStreamingChangeResuming
+		} else {
+			// if not optimistically started, nothing else to do
+			if f.targetSpatialLayer == InvalidSpatialLayer {
+				return
+			}
+
+			if canPause {
+				// disable it as it is not known how big this stream is
+				// and if it will fit in the available channel capacity
+				result.change = VideoStreamingChangePausing
+				result.state = VideoAllocationStateDeficient
+				result.bandwidthRequested = 0
+				result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
+
+				f.lastAllocationState = result.state
+				f.lastAllocationRequestBps = result.bandwidthRequested
+
+				f.disable()
+			}
+		}
+		return
+	}
+
+	// LK-TODO for temporal preference, traverse the bitrates array the other way
+	for i := f.maxSpatialLayer; i >= 0; i-- {
+		for j := f.maxTemporalLayer; j >= 0; j-- {
+			if brs[i][j] == 0 {
+				continue
+			}
+			if brs[i][j] < availableChannelCapacity {
+				if f.targetSpatialLayer == InvalidSpatialLayer {
+					result.change = VideoStreamingChangeResuming
+				}
+				result.bandwidthRequested = brs[i][j]
+				result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
+				if result.bandwidthRequested == optimalBandwidthNeeded {
+					result.state = VideoAllocationStateOptimal
+				} else {
+					result.state = VideoAllocationStateDeficient
+				}
+
+				f.lastAllocationState = result.state
+				f.lastAllocationRequestBps = result.bandwidthRequested
+
+				f.targetSpatialLayer = int32(i)
+				f.targetTemporalLayer = int32(j)
+				return
+			}
+		}
+	}
+
+	if !canPause {
+		// do not pause if preserving
+		// although preserving, currently streamed layers could have a different bitrate,
+		// but not updating to prevent entropy increase.
+		result.state = f.lastAllocationState
+		return
+	}
+
+	// no layer fits in the available channel capacity, disable the track
+	if f.targetSpatialLayer != InvalidSpatialLayer {
+		result.change = VideoStreamingChangePausing
+	}
+	result.state = VideoAllocationStateDeficient
+	result.bandwidthRequested = 0
+	result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
+
+	f.lastAllocationState = result.state
+	f.lastAllocationRequestBps = result.bandwidthRequested
+
+	f.disable()
+	return
+}
+
+func (f *Forwarder) Allocate(availableChannelCapacity int64, brs [3][4]int64) VideoAllocationResult {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	return f.allocate(availableChannelCapacity, true, brs)
+}
+
+func (f *Forwarder) TryAllocate(additionalChannelCapacity int64, brs [3][4]int64) VideoAllocationResult {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	return f.allocate(f.lastAllocationRequestBps+additionalChannelCapacity, false, brs)
+}
+
+func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.lastAllocationState != VideoAllocationStateAwaitingMeasurement {
+		return
+	}
+
+	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	if optimalBandwidthNeeded == 0 {
+		if len(f.availableLayers) == 0 {
+			// feed dry
+			f.lastAllocationState = VideoAllocationStateFeedDry
+			f.lastAllocationRequestBps = 0
+		}
+
+		// still awaiting measurement
+		return
+	}
+
+	// LK-TODO for temporal preference, traverse the bitrates array the other way
+	for i := f.maxSpatialLayer; i >= 0; i-- {
+		for j := f.maxTemporalLayer; j >= 0; j-- {
+			if brs[i][j] == 0 {
+				continue
+			}
+
+			f.lastAllocationState = VideoAllocationStateOptimal
+			f.lastAllocationRequestBps = brs[i][j]
+
+			f.targetSpatialLayer = int32(i)
+			f.targetTemporalLayer = int32(j)
+			break
+		}
+	}
+}
+
+func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		return false
+	}
+
+	// if targets are still pending, don't increase
+	if f.targetSpatialLayer != InvalidSpatialLayer {
+		if f.targetSpatialLayer != f.currentSpatialLayer || f.targetTemporalLayer != f.currentTemporalLayer {
+			return false
+		}
+	}
+
+	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	if optimalBandwidthNeeded == 0 {
+		if len(f.availableLayers) == 0 {
+			f.lastAllocationState = VideoAllocationStateFeedDry
+			f.lastAllocationRequestBps = 0
+			return false
+		}
+
+		// bitrates not available yet
+		f.lastAllocationState = VideoAllocationStateAwaitingMeasurement
+		f.lastAllocationRequestBps = 0
+		return false
 	}
 
 	// try moving temporal layer up in the current spatial layer
@@ -1172,9 +1381,13 @@ func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwi
 		f.targetSpatialLayer = currentSpatialLayer
 		f.targetTemporalLayer = nextTemporalLayer
 
-		increased = true
-		bandwidthRequested = brs[currentSpatialLayer][nextTemporalLayer]
-		return
+		f.lastAllocationRequestBps = brs[currentSpatialLayer][nextTemporalLayer]
+		if f.lastAllocationRequestBps < optimalBandwidthNeeded {
+			f.lastAllocationState = VideoAllocationStateDeficient
+		} else {
+			f.lastAllocationState = VideoAllocationStateOptimal
+		}
+		return true
 	}
 
 	// try moving spatial layer up if already at max temporal layer of current spatial layer
@@ -1183,12 +1396,30 @@ func (f *Forwarder) IncreaseAllocation(brs [3][4]uint64) (increased bool, bandwi
 		f.targetSpatialLayer = nextSpatialLayer
 		f.targetTemporalLayer = 0
 
-		increased = true
-		bandwidthRequested = brs[nextSpatialLayer][0]
-		return
+		f.lastAllocationRequestBps = brs[nextSpatialLayer][0]
+		if f.lastAllocationRequestBps < optimalBandwidthNeeded {
+			f.lastAllocationState = VideoAllocationStateDeficient
+		} else {
+			f.lastAllocationState = VideoAllocationStateOptimal
+		}
+		return true
 	}
 
-	return
+	return false
+}
+
+func (f *Forwarder) AllocationState() VideoAllocationState {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.lastAllocationState
+}
+
+func (f *Forwarder) AllocationBandwidth() int64 {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.lastAllocationRequestBps
 }
 
 func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
