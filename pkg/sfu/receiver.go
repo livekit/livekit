@@ -26,20 +26,21 @@ type TrackReceiver interface {
 	DeleteDownTrack(peerID string)
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+	Codec() webrtc.RTPCodecCapability
 }
 
 // Receiver defines a interface for a track receivers
 type Receiver interface {
 	TrackID() string
 	StreamID() string
-	Codec() webrtc.RTPCodecParameters
+	Codec() webrtc.RTPCodecCapability
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() [3][4]int64
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	DeleteDownTrack(peerID string)
+	DeleteDownTrack(ID string)
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
@@ -48,23 +49,12 @@ type Receiver interface {
 	DebugInfo() map[string]interface{}
 }
 
-const (
-	lostUpdateDelta = 1e9
-)
-
-/* RAJA-REMOVE
-var (
-	defaultBitratesCumulative = [][]uint64{{60000, 90000, 150000, 0}, {200000, 300000, 500000, 0}, {400000, 600000, 1000000, 0}}
-)
-RAJA-REMOVE */
-
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
 	peerID          string
 	trackID         string
 	streamID        string
 	kind            webrtc.RTPCodecType
-	stream          string
 	receiver        *webrtc.RTPReceiver
 	codec           webrtc.RTPCodecParameters
 	isSimulcast     bool
@@ -92,10 +82,6 @@ type WebRTCReceiver struct {
 	free        map[int]struct{}
 	numProcs    int
 	lbThreshold int
-
-	fracLostMu        sync.Mutex
-	maxDownFracLost   uint8
-	maxDownFracLostTs time.Time
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -176,8 +162,8 @@ func (w *WebRTCReceiver) SSRC(layer int) uint32 {
 	return 0
 }
 
-func (w *WebRTCReceiver) Codec() webrtc.RTPCodecParameters {
-	return w.codec
+func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
+	return w.codec.RTPCodecCapability
 }
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
@@ -355,7 +341,6 @@ func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]int64 {
 			tls := make([]int64, 4)
 			if w.hasSpatialLayer(int32(i)) {
 				tls = buff.BitrateTemporalCumulative()
-				// RAJA-REMOVE w.maybeUseDefaultBitrate(tls, i)
 			}
 
 			for j := 0; j < len(br[i]); j++ {
@@ -538,34 +523,6 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 	w.index[track.PeerID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
 }
-
-/* RAJA-REMOVE
-func (w *WebRTCReceiver) maybeUseDefaultBitrate(tlbs []uint64, layer int) {
-	for _, tlb := range tlbs {
-		if tlb != uint64(0) {
-			// some layer has data
-			return
-		}
-	}
-
-	//
-	// Before measured bitrate is available, initialize with some sane default values.
-	// Note that not all clients send temporal layers or have same number of temporal layers.
-	//   o Safari 15 - does not do temporal layers
-	//   o Chrome 95 - does two temporal layers
-	//   o Firefox 94 - does three temporal layers
-	// Default initialization is to ensure that StreamAllocator has some data and can
-	// forward tracks as soon as available.
-	//
-	// Measured bitrate will be available periodically starting shortly after stream
-	// starts flowing (see `reportDelta` in buffer.go). Once that information becomes
-	// available, it will be used for stream allocation.
-	//
-	for i := 0; i < len(tlbs); i++ {
-		tlbs[i] = defaultBitratesCumulative[layer][i]
-	}
-}
-RAJA-REMOVE */
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{

@@ -222,10 +222,10 @@ func VP8PictureIdSizeDiff(mBit1 bool, mBit2 bool) int {
 	return -1
 }
 
-// isH264Keyframe detects if h264 payload is a keyframe
+// IsH264Keyframe detects if h264 payload is a keyframe
 // this code was taken from https://github.com/jech/galene/blob/codecs/rtpconn/rtpreader.go#L45
 // all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
-func isH264Keyframe(payload []byte) bool {
+func IsH264Keyframe(payload []byte) bool {
 	if len(payload) < 1 {
 		return false
 	}

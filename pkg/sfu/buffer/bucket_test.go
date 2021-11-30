@@ -78,7 +78,7 @@ func Test_queue(t *testing.T) {
 	assert.Equal(t, expectedSN, np.SequenceNumber)
 
 	_, err = q.AddPacket(buf, 8, false)
-	assert.ErrorIs(t, err, errRTXPacket)
+	assert.ErrorIs(t, err, ErrRTXPacket)
 }
 
 func Test_queue_edges(t *testing.T) {
