@@ -72,9 +72,17 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	roomName := r.FormValue("room")
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
+	publishParam := r.FormValue("publish")
 
 	if onlyName != "" {
 		roomName = onlyName
+	}
+
+	// this is new connection with publish only permissions for an existing participant
+	if publishParam != "" {
+		claims.Identity += "#" + publishParam
+		claims.Video.SetCanSubscribe(false)
+		claims.Video.SetCanPublish(true)
 	}
 
 	if router, ok := s.router.(routing.Router); ok {
