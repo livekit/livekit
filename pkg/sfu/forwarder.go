@@ -203,24 +203,18 @@ func (f *Forwarder) disable() {
 }
 
 func (f *Forwarder) getOptimalBandwidthNeeded(brs [3][4]int64) int64 {
-	optimalBandwidthNeeded := int64(0)
+	// LK-TODO for temporal preference, traverse the bitrates array the other way
 	for i := f.maxSpatialLayer; i >= 0; i-- {
 		for j := f.maxTemporalLayer; j >= 0; j-- {
 			if brs[i][j] == 0 {
 				continue
 			}
-			if optimalBandwidthNeeded == 0 {
-				optimalBandwidthNeeded = brs[i][j]
-				break
-			}
-		}
 
-		if optimalBandwidthNeeded != 0 {
-			break
+			return brs[i][j]
 		}
 	}
 
-	return optimalBandwidthNeeded
+	return 0
 }
 
 func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs [3][4]int64) (result VideoAllocationResult) {
