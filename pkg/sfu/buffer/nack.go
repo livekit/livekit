@@ -14,18 +14,18 @@ type nack struct {
 	nacked uint8
 }
 
-type nackQueue struct {
+type NackQueue struct {
 	nacks []nack
 	kfSN  uint32
 }
 
-func newNACKQueue() *nackQueue {
-	return &nackQueue{
+func NewNACKQueue() *NackQueue {
+	return &NackQueue{
 		nacks: make([]nack, 0, maxNackCache+1),
 	}
 }
 
-func (n *nackQueue) remove(extSN uint32) {
+func (n *NackQueue) Remove(extSN uint32) {
 	i := sort.Search(len(n.nacks), func(i int) bool { return n.nacks[i].sn >= extSN })
 	if i >= len(n.nacks) || n.nacks[i].sn != extSN {
 		return
@@ -34,7 +34,7 @@ func (n *nackQueue) remove(extSN uint32) {
 	n.nacks = n.nacks[:len(n.nacks)-1]
 }
 
-func (n *nackQueue) push(extSN uint32) {
+func (n *NackQueue) Push(extSN uint32) {
 	i := sort.Search(len(n.nacks), func(i int) bool { return n.nacks[i].sn >= extSN })
 	if i < len(n.nacks) && n.nacks[i].sn == extSN {
 		return
@@ -56,7 +56,7 @@ func (n *nackQueue) push(extSN uint32) {
 	}
 }
 
-func (n *nackQueue) pairs(headSN uint32) ([]rtcp.NackPair, bool) {
+func (n *NackQueue) Pairs(headSN uint32) ([]rtcp.NackPair, bool) {
 	if len(n.nacks) == 0 {
 		return nil, false
 	}

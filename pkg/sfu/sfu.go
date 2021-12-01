@@ -10,12 +10,12 @@ import (
 var Logger logr.Logger = logr.Discard()
 
 var (
-	packetFactory *sync.Pool
+	PacketFactory *sync.Pool
 )
 
 func init() {
 	// Init packet factory
-	packetFactory = &sync.Pool{
+	PacketFactory = &sync.Pool{
 		New: func() interface{} {
 			b := make([]byte, 1460)
 			return &b
