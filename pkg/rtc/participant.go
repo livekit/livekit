@@ -1320,21 +1320,17 @@ func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdat
 	}
 
 	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
-	if len(update.Paused) != 0 {
-		for _, streamedTrack := range update.Paused {
-			streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
-				ParticipantSid: streamedTrack.ParticipantSid,
-				TrackSid:       streamedTrack.TrackSid,
-			})
-		}
+	for _, streamedTrack := range update.Paused {
+		streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
 	}
-	if len(update.Resumed) != 0 {
-		for _, streamedTrack := range update.Resumed {
-			streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
-				ParticipantSid: streamedTrack.ParticipantSid,
-				TrackSid:       streamedTrack.TrackSid,
-			})
-		}
+	for _, streamedTrack := range update.Resumed {
+		streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
