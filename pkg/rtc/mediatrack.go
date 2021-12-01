@@ -390,7 +390,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
-	if atomic.LoadUint32(&t.numUpTracks) > 1 {
+	if atomic.LoadUint32(&t.numUpTracks) > 1 || track.RID() != "" {
+		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
 		t.simulcasted.TrySet(true)
 	}
 
