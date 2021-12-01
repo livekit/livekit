@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/protocol/proto"
 )
 
@@ -109,6 +110,16 @@ type FakePublishedTrack struct {
 	}
 	publishLossPercentageReturnsOnCall map[int]struct {
 		result1 uint32
+	}
+	ReceiverStub        func() sfu.TrackReceiver
+	receiverMutex       sync.RWMutex
+	receiverArgsForCall []struct {
+	}
+	receiverReturns struct {
+		result1 sfu.TrackReceiver
+	}
+	receiverReturnsOnCall map[int]struct {
+		result1 sfu.TrackReceiver
 	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
@@ -699,6 +710,59 @@ func (fake *FakePublishedTrack) PublishLossPercentageReturnsOnCall(i int, result
 	}{result1}
 }
 
+func (fake *FakePublishedTrack) Receiver() sfu.TrackReceiver {
+	fake.receiverMutex.Lock()
+	ret, specificReturn := fake.receiverReturnsOnCall[len(fake.receiverArgsForCall)]
+	fake.receiverArgsForCall = append(fake.receiverArgsForCall, struct {
+	}{})
+	stub := fake.ReceiverStub
+	fakeReturns := fake.receiverReturns
+	fake.recordInvocation("Receiver", []interface{}{})
+	fake.receiverMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) ReceiverCallCount() int {
+	fake.receiverMutex.RLock()
+	defer fake.receiverMutex.RUnlock()
+	return len(fake.receiverArgsForCall)
+}
+
+func (fake *FakePublishedTrack) ReceiverCalls(stub func() sfu.TrackReceiver) {
+	fake.receiverMutex.Lock()
+	defer fake.receiverMutex.Unlock()
+	fake.ReceiverStub = stub
+}
+
+func (fake *FakePublishedTrack) ReceiverReturns(result1 sfu.TrackReceiver) {
+	fake.receiverMutex.Lock()
+	defer fake.receiverMutex.Unlock()
+	fake.ReceiverStub = nil
+	fake.receiverReturns = struct {
+		result1 sfu.TrackReceiver
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) ReceiverReturnsOnCall(i int, result1 sfu.TrackReceiver) {
+	fake.receiverMutex.Lock()
+	defer fake.receiverMutex.Unlock()
+	fake.ReceiverStub = nil
+	if fake.receiverReturnsOnCall == nil {
+		fake.receiverReturnsOnCall = make(map[int]struct {
+			result1 sfu.TrackReceiver
+		})
+	}
+	fake.receiverReturnsOnCall[i] = struct {
+		result1 sfu.TrackReceiver
+	}{result1}
+}
+
 func (fake *FakePublishedTrack) RemoveAllSubscribers() {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
@@ -993,6 +1057,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.onCloseMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
+	fake.receiverMutex.RLock()
+	defer fake.receiverMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
