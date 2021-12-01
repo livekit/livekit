@@ -84,6 +84,7 @@ var (
 
 type Options struct {
 	AutoSubscribe bool
+	Publish       string
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -96,7 +97,8 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t&publish=%s",
+			connectUrl, opts.AutoSubscribe, opts.Publish)
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
