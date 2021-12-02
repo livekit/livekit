@@ -135,7 +135,10 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	t.lock.RUnlock()
 }
 
-func (t *MediaTrack) OnClose(f func()) {
+func (t *MediaTrack) AddOnClose(f func()) {
+	if f == nil {
+		return
+	}
 	t.onClose = append(t.onClose, f)
 }
 

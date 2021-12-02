@@ -10,6 +10,11 @@ import (
 )
 
 type FakePublishedTrack struct {
+	AddOnCloseStub        func(func())
+	addOnCloseMutex       sync.RWMutex
+	addOnCloseArgsForCall []struct {
+		arg1 func()
+	}
 	AddSubscriberStub        func(types.Participant) error
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
@@ -96,11 +101,6 @@ type FakePublishedTrack struct {
 		result1 uint32
 		result2 uint32
 	}
-	OnCloseStub        func(func())
-	onCloseMutex       sync.RWMutex
-	onCloseArgsForCall []struct {
-		arg1 func()
-	}
 	PublishLossPercentageStub        func() uint32
 	publishLossPercentageMutex       sync.RWMutex
 	publishLossPercentageArgsForCall []struct {
@@ -171,6 +171,38 @@ type FakePublishedTrack struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakePublishedTrack) AddOnClose(arg1 func()) {
+	fake.addOnCloseMutex.Lock()
+	fake.addOnCloseArgsForCall = append(fake.addOnCloseArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.AddOnCloseStub
+	fake.recordInvocation("AddOnClose", []interface{}{arg1})
+	fake.addOnCloseMutex.Unlock()
+	if stub != nil {
+		fake.AddOnCloseStub(arg1)
+	}
+}
+
+func (fake *FakePublishedTrack) AddOnCloseCallCount() int {
+	fake.addOnCloseMutex.RLock()
+	defer fake.addOnCloseMutex.RUnlock()
+	return len(fake.addOnCloseArgsForCall)
+}
+
+func (fake *FakePublishedTrack) AddOnCloseCalls(stub func(func())) {
+	fake.addOnCloseMutex.Lock()
+	defer fake.addOnCloseMutex.Unlock()
+	fake.AddOnCloseStub = stub
+}
+
+func (fake *FakePublishedTrack) AddOnCloseArgsForCall(i int) func() {
+	fake.addOnCloseMutex.RLock()
+	defer fake.addOnCloseMutex.RUnlock()
+	argsForCall := fake.addOnCloseArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakePublishedTrack) AddSubscriber(arg1 types.Participant) error {
@@ -625,38 +657,6 @@ func (fake *FakePublishedTrack) NumUpTracksReturnsOnCall(i int, result1 uint32, 
 	}{result1, result2}
 }
 
-func (fake *FakePublishedTrack) OnClose(arg1 func()) {
-	fake.onCloseMutex.Lock()
-	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.OnCloseStub
-	fake.recordInvocation("OnClose", []interface{}{arg1})
-	fake.onCloseMutex.Unlock()
-	if stub != nil {
-		fake.OnCloseStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) OnCloseCallCount() int {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	return len(fake.onCloseArgsForCall)
-}
-
-func (fake *FakePublishedTrack) OnCloseCalls(stub func(func())) {
-	fake.onCloseMutex.Lock()
-	defer fake.onCloseMutex.Unlock()
-	fake.OnCloseStub = stub
-}
-
-func (fake *FakePublishedTrack) OnCloseArgsForCall(i int) func() {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	argsForCall := fake.onCloseArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
 	fake.publishLossPercentageMutex.Lock()
 	ret, specificReturn := fake.publishLossPercentageReturnsOnCall[len(fake.publishLossPercentageArgsForCall)]
@@ -1037,6 +1037,8 @@ func (fake *FakePublishedTrack) ToProtoReturnsOnCall(i int, result1 *livekit.Tra
 func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.addOnCloseMutex.RLock()
+	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
@@ -1053,8 +1055,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.nameMutex.RUnlock()
 	fake.numUpTracksMutex.RLock()
 	defer fake.numUpTracksMutex.RUnlock()
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.receiverMutex.RLock()

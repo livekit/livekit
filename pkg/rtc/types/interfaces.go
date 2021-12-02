@@ -116,7 +116,7 @@ type PublishedTrack interface {
 	Receiver() sfu.TrackReceiver
 
 	// callbacks
-	OnClose(func())
+	AddOnClose(func())
 }
 
 //counterfeiter:generate . SubscribedTrack

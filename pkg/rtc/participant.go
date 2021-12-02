@@ -428,7 +428,6 @@ func (p *ParticipantImpl) Close() error {
 	p.lock.Lock()
 	for _, t := range p.publishedTracks {
 		// skip updates
-		t.OnClose(nil)
 		t.RemoveAllSubscribers()
 	}
 
@@ -1079,7 +1078,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 
 	track.Start()
 
-	track.OnClose(func() {
+	track.AddOnClose(func() {
 		// cleanup
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
@@ -1088,7 +1087,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
-		track.OnClose(nil)
 	})
 
 	if p.onTrackPublished != nil {
