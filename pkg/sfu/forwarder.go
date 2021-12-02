@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 
@@ -40,9 +39,6 @@ type VideoAllocationResult struct {
 }
 
 type Forwarder struct {
-	id string	// REMOVE
-	peerId string	// REMOVE
-
 	lock  sync.RWMutex
 	codec webrtc.RTPCodecCapability
 	kind  webrtc.RTPCodecType
@@ -70,10 +66,8 @@ type Forwarder struct {
 	vp8Munger *VP8Munger
 }
 
-func NewForwarder(id string, peerId string, codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := &Forwarder{
-		id: id,
-		peerId: peerId,
 		codec: codec,
 		kind:  kind,
 
@@ -240,7 +234,6 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("SA_DEBUG id: %s, peerId: %s, optimal: %d, availalble layers: %+v, bitrates: %+v, availableChannelCapacity: %d\n", f.id, f.peerId, optimalBandwidthNeeded, f.availableLayers, brs, availableChannelCapacity)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
@@ -254,7 +247,6 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		}
 
 		// feed bitrate is not yet calculated
-		fmt.Printf("SA_DEBUG id: %s, peerId: %s, am2\n", f.id, f.peerId)	// REMOVE
 		result.state = VideoAllocationStateAwaitingMeasurement
 		f.lastAllocationState = result.state
 
@@ -276,7 +268,6 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 				f.targetTemporalLayer = 0
 			}
 
-			fmt.Printf("SA_DEBUG, id: %s, peerId: %s, free allocating %d, %d\n", f.id, f.peerId, f.targetSpatialLayer, f.targetTemporalLayer)	// REMOVE
 		} else {
 			// if not optimistically started, nothing else to do
 			if f.targetSpatialLayer == InvalidSpatialLayer {
@@ -323,7 +314,6 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 
 				f.targetSpatialLayer = int32(i)
 				f.targetTemporalLayer = int32(j)
-				fmt.Printf("SA_DEBUG, id: %s, peerId: %s, allocating %d, %d\n", f.id, f.peerId, f.targetSpatialLayer, f.targetTemporalLayer)	// REMOVE
 				return
 			}
 		}
@@ -375,7 +365,6 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("SA_DEBUG finalize id: %s, peerId: %s, optimal: %d, availalble layers: %+v, bitrates: %+v\n", f.id, f.peerId, optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed dry
@@ -399,7 +388,6 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 
 			f.targetSpatialLayer = int32(i)
 			f.targetTemporalLayer = int32(j)
-			fmt.Printf("SA_DEBUG, id: %s, peerId: %s, finalize allocating %d, %d\n", f.id, f.peerId, f.targetSpatialLayer, f.targetTemporalLayer)	// REMOVE
 			return
 		}
 	}
@@ -429,7 +417,6 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) bool {
 		}
 
 		// bitrates not available yet
-		fmt.Printf("SA_DEBUG id: %s, peerId: %s, am1\n", f.id, f.peerId)	// REMOVE
 		f.lastAllocationState = VideoAllocationStateAwaitingMeasurement
 		f.lastAllocationRequestBps = 0
 		return false
@@ -557,7 +544,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetSpatialLayer == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				fmt.Printf("SA_DEBUG id: %s, peerId: %s, locking to target layer, %d -> %d\n", f.id, f.peerId, f.currentSpatialLayer, f.targetSpatialLayer)	// ERMOVE
 				f.currentSpatialLayer = f.targetSpatialLayer
 			} else {
 				tp.shouldSendPLI = true

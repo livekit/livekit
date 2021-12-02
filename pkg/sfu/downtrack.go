@@ -194,7 +194,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		receiver:      r,
 		codec:         c,
 		kind:          kind,
-		forwarder:     NewForwarder(r.TrackID(), peerID, c, kind),
+		forwarder:     NewForwarder(c, kind),
 	}
 
 	if strings.ToLower(c.MimeType) == "video/vp8" {
