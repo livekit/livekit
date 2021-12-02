@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	feedbackTypes = []webrtc.RTCPFeedback{
+	FeedbackTypes = []webrtc.RTCPFeedback{
 		{Type: webrtc.TypeRTCPFBGoogREMB},
 		{Type: webrtc.TypeRTCPFBNACK},
 		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
@@ -62,7 +62,7 @@ type MediaTrack struct {
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
 
-	onClose func()
+	onClose []func()
 }
 
 type MediaTrackParams struct {
@@ -135,8 +135,11 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	t.lock.RUnlock()
 }
 
-func (t *MediaTrack) OnClose(f func()) {
-	t.onClose = f
+func (t *MediaTrack) AddOnClose(f func()) {
+	if f == nil {
+		return
+	}
+	t.onClose = append(t.onClose, f)
 }
 
 func (t *MediaTrack) IsSubscriber(subId string) bool {
@@ -183,7 +186,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		ClockRate:    codec.ClockRate,
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
-		RTCPFeedback: feedbackTypes,
+		RTCPFeedback: FeedbackTypes,
 	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err
@@ -376,8 +379,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.lock.Unlock()
 			t.RemoveAllSubscribers()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
-			if onclose != nil {
-				onclose()
+			for _, f := range onclose {
+				f()
 			}
 		})
 		t.params.Telemetry.TrackPublished(context.Background(), t.params.ParticipantID, t.ToProto())
@@ -590,4 +593,8 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	}
 
 	return info
+}
+
+func (t *MediaTrack) Receiver() sfu.TrackReceiver {
+	return t.receiver
 }
