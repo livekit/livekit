@@ -700,6 +700,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if s.state == StateStable {
 		update := NewStreamedTracksUpdate()
 		result := track.Allocate(ChannelCapacityInfinity)
+		fmt.Printf("SA_DEBUG track allocate result, participant: %s, track: %+v, result: %+v\n", s.participantID, track, result)	// REMOVE
 		update.HandleStreamingChange(result.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -730,6 +731,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	update := NewStreamedTracksUpdate()
 
 	result := track.TryAllocate(lpExpectedBps)
+	fmt.Printf("SA_DEBUG try track allocate result, participant: %s, track: %+v, result: %+v\n", s.participantID, track, result)	// REMOVE
 
 	update.HandleStreamingChange(result.change, track)
 
@@ -832,6 +834,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 		//    - pause if there is not enough capacity for any layer
 		//
 		result := track.Allocate(availableChannelCapacity)
+		fmt.Printf("SA_DEBUG allocate all track result, participant: %s, track: %+v, result: %+v\n", s.participantID, track, result)	// REMOVE
 
 		update.HandleStreamingChange(result.change, track)
 

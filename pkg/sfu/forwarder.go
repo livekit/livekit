@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -234,6 +235,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	fmt.Printf("SA_DEBUG optimal: %d, availalble layers: %+v, bitrates: %+v, availableChannelCapacity: %d\n", optimalBandwidthNeeded, f.availableLayers, brs, availableChannelCapacity)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
@@ -254,10 +256,12 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 			// channel capacity allows a free pass.
 			// So, resume with the highest layer available <= max subscribed layer
 
+/*
 			// if already optimistically started, nothing else to do
 			if f.targetSpatialLayer != InvalidSpatialLayer {
 				return
 			}
+*/
 
 			f.targetSpatialLayer = int32(f.availableLayers[len(f.availableLayers)-1])
 			if f.targetSpatialLayer > f.maxSpatialLayer {
@@ -269,6 +273,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 				f.targetTemporalLayer = 0
 			}
 
+			fmt.Printf("SA_DEBUG, free allocating %d, %d\n", f.targetSpatialLayer, f.targetTemporalLayer)	// REMOVE
 			result.change = VideoStreamingChangeResuming
 		} else {
 			// if not optimistically started, nothing else to do
@@ -316,6 +321,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 
 				f.targetSpatialLayer = int32(i)
 				f.targetTemporalLayer = int32(j)
+				fmt.Printf("SA_DEBUG, allocating %d, %d\n", f.targetSpatialLayer, f.targetTemporalLayer)	// REMOVE
 				return
 			}
 		}
@@ -546,6 +552,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetSpatialLayer == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
+				fmt.Printf("SA_DEBUG locking to target layer, %d -> %d\n", f.currentSpatialLayer, f.targetSpatialLayer)	// ERMOVE
 				f.currentSpatialLayer = f.targetSpatialLayer
 			} else {
 				tp.shouldSendPLI = true
