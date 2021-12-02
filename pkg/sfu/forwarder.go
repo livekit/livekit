@@ -253,7 +253,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		if availableChannelCapacity == ChannelCapacityInfinity {
 			// channel capacity allows a free pass.
 			// So, resume with the highest layer available <= max subscribed layer
-			// If already resumed, move allocation to the higheest available layer <= max subscribed layer
+			// If already resumed, move allocation to the highest available layer <= max subscribed layer
 			if f.targetSpatialLayer == InvalidSpatialLayer {
 				result.change = VideoStreamingChangeResuming
 			}
