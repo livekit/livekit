@@ -80,10 +80,12 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
-		// Make sure grant does not have 'subscribe' set,
-		if claims.Video.CanSubscribe != nil && *claims.Video.CanSubscribe == true {
+		// Make sure grant has CanPublish set,
+		if claims.Video.CanPublish == nil || *claims.Video.CanPublish == false {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
+		// Make sure by default subscribe is off
+		claims.Video.SetCanSubscribe(false)
 		claims.Identity += "#" + publishParam
 	}
 

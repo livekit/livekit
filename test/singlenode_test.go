@@ -42,23 +42,26 @@ func TestClientConnectDuplicate(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
 	defer finish()
 
-	c1 := createRTCClient("c1", defaultServerPort, nil)
+	token := joinToken(testRoom, "c1")
+	c1 := createRTCClientWithToken(token, defaultServerPort, nil)
 
-	opts := &testclient.Options{
-		Publish: "duplicate_connection",
-	}
+	waitUntilConnected(t, c1)
 
-	c1Dup := createRTCClient("c1", defaultServerPort, opts)
-
-	waitUntilConnected(t, c1, c1Dup)
-
-	// publish 3 tracks and ensure clients receive it ok
+	// publish 2 tracks
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
 	require.NoError(t, err)
 	defer t1.Stop()
 	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
 	require.NoError(t, err)
 	defer t2.Stop()
+
+	opts := &testclient.Options{
+		Publish: "duplicate_connection",
+	}
+	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
+
+	waitUntilConnected(t, c1Dup)
+
 	t3, err := c1Dup.AddStaticTrack("video/vp8", "video", "webcam")
 	require.NoError(t, err)
 	defer t3.Stop()

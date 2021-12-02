@@ -267,6 +267,9 @@ func (c *RTCClient) Run() error {
 				c.remoteParticipants[p.Sid] = p
 			}
 			c.lock.Unlock()
+			if !msg.Join.SubscriberPrimary {
+				c.publisher.Negotiate()
+			}
 
 			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
 		case *livekit.SignalResponse_Answer:

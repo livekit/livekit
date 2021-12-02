@@ -203,6 +203,22 @@ func createRTCClient(name string, port int, opts *testclient.Options) *testclien
 	return c
 }
 
+// creates a client and runs against server
+func createRTCClientWithToken(token string, port int, opts *testclient.Options) *testclient.RTCClient {
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
+	if err != nil {
+		panic(err)
+	}
+
+	c, err := testclient.NewRTCClient(ws)
+	if err != nil {
+		panic(err)
+	}
+
+	go c.Run()
+
+	return c
+}
 func redisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
