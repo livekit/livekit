@@ -428,7 +428,6 @@ func (p *ParticipantImpl) Close() error {
 	p.lock.Lock()
 	for _, t := range p.publishedTracks {
 		// skip updates
-		t.OnClose(nil)
 		t.RemoveAllSubscribers()
 	}
 
@@ -1079,7 +1078,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 
 	track.Start()
 
-	track.OnClose(func() {
+	track.AddOnClose(func() {
 		// cleanup
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
@@ -1088,7 +1087,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
-		track.OnClose(nil)
 	})
 
 	if p.onTrackPublished != nil {
@@ -1320,21 +1318,17 @@ func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdat
 	}
 
 	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
-	if len(update.Paused) != 0 {
-		for _, streamedTrack := range update.Paused {
-			streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
-				ParticipantSid: streamedTrack.ParticipantSid,
-				TrackSid:       streamedTrack.TrackSid,
-			})
-		}
+	for _, streamedTrack := range update.Paused {
+		streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
 	}
-	if len(update.Resumed) != 0 {
-		for _, streamedTrack := range update.Resumed {
-			streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
-				ParticipantSid: streamedTrack.ParticipantSid,
-				TrackSid:       streamedTrack.TrackSid,
-			})
-		}
+	for _, streamedTrack := range update.Resumed {
+		streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{

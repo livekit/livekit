@@ -113,9 +113,10 @@ type PublishedTrack interface {
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
 	ToProto() *livekit.TrackInfo
+	Receiver() sfu.TrackReceiver
 
 	// callbacks
-	OnClose(func())
+	AddOnClose(func())
 }
 
 //counterfeiter:generate . SubscribedTrack

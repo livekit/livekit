@@ -91,7 +91,7 @@ APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
 
 ### Starting the server
 
-In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the keys it should use
+In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the API keys it should use
 in `LIVEKIT_KEYS`. LiveKit could also use a [config file](config-sample.yaml) or config environment
 variable `LIVEKIT_CONFIG`
 
