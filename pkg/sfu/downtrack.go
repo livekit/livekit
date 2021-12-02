@@ -194,7 +194,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		receiver:      r,
 		codec:         c,
 		kind:          kind,
-		forwarder:     NewForwarder(c, kind),
+		forwarder:     NewForwarder(r.TrackID(), peerID, c, kind),
 	}
 
 	if strings.ToLower(c.MimeType) == "video/vp8" {
@@ -551,7 +551,6 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 }
 
 func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocationResult {
-	fmt.Printf("SA_DEBUG allocate for id: %s, peerID: %s\n", d.id, d.peerID)	// REMOVE
 	return d.forwarder.Allocate(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
