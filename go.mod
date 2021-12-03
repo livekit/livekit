@@ -11,7 +11,7 @@ require (
 	github.com/gammazero/workerpool v1.1.2
 	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/zapr v1.1.0
-	github.com/go-redis/redis/v8 v8.11.3
+	github.com/go-redis/redis/v8 v8.11.4
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2

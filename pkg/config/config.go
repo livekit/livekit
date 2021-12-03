@@ -80,7 +80,6 @@ type RedisConfig struct {
 	Username          string   `yaml:"username"`
 	Password          string   `yaml:"password"`
 	DB                int      `yaml:"db"`
-	UseSentinel       bool     `yaml:"sentinel_enabled"`
 	MasterName        string   `yaml:"sentinel_master_name"`
 	SentinelUsername  string   `yaml:"sentinel_username"`
 	SentinelPassword  string   `yaml:"sentinel_password"`
@@ -214,7 +213,11 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 }
 
 func (conf *Config) HasRedis() bool {
-	return conf.Redis.Address != ""
+	return conf.Redis.Address != "" || conf.Redis.SentinelAddresses != nil
+}
+
+func (conf *Config) UseSentinel() bool {
+	return conf.Redis.SentinelAddresses != nil
 }
 
 func (conf *Config) updateFromCLI(c *cli.Context) error {

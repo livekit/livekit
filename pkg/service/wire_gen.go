@@ -118,13 +118,28 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	if !conf.HasRedis() {
 		return nil, nil
 	}
-	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
-		Addr:     conf.Redis.Address,
-		Username: conf.Redis.Username,
-		Password: conf.Redis.Password,
-		DB:       conf.Redis.DB,
-	})
+
+	var rc *redis.Client
+	if conf.UseSentinel() {
+		logger.Infow("using multi-node routing via redis", "sentinel", true, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		rc = redis.NewFailoverClient(&redis.FailoverOptions{
+			SentinelAddrs:    conf.Redis.SentinelAddresses,
+			SentinelUsername: conf.Redis.SentinelUsername,
+			SentinelPassword: conf.Redis.SentinelPassword,
+			MasterName:       conf.Redis.MasterName,
+			Username:         conf.Redis.Username,
+			Password:         conf.Redis.Password,
+			DB:               conf.Redis.DB,
+		})
+	} else {
+		logger.Infow("using multi-node routing via redis", "sentinel", false, "addr", conf.Redis.Address)
+		rc = redis.NewClient(&redis.Options{
+			Addr:     conf.Redis.Address,
+			Username: conf.Redis.Username,
+			Password: conf.Redis.Password,
+			DB:       conf.Redis.DB,
+		})
+	}
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
 		return nil, err

@@ -97,9 +97,10 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		return nil, nil
 	}
 
-	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	if conf.Redis.UseSentinel {
-		rc := redis.NewClient(&redis.FailoverOptions{
+	var rc *redis.Client
+	if conf.UseSentinel() {
+		logger.Infow("using multi-node routing via redis", "sentinel", true, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		rc = redis.NewFailoverClient(&redis.FailoverOptions{
 			SentinelAddrs:    conf.Redis.SentinelAddresses,
 			SentinelUsername: conf.Redis.SentinelUsername,
 			SentinelPassword: conf.Redis.SentinelPassword,
@@ -109,7 +110,8 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 			DB:               conf.Redis.DB,
 		})
 	} else {
-		rc := redis.NewClient(&redis.Options{
+		logger.Infow("using multi-node routing via redis", "sentinel", false, "addr", conf.Redis.Address)
+		rc = redis.NewClient(&redis.Options{
 			Addr:     conf.Redis.Address,
 			Username: conf.Redis.Username,
 			Password: conf.Redis.Password,
