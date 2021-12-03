@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
+	livekit "github.com/livekit/protocol/proto"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"
@@ -32,6 +33,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		routing.CreateRouter,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
+		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		NewRecordingService,
