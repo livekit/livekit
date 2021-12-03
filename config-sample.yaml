@@ -12,6 +12,14 @@ redis:
   # db: 0
   # username: myuser
   # password: mypassword
+  # To use sentinel remove the address key above and add the following
+  # sentinel_master_name: livekit
+  # sentinel_addresses:
+  # - livekit-redis-node-0.livekit-redis-headless:26379
+  # - livekit-redis-node-1.livekit-redis-headless:26379
+  # If you use a different set of credentials for sentinel add
+  # sentinel_username: user
+  # sentinel_addresses: pass
 
 # WebRTC configuration
 rtc:
