@@ -3,6 +3,7 @@ package selector
 import (
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/thoas/go-funk"
 )
@@ -19,4 +20,20 @@ func GetAvailableNodes(nodes []*livekit.Node) []*livekit.Node {
 	return funk.Filter(nodes, func(node *livekit.Node) bool {
 		return IsAvailable(node) && node.State == livekit.NodeState_SERVING
 	}).([]*livekit.Node)
+}
+
+// TODO: check remote node configured limit, instead of this node's config
+func LimitsReached(limitConfig config.LimitConfig, nodeStats *livekit.NodeStats) bool {
+	if nodeStats == nil {
+		return false
+	}
+
+	if limitConfig.NumTracks > 0 && limitConfig.NumTracks <= nodeStats.NumTracksIn+nodeStats.NumTracksOut {
+		return true
+	}
+	if limitConfig.BytesPerSec > 0 && limitConfig.BytesPerSec <= nodeStats.BytesInPerSec+nodeStats.BytesOutPerSec {
+		return true
+	}
+
+	return false
 }

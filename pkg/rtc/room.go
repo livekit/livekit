@@ -34,7 +34,7 @@ type Room struct {
 
 	config      WebRTCConfig
 	audioConfig *config.AudioConfig
-	telemetry   *telemetry.TelemetryService
+	telemetry   telemetry.TelemetryService
 
 	// map of identity -> Participant
 	participants    map[string]types.Participant
@@ -57,7 +57,7 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry *telemetry.TelemetryService) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
 		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
@@ -161,6 +161,9 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	if r.FirstJoinedAt() == 0 {
 		r.joinedAt.Store(time.Now().Unix())
 	}
+	if !participant.Hidden() {
+		r.Room.NumParticipants++
+	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -222,7 +225,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
-	if participant.ProtocolVersion().SubscriberAsPrimary() {
+	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
 		participant.Negotiate()
 	}
@@ -256,7 +259,11 @@ func (r *Room) RemoveParticipant(identity string) {
 	if ok {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
+		if !p.Hidden() {
+			r.Room.NumParticipants--
+		}
 	}
+
 	r.lock.Unlock()
 	if !ok {
 		return

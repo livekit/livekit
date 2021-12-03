@@ -158,22 +158,17 @@ func generateWire() error {
 
 	fmt.Println("wiring...")
 
-	cmd := exec.Command("go", "generate", "./cmd/...")
-	connectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
 	wire, err := getToolPath("wire")
 	if err != nil {
 		return err
 	}
-	cmd = exec.Command(wire)
+	cmd := exec.Command(wire)
 	cmd.Dir = "pkg/service"
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -183,18 +178,18 @@ func installDeps() error {
 }
 
 func installTools(force bool) error {
-	tools := []string{
-		"github.com/google/wire/cmd/wire",
+	tools := map[string]string{
+		"github.com/google/wire/cmd/wire": "latest",
 	}
-	for _, t := range tools {
-		if err := installTool(t, force); err != nil {
+	for t, v := range tools {
+		if err := installTool(t, v, force); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func installTool(url string, force bool) error {
+func installTool(url, version string, force bool) error {
 	name := filepath.Base(url)
 	if !force {
 		_, err := getToolPath(name)
@@ -204,8 +199,9 @@ func installTool(url string, force bool) error {
 		}
 	}
 
-	fmt.Printf("installing %s\n", name)
-	cmd := exec.Command("go", "get", "-u", url)
+	fmt.Printf("installing %s %s\n", name, version)
+	urlWithVersion := fmt.Sprintf("%s@%s", url, version)
+	cmd := exec.Command("go", "install", urlWithVersion)
 	connectStd(cmd)
 	if err := cmd.Run(); err != nil {
 		return err

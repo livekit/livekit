@@ -67,13 +67,13 @@ func Test_nackQueue_pairs(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := &nackQueue{
+			n := &NackQueue{
 				nacks: tt.fields.nacks,
 			}
 			for _, sn := range tt.args {
-				n.push(sn)
+				n.Push(sn)
 			}
-			got, _ := n.pairs(75530)
+			got, _ := n.Pairs(75530)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("pairs() = %v, want %v", got, tt.want)
 			}
@@ -108,11 +108,11 @@ func Test_nackQueue_push(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := &nackQueue{
+			n := &NackQueue{
 				nacks: tt.fields.nacks,
 			}
 			for _, sn := range tt.args.sn {
-				n.push(sn)
+				n.Push(sn)
 			}
 			var newSN []uint32
 			for _, sn := range n.nacks {
@@ -148,13 +148,13 @@ func Test_nackQueue(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := nackQueue{}
+			n := NackQueue{}
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			for i := 0; i < 100; i++ {
 				assert.NotPanics(t, func() {
-					n.push(uint32(r.Intn(60000)))
-					n.remove(uint32(r.Intn(60000)))
-					n.pairs(60001)
+					n.Push(uint32(r.Intn(60000)))
+					n.Remove(uint32(r.Intn(60000)))
+					n.Pairs(60001)
 				})
 			}
 		})
@@ -181,11 +181,11 @@ func Test_nackQueue_remove(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := nackQueue{}
+			n := NackQueue{}
 			for _, sn := range tt.args.sn {
-				n.push(sn)
+				n.Push(sn)
 			}
-			n.remove(5)
+			n.Remove(5)
 			var newSN []uint32
 			for _, sn := range n.nacks {
 				newSN = append(newSN, sn.sn)

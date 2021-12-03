@@ -107,22 +107,36 @@
 package sfu
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/gammazero/deque"
+
+	"github.com/livekit/protocol/logger"
 )
 
+type ProberParams struct {
+	ParticipantID string
+	Logger        logger.Logger
+}
+
 type Prober struct {
+	participantID string
+	logger        logger.Logger
+
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque
 	activeCluster *Cluster
 
-	onSendProbe func(bytesToSend int) int
+	onSendProbe func(bytesToSend int)
 }
 
-func NewProber() *Prober {
-	p := &Prober{}
+func NewProber(params ProberParams) *Prober {
+	p := &Prober{
+		participantID: params.ParticipantID,
+		logger:        params.Logger,
+	}
 	p.clusters.SetMinCapacity(2)
 	return p
 }
@@ -136,12 +150,17 @@ func (p *Prober) IsRunning() bool {
 
 func (p *Prober) Reset() {
 	p.clustersMu.Lock()
-	// LK-TODO - log if active cluster is getting reset, maybe log state of all clusters
 	defer p.clustersMu.Unlock()
+
+	if p.activeCluster != nil {
+		p.logger.Debugw("resetting active cluster", "participant", p.participantID, "cluster", p.activeCluster.String())
+	}
+
 	p.clusters.Clear()
+	p.activeCluster = nil
 }
 
-func (p *Prober) OnSendProbe(f func(bytesToSend int) int) {
+func (p *Prober) OnSendProbe(f func(bytesToSend int)) {
 	p.onSendProbe = f
 }
 
@@ -151,7 +170,7 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 	}
 
 	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
-	// LK-TODO - log information about added cluster
+	p.logger.Debugw("cluster added", "participant", p.participantID, "cluster", cluster.String())
 
 	p.pushBackClusterAndMaybeStart(cluster)
 }
@@ -163,6 +182,15 @@ func (p *Prober) PacketSent(size int) {
 	}
 
 	cluster.PacketSent(size)
+}
+
+func (p *Prober) ProbeSent(size int) {
+	cluster := p.getFrontCluster()
+	if cluster == nil {
+		return
+	}
+
+	cluster.ProbeSent(size)
 }
 
 func (p *Prober) getFrontCluster() *Cluster {
@@ -227,12 +255,17 @@ func (p *Prober) run() {
 			return
 		}
 
-		if !cluster.Process(p) {
+		cluster.Process(p)
+
+		if cluster.IsFinished() {
+			p.logger.Debugw("cluster finished", "participant", p.participantID, "cluster", cluster.String())
 			p.popFrontCluster(cluster)
 			continue
 		}
 	}
 }
+
+//---------------------------------
 
 type Cluster struct {
 	// LK-TODO-START
@@ -294,16 +327,36 @@ func (c *Cluster) PacketSent(size int) {
 	c.bytesSentNonProbe += size
 }
 
-func (c *Cluster) Process(p *Prober) bool {
+func (c *Cluster) ProbeSent(size int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.bytesSentProbe += size
+}
+
+func (c *Cluster) IsFinished() bool {
 	c.lock.RLock()
+	defer c.lock.RUnlock()
 
 	// if already past deadline, end the cluster
 	timeElapsed := time.Since(c.startTime)
 	if timeElapsed > c.maxDuration {
-		// LK-TODO log information about short fall in probing
-		c.lock.RUnlock()
-		return false
+		return true
 	}
+
+	// do not end cluster until minDuration elapses even if rate is achieved.
+	// Ensures that the next cluster (if any) does not start early.
+	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
+		return true
+	}
+
+	return false
+}
+
+func (c *Cluster) Process(p *Prober) {
+	c.lock.RLock()
+
+	timeElapsed := time.Since(c.startTime)
 
 	// Calculate number of probe bytes that should have been sent since start.
 	// Overall goal is to send desired number of probe bytes in minDuration.
@@ -330,23 +383,25 @@ func (c *Cluster) Process(p *Prober) bool {
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
 	c.lock.RUnlock()
 
-	bytesSent := 0
 	if bytesShortFall > 0 && p.onSendProbe != nil {
-		bytesSent = p.onSendProbe(bytesShortFall)
-	}
-
-	c.lock.Lock()
-	c.bytesSentProbe += bytesSent
-
-	// do not end cluster until minDuration elapses even if rate is achieved.
-	// Ensures that the next cluster (if any) does not start early.
-	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
-		// LK-TODO - log data about how much time the probe finished compared to min/max
-		c.lock.Unlock()
-		return false
+		p.onSendProbe(bytesShortFall)
 	}
 
 	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
-	c.lock.Unlock()
-	return true
+}
+
+func (c *Cluster) String() string {
+	activeTimeMs := int64(0)
+	if !c.startTime.IsZero() {
+		activeTimeMs = time.Since(c.startTime).Milliseconds()
+	}
+
+	return fmt.Sprintf("bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+		c.desiredBytes,
+		c.bytesSentProbe,
+		c.bytesSentNonProbe,
+		c.desiredBytes-c.bytesSentProbe-c.bytesSentNonProbe,
+		activeTimeMs,
+		c.minDuration.Milliseconds(),
+		c.maxDuration.Milliseconds())
 }

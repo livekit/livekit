@@ -1,18 +1,40 @@
 package telemetry
 
 import (
+	"context"
 	"sync"
 
 	"github.com/gammazero/workerpool"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-type TelemetryService struct {
+type TelemetryService interface {
+	// stats
+	NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory
+	AddUpTrack(participantID string, buff *buffer.Buffer)
+	OnDownstreamPacket(participantID string, bytes int)
+	HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet)
+	Report(ctx context.Context, stats []*livekit.AnalyticsStat)
+
+	// events
+	RoomStarted(ctx context.Context, room *livekit.Room)
+	RoomEnded(ctx context.Context, room *livekit.Room)
+	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
+	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
+	TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo)
+	TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32)
+	TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
+	TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
+	RecordingStarted(ctx context.Context, recordingID string, req *livekit.StartRecordingRequest)
+	RecordingEnded(ctx context.Context, res *livekit.RecordingResult)
+}
+
+type telemetryService struct {
 	notifier    webhook.Notifier
 	webhookPool *workerpool.WorkerPool
 
@@ -20,26 +42,28 @@ type TelemetryService struct {
 	// one worker per participant
 	workers map[string]*StatsWorker
 
-	analyticsEnabled bool
-	authToken        string
-	nodeID           string
-	events           livekit.AnalyticsRecorderService_IngestEventsClient
-	stats            livekit.AnalyticsRecorderService_IngestStatsClient
+	analytics AnalyticsService
 }
 
-func NewTelemetryService(notifier webhook.Notifier) *TelemetryService {
-	return &TelemetryService{
+func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
+	return &telemetryService{
 		notifier:    notifier,
 		webhookPool: workerpool.New(1),
 		workers:     make(map[string]*StatsWorker),
-
-		analyticsEnabled: false, // TODO
-		authToken:        "",
-		nodeID:           "",
+		analytics:   analytics,
 	}
 }
 
-func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
+func (t *telemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	if w != nil {
+		w.AddBuffer(buff)
+	}
+}
+
+func (t *telemetryService) OnDownstreamPacket(participantID string, bytes int) {
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
@@ -48,7 +72,7 @@ func (t *TelemetryService) OnDownstreamPacket(participantID string, bytes int) {
 	}
 }
 
-func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
+func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
 	stats := &livekit.AnalyticsStat{}
 	for _, pkt := range pkts {
 		switch pkt := pkt.(type) {
@@ -86,7 +110,7 @@ func (t *TelemetryService) HandleRTCP(streamType livekit.StreamType, participant
 	}
 }
 
-func (t *TelemetryService) Report(stats []*livekit.AnalyticsStat) {
+func (t *telemetryService) Report(ctx context.Context, stats []*livekit.AnalyticsStat) {
 	for _, stat := range stats {
 		direction := prometheus.Incoming
 		if stat.Kind == livekit.StreamType_DOWNSTREAM {
@@ -97,18 +121,5 @@ func (t *TelemetryService) Report(stats []*livekit.AnalyticsStat) {
 		prometheus.IncrementBytes(direction, stat.TotalBytes)
 	}
 
-	t.sendStats(stats)
-}
-
-func (t *TelemetryService) sendStats(stats []*livekit.AnalyticsStat) {
-	if t.analyticsEnabled {
-		for _, stat := range stats {
-			stat.AuthToken = t.authToken
-			stat.Node = t.nodeID
-		}
-
-		if err := t.stats.Send(&livekit.AnalyticsStats{Stats: stats}); err != nil {
-			logger.Errorw("failed to send stats", err)
-		}
-	}
+	t.analytics.SendStats(ctx, stats)
 }

@@ -67,6 +67,7 @@ type Participant interface {
 	CanSubscribe() bool
 	CanPublishData() bool
 	Hidden() bool
+	SubscriberAsPrimary() bool
 
 	Start()
 	Close() error
@@ -112,9 +113,10 @@ type PublishedTrack interface {
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
 	ToProto() *livekit.TrackInfo
+	Receiver() sfu.TrackReceiver
 
 	// callbacks
-	OnClose(func())
+	AddOnClose(func())
 }
 
 //counterfeiter:generate . SubscribedTrack

@@ -39,7 +39,7 @@ type ParticipantParams struct {
 	Sink            routing.MessageSink
 	AudioConfig     config.AudioConfig
 	ProtocolVersion types.ProtocolVersion
-	Telemetry       *telemetry.TelemetryService
+	Telemetry       telemetry.TelemetryService
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
@@ -155,7 +155,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	primaryPC := p.publisher.pc
 
-	if p.ProtocolVersion().SubscriberAsPrimary() {
+	if p.SubscriberAsPrimary() {
 		primaryPC = p.subscriber.pc
 		ordered := true
 		// also create data channels for subs
@@ -179,6 +179,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
 	p.subscriber.OnOffer(p.onOffer)
+
+	p.subscriber.OnStreamedTracksChange(p.onStreamedTracksChange)
 
 	return p, nil
 }
@@ -426,7 +428,6 @@ func (p *ParticipantImpl) Close() error {
 	p.lock.Lock()
 	for _, t := range p.publishedTracks {
 		// skip updates
-		t.OnClose(nil)
 		t.RemoveAllSubscribers()
 	}
 
@@ -505,7 +506,11 @@ func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
 
 // signal connection methods
 
-func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error {
+func (p *ParticipantImpl) SendJoinResponse(
+	roomInfo *livekit.Room,
+	otherParticipants []*livekit.ParticipantInfo,
+	iceServers []*livekit.ICEServer,
+) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
@@ -516,7 +521,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 				ServerVersion:     version.Version,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary
-				SubscriberPrimary: p.ProtocolVersion().SubscriberAsPrimary(),
+				SubscriberPrimary: p.SubscriberAsPrimary(),
 			},
 		},
 	})
@@ -574,13 +579,13 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 
 	var dc *webrtc.DataChannel
 	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.ProtocolVersion().SubscriberAsPrimary() {
+		if p.SubscriberAsPrimary() {
 			dc = p.reliableDCSub
 		} else {
 			dc = p.reliableDC
 		}
 	} else {
-		if p.ProtocolVersion().SubscriberAsPrimary() {
+		if p.SubscriberAsPrimary() {
 			dc = p.lossyDCSub
 		} else {
 			dc = p.lossyDC
@@ -701,7 +706,7 @@ func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if subTrack.DownTrack().TargetSpatialLayer() < subTrack.DownTrack().MaxSpatialLayer() {
+		if subTrack.DownTrack().GetForwardingStatus() != sfu.ForwardingStatusOptimal {
 			reducedQualitySub = true
 		}
 		subLoss += subTrack.SubscribeLossPercentage()
@@ -753,6 +758,10 @@ func (p *ParticipantImpl) Hidden() bool {
 	return p.params.Hidden
 }
 
+func (p *ParticipantImpl) SubscriberAsPrimary() bool {
+	return p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
+}
+
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
@@ -796,6 +805,8 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
+
+	p.subscriber.AddTrack(subTrack)
 	p.subscribedTo.Store(subTrack.PublisherIdentity(), struct{}{})
 }
 
@@ -803,6 +814,9 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("removed subscribedTrack", "publisher", subTrack.PublisherIdentity(),
 		"participant", p.Identity(), "track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
+
+	p.subscriber.RemoveTrack(subTrack)
+
 	p.lock.Lock()
 	delete(p.subscribedTracks, subTrack.ID())
 	// remove from subscribed map
@@ -1064,7 +1078,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 
 	track.Start()
 
-	track.OnClose(func() {
+	track.AddOnClose(func() {
 		// cleanup
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
@@ -1073,7 +1087,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
-		track.OnClose(nil)
 	})
 
 	if p.onTrackPublished != nil {
@@ -1297,6 +1310,32 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			p.params.Logger.Warnw("failed to SetCodecPreferences", err)
 		}
 	}
+}
+
+func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdate) error {
+	if len(update.Paused) == 0 && len(update.Resumed) == 0 {
+		return nil
+	}
+
+	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
+	for _, streamedTrack := range update.Paused {
+		streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
+	}
+	for _, streamedTrack := range update.Resumed {
+		streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
+			ParticipantSid: streamedTrack.ParticipantSid,
+			TrackSid:       streamedTrack.TrackSid,
+		})
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_StreamedTracksUpdate{
+			StreamedTracksUpdate: streamedTracksUpdate,
+		},
+	})
 }
 
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {

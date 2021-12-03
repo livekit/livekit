@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -27,15 +28,22 @@ const (
 // It runs its own goroutine for detection, and fires OnStatusChanged callback
 type StreamTracker struct {
 	// number of samples needed per cycle
-	SamplesRequired uint32
+	samplesRequired uint32
 	// number of cycles needed to be active
-	CyclesRequired  uint64
-	CycleDuration   time.Duration
-	OnStatusChanged func(StreamStatus)
-	paused          atomicBool
-	status          atomicInt32 // stores StreamStatus
-	countSinceLast  uint32      // number of packets received since last check
-	running         chan struct{}
+	cyclesRequired uint64
+	cycleDuration  time.Duration
+
+	onStatusChanged func(status StreamStatus)
+
+	paused         atomicBool
+	countSinceLast uint32 // number of packets received since last check
+	running        chan struct{}
+
+	initMu      sync.Mutex
+	initialized bool
+
+	statusMu sync.RWMutex
+	status   StreamStatus
 
 	// only access within detectWorker
 	cycleCount uint64
@@ -44,35 +52,66 @@ type StreamTracker struct {
 	lastSN uint16
 }
 
-func NewStreamTracker() *StreamTracker {
+func NewStreamTracker(samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
 	s := &StreamTracker{
-		SamplesRequired: 5,
-		CyclesRequired:  60, // 30s of continuous stream
-		CycleDuration:   500 * time.Millisecond,
+		samplesRequired: samplesRequired,
+		cyclesRequired:  cyclesRequired,
+		cycleDuration:   cycleDuration,
+		status:          StreamStatusStopped,
 	}
-	s.status.set(int32(StreamStatusActive))
 	return s
 }
 
-func (s *StreamTracker) Status() StreamStatus {
-	return StreamStatus(s.status.get())
+func (s *StreamTracker) OnStatusChanged(f func(status StreamStatus)) {
+	s.onStatusChanged = f
 }
 
-func (s *StreamTracker) setStatus(status StreamStatus) {
-	if status != s.Status() {
-		s.status.set(int32(status))
-		if s.OnStatusChanged != nil {
-			s.OnStatusChanged(status)
-		}
+func (s *StreamTracker) Status() StreamStatus {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+
+	return s.status
+}
+
+func (s *StreamTracker) maybeSetActive() {
+	changed := false
+	s.statusMu.Lock()
+	if s.status != StreamStatusActive {
+		s.status = StreamStatusActive
+		changed = true
+	}
+	s.statusMu.Unlock()
+
+	if changed && s.onStatusChanged != nil {
+		s.onStatusChanged(StreamStatusActive)
 	}
 }
 
-func (s *StreamTracker) Start() {
+func (s *StreamTracker) maybeSetStopped() {
+	changed := false
+	s.statusMu.Lock()
+	if s.status != StreamStatusStopped {
+		s.status = StreamStatusStopped
+		changed = true
+	}
+	s.statusMu.Unlock()
+
+	if changed && s.onStatusChanged != nil {
+		s.onStatusChanged(StreamStatusStopped)
+	}
+}
+
+func (s *StreamTracker) init() {
+	s.maybeSetActive()
+
 	if s.isRunning() {
 		return
 	}
 	s.running = make(chan struct{})
 	go s.detectWorker()
+}
+
+func (s *StreamTracker) Start() {
 }
 
 func (s *StreamTracker) Stop() {
@@ -103,6 +142,21 @@ func (s *StreamTracker) Observe(sn uint16) {
 	if s.paused.get() {
 		return
 	}
+
+	s.initMu.Lock()
+	if !s.initialized {
+		// first packet
+		s.lastSN = sn
+		s.initialized = true
+		s.initMu.Unlock()
+
+		// declare stream active and start the detect worker
+		go s.init()
+
+		return
+	}
+	s.initMu.Unlock()
+
 	// ignore out-of-order SNs
 	if (sn - s.lastSN) > uint16(1<<15) {
 		return
@@ -112,7 +166,7 @@ func (s *StreamTracker) Observe(sn uint16) {
 }
 
 func (s *StreamTracker) detectWorker() {
-	ticker := time.NewTicker(s.CycleDuration)
+	ticker := time.NewTicker(s.cycleDuration)
 
 	for s.isRunning() {
 		<-ticker.C
@@ -129,18 +183,18 @@ func (s *StreamTracker) detectChanges() {
 		return
 	}
 
-	if atomic.LoadUint32(&s.countSinceLast) >= s.SamplesRequired {
+	if atomic.LoadUint32(&s.countSinceLast) >= s.samplesRequired {
 		s.cycleCount += 1
 	} else {
 		s.cycleCount = 0
 	}
 
-	if s.cycleCount == 0 && s.Status() == StreamStatusActive {
+	if s.cycleCount == 0 {
 		// flip to stopped
-		s.setStatus(StreamStatusStopped)
-	} else if s.cycleCount >= s.CyclesRequired && s.Status() == StreamStatusStopped {
+		s.maybeSetStopped()
+	} else if s.cycleCount >= s.cyclesRequired {
 		// flip to active
-		s.setStatus(StreamStatusActive)
+		s.maybeSetActive()
 	}
 
 	atomic.StoreUint32(&s.countSinceLast, 0)

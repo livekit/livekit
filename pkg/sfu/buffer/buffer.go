@@ -19,7 +19,7 @@ import (
 const (
 	MaxSN = 1 << 16
 
-	reportDelta = 1e9
+	ReportDelta = 1e9
 )
 
 // Logger is an implementation of logr.Logger. If is not provided - will be turned off.
@@ -32,18 +32,20 @@ type pendingPackets struct {
 
 type ExtPacket struct {
 	Head     bool
-	Cycle    uint32
 	Arrival  int64
 	Packet   rtp.Packet
 	Payload  interface{}
 	KeyFrame bool
+	//audio level for voice, l&0x80 == 0 means audio level not present
+	AudioLevel uint8
+	RawPacket  []byte
 }
 
 // Buffer contains all packets
 type Buffer struct {
 	sync.Mutex
 	bucket     *Bucket
-	nacker     *nackQueue
+	nacker     *NackQueue
 	videoPool  *sync.Pool
 	audioPool  *sync.Pool
 	codecType  webrtc.RTPCodecType
@@ -52,7 +54,7 @@ type Buffer struct {
 	closeOnce  sync.Once
 	mediaSSRC  uint32
 	clockRate  uint32
-	maxBitrate uint64
+	maxBitrate int64
 	lastReport int64
 	twccExt    uint8
 	audioExt   uint8
@@ -68,9 +70,8 @@ type Buffer struct {
 
 	minPacketProbe     int
 	lastPacketRead     int
-	maxTemporalLayer   int32
 	bitrate            atomic.Value
-	bitrateHelper      [4]uint64
+	bitrateHelper      [4]int64
 	lastSRNTPTime      uint64
 	lastSRRTPTime      uint32
 	lastSRRecv         int64 // Represents wall clock of the most recent sender report arrival
@@ -118,7 +119,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool, logger logr.Logger) *Buffer {
 		audioPool: ap,
 		logger:    logger,
 	}
-	b.bitrate.Store(make([]uint64, len(b.bitrateHelper)))
+	b.bitrate.Store(make([]int64, len(b.bitrateHelper)))
 	b.extPackets.SetMinCapacity(7)
 	return b
 }
@@ -128,7 +129,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	defer b.Unlock()
 
 	b.clockRate = codec.ClockRate
-	b.maxBitrate = o.MaxBitRate
+	b.maxBitrate = int64(o.MaxBitRate)
 	b.mime = strings.ToLower(codec.MimeType)
 
 	switch {
@@ -160,7 +161,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				b.twcc = true
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.V(1).Info("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-				b.nacker = newNACKQueue()
+				b.nacker = NewNACKQueue()
 				b.nack = true
 			}
 		}
@@ -216,7 +217,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = errBufferTooSmall
+				err = ErrBufferTooSmall
 				b.Unlock()
 				return
 			}
@@ -282,10 +283,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		if b.nack {
 			if isNewer {
 				for i := b.seqHdlr.MaxSeqNo() + 1; i < extSN; i++ {
-					b.nacker.push(i)
+					b.nacker.Push(i)
 				}
 			} else {
-				b.nacker.remove(extSN)
+				b.nacker.Remove(extSN)
 			}
 		}
 		if isNewer {
@@ -297,7 +298,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	var p rtp.Packet
 	pb, err := b.bucket.AddPacket(pkt, sn, headPkt)
 	if err != nil {
-		if err == errRTXPacket {
+		if err == ErrRTXPacket {
 			return
 		}
 		return
@@ -309,7 +310,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
 	// for bandwidth estimation
 	if b.twcc {
-		if ext := p.GetExtension(b.twccExt); ext != nil && len(ext) > 1 {
+		if ext := p.GetExtension(b.twccExt); len(ext) > 1 {
 			b.feedbackTWCC(binary.BigEndian.Uint16(ext[0:2]), arrivalTime, p.Marker)
 		}
 	}
@@ -318,10 +319,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.stats.PacketCount++
 
 	ep := ExtPacket{
-		Head:    headPkt,
-		Cycle:   b.seqHdlr.Cycles(),
-		Packet:  p,
-		Arrival: arrivalTime,
+		Head:      headPkt,
+		Packet:    p,
+		Arrival:   arrivalTime,
+		RawPacket: pb,
 	}
 
 	if len(p.Payload) == 0 {
@@ -341,20 +342,20 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		temporalLayer = int32(vp8Packet.TID)
 	case "video/h264":
-		ep.KeyFrame = isH264Keyframe(p.Payload)
+		ep.KeyFrame = IsH264Keyframe(p.Payload)
 	}
 
 	if b.minPacketProbe < 25 {
+		// LK-TODO-START
+		// This should check for proper wrap around.
+		// Probably remove this probe section of code as
+		// the only place this baseSN is used at is where
+		// RTCP receiver reports are generated. If there
+		// are some out-of-order packets right at the start
+		// the stat is going to be off by a bit. Not a big deal.
+		// LK-TODO-END
 		if sn < b.baseSN {
 			b.baseSN = sn
-		}
-
-		if b.mime == "video/vp8" {
-			pld := ep.Payload.(VP8)
-			mtl := atomic.LoadInt32(&b.maxTemporalLayer)
-			if mtl < int32(pld.TID) {
-				atomic.StoreInt32(&b.maxTemporalLayer, int32(pld.TID))
-			}
 		}
 
 		b.minPacketProbe++
@@ -385,6 +386,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
+				ep.AudioLevel = e[0] | 0x80 // highest bit to indicate audio level present
 				duration := (int64(p.Timestamp) - int64(latestTimestamp)) * 1e3 / int64(b.clockRate)
 				if duration > 0 {
 					b.onAudioLevel(ext.Level, uint32(duration))
@@ -399,26 +401,22 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		}
 	}
 
-	b.bitrateHelper[temporalLayer] += uint64(len(pkt))
+	b.bitrateHelper[temporalLayer] += int64(len(pkt))
 
 	diff := arrivalTime - b.lastReport
-	if diff >= reportDelta {
-		// LK-TODO-START
+	if diff >= ReportDelta {
+		//
 		// As this happens in the data path, if there are no packets received
-		// in an interval, the bitrate is stuck with the old value. GetBitrate()
-		// method in sfu.Receiver uses the availableLayers set by stream
-		// tracker to report 0 bitrate if a layer is not available. But, stream
-		// tracker is not run for the lowest layer. So, if the lowest layer stops,
-		// stale bitrate will be reported. The simplest thing might be to run the
-		// stream tracker on all layers to address this. Another option to look at
-		// is some monitoring loop running at low frequency and reporting bitrate.
-		// LK-TODO-END
-		bitrates, ok := b.bitrate.Load().([]uint64)
+		// in an interval, the bitrate will be stuck with the old value.
+		// GetBitrate() method in sfu.Receiver uses the availableLayers
+		// set by stream tracker to report 0 bitrate if a layer is not available.
+		//
+		bitrates, ok := b.bitrate.Load().([]int64)
 		if !ok {
-			bitrates = make([]uint64, len(b.bitrateHelper))
+			bitrates = make([]int64, len(b.bitrateHelper))
 		}
 		for i := 0; i < len(b.bitrateHelper); i++ {
-			br := (8 * b.bitrateHelper[i] * uint64(reportDelta)) / uint64(diff)
+			br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / int64(diff)
 			bitrates[i] = br
 			b.bitrateHelper[i] = 0
 		}
@@ -429,7 +427,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 }
 
 func (b *Buffer) buildNACKPacket() []rtcp.Packet {
-	if nacks, askKeyframe := b.nacker.pairs(b.seqHdlr.MaxSeqNo()); (nacks != nil && len(nacks) > 0) || askKeyframe {
+	if nacks, askKeyframe := b.nacker.Pairs(b.seqHdlr.MaxSeqNo()); len(nacks) > 0 || askKeyframe {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
@@ -451,10 +449,10 @@ func (b *Buffer) buildNACKPacket() []rtcp.Packet {
 func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	br := b.Bitrate()
 	if b.stats.LostRate < 0.02 {
-		br = uint64(float64(br)*1.09) + 2000
+		br = int64(float64(br)*1.09) + 2000
 	}
 	if b.stats.LostRate > .1 {
-		br = uint64(float64(br) * float64(1-0.5*b.stats.LostRate))
+		br = int64(float64(br) * float64(1-0.5*b.stats.LostRate))
 	}
 	if br > b.maxBitrate {
 		br = b.maxBitrate
@@ -550,9 +548,9 @@ func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 }
 
 // Bitrate returns the current publisher stream bitrate.
-func (b *Buffer) Bitrate() uint64 {
-	bitrates, ok := b.bitrate.Load().([]uint64)
-	bitrate := uint64(0)
+func (b *Buffer) Bitrate() int64 {
+	bitrates, ok := b.bitrate.Load().([]int64)
+	bitrate := int64(0)
 	if ok {
 		for _, b := range bitrates {
 			bitrate += b
@@ -561,29 +559,15 @@ func (b *Buffer) Bitrate() uint64 {
 	return bitrate
 }
 
-// BitrateTemporal returns the current publisher stream bitrate temporal layer wise.
-func (b *Buffer) BitrateTemporal() []uint64 {
-	bitrates, ok := b.bitrate.Load().([]uint64)
-	if !ok {
-		return make([]uint64, len(b.bitrateHelper))
-	}
-
-	// copy and return
-	brs := make([]uint64, len(bitrates))
-	copy(brs, bitrates)
-
-	return brs
-}
-
 // BitrateTemporalCumulative returns the current publisher stream bitrate temporal layer accumulated with lower temporal layers.
-func (b *Buffer) BitrateTemporalCumulative() []uint64 {
-	bitrates, ok := b.bitrate.Load().([]uint64)
+func (b *Buffer) BitrateTemporalCumulative() []int64 {
+	bitrates, ok := b.bitrate.Load().([]int64)
 	if !ok {
-		return make([]uint64, len(b.bitrateHelper))
+		return make([]int64, len(b.bitrateHelper))
 	}
 
 	// copy and process
-	brs := make([]uint64, len(bitrates))
+	brs := make([]int64, len(bitrates))
 	copy(brs, bitrates)
 
 	for i := len(brs) - 1; i >= 1; i-- {
@@ -595,10 +579,6 @@ func (b *Buffer) BitrateTemporalCumulative() []uint64 {
 	}
 
 	return brs
-}
-
-func (b *Buffer) MaxTemporalLayer() int32 {
-	return atomic.LoadInt32(&b.maxTemporalLayer)
 }
 
 func (b *Buffer) OnTransportWideCC(fn func(sn uint16, timeNS int64, marker bool)) {
@@ -667,7 +647,7 @@ func IsLaterTimestamp(timestamp1 uint32, timestamp2 uint32) bool {
 	return false
 }
 
-func isNewerUint16(val1, val2 uint16) bool {
+func IsNewerUint16(val1, val2 uint16) bool {
 	return val1 != val2 && val1-val2 < 0x8000
 }
 
@@ -689,7 +669,7 @@ func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
 	maxSeqNo := uint16(s.maxSeqNo)
 	delta := int32(seq) - int32(maxSeqNo)
 
-	newer := isNewerUint16(seq, maxSeqNo)
+	newer := IsNewerUint16(seq, maxSeqNo)
 
 	if newer {
 		if delta < 0 {

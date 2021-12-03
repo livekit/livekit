@@ -30,7 +30,7 @@ type RoomManager struct {
 	currentNode routing.LocalNode
 	router      routing.Router
 	roomStore   RoomStore
-	telemetry   *telemetry.TelemetryService
+	telemetry   telemetry.TelemetryService
 
 	rooms map[string]*rtc.Room
 }
@@ -40,7 +40,7 @@ func NewLocalRoomManager(
 	roomStore RoomStore,
 	currentNode routing.LocalNode,
 	router routing.Router,
-	telemetry *telemetry.TelemetryService,
+	telemetry telemetry.TelemetryService,
 ) (*RoomManager, error) {
 
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
@@ -253,13 +253,33 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err := room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		logger.Errorw("could not join room", err)
 		return
+	}
+	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
+		logger.Errorw("could not store participant", err)
+	}
+	// update roomstore with new numParticipants
+	if !participant.Hidden() {
+		err = r.roomStore.StoreRoom(ctx, room.Room)
+		if err != nil {
+			logger.Errorw("could not store room", err)
+		}
 	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
 	participant.OnClose(func(p types.Participant) {
+		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
+			logger.Errorw("could not delete participant", err)
+		}
+		// update roomstore with new numParticipants
+		if !participant.Hidden() {
+			err = r.roomStore.StoreRoom(ctx, room.Room)
+			if err != nil {
+				logger.Errorw("could not store room", err)
+			}
+		}
 		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
 	})
 
@@ -295,20 +315,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName string) (*rt
 		logger.Infow("room closed")
 	})
 	room.OnMetadataUpdate(func(metadata string) {
-		err := r.roomStore.StoreRoom(ctx, room.Room)
-		if err != nil {
+		if err := r.roomStore.StoreRoom(ctx, room.Room); err != nil {
 			logger.Errorw("could not handle metadata update", err)
 		}
 	})
 	room.OnParticipantChanged(func(p types.Participant) {
-		var err error
-		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
-			err = r.roomStore.DeleteParticipant(ctx, roomName, p.Identity())
-		} else {
-			err = r.roomStore.StoreParticipant(ctx, roomName, p.ToProto())
-		}
-		if err != nil {
-			logger.Errorw("could not handle participant change", err)
+		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
+			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
+				logger.Errorw("could not handle participant change", err)
+			}
 		}
 	})
 	r.lock.Lock()

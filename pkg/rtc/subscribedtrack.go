@@ -62,11 +62,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(enabled bool, quality livekit
 		t.subMuted.TrySet(!enabled)
 		t.updateDownTrackMute()
 		if enabled && t.dt.Kind() == webrtc.RTPCodecTypeVideo {
-			err := t.dt.SwitchSpatialLayer(spatialLayerForQuality(quality), true)
-			if err == sfu.ErrSpatialLayerNotFound && quality != livekit.VideoQuality_MEDIUM {
-				// try to switch to middle layer
-				_ = t.dt.SwitchSpatialLayer(spatialLayerForQuality(livekit.VideoQuality_MEDIUM), true)
-			}
+			t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
 		}
 	})
 }
