@@ -56,3 +56,15 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 }
 
 //--------------------------------------
+
+func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.ExtPacket, error) {
+	ep, err := GetTestExtPacket(params)
+	if err != nil {
+		return nil, err
+	}
+
+	ep.Payload = *vp8
+	return ep, nil
+}
+
+//--------------------------------------

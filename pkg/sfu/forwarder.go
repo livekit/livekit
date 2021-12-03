@@ -688,7 +688,7 @@ func (f *Forwarder) GetSnTsForBlankFrames() ([]SnTs, bool, error) {
 	return snts, frameEndNeeded, err
 }
 
-func (f *Forwarder) GetPaddingVP8(frameEndNeeded bool) (*buffer.VP8, error) {
+func (f *Forwarder) GetPaddingVP8(frameEndNeeded bool) *buffer.VP8 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
