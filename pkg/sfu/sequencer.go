@@ -42,7 +42,7 @@ func (p *packetMeta) packVP8(vp8 *buffer.VP8) {
 		uint64(vp8.TL0PICIDXPresent&0x1)<<54 |
 		uint64(vp8.TIDPresent&0x1)<<53 |
 		uint64(vp8.KEYIDXPresent&0x1)<<52 |
-		uint64(vp8.PictureID&0xFFFF)<<32 |
+		uint64(vp8.PictureID&0x7FFF)<<32 |
 		uint64(vp8.TL0PICIDX&0xFF)<<24 |
 		uint64(vp8.TID&0x3)<<22 |
 		uint64(vp8.Y&0x1)<<21 |
@@ -54,7 +54,7 @@ func (p *packetMeta) unpackVP8() *buffer.VP8 {
 	return &buffer.VP8{
 		FirstByte:        byte(p.misc >> 56),
 		PictureIDPresent: int((p.misc >> 55) & 0x1),
-		PictureID:        uint16((p.misc >> 32) & 0xFFFF),
+		PictureID:        uint16((p.misc >> 32) & 0x7FFF),
 		TL0PICIDXPresent: int((p.misc >> 54) & 0x1),
 		TL0PICIDX:        uint8((p.misc >> 24) & 0xFF),
 		TIDPresent:       int((p.misc >> 53) & 0x1),

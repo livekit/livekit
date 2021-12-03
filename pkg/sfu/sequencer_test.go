@@ -118,7 +118,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 	expectedVP8 := &buffer.VP8{
 		FirstByte:        25,
 		PictureIDPresent: 1,
-		PictureID:        55467,
+		PictureID:        55467 % 32768,
 		MBit:             false,
 		TL0PICIDXPresent: 1,
 		TL0PICIDX:        233,
