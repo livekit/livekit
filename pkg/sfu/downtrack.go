@@ -683,10 +683,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 }
 
 func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) error {
-	blankVP8, err := d.forwarder.GetPaddingVP8(frameEndNeeded)
-	if err != nil {
-		return err
-	}
+	blankVP8 := d.forwarder.GetPaddingVP8(frameEndNeeded)
 
 	// 1x1 key frame
 	// Used even when closing out a previous frame. Looks like receivers
@@ -694,7 +691,7 @@ func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) err
 	// frame, but that should be okay as there are key frames following)
 	payload := make([]byte, blankVP8.HeaderSize+len(VP8KeyFrame1x1))
 	vp8Header := payload[:blankVP8.HeaderSize]
-	err = blankVP8.MarshalTo(vp8Header)
+	err := blankVP8.MarshalTo(vp8Header)
 	if err != nil {
 		return err
 	}

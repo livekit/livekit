@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+
+	"github.com/stretchr/testify/require"
 )
 
 func Test_sequencer(t *testing.T) {
@@ -19,35 +21,27 @@ func Test_sequencer(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getSeqNoPairs(req)
-	assert.Equal(t, len(req), len(res))
+	require.Equal(t, len(req), len(res))
 	for i, val := range res {
-		assert.Equal(t, val.targetSeqNo, req[i])
-		assert.Equal(t, val.sourceSeqNo, req[i]-off)
-		assert.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.targetSeqNo, req[i])
+		require.Equal(t, val.sourceSeqNo, req[i]-off)
+		require.Equal(t, val.layer, uint8(2))
 	}
 	res = seq.getSeqNoPairs(req)
-	assert.Equal(t, 0, len(res))
+	require.Equal(t, 0, len(res))
 	time.Sleep(150 * time.Millisecond)
 	res = seq.getSeqNoPairs(req)
-	assert.Equal(t, len(req), len(res))
+	require.Equal(t, len(req), len(res))
 	for i, val := range res {
-		assert.Equal(t, val.targetSeqNo, req[i])
-		assert.Equal(t, val.sourceSeqNo, req[i]-off)
-		assert.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.targetSeqNo, req[i])
+		require.Equal(t, val.sourceSeqNo, req[i]-off)
+		require.Equal(t, val.layer, uint8(2))
 	}
 
 	s := seq.push(521, 521+off, 123, 1, true)
-	var (
-		tlzIdx = uint8(15)
-		picID  = uint16(16)
-	)
-	s.setVP8PayloadMeta(tlzIdx, picID)
 	s.sourceSeqNo = 12
 	m := seq.getSeqNoPairs([]uint16{521 + off})
-	assert.Equal(t, 1, len(m))
-	tlz0, pID := m[0].getVP8PayloadMeta()
-	assert.Equal(t, tlzIdx, tlz0)
-	assert.Equal(t, picID, pID)
+	require.Equal(t, 1, len(m))
 }
 
 func Test_sequencer_getNACKSeqNo(t *testing.T) {
@@ -96,4 +90,84 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_packetMeta_VP8(t *testing.T) {
+	p := &packetMeta{}
+
+	vp8 := &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        55467,
+		MBit:             true,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              13,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       true,
+	}
+
+	p.packVP8(vp8)
+
+	// booleans are not packed, so they will be `false` in unpacked.
+	// Also TID is only two bits, so it should be modulo 3.
+	expectedVP8 := &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        55467 % 32768,
+		MBit:             false,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              13 % 3,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       false,
+	}
+	unpackedVP8 := p.unpackVP8()
+	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
+
+	// short picture id and no TL0PICIDX
+	vp8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        63,
+		MBit:             false,
+		TL0PICIDXPresent: 0,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              2,
+		Y:                1,
+		KEYIDXPresent:    0,
+		KEYIDX:           23,
+		HeaderSize:       23,
+		IsKeyFrame:       true,
+	}
+
+	p.packVP8(vp8)
+
+	expectedVP8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        63,
+		MBit:             false,
+		TL0PICIDXPresent: 0,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              2,
+		Y:                1,
+		KEYIDXPresent:    0,
+		KEYIDX:           23,
+		HeaderSize:       23,
+		IsKeyFrame:       false,
+	}
+	unpackedVP8 = p.unpackVP8()
+	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
+
 }
