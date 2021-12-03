@@ -76,10 +76,15 @@ type AudioConfig struct {
 }
 
 type RedisConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
+	Address           string   `yaml:"address"`
+	Username          string   `yaml:"username"`
+	Password          string   `yaml:"password"`
+	DB                int      `yaml:"db"`
+	UseSentinel       bool     `yaml:"sentinel_enabled"`
+	MasterName        string   `yaml:"sentinel_master_name"`
+	SentinelUsername  string   `yaml:"sentinel_username"`
+	SentinelPassword  string   `yaml:"sentinel_password"`
+	SentinelAddresses []string `yaml:"sentinel_addresses"`
 }
 
 type RoomConfig struct {
