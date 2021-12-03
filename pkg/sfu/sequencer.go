@@ -36,26 +36,18 @@ type packetMeta struct {
 	misc uint64
 }
 
-func (p *packetMeta) setVP8PayloadMeta(tlz0Idx uint8, picID uint16) {
-	p.misc = uint64(tlz0Idx)<<16 | uint64(picID)
-}
-
-func (p *packetMeta) getVP8PayloadMeta() (uint8, uint16) {
-	return uint8(p.misc >> 16), uint16(p.misc)
-}
-
 func (p *packetMeta) packVP8(vp8 *buffer.VP8) {
 	p.misc = uint64(vp8.FirstByte)<<56 |
-		uint64(vp8.PictureIDPresent)<<55 |
-		uint64(vp8.TL0PICIDXPresent)<<54 |
-		uint64(vp8.TIDPresent)<<53 |
-		uint64(vp8.KEYIDXPresent)<<52 |
-		uint64(vp8.PictureID)<<32 |
-		uint64(vp8.TL0PICIDX)<<24 |
-		uint64(vp8.TID)<<22 |
-		uint64(vp8.Y)<<21 |
-		uint64(vp8.KEYIDX)<<16 |
-		uint64(vp8.HeaderSize)<<8
+		uint64(vp8.PictureIDPresent&0x1)<<55 |
+		uint64(vp8.TL0PICIDXPresent&0x1)<<54 |
+		uint64(vp8.TIDPresent&0x1)<<53 |
+		uint64(vp8.KEYIDXPresent&0x1)<<52 |
+		uint64(vp8.PictureID&0xFFFF)<<32 |
+		uint64(vp8.TL0PICIDX&0xFF)<<24 |
+		uint64(vp8.TID&0x3)<<22 |
+		uint64(vp8.Y&0x1)<<21 |
+		uint64(vp8.KEYIDX&0x1F)<<16 |
+		uint64(vp8.HeaderSize&0xFF)<<8
 }
 
 func (p *packetMeta) unpackVP8() *buffer.VP8 {

@@ -9,17 +9,17 @@ import (
 //-----------------------------------------------------------
 
 type TestExtPacketParams struct {
-	SetMarker bool
-	SetPadding bool
-	IsHead bool
-	IsKeyFrame bool
-	PayloadType uint8
+	SetMarker      bool
+	SetPadding     bool
+	IsHead         bool
+	IsKeyFrame     bool
+	PayloadType    uint8
 	SequenceNumber uint16
-	Timestamp uint32
-	SSRC uint32
-	PayloadSize int
-	PaddingSize int
-	ArrivalTime int64
+	Timestamp      uint32
+	SSRC           uint32
+	PayloadSize    int
+	PaddingSize    int
+	ArrivalTime    int64
 }
 
 //-----------------------------------------------------------
@@ -27,13 +27,13 @@ type TestExtPacketParams struct {
 func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	packet := rtp.Packet{
 		Header: rtp.Header{
-			Version: 2,
-			Padding: params.SetPadding,
-			Marker: params.SetMarker,
-			PayloadType: params.PayloadType,
+			Version:        2,
+			Padding:        params.SetPadding,
+			Marker:         params.SetMarker,
+			PayloadType:    params.PayloadType,
 			SequenceNumber: params.SequenceNumber,
-			Timestamp: params.Timestamp,
-			SSRC: params.SSRC,
+			Timestamp:      params.Timestamp,
+			SSRC:           params.SSRC,
 		},
 		Payload: make([]byte, params.PayloadSize),
 		// LK-TODO need a newer version of pion/rtp PaddingSize: params.PaddingSize,
@@ -42,13 +42,13 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	raw, err := packet.Marshal()
 	if err != nil {
 		return nil, err
-	} 
+	}
 
 	ep := &buffer.ExtPacket{
 		Head:      params.IsHead,
 		Arrival:   params.ArrivalTime,
 		Packet:    packet,
-		KeyFrame: params.IsKeyFrame,
+		KeyFrame:  params.IsKeyFrame,
 		RawPacket: raw,
 	}
 
