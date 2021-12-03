@@ -14,8 +14,8 @@ func TestSetLastSnTs(t *testing.T) {
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, err := testutils.GetTestExtPacket(params)
 	require.NoError(t, err)
@@ -30,8 +30,8 @@ func TestSetLastSnTs(t *testing.T) {
 
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 0,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, err = testutils.GetTestExtPacket(params)
 	require.NoError(t, err)
@@ -50,16 +50,16 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
 
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 33333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x87654321,
+		Timestamp:      0xabcdef,
+		SSRC:           0x87654321,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.UpdateSnTsOffsets(extPkt, 1, 1)
@@ -75,8 +75,8 @@ func TestPacketDropped(t *testing.T) {
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -89,8 +89,8 @@ func TestPacketDropped(t *testing.T) {
 	// drop a non-head packet, should cause no change in internals
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 33333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
@@ -100,10 +100,10 @@ func TestPacketDropped(t *testing.T) {
 
 	// drop a head packet and check offset increases
 	params = &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 44444,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
@@ -117,8 +117,8 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -126,15 +126,15 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	// out-of-order sequence number not in the missing sequence number cache
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23332,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected := TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingOutOfOrder,
 	}
-	
+
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrOutOfOrderSequenceNumberCacheMiss)
@@ -144,9 +144,9 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	r.missingSNs[23332] = 10
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering: SequenceNumberOrderingOutOfOrder,
+		snOrdering:     SequenceNumberOrderingOutOfOrder,
 		sequenceNumber: 23322,
-		timestamp: 0xabcdef,
+		timestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -158,10 +158,10 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 	r := NewRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -173,7 +173,7 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 	tpExpected := TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingDuplicate,
 	}
-	
+
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrDuplicatePacket)
@@ -184,10 +184,10 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	r := NewRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -196,7 +196,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	tpExpected := TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingContiguous,
 	}
-	
+
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
@@ -207,17 +207,17 @@ func TestPaddingOnlyPacket(t *testing.T) {
 
 	// padding only packet with a gap should not report an error
 	params = &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 23335,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected = TranslationParamsRTP{
-		snOrdering: SequenceNumberOrderingGap,
+		snOrdering:     SequenceNumberOrderingGap,
 		sequenceNumber: 23334,
-		timestamp: 0xabcdef,
+		timestamp:      0xabcdef,
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt)
@@ -232,11 +232,11 @@ func TestGapInSequenceNumber(t *testing.T) {
 	r := NewRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 65533,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
-		PayloadSize: 33,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    33,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -246,20 +246,20 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	// three lost packets
 	params = &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 1,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
-		PayloadSize: 33,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    33,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	tpExpected := TranslationParamsRTP{
-		snOrdering: SequenceNumberOrderingGap,
+		snOrdering:     SequenceNumberOrderingGap,
 		sequenceNumber: 1,
-		timestamp: 0xabcdef,
+		timestamp:      0xabcdef,
 	}
-	
+
 	tp, err := r.UpdateAndGetSnTs(extPkt)
 	require.NoError(t, err)
 	require.True(t, reflect.DeepEqual(*tp, tpExpected))
@@ -295,11 +295,11 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	r := NewRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
-		PayloadSize: 20,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -318,7 +318,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp: 0xabcdef + (uint32(i) * clockRate) / frameRate,
+			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
 		}
 	}
 	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
@@ -329,7 +329,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23343 + uint16(i) + 1,
-			timestamp: 0xabcdef + (uint32(i + 1) * clockRate) / frameRate,
+			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
 	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
@@ -341,11 +341,11 @@ func TestIsOnFrameBoundary(t *testing.T) {
 	r := NewRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead: true,
+		IsHead:         true,
 		SequenceNumber: 23333,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
-		PayloadSize: 20,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
@@ -357,12 +357,12 @@ func TestIsOnFrameBoundary(t *testing.T) {
 
 	// packet with RTP marker
 	params = &testutils.TestExtPacketParams{
-		IsHead: true,
-		SetMarker: true,
+		IsHead:         true,
+		SetMarker:      true,
 		SequenceNumber: 23334,
-		Timestamp: 0xabcdef,
-		SSRC: 0x12345678,
-		PayloadSize: 20,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
