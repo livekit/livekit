@@ -256,12 +256,12 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	return nil
 }
 
-func (t *PCTransport) OnStreamedTracksChange(f func(update *sfu.StreamedTracksUpdate) error) {
+func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
 	if t.streamAllocator == nil {
 		return
 	}
 
-	t.streamAllocator.OnStreamedTracksChange(f)
+	t.streamAllocator.OnStreamStateChange(f)
 }
 
 func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
