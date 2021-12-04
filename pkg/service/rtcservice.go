@@ -91,6 +91,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
+		Recorder:      claims.Video.Recorder,
 		Client:        s.parseClientInfo(r.Form),
 	}
 	if autoSubParam != "" {
