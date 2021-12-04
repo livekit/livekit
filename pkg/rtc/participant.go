@@ -182,7 +182,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.subscriber.OnOffer(p.onOffer)
 
-	p.subscriber.OnStreamedTracksChange(p.onStreamedTracksChange)
+	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
 
 	return p, nil
 }
@@ -1319,28 +1319,27 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	}
 }
 
-func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdate) error {
-	if len(update.Paused) == 0 && len(update.Resumed) == 0 {
+func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) error {
+	if len(update.StreamStates) == 0 {
 		return nil
 	}
 
-	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
-	for _, streamedTrack := range update.Paused {
-		streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
-			ParticipantSid: streamedTrack.ParticipantSid,
-			TrackSid:       streamedTrack.TrackSid,
-		})
-	}
-	for _, streamedTrack := range update.Resumed {
-		streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
-			ParticipantSid: streamedTrack.ParticipantSid,
-			TrackSid:       streamedTrack.TrackSid,
+	streamStateUpdate := &livekit.StreamStateUpdate{}
+	for _, streamStateInfo := range update.StreamStates {
+		state := livekit.StreamState_ACTIVE
+		if streamStateInfo.State == sfu.StreamStatePaused {
+			state = livekit.StreamState_PAUSED
+		}
+		streamStateUpdate.StreamStates = append(streamStateUpdate.StreamStates, &livekit.StreamStateInfo{
+			ParticipantSid: streamStateInfo.ParticipantSid,
+			TrackSid:       streamStateInfo.TrackSid,
+			State:          state,
 		})
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_StreamedTracksUpdate{
-			StreamedTracksUpdate: streamedTracksUpdate,
+		Message: &livekit.SignalResponse_StreamStateUpdate{
+			StreamStateUpdate: streamStateUpdate,
 		},
 	})
 }
