@@ -144,32 +144,29 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 	})
 }
 
-func (t *telemetryService) RecordingStarted(ctx context.Context, recordingID string, req *livekit.StartRecordingRequest) {
+func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event: webhook.EventRecordingStarted,
-		RecordingInfo: &livekit.RecordingInfo{
-			Id:      recordingID,
-			Request: req,
-		},
+		Event:         webhook.EventRecordingStarted,
+		RecordingInfo: ri,
 	})
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:        livekit.AnalyticsEventType_RECORDING_STARTED,
 		Timestamp:   timestamppb.Now(),
-		RecordingId: recordingID,
+		RecordingId: ri.Id,
 	})
 }
 
-func (t *telemetryService) RecordingEnded(ctx context.Context, res *livekit.RecordingResult) {
+func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event:           webhook.EventRecordingFinished,
-		RecordingResult: res,
+		Event:         webhook.EventRecordingFinished,
+		RecordingInfo: ri,
 	})
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:        livekit.AnalyticsEventType_RECORDING_ENDED,
 		Timestamp:   timestamppb.Now(),
-		RecordingId: res.Id,
+		RecordingId: ri.Id,
 	})
 }
 

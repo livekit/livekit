@@ -9,8 +9,6 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -18,6 +16,9 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -43,6 +44,7 @@ type ParticipantParams struct {
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
+	Recorder        bool
 	Logger          logger.Logger
 }
 
@@ -235,6 +237,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
+		Recorder: p.IsRecorder(),
 	}
 
 	p.lock.RLock()
@@ -756,6 +759,10 @@ func (p *ParticipantImpl) CanPublishData() bool {
 
 func (p *ParticipantImpl) Hidden() bool {
 	return p.params.Hidden
+}
+
+func (p *ParticipantImpl) IsRecorder() bool {
+	return p.params.Recorder
 }
 
 func (p *ParticipantImpl) SubscriberAsPrimary() bool {
