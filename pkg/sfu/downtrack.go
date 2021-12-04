@@ -42,26 +42,6 @@ const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMax             = 6
-
-	InvalidSpatialLayer  = -1
-	InvalidTemporalLayer = -1
-)
-
-type SequenceNumberOrdering int
-
-const (
-	SequenceNumberOrderingContiguous SequenceNumberOrdering = iota
-	SequenceNumberOrderingOutOfOrder
-	SequenceNumberOrderingGap
-	SequenceNumberOrderingDuplicate
-)
-
-type ForwardingStatus int
-
-const (
-	ForwardingStatusOff ForwardingStatus = iota
-	ForwardingStatusPartial
-	ForwardingStatusOptimal
 )
 
 var (
@@ -131,7 +111,6 @@ type DownTrack struct {
 	sequencer     *sequencer
 	trackType     DownTrackType
 	bufferFactory *buffer.Factory
-	payload       *[]byte
 
 	forwarder *Forwarder
 
@@ -195,10 +174,6 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		codec:         c,
 		kind:          kind,
 		forwarder:     NewForwarder(c, kind),
-	}
-
-	if strings.ToLower(c.MimeType) == "video/vp8" {
-		d.payload = PacketFactory.Get().(*[]byte)
 	}
 
 	return d, nil
@@ -287,6 +262,14 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 
 // WriteRTP writes a RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
+	var pool *[]byte
+	defer func() {
+		if pool != nil {
+			PacketFactory.Put(pool)
+			pool = nil
+		}
+	}()
+
 	d.lastRTP.set(time.Now().UnixNano())
 
 	if !d.bound.get() {
@@ -306,7 +289,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	payload := extPkt.Packet.Payload
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, tp.vp8.header)
+		payload, pool, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, tp.vp8.header)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err
@@ -460,9 +443,6 @@ func (d *DownTrack) Close() {
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
-		if d.payload != nil {
-			PacketFactory.Put(d.payload)
-		}
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
@@ -787,30 +767,44 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 }
 
-func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
+func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) (pool *[]byte, err error) {
 	if d.mime != "video/vp8" || len(pkt.Payload) == 0 {
-		return nil
+		return
 	}
 
 	var incomingVP8 buffer.VP8
-	if err := incomingVP8.Unmarshal(pkt.Payload); err != nil {
-		return err
+	if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
+		return
 	}
 
 	translatedVP8 := meta.unpackVP8()
-	payload, err := d.translateVP8Packet(pkt, &incomingVP8, translatedVP8)
+	payload, pool, err := d.translateVP8Packet(pkt, &incomingVP8, translatedVP8)
 	if err != nil {
-		return err
+		return
 	}
 
 	pkt.Payload = payload
-	return nil
+	return
 }
 
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
+	var pool *[]byte
+	defer func() {
+		if pool != nil {
+			PacketFactory.Put(pool)
+			pool = nil
+		}
+	}()
+
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
+
 	for _, meta := range nackedPackets {
+		if pool != nil {
+			PacketFactory.Put(pool)
+			pool = nil
+		}
+
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
 		if err != nil {
@@ -828,7 +822,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		err = d.maybeTranslateVP8(&pkt, meta)
+		pool, err = d.maybeTranslateVP8(&pkt, meta)
 		if err != nil {
 			Logger.Error(err, "translating VP8 packet err")
 			continue
@@ -895,17 +889,20 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tpRTP *Tran
 	return &hdr, nil
 }
 
-func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8) (buf []byte, err error) {
-	buf = *d.payload
-	buf = buf[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8) (buf []byte, pool *[]byte, err error) {
+	if incomingVP8.HeaderSize == translatedVP8.HeaderSize {
+		buf = pkt.Payload
+	} else {
+		pool = PacketFactory.Get().(*[]byte)
+		buf = (*pool)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
 
-	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-	dstPayload := buf[translatedVP8.HeaderSize:]
-	copy(dstPayload, srcPayload)
+		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
+		dstPayload := buf[translatedVP8.HeaderSize:]
+		copy(dstPayload, srcPayload)
+	}
 
 	hdr := buf[:translatedVP8.HeaderSize]
 	err = translatedVP8.MarshalTo(hdr)
-
 	return
 }
 
