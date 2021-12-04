@@ -26,6 +26,7 @@ type RoomStore interface {
 	DeleteParticipant(ctx context.Context, roomName, identity string) error
 }
 
+//counterfeiter:generate . RORoomStore
 type RORoomStore interface {
 	LoadRoom(ctx context.Context, name string) (*livekit.Room, error)
 	ListRooms(ctx context.Context) ([]*livekit.Room, error)
@@ -34,6 +35,7 @@ type RORoomStore interface {
 	ListParticipants(ctx context.Context, roomName string) ([]*livekit.ParticipantInfo, error)
 }
 
+//counterfeiter:generate . RoomAllocator
 type RoomAllocator interface {
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
 }

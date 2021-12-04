@@ -198,6 +198,11 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		"room", r.Room.Name,
 		"roomID", r.Room.Sid)
 
+	if participant.IsRecorder() && !r.Room.ActiveRecording {
+		r.Room.ActiveRecording = true
+		r.sendRoomUpdateLocked()
+	}
+
 	r.participants[participant.Identity()] = participant
 	r.participantOpts[participant.Identity()] = opts
 
@@ -264,7 +269,22 @@ func (r *Room) RemoveParticipant(identity string) {
 		}
 	}
 
+	activeRecording := false
+	if (p != nil && p.IsRecorder()) || p == nil && r.Room.ActiveRecording {
+		for _, op := range r.participants {
+			if op.IsRecorder() {
+				activeRecording = true
+				break
+			}
+		}
+	}
+
+	if r.Room.ActiveRecording != activeRecording {
+		r.Room.ActiveRecording = activeRecording
+		r.sendRoomUpdateLocked()
+	}
 	r.lock.Unlock()
+
 	if !ok {
 		return
 	}
@@ -402,8 +422,18 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 func (r *Room) SetMetadata(metadata string) {
 	r.Room.Metadata = metadata
 
+	r.lock.RLock()
+	r.sendRoomUpdateLocked()
+	r.lock.RUnlock()
+
+	if r.onMetadataUpdate != nil {
+		r.onMetadataUpdate(metadata)
+	}
+}
+
+func (r *Room) sendRoomUpdateLocked() {
 	// Send update to participants
-	for _, p := range r.GetParticipants() {
+	for _, p := range r.participants {
 		if !p.IsReady() {
 			continue
 		}
@@ -412,10 +442,6 @@ func (r *Room) SetMetadata(metadata string) {
 		if err != nil {
 			r.Logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
 		}
-	}
-
-	if r.onMetadataUpdate != nil {
-		r.onMetadataUpdate(metadata)
 	}
 }
 

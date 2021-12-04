@@ -200,7 +200,7 @@ type StreamAllocator struct {
 	participantID string
 	logger        logger.Logger
 
-	onStreamedTracksChange func(update *StreamedTracksUpdate) error
+	onStreamStateChange func(update *StreamStateUpdate) error
 
 	trackingSSRC             uint32
 	committedChannelCapacity int64
@@ -266,8 +266,8 @@ func (s *StreamAllocator) Stop() {
 	close(s.eventCh)
 }
 
-func (s *StreamAllocator) OnStreamedTracksChange(f func(update *StreamedTracksUpdate) error) {
-	s.onStreamedTracksChange = f
+func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
+	s.onStreamStateChange = f
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
@@ -698,7 +698,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if s.state == StateStable {
-		update := NewStreamedTracksUpdate()
+		update := NewStreamStateUpdate()
 		result := track.Allocate(ChannelCapacityInfinity)
 		update.HandleStreamingChange(result.change, track)
 		s.maybeSendUpdate(update)
@@ -727,7 +727,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// track may be downgrading due to mute or reduction in subscribed layers
 	// and actually giving back some bits.
 	//
-	update := NewStreamedTracksUpdate()
+	update := NewStreamStateUpdate()
 
 	result := track.TryAllocate(lpExpectedBps)
 
@@ -765,7 +765,7 @@ func (s *StreamAllocator) unallocateTrack(track *Track) {
 		return
 	}
 
-	update := NewStreamedTracksUpdate()
+	update := NewStreamStateUpdate()
 
 	unallocatedBps := track.BandwidthRequested()
 	if unallocatedBps > 0 {
@@ -777,7 +777,7 @@ func (s *StreamAllocator) unallocateTrack(track *Track) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64, update *StreamedTracksUpdate) int64 {
+func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64, update *StreamStateUpdate) int64 {
 	for _, t := range tracks {
 		if !t.IsDeficient() {
 			continue
@@ -820,7 +820,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	//
 	// Ask down tracks adjust their forwarded layers.
 	//
-	update := NewStreamedTracksUpdate()
+	update := NewStreamStateUpdate()
 
 	availableChannelCapacity := s.committedChannelCapacity
 	for _, track := range s.videoTracksSorted {
@@ -859,14 +859,14 @@ func (s *StreamAllocator) allocateAllTracks() {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) maybeSendUpdate(update *StreamedTracksUpdate) {
+func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	if update.Empty() {
 		return
 	}
 
-	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "paused", update.Paused, "resumed", update.Resumed)
-	if s.onStreamedTracksChange != nil {
-		err := s.onStreamedTracksChange(update)
+	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
+	if s.onStreamStateChange != nil {
+		err := s.onStreamStateChange(update)
 		if err != nil {
 			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
 		}
@@ -1006,37 +1006,46 @@ func (s *StreamAllocator) resetGratuitousProbe() {
 
 //------------------------------------------------
 
-type StreamedTrack struct {
+type StreamState int
+
+const (
+	StreamStateActive StreamState = iota
+	StreamStatePaused
+)
+
+type StreamStateInfo struct {
 	ParticipantSid string
 	TrackSid       string
+	State          StreamState
 }
 
-type StreamedTracksUpdate struct {
-	Paused  []*StreamedTrack
-	Resumed []*StreamedTrack
+type StreamStateUpdate struct {
+	StreamStates []*StreamStateInfo
 }
 
-func NewStreamedTracksUpdate() *StreamedTracksUpdate {
-	return &StreamedTracksUpdate{}
+func NewStreamStateUpdate() *StreamStateUpdate {
+	return &StreamStateUpdate{}
 }
 
-func (s *StreamedTracksUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
+func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, track *Track) {
 	switch change {
 	case VideoStreamingChangePausing:
-		s.Paused = append(s.Paused, &StreamedTrack{
+		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantSid: track.PeerID(),
 			TrackSid:       track.ID(),
+			State:          StreamStatePaused,
 		})
 	case VideoStreamingChangeResuming:
-		s.Resumed = append(s.Resumed, &StreamedTrack{
+		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
 			ParticipantSid: track.PeerID(),
 			TrackSid:       track.ID(),
+			State:          StreamStateActive,
 		})
 	}
 }
 
-func (s *StreamedTracksUpdate) Empty() bool {
-	return len(s.Paused) == 0 && len(s.Resumed) == 0
+func (s *StreamStateUpdate) Empty() bool {
+	return len(s.StreamStates) == 0
 }
 
 //------------------------------------------------

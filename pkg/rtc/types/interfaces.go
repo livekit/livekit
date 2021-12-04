@@ -67,6 +67,7 @@ type Participant interface {
 	CanSubscribe() bool
 	CanPublishData() bool
 	Hidden() bool
+	IsRecorder() bool
 	SubscriberAsPrimary() bool
 
 	Start()
