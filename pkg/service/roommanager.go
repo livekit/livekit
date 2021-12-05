@@ -476,8 +476,9 @@ func (r *RoomManager) handleSignalRequest(room *rtc.Room, participant types.Part
 		if track == nil {
 			logger.Warnw("could not find published track", nil,
 				"track", msg.UpdateLayers.TrackSid)
-
+			return nil
 		}
+		track.UpdateVideoLayers(msg.UpdateLayers.Layers)
 	case *livekit.SignalRequest_Leave:
 		_ = participant.Close()
 	}
