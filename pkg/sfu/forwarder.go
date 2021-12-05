@@ -12,6 +12,28 @@ import (
 //
 // Forwarder
 //
+const (
+	InvalidSpatialLayer  = -1
+	InvalidTemporalLayer = -1
+)
+
+type SequenceNumberOrdering int
+
+const (
+	SequenceNumberOrderingContiguous SequenceNumberOrdering = iota
+	SequenceNumberOrderingOutOfOrder
+	SequenceNumberOrderingGap
+	SequenceNumberOrderingDuplicate
+)
+
+type ForwardingStatus int
+
+const (
+	ForwardingStatusOff ForwardingStatus = iota
+	ForwardingStatusPartial
+	ForwardingStatusOptimal
+)
+
 type VideoStreamingChange int
 
 const (
