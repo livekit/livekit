@@ -15,9 +15,9 @@ var (
 type ntpTime uint64
 
 const (
-	quarterResolution = "q"
-	halfResolution    = "h"
-	fullResolution    = "f"
+	QuarterResolution = "q"
+	HalfResolution    = "h"
+	FullResolution    = "f"
 )
 
 // Do a fuzzy find for a codec in the list of codecs

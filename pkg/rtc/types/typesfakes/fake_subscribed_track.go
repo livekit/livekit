@@ -65,11 +65,14 @@ type FakeSubscribedTrack struct {
 	subscribeLossPercentageReturnsOnCall map[int]struct {
 		result1 uint32
 	}
-	UpdateSubscriberSettingsStub        func(bool, livekit.VideoQuality)
+	UpdateSubscriberSettingsStub        func(*livekit.UpdateTrackSettings)
 	updateSubscriberSettingsMutex       sync.RWMutex
 	updateSubscriberSettingsArgsForCall []struct {
-		arg1 bool
-		arg2 livekit.VideoQuality
+		arg1 *livekit.UpdateTrackSettings
+	}
+	UpdateVideoLayerStub        func()
+	updateVideoLayerMutex       sync.RWMutex
+	updateVideoLayerArgsForCall []struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -372,17 +375,16 @@ func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturnsOnCall(i int, res
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 bool, arg2 livekit.VideoQuality) {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 *livekit.UpdateTrackSettings) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	fake.updateSubscriberSettingsArgsForCall = append(fake.updateSubscriberSettingsArgsForCall, struct {
-		arg1 bool
-		arg2 livekit.VideoQuality
-	}{arg1, arg2})
+		arg1 *livekit.UpdateTrackSettings
+	}{arg1})
 	stub := fake.UpdateSubscriberSettingsStub
-	fake.recordInvocation("UpdateSubscriberSettings", []interface{}{arg1, arg2})
+	fake.recordInvocation("UpdateSubscriberSettings", []interface{}{arg1})
 	fake.updateSubscriberSettingsMutex.Unlock()
 	if stub != nil {
-		fake.UpdateSubscriberSettingsStub(arg1, arg2)
+		fake.UpdateSubscriberSettingsStub(arg1)
 	}
 }
 
@@ -392,17 +394,41 @@ func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCallCount() int {
 	return len(fake.updateSubscriberSettingsArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCalls(stub func(bool, livekit.VideoQuality)) {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsCalls(stub func(*livekit.UpdateTrackSettings)) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	defer fake.updateSubscriberSettingsMutex.Unlock()
 	fake.UpdateSubscriberSettingsStub = stub
 }
 
-func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsArgsForCall(i int) (bool, livekit.VideoQuality) {
+func (fake *FakeSubscribedTrack) UpdateSubscriberSettingsArgsForCall(i int) *livekit.UpdateTrackSettings {
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	argsForCall := fake.updateSubscriberSettingsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
+}
+
+func (fake *FakeSubscribedTrack) UpdateVideoLayer() {
+	fake.updateVideoLayerMutex.Lock()
+	fake.updateVideoLayerArgsForCall = append(fake.updateVideoLayerArgsForCall, struct {
+	}{})
+	stub := fake.UpdateVideoLayerStub
+	fake.recordInvocation("UpdateVideoLayer", []interface{}{})
+	fake.updateVideoLayerMutex.Unlock()
+	if stub != nil {
+		fake.UpdateVideoLayerStub()
+	}
+}
+
+func (fake *FakeSubscribedTrack) UpdateVideoLayerCallCount() int {
+	fake.updateVideoLayerMutex.RLock()
+	defer fake.updateVideoLayerMutex.RUnlock()
+	return len(fake.updateVideoLayerArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) UpdateVideoLayerCalls(stub func()) {
+	fake.updateVideoLayerMutex.Lock()
+	defer fake.updateVideoLayerMutex.Unlock()
+	fake.UpdateVideoLayerStub = stub
 }
 
 func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
@@ -422,6 +448,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.subscribeLossPercentageMutex.RUnlock()
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
+	fake.updateVideoLayerMutex.RLock()
+	defer fake.updateVideoLayerMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

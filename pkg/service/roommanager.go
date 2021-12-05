@@ -361,116 +361,127 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			}
 
 			req := obj.(*livekit.SignalRequest)
-
-			switch msg := req.Message.(type) {
-			case *livekit.SignalRequest_Offer:
-				_, err := participant.HandleOffer(rtc.FromProtoSessionDescription(msg.Offer))
-				if err != nil {
-					logger.Errorw("could not handle offer", err,
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-					)
-					return
-				}
-			case *livekit.SignalRequest_AddTrack:
-				logger.Debugw("add track request",
-					"room", room.Room.Name,
-					"participant", participant.Identity(),
-					"pID", participant.ID(),
-					"track", msg.AddTrack.Cid)
-				participant.AddTrack(msg.AddTrack)
-			case *livekit.SignalRequest_Answer:
-				sd := rtc.FromProtoSessionDescription(msg.Answer)
-				if err := participant.HandleAnswer(sd); err != nil {
-					logger.Errorw("could not handle answer", err,
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-					)
-				}
-			case *livekit.SignalRequest_Trickle:
-				candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
-				if err != nil {
-					logger.Errorw("could not decode trickle", err,
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-					)
-					break
-				}
-				// logger.Debugw("adding peer candidate", "participant", participant.Identity())
-				if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-					logger.Errorw("could not handle trickle", err,
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-					)
-				}
-			case *livekit.SignalRequest_Mute:
-				participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
-			case *livekit.SignalRequest_Subscription:
-				if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
-					logger.Warnw("could not update subscription", err,
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-						"tracks", msg.Subscription.TrackSids,
-						"subscribe", msg.Subscription.Subscribe)
-				}
-			case *livekit.SignalRequest_TrackSetting:
-				for _, sid := range msg.TrackSetting.TrackSids {
-					subTrack := participant.GetSubscribedTrack(sid)
-					if subTrack == nil {
-						logger.Warnw("unable to find SubscribedTrack", nil,
-							"room", room.Room.Name,
-							"participant", participant.Identity(),
-							"pID", participant.ID(),
-							"track", sid)
-						continue
-					}
-
-					// find the source PublishedTrack
-					publisher := room.GetParticipant(subTrack.PublisherIdentity())
-					if publisher == nil {
-						logger.Warnw("unable to find publisher of SubscribedTrack", nil,
-							"room", room.Room.Name,
-							"participant", participant.Identity(),
-							"pID", participant.ID(),
-							"publisher", subTrack.PublisherIdentity(),
-							"track", sid)
-						continue
-					}
-
-					pubTrack := publisher.GetPublishedTrack(sid)
-					if pubTrack == nil {
-						logger.Warnw("unable to find PublishedTrack", nil,
-							"room", room.Room.Name,
-							"participant", publisher.Identity(),
-							"pID", publisher.ID(),
-							"track", sid)
-						continue
-					}
-					if msg.TrackSetting.Width > 0 {
-						msg.TrackSetting.Quality = pubTrack.GetQualityForDimension(msg.TrackSetting.Width, msg.TrackSetting.Height)
-					}
-
-					// find quality for published track
-					logger.Debugw("updating track settings",
-						"room", room.Room.Name,
-						"participant", participant.Identity(),
-						"pID", participant.ID(),
-						"settings", msg.TrackSetting)
-					subTrack.UpdateSubscriberSettings(
-						!msg.TrackSetting.Disabled,
-						msg.TrackSetting.Quality,
-					)
-				}
-			case *livekit.SignalRequest_Leave:
-				_ = participant.Close()
+			if err := r.handleSignalRequest(room, participant, req); err != nil {
+				// more specific errors are already logged
+				// treat errors returned as fatal
+				return
 			}
 		}
 	}
+}
+
+func (r *RoomManager) handleSignalRequest(room *rtc.Room, participant types.Participant, req *livekit.SignalRequest) error {
+	switch msg := req.Message.(type) {
+	case *livekit.SignalRequest_Offer:
+		_, err := participant.HandleOffer(rtc.FromProtoSessionDescription(msg.Offer))
+		if err != nil {
+			logger.Errorw("could not handle offer", err,
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+			)
+			return err
+		}
+	case *livekit.SignalRequest_AddTrack:
+		logger.Debugw("add track request",
+			"room", room.Room.Name,
+			"participant", participant.Identity(),
+			"pID", participant.ID(),
+			"track", msg.AddTrack.Cid)
+		participant.AddTrack(msg.AddTrack)
+	case *livekit.SignalRequest_Answer:
+		sd := rtc.FromProtoSessionDescription(msg.Answer)
+		if err := participant.HandleAnswer(sd); err != nil {
+			logger.Errorw("could not handle answer", err,
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+			)
+			// connection cannot be successful if we can't answer
+			return err
+		}
+	case *livekit.SignalRequest_Trickle:
+		candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+		if err != nil {
+			logger.Warnw("could not decode trickle", err,
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+			)
+			return nil
+		}
+		// logger.Debugw("adding peer candidate", "participant", participant.Identity())
+		if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
+			logger.Warnw("could not handle trickle", err,
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+			)
+		}
+	case *livekit.SignalRequest_Mute:
+		participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
+	case *livekit.SignalRequest_Subscription:
+		if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
+			logger.Warnw("could not update subscription", err,
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+				"tracks", msg.Subscription.TrackSids,
+				"subscribe", msg.Subscription.Subscribe)
+		}
+	case *livekit.SignalRequest_TrackSetting:
+		for _, sid := range msg.TrackSetting.TrackSids {
+			subTrack := participant.GetSubscribedTrack(sid)
+			if subTrack == nil {
+				logger.Warnw("unable to find SubscribedTrack", nil,
+					"room", room.Room.Name,
+					"participant", participant.Identity(),
+					"pID", participant.ID(),
+					"track", sid)
+				continue
+			}
+
+			// find the source PublishedTrack
+			publisher := room.GetParticipant(subTrack.PublisherIdentity())
+			if publisher == nil {
+				logger.Warnw("unable to find publisher of SubscribedTrack", nil,
+					"room", room.Room.Name,
+					"participant", participant.Identity(),
+					"pID", participant.ID(),
+					"publisher", subTrack.PublisherIdentity(),
+					"track", sid)
+				continue
+			}
+
+			pubTrack := publisher.GetPublishedTrack(sid)
+			if pubTrack == nil {
+				logger.Warnw("unable to find PublishedTrack", nil,
+					"room", room.Room.Name,
+					"participant", publisher.Identity(),
+					"pID", publisher.ID(),
+					"track", sid)
+				continue
+			}
+
+			// find quality for published track
+			logger.Debugw("updating track settings",
+				"room", room.Room.Name,
+				"participant", participant.Identity(),
+				"pID", participant.ID(),
+				"settings", msg.TrackSetting)
+			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
+		}
+	case *livekit.SignalRequest_UpdateLayers:
+		track := participant.GetPublishedTrack(msg.UpdateLayers.TrackSid)
+		if track == nil {
+			logger.Warnw("could not find published track", nil,
+				"track", msg.UpdateLayers.TrackSid)
+
+		}
+	case *livekit.SignalRequest_Leave:
+		_ = participant.Close()
+	}
+	return nil
 }
 
 // handles RTC messages resulted from Room API calls

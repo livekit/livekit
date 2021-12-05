@@ -1,9 +1,11 @@
 package rtc
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -15,16 +17,19 @@ const (
 )
 
 type SubscribedTrack struct {
+	publishedTrack    types.PublishedTrack
 	dt                *sfu.DownTrack
 	publisherIdentity string
 	subMuted          utils.AtomicFlag
 	pubMuted          utils.AtomicFlag
+	settings          atomic.Value // *livekit.UpdateTrackSettings
 
 	debouncer func(func())
 }
 
-func NewSubscribedTrack(publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(publishedTrack types.PublishedTrack, publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
+		publishedTrack:    publishedTrack,
 		publisherIdentity: publisherIdentity,
 		dt:                dt,
 		debouncer:         debounce.New(subscriptionDebounceInterval),
@@ -57,14 +62,28 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 	t.updateDownTrackMute()
 }
 
-func (t *SubscribedTrack) UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality) {
-	t.debouncer(func() {
-		t.subMuted.TrySet(!enabled)
-		t.updateDownTrackMute()
-		if enabled && t.dt.Kind() == webrtc.RTPCodecTypeVideo {
-			t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
-		}
-	})
+func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
+	t.subMuted.TrySet(settings.Disabled)
+	t.settings.Store(settings)
+	// avoid frequent changes to mute & video layers
+	t.debouncer(t.UpdateVideoLayer)
+}
+
+func (t *SubscribedTrack) UpdateVideoLayer() {
+	t.updateDownTrackMute()
+	if t.subMuted.Get() || t.dt.Kind() != webrtc.RTPCodecTypeVideo {
+		return
+	}
+	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
+	if !ok {
+		return
+	}
+
+	quality := settings.Quality
+	if settings.Width > 0 {
+		quality = t.publishedTrack.GetQualityForDimension(settings.Width, settings.Height)
+	}
+	t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
