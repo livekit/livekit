@@ -286,10 +286,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	payload := extPkt.Packet.Payload
+	payload := &extPkt.Packet.Payload
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-		payload, pool, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, tp.vp8.header)
+
+		if incomingVP8.HeaderSize != tp.vp8.header.HeaderSize {
+			pool = PacketFactory.Get().(*[]byte)
+			payload = pool
+		}
+		err = d.translateVP8PacketTo(&extPkt.Packet, &incomingVP8, tp.vp8.header, payload)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err
@@ -309,17 +314,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	_, err = d.writeStream.WriteRTP(hdr, payload)
+	_, err = d.writeStream.WriteRTP(hdr, *payload)
 	if err == nil {
 		for _, f := range d.onPacketSent {
-			f(d, hdr.MarshalSize()+len(payload))
+			f(d, hdr.MarshalSize()+len(*payload))
 		}
 	} else {
 		d.pktsDropped.add(1)
 	}
 
 	// LK-TODO maybe include RTP header size also
-	d.UpdateStats(uint32(len(payload)))
+	d.UpdateStats(uint32(len(*payload)))
 
 	return err
 }
@@ -767,26 +772,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 }
 
-func (d *DownTrack) maybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) (pool *[]byte, err error) {
-	if d.mime != "video/vp8" || len(pkt.Payload) == 0 {
-		return
-	}
-
-	var incomingVP8 buffer.VP8
-	if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
-		return
-	}
-
-	translatedVP8 := meta.unpackVP8()
-	payload, pool, err := d.translateVP8Packet(pkt, &incomingVP8, translatedVP8)
-	if err != nil {
-		return
-	}
-
-	pkt.Payload = payload
-	return
-}
-
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	var pool *[]byte
 	defer func() {
@@ -822,10 +807,24 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		pool, err = d.maybeTranslateVP8(&pkt, meta)
-		if err != nil {
-			Logger.Error(err, "translating VP8 packet err")
-			continue
+		payload := &pkt.Payload
+		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
+			var incomingVP8 buffer.VP8
+			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
+				Logger.Error(err, "unmarshalling VP8 packet err")
+				continue
+			}
+
+			translatedVP8 := meta.unpackVP8()
+			if incomingVP8.HeaderSize != translatedVP8.HeaderSize {
+				pool = PacketFactory.Get().(*[]byte)
+				payload = pool
+			}
+			err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, payload)
+			if err != nil {
+				Logger.Error(err, "translating VP8 packet err")
+				continue
+			}
 		}
 
 		err = d.writeRTPHeaderExtensions(&pkt.Header)
@@ -834,7 +833,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 			continue
 		}
 
-		if _, err = d.writeStream.WriteRTP(&pkt.Header, pkt.Payload); err != nil {
+		if _, err = d.writeStream.WriteRTP(&pkt.Header, *payload); err != nil {
 			Logger.Error(err, "Writing rtx packet err")
 		} else {
 			d.UpdateStats(uint32(n))
@@ -889,12 +888,12 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tpRTP *Tran
 	return &hdr, nil
 }
 
-func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8) (buf []byte, pool *[]byte, err error) {
-	if incomingVP8.HeaderSize == translatedVP8.HeaderSize {
+func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) error {
+	var buf []byte
+	if outbuf == &pkt.Payload {
 		buf = pkt.Payload
 	} else {
-		pool = PacketFactory.Get().(*[]byte)
-		buf = (*pool)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
 
 		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
 		dstPayload := buf[translatedVP8.HeaderSize:]
@@ -902,8 +901,7 @@ func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 	}
 
 	hdr := buf[:translatedVP8.HeaderSize]
-	err = translatedVP8.MarshalTo(hdr)
-	return
+	return translatedVP8.MarshalTo(hdr)
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
