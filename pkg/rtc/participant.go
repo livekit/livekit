@@ -9,8 +9,6 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
@@ -18,6 +16,9 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -43,6 +44,7 @@ type ParticipantParams struct {
 	ThrottleConfig  config.PLIThrottleConfig
 	EnabledCodecs   []*livekit.Codec
 	Hidden          bool
+	Recorder        bool
 	Logger          logger.Logger
 }
 
@@ -180,7 +182,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.subscriber.OnOffer(p.onOffer)
 
-	p.subscriber.OnStreamedTracksChange(p.onStreamedTracksChange)
+	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
 
 	return p, nil
 }
@@ -235,6 +237,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
+		Recorder: p.IsRecorder(),
 	}
 
 	p.lock.RLock()
@@ -428,7 +431,6 @@ func (p *ParticipantImpl) Close() error {
 	p.lock.Lock()
 	for _, t := range p.publishedTracks {
 		// skip updates
-		t.OnClose(nil)
 		t.RemoveAllSubscribers()
 	}
 
@@ -759,6 +761,10 @@ func (p *ParticipantImpl) Hidden() bool {
 	return p.params.Hidden
 }
 
+func (p *ParticipantImpl) IsRecorder() bool {
+	return p.params.Recorder
+}
+
 func (p *ParticipantImpl) SubscriberAsPrimary() bool {
 	return p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
 }
@@ -1079,7 +1085,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 
 	track.Start()
 
-	track.OnClose(func() {
+	track.AddOnClose(func() {
 		// cleanup
 		p.lock.Lock()
 		delete(p.publishedTracks, track.ID())
@@ -1088,7 +1094,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 		if p.IsReady() && p.onTrackUpdated != nil {
 			p.onTrackUpdated(p, track)
 		}
-		track.OnClose(nil)
 	})
 
 	if p.onTrackPublished != nil {
@@ -1314,28 +1319,27 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	}
 }
 
-func (p *ParticipantImpl) onStreamedTracksChange(update *sfu.StreamedTracksUpdate) error {
-	if len(update.Paused) == 0 && len(update.Resumed) == 0 {
+func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) error {
+	if len(update.StreamStates) == 0 {
 		return nil
 	}
 
-	streamedTracksUpdate := &livekit.StreamedTracksUpdate{}
-	for _, streamedTrack := range update.Paused {
-		streamedTracksUpdate.Paused = append(streamedTracksUpdate.Paused, &livekit.StreamedTrack{
-			ParticipantSid: streamedTrack.ParticipantSid,
-			TrackSid:       streamedTrack.TrackSid,
-		})
-	}
-	for _, streamedTrack := range update.Resumed {
-		streamedTracksUpdate.Resumed = append(streamedTracksUpdate.Resumed, &livekit.StreamedTrack{
-			ParticipantSid: streamedTrack.ParticipantSid,
-			TrackSid:       streamedTrack.TrackSid,
+	streamStateUpdate := &livekit.StreamStateUpdate{}
+	for _, streamStateInfo := range update.StreamStates {
+		state := livekit.StreamState_ACTIVE
+		if streamStateInfo.State == sfu.StreamStatePaused {
+			state = livekit.StreamState_PAUSED
+		}
+		streamStateUpdate.StreamStates = append(streamStateUpdate.StreamStates, &livekit.StreamStateInfo{
+			ParticipantSid: streamStateInfo.ParticipantSid,
+			TrackSid:       streamStateInfo.TrackSid,
+			State:          state,
 		})
 	}
 
 	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_StreamedTracksUpdate{
-			StreamedTracksUpdate: streamedTracksUpdate,
+		Message: &livekit.SignalResponse_StreamStateUpdate{
+			StreamStateUpdate: streamStateUpdate,
 		},
 	})
 }

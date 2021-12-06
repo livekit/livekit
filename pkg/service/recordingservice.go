@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/proto"
@@ -63,8 +62,15 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, err
 	}
 
+	ri := &livekit.RecordingInfo{
+		Id:     recordingId,
+		Active: true,
+	}
+	if template := req.Input.(*livekit.StartRecordingRequest_Template); template != nil {
+		ri.RoomName = template.Template.RoomName
+	}
 	logger.Debugw("recording started", "recordingID", recordingId)
-	s.telemetry.RecordingStarted(ctx, recordingId, req)
+	s.telemetry.RecordingStarted(ctx, ri)
 
 	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
 }
@@ -85,6 +91,7 @@ func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutput
 	if err != nil {
 		return nil, err
 	}
+
 	return &emptypb.Empty{}, nil
 }
 
@@ -104,6 +111,7 @@ func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.Remove
 	if err != nil {
 		return nil, err
 	}
+
 	return &emptypb.Empty{}, nil
 }
 
@@ -140,7 +148,7 @@ func (s *RecordingService) resultsWorker() {
 		case msg := <-resChan:
 			b := sub.Payload(msg)
 
-			res := &livekit.RecordingResult{}
+			res := &livekit.RecordingInfo{}
 			if err = proto.Unmarshal(b, res); err != nil {
 				logger.Errorw("failed to read results", err)
 				continue
@@ -150,11 +158,6 @@ func (s *RecordingService) resultsWorker() {
 			values := []interface{}{"recordingID", res.Id}
 			if res.Error != "" {
 				values = append(values, "error", res.Error)
-			} else {
-				values = append(values, "duration", time.Duration(res.Duration*1e9))
-				if res.DownloadUrl != "" {
-					values = append(values, "url", res.DownloadUrl)
-				}
 			}
 			logger.Debugw("recording ended", values...)
 

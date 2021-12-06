@@ -31,12 +31,14 @@ type pendingPackets struct {
 }
 
 type ExtPacket struct {
-	Head      bool
-	Arrival   int64
-	Packet    rtp.Packet
-	Payload   interface{}
-	KeyFrame  bool
-	RawPacket []byte
+	Head     bool
+	Arrival  int64
+	Packet   rtp.Packet
+	Payload  interface{}
+	KeyFrame bool
+	//audio level for voice, l&0x80 == 0 means audio level not present
+	AudioLevel uint8
+	RawPacket  []byte
 }
 
 // Buffer contains all packets
@@ -384,6 +386,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
+				ep.AudioLevel = e[0] | 0x80 // highest bit to indicate audio level present
 				duration := (int64(p.Timestamp) - int64(latestTimestamp)) * 1e3 / int64(b.clockRate)
 				if duration > 0 {
 					b.onAudioLevel(ext.Level, uint32(duration))

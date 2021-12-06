@@ -18,7 +18,7 @@ type RoomService struct {
 	roomStore     RORoomStore
 }
 
-func NewRoomService(ra RoomAllocator, rs RORoomStore, router routing.MessageRouter) (svc livekit.RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs RORoomStore, router routing.MessageRouter) (svc *RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,
@@ -62,12 +62,12 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-
-	if err := s.writeRoomMessage(ctx, req.Room, "", &livekit.RTCNodeMessage{
+	err := s.router.WriteRoomRTC(ctx, req.Room, "", &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 

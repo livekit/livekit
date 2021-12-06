@@ -95,10 +95,10 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		return nil, ErrNotVP8
 	}
 
-	extPictureId, newer := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.MBit)
+	extPictureId := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.MBit)
 
 	// if out-of-order, look up missing picture id cache
-	if !newer {
+	if ordering == SequenceNumberOrderingOutOfOrder {
 		value, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
 			return nil, ErrOutOfOrderVP8PictureIdCacheMiss
@@ -215,7 +215,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	}, nil
 }
 
-func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) (*buffer.VP8, error) {
+func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) *buffer.VP8 {
 	offset := 0
 	if newPicture {
 		offset = 1
@@ -273,13 +273,19 @@ func (v *VP8Munger) UpdateAndGetPadding(newPicture bool) (*buffer.VP8, error) {
 		IsKeyFrame:       true,
 		HeaderSize:       headerSize,
 	}
-	return vp8Packet, nil
+	return vp8Packet
+}
+
+// for testing only
+func (v *VP8Munger) PictureIdOffset(extPictureId int32) (int32, bool) {
+	value, ok := v.missingPictureIds.Get(extPictureId)
+	return value.(int32), ok
 }
 
 //-----------------------------
 
 //
-// VP8Munger
+// VP8PictureIdWrapHandler
 //
 func isWrapping7Bit(val1 int32, val2 int32) bool {
 	return val2 < val1 && (val1-val2) > (1<<6)
@@ -307,8 +313,8 @@ func (v *VP8PictureIdWrapHandler) MaxPictureId() int32 {
 	return v.maxPictureId
 }
 
-// unwrap picture id and update the maxPictureId. return unwrapped value, and whether picture id is newer
-func (v *VP8PictureIdWrapHandler) Unwrap(pictureId uint16, mBit bool) (int32, bool) {
+// unwrap picture id and update the maxPictureId. return unwrapped value
+func (v *VP8PictureIdWrapHandler) Unwrap(pictureId uint16, mBit bool) int32 {
 	//
 	// VP8 Picture ID is specified very flexibly.
 	//
@@ -360,7 +366,7 @@ func (v *VP8PictureIdWrapHandler) Unwrap(pictureId uint16, mBit bool) (int32, bo
 	//
 	if v.totalWrap > 0 {
 		if (v.maxPictureId + (v.lastWrap >> 1)) < (newPictureId + v.totalWrap) {
-			return newPictureId + v.totalWrap - v.lastWrap, false
+			return newPictureId + v.totalWrap - v.lastWrap
 		}
 	}
 
@@ -371,7 +377,7 @@ func (v *VP8PictureIdWrapHandler) Unwrap(pictureId uint16, mBit bool) (int32, bo
 	//   2. Wrapping from 15-bit -> 15-bit (32767 -> 0)
 	//   3. Wrapping from 8-bit -> 8-bit (127 -> 0)
 	// In all cases, looking at the mode of previous picture id will
-	// ensure that we are calculating the rap properly.
+	// ensure that we are calculating the wrap properly.
 	//
 	wrap := int32(0)
 	if v.maxMBit {
@@ -390,8 +396,7 @@ func (v *VP8PictureIdWrapHandler) Unwrap(pictureId uint16, mBit bool) (int32, bo
 	}
 	newPictureId += v.totalWrap
 
-	// >= in the below check as there could be multiple packets per picture
-	return newPictureId, newPictureId >= v.maxPictureId
+	return newPictureId
 }
 
 func (v *VP8PictureIdWrapHandler) UpdateMaxPictureId(extPictureId int32, mBit bool) {

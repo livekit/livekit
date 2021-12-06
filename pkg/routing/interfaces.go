@@ -35,6 +35,7 @@ type ParticipantInit struct {
 	Permission    *livekit.ParticipantPermission
 	AutoSubscribe bool
 	Hidden        bool
+	Recorder      bool
 	Client        *livekit.ClientInfo
 }
 

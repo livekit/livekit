@@ -7,16 +7,16 @@ import (
 // wrapper around WebRTC receiver, overriding its ID
 
 type WrappedReceiver struct {
-	sfu.Receiver
+	sfu.TrackReceiver
 	trackId  string
 	streamId string
 }
 
-func NewWrappedReceiver(receiver sfu.Receiver, trackId string, streamId string) WrappedReceiver {
+func NewWrappedReceiver(receiver sfu.TrackReceiver, trackId string, streamId string) WrappedReceiver {
 	return WrappedReceiver{
-		Receiver: receiver,
-		trackId:  trackId,
-		streamId: streamId,
+		TrackReceiver: receiver,
+		trackId:       trackId,
+		streamId:      streamId,
 	}
 }
 

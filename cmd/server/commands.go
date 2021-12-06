@@ -110,6 +110,7 @@ func createToken(c *cli.Context) error {
 	}
 	if c.Bool("recorder") {
 		grant.Hidden = true
+		grant.Recorder = true
 		grant.SetCanPublish(false)
 		grant.SetCanPublishData(false)
 	}

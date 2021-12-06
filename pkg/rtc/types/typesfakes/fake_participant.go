@@ -266,6 +266,16 @@ type FakeParticipant struct {
 	isReadyReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsRecorderStub        func() bool
+	isRecorderMutex       sync.RWMutex
+	isRecorderArgsForCall []struct {
+	}
+	isRecorderReturns struct {
+		result1 bool
+	}
+	isRecorderReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsSubscribedToStub        func(string) bool
 	isSubscribedToMutex       sync.RWMutex
 	isSubscribedToArgsForCall []struct {
@@ -1831,6 +1841,59 @@ func (fake *FakeParticipant) IsReadyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) IsRecorder() bool {
+	fake.isRecorderMutex.Lock()
+	ret, specificReturn := fake.isRecorderReturnsOnCall[len(fake.isRecorderArgsForCall)]
+	fake.isRecorderArgsForCall = append(fake.isRecorderArgsForCall, struct {
+	}{})
+	stub := fake.IsRecorderStub
+	fakeReturns := fake.isRecorderReturns
+	fake.recordInvocation("IsRecorder", []interface{}{})
+	fake.isRecorderMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) IsRecorderCallCount() int {
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
+	return len(fake.isRecorderArgsForCall)
+}
+
+func (fake *FakeParticipant) IsRecorderCalls(stub func() bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = stub
+}
+
+func (fake *FakeParticipant) IsRecorderReturns(result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	fake.isRecorderReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
+	fake.isRecorderMutex.Lock()
+	defer fake.isRecorderMutex.Unlock()
+	fake.IsRecorderStub = nil
+	if fake.isRecorderReturnsOnCall == nil {
+		fake.isRecorderReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isRecorderReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeParticipant) IsSubscribedTo(arg1 string) bool {
 	fake.isSubscribedToMutex.Lock()
 	ret, specificReturn := fake.isSubscribedToReturnsOnCall[len(fake.isSubscribedToArgsForCall)]
@@ -3139,6 +3202,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.identityMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
+	fake.isRecorderMutex.RLock()
+	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
 	fake.negotiateMutex.RLock()

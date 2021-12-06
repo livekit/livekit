@@ -85,7 +85,7 @@ func TestTrackPublishing(t *testing.T) {
 		require.False(t, updated)
 		require.Len(t, p.publishedTracks, 1)
 
-		track.OnCloseArgsForCall(0)()
+		track.AddOnCloseArgsForCall(0)()
 		require.Len(t, p.publishedTracks, 0)
 		require.True(t, updated)
 	})
