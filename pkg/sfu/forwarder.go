@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -380,6 +381,7 @@ func (f *Forwarder) findBestLayers(
 	}
 
 	result = f.toVideoAllocationResult(targetLayers, brs, optimalBandwidthNeeded, canPause)
+	fmt.Printf("RAJA result: %+v, targetLayers: %+v\n", result, targetLayers)	// REMOVE
 	f.updateAllocationState(targetLayers, result)
 	return
 }
@@ -401,6 +403,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	fmt.Printf("RAJA o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
@@ -769,7 +772,17 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.targetLayers.temporal)
+	// catch up temporal layer if necessary
+	if f.currentLayers.temporal != f.targetLayers.temporal {
+		incomingVP8, ok := extPkt.Payload.(buffer.VP8)
+		if ok {
+			if incomingVP8.TIDPresent == 1 && incomingVP8.TID <= uint8(f.targetLayers.temporal) {
+				f.currentLayers.temporal = f.targetLayers.temporal
+			}
+		}
+	}
+
+	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.currentLayers.temporal)
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
@@ -781,13 +794,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 
 		return tp, err
-	}
-
-	// catch up temporal layer if necessary
-	if tpVP8 != nil && f.currentLayers.temporal != f.targetLayers.temporal {
-		if tpVP8.header.TIDPresent == 1 && tpVP8.header.TID <= uint8(f.targetLayers.temporal) {
-			f.currentLayers.temporal = f.targetLayers.temporal
-		}
 	}
 
 	tp.rtp = tpRTP
