@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,7 +31,8 @@ var (
 )
 
 const (
-	lostUpdateDelta = time.Second
+	lostUpdateDelta         = time.Second
+	layerSelectionTolerance = 0.8
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -47,12 +49,13 @@ type MediaTrack struct {
 
 	// channel to send RTCP packets to the source
 	lock sync.RWMutex
-	// map of target participantId -> *SubscribedTrack
-	subscribedTracks map[string]*SubscribedTrack
+	// map of target participantId -> types.SubscribedTrack
+	subscribedTracks sync.Map
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
 	lastPLI          time.Time
+	layerDimensions  sync.Map // quality => *livekit.VideoLayer
 
 	// track audio fraction lost
 	fracLostLock      sync.Mutex
@@ -81,15 +84,18 @@ type MediaTrackParams struct {
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:           params,
-		ssrc:             track.SSRC(),
-		streamID:         track.StreamID(),
-		codec:            track.Codec(),
-		subscribedTracks: make(map[string]*SubscribedTrack),
+		params:   params,
+		ssrc:     track.SSRC(),
+		streamID: track.StreamID(),
+		codec:    track.Codec(),
 	}
 
 	if params.TrackInfo.Muted {
 		t.SetMuted(true)
+	}
+
+	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
+		t.UpdateVideoLayers(params.TrackInfo.Layers)
 	}
 	return t
 }
@@ -128,11 +134,15 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	if t.receiver != nil {
 		t.receiver.SetUpTrackPaused(muted)
 	}
-	// mute all subscribed tracks
-	for _, st := range t.subscribedTracks {
-		st.SetPublisherMuted(muted)
-	}
 	t.lock.RUnlock()
+
+	// mute all subscribed tracks
+	t.subscribedTracks.Range(func(_, value interface{}) bool {
+		if st, ok := value.(types.SubscribedTrack); ok {
+			st.SetPublisherMuted(muted)
+		}
+		return true
+	})
 }
 
 func (t *MediaTrack) AddOnClose(f func()) {
@@ -143,9 +153,8 @@ func (t *MediaTrack) AddOnClose(f func()) {
 }
 
 func (t *MediaTrack) IsSubscriber(subId string) bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-	return t.subscribedTracks[subId] != nil
+	_, ok := t.subscribedTracks.Load(subId)
+	return ok
 }
 
 func (t *MediaTrack) PublishLossPercentage() uint32 {
@@ -160,10 +169,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	existingSt := t.subscribedTracks[sub.ID()]
 
 	// don't subscribe to the same track multiple times
-	if existingSt != nil {
+	if _, ok := t.subscribedTracks.Load(sub.ID()); ok {
 		return nil
 	}
 
@@ -191,7 +199,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(t.params.ParticipantIdentity, downTrack)
+	subTrack := NewSubscribedTrack(t, t.params.ParticipantIdentity, downTrack)
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
@@ -249,10 +257,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.lock.Lock()
-			delete(t.subscribedTracks, sub.ID())
-			t.lock.Unlock()
-
+			t.subscribedTracks.Delete(sub.ID())
 			t.params.Telemetry.TrackUnsubscribed(context.Background(), sub.ID(), t.ToProto())
 
 			// ignore if the subscribing sub is not connected
@@ -293,7 +298,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 	}
 
-	t.subscribedTracks[sub.ID()] = subTrack
+	t.subscribedTracks.Store(sub.ID(), subTrack)
 	subTrack.SetPublisherMuted(t.IsMuted())
 
 	t.receiver.AddDownTrack(downTrack)
@@ -406,10 +411,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
 func (t *MediaTrack) RemoveSubscriber(participantId string) {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	if subTrack := t.subscribedTracks[participantId]; subTrack != nil {
+	subTrack := t.getSubscribedTrack(participantId)
+	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
 }
@@ -418,21 +421,46 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.params.Logger.Debugw("removing all subscribers", "track", t.ID())
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	for _, subTrack := range t.subscribedTracks {
-		go subTrack.DownTrack().Close()
-	}
-	t.subscribedTracks = make(map[string]*SubscribedTrack)
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if subTrack, ok := val.(types.SubscribedTrack); ok {
+			go subTrack.DownTrack().Close()
+		}
+		return true
+	})
+	t.subscribedTracks = sync.Map{}
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.params.TrackInfo
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.simulcasted.Get()
+	layers := make([]*livekit.VideoLayer, 0)
+	t.layerDimensions.Range(func(_, val interface{}) bool {
+		if layer, ok := val.(*livekit.VideoLayer); ok {
+			layers = append(layers, layer)
+		}
+		return true
+	})
+	info.Layers = layers
+
 	return info
 }
 
+func (t *MediaTrack) UpdateVideoLayers(layers []*livekit.VideoLayer) {
+	for _, layer := range layers {
+		t.layerDimensions.Store(layer.Quality, layer)
+	}
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if st, ok := val.(types.SubscribedTrack); ok {
+			st.UpdateVideoLayer()
+		}
+		return true
+	})
+	// TODO: this might need to trigger a participant update for clients to pick up dimension change
+}
+
 // GetQualityForDimension finds the closest quality to use for desired dimensions
-// affords a 10% tolerance on dimension
+// affords a 20% tolerance on dimension
 func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
 	quality := livekit.VideoQuality_HIGH
 	if t.Kind() == livekit.TrackType_AUDIO || t.params.TrackInfo.Height == 0 {
@@ -446,11 +474,26 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 		requestedSize = width
 	}
 
-	// representing qualities low - high
+	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
+	var providedSizes []uint32
+	t.layerDimensions.Range(func(_, val interface{}) bool {
+		if layer, ok := val.(*livekit.VideoLayer); ok {
+			providedSizes = append(providedSizes, layer.Height)
+		}
+		return true
+	})
+	if len(providedSizes) > 0 {
+		layerSizes = providedSizes
+		// comparing height always
+		requestedSize = height
+		sort.Slice(layerSizes, func(i, j int) bool {
+			return layerSizes[i] < layerSizes[j]
+		})
+	}
 
 	// finds the lowest layer that could satisfy client demands
-	requestedSize = uint32(float32(requestedSize) * 0.9)
+	requestedSize = uint32(float32(requestedSize) * layerSelectionTolerance)
 	for i, s := range layerSizes {
 		quality = livekit.VideoQuality(i)
 		if s >= requestedSize {
@@ -461,15 +504,21 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
+func (t *MediaTrack) getSubscribedTrack(id string) types.SubscribedTrack {
+	if val, ok := t.subscribedTracks.Load(id); ok {
+		if st, ok := val.(types.SubscribedTrack); ok {
+			return st
+		}
+	}
+	return nil
+}
+
 // TODO: send for all downtracks from the source participant
 // https://tools.ietf.org/html/rfc7941
 func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	var sd []rtcp.SourceDescriptionChunk
 
-	t.lock.RLock()
-	subTrack := t.subscribedTracks[sub.ID()]
-	t.lock.RUnlock()
-
+	subTrack := t.getSubscribedTrack(sub.ID())
 	if subTrack == nil {
 		return
 	}
@@ -575,14 +624,15 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	}
 
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
-	t.lock.RLock()
-	for _, track := range t.subscribedTracks {
-		dt := track.dt.DebugInfo()
-		dt["PubMuted"] = track.pubMuted.Get()
-		dt["SubMuted"] = track.subMuted.Get()
-		subscribedTrackInfo = append(subscribedTrackInfo, dt)
-	}
-	t.lock.RUnlock()
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if track, ok := val.(*SubscribedTrack); ok {
+			dt := track.dt.DebugInfo()
+			dt["PubMuted"] = track.pubMuted.Get()
+			dt["SubMuted"] = track.subMuted.Get()
+			subscribedTrackInfo = append(subscribedTrackInfo, dt)
+		}
+		return true
+	})
 	info["DownTracks"] = subscribedTrackInfo
 
 	if t.receiver != nil {

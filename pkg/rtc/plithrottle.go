@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu"
 )
 
 type pliThrottle struct {
@@ -13,13 +14,6 @@ type pliThrottle struct {
 	periods  map[uint32]int64
 	lastSent map[uint32]int64
 }
-
-// github.com/livekit/livekit-server/pkg/sfu/simulcast.go
-const (
-	fullResolution    = "f"
-	halfResolution    = "h"
-	quarterResolution = "q"
-)
 
 func newPLIThrottle(conf config.PLIThrottleConfig) *pliThrottle {
 	return &pliThrottle{
@@ -35,11 +29,11 @@ func (t *pliThrottle) addTrack(ssrc uint32, rid string) {
 
 	var duration time.Duration
 	switch rid {
-	case fullResolution:
+	case sfu.FullResolution:
 		duration = t.config.HighQuality
-	case halfResolution:
+	case sfu.HalfResolution:
 		duration = t.config.MidQuality
-	case quarterResolution:
+	case sfu.QuarterResolution:
 		duration = t.config.LowQuality
 	default:
 		duration = t.config.MidQuality

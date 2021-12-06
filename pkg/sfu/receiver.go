@@ -177,9 +177,9 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 
 	var layer int32
 	switch track.RID() {
-	case fullResolution:
+	case FullResolution:
 		layer = 2
-	case halfResolution:
+	case HalfResolution:
 		layer = 1
 	default:
 		layer = 0
