@@ -939,8 +939,14 @@ func (s *StreamAllocator) maybeBoostLayer() {
 			continue
 		}
 
-		if track.AllocateNextHigher() {
+		result := track.AllocateNextHigher()
+		if result.layersChanged {
 			s.lastBoostTime = time.Now()
+
+			update := NewStreamStateUpdate()
+			update.HandleStreamingChange(result.change, track)
+			s.maybeSendUpdate(update)
+
 			break
 		}
 	}
@@ -1143,7 +1149,7 @@ func (t *Track) FinalizeAllocate() {
 	t.downTrack.FinalizeAllocate()
 }
 
-func (t *Track) AllocateNextHigher() bool {
+func (t *Track) AllocateNextHigher() VideoAllocationResult {
 	return t.downTrack.AllocateNextHigher()
 }
 
