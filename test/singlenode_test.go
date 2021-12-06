@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/auth"
+
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
@@ -42,10 +44,12 @@ func TestClientConnectDuplicate(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
 	defer finish()
 
-	token := joinToken(testRoom, "c1")
-	c1 := createRTCClientWithToken(token, defaultServerPort, nil)
+	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
+	grant.SetCanPublish(true)
+	grant.SetCanSubscribe(true)
+	token := joinTokenWithGrant("c1", grant)
 
-	waitUntilConnected(t, c1)
+	c1 := createRTCClientWithToken(token, defaultServerPort, nil)
 
 	// publish 2 tracks
 	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -55,19 +59,19 @@ func TestClientConnectDuplicate(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
+	c2 := createRTCClient("c2", defaultServerPort, nil)
+	waitUntilConnected(t, c1, c2)
+
 	opts := &testclient.Options{
 		Publish: "duplicate_connection",
 	}
 	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
 
-	waitUntilConnected(t, c1Dup)
+	waitUntilConnected(t, c1Dup, c1, c2)
 
 	t3, err := c1Dup.AddStaticTrack("video/vp8", "video", "webcam")
 	require.NoError(t, err)
 	defer t3.Stop()
-
-	c2 := createRTCClient("c2", defaultServerPort, nil)
-	waitUntilConnected(t, c2)
 
 	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {

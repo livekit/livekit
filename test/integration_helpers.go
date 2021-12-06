@@ -236,6 +236,17 @@ func joinToken(room, name string) string {
 	return t
 }
 
+func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(grant).
+		SetIdentity(name)
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
 func createRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomCreate: true}).
