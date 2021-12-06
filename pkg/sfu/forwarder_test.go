@@ -646,7 +646,317 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 }
 
 func TestForwarderGetTranslationParamsVideo(t *testing.T) {
-	// RAJA-TODO f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+
+	params := &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23333,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	vp8 := &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        13467,
+		MBit:             true,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              1,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       false,
+	}
+	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
+
+	// no target layers, should drop
+	expectedTP := TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err := f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, *actualTP)
+
+	// although target layer matches, not a key frame, so should drop and ask to send PLI
+	f.targetLayers = VideoLayers{
+		spatial:  0,
+		temporal: 1,
+	}
+	expectedTP = TranslationParams{
+		shouldDrop:    true,
+		shouldSendPLI: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, *actualTP)
+
+	// should lock onto packet (target layer and key frame)
+	vp8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        13467,
+		MBit:             true,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              1,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       true,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23333,
+			timestamp:      0xabcdef,
+		},
+		vp8: &TranslationParamsVP8{
+			header: &buffer.VP8{
+				FirstByte:        25,
+				PictureIDPresent: 1,
+				PictureID:        13467,
+				MBit:             true,
+				TL0PICIDXPresent: 1,
+				TL0PICIDX:        233,
+				TIDPresent:       1,
+				TID:              1,
+				Y:                1,
+				KEYIDXPresent:    1,
+				KEYIDX:           23,
+				HeaderSize:       6,
+				IsKeyFrame:       true,
+			},
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+	require.True(t, f.started)
+	require.Equal(t, f.lastSSRC, params.SSRC)
+
+	// send a duplicate, should be dropped
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// out-of-order packet not in cache should be dropped
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23332,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// padding only packet in order should be dropped
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23334,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// in order packet should be forwarded
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23335,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23334,
+			timestamp:      0xabcdef,
+		},
+		vp8: &TranslationParamsVP8{
+			header: &buffer.VP8{
+				FirstByte:        25,
+				PictureIDPresent: 1,
+				PictureID:        13467,
+				MBit:             true,
+				TL0PICIDXPresent: 1,
+				TL0PICIDX:        233,
+				TIDPresent:       1,
+				TID:              1,
+				Y:                1,
+				KEYIDXPresent:    1,
+				KEYIDX:           23,
+				HeaderSize:       6,
+				IsKeyFrame:       true,
+			},
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// temporal layer higher than target, should be dropped
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23336,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        13468,
+		MBit:             true,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        233,
+		TIDPresent:       1,
+		TID:              2,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       true,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// RTP sequence number and VP8 picture id should be contiguous after dropping higher temporal layer picture
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23337,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        13469,
+		MBit:             true,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        234,
+		TIDPresent:       1,
+		TID:              0,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           23,
+		HeaderSize:       6,
+		IsKeyFrame:       false,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23335,
+			timestamp:      0xabcdef,
+		},
+		vp8: &TranslationParamsVP8{
+			header: &buffer.VP8{
+				FirstByte:        25,
+				PictureIDPresent: 1,
+				PictureID:        13468,
+				MBit:             true,
+				TL0PICIDXPresent: 1,
+				TL0PICIDX:        234,
+				TIDPresent:       1,
+				TID:              0,
+				Y:                1,
+				KEYIDXPresent:    1,
+				KEYIDX:           23,
+				HeaderSize:       6,
+				IsKeyFrame:       false,
+			},
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// switching SSRC (happens for new layer or new track source)
+	// should lock onto the new source, but sequence number should be contiguous
+	f.targetLayers = VideoLayers{
+		spatial:  1,
+		temporal: 1,
+	}
+
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 123,
+		Timestamp:      0xfedcba,
+		SSRC:           0x87654321,
+		PayloadSize:    20,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:        25,
+		PictureIDPresent: 1,
+		PictureID:        45,
+		MBit:             false,
+		TL0PICIDXPresent: 1,
+		TL0PICIDX:        12,
+		TIDPresent:       1,
+		TID:              0,
+		Y:                1,
+		KEYIDXPresent:    1,
+		KEYIDX:           30,
+		HeaderSize:       5,
+		IsKeyFrame:       true,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23336,
+			timestamp:      0xabcdf0,
+		},
+		vp8: &TranslationParamsVP8{
+			header: &buffer.VP8{
+				FirstByte:        25,
+				PictureIDPresent: 1,
+				PictureID:        13469,
+				MBit:             true,
+				TL0PICIDXPresent: 1,
+				TL0PICIDX:        235,
+				TIDPresent:       1,
+				TID:              0,
+				Y:                1,
+				KEYIDXPresent:    1,
+				KEYIDX:           24,
+				HeaderSize:       6,
+				IsKeyFrame:       true,
+			},
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 1)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+	require.Equal(t, f.lastSSRC, params.SSRC)
 }
 
 func TestForwardGetSnTsForPadding(t *testing.T) {

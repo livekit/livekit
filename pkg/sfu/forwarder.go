@@ -549,29 +549,6 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationR
 
 	// try moving temporal layer up in currently streaming spatial layer
 	if f.targetLayers != InvalidLayers {
-		/*
-			for i := f.targetTemporalLayer + 1; i <= f.maxTemporalLayer; i++ {
-				if brs[f.targetSpatialLayer][i] == 0 {
-					continue
-				}
-
-				result.bandwidthRequested = brs[f.targetSpatialLayer][i]
-				result.bandwidthDelta = result.bandwidthRequested - f.lastAllocationRequestBps
-				if result.bandwidthRequested == optimalBandwidthNeeded {
-					result.state = VideoAllocationStateOptimal
-				} else {
-					result.state = VideoAllocationStateDeficient
-				}
-
-				f.lastAllocationState = result.state
-				f.lastAllocationRequestBps = result.bandwidthRequested
-
-				f.targetTemporalLayer = int32(i)
-
-				boosted = true
-				return
-			}
-		*/
 		minLayers := VideoLayers{
 			spatial:  f.targetLayers.spatial,
 			temporal: f.targetLayers.temporal + 1,
@@ -792,7 +769,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.currentLayers.temporal)
+	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.targetLayers.temporal)
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
