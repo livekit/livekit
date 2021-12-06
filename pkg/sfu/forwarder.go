@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -381,7 +380,6 @@ func (f *Forwarder) findBestLayers(
 	}
 
 	result = f.toVideoAllocationResult(targetLayers, brs, optimalBandwidthNeeded, canPause)
-	fmt.Printf("RAJA result: %+v, targetLayers: %+v\n", result, targetLayers)	// REMOVE
 	f.updateAllocationState(targetLayers, result)
 	return
 }
@@ -403,7 +401,6 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
