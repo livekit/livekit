@@ -63,10 +63,14 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
-	t.subMuted.TrySet(settings.Disabled)
+	visibilityChanged := t.subMuted.TrySet(settings.Disabled)
 	t.settings.Store(settings)
-	// avoid frequent changes to mute & video layers
-	t.debouncer(t.UpdateVideoLayer)
+	// avoid frequent changes to mute & video layers, unless it became visible
+	if visibilityChanged && !settings.Disabled {
+		t.UpdateVideoLayer()
+	} else {
+		t.debouncer(t.UpdateVideoLayer)
+	}
 }
 
 func (t *SubscribedTrack) UpdateVideoLayer() {
