@@ -9,6 +9,10 @@ import (
 //
 // VP8 munger
 //
+type TranslationParamsVP8 struct {
+	header *buffer.VP8
+}
+
 type VP8MungerParams struct {
 	pictureIdWrapHandler VP8PictureIdWrapHandler
 	extLastPictureId     int32

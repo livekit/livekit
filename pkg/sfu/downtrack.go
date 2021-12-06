@@ -66,33 +66,6 @@ var (
 	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
 )
 
-type TranslationParamsRTP struct {
-	snOrdering     SequenceNumberOrdering
-	sequenceNumber uint16
-	timestamp      uint32
-}
-
-type TranslationParamsVP8 struct {
-	header *buffer.VP8
-}
-
-type TranslationParams struct {
-	shouldDrop    bool
-	shouldSendPLI bool
-	rtp           *TranslationParamsRTP
-	vp8           *TranslationParamsVP8
-}
-
-type SnTs struct {
-	sequenceNumber uint16
-	timestamp      uint32
-}
-
-type VideoLayers struct {
-	spatial  int32
-	temporal int32
-}
-
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 // DownTrack  implements TrackLocal, is the track used to write packets
@@ -547,7 +520,7 @@ func (d *DownTrack) FinalizeAllocate() {
 	d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) AllocateNextHigher() bool {
+func (d *DownTrack) AllocateNextHigher() VideoAllocationResult {
 	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
 }
 
@@ -585,12 +558,12 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	currentSpatialLayer := d.forwarder.CurrentSpatialLayer()
-	if currentSpatialLayer == InvalidSpatialLayer {
+	currentLayers := d.forwarder.CurrentLayers()
+	if currentLayers == InvalidLayers {
 		return nil
 	}
 
-	srRTP, srNTP := d.receiver.GetSenderReportTime(currentSpatialLayer)
+	srRTP, srNTP := d.receiver.GetSenderReportTime(currentLayers.spatial)
 	if srRTP == 0 {
 		return nil
 	}
@@ -719,10 +692,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	pliOnce := true
 	sendPliOnce := func() {
 		if pliOnce {
-			targetSpatialLayer := d.forwarder.TargetSpatialLayer()
-			if targetSpatialLayer != InvalidSpatialLayer {
+			targetLayers := d.forwarder.TargetLayers()
+			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
-				d.receiver.SendPLI(targetSpatialLayer)
+				d.receiver.SendPLI(targetLayers.spatial)
 				pliOnce = false
 			}
 		}
@@ -933,7 +906,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.get(),
 		"Muted":               d.forwarder.Muted(),
-		"CurrentSpatialLayer": d.forwarder.CurrentSpatialLayer,
+		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
 		"Stats":               stats,
 	}
 }

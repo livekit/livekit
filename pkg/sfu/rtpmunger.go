@@ -7,6 +7,26 @@ import (
 //
 // RTPMunger
 //
+type SequenceNumberOrdering int
+
+const (
+	SequenceNumberOrderingContiguous SequenceNumberOrdering = iota
+	SequenceNumberOrderingOutOfOrder
+	SequenceNumberOrderingGap
+	SequenceNumberOrderingDuplicate
+)
+
+type TranslationParamsRTP struct {
+	snOrdering     SequenceNumberOrdering
+	sequenceNumber uint16
+	timestamp      uint32
+}
+
+type SnTs struct {
+	sequenceNumber uint16
+	timestamp      uint32
+}
+
 type RTPMungerParams struct {
 	highestIncomingSN uint16
 	lastSN            uint16
