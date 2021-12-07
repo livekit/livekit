@@ -203,6 +203,22 @@ func createRTCClient(name string, port int, opts *testclient.Options) *testclien
 	return c
 }
 
+// creates a client and runs against server
+func createRTCClientWithToken(token string, port int, opts *testclient.Options) *testclient.RTCClient {
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
+	if err != nil {
+		panic(err)
+	}
+
+	c, err := testclient.NewRTCClient(ws)
+	if err != nil {
+		panic(err)
+	}
+
+	go c.Run()
+
+	return c
+}
 func redisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
@@ -212,6 +228,17 @@ func redisClient() *redis.Client {
 func joinToken(room, name string) string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomJoin: true, Room: room}).
+		SetIdentity(name)
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(grant).
 		SetIdentity(name)
 	t, err := at.ToJWT()
 	if err != nil {
