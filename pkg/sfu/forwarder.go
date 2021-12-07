@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -13,6 +14,10 @@ import (
 //
 // Forwarder
 //
+const (
+	FlagPauseOnDowngrade = false
+)
+
 const (
 	DefaultMaxSpatialLayer  = int32(2)
 	DefaultMaxTemporalLayer = int32(3)
@@ -226,6 +231,7 @@ func (f *Forwarder) UptrackLayersChange(availableLayers []uint16) {
 	defer f.lock.Unlock()
 
 	f.availableLayers = availableLayers
+	fmt.Printf("RAJA UPTRACKLAYERSCHANGES: %+v\n", f.availableLayers)	// REMOVE
 }
 
 func (f *Forwarder) disable() {
@@ -381,6 +387,7 @@ func (f *Forwarder) findBestLayers(
 
 	result = f.toVideoAllocationResult(targetLayers, brs, optimalBandwidthNeeded, canPause)
 	f.updateAllocationState(targetLayers, result)
+	fmt.Printf("RAJA findBestLayers: result: %+v, target: %+v\n", result, targetLayers)	// REMOVE
 	return
 }
 
@@ -401,6 +408,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	fmt.Printf("RAJA: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
@@ -431,6 +439,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 			}
 
 			f.targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
+			fmt.Printf("RAJA awaiting measurement layers: %+v\n", f.targetLayers)	// REMOVE
 		} else {
 			// if not optimistically started, nothing else to do
 			if f.targetLayers == InvalidLayers {
@@ -475,6 +484,7 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, brs [3][4]int64) Vi
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	fmt.Printf("RAJA ALLOCATE\n")	// REMOVE
 	return f.allocate(availableChannelCapacity, true, brs)
 }
 
@@ -482,6 +492,7 @@ func (f *Forwarder) TryAllocate(additionalChannelCapacity int64, brs [3][4]int64
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	fmt.Printf("RAJA TRYALLOCATE\n")	// REMOVE
 	return f.allocate(f.lastAllocationRequestBps+additionalChannelCapacity, false, brs)
 }
 
@@ -494,6 +505,7 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	fmt.Printf("RAJA FINALIZEALLOCATE: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed dry
@@ -519,12 +531,14 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 		ChannelCapacityInfinity,
 		false,
 	)
+	fmt.Printf("RAJA FINALIZEALLOCATE FINISH\n")	// REMOVE
 }
 
 func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationResult) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	fmt.Printf("RAJA ALLOCATENEXTHIGHER\n")	// REMOVE
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -542,6 +556,7 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationR
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	fmt.Printf("RAJA ALLOCATENEXTLAYER: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
 	if optimalBandwidthNeeded == 0 {
 		// either feed is dry or awaiting measurement, don't hunt for higher
 		return
@@ -680,6 +695,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
+				fmt.Printf("RAJA locking to layer: %d -> %d\n", f.currentLayers.spatial, f.targetLayers.spatial)	// REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 			} else {
 				tp.shouldSendPLI = true
@@ -692,7 +708,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if f.targetLayers.spatial < f.currentLayers.spatial && f.targetLayers.spatial < f.maxLayers.spatial {
+	if FlagPauseOnDowngrade && f.targetLayers.spatial < f.currentLayers.spatial && f.targetLayers.spatial < f.maxLayers.spatial {
 		//
 		// If target layer is lower than both the current and
 		// maximum subscribed layer, it is due to bandwidth
@@ -764,7 +780,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	if f.vp8Munger == nil {
+	if f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		tp.rtp = tpRTP
 		return tp, nil
 	}
@@ -795,6 +811,16 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
+	/*
+	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
+	fmt.Printf("AJAR forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
+			layer,
+			extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
+			incomingVP8.PictureID, incomingVP8.TL0PICIDX,
+			f.lastSSRC, tpRTP.sequenceNumber, tpRTP.timestamp,
+			tpVP8.header.PictureID, tpVP8.header.TL0PICIDX,
+			extPkt.KeyFrame, incomingVP8.IsKeyFrame, tpVP8.header.IsKeyFrame)
+			*/
 	return tp, nil
 }
 

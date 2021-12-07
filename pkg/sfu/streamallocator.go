@@ -537,6 +537,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.receivedEstimate = int64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
 		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+		s.logger.Debugw("RAJA received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)	// REMOVE
 	}
 
 	if s.maybeCommitEstimate() {
@@ -639,6 +640,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
 		s.logger.Infow("state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())
+		s.logger.Infow("RAJA state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())	// REMOVE
 	}
 
 	s.state = state
@@ -692,6 +694,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.lastCommitTime = time.Now()
 
 	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
+	s.logger.Debugw("RAJA committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)	// REMOVE
 	return
 }
 
@@ -865,10 +868,12 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	}
 
 	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
+	s.logger.Debugw("RAJA streamed tracks changed", "participant", s.participantID, "update", update)	// REMOVE
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
 			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+			s.logger.Errorw("RAJA could not send streamed tracks update", err, "participant", s.participantID)	// REMOVE
 		}
 	}
 }

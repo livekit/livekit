@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"github.com/elliotchance/orderedmap"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -96,6 +97,7 @@ func (v *VP8Munger) UpdateOffsets(extPkt *buffer.ExtPacket) {
 func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumberOrdering, maxTemporalLayer int32) (*TranslationParamsVP8, error) {
 	vp8, ok := extPkt.Payload.(buffer.VP8)
 	if !ok {
+		fmt.Printf("RAJA payload size: %d\n", len(extPkt.Packet.Payload))	// REMOVE
 		return nil, ErrNotVP8
 	}
 

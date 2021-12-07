@@ -622,6 +622,48 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
 
+	// padding only packet after a gap should be forwarded
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23337,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, err = testutils.GetTestExtPacket(params)
+
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23336,
+			timestamp:      0xabcdef,
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// out-of-order should be forwarded using cache
+	params = &testutils.TestExtPacketParams{
+		IsHead:         false,
+		SequenceNumber: 23336,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+	}
+	extPkt, err = testutils.GetTestExtPacket(params)
+
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingContiguous,
+			sequenceNumber: 23335,
+			timestamp:      0xabcdef,
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
 	// switching source should lock onto the new source, but sequence number should be contiguous
 	params = &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -635,7 +677,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23335,
+			sequenceNumber: 23337,
 			timestamp:      0xabcdf0,
 		},
 	}
