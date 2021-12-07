@@ -65,23 +65,12 @@ func TestClientConnectDuplicate(t *testing.T) {
 	opts := &testclient.Options{
 		Publish: "duplicate_connection",
 	}
-	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
-
-	waitUntilConnected(t, c1Dup, c1, c2)
-
-	t3, err := c1Dup.AddStaticTrack("video/vp8", "video", "webcam")
-	require.NoError(t, err)
-	defer t3.Stop()
-
 	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
 		if len(c2.SubscribedTracks()) == 0 {
 			return false
 		}
 		// should have received three tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
-			return false
-		}
-		if len(c2.SubscribedTracks()[c1Dup.ID()]) != 1 {
 			return false
 		}
 
@@ -92,6 +81,25 @@ func TestClientConnectDuplicate(t *testing.T) {
 		tr2 := c2.SubscribedTracks()[c1.ID()][1]
 		participantId2, _ := rtc.UnpackStreamID(tr2.StreamID())
 		require.Equal(t, c1.ID(), participantId2)
+		return true
+	})
+	if !success {
+		t.FailNow()
+	}
+
+	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
+
+	waitUntilConnected(t, c1Dup)
+
+	t3, err := c1Dup.AddStaticTrack("video/vp8", "video", "webcam")
+	require.NoError(t, err)
+	defer t3.Stop()
+
+	success = testutils.WithTimeout(t, "c2 should receive third tracks", func() bool {
+		if len(c2.SubscribedTracks()[c1Dup.ID()]) != 1 {
+			return false
+		}
+
 		tr3 := c2.SubscribedTracks()[c1Dup.ID()][0]
 		participantId3, _ := rtc.UnpackStreamID(tr3.StreamID())
 		require.Contains(t, c1Dup.ID(), participantId3)
@@ -101,7 +109,6 @@ func TestClientConnectDuplicate(t *testing.T) {
 	if !success {
 		t.FailNow()
 	}
-
 }
 
 func TestSinglePublisher(t *testing.T) {

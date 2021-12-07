@@ -48,11 +48,12 @@ type RTCClient struct {
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
-	reliableDC         *webrtc.DataChannel
-	reliableDCSub      *webrtc.DataChannel
-	lossyDC            *webrtc.DataChannel
-	lossyDCSub         *webrtc.DataChannel
-	publisherConnected utils.AtomicFlag
+	reliableDC          *webrtc.DataChannel
+	reliableDCSub       *webrtc.DataChannel
+	lossyDC             *webrtc.DataChannel
+	lossyDCSub          *webrtc.DataChannel
+	publisherConnected  utils.AtomicFlag
+	publisherNegotiated utils.AtomicFlag
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -226,8 +227,13 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.publisher.PeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		logger.Infow("publisher ICE state changed", "state", state.String(),
 			"participant", c.localParticipant.Identity)
+
 		if state == webrtc.ICEConnectionStateConnected {
 			c.publisherConnected.TrySet(true)
+			// check if publisher triggered negotiate (!subscriberPrimary)
+			if c.publisherNegotiated.Get() {
+				c.iceConnected.TrySet(true)
+			}
 		} else {
 			c.publisherConnected.TrySet(false)
 		}
@@ -267,7 +273,9 @@ func (c *RTCClient) Run() error {
 				c.remoteParticipants[p.Sid] = p
 			}
 			c.lock.Unlock()
+			// if publish only, negotiate
 			if !msg.Join.SubscriberPrimary {
+				c.publisherNegotiated.TrySet(true)
 				c.publisher.Negotiate()
 			}
 
