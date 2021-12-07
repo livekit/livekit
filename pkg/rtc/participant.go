@@ -365,6 +365,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		Muted:      req.Muted,
 		DisableDtx: req.DisableDtx,
 		Source:     req.Source,
+		Layers:     req.Layers,
 	}
 	p.pendingTracks[req.Cid] = ti
 
@@ -496,15 +497,6 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 		n += 1
 	}
 	return n, nil
-}
-
-func (p *ParticipantImpl) RemoveSubscriber(participantId string) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	for _, track := range p.publishedTracks {
-		track.RemoveSubscriber(participantId)
-	}
 }
 
 // signal connection methods

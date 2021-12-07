@@ -47,7 +47,6 @@ type Participant interface {
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant) (int, error)
-	RemoveSubscriber(peerId string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
@@ -104,6 +103,9 @@ type PublishedTrack interface {
 	Name() string
 	IsMuted() bool
 	SetMuted(muted bool)
+	UpdateVideoLayers(layers []*livekit.VideoLayer)
+
+	// subscribers
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
@@ -127,7 +129,9 @@ type SubscribedTrack interface {
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
-	UpdateSubscriberSettings(enabled bool, quality livekit.VideoQuality)
+	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
+	// selects appropriate video layer according to subscriber preferences
+	UpdateVideoLayer()
 	SubscribeLossPercentage() uint32
 }
 

@@ -4,6 +4,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v3"
 )
 
 //-----------------------------------------------------------
@@ -63,8 +64,21 @@ func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.
 		return nil, err
 	}
 
+	ep.KeyFrame = vp8.IsKeyFrame
 	ep.Payload = *vp8
 	return ep, nil
+}
+
+//--------------------------------------
+
+var TestVP8Codec = webrtc.RTPCodecCapability{
+	MimeType:  "video/vp8",
+	ClockRate: 90000,
+}
+
+var TestOpusCodec = webrtc.RTPCodecCapability{
+	MimeType:  "audio/opus",
+	ClockRate: 48000,
 }
 
 //--------------------------------------

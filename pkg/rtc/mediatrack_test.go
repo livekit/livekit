@@ -69,4 +69,34 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(400, 700))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(600, 900))
 	})
+
+	t.Run("layers provided", func(t *testing.T) {
+		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   960,
+					Height:  540,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(120, 120))
+		require.Equal(t, livekit.VideoQuality_LOW, mt.GetQualityForDimension(300, 300))
+		require.Equal(t, livekit.VideoQuality_MEDIUM, mt.GetQualityForDimension(800, 500))
+		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
+	})
 }
