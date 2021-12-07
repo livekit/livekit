@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -14,7 +15,8 @@ const updateFrequency = time.Second * 10
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
-	t             *TelemetryService
+	ctx           context.Context
+	t             TelemetryService
 	roomID        string
 	roomName      string
 	participantID string
@@ -38,12 +40,13 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func NewStatsWorker(t *TelemetryService, roomID, participantID, roomName string) *StatsWorker {
+func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, participantID string) *StatsWorker {
 	s := &StatsWorker{
+		ctx:           ctx,
 		t:             t,
 		roomID:        roomID,
-		participantID: participantID,
 		roomName:      roomName,
+		participantID: participantID,
 
 		buffers: make(map[uint32]*buffer.Buffer),
 		drain:   make(map[uint32]bool),
@@ -151,7 +154,7 @@ func (s *StatsWorker) Update() {
 		stats = append(stats, downstream)
 	}
 
-	s.t.Report(stats)
+	s.t.Report(s.ctx, stats)
 }
 
 func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
