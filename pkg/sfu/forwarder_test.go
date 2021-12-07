@@ -628,13 +628,12 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SequenceNumber: 23337,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
-		PayloadSize:    20,
 	}
 	extPkt, err = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
+			snOrdering:     SequenceNumberOrderingGap,
 			sequenceNumber: 23336,
 			timestamp:      0xabcdef,
 		},
@@ -655,7 +654,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
-			snOrdering:     SequenceNumberOrderingContiguous,
+			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: 23335,
 			timestamp:      0xabcdef,
 		},
@@ -940,6 +939,46 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
 
+	// padding only packet after a gap should be forwarded
+	params = &testutils.TestExtPacketParams{
+		IsHead:         true,
+		SequenceNumber: 23339,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, err = testutils.GetTestExtPacket(params)
+
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingGap,
+			sequenceNumber: 23337,
+			timestamp:      0xabcdef,
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
+	// out-of-order should be forwarded using cache, even if it is padding only
+	params = &testutils.TestExtPacketParams{
+		IsHead:         false,
+		SequenceNumber: 23338,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, err = testutils.GetTestExtPacket(params)
+
+	expectedTP = TranslationParams{
+		rtp: &TranslationParamsRTP{
+			snOrdering:     SequenceNumberOrderingOutOfOrder,
+			sequenceNumber: 23336,
+			timestamp:      0xabcdef,
+		},
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(expectedTP, *actualTP))
+
 	// switching SSRC (happens for new layer or new track source)
 	// should lock onto the new source, but sequence number should be contiguous
 	f.targetLayers = VideoLayers{
@@ -974,7 +1013,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingContiguous,
-			sequenceNumber: 23336,
+			sequenceNumber: 23338,
 			timestamp:      0xabcdf0,
 		},
 		vp8: &TranslationParamsVP8{
