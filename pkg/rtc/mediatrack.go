@@ -189,7 +189,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		streamId = PackStreamID(t.params.ParticipantID, t.ID())
 	}
 	receiver := NewWrappedReceiver(t.receiver, t.ID(), streamId)
-	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
+	downTrack, err := sfu.NewDownTrack(sub.Identity(), t.params.ParticipantIdentity, webrtc.RTPCodecCapability{
 		MimeType:     codec.MimeType,
 		ClockRate:    codec.ClockRate,
 		Channels:     codec.Channels,

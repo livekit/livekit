@@ -92,6 +92,9 @@ var (
 )
 
 type Forwarder struct {
+	myID string
+	theirID string
+	trackID string
 	lock  sync.RWMutex
 	codec webrtc.RTPCodecCapability
 	kind  webrtc.RTPCodecType
@@ -115,8 +118,11 @@ type Forwarder struct {
 	vp8Munger *VP8Munger
 }
 
-func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+func NewForwarder(myID string, theirID string, trackID string, codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := &Forwarder{
+		myID: myID,
+		theirID: theirID,
+		trackID: trackID,
 		codec: codec,
 		kind:  kind,
 
@@ -813,7 +819,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.vp8 = tpVP8
 	/*
 	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-	fmt.Printf("AJAR forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
+	fmt.Printf("AJAR %s/%s/%s forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
+			f.myID, f.theirID, f.trackID,
 			layer,
 			extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
 			incomingVP8.PictureID, incomingVP8.TL0PICIDX,

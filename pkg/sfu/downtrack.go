@@ -72,6 +72,8 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 type DownTrack struct {
+	myID string
+	theirID string
 	id            string
 	peerID        string
 	bound         atomicBool
@@ -126,7 +128,7 @@ type DownTrack struct {
 }
 
 // NewDownTrack returns a DownTrack.
-func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
+func NewDownTrack(myID string, theirID string, c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
 	case strings.HasPrefix(c.MimeType, "audio/"):
@@ -138,6 +140,8 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	d := &DownTrack{
+		myID: myID,
+		theirID: theirID,
 		id:            r.TrackID(),
 		peerID:        peerID,
 		maxTrack:      mt,
@@ -146,7 +150,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		receiver:      r,
 		codec:         c,
 		kind:          kind,
-		forwarder:     NewForwarder(c, kind),
+		forwarder:     NewForwarder(myID, theirID, r.TrackID(), c, kind),
 	}
 
 	return d, nil
