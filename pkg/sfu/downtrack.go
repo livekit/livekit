@@ -870,7 +870,7 @@ func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP
 	if outbuf == &pkt.Payload {
 		buf = pkt.Payload
 	} else {
-		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize]
 
 		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
 		dstPayload := buf[translatedVP8.HeaderSize:]

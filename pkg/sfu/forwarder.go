@@ -817,9 +817,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
-	/*
 	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-	fmt.Printf("AJAR %s/%s/%s forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
+	fmt.Printf("RAJA %s/%s/%s forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
 			f.myID, f.theirID, f.trackID,
 			layer,
 			extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
@@ -827,7 +826,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			f.lastSSRC, tpRTP.sequenceNumber, tpRTP.timestamp,
 			tpVP8.header.PictureID, tpVP8.header.TL0PICIDX,
 			extPkt.KeyFrame, incomingVP8.IsKeyFrame, tpVP8.header.IsKeyFrame)
-			*/
 	return tp, nil
 }
 
