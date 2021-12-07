@@ -41,7 +41,8 @@ const (
 type LayerPreference int
 
 const (
-	LayerPreferenceSpatial LayerPreference = iota
+	LayerPreferenceNone LayerPreference = iota
+	LayerPreferenceSpatial
 	LayerPreferenceTemporal
 )
 
@@ -92,12 +93,14 @@ var (
 )
 
 type Forwarder struct {
-	myID string
+	myID    string
 	theirID string
 	trackID string
-	lock  sync.RWMutex
-	codec webrtc.RTPCodecCapability
-	kind  webrtc.RTPCodecType
+	lock    sync.RWMutex
+	codec   webrtc.RTPCodecCapability
+	kind    webrtc.RTPCodecType
+
+	layerPref LayerPreference
 
 	muted bool
 
@@ -120,11 +123,13 @@ type Forwarder struct {
 
 func NewForwarder(myID string, theirID string, trackID string, codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := &Forwarder{
-		myID: myID,
+		myID:    myID,
 		theirID: theirID,
 		trackID: trackID,
-		codec: codec,
-		kind:  kind,
+		codec:   codec,
+		kind:    kind,
+
+		layerPref: LayerPreferenceSpatial,
 
 		// start off with nothing, let streamallocator set things
 		currentLayers: InvalidLayers,
@@ -170,30 +175,30 @@ func (f *Forwarder) Muted() bool {
 	return f.muted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers) {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, LayerPreference) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || spatialLayer == f.maxLayers.spatial {
-		return false, InvalidLayers
+		return false, InvalidLayers, LayerPreferenceNone
 	}
 
 	f.maxLayers.spatial = spatialLayer
 
-	return true, f.maxLayers
+	return true, f.maxLayers, f.layerPref
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers) {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers, LayerPreference) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || temporalLayer == f.maxLayers.temporal {
-		return false, InvalidLayers
+		return false, InvalidLayers, LayerPreferenceNone
 	}
 
 	f.maxLayers.temporal = temporalLayer
 
-	return true, f.maxLayers
+	return true, f.maxLayers, f.layerPref
 }
 
 func (f *Forwarder) MaxLayers() VideoLayers {
@@ -201,6 +206,13 @@ func (f *Forwarder) MaxLayers() VideoLayers {
 	defer f.lock.RUnlock()
 
 	return f.maxLayers
+}
+
+func (f *Forwarder) GetLayerPreference() LayerPreference {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	return f.layerPref
 }
 
 func (f *Forwarder) CurrentLayers() VideoLayers {
@@ -237,7 +249,7 @@ func (f *Forwarder) UptrackLayersChange(availableLayers []uint16) {
 	defer f.lock.Unlock()
 
 	f.availableLayers = availableLayers
-	fmt.Printf("RAJA UPTRACKLAYERSCHANGES: %+v\n", f.availableLayers)	// REMOVE
+	fmt.Printf("RAJA UPTRACKLAYERSCHANGES: %+v\n", f.availableLayers) // REMOVE
 }
 
 func (f *Forwarder) disable() {
@@ -393,7 +405,7 @@ func (f *Forwarder) findBestLayers(
 
 	result = f.toVideoAllocationResult(targetLayers, brs, optimalBandwidthNeeded, canPause)
 	f.updateAllocationState(targetLayers, result)
-	fmt.Printf("RAJA findBestLayers: result: %+v, target: %+v\n", result, targetLayers)	// REMOVE
+	fmt.Printf("RAJA findBestLayers: result: %+v, target: %+v\n", result, targetLayers) // REMOVE
 	return
 }
 
@@ -414,7 +426,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
+	fmt.Printf("RAJA: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
@@ -445,7 +457,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 			}
 
 			f.targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
-			fmt.Printf("RAJA awaiting measurement layers: %+v\n", f.targetLayers)	// REMOVE
+			fmt.Printf("RAJA awaiting measurement layers: %+v\n", f.targetLayers) // REMOVE
 		} else {
 			// if not optimistically started, nothing else to do
 			if f.targetLayers == InvalidLayers {
@@ -479,7 +491,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		brs,
 		optimalBandwidthNeeded,
 		LayerDirectionHighToLow,
-		LayerPreferenceSpatial,
+		f.layerPref,
 		availableChannelCapacity,
 		canPause,
 	)
@@ -490,7 +502,7 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, brs [3][4]int64) Vi
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA ALLOCATE\n")	// REMOVE
+	fmt.Printf("RAJA ALLOCATE: %d\n", availableChannelCapacity) // REMOVE
 	return f.allocate(availableChannelCapacity, true, brs)
 }
 
@@ -498,7 +510,7 @@ func (f *Forwarder) TryAllocate(additionalChannelCapacity int64, brs [3][4]int64
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA TRYALLOCATE\n")	// REMOVE
+	fmt.Printf("RAJA TRYALLOCATE: %d + %d\n", f.lastAllocationRequestBps, additionalChannelCapacity) // REMOVE
 	return f.allocate(f.lastAllocationRequestBps+additionalChannelCapacity, false, brs)
 }
 
@@ -511,7 +523,7 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA FINALIZEALLOCATE: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
+	fmt.Printf("RAJA FINALIZEALLOCATE: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed dry
@@ -533,18 +545,18 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) {
 		brs,
 		optimalBandwidthNeeded,
 		LayerDirectionHighToLow,
-		LayerPreferenceSpatial,
+		f.layerPref,
 		ChannelCapacityInfinity,
 		false,
 	)
-	fmt.Printf("RAJA FINALIZEALLOCATE FINISH\n")	// REMOVE
+	fmt.Printf("RAJA FINALIZEALLOCATE FINISH\n") // REMOVE
 }
 
 func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationResult) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA ALLOCATENEXTHIGHER\n")	// REMOVE
+	fmt.Printf("RAJA ALLOCATENEXTHIGHER\n") // REMOVE
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return
 	}
@@ -562,7 +574,7 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationR
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA ALLOCATENEXTLAYER: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs)	// REMOVE
+	fmt.Printf("RAJA ALLOCATENEXTLAYER: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		// either feed is dry or awaiting measurement, don't hunt for higher
 		return
@@ -584,7 +596,7 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationR
 			brs,
 			optimalBandwidthNeeded,
 			LayerDirectionLowToHigh,
-			LayerPreferenceSpatial,
+			f.layerPref,
 			ChannelCapacityInfinity,
 			false,
 		)
@@ -608,7 +620,7 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (result VideoAllocationR
 		brs,
 		optimalBandwidthNeeded,
 		LayerDirectionLowToHigh,
-		LayerPreferenceSpatial,
+		f.layerPref,
 		ChannelCapacityInfinity,
 		false,
 	)
@@ -701,7 +713,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				fmt.Printf("RAJA locking to layer: %d -> %d\n", f.currentLayers.spatial, f.targetLayers.spatial)	// REMOVE
+				fmt.Printf("RAJA locking to layer: %d -> %d\n", f.currentLayers.spatial, f.targetLayers.spatial) // REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 			} else {
 				tp.shouldSendPLI = true
@@ -819,13 +831,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.vp8 = tpVP8
 	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
 	fmt.Printf("RAJA %s/%s/%s forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
-			f.myID, f.theirID, f.trackID,
-			layer,
-			extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
-			incomingVP8.PictureID, incomingVP8.TL0PICIDX,
-			f.lastSSRC, tpRTP.sequenceNumber, tpRTP.timestamp,
-			tpVP8.header.PictureID, tpVP8.header.TL0PICIDX,
-			extPkt.KeyFrame, incomingVP8.IsKeyFrame, tpVP8.header.IsKeyFrame)
+		f.myID, f.theirID, f.trackID,
+		layer,
+		extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
+		incomingVP8.PictureID, incomingVP8.TL0PICIDX,
+		f.lastSSRC, tpRTP.sequenceNumber, tpRTP.timestamp,
+		tpVP8.header.PictureID, tpVP8.header.TL0PICIDX,
+		extPkt.KeyFrame, incomingVP8.IsKeyFrame, tpVP8.header.IsKeyFrame)
 	return tp, nil
 }
 

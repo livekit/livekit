@@ -337,11 +337,17 @@ func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
+func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers, layerPref LayerPreference) {
 	s.postEvent(Event{
 		Signal:    SignalSubscribedLayersChange,
 		DownTrack: downTrack,
-		Data:      layers,
+		Data: struct {
+			layers    VideoLayers
+			layerPref LayerPreference
+		}{
+			layers:    layers,
+			layerPref: layerPref,
+		},
 	})
 }
 
@@ -537,7 +543,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.receivedEstimate = int64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
 		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
-		s.logger.Debugw("RAJA received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)	// REMOVE
+		s.logger.Debugw("RAJA received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate) // REMOVE
 	}
 
 	if s.maybeCommitEstimate() {
@@ -596,8 +602,11 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 		return
 	}
 
-	layers := event.Data.(VideoLayers)
-	track.UpdateMaxLayers(layers)
+	data := event.Data.(struct {
+		layers VideoLayers
+		layerPref LayerPreference
+	})
+	track.UpdatePriority(data.layers, data.layerPref)
 	sort.Sort(s.videoTracksSorted)
 
 	s.allocateTrack(track)
@@ -640,7 +649,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
 		s.logger.Infow("state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())
-		s.logger.Infow("RAJA state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())	// REMOVE
+		s.logger.Infow("RAJA state change", "participant", s.participantID, "from", s.state.String(), "to", state.String()) // REMOVE
 	}
 
 	s.state = state
@@ -694,7 +703,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.lastCommitTime = time.Now()
 
 	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
-	s.logger.Debugw("RAJA committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)	// REMOVE
+	s.logger.Debugw("RAJA committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity) // REMOVE
 	return
 }
 
@@ -708,6 +717,48 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
+	/* RAJA-TODO
+	//
+	// When DEFICIENT, borrow bits from lower priority tracks and
+	// balance current priority allocation. For example, assume
+	// there are 10 tracks, three at p0 (highest prio), four at p1
+	// and three at p2. If a eleventh track is added and if it is
+	// at p1, the goal is to borrow bits from the three p2 tracks,
+	// add it to bits used by already streaming four p1 tracks and
+	// use that aggregate for the five p1 tracks (four already
+	// streaming and the one newly added).
+	//
+	prio := track.Priority()
+	var spTracks []*Track
+	var lpTracks []*Track
+	for idx, t := range s.videoTracksSorted {
+		tp := t.Priority()
+		if tp > prio {
+			continue
+		}
+
+		if tp == prio && spTracks == nil {
+			spTracks = s.videoTracksSorted[idx:]
+		}
+
+		if tp < prio {
+			lpTracks = s.videoTracksSorted[idx:]
+			if spTracks != nil {
+				spTracks = spTracks[:len(spTracks)-len(lpTracks)]
+			}
+			break
+		}
+	}
+	// add given track to same priority tracks
+	spTracks = append(spTracks, track)
+
+	// how much is lower priority tracks consuming
+	lpExpectedBps := int64(0)
+	for _, t := range lpTracks {
+		lpExpectedBps += t.BandwidthRequested()
+	}
+	RAJA-TODO */
+
 	// slice into higher priority tracks and lower priority tracks
 	var hpTracks []*Track
 	var lpTracks []*Track
@@ -715,6 +766,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		if t == track {
 			hpTracks = s.videoTracksSorted[:idx]
 			lpTracks = s.videoTracksSorted[idx+1:]
+			break
 		}
 	}
 
@@ -868,12 +920,12 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	}
 
 	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
-	s.logger.Debugw("RAJA streamed tracks changed", "participant", s.participantID, "update", update)	// REMOVE
+	s.logger.Debugw("RAJA streamed tracks changed", "participant", s.participantID, "update", update) // REMOVE
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
 			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
-			s.logger.Errorw("RAJA could not send streamed tracks update", err, "participant", s.participantID)	// REMOVE
+			s.logger.Errorw("RAJA could not send streamed tracks update", err, "participant", s.participantID) // REMOVE
 		}
 	}
 }
@@ -1093,14 +1145,16 @@ type Track struct {
 	lastHighestSN   uint32
 	lastPacketsLost uint32
 
-	maxLayers VideoLayers
+	priority int32
 }
 
 func newTrack(downTrack *DownTrack) *Track {
-	return &Track{
+	t := &Track{
 		downTrack: downTrack,
-		maxLayers: downTrack.MaxLayers(),
 	}
+	t.UpdatePriority(downTrack.MaxLayers(), downTrack.GetLayerPreference())
+
+	return t
 }
 
 func (t *Track) DownTrack() *DownTrack {
@@ -1130,8 +1184,17 @@ func (t *Track) UpdatePacketStats(rr *rtcp.ReceiverReport) {
 	}
 }
 
-func (t *Track) UpdateMaxLayers(layers VideoLayers) {
-	t.maxLayers = layers
+func (t *Track) UpdatePriority(layers VideoLayers, pref LayerPreference) {
+	switch pref {
+	case LayerPreferenceSpatial:
+		t.priority = layers.spatial*10 + layers.temporal
+	case LayerPreferenceTemporal:
+		t.priority = layers.temporal*10 + layers.spatial
+	}
+}
+
+func (t *Track) Priority() int32 {
+	return t.priority
 }
 
 func (t *Track) GetPacketStats() (uint32, uint32) {
@@ -1177,9 +1240,9 @@ func (t *Track) BandwidthRequested() int64 {
 // OR
 // It is left up to the clients to subscribe explicitly to the quality they want.
 //
-// This sorter is prioritizing tracks by max layer subscribed. But, with simple
-// tracks, there is only one layer. But, it is possible they should be higher
-// priority, for e.g. screen share track.
+// This sorter is prioritizing tracks by max layer subscribed and layer preference.
+// But, with simple tracks, there is only one layer. But, it is possible they should
+// be higher priority, for e.g. screen share track.
 // LK-TODO-END
 type TrackSorter []*Track
 
@@ -1192,19 +1255,7 @@ func (t TrackSorter) Swap(i, j int) {
 }
 
 func (t TrackSorter) Less(i, j int) bool {
-	// highest spatial layers have higher priority
-	if t[i].maxLayers.spatial != t[j].maxLayers.spatial {
-		return t[i].maxLayers.spatial > t[j].maxLayers.spatial
-	}
-
-	// highest temporal layers have priority if max spatial layers match
-	if t[i].maxLayers.temporal != t[j].maxLayers.temporal {
-		return t[i].maxLayers.temporal > t[j].maxLayers.temporal
-	}
-
-	// use track id to keep ordering if nothing else changes
-	// LK-TODO: ideally should be sorting, compare and then re-allocate only if order changed
-	return t[i].ID() < t[j].ID()
+	return t[i].priority > t[j].priority
 }
 
 //------------------------------------------------

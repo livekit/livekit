@@ -72,8 +72,8 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 type DownTrack struct {
-	myID string
-	theirID string
+	myID          string
+	theirID       string
 	id            string
 	peerID        string
 	bound         atomicBool
@@ -121,7 +121,7 @@ type DownTrack struct {
 	onSubscriptionChanged func(dt *DownTrack)
 
 	// max layer change callback
-	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
+	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers, layerPref LayerPreference)
 
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
@@ -140,8 +140,8 @@ func NewDownTrack(myID string, theirID string, c webrtc.RTPCodecCapability, r Tr
 	}
 
 	d := &DownTrack{
-		myID: myID,
-		theirID: theirID,
+		myID:          myID,
+		theirID:       theirID,
 		id:            r.TrackID(),
 		peerID:        peerID,
 		maxTrack:      mt,
@@ -263,15 +263,16 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	payload := &extPkt.Packet.Payload
+	payload := extPkt.Packet.Payload
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
 
+		outbuf := &payload
 		if incomingVP8.HeaderSize != tp.vp8.header.HeaderSize {
 			pool = PacketFactory.Get().(*[]byte)
-			payload = pool
+			outbuf = pool
 		}
-		err = d.translateVP8PacketTo(&extPkt.Packet, &incomingVP8, tp.vp8.header, payload)
+		payload, err = d.translateVP8PacketTo(&extPkt.Packet, &incomingVP8, tp.vp8.header, outbuf)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err
@@ -291,17 +292,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	_, err = d.writeStream.WriteRTP(hdr, *payload)
+	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
 		for _, f := range d.onPacketSent {
-			f(d, hdr.MarshalSize()+len(*payload))
+			f(d, hdr.MarshalSize()+len(payload))
 		}
 	} else {
 		d.pktsDropped.add(1)
 	}
 
 	// LK-TODO maybe include RTP header size also
-	d.UpdateStats(uint32(len(*payload)))
+	d.UpdateStats(uint32(len(payload)))
 
 	return err
 }
@@ -432,29 +433,33 @@ func (d *DownTrack) Close() {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayers, layerPref := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers)
+		d.onSubscribedLayersChanged(d, maxLayers, layerPref)
 	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayers := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayers, layerPref := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers)
+		d.onSubscribedLayersChanged(d, maxLayers, layerPref)
 	}
 }
 
 func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
+}
+
+func (d *DownTrack) GetLayerPreference() LayerPreference {
+	return d.forwarder.GetLayerPreference()
 }
 
 func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
@@ -504,7 +509,7 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
 }
 
-func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
+func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers, layerPref LayerPreference)) {
 	d.onSubscribedLayersChanged = fn
 }
 
@@ -784,7 +789,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pkt.Header.SSRC = d.ssrc
 		pkt.Header.PayloadType = d.payloadType
 
-		payload := &pkt.Payload
+		payload := pkt.Payload
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
@@ -792,12 +797,13 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 				continue
 			}
 
+			outbuf := &payload
 			translatedVP8 := meta.unpackVP8()
 			if incomingVP8.HeaderSize != translatedVP8.HeaderSize {
 				pool = PacketFactory.Get().(*[]byte)
-				payload = pool
+				outbuf = pool
 			}
-			err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, payload)
+			payload, err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, outbuf)
 			if err != nil {
 				Logger.Error(err, "translating VP8 packet err")
 				continue
@@ -810,7 +816,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 			continue
 		}
 
-		if _, err = d.writeStream.WriteRTP(&pkt.Header, *payload); err != nil {
+		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
 			Logger.Error(err, "Writing rtx packet err")
 		} else {
 			d.UpdateStats(uint32(n))
@@ -865,7 +871,7 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tpRTP *Tran
 	return &hdr, nil
 }
 
-func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) error {
+func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
 	var buf []byte
 	if outbuf == &pkt.Payload {
 		buf = pkt.Payload
@@ -877,8 +883,8 @@ func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP
 		copy(dstPayload, srcPayload)
 	}
 
-	hdr := buf[:translatedVP8.HeaderSize]
-	return translatedVP8.MarshalTo(hdr)
+	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
+	return buf, err
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
