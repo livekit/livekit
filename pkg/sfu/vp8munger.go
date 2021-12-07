@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"fmt"
 	"github.com/elliotchance/orderedmap"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -51,12 +50,7 @@ func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
 	v.pictureIdUsed = vp8.PictureIDPresent
 	if v.pictureIdUsed == 1 {
 		v.pictureIdWrapHandler.Init(int32(vp8.PictureID)-1, vp8.MBit)
-		/* RAJA-TODO RESTORE
 		v.extLastPictureId = int32(vp8.PictureID)
-		*/
-		v.extLastPictureId = int32(32600)	// REMOVE
-		v.pictureIdOffset = int32(vp8.PictureID) - v.extLastPictureId - 1	// REMOVE
-		fmt.Printf("RAJA incoming: %d, last: %d, offset: %d\n", vp8.PictureID, v.extLastPictureId, v.pictureIdOffset)	// REMOVE
 	}
 
 	v.tl0PicIdxUsed = vp8.TL0PICIDXPresent
@@ -209,8 +203,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		FirstByte:        vp8.FirstByte,
 		PictureIDPresent: vp8.PictureIDPresent,
 		PictureID:        mungedPictureId,
-		//MBit:             mungedPictureId > 127,
-		MBit:             vp8.MBit,
+		MBit:             mungedPictureId > 127,
 		TL0PICIDXPresent: vp8.TL0PICIDXPresent,
 		TL0PICIDX:        mungedTl0PicIdx,
 		TIDPresent:       vp8.TIDPresent,
@@ -219,8 +212,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		KEYIDXPresent:    vp8.KEYIDXPresent,
 		KEYIDX:           mungedKeyIdx,
 		IsKeyFrame:       vp8.IsKeyFrame,
-		//HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
-		HeaderSize:       vp8.HeaderSize,
+		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
 	return &TranslationParamsVP8{
 		header: vp8Packet,
