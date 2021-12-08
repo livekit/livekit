@@ -337,11 +337,17 @@ func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
+func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers, layerPref LayerPreference) {
 	s.postEvent(Event{
 		Signal:    SignalSubscribedLayersChange,
 		DownTrack: downTrack,
-		Data:      layers,
+		Data: struct {
+			layers    VideoLayers
+			layerPref LayerPreference
+		}{
+			layers:    layers,
+			layerPref: layerPref,
+		},
 	})
 }
 
@@ -595,8 +601,11 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 		return
 	}
 
-	layers := event.Data.(VideoLayers)
-	track.UpdateMaxLayers(layers)
+	data := event.Data.(struct {
+		layers    VideoLayers
+		layerPref LayerPreference
+	})
+	track.UpdatePriority(data.layers, data.layerPref)
 	sort.Sort(s.videoTracksSorted)
 
 	s.allocateTrack(track)
@@ -638,7 +647,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.logger.Infow("state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())
+		s.logger.Infow("state change", "participant", s.participantID, "from", s.state, "to", state)
 	}
 
 	s.state = state
@@ -699,8 +708,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if s.state == StateStable {
 		update := NewStreamStateUpdate()
-		result := track.Allocate(ChannelCapacityInfinity)
-		update.HandleStreamingChange(result.change, track)
+		allocation := track.Allocate(ChannelCapacityInfinity)
+		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -712,6 +721,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		if t == track {
 			hpTracks = s.videoTracksSorted[:idx]
 			lpTracks = s.videoTracksSorted[idx+1:]
+			break
 		}
 	}
 
@@ -729,11 +739,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	//
 	update := NewStreamStateUpdate()
 
-	result := track.TryAllocate(lpExpectedBps)
+	allocation := track.TryAllocate(lpExpectedBps)
 
-	update.HandleStreamingChange(result.change, track)
+	update.HandleStreamingChange(allocation.change, track)
 
-	delta := lpExpectedBps - result.bandwidthDelta
+	delta := lpExpectedBps - allocation.bandwidthDelta
 	if delta > 0 {
 		// gotten some bits back, check if any deficient higher priority track can make use of it
 		delta = s.tryAllocateTracks(hpTracks, delta, update)
@@ -746,10 +756,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	for _, t := range lpTracks {
-		result := t.Allocate(delta)
-		update.HandleStreamingChange(result.change, t)
+		allocation := t.Allocate(delta)
+		update.HandleStreamingChange(allocation.change, t)
 
-		delta -= result.bandwidthRequested
+		delta -= allocation.bandwidthRequested
 		if delta < 0 {
 			delta = 0
 		}
@@ -783,10 +793,10 @@ func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64
 			continue
 		}
 
-		result := t.TryAllocate(additionalBps)
-		update.HandleStreamingChange(result.change, t)
+		allocation := t.TryAllocate(additionalBps)
+		update.HandleStreamingChange(allocation.change, t)
 
-		additionalBps -= result.bandwidthDelta
+		additionalBps -= allocation.bandwidthDelta
 		if additionalBps <= 0 {
 			// used up all the extra bits
 			break
@@ -831,12 +841,12 @@ func (s *StreamAllocator) allocateAllTracks() {
 		//    - adjust layers up or down
 		//    - pause if there is not enough capacity for any layer
 		//
-		result := track.Allocate(availableChannelCapacity)
+		allocation := track.Allocate(availableChannelCapacity)
 
-		update.HandleStreamingChange(result.change, track)
+		update.HandleStreamingChange(allocation.change, track)
 
-		availableChannelCapacity -= result.bandwidthRequested
-		if availableChannelCapacity < 0 || result.state == VideoAllocationStateDeficient {
+		availableChannelCapacity -= allocation.bandwidthRequested
+		if availableChannelCapacity < 0 || allocation.state == VideoAllocationStateDeficient {
 			//
 			// This is walking down tracks in priortized order.
 			// Once one of those streams do not fit, set
@@ -939,12 +949,12 @@ func (s *StreamAllocator) maybeBoostLayer() {
 			continue
 		}
 
-		result := track.AllocateNextHigher()
-		if result.layersChanged {
+		allocation, boosted := track.AllocateNextHigher()
+		if boosted {
 			s.lastBoostTime = time.Now()
 
 			update := NewStreamStateUpdate()
-			update.HandleStreamingChange(result.change, track)
+			update.HandleStreamingChange(allocation.change, track)
 			s.maybeSendUpdate(update)
 
 			break
@@ -1088,14 +1098,16 @@ type Track struct {
 	lastHighestSN   uint32
 	lastPacketsLost uint32
 
-	maxLayers VideoLayers
+	priority int32
 }
 
 func newTrack(downTrack *DownTrack) *Track {
-	return &Track{
+	t := &Track{
 		downTrack: downTrack,
-		maxLayers: downTrack.MaxLayers(),
 	}
+	t.UpdatePriority(downTrack.MaxLayers(), downTrack.GetLayerPreference())
+
+	return t
 }
 
 func (t *Track) DownTrack() *DownTrack {
@@ -1125,8 +1137,17 @@ func (t *Track) UpdatePacketStats(rr *rtcp.ReceiverReport) {
 	}
 }
 
-func (t *Track) UpdateMaxLayers(layers VideoLayers) {
-	t.maxLayers = layers
+func (t *Track) UpdatePriority(layers VideoLayers, pref LayerPreference) {
+	switch pref {
+	case LayerPreferenceSpatial:
+		t.priority = layers.spatial*10 + layers.temporal
+	case LayerPreferenceTemporal:
+		t.priority = layers.temporal*10 + layers.spatial
+	}
+}
+
+func (t *Track) Priority() int32 {
+	return t.priority
 }
 
 func (t *Track) GetPacketStats() (uint32, uint32) {
@@ -1137,11 +1158,11 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocationResult {
+func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocation {
 	return t.downTrack.Allocate(availableChannelCapacity)
 }
 
-func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocationResult {
+func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocation {
 	return t.downTrack.TryAllocate(additionalChannelCapacity)
 }
 
@@ -1149,16 +1170,16 @@ func (t *Track) FinalizeAllocate() {
 	t.downTrack.FinalizeAllocate()
 }
 
-func (t *Track) AllocateNextHigher() VideoAllocationResult {
+func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
 	return t.downTrack.AllocateNextHigher()
 }
 
 func (t *Track) IsDeficient() bool {
-	return t.downTrack.AllocationState() == VideoAllocationStateDeficient
+	return t.downTrack.LastAllocation().state == VideoAllocationStateDeficient
 }
 
 func (t *Track) BandwidthRequested() int64 {
-	return t.downTrack.AllocationBandwidth()
+	return t.downTrack.LastAllocation().bandwidthRequested
 }
 
 //------------------------------------------------
@@ -1172,9 +1193,9 @@ func (t *Track) BandwidthRequested() int64 {
 // OR
 // It is left up to the clients to subscribe explicitly to the quality they want.
 //
-// This sorter is prioritizing tracks by max layer subscribed. But, with simple
-// tracks, there is only one layer. But, it is possible they should be higher
-// priority, for e.g. screen share track.
+// This sorter is prioritizing tracks by max layer subscribed and layer preference.
+// But, with simple tracks, there is only one layer. But, it is possible they should
+// be higher priority, for e.g. screen share track.
 // LK-TODO-END
 type TrackSorter []*Track
 
@@ -1187,19 +1208,7 @@ func (t TrackSorter) Swap(i, j int) {
 }
 
 func (t TrackSorter) Less(i, j int) bool {
-	// highest spatial layers have higher priority
-	if t[i].maxLayers.spatial != t[j].maxLayers.spatial {
-		return t[i].maxLayers.spatial > t[j].maxLayers.spatial
-	}
-
-	// highest temporal layers have priority if max spatial layers match
-	if t[i].maxLayers.temporal != t[j].maxLayers.temporal {
-		return t[i].maxLayers.temporal > t[j].maxLayers.temporal
-	}
-
-	// use track id to keep ordering if nothing else changes
-	// LK-TODO: ideally should be sorting, compare and then re-allocate only if order changed
-	return t[i].ID() < t[j].ID()
+	return t[i].priority > t[j].priority
 }
 
 //------------------------------------------------
