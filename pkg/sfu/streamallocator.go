@@ -602,7 +602,7 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 	}
 
 	data := event.Data.(struct {
-		layers VideoLayers
+		layers    VideoLayers
 		layerPref LayerPreference
 	})
 	track.UpdatePriority(data.layers, data.layerPref)

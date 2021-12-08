@@ -103,9 +103,15 @@ type VideoAllocation struct {
 }
 
 func (v VideoAllocation) String() string {
-	return fmt.Sprintf("VideoAllocation: state: %s, change: %s, bw: %d, del: %d, avail: %+v, rates: %+v, target: %s",
+	return fmt.Sprintf("VideoAllocation{state: %s, change: %s, bw: %d, del: %d, avail: %+v, rates: %+v, target: %s}",
 		v.state, v.change, v.bandwidthRequested, v.bandwidthDelta, v.availableLayers, v.bitrates, v.targetLayers)
 }
+
+var (
+	VideoAllocationDefault = VideoAllocation{
+		targetLayers: InvalidLayers,
+	}
+)
 
 type TranslationParams struct {
 	shouldDrop    bool
@@ -120,7 +126,7 @@ type VideoLayers struct {
 }
 
 func (v VideoLayers) String() string {
-	return fmt.Sprintf("VideoLayers, s: %d, t: %d\n", v.spatial, v.temporal)
+	return fmt.Sprintf("VideoLayers{s: %d, t: %d}", v.spatial, v.temporal)
 }
 
 const (
@@ -146,9 +152,9 @@ var (
 )
 
 type Forwarder struct {
-	lock    sync.RWMutex
-	codec   webrtc.RTPCodecCapability
-	kind    webrtc.RTPCodecType
+	lock  sync.RWMutex
+	codec webrtc.RTPCodecCapability
+	kind  webrtc.RTPCodecType
 
 	layerPref LayerPreference
 
@@ -172,8 +178,8 @@ type Forwarder struct {
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := &Forwarder{
-		codec:   codec,
-		kind:    kind,
+		codec: codec,
+		kind:  kind,
 
 		layerPref: LayerPreferenceSpatial,
 
@@ -181,9 +187,7 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 		currentLayers: InvalidLayers,
 		targetLayers:  InvalidLayers,
 
-		lastAllocation: VideoAllocation {
-			targetLayers: InvalidLayers,
-		},
+		lastAllocation: VideoAllocationDefault,
 
 		rtpMunger: NewRTPMunger(),
 	}
@@ -448,13 +452,13 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 
 	if f.muted {
 		f.lastAllocation = VideoAllocation{
-			state: VideoAllocationStateMuted,
-			change: VideoStreamingChangeNone,
+			state:              VideoAllocationStateMuted,
+			change:             VideoStreamingChangeNone,
 			bandwidthRequested: 0,
-			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-			availableLayers: f.availableLayers,
-			bitrates: brs,
-			targetLayers: f.targetLayers,
+			bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+			availableLayers:    f.availableLayers,
+			bitrates:           brs,
+			targetLayers:       f.targetLayers,
 		}
 		return
 	}
@@ -464,13 +468,13 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		if len(f.availableLayers) == 0 {
 			// feed is dry
 			f.lastAllocation = VideoAllocation{
-				state: VideoAllocationStateFeedDry,
-				change: VideoStreamingChangeNone,
+				state:              VideoAllocationStateFeedDry,
+				change:             VideoStreamingChangeNone,
 				bandwidthRequested: 0,
-				bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-				availableLayers: f.availableLayers,
-				bitrates: brs,
-				targetLayers: f.targetLayers,
+				bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+				availableLayers:    f.availableLayers,
+				bitrates:           brs,
+				targetLayers:       f.targetLayers,
 			}
 			return
 		}
@@ -495,25 +499,25 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 			f.targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
 
 			f.lastAllocation = VideoAllocation{
-				state: VideoAllocationStateAwaitingMeasurement,
-				change: change,
+				state:              VideoAllocationStateAwaitingMeasurement,
+				change:             change,
 				bandwidthRequested: 0, // unavailable yet
-				bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-				availableLayers: f.availableLayers,
-				bitrates: brs,
-				targetLayers: f.targetLayers,
+				bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+				availableLayers:    f.availableLayers,
+				bitrates:           brs,
+				targetLayers:       f.targetLayers,
 			}
 		} else {
 			// if not optimistically started, nothing else to do
 			if f.targetLayers == InvalidLayers {
 				f.lastAllocation = VideoAllocation{
-					state: VideoAllocationStateDeficient,
-					change: VideoStreamingChangeNone,
+					state:              VideoAllocationStateDeficient,
+					change:             VideoStreamingChangeNone,
 					bandwidthRequested: 0, // unavailable yet
-					bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-					availableLayers: f.availableLayers,
-					bitrates: brs,
-					targetLayers: f.targetLayers,
+					bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+					availableLayers:    f.availableLayers,
+					bitrates:           brs,
+					targetLayers:       f.targetLayers,
 				}
 			} else if canPause {
 				// disable it as it is not known how big this stream is
@@ -521,13 +525,13 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 				f.disable()
 
 				f.lastAllocation = VideoAllocation{
-					state: VideoAllocationStateDeficient,
-					change: VideoStreamingChangePausing,
+					state:              VideoAllocationStateDeficient,
+					change:             VideoStreamingChangePausing,
 					bandwidthRequested: 0, // unavailable yet
-					bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-					availableLayers: f.availableLayers,
-					bitrates: brs,
-					targetLayers: f.targetLayers,
+					bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+					availableLayers:    f.availableLayers,
+					bitrates:           brs,
+					targetLayers:       f.targetLayers,
 				}
 			}
 		}
@@ -576,13 +580,13 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) VideoAllocation {
 		if len(f.availableLayers) == 0 {
 			// feed dry
 			f.lastAllocation = VideoAllocation{
-				state: VideoAllocationStateFeedDry,
-				change: VideoStreamingChangeNone,
+				state:              VideoAllocationStateFeedDry,
+				change:             VideoStreamingChangeNone,
 				bandwidthRequested: 0,
-				bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
-				availableLayers: f.availableLayers,
-				bitrates: brs,
-				targetLayers: f.targetLayers,
+				bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
+				availableLayers:    f.availableLayers,
+				bitrates:           brs,
+				targetLayers:       f.targetLayers,
 			}
 		}
 
