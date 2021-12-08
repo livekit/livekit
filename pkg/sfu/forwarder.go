@@ -97,14 +97,13 @@ type VideoAllocation struct {
 	change             VideoStreamingChange
 	bandwidthRequested int64
 	bandwidthDelta     int64
-	layersChanged      bool
 	availableLayers    []uint16
 	bitrates           [3][4]int64
 	targetLayers       VideoLayers
 }
 
 // RAJA-TODO layers changed
-func (v *VideoAllocation) String() string {
+func (v VideoAllocation) String() string {
 	return fmt.Sprintf("VideoAllocation: state: %s, change: %s, bw: %d, del: %d, avail: %+v, rates: %+v, target: %s",
 		v.state, v.change, v.bandwidthRequested, v.bandwidthDelta, v.availableLayers, v.bitrates, v.targetLayers)
 }
@@ -121,7 +120,7 @@ type VideoLayers struct {
 	temporal int32
 }
 
-func (v *VideoLayers) String() string {
+func (v VideoLayers) String() string {
 	return fmt.Sprintf("VideoLayers, s: %d, t: %d\n", v.spatial, v.temporal)
 }
 
@@ -148,9 +147,6 @@ var (
 )
 
 type Forwarder struct {
-	myID    string
-	theirID string
-	trackID string
 	lock    sync.RWMutex
 	codec   webrtc.RTPCodecCapability
 	kind    webrtc.RTPCodecType
@@ -168,10 +164,6 @@ type Forwarder struct {
 	targetLayers  VideoLayers
 
 	lastAllocation VideoAllocation
-/* RAJA-REMOVE
-	lastAllocationState      VideoAllocationState
-	lastAllocationRequestBps int64
-RAJA-REMOVE */
 
 	availableLayers []uint16
 
@@ -179,11 +171,8 @@ RAJA-REMOVE */
 	vp8Munger *VP8Munger
 }
 
-func NewForwarder(myID string, theirID string, trackID string, codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := &Forwarder{
-		myID:    myID,
-		theirID: theirID,
-		trackID: trackID,
 		codec:   codec,
 		kind:    kind,
 
@@ -306,7 +295,6 @@ func (f *Forwarder) UptrackLayersChange(availableLayers []uint16) {
 	defer f.lock.Unlock()
 
 	f.availableLayers = availableLayers
-	fmt.Printf("RAJA UPTRACKLAYERSCHANGES: %+v\n", f.availableLayers) // REMOVE
 }
 
 func (f *Forwarder) disable() {
@@ -328,73 +316,6 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs [3][4]int64) int64 {
 	return 0
 }
 
-func (f *Forwarder) toVideoAllocation(
-	targetLayers VideoLayers,
-	brs [3][4]int64,
-	optimalBandwidthNeeded int64,
-	canPause bool,
-) (allocation VideoAllocation) {
-	if targetLayers == InvalidLayers && !canPause {
-		//
-		// Do not pause if preserving even if allocation does not fit in available channel capacity.
-		//
-		// Note that currently streamed layers could have a different bitrate compared to
-		// when the allocation was done. But not updating to avoid any unnecessary perturbation
-		// in the allocation system. Let channel changes happen and update state as needed via
-		// a fresh allocation.
-		//
-/* RAJA-REMOVE
-		allocation.state = f.lastAllocationState
-		allocation.bandwidthRequested = f.lastAllocationRequestBps
-*/
-		allocation = f.lastAllocation
-		return
-	}
-
-	// change in streaming state?
-	switch {
-	case f.targetLayers != InvalidLayers && targetLayers == InvalidLayers:
-		allocation.change = VideoStreamingChangePausing
-	case f.targetLayers == InvalidLayers && targetLayers != InvalidLayers:
-		allocation.change = VideoStreamingChangeResuming
-	}
-
-	// how much bandwidth is needed and delta from previous allocation
-	if targetLayers == InvalidLayers {
-		allocation.bandwidthRequested = 0
-	} else {
-		allocation.bandwidthRequested = brs[targetLayers.spatial][targetLayers.temporal]
-	}
-	allocation.bandwidthDelta = allocation.bandwidthRequested - f.lastAllocation.bandwidthRequested
-
-	// state of allocation
-	if allocation.bandwidthRequested == optimalBandwidthNeeded {
-		allocation.state = VideoAllocationStateOptimal
-	} else {
-		allocation.state = VideoAllocationStateDeficient
-	}
-
-	// have allocated layers changed?
-	if f.targetLayers != targetLayers {
-		allocation.layersChanged = true
-	}
-	allocation.availableLayers = f.availableLayers
-	allocation.bitrates = brs
-	allocation.targetLayers = targetLayers
-	return
-}
-
-/* RAJA-REMOVE
-func (f *Forwarder) updateAllocationState(targetLayers VideoLayers, result VideoAllocationResult) {
-	f.lastAllocationState = result.state
-	f.lastAllocationRequestBps = result.bandwidthRequested
-
-	if result.layersChanged {
-		f.targetLayers = targetLayers
-	}
-}
-RAJA-REMOVE */
-
 func (f *Forwarder) findBestLayers(
 	minLayers VideoLayers,
 	maxLayers VideoLayers,
@@ -413,7 +334,7 @@ func (f *Forwarder) findBestLayers(
 		case LayerPreferenceSpatial:
 			for i := minLayers.spatial; i <= maxLayers.spatial; i++ {
 				for j := minLayers.temporal; j <= maxLayers.temporal; j++ {
-					if brs[i][j] != 0 && brs[i][j] < availableChannelCapacity {
+					if brs[i][j] != 0 && brs[i][j] <= availableChannelCapacity {
 						targetLayers = VideoLayers{
 							spatial:  i,
 							temporal: j,
@@ -428,7 +349,7 @@ func (f *Forwarder) findBestLayers(
 		case LayerPreferenceTemporal:
 			for i := minLayers.temporal; i <= maxLayers.temporal; i++ {
 				for j := minLayers.spatial; j <= maxLayers.spatial; j++ {
-					if brs[j][i] != 0 && brs[j][i] < availableChannelCapacity {
+					if brs[j][i] != 0 && brs[j][i] <= availableChannelCapacity {
 						targetLayers = VideoLayers{
 							spatial:  j,
 							temporal: i,
@@ -446,7 +367,7 @@ func (f *Forwarder) findBestLayers(
 		case LayerPreferenceSpatial:
 			for i := maxLayers.spatial; i >= minLayers.spatial; i-- {
 				for j := maxLayers.temporal; j >= minLayers.temporal; j-- {
-					if brs[i][j] != 0 && brs[i][j] < availableChannelCapacity {
+					if brs[i][j] != 0 && brs[i][j] <= availableChannelCapacity {
 						targetLayers = VideoLayers{
 							spatial:  i,
 							temporal: j,
@@ -461,7 +382,7 @@ func (f *Forwarder) findBestLayers(
 		case LayerPreferenceTemporal:
 			for i := maxLayers.temporal; i >= minLayers.temporal; i-- {
 				for j := maxLayers.spatial; j >= minLayers.spatial; j-- {
-					if brs[j][i] != 0 && brs[j][i] < availableChannelCapacity {
+					if brs[j][i] != 0 && brs[j][i] <= availableChannelCapacity {
 						targetLayers = VideoLayers{
 							spatial:  j,
 							temporal: i,
@@ -513,27 +434,21 @@ func (f *Forwarder) findBestLayers(
 		allocation.state = VideoAllocationStateDeficient
 	}
 
-	// have allocated layers changed?
-	if f.targetLayers != targetLayers {
-		allocation.layersChanged = true
-	}
 	allocation.availableLayers = f.availableLayers
 	allocation.bitrates = brs
 	allocation.targetLayers = targetLayers
-	// RAJA-REMOVE allocation = f.toVideoAllocationResult(targetLayers, brs, optimalBandwidthNeeded, canPause)
-	// RAJA-REMOVE f.updateAllocationState(targetLayers, result)
-	fmt.Printf("RAJA findBestLayers: allocation: %s, target: %+v\n", allocation, targetLayers) // REMOVE
+
 	return allocation
 }
 
-func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs [3][4]int64) VideoAllocation {
+func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs [3][4]int64) {
 	// should never get called on audio tracks, just for safety
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return f.lastAllocation
+		return
 	}
 
 	if f.muted {
-		return VideoAllocation{
+		f.lastAllocation = VideoAllocation{
 			state: VideoAllocationStateMuted,
 			change: VideoStreamingChangeNone,
 			bandwidthRequested: 0,
@@ -542,14 +457,14 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 			bitrates: brs,
 			targetLayers: f.targetLayers,
 		}
+		return
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed is dry
-			return VideoAllocation{
+			f.lastAllocation = VideoAllocation{
 				state: VideoAllocationStateFeedDry,
 				change: VideoStreamingChangeNone,
 				bandwidthRequested: 0,
@@ -558,6 +473,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 				bitrates: brs,
 				targetLayers: f.targetLayers,
 			}
+			return
 		}
 
 		// feed bitrate is not yet calculated
@@ -579,8 +495,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 
 			f.targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
 
-			fmt.Printf("RAJA awaiting measurement layers: %+v\n", f.targetLayers) // REMOVE
-			return VideoAllocation{
+			f.lastAllocation = VideoAllocation{
 				state: VideoAllocationStateAwaitingMeasurement,
 				change: change,
 				bandwidthRequested: 0, // unavailable yet
@@ -592,7 +507,7 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		} else {
 			// if not optimistically started, nothing else to do
 			if f.targetLayers == InvalidLayers {
-				return VideoAllocation{
+				f.lastAllocation = VideoAllocation{
 					state: VideoAllocationStateDeficient,
 					change: VideoStreamingChangeNone,
 					bandwidthRequested: 0, // unavailable yet
@@ -601,14 +516,12 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 					bitrates: brs,
 					targetLayers: f.targetLayers,
 				}
-			}
-
-			if canPause {
+			} else if canPause {
 				// disable it as it is not known how big this stream is
 				// and if it will fit in the available channel capacity
 				f.disable()
 
-				return VideoAllocation{
+				f.lastAllocation = VideoAllocation{
 					state: VideoAllocationStateDeficient,
 					change: VideoStreamingChangePausing,
 					bandwidthRequested: 0, // unavailable yet
@@ -619,12 +532,10 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 				}
 			}
 		}
-
-		// RAJA-TODO return here or no?
-		return f.lastAllocation
+		return
 	}
 
-	return f.findBestLayers(
+	f.lastAllocation = f.findBestLayers(
 		MinLayers,
 		f.maxLayers,
 		brs,
@@ -634,15 +545,14 @@ func (f *Forwarder) allocate(availableChannelCapacity int64, canPause bool, brs 
 		availableChannelCapacity,
 		canPause,
 	)
+	f.targetLayers = f.lastAllocation.targetLayers
 }
 
 func (f *Forwarder) Allocate(availableChannelCapacity int64, brs [3][4]int64) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA ALLOCATE: %d\n", availableChannelCapacity) // REMOVE
-	f.lastAllocation = f.allocate(availableChannelCapacity, true, brs)
-	fmt.Printf("RAJA ALLOCATE RESULT: %s\n", f.lastAllocation) // REMOVE
+	f.allocate(availableChannelCapacity, true, brs)
 	return f.lastAllocation
 }
 
@@ -650,9 +560,7 @@ func (f *Forwarder) TryAllocate(additionalChannelCapacity int64, brs [3][4]int64
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA TRYALLOCATE: %d + %d\n", f.lastAllocation.bandwidthRequested, additionalChannelCapacity) // REMOVE
-	f.lastAllocation = f.allocate(f.lastAllocation.bandwidthRequested+additionalChannelCapacity, false, brs)
-	fmt.Printf("RAJA TRYALLOCATE RESULT: %s\n", f.lastAllocation) // REMOVE
+	f.allocate(f.lastAllocation.bandwidthRequested+additionalChannelCapacity, false, brs)
 	return f.lastAllocation
 }
 
@@ -665,7 +573,6 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) VideoAllocation {
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA FINALIZEALLOCATE: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		if len(f.availableLayers) == 0 {
 			// feed dry
@@ -694,34 +601,32 @@ func (f *Forwarder) FinalizeAllocate(brs [3][4]int64) VideoAllocation {
 		ChannelCapacityInfinity,
 		false,
 	)
-	fmt.Printf("RAJA FINALIZEALLOCATE FINISH: %s\n", f.lastAllocation) // REMOVE
+	f.targetLayers = f.lastAllocation.targetLayers
 	return f.lastAllocation
 }
 
-func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) VideoAllocation {
+func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (VideoAllocation, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	fmt.Printf("RAJA ALLOCATENEXTHIGHER\n") // REMOVE
 	if f.kind == webrtc.RTPCodecTypeAudio {
-		return f.lastAllocation
+		return f.lastAllocation, false
 	}
 
 	// if not deficient, nothing to do
 	if f.lastAllocation.state != VideoAllocationStateDeficient {
-		return f.lastAllocation
+		return f.lastAllocation, false
 	}
 
 	// if targets are still pending, don't increase
 	if f.targetLayers != InvalidLayers && f.targetLayers != f.currentLayers {
-		return f.lastAllocation
+		return f.lastAllocation, false
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	fmt.Printf("RAJA ALLOCATENEXTLAYER: o: %d, a: %+v, brs: %+v\n", optimalBandwidthNeeded, f.availableLayers, brs) // REMOVE
 	if optimalBandwidthNeeded == 0 {
 		// either feed is dry or awaiting measurement, don't hunt for higher
-		return f.lastAllocation
+		return f.lastAllocation, false
 	}
 
 	// try moving temporal layer up in currently streaming spatial layer
@@ -745,9 +650,10 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) VideoAllocation {
 			false,
 		)
 		// RAJA-TODO - assign to lastAllocation and also figure out layer change
-		if allocation.layersChanged {
+		if allocation.targetLayers != f.targetLayers {
 			f.lastAllocation = allocation
-			return f.lastAllocation
+			f.targetLayers = allocation.targetLayers
+			return f.lastAllocation, true
 		}
 	}
 
@@ -760,7 +666,7 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) VideoAllocation {
 		spatial:  f.maxLayers.spatial,
 		temporal: f.maxLayers.temporal,
 	}
-	f.lastAllocation = f.findBestLayers(
+	allocation := f.findBestLayers(
 		minLayers,
 		maxLayers,
 		brs,
@@ -770,8 +676,13 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) VideoAllocation {
 		ChannelCapacityInfinity,
 		false,
 	)
+	if allocation.targetLayers != f.targetLayers {
+		f.lastAllocation = allocation
+		f.targetLayers = allocation.targetLayers
+		return f.lastAllocation, true
+	}
 
-	return f.lastAllocation
+	return f.lastAllocation, false
 }
 
 /*
@@ -867,7 +778,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				fmt.Printf("RAJA locking to layer: %d -> %d\n", f.currentLayers.spatial, f.targetLayers.spatial) // REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 			} else {
 				tp.shouldSendPLI = true
@@ -984,8 +894,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
 	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-	fmt.Printf("RAJA %s/%s/%s forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
-		f.myID, f.theirID, f.trackID,
+	fmt.Printf("RAJA forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
 		layer,
 		extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
 		incomingVP8.PictureID, incomingVP8.TL0PICIDX,
