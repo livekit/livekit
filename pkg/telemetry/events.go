@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/types/known/timestamppb"
 

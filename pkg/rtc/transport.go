@@ -6,7 +6,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 

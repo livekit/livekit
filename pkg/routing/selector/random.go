@@ -1,7 +1,7 @@
 package selector
 
 import (
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/thoas/go-funk"
 )
 
