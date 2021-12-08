@@ -6,7 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 )
 
 type FakePublishedTrack struct {
@@ -154,10 +154,6 @@ type FakePublishedTrack struct {
 	}
 	signalCidReturnsOnCall map[int]struct {
 		result1 string
-	}
-	StartStub        func()
-	startMutex       sync.RWMutex
-	startArgsForCall []struct {
 	}
 	ToProtoStub        func() *livekit.TrackInfo
 	toProtoMutex       sync.RWMutex
@@ -962,30 +958,6 @@ func (fake *FakePublishedTrack) SignalCidReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) Start() {
-	fake.startMutex.Lock()
-	fake.startArgsForCall = append(fake.startArgsForCall, struct {
-	}{})
-	stub := fake.StartStub
-	fake.recordInvocation("Start", []interface{}{})
-	fake.startMutex.Unlock()
-	if stub != nil {
-		fake.StartStub()
-	}
-}
-
-func (fake *FakePublishedTrack) StartCallCount() int {
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
-	return len(fake.startArgsForCall)
-}
-
-func (fake *FakePublishedTrack) StartCalls(stub func()) {
-	fake.startMutex.Lock()
-	defer fake.startMutex.Unlock()
-	fake.StartStub = stub
-}
-
 func (fake *FakePublishedTrack) ToProto() *livekit.TrackInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
@@ -1111,8 +1083,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.setMutedMutex.RUnlock()
 	fake.signalCidMutex.RLock()
 	defer fake.signalCidMutex.RUnlock()
-	fake.startMutex.RLock()
-	defer fake.startMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()

@@ -1075,8 +1075,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
 	}
 	p.lock.Unlock()
 
-	track.Start()
-
 	track.AddOnClose(func() {
 		// cleanup
 		p.lock.Lock()

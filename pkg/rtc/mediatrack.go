@@ -100,9 +100,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 	return t
 }
 
-func (t *MediaTrack) Start() {
-}
-
 func (t *MediaTrack) ID() string {
 	return t.params.TrackInfo.Sid
 }
