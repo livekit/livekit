@@ -102,7 +102,6 @@ type VideoAllocation struct {
 	targetLayers       VideoLayers
 }
 
-// RAJA-TODO layers changed
 func (v VideoAllocation) String() string {
 	return fmt.Sprintf("VideoAllocation: state: %s, change: %s, bw: %d, del: %d, avail: %+v, rates: %+v, target: %s",
 		v.state, v.change, v.bandwidthRequested, v.bandwidthDelta, v.availableLayers, v.bitrates, v.targetLayers)
@@ -649,7 +648,6 @@ func (f *Forwarder) AllocateNextHigher(brs [3][4]int64) (VideoAllocation, bool) 
 			ChannelCapacityInfinity,
 			false,
 		)
-		// RAJA-TODO - assign to lastAllocation and also figure out layer change
 		if allocation.targetLayers != f.targetLayers {
 			f.lastAllocation = allocation
 			f.targetLayers = allocation.targetLayers
@@ -893,14 +891,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
-	incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-	fmt.Printf("RAJA forwarding layer: %d, incoming: %d/%d/%d/%d/%d, outgoing: %d/%d/%d/%d/%d, key:%+v/%+v/%+v\n",
-		layer,
-		extPkt.Packet.SSRC, extPkt.Packet.SequenceNumber, extPkt.Packet.Timestamp,
-		incomingVP8.PictureID, incomingVP8.TL0PICIDX,
-		f.lastSSRC, tpRTP.sequenceNumber, tpRTP.timestamp,
-		tpVP8.header.PictureID, tpVP8.header.TL0PICIDX,
-		extPkt.KeyFrame, incomingVP8.IsKeyFrame, tpVP8.header.IsKeyFrame)
 	return tp, nil
 }
 

@@ -543,7 +543,6 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.receivedEstimate = int64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
 		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
-		s.logger.Debugw("RAJA received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate) // REMOVE
 	}
 
 	if s.maybeCommitEstimate() {
@@ -648,8 +647,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.logger.Infow("state change", "participant", s.participantID, "from", s.state.String(), "to", state.String())
-		s.logger.Infow("RAJA state change", "participant", s.participantID, "from", s.state.String(), "to", state.String()) // REMOVE
+		s.logger.Infow("state change", "participant", s.participantID, "from", s.state, "to", state)
 	}
 
 	s.state = state
@@ -703,7 +701,6 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.lastCommitTime = time.Now()
 
 	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
-	s.logger.Debugw("RAJA committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity) // REMOVE
 	return
 }
 
@@ -716,48 +713,6 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		s.maybeSendUpdate(update)
 		return
 	}
-
-	/* RAJA-TODO
-	//
-	// When DEFICIENT, borrow bits from lower priority tracks and
-	// balance current priority allocation. For example, assume
-	// there are 10 tracks, three at p0 (highest prio), four at p1
-	// and three at p2. If a eleventh track is added and if it is
-	// at p1, the goal is to borrow bits from the three p2 tracks,
-	// add it to bits used by already streaming four p1 tracks and
-	// use that aggregate for the five p1 tracks (four already
-	// streaming and the one newly added).
-	//
-	prio := track.Priority()
-	var spTracks []*Track
-	var lpTracks []*Track
-	for idx, t := range s.videoTracksSorted {
-		tp := t.Priority()
-		if tp > prio {
-			continue
-		}
-
-		if tp == prio && spTracks == nil {
-			spTracks = s.videoTracksSorted[idx:]
-		}
-
-		if tp < prio {
-			lpTracks = s.videoTracksSorted[idx:]
-			if spTracks != nil {
-				spTracks = spTracks[:len(spTracks)-len(lpTracks)]
-			}
-			break
-		}
-	}
-	// add given track to same priority tracks
-	spTracks = append(spTracks, track)
-
-	// how much is lower priority tracks consuming
-	lpExpectedBps := int64(0)
-	for _, t := range lpTracks {
-		lpExpectedBps += t.BandwidthRequested()
-	}
-	RAJA-TODO */
 
 	// slice into higher priority tracks and lower priority tracks
 	var hpTracks []*Track
@@ -920,12 +875,10 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	}
 
 	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
-	s.logger.Debugw("RAJA streamed tracks changed", "participant", s.participantID, "update", update) // REMOVE
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
 			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
-			s.logger.Errorw("RAJA could not send streamed tracks update", err, "participant", s.participantID) // REMOVE
 		}
 	}
 }
