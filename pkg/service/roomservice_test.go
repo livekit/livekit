@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 )
 

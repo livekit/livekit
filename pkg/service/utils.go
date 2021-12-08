@@ -6,7 +6,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 )
 
 func handleError(w http.ResponseWriter, status int, msg string) {

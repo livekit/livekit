@@ -3,7 +3,7 @@
 
 package prometheus
 
-import livekit "github.com/livekit/protocol/proto"
+import livekit "github.com/livekit/protocol/livekit"
 
 func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) error {
 	return nil
