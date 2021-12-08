@@ -517,28 +517,33 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
-func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocationResult {
+func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocation {
 	return d.forwarder.Allocate(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) TryAllocate(additionalChannelCapacity int64) VideoAllocationResult {
+func (d *DownTrack) TryAllocate(additionalChannelCapacity int64) VideoAllocation {
 	return d.forwarder.TryAllocate(additionalChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) FinalizeAllocate() {
-	d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) FinalizeAllocate() VideoAllocation {
+	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) AllocateNextHigher() VideoAllocationResult {
+func (d *DownTrack) AllocateNextHigher() VideoAllocation {
 	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
 }
 
+/* RAJA-REMOVE
 func (d *DownTrack) AllocationState() VideoAllocationState {
 	return d.forwarder.AllocationState()
 }
 
 func (d *DownTrack) AllocationBandwidth() int64 {
 	return d.forwarder.AllocationBandwidth()
+}
+RAJA-REMOVE */
+func (d *DownTrack) LastAllocation() VideoAllocation {
+	return d.forwarder.LastAllocation()
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {

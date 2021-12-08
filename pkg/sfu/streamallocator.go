@@ -711,8 +711,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if s.state == StateStable {
 		update := NewStreamStateUpdate()
-		result := track.Allocate(ChannelCapacityInfinity)
-		update.HandleStreamingChange(result.change, track)
+		allocation := track.Allocate(ChannelCapacityInfinity)
+		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
 	}
@@ -784,11 +784,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	//
 	update := NewStreamStateUpdate()
 
-	result := track.TryAllocate(lpExpectedBps)
+	allocation := track.TryAllocate(lpExpectedBps)
 
-	update.HandleStreamingChange(result.change, track)
+	update.HandleStreamingChange(allocation.change, track)
 
-	delta := lpExpectedBps - result.bandwidthDelta
+	delta := lpExpectedBps - allocation.bandwidthDelta
 	if delta > 0 {
 		// gotten some bits back, check if any deficient higher priority track can make use of it
 		delta = s.tryAllocateTracks(hpTracks, delta, update)
@@ -801,10 +801,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	for _, t := range lpTracks {
-		result := t.Allocate(delta)
-		update.HandleStreamingChange(result.change, t)
+		allocation := t.Allocate(delta)
+		update.HandleStreamingChange(allocation.change, t)
 
-		delta -= result.bandwidthRequested
+		delta -= allocation.bandwidthRequested
 		if delta < 0 {
 			delta = 0
 		}
@@ -838,10 +838,10 @@ func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64
 			continue
 		}
 
-		result := t.TryAllocate(additionalBps)
-		update.HandleStreamingChange(result.change, t)
+		allocation := t.TryAllocate(additionalBps)
+		update.HandleStreamingChange(allocation.change, t)
 
-		additionalBps -= result.bandwidthDelta
+		additionalBps -= allocation.bandwidthDelta
 		if additionalBps <= 0 {
 			// used up all the extra bits
 			break
@@ -886,12 +886,12 @@ func (s *StreamAllocator) allocateAllTracks() {
 		//    - adjust layers up or down
 		//    - pause if there is not enough capacity for any layer
 		//
-		result := track.Allocate(availableChannelCapacity)
+		allocation := track.Allocate(availableChannelCapacity)
 
-		update.HandleStreamingChange(result.change, track)
+		update.HandleStreamingChange(allocation.change, track)
 
-		availableChannelCapacity -= result.bandwidthRequested
-		if availableChannelCapacity < 0 || result.state == VideoAllocationStateDeficient {
+		availableChannelCapacity -= allocation.bandwidthRequested
+		if availableChannelCapacity < 0 || allocation.state == VideoAllocationStateDeficient {
 			//
 			// This is walking down tracks in priortized order.
 			// Once one of those streams do not fit, set
@@ -996,12 +996,12 @@ func (s *StreamAllocator) maybeBoostLayer() {
 			continue
 		}
 
-		result := track.AllocateNextHigher()
-		if result.layersChanged {
+		allocation := track.AllocateNextHigher()
+		if allocation.layersChanged {
 			s.lastBoostTime = time.Now()
 
 			update := NewStreamStateUpdate()
-			update.HandleStreamingChange(result.change, track)
+			update.HandleStreamingChange(allocation.change, track)
 			s.maybeSendUpdate(update)
 
 			break
@@ -1205,11 +1205,11 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocationResult {
+func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocation {
 	return t.downTrack.Allocate(availableChannelCapacity)
 }
 
-func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocationResult {
+func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocation {
 	return t.downTrack.TryAllocate(additionalChannelCapacity)
 }
 
@@ -1217,16 +1217,16 @@ func (t *Track) FinalizeAllocate() {
 	t.downTrack.FinalizeAllocate()
 }
 
-func (t *Track) AllocateNextHigher() VideoAllocationResult {
+func (t *Track) AllocateNextHigher() VideoAllocation {
 	return t.downTrack.AllocateNextHigher()
 }
 
 func (t *Track) IsDeficient() bool {
-	return t.downTrack.AllocationState() == VideoAllocationStateDeficient
+	return t.downTrack.LastAllocation().state == VideoAllocationStateDeficient
 }
 
 func (t *Track) BandwidthRequested() int64 {
-	return t.downTrack.AllocationBandwidth()
+	return t.downTrack.LastAllocation().bandwidthRequested
 }
 
 //------------------------------------------------
