@@ -30,12 +30,12 @@ type LocalRoomManager struct {
 	currentNode routing.LocalNode
 	rtcConfig   *rtc.WebRTCConfig
 	config      *config.Config
-	telemetry   *telemetry.TelemetryService
+	telemetry   telemetry.TelemetryService
 	rooms       map[string]*rtc.Room
 }
 
 func NewLocalRoomManager(conf *config.Config, rs RoomStore, router routing.Router, currentNode routing.LocalNode,
-	telemetry *telemetry.TelemetryService) (*LocalRoomManager, error) {
+	telemetry telemetry.TelemetryService) (*LocalRoomManager, error) {
 
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {

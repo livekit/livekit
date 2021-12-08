@@ -17,11 +17,11 @@ import (
 
 type RecordingService struct {
 	bus       utils.MessageBus
-	telemetry *telemetry.TelemetryService
+	telemetry telemetry.TelemetryService
 	shutdown  chan struct{}
 }
 
-func NewRecordingService(mb utils.MessageBus, telemetry *telemetry.TelemetryService) *RecordingService {
+func NewRecordingService(mb utils.MessageBus, telemetry telemetry.TelemetryService) *RecordingService {
 	return &RecordingService{
 		bus:       mb,
 		telemetry: telemetry,
@@ -63,8 +63,13 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, err
 	}
 
+	ri := &livekit.RecordingInfo{
+		Id: recordingId,
+		// Active: true,
+	}
+
 	logger.Debugw("recording started", "recordingID", recordingId)
-	s.telemetry.RecordingStarted(ctx, recordingId, req)
+	s.telemetry.RecordingStarted(ctx, ri)
 
 	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
 }
@@ -140,7 +145,7 @@ func (s *RecordingService) resultsWorker() {
 		case msg := <-resChan:
 			b := sub.Payload(msg)
 
-			res := &livekit.RecordingResult{}
+			res := &livekit.RecordingResult{} // &livekit.RecordingInfo{}
 			if err = proto.Unmarshal(b, res); err != nil {
 				logger.Errorw("failed to read results", err)
 				continue
@@ -158,7 +163,7 @@ func (s *RecordingService) resultsWorker() {
 			}
 			logger.Debugw("recording ended", values...)
 
-			s.telemetry.RecordingEnded(res)
+			s.telemetry.RecordingEnded(context.Background(), &livekit.RecordingInfo{})
 		case <-s.shutdown:
 			_ = sub.Close()
 			return

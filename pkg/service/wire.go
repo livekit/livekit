@@ -31,6 +31,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createKeyProvider,
 		createWebhookNotifier,
 		routing.CreateRouter,
+		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		NewRecordingService,
 		NewRoomAllocator,

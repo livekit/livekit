@@ -46,7 +46,7 @@ type Room struct {
 	// for active speaker updates
 	audioConfig *config.AudioConfig
 
-	telemetry *telemetry.TelemetryService
+	telemetry telemetry.TelemetryService
 
 	onParticipantChanged func(p types.Participant)
 	onMetadataUpdate     func(metadata string)
@@ -57,7 +57,7 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry *telemetry.TelemetryService) *Room {
+func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
 		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
