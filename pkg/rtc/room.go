@@ -735,10 +735,7 @@ func (r *Room) connectionQualityWorker() {
 		connectionInfos := make(map[string]*livekit.ConnectionQualityInfo, len(participants))
 
 		for _, p := range participants {
-			connectionInfos[p.Identity()] = &livekit.ConnectionQualityInfo{
-				ParticipantSid: p.ID(),
-				Quality:        p.GetConnectionQuality(),
-			}
+			connectionInfos[p.Identity()] = p.GetConnectionQuality()
 		}
 
 		for _, op := range participants {

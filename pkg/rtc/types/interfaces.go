@@ -55,7 +55,7 @@ type Participant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
-	GetConnectionQuality() livekit.ConnectionQuality
+	GetConnectionQuality() *livekit.ConnectionQualityInfo
 	IsSubscribedTo(identity string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
@@ -116,6 +116,8 @@ type MediaTrack interface {
 	RemoveAllSubscribers()
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+
+	GetUpConnectionScore() float64
 }
 
 // PublishedTrack is the main interface representing a track published to the room

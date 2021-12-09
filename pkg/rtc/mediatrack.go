@@ -32,6 +32,7 @@ var (
 
 const (
 	lostUpdateDelta         = time.Second
+	lastUpdateDelta         = 5 * time.Second
 	layerSelectionTolerance = 0.8
 )
 
@@ -58,14 +59,21 @@ type MediaTrack struct {
 	layerDimensions  sync.Map // quality => *livekit.VideoLayer
 
 	// track audio fraction lost
-	fracLostLock      sync.Mutex
+	statsLock         sync.Mutex
 	maxDownFracLost   uint8
 	maxDownFracLostTs time.Time
 	currentUpFracLost uint32
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
+	connectionStatsUp *ConnectionStats
 
 	onClose []func()
+}
+
+func (t *MediaTrack) GetUpConnectionScore() float64 {
+	t.statsLock.Lock()
+	defer t.statsLock.Unlock()
+	return t.connectionStatsUp.Score
 }
 
 type MediaTrackParams struct {
@@ -82,12 +90,31 @@ type MediaTrackParams struct {
 	Logger              logger.Logger
 }
 
+type ConnectionStat struct {
+	FractionLost uint8
+	PacketsLost  uint32
+	Delay        uint32
+	Jitter       uint32
+}
+
+type ConnectionStats struct {
+	Curr        *ConnectionStat
+	Prev        *ConnectionStat
+	LastUpdated time.Time
+	Score       float64
+}
+
+func NewConnectionStats() *ConnectionStats {
+	return &ConnectionStats{Curr: &ConnectionStat{}}
+}
+
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:   params,
-		ssrc:     track.SSRC(),
-		streamID: track.StreamID(),
-		codec:    track.Codec(),
+		params:            params,
+		ssrc:              track.SSRC(),
+		streamID:          track.StreamID(),
+		codec:             track.Codec(),
+		connectionStatsUp: NewConnectionStats(),
 	}
 
 	if params.TrackInfo.Muted {
@@ -98,6 +125,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
+
 	return t
 }
 
@@ -558,6 +586,10 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
 	var hasReport bool
+	var delay uint32
+	var jitter uint32
+	var totalLost uint32
+
 	for _, p := range packets {
 		switch pkt := p.(type) {
 		// sfu.Buffer generates ReceiverReports for the publisher
@@ -566,13 +598,20 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
+				if rr.Delay > delay {
+					delay = rr.Delay
+				}
+				if rr.Jitter > jitter {
+					jitter = rr.Jitter
+				}
+				totalLost += rr.TotalLost
 				hasReport = true
 			}
 		}
 	}
 
 	if hasReport {
-		t.fracLostLock.Lock()
+		t.statsLock.Lock()
 		if maxLost > t.maxUpFracLost {
 			t.maxUpFracLost = maxLost
 		}
@@ -583,9 +622,23 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			t.maxUpFracLost = 0
 			t.maxUpFracLostTs = now
 		}
-		t.fracLostLock.Unlock()
-	}
+		// update feedback stats
+		current := t.connectionStatsUp.Curr
+		current.Jitter = jitter
+		current.Delay = delay
+		current.FractionLost = maxLost
+		current.PacketsLost = totalLost
+		if now.Sub(t.connectionStatsUp.LastUpdated) > lastUpdateDelta {
+			// calculate score and store it
+			t.connectionStatsUp.Score = ConnectionScore(current, t.Kind())
+			// store previous stats (not used as of now)
+			t.connectionStatsUp.Prev = current
+			t.connectionStatsUp.Curr = &ConnectionStat{}
+			t.connectionStatsUp.LastUpdated = now
+		}
+		t.statsLock.Unlock()
 
+	}
 	// also look for sender reports
 	// feedback for the source RTCP
 	t.params.RTCPChan <- packets
@@ -597,7 +650,7 @@ func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.Receiv
 		shouldUpdate bool
 		maxLost      uint8
 	)
-	t.fracLostLock.Lock()
+	t.statsLock.Lock()
 	for _, rr := range report.Reports {
 		if t.maxDownFracLost < rr.FractionLost {
 			t.maxDownFracLost = rr.FractionLost
@@ -611,7 +664,7 @@ func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.Receiv
 		t.maxDownFracLost = 0
 		t.maxDownFracLostTs = now
 	}
-	t.fracLostLock.Unlock()
+	t.statsLock.Unlock()
 
 	if shouldUpdate && t.buffer != nil {
 		// ok to access buffer since receivers are added before subscribers
