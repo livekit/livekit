@@ -65,6 +65,9 @@ type MediaTrack struct {
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
 
+	// feedback
+	Feedback *MediaFeedback
+
 	onClose []func()
 }
 
@@ -82,12 +85,34 @@ type MediaTrackParams struct {
 	Logger              logger.Logger
 }
 
+type MediaStats struct {
+	FractionLost    uint8
+	PacketsLost     uint32
+	PacketsReceived uint32
+	Delay           uint32
+	BytesIn         uint64
+	NumReports      uint32
+}
+
+type MediaFeedback struct {
+	lock        sync.Mutex
+	Curr        *MediaStats
+	Prev        *MediaStats
+	LastUpdated time.Time
+	Score       float64
+}
+
+func newMediaFeedback() *MediaFeedback {
+	return &MediaFeedback{Curr: &MediaStats{}}
+}
+
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params:   params,
 		ssrc:     track.SSRC(),
 		streamID: track.StreamID(),
 		codec:    track.Codec(),
+		Feedback: newMediaFeedback(),
 	}
 
 	if params.TrackInfo.Muted {
@@ -551,37 +576,47 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	}()
 }
 
+func (t *MediaTrack) updateStats() {
+
+}
+
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
-	var maxLost uint8
-	var hasReport bool
+	feedback := t.Feedback
+	feedback.lock.Lock()
+	defer feedback.lock.Unlock()
+	current := feedback.Curr
+	current.NumReports++
+	now := time.Now()
+
 	for _, p := range packets {
 		switch pkt := p.(type) {
 		// sfu.Buffer generates ReceiverReports for the publisher
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
-				if rr.FractionLost > maxLost {
-					maxLost = rr.FractionLost
-				}
-				hasReport = true
+				current.FractionLost += rr.FractionLost
+				current.PacketsLost += rr.TotalLost
+				current.Delay += rr.Delay
 			}
 		}
 	}
 
-	if hasReport {
-		t.fracLostLock.Lock()
-		if maxLost > t.maxUpFracLost {
-			t.maxUpFracLost = maxLost
+	if now.Sub(feedback.LastUpdated) > lostUpdateDelta {
+		/* TODO - buffer lock is already held by sfu.Write (which calls handlePublisherFeedback). getstats deadlocks
+		t.lock.RLock()
+		stats := t.buffer.GetStats()
+		current.PacketsReceived = stats.PacketCount
+		t.lock.RUnlock()
+		*/
+		// calculate score and store it
+		if t.Kind() == livekit.TrackType_AUDIO {
+			feedback.Score = calculateAudioScore(current, feedback.Prev)
+		} else {
+			feedback.Score = calculateVideoScore(current, feedback.Prev, t.params.TrackInfo.Height, t.params.TrackInfo.Width)
 		}
-
-		now := time.Now()
-		if now.Sub(t.maxUpFracLostTs) > lostUpdateDelta {
-			atomic.StoreUint32(&t.currentUpFracLost, uint32(t.maxUpFracLost))
-			t.maxUpFracLost = 0
-			t.maxUpFracLostTs = now
-		}
-		t.fracLostLock.Unlock()
+		feedback.Prev = current
+		feedback.Curr = &MediaStats{}
+		feedback.LastUpdated = now
 	}
-
 	// also look for sender reports
 	// feedback for the source RTCP
 	t.params.RTCPChan <- packets
