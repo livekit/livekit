@@ -32,6 +32,7 @@ var (
 
 const (
 	lostUpdateDelta         = time.Second
+	lastUpdateDelta         = 5 * time.Second
 	layerSelectionTolerance = 0.8
 )
 
@@ -65,6 +66,9 @@ type MediaTrack struct {
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
 
+	// feedback
+	Feedback *MediaFeedback
+
 	onClose []func()
 }
 
@@ -82,12 +86,32 @@ type MediaTrackParams struct {
 	Logger              logger.Logger
 }
 
+type MediaStats struct {
+	FractionLost uint8
+	PacketsLost  uint32
+	Delay        uint32
+	Jitter       uint32
+}
+
+type MediaFeedback struct {
+	lock        sync.Mutex
+	Curr        *MediaStats
+	Prev        *MediaStats
+	LastUpdated time.Time
+	Score       float64
+}
+
+func newMediaFeedback() *MediaFeedback {
+	return &MediaFeedback{Curr: &MediaStats{}}
+}
+
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params:   params,
 		ssrc:     track.SSRC(),
 		streamID: track.StreamID(),
 		codec:    track.Codec(),
+		Feedback: newMediaFeedback(),
 	}
 
 	if params.TrackInfo.Muted {
@@ -97,6 +121,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
 	}
+
 	return t
 }
 
@@ -551,6 +576,10 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
 	var hasReport bool
+	var delay uint32
+	var jitter uint32
+	var totalLost uint32
+
 	for _, p := range packets {
 		switch pkt := p.(type) {
 		// sfu.Buffer generates ReceiverReports for the publisher
@@ -559,6 +588,13 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
+				if rr.Delay > delay {
+					delay = rr.Delay
+				}
+				if rr.Jitter > jitter {
+					jitter = rr.Jitter
+				}
+				totalLost += rr.TotalLost
 				hasReport = true
 			}
 		}
@@ -577,8 +613,26 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			t.maxUpFracLostTs = now
 		}
 		t.fracLostLock.Unlock()
-	}
 
+		// update feedback stats
+		t.Feedback.lock.Lock()
+		current := t.Feedback.Curr
+		current.Jitter = jitter
+		current.Delay = delay
+		current.FractionLost = maxLost
+		current.PacketsLost = totalLost
+		if now.Sub(t.Feedback.LastUpdated) > lastUpdateDelta {
+			// calculate score and store it
+			t.Feedback.Score, _ = MosRating(current, t.Kind())
+
+			// store previous stats (not used as of now)
+			t.Feedback.Prev = current
+			t.Feedback.Curr = &MediaStats{}
+			t.Feedback.LastUpdated = now
+		}
+		t.Feedback.lock.Unlock()
+
+	}
 	// also look for sender reports
 	// feedback for the source RTCP
 	t.params.RTCPChan <- packets
