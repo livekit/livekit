@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -98,9 +98,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
 	}
 	return t
-}
-
-func (t *MediaTrack) Start() {
 }
 
 func (t *MediaTrack) ID() string {

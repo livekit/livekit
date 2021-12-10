@@ -7,7 +7,7 @@ import (
 	"github.com/bep/debounce"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/webrtc/v3"
 )
@@ -17,7 +17,7 @@ const (
 )
 
 type SubscribedTrack struct {
-	publishedTrack    types.PublishedTrack
+	publishedTrack    types.MediaTrack
 	dt                *sfu.DownTrack
 	publisherIdentity string
 	subMuted          utils.AtomicFlag
@@ -27,9 +27,9 @@ type SubscribedTrack struct {
 	debouncer func(func())
 }
 
-func NewSubscribedTrack(publishedTrack types.PublishedTrack, publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(mediaTrack types.MediaTrack, publisherIdentity string, dt *sfu.DownTrack) *SubscribedTrack {
 	return &SubscribedTrack{
-		publishedTrack:    publishedTrack,
+		publishedTrack:    mediaTrack,
 		publisherIdentity: publisherIdentity,
 		dt:                dt,
 		debouncer:         debounce.New(subscriptionDebounceInterval),

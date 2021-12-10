@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/service"
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 )
 
 type FakeRORoomStore struct {

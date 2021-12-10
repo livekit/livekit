@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
