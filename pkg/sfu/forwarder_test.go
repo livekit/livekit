@@ -680,7 +680,8 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	extPkt, err = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
-		shouldDrop: true,
+		shouldDrop:         true,
+		isDroppingRelevant: true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -899,7 +900,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 	expectedTP = TranslationParams{
-		shouldDrop: true,
+		shouldDrop:         true,
+		isDroppingRelevant: true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)

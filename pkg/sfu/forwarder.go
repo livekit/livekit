@@ -756,6 +756,9 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*Transl
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			if err == ErrOutOfOrderSequenceNumberCacheMiss {
+				tp.isDroppingRelevant = true
+			}
 			return tp, nil
 		}
 
