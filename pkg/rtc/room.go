@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -316,10 +316,6 @@ func (r *Room) RemoveParticipant(identity string) {
 }
 
 func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []string, subscribe bool) error {
-	if !participant.CanSubscribe() {
-		return ErrCannotSubscribe
-	}
-
 	// find all matching tracks
 	var tracks []types.PublishedTrack
 	participants := r.GetParticipants()
