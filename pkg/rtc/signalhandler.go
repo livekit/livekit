@@ -6,53 +6,32 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func HandleParticipantSignal(room types.Room, participant types.Participant, req *livekit.SignalRequest) error {
+func HandleParticipantSignal(room types.Room, participant types.Participant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
 		_, err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
 		if err != nil {
-			logger.Errorw("could not handle offer", err,
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
-			)
+			pLogger.Errorw("could not handle offer", err)
 			return err
 		}
 	case *livekit.SignalRequest_AddTrack:
-		logger.Debugw("add track request",
-			"room", room.Name(),
-			"participant", participant.Identity(),
-			"pID", participant.ID(),
-			"track", msg.AddTrack.Cid)
+		pLogger.Debugw("add track request", "track", msg.AddTrack.Cid)
 		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Answer:
 		sd := FromProtoSessionDescription(msg.Answer)
 		if err := participant.HandleAnswer(sd); err != nil {
-			logger.Errorw("could not handle answer", err,
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
-			)
+			pLogger.Errorw("could not handle answer", err)
 			// connection cannot be successful if we can't answer
 			return err
 		}
 	case *livekit.SignalRequest_Trickle:
 		candidateInit, err := FromProtoTrickle(msg.Trickle)
 		if err != nil {
-			logger.Warnw("could not decode trickle", err,
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
-			)
+			pLogger.Warnw("could not decode trickle", err)
 			return nil
 		}
-		// logger.Debugw("adding peer candidate", "participant", participant.Identity())
 		if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-			logger.Warnw("could not handle trickle", err,
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
-			)
+			pLogger.Warnw("could not handle trickle", err)
 		}
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
@@ -67,10 +46,7 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			err = ErrCannotSubscribe
 		}
 		if err != nil {
-			logger.Warnw("could not update subscription", err,
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
+			pLogger.Warnw("could not update subscription", err,
 				"tracks", msg.Subscription.TrackSids,
 				"subscribe", msg.Subscription.Subscribe)
 		}
@@ -78,26 +54,20 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 		for _, sid := range msg.TrackSetting.TrackSids {
 			subTrack := participant.GetSubscribedTrack(sid)
 			if subTrack == nil {
-				logger.Warnw("unable to find SubscribedTrack", nil,
-					"room", room.Name(),
-					"participant", participant.Identity(),
-					"pID", participant.ID(),
+				pLogger.Warnw("unable to find SubscribedTrack", nil,
 					"track", sid)
 				continue
 			}
 
 			// find quality for published track
-			logger.Debugw("updating track settings",
-				"room", room.Name(),
-				"participant", participant.Identity(),
-				"pID", participant.ID(),
+			pLogger.Debugw("updating track settings",
 				"settings", msg.TrackSetting)
 			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
 		track := participant.GetPublishedTrack(msg.UpdateLayers.TrackSid)
 		if track == nil {
-			logger.Warnw("could not find published track", nil,
+			pLogger.Warnw("could not find published track", nil,
 				"track", msg.UpdateLayers.TrackSid)
 			return nil
 		}

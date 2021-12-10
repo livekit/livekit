@@ -192,13 +192,11 @@ func (s Signal) String() string {
 }
 
 type StreamAllocatorParams struct {
-	ParticipantID string
-	Logger        logger.Logger
+	Logger logger.Logger
 }
 
 type StreamAllocator struct {
-	participantID string
-	logger        logger.Logger
+	logger logger.Logger
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
@@ -234,13 +232,11 @@ type Event struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		participantID: params.ParticipantID,
-		logger:        params.Logger,
-		audioTracks:   make(map[string]*Track),
-		videoTracks:   make(map[string]*Track),
+		logger:      params.Logger,
+		audioTracks: make(map[string]*Track),
+		videoTracks: make(map[string]*Track),
 		prober: NewProber(ProberParams{
-			ParticipantID: params.ParticipantID,
-			Logger:        params.Logger,
+			Logger: params.Logger,
 		}),
 		eventCh:   make(chan Event, 20),
 		runningCh: make(chan struct{}),
@@ -517,7 +513,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	}
 	if !found {
 		if len(remb.SSRCs) == 0 {
-			s.logger.Warnw("no SSRC to track REMB", nil, "participant", s.participantID)
+			s.logger.Warnw("no SSRC to track REMB", nil)
 			return
 		}
 
@@ -542,7 +538,10 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+		s.logger.Debugw("received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
 	}
 
 	if s.maybeCommitEstimate() {
@@ -647,7 +646,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.logger.Infow("state change", "participant", s.participantID, "from", s.state, "to", state)
+		s.logger.Infow("state change", "from", s.state, "to", state)
 	}
 
 	s.state = state
@@ -700,7 +699,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
 
-	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
+	s.logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
 	return
 }
 
@@ -874,11 +873,11 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 		return
 	}
 
-	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
+	s.logger.Debugw("streamed tracks changed", "update", update)
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
-			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+			s.logger.Errorw("could not send streamed tracks update", err)
 		}
 	}
 }

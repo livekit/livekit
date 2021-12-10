@@ -265,8 +265,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			}
 			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
-				"pIDs", []string{t.params.ParticipantID, sub.ID()},
-				"participant", sub.Identity(),
+				"subscriber", sub.Identity(),
+				"subscriberID", sub.ID(),
 				"kind", t.Kind(),
 			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
@@ -279,7 +279,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					// been set to Inactive
 					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
 						"error", err,
-						"participant", sub.Identity(), "pID", sub.ID())
+						"subscriber", sub.Identity(),
+						"subscriberID", sub.ID(),
+					)
 				}
 			}
 
@@ -327,8 +329,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
 		logger.Errorw("could not retrieve buffer pair", nil,
-			"participant", t.params.ParticipantIdentity,
-			"participantID", t.params.ParticipantID,
 			"track", t.ID())
 		return
 	}
