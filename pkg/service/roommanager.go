@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -421,7 +421,16 @@ func (r *RoomManager) handleSignalRequest(room *rtc.Room, participant types.Part
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
-		if err := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe); err != nil {
+		var err error
+		if participant.CanSubscribe() {
+			updateErr := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe)
+			if updateErr != nil {
+				err = updateErr
+			}
+		} else {
+			err = rtc.ErrCannotSubscribe
+		}
+		if err != nil {
 			logger.Warnw("could not update subscription", err,
 				"room", room.Room.Name,
 				"participant", participant.Identity(),

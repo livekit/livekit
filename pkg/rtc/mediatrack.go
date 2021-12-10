@@ -160,10 +160,6 @@ func (t *MediaTrack) PublishLossPercentage() uint32 {
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
-	if !sub.CanSubscribe() {
-		return ErrPermissionDenied
-	}
-
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
