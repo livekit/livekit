@@ -114,10 +114,11 @@ var (
 )
 
 type TranslationParams struct {
-	shouldDrop    bool
-	shouldSendPLI bool
-	rtp           *TranslationParamsRTP
-	vp8           *TranslationParamsVP8
+	shouldDrop         bool
+	isDroppingRelevant bool
+	shouldSendPLI      bool
+	rtp                *TranslationParamsRTP
+	vp8                *TranslationParamsVP8
 }
 
 type VideoLayers struct {
@@ -758,6 +759,7 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*Transl
 			return tp, nil
 		}
 
+		tp.isDroppingRelevant = true
 		return tp, err
 	}
 
@@ -813,6 +815,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// applied restriction from client requested restriction.
 		//
 		tp.shouldDrop = true
+		tp.isDroppingRelevant = true
 		return tp, nil
 	}
 
@@ -858,9 +861,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	if err != nil {
 		tp.shouldDrop = true
 		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
+			if err == ErrOutOfOrderSequenceNumberCacheMiss {
+				tp.isDroppingRelevant = true
+			}
 			return tp, nil
 		}
 
+		tp.isDroppingRelevant = true
 		return tp, err
 	}
 
@@ -887,9 +894,13 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
 			}
+			if err == ErrOutOfOrderVP8PictureIdCacheMiss {
+				tp.isDroppingRelevant = true
+			}
 			return tp, nil
 		}
 
+		tp.isDroppingRelevant = true
 		return tp, err
 	}
 
