@@ -227,6 +227,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactor())
 	sid := utils.NewGuid(utils.ParticipantPrefix)
+	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:        pi.Identity,
 		SID:             sid,
@@ -238,7 +239,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 		ThrottleConfig:  r.config.RTC.PLIThrottle,
 		EnabledCodecs:   room.Room.EnabledCodecs,
 		Hidden:          pi.Hidden,
-		Logger:          rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid),
+		Logger:          pLogger,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)
@@ -257,11 +258,11 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 		AutoSubscribe: pi.AutoSubscribe,
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
-		logger.Errorw("could not join room", err)
+		pLogger.Errorw("could not join room", err)
 		return
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
-		logger.Errorw("could not store participant", err)
+		pLogger.Errorw("could not store participant", err)
 	}
 	// update roomstore with new numParticipants
 	if !participant.Hidden() {
@@ -274,7 +275,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
 	participant.OnClose(func(p types.Participant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
-			logger.Errorw("could not delete participant", err)
+			pLogger.Errorw("could not delete participant", err)
 		}
 		// update roomstore with new numParticipants
 		if !participant.Hidden() {
