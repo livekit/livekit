@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/recording"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"

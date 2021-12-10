@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 )
 

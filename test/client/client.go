@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -48,11 +48,12 @@ type RTCClient struct {
 	localParticipant   *livekit.ParticipantInfo
 	remoteParticipants map[string]*livekit.ParticipantInfo
 
-	reliableDC         *webrtc.DataChannel
-	reliableDCSub      *webrtc.DataChannel
-	lossyDC            *webrtc.DataChannel
-	lossyDCSub         *webrtc.DataChannel
-	publisherConnected utils.AtomicFlag
+	reliableDC          *webrtc.DataChannel
+	reliableDCSub       *webrtc.DataChannel
+	lossyDC             *webrtc.DataChannel
+	lossyDCSub          *webrtc.DataChannel
+	publisherConnected  utils.AtomicFlag
+	publisherNegotiated utils.AtomicFlag
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -84,6 +85,7 @@ var (
 
 type Options struct {
 	AutoSubscribe bool
+	Publish       string
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -96,7 +98,8 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t&publish=%s",
+			connectUrl, opts.AutoSubscribe, opts.Publish)
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
@@ -224,8 +227,13 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.publisher.PeerConnection().OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		logger.Infow("publisher ICE state changed", "state", state.String(),
 			"participant", c.localParticipant.Identity)
+
 		if state == webrtc.ICEConnectionStateConnected {
 			c.publisherConnected.TrySet(true)
+			// check if publisher triggered negotiate (!subscriberPrimary)
+			if c.publisherNegotiated.Get() {
+				c.iceConnected.TrySet(true)
+			}
 		} else {
 			c.publisherConnected.TrySet(false)
 		}
@@ -265,6 +273,11 @@ func (c *RTCClient) Run() error {
 				c.remoteParticipants[p.Sid] = p
 			}
 			c.lock.Unlock()
+			// if publish only, negotiate
+			if !msg.Join.SubscriberPrimary {
+				c.publisherNegotiated.TrySet(true)
+				c.publisher.Negotiate()
+			}
 
 			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
 		case *livekit.SignalResponse_Answer:

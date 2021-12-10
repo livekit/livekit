@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/auth"
+
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
@@ -31,6 +33,82 @@ func TestClientCouldConnect(t *testing.T) {
 	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
 		return len(c1.RemoteParticipants()) != 0 && len(c2.RemoteParticipants()) != 0
 	})
+}
+
+func TestClientConnectDuplicate(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	defer finish()
+
+	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
+	grant.SetCanPublish(true)
+	grant.SetCanSubscribe(true)
+	token := joinTokenWithGrant("c1", grant)
+
+	c1 := createRTCClientWithToken(token, defaultServerPort, nil)
+
+	// publish 2 tracks
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	require.NoError(t, err)
+	defer t1.Stop()
+	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
+	require.NoError(t, err)
+	defer t2.Stop()
+
+	c2 := createRTCClient("c2", defaultServerPort, nil)
+	waitUntilConnected(t, c1, c2)
+
+	opts := &testclient.Options{
+		Publish: "duplicate_connection",
+	}
+	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
+		if len(c2.SubscribedTracks()) == 0 {
+			return false
+		}
+		// should have received three tracks
+		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+			return false
+		}
+
+		//participant ID can be appended with '#..' . but should contain orig id as prefix
+		tr1 := c2.SubscribedTracks()[c1.ID()][0]
+		participantId1, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), participantId1)
+		tr2 := c2.SubscribedTracks()[c1.ID()][1]
+		participantId2, _ := rtc.UnpackStreamID(tr2.StreamID())
+		require.Equal(t, c1.ID(), participantId2)
+		return true
+	})
+	if !success {
+		t.FailNow()
+	}
+
+	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
+
+	waitUntilConnected(t, c1Dup)
+
+	t3, err := c1Dup.AddStaticTrack("video/vp8", "video", "webcam")
+	require.NoError(t, err)
+	defer t3.Stop()
+
+	success = testutils.WithTimeout(t, "c2 should receive third tracks", func() bool {
+		if len(c2.SubscribedTracks()[c1Dup.ID()]) != 1 {
+			return false
+		}
+
+		tr3 := c2.SubscribedTracks()[c1Dup.ID()][0]
+		participantId3, _ := rtc.UnpackStreamID(tr3.StreamID())
+		require.Contains(t, c1Dup.ID(), participantId3)
+
+		return true
+	})
+	if !success {
+		t.FailNow()
+	}
 }
 
 func TestSinglePublisher(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"

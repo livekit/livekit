@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	livekit "github.com/livekit/protocol/proto"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
@@ -61,7 +61,6 @@ type Participant interface {
 	GetSubscribedParticipants() []string
 
 	// permissions
-
 	CanPublish() bool
 	CanSubscribe() bool
 	CanPublishData() bool
@@ -91,14 +90,10 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
-// PublishedTrack is the main interface representing a track published to the room
-// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
-//counterfeiter:generate . PublishedTrack
-type PublishedTrack interface {
-	Start()
+// MediaTrack represents a media track
+//counterfeiter:generate . MediaTrack
+type MediaTrack interface {
 	ID() string
-	SignalCid() string
-	SdpCid() string
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool
@@ -112,10 +107,21 @@ type PublishedTrack interface {
 	RemoveAllSubscribers()
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+}
+
+// PublishedTrack is the main interface representing a track published to the room
+// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
+//counterfeiter:generate . PublishedTrack
+type PublishedTrack interface {
+	MediaTrack
+
+	SignalCid() string
+	SdpCid() string
+	ToProto() *livekit.TrackInfo
+
 	// returns number of uptracks that are publishing, registered
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
-	ToProto() *livekit.TrackInfo
 	Receiver() sfu.TrackReceiver
 
 	// callbacks

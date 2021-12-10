@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 )

@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
-	livekit "github.com/livekit/protocol/proto"
+	livekit "github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"
