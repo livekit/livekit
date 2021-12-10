@@ -8,34 +8,39 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const livekitNamespace = "livekit"
+const livekitNamespace string = "livekit"
 
 var (
+	MessageCounter          *prometheus.CounterVec
+	ServiceOperationCounter *prometheus.CounterVec
+)
+
+func Init(nodeID string) {
 	MessageCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: livekitNamespace,
-			Subsystem: "node",
-			Name:      "messages",
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "messages",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
 		},
 		[]string{"type", "status"},
 	)
 
 	ServiceOperationCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: livekitNamespace,
-			Subsystem: "node",
-			Name:      "service_operation",
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "service_operation",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
 		},
 		[]string{"type", "status", "error_type"},
 	)
-)
 
-func init() {
 	prometheus.MustRegister(MessageCounter)
 	prometheus.MustRegister(ServiceOperationCounter)
 
-	initPacketStats()
-	initRoomStats()
+	initPacketStats(nodeID)
+	initRoomStats(nodeID)
 }
 
 func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) error {

@@ -18,6 +18,7 @@ import (
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -195,6 +196,8 @@ func startServer(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	prometheus.Init(currentNode.Id)
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
