@@ -105,9 +105,9 @@ type DownTrack struct {
 	closeOnce               sync.Once
 
 	// Report helpers
-	primaryStats atomic.Value
-	rtxStats     atomic.Value
-	paddingStats atomic.Value
+	primaryStats atomic.Value // contains *PacketStats
+	rtxStats     atomic.Value // contains *PacketStats
+	paddingStats atomic.Value // contains *PacketStats
 
 	lossFraction atomicUint8
 
