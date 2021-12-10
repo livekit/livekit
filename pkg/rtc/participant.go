@@ -701,7 +701,13 @@ func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if subTrack.DownTrack().TargetSpatialLayer() < subTrack.DownTrack().MaxSpatialLayer() {
+		// determine the max spatial layer based on what's published
+		desiredLayer := subTrack.DownTrack().MaxSpatialLayer()
+		maxAvailable := subTrack.DownTrack().MaxAvailableLayer()
+		if maxAvailable < desiredLayer {
+			desiredLayer = maxAvailable
+		}
+		if subTrack.DownTrack().TargetSpatialLayer() < desiredLayer {
 			reducedQualitySub = true
 		}
 		subLoss += subTrack.SubscribeLossPercentage()
