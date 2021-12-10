@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -144,10 +144,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pLogger := rtc.LoggerWithParticipant(
+		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName),
+		pi.Identity, "",
+	)
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		logger.Infow("server closing WS connection", "participant", pi.Identity, "connID", connId)
+		pLogger.Infow("server closing WS connection", "connID", connId)
 		reqSink.Close()
 		close(done)
 	}()
@@ -156,7 +160,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
-		logger.Warnw("could not upgrade to WS", err)
+		pLogger.Warnw("could not upgrade to WS", err)
 		handleError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -166,11 +170,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
-	logger.Infow("new client WS connected",
+	pLogger.Infow("new client WS connected",
 		"connID", connId,
 		"roomID", rm.Sid,
-		"room", rm.Name,
-		"participant", pi.Identity,
 	)
 
 	// handle responses
@@ -187,22 +189,20 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-resSource.ReadChan():
 				if msg == nil {
-					logger.Infow("source closed connection",
-						"participant", pi.Identity,
+					pLogger.Infow("source closed connection",
 						"connID", connId)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
-					logger.Errorw("unexpected message type", nil,
+					pLogger.Errorw("unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
-						"participant", pi.Identity,
 						"connID", connId)
 					continue
 				}
 
 				if err = sigConn.WriteResponse(res); err != nil {
-					logger.Warnw("error writing to websocket", err)
+					pLogger.Warnw("error writing to websocket", err)
 					return
 				}
 			}
@@ -218,13 +218,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
 				return
 			} else {
-				logger.Errorw("error reading from websocket", err)
+				pLogger.Errorw("error reading from websocket", err)
 				return
 			}
 		}
 		if err := reqSink.WriteMessage(req); err != nil {
-			logger.Warnw("error writing to request sink", err,
-				"participant", pi.Identity,
+			pLogger.Warnw("error writing to request sink", err,
 				"connID", connId)
 		}
 	}

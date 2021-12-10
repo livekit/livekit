@@ -117,13 +117,11 @@ import (
 )
 
 type ProberParams struct {
-	ParticipantID string
-	Logger        logger.Logger
+	Logger logger.Logger
 }
 
 type Prober struct {
-	participantID string
-	logger        logger.Logger
+	logger logger.Logger
 
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque
@@ -134,8 +132,7 @@ type Prober struct {
 
 func NewProber(params ProberParams) *Prober {
 	p := &Prober{
-		participantID: params.ParticipantID,
-		logger:        params.Logger,
+		logger: params.Logger,
 	}
 	p.clusters.SetMinCapacity(2)
 	return p
@@ -153,7 +150,7 @@ func (p *Prober) Reset() {
 	defer p.clustersMu.Unlock()
 
 	if p.activeCluster != nil {
-		p.logger.Debugw("resetting active cluster", "participant", p.participantID, "cluster", p.activeCluster.String())
+		p.logger.Debugw("resetting active cluster", "cluster", p.activeCluster.String())
 	}
 
 	p.clusters.Clear()
@@ -170,7 +167,7 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 	}
 
 	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
-	p.logger.Debugw("cluster added", "participant", p.participantID, "cluster", cluster.String())
+	p.logger.Debugw("cluster added", "cluster", cluster.String())
 
 	p.pushBackClusterAndMaybeStart(cluster)
 }
@@ -258,7 +255,7 @@ func (p *Prober) run() {
 		cluster.Process(p)
 
 		if cluster.IsFinished() {
-			p.logger.Debugw("cluster finished", "participant", p.participantID, "cluster", cluster.String())
+			p.logger.Debugw("cluster finished", "cluster", cluster.String())
 			p.popFrontCluster(cluster)
 			continue
 		}

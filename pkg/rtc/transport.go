@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
@@ -100,8 +100,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
-			ParticipantID: params.ParticipantID,
-			Logger:        params.Logger,
+			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
 	}

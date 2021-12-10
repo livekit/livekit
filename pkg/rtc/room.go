@@ -60,7 +60,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          logger.Logger(logger.GetLogger().WithValues("room", room.Name)),
+		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), room.Name),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
@@ -172,7 +172,10 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.Participant, oldState livekit.ParticipantInfo_State) {
-		r.Logger.Debugw("participant state changed", "state", p.State(), "participant", p.Identity(), "pID", p.ID(),
+		r.Logger.Debugw("participant state changed",
+			"state", p.State(),
+			"participant", p.Identity(),
+			"pID", p.ID(),
 			"oldState", oldState)
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
