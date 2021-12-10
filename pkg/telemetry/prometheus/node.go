@@ -5,6 +5,7 @@ import (
 	"time"
 
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -15,7 +16,8 @@ var (
 	ServiceOperationCounter *prometheus.CounterVec
 )
 
-func Init(nodeID string) {
+func init() {
+	nodeID, _ := utils.LocalNodeID()
 	MessageCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,
