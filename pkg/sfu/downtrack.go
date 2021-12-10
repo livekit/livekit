@@ -130,6 +130,7 @@ type DownTrack struct {
 	maxPacketTs uint32
 
 	bandwidthConstrainedMuted atomicBool
+	maxAvailableLayer         atomicInt32
 
 	// RTCP callbacks
 	onRTCP func([]rtcp.Packet)
@@ -461,6 +462,7 @@ func (d *DownTrack) Close() {
 func (d *DownTrack) SetInitialLayers(spatialLayer, temporalLayer int32) {
 	d.currentSpatialLayer.set(spatialLayer)
 	d.targetSpatialLayer.set(spatialLayer)
+	d.maxAvailableLayer.set(spatialLayer)
 	d.temporalLayer.set((temporalLayer << 16) | temporalLayer)
 }
 
@@ -474,6 +476,10 @@ func (d *DownTrack) TargetSpatialLayer() int32 {
 
 func (d *DownTrack) MaxSpatialLayer() int32 {
 	return d.maxSpatialLayer.get()
+}
+
+func (d *DownTrack) MaxAvailableLayer() int32 {
+	return d.maxAvailableLayer.get()
 }
 
 // SwitchSpatialLayer switches the current layer
@@ -519,6 +525,7 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 	if d.trackType == SimulcastDownTrack {
 		currentLayer := uint16(d.CurrentSpatialLayer())
 		maxLayer := uint16(d.maxSpatialLayer.get())
+		maxAvailable := uint16(0)
 
 		var maxFound uint16 = 0
 		layerFound := false
@@ -534,7 +541,12 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16, layerAdded boo
 					minFound = target
 				}
 			}
+			if target > maxAvailable {
+				maxAvailable = target
+			}
 		}
+		d.maxAvailableLayer.set(int32(maxAvailable))
+
 		var targetLayer uint16
 		if layerFound {
 			targetLayer = maxFound
