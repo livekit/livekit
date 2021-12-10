@@ -82,6 +82,10 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	return r
 }
 
+func (r *Room) Name() string {
+	return r.Room.Name
+}
+
 func (r *Room) GetParticipant(identity string) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()

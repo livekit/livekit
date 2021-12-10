@@ -90,6 +90,13 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
+// Room is a container of participants, and can provide room level actions
+//counterfeiter:generate . Room
+type Room interface {
+	Name() string
+	UpdateSubscriptions(participant Participant, trackIDs []string, subscribe bool) error
+}
+
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
