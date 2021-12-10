@@ -22,34 +22,45 @@ var (
 
 	promPacketLabels = []string{"direction"}
 
-	promPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "packet",
-		Name:      "total",
-	}, promPacketLabels)
-	promPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "packet",
-		Name:      "bytes",
-	}, promPacketLabels)
-	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "nack",
-		Name:      "total",
-	}, promPacketLabels)
-	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "pli",
-		Name:      "total",
-	}, promPacketLabels)
-	promFirTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "fir",
-		Name:      "total",
-	}, promPacketLabels)
+	promPacketTotal *prometheus.CounterVec
+	promPacketBytes *prometheus.CounterVec
+	promNackTotal   *prometheus.CounterVec
+	promPliTotal    *prometheus.CounterVec
+	promFirTotal    *prometheus.CounterVec
 )
 
-func initPacketStats() {
+func initPacketStats(nodeID string) {
+	promPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "packet",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, promPacketLabels)
+	promPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "packet",
+		Name:        "bytes",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, promPacketLabels)
+	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "nack",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, promPacketLabels)
+	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "pli",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, promPacketLabels)
+	promFirTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "fir",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, promPacketLabels)
+
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
 	prometheus.MustRegister(promNackTotal)

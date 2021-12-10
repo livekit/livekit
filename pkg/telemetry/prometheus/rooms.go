@@ -13,37 +13,47 @@ var (
 	atomicTrackPublishedTotal  int32
 	atomicTrackSubscribedTotal int32
 
+	promRoomTotal            prometheus.Gauge
+	promRoomDuration         prometheus.Histogram
+	promParticipantTotal     prometheus.Gauge
+	promTrackPublishedTotal  *prometheus.GaugeVec
+	promTrackSubscribedTotal *prometheus.GaugeVec
+)
+
+func initRoomStats(nodeID string) {
 	promRoomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: livekitNamespace,
 		Subsystem: "room",
 		Name:      "total",
 	})
 	promRoomDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "room",
-		Name:      "duration_seconds",
+		Namespace:   livekitNamespace,
+		Subsystem:   "room",
+		Name:        "duration_seconds",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
 		Buckets: []float64{
 			5, 10, 60, 5 * 60, 10 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 5 * 60 * 60, 10 * 60 * 60,
 		},
 	})
 	promParticipantTotal = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "participant",
-		Name:      "total",
+		Namespace:   livekitNamespace,
+		Subsystem:   "participant",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	})
 	promTrackPublishedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "track",
-		Name:      "published_total",
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "published_total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	}, []string{"kind"})
 	promTrackSubscribedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "track",
-		Name:      "subscribed_total",
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "subscribed_total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	}, []string{"kind"})
-)
 
-func initRoomStats() {
 	prometheus.MustRegister(promRoomTotal)
 	prometheus.MustRegister(promRoomDuration)
 	prometheus.MustRegister(promParticipantTotal)
