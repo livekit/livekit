@@ -11,6 +11,22 @@ const (
 	ignoreRetransmission = 100 // Ignore packet retransmission after ignoreRetransmission milliseconds
 )
 
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+
+	return 0
+}
+
+func itob(i int) bool {
+	if i == 0 {
+		return false
+	}
+
+	return true
+}
+
 type packetMeta struct {
 	// Original sequence number from stream.
 	// The original sequence number is used to find the original
@@ -42,6 +58,8 @@ func (p *packetMeta) packVP8(vp8 *buffer.VP8) {
 		uint64(vp8.TL0PICIDXPresent&0x1)<<54 |
 		uint64(vp8.TIDPresent&0x1)<<53 |
 		uint64(vp8.KEYIDXPresent&0x1)<<52 |
+		uint64(btoi(vp8.MBit)&0x1)<<51 |
+		uint64(btoi(vp8.IsKeyFrame)&0x1)<<50 |
 		uint64(vp8.PictureID&0x7FFF)<<32 |
 		uint64(vp8.TL0PICIDX&0xFF)<<24 |
 		uint64(vp8.TID&0x3)<<22 |
@@ -55,6 +73,7 @@ func (p *packetMeta) unpackVP8() *buffer.VP8 {
 		FirstByte:        byte(p.misc >> 56),
 		PictureIDPresent: int((p.misc >> 55) & 0x1),
 		PictureID:        uint16((p.misc >> 32) & 0x7FFF),
+		MBit:             itob(int((p.misc >> 51) & 0x1)),
 		TL0PICIDXPresent: int((p.misc >> 54) & 0x1),
 		TL0PICIDX:        uint8((p.misc >> 24) & 0xFF),
 		TIDPresent:       int((p.misc >> 53) & 0x1),
@@ -63,6 +82,7 @@ func (p *packetMeta) unpackVP8() *buffer.VP8 {
 		KEYIDXPresent:    int((p.misc >> 52) & 0x1),
 		KEYIDX:           uint8((p.misc >> 16) & 0x1F),
 		HeaderSize:       int((p.misc >> 8) & 0xFF),
+		IsKeyFrame:       itob(int((p.misc >> 50) & 0x1)),
 	}
 }
 

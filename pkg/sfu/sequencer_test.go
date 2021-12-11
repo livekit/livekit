@@ -119,7 +119,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 		FirstByte:        25,
 		PictureIDPresent: 1,
 		PictureID:        55467 % 32768,
-		MBit:             false,
+		MBit:             true,
 		TL0PICIDXPresent: 1,
 		TL0PICIDX:        233,
 		TIDPresent:       1,
@@ -128,7 +128,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 		KEYIDXPresent:    1,
 		KEYIDX:           23,
 		HeaderSize:       6,
-		IsKeyFrame:       false,
+		IsKeyFrame:       true,
 	}
 	unpackedVP8 := p.unpackVP8()
 	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
@@ -165,7 +165,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 		KEYIDXPresent:    0,
 		KEYIDX:           23,
 		HeaderSize:       23,
-		IsKeyFrame:       false,
+		IsKeyFrame:       true,
 	}
 	unpackedVP8 = p.unpackVP8()
 	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
