@@ -15,10 +15,10 @@ func redisClient() *redis.Client {
 
 func TestIsValidDomain(t *testing.T) {
 	list := map[string]bool{
-		"turn.myhost.com": true,
-		"turn.google.com": true,
+		"turn.myhost.com":  true,
+		"turn.google.com":  true,
 		"https://host.com": false,
-		"turn://host.com": false,
+		"turn://host.com":  false,
 	}
 	for key, result := range list {
 		service.IsValidDomain(key)

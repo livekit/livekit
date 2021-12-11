@@ -285,7 +285,6 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 		track.maxTemporalLayer.set(2)
 		track.lastSSRC.set(w.SSRC(layer))
 		track.trackType = SimulcastDownTrack
-		track.payload = packetFactory.Get().(*[]byte)
 	} else {
 		// LK-TODO-START
 		// check if any webrtc client does more than one temporal layer when not simulcasting.
@@ -295,7 +294,6 @@ func (w *WebRTCReceiver) AddDownTrack(track *DownTrack, bestQualityFirst bool) {
 		// LK-TODO-END
 		track.SetInitialLayers(0, 0)
 		track.trackType = SimpleDownTrack
-		track.payload = packetFactory.Get().(*[]byte)
 	}
 
 	w.storeDownTrack(track)
@@ -492,6 +490,7 @@ func (w *WebRTCReceiver) RetransmitPackets(track *DownTrack, packets []packetMet
 	// LK-TODO: should move down track specific bits into there
 	w.nackWorker.Submit(func() {
 		src := packetFactory.Get().(*[]byte)
+		pool := packetFactory.Get().(*[]byte)
 		for _, meta := range packets {
 			pktBuff := *src
 			w.bufferMu.RLock()
@@ -516,7 +515,7 @@ func (w *WebRTCReceiver) RetransmitPackets(track *DownTrack, packets []packetMet
 			pkt.Header.SSRC = track.ssrc
 			pkt.Header.PayloadType = track.payloadType
 
-			err = track.MaybeTranslateVP8(&pkt, meta)
+			payload, err := track.MaybeTranslateVP8(&pkt, meta, pool)
 			if err != nil {
 				Logger.Error(err, "translating VP8 packet err")
 				continue
@@ -528,12 +527,13 @@ func (w *WebRTCReceiver) RetransmitPackets(track *DownTrack, packets []packetMet
 				continue
 			}
 
-			if _, err = track.writeStream.WriteRTP(&pkt.Header, pkt.Payload); err != nil {
+			if _, err = track.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
 				Logger.Error(err, "Writing rtx packet err")
 			} else {
 				track.UpdateStats(uint32(i))
 			}
 		}
+		packetFactory.Put(pool)
 		packetFactory.Put(src)
 	})
 	return nil

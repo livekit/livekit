@@ -87,7 +87,6 @@ type DownTrack struct {
 	sequencer     *sequencer
 	trackType     DownTrackType
 	bufferFactory *buffer.Factory
-	payload       *[]byte
 
 	currentSpatialLayer atomicInt32
 	targetSpatialLayer  atomicInt32
@@ -246,24 +245,23 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
-func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta) error {
+func (d *DownTrack) MaybeTranslateVP8(pkt *rtp.Packet, meta packetMeta, outbuf *[]byte) ([]byte, error) {
 	if d.vp8Munger == nil || len(pkt.Payload) == 0 {
-		return nil
+		return pkt.Payload, nil
 	}
 
 	var incomingVP8 buffer.VP8
 	if err := incomingVP8.Unmarshal(pkt.Payload); err != nil {
-		return err
+		return nil, err
 	}
 
 	translatedVP8 := meta.unpackVP8()
-	payload, err := d.translateVP8Packet(pkt, &incomingVP8, translatedVP8)
+	payload, err := d.translateVP8Packet(pkt, &incomingVP8, translatedVP8, outbuf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	pkt.Payload = payload
-	return nil
+	return payload, nil
 }
 
 // Writes RTP header extensions of track
@@ -450,9 +448,6 @@ func (d *DownTrack) Close() {
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.Kind())
-		if d.payload != nil {
-			packetFactory.Put(d.payload)
-		}
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
@@ -820,6 +815,14 @@ func (d *DownTrack) bandwidthConstrainedMute(val bool) {
 }
 
 func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
+	var pool *[]byte
+	defer func() {
+		if pool != nil {
+			packetFactory.Put(pool)
+			pool = nil
+		}
+	}()
+
 	if d.reSync.get() {
 		if d.Kind() == webrtc.RTPCodecTypeVideo {
 			if !extPkt.KeyFrame {
@@ -893,7 +896,12 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 			return ErrNotVP8
 		}
 
-		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, translatedVP8)
+		outbuf := &payload
+		if incomingVP8.HeaderSize != translatedVP8.HeaderSize {
+			pool = packetFactory.Get().(*[]byte)
+			outbuf = pool
+		}
+		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, translatedVP8, outbuf)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err
@@ -932,6 +940,14 @@ func (d *DownTrack) writeSimpleRTP(extPkt *buffer.ExtPacket) error {
 }
 
 func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) error {
+	var pool *[]byte
+	defer func() {
+		if pool != nil {
+			packetFactory.Put(pool)
+			pool = nil
+		}
+	}()
+
 	// Check if packet SSRC is different from before
 	// if true, the video source changed
 	csl := d.CurrentSpatialLayer()
@@ -1045,7 +1061,12 @@ func (d *DownTrack) writeSimulcastRTP(extPkt *buffer.ExtPacket, layer int32) err
 			return ErrNotVP8
 		}
 
-		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, translatedVP8)
+		outbuf := &payload
+		if incomingVP8.HeaderSize != translatedVP8.HeaderSize {
+			pool = packetFactory.Get().(*[]byte)
+			outbuf = pool
+		}
+		payload, err = d.translateVP8Packet(&extPkt.Packet, &incomingVP8, translatedVP8, outbuf)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err
@@ -1347,7 +1368,7 @@ func (d *DownTrack) getSRStats() (octets, packets uint32) {
 	return d.octetCount.get(), d.packetCount.get()
 }
 
-func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8) (buf []byte, err error) {
+func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
 	temporalLayer := d.temporalLayer.get()
 	currentLayer := uint16(temporalLayer)
 	currentTargetLayer := uint16(temporalLayer >> 16)
@@ -1358,17 +1379,23 @@ func (d *DownTrack) translateVP8Packet(pkt *rtp.Packet, incomingVP8 *buffer.VP8,
 		}
 	}
 
-	buf = *d.payload
-	buf = buf[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+	var buf []byte
+	if outbuf == &pkt.Payload {
+		buf = pkt.Payload
+	} else {
+		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
 
-	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-	dstPayload := buf[translatedVP8.HeaderSize:]
-	copy(dstPayload, srcPayload)
+		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
+		dstPayload := buf[translatedVP8.HeaderSize:]
+		copy(dstPayload, srcPayload)
+	}
 
-	hdr := buf[:translatedVP8.HeaderSize]
-	err = translatedVP8.MarshalTo(hdr)
+	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
+	if err != nil {
+		return nil, err
+	}
 
-	return
+	return buf, err
 }
 
 func (d *DownTrack) DebugInfo() map[string]interface{} {
@@ -1501,15 +1528,8 @@ func (m *Munger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (uint16, uint32, Seq
 	diff := extPkt.Packet.SequenceNumber - m.highestIncomingSN
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
-		var lossStartSN, lossEndSN int
-		lossStartSN = int(m.highestIncomingSN) + 1
-		if extPkt.Packet.SequenceNumber > m.highestIncomingSN {
-			lossEndSN = int(extPkt.Packet.SequenceNumber) - 1
-		} else {
-			lossEndSN = int(extPkt.Packet.SequenceNumber) - 1 + buffer.MaxSN
-		}
-		for lostSN := lossStartSN; lostSN <= lossEndSN; lostSN++ {
-			m.missingSNs[uint16(lostSN&0xffff)] = m.snOffset
+		for i := m.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber; i++ {
+			m.missingSNs[i] = m.snOffset
 		}
 	} else {
 		// can get duplicate packet due to FEC
