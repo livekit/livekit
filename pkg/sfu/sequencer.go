@@ -20,11 +20,7 @@ func btoi(b bool) int {
 }
 
 func itob(i int) bool {
-	if i == 0 {
-		return false
-	}
-
-	return true
+	return i != 0
 }
 
 type packetMeta struct {
