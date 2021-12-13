@@ -48,6 +48,10 @@ func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.dt
 }
 
+func (t *SubscribedTrack) PublishedTrack() types.MediaTrack {
+	return t.publishedTrack
+}
+
 func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {
 	return FixedPointToPercent(t.DownTrack().CurrentMaxLossFraction())
 }
