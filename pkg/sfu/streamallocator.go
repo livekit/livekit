@@ -787,7 +787,9 @@ func (s *StreamAllocator) maybeProbe() {
 
 func (s *StreamAllocator) maybeBoostLayer() {
 	var distanceSorted MaxDistanceSorter
-	copy(distanceSorted, s.managedVideoTracksSorted)
+	for _, track := range s.managedVideoTracksSorted {
+		distanceSorted = append(distanceSorted, track)
+	}
 	sort.Sort(distanceSorted)
 
 	// boost first deficient track in priority order
