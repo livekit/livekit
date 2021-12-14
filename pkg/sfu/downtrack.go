@@ -550,6 +550,14 @@ func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers)
 }
 
+func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
+	return d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+}
+
+func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
+	return d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+}
+
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	return d.forwarder.ProvisionalAllocateCommit()
 }
@@ -833,7 +841,6 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
 		if err != nil {
-			fmt.Printf("RAJA could not find rtx, %d -> %d\n", meta.targetSeqNo, meta.sourceSeqNo)	// REMOVE
 			if err == io.EOF {
 				break
 			}
@@ -878,7 +885,6 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
 			Logger.Error(err, "Writing rtx packet err")
 		} else {
-			fmt.Printf("RAJA retransmitted: %d\n", pkt.Header.SequenceNumber)	// REMOVE
 			pktSize := pkt.Header.MarshalSize() + len(payload)
 			for _, f := range d.onPacketSent {
 				f(d, pktSize)

@@ -340,6 +340,121 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.TargetLayers())
 }
 
+func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
+	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+
+	bitrates := Bitrates{
+		{1, 2, 3, 4},
+		{5, 6, 7, 8},
+		{9, 10, 0, 0},
+	}
+
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// from scratch (InvalidLayers) should give back layer (0, 0)
+	expectedTransition := VideoTransition{
+		from:           InvalidLayers,
+		to:             VideoLayers{spatial: 0, temporal: 0},
+		bandwidthDelta: 1,
+	}
+	transition := f.ProvisionalAllocateGetCooperativeTransition()
+	require.Equal(t, expectedTransition, transition)
+
+	// committing should set target to (0, 0)
+	expectedLayers := VideoLayers{spatial: 0, temporal: 0}
+	expectedResult := VideoAllocation{
+		state:              VideoAllocationStateDeficient,
+		change:             VideoStreamingChangeResuming,
+		bandwidthRequested: 1,
+		bandwidthDelta:     1,
+		availableLayers:    nil,
+		bitrates:           bitrates,
+		targetLayers:       expectedLayers,
+		distanceToDesired:  9,
+	}
+	result := f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedLayers, f.TargetLayers())
+
+	// a higher target that is already streaming, just maintain it
+	targetLayers := VideoLayers{spatial: 2, temporal: 1}
+	f.targetLayers = targetLayers
+	f.lastAllocation.bandwidthRequested = 10
+	expectedTransition = VideoTransition{
+		from:           targetLayers,
+		to:             targetLayers,
+		bandwidthDelta: 0,
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition()
+	require.Equal(t, expectedTransition, transition)
+
+	// committing should set target to (2, 1)
+	expectedLayers = VideoLayers{spatial: 2, temporal: 1}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: 10,
+		bandwidthDelta:     0,
+		availableLayers:    nil,
+		bitrates:           bitrates,
+		targetLayers:       expectedLayers,
+		distanceToDesired:  0,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedLayers, f.TargetLayers())
+
+	// from a target that has become unavailable, should switch to the minimal layer
+	targetLayers = VideoLayers{spatial: 2, temporal: 2}
+	f.targetLayers = targetLayers
+	expectedTransition = VideoTransition{
+		from:           targetLayers,
+		to:             VideoLayers{spatial: 0, temporal: 0},
+		bandwidthDelta: -9,
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition()
+	require.Equal(t, expectedTransition, transition)
+
+	f.ProvisionalAllocateCommit()
+
+	// mute
+	f.Mute(true)
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// mute should send target to InvalidLayers
+	expectedTransition = VideoTransition{
+		from:           VideoLayers{spatial: 0, temporal: 0},
+		to:             InvalidLayers,
+		bandwidthDelta: -1,
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition()
+	require.Equal(t, expectedTransition, transition)
+}
+
+func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
+	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+
+	bitrates := Bitrates{
+		{1, 2, 3, 4},
+		{5, 6, 7, 8},
+		{9, 10, 11, 12},
+	}
+
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	f.targetLayers = VideoLayers{spatial: 2, temporal: 2}
+	f.lastAllocation.bandwidthRequested = bitrates[2][2]
+	expectedTransition := VideoTransition{
+		from:           f.targetLayers,
+		to:             VideoLayers{spatial: 2, temporal: 0},
+		bandwidthDelta: 2,
+	}
+	transition := f.ProvisionalAllocateGetBestWeightedTransition()
+	require.Equal(t, expectedTransition, transition)
+}
+
 func TestForwarderFinalizeAllocate(t *testing.T) {
 	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 

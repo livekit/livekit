@@ -112,17 +112,15 @@ type VideoAllocationProvisional struct {
 	bitrates Bitrates
 }
 
-const (
-	SpatialTransitionCost  = 10
-	TemporalTransitionCost = 0
-)
-
-type VideoAllocationMove struct {
-	layers         VideoLayers
-	deltaBitrate   int64
-	transitionCost int32
-	qualityCost    int32
+type VideoTransition struct {
+	from           VideoLayers
+	to             VideoLayers
+	bandwidthDelta int64
 }
+
+const (
+	TransitionCostSpatial = 10
+)
 
 type TranslationParams struct {
 	shouldDrop         bool
@@ -520,6 +518,157 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	return 0
 }
 
+func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.provisional.muted {
+		f.provisional.layers = InvalidLayers
+		return VideoTransition{
+			from:           f.targetLayers,
+			to:             InvalidLayers,
+			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			// LK-TODO should this take current bitrate of current target layers?
+		}
+	}
+
+	// check if we should preserve current target
+	if f.targetLayers != InvalidLayers {
+		// what is the highest that is available
+		maximalLayers := InvalidLayers
+		for s := f.maxLayers.spatial; s >= 0; s-- {
+			for t := f.maxLayers.temporal; t >= 0; t-- {
+				if f.provisional.bitrates[s][t] != 0 {
+					maximalLayers = VideoLayers{spatial: s, temporal: t}
+					break
+				}
+			}
+
+			if maximalLayers != InvalidLayers {
+				break
+			}
+		}
+
+		if maximalLayers != InvalidLayers && !f.targetLayers.GreaterThan(maximalLayers) && (f.provisional.bitrates[f.targetLayers.spatial][f.targetLayers.temporal] != 0) {
+			// currently streaming and wanting an upgrade, just preserve current target in the cooperative scheme of things
+			f.provisional.layers = f.targetLayers
+			return VideoTransition{
+				from:           f.targetLayers,
+				to:             f.targetLayers,
+				bandwidthDelta: 0,
+			}
+		}
+	}
+
+	// currently not streaming, find minimal
+	// NOTE: a layer in feed could have paused and there could be other options than going back to minimal, but the cooperative scheme knocks things back to minimal
+	minimalLayers := InvalidLayers
+	bandwidthRequired := int64(0)
+	for s := int32(0); s <= f.maxLayers.spatial; s++ {
+		for t := int32(0); s <= f.maxLayers.temporal; t++ {
+			if f.provisional.bitrates[s][t] != 0 {
+				minimalLayers = VideoLayers{spatial: s, temporal: t}
+				bandwidthRequired = f.provisional.bitrates[s][t]
+				break
+			}
+		}
+
+		if bandwidthRequired != 0 {
+			break
+		}
+	}
+
+	targetLayers := f.targetLayers
+	if targetLayers == InvalidLayers || targetLayers.GreaterThan(minimalLayers) || (f.provisional.bitrates[targetLayers.spatial][targetLayers.temporal] == 0) {
+		targetLayers = minimalLayers
+	}
+
+	f.provisional.layers = targetLayers
+	return VideoTransition{
+		from:           f.targetLayers,
+		to:             targetLayers,
+		bandwidthDelta: bandwidthRequired - f.lastAllocation.bandwidthRequested,
+	}
+}
+
+func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.provisional.muted {
+		f.provisional.layers = InvalidLayers
+		return VideoTransition{
+			from:           f.targetLayers,
+			to:             InvalidLayers,
+			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			// LK-TODO should this take current bitrate of current target layers?
+		}
+	}
+
+	maxReachableLayerTemporal := int32(-1)
+	for t := f.maxLayers.temporal; t >= 0; t-- {
+		for s := f.maxLayers.spatial; s >= 0; s-- {
+			if f.provisional.bitrates[s][t] != 0 {
+				maxReachableLayerTemporal = t
+				break
+			}
+		}
+		if maxReachableLayerTemporal != -1 {
+			break
+		}
+	}
+
+	if maxReachableLayerTemporal == -1 {
+		// feed has gone dry,
+		f.provisional.layers = InvalidLayers
+		return VideoTransition{
+			from:           f.targetLayers,
+			to:             InvalidLayers,
+			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+		}
+	}
+
+	// starting from mimimum to target, find transition which gives the best
+	// transition taking into account bits saved vs cost of such a transition
+	// required transision could be up or down. Find the minimal need to not pause
+	bestLayers := InvalidLayers
+	bestBandwidthDelta := int64(0)
+	bestValue := float32(0)
+	for s := int32(0); s <= f.targetLayers.spatial; s++ {
+		for t := int32(0); t <= f.targetLayers.temporal; t++ {
+			if s == f.targetLayers.spatial && t == f.targetLayers.temporal {
+				break
+			}
+
+			bandwidthDelta := int64(math.Max(float64(0), float64(f.lastAllocation.bandwidthRequested-f.provisional.bitrates[s][t])))
+
+			transitionCost := int32(0)
+			if f.targetLayers.spatial != s {
+				transitionCost = TransitionCostSpatial
+			}
+
+			qualityCost := ((maxReachableLayerTemporal+1)*(f.targetLayers.spatial-s) + f.targetLayers.temporal - t)
+
+			value := float32(0)
+			if (transitionCost + qualityCost) != 0 {
+				value = float32(bandwidthDelta) / float32(transitionCost+qualityCost)
+			}
+			if value > bestValue || (value == bestValue && bandwidthDelta > bestBandwidthDelta) {
+				bestValue = value
+				bestBandwidthDelta = bandwidthDelta
+				bestLayers = VideoLayers{spatial: s, temporal: t}
+			}
+		}
+	}
+
+	f.provisional.layers = bestLayers
+	return VideoTransition{
+		from:           f.targetLayers,
+		to:             bestLayers,
+		bandwidthDelta: bestBandwidthDelta,
+	}
+}
+
 func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -531,7 +680,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	bandwidthRequested := int64(0)
 
 	switch {
-	case f.muted:
+	case f.provisional.muted:
 		state = VideoAllocationStateMuted
 	case optimalBandwidthNeeded == 0:
 		if len(f.availableLayers) == 0 {
@@ -581,8 +730,6 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	if f.targetLayers == InvalidLayers {
 		f.currentLayers = InvalidLayers
 	}
-
-	f.provisional = nil
 
 	return f.lastAllocation
 }
