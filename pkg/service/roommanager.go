@@ -241,7 +241,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 		Hidden:          pi.Hidden,
 		Logger:          pLogger,
 	})
-	
+
 	if err != nil {
 		logger.Errorw("could not create participant", err)
 		return
