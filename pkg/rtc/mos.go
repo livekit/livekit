@@ -22,13 +22,17 @@ func score2Rating(score float64) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(cur *ConnectionStat) float64 {
+func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 
 	if cur == nil {
 		return 0.0
 	}
 
-	percentageLost := FixedPointToPercent(cur.FractionLost)
+	// find percentage of lost packets in this window
+	deltaTotalPackets := cur.TotalPackets - prev.TotalPackets
+	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
+	percentageLost := deltaTotalLostPackets / deltaTotalPackets * 100
+
 	rx := 93.2 - float64(percentageLost)
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
@@ -52,9 +56,9 @@ func mosAudioEmodel(cur *ConnectionStat) float64 {
 	return score
 }
 
-func ConnectionScore(cur *ConnectionStat, kind livekit.TrackType) float64 {
+func ConnectionScore(cur, prev *ConnectionStat, kind livekit.TrackType) float64 {
 	if kind == livekit.TrackType_AUDIO {
-		return mosAudioEmodel(cur)
+		return mosAudioEmodel(cur, prev)
 	}
 	return 0
 }

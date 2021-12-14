@@ -67,13 +67,8 @@ type MediaTrack struct {
 	maxUpFracLostTs   time.Time
 	connectionStatsUp *ConnectionStats
 
+	done    chan bool
 	onClose []func()
-}
-
-func (t *MediaTrack) GetUpConnectionScore() float64 {
-	t.statsLock.Lock()
-	defer t.statsLock.Unlock()
-	return t.connectionStatsUp.Score
 }
 
 type MediaTrackParams struct {
@@ -91,10 +86,10 @@ type MediaTrackParams struct {
 }
 
 type ConnectionStat struct {
-	FractionLost uint8
 	PacketsLost  uint32
 	Delay        uint32
 	Jitter       uint32
+	TotalPackets uint32
 }
 
 type ConnectionStats struct {
@@ -105,7 +100,7 @@ type ConnectionStats struct {
 }
 
 func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Curr: &ConnectionStat{}}
+	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}}
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -115,6 +110,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		streamID:          track.StreamID(),
 		codec:             track.Codec(),
 		connectionStatsUp: NewConnectionStats(),
+		done:              make(chan bool),
 	}
 
 	if params.TrackInfo.Muted {
@@ -125,6 +121,9 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
+	// on close signal via closing channel to workers
+	t.AddOnClose(t.closeChan)
+	go t.updateStats()
 
 	return t
 }
@@ -595,9 +594,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		// sfu.Buffer generates ReceiverReports for the publisher
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
-				if rr.FractionLost > maxLost {
-					maxLost = rr.FractionLost
-				}
+
 				if rr.Delay > delay {
 					delay = rr.Delay
 				}
@@ -626,16 +623,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		current := t.connectionStatsUp.Curr
 		current.Jitter = jitter
 		current.Delay = delay
-		current.FractionLost = maxLost
 		current.PacketsLost += totalLost
-		if now.Sub(t.connectionStatsUp.LastUpdated) > lastUpdateDelta {
-			// calculate score and store it
-			t.connectionStatsUp.Score = ConnectionScore(current, t.Kind())
-			// store previous stats (not used as of now)
-			t.connectionStatsUp.Prev = current
-			t.connectionStatsUp.Curr = &ConnectionStat{}
-			t.connectionStatsUp.LastUpdated = now
-		}
 		t.statsLock.Unlock()
 
 	}
@@ -704,4 +692,51 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 
 func (t *MediaTrack) Receiver() sfu.TrackReceiver {
 	return t.receiver
+}
+
+func (t *MediaTrack) GetUpConnectionScore() float64 {
+	t.statsLock.Lock()
+	defer t.statsLock.Unlock()
+	return t.connectionStatsUp.Score
+}
+
+func (t *MediaTrack) closeChan() {
+	close(t.done)
+}
+
+func (t *MediaTrack) updateStats() {
+	for {
+		select {
+		case _, ok := <-t.done:
+			if !ok {
+				return
+			}
+		case <-time.After(lastUpdateDelta):
+
+			// take lock on track access buffer
+			t.lock.Lock()
+			var stats buffer.Stats
+			if t.buffer != nil {
+				stats = t.buffer.GetStats()
+			}
+			t.lock.Unlock()
+
+			// lock the stats
+			t.statsLock.Lock()
+			t.connectionStatsUp.Curr.TotalPackets += stats.PacketCount
+			now := time.Now()
+			// calculate score if last update > interval
+			if now.Sub(t.connectionStatsUp.LastUpdated) > lastUpdateDelta {
+				// update feedback stats
+				current := t.connectionStatsUp.Curr
+				// calculate score and store it
+				t.connectionStatsUp.Score = ConnectionScore(current, t.connectionStatsUp.Prev, t.Kind())
+				// store previous stats (not used as of now)
+				t.connectionStatsUp.Prev = current
+				t.connectionStatsUp.Curr = &ConnectionStat{}
+				t.connectionStatsUp.LastUpdated = now
+			}
+			t.statsLock.Unlock()
+		}
+	}
 }
