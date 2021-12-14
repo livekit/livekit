@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"

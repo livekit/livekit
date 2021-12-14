@@ -106,6 +106,8 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
+	Source() livekit.TrackSource
+	IsSimulcast() bool
 
 	// subscribers
 	AddSubscriber(participant Participant) error
@@ -140,6 +142,7 @@ type SubscribedTrack interface {
 	ID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
+	PublishedTrack() MediaTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)

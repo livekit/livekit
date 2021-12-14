@@ -5,8 +5,8 @@ import (
 	"regexp"
 
 	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 func handleError(w http.ResponseWriter, status int, msg string) {

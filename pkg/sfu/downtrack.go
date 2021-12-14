@@ -26,7 +26,6 @@ type TrackSender interface {
 	Close()
 	// ID is the globally unique identifier for this Track.
 	ID() string
-	SetTrackType(isSimulcast bool)
 	Codec() webrtc.RTPCodecCapability
 	PeerID() string
 }
@@ -127,7 +126,7 @@ type DownTrack struct {
 	onSubscriptionChanged func(dt *DownTrack)
 
 	// max layer change callback
-	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers, layerPref LayerPreference)
+	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
 
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
@@ -161,15 +160,13 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	d.rtxStats.Store(new(PacketStats))
 	d.paddingStats.Store(new(PacketStats))
 
-	return d, nil
-}
-
-func (d *DownTrack) SetTrackType(isSimulcast bool) {
-	if isSimulcast {
+	if r.IsSimulcast() {
 		d.trackType = SimulcastDownTrack
 	} else {
 		d.trackType = SimpleDownTrack
 	}
+
+	return d, nil
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
@@ -449,33 +446,29 @@ func (d *DownTrack) Close() {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayers, layerPref := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers, layerPref)
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayers, layerPref := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayers := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.onSubscribedLayersChanged(d, maxLayers, layerPref)
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
 func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
-}
-
-func (d *DownTrack) GetLayerPreference() LayerPreference {
-	return d.forwarder.GetLayerPreference()
 }
 
 func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
@@ -525,7 +518,7 @@ func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
 	d.onSubscriptionChanged = fn
 }
 
-func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers, layerPref LayerPreference)) {
+func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers VideoLayers)) {
 	d.onSubscribedLayersChanged = fn
 }
 
@@ -533,12 +526,32 @@ func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
+func (d *DownTrack) IsDeficient() bool {
+	return d.forwarder.IsDeficient()
+}
+
+func (d *DownTrack) BandwidthRequested() int64 {
+	return d.forwarder.BandwidthRequested()
+}
+
+func (d *DownTrack) DistanceToDesired() int32 {
+	return d.forwarder.DistanceToDesired()
+}
+
 func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocation {
 	return d.forwarder.Allocate(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) TryAllocate(additionalChannelCapacity int64) VideoAllocation {
-	return d.forwarder.TryAllocate(additionalChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) ProvisionalAllocatePrepare() {
+	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
+	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers)
+}
+
+func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
+	return d.forwarder.ProvisionalAllocateCommit()
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
@@ -549,8 +562,8 @@ func (d *DownTrack) AllocateNextHigher() (VideoAllocation, bool) {
 	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) LastAllocation() VideoAllocation {
-	return d.forwarder.LastAllocation()
+func (d *DownTrack) Pause() VideoAllocation {
+	return d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {

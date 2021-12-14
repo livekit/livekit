@@ -16,17 +16,20 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
+type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
+
 // TrackReceiver defines a interface receive media from remote peer
 type TrackReceiver interface {
 	TrackID() string
 	StreamID() string
-	GetBitrateTemporalCumulative() [3][4]int64
+	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
 	DeleteDownTrack(peerID string)
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
+	IsSimulcast() bool
 }
 
 // Receiver defines a interface for a track receivers
@@ -34,11 +37,12 @@ type Receiver interface {
 	TrackID() string
 	StreamID() string
 	Codec() webrtc.RTPCodecCapability
+	IsSimulcast() bool
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
 	NumAvailableSpatialLayers() int
-	GetBitrateTemporalCumulative() [3][4]int64
+	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	DeleteDownTrack(ID string)
 	OnCloseHandler(fn func())
@@ -62,7 +66,7 @@ type WebRTCReceiver struct {
 	onCloseHandler  func()
 	closeOnce       sync.Once
 	closed          atomicBool
-	trackers        [3]*StreamTracker
+	trackers        [DefaultMaxLayerSpatial + 1]*StreamTracker
 	useTrackers     bool
 
 	rtcpMu      sync.Mutex
@@ -71,10 +75,10 @@ type WebRTCReceiver struct {
 	pliThrottle int64
 
 	bufferMu sync.RWMutex
-	buffers  [3]*buffer.Buffer
+	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
 
 	upTrackMu sync.RWMutex
-	upTracks  [3]*webrtc.TrackRemote
+	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
 
 	downTrackMu sync.RWMutex
 	downTracks  []TrackSender
@@ -117,12 +121,13 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 // NewWebRTCReceiver creates a new webrtc track receivers
 func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid string, opts ...ReceiverOpts) Receiver {
 	w := &WebRTCReceiver{
-		peerID:      pid,
-		receiver:    receiver,
-		trackID:     track.ID(),
-		streamID:    track.StreamID(),
-		codec:       track.Codec(),
-		kind:        track.Kind(),
+		peerID:   pid,
+		receiver: receiver,
+		trackID:  track.ID(),
+		streamID: track.StreamID(),
+		codec:    track.Codec(),
+		kind:     track.Kind(),
+		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast: len(track.RID()) > 0,
 		pliThrottle: 500e6,
 		downTracks:  make([]TrackSender, 0),
@@ -168,6 +173,10 @@ func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
+}
+
+func (w *WebRTCReceiver) IsSimulcast() bool {
+	return w.isSimulcast
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
@@ -240,7 +249,6 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 		return
 	}
 
-	track.SetTrackType(w.isSimulcast)
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
 		// notify added downtrack of available layers
 		w.upTrackMu.RLock()
@@ -331,14 +339,14 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 	w.downtrackLayerChange(newLayers)
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() [3][4]int64 {
+func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
 	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
-	var br [3][4]int64
+	var br Bitrates
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	for i, buff := range w.buffers {
 		if buff != nil {
-			tls := make([]int64, 4)
+			tls := make([]int64, DefaultMaxLayerTemporal+1)
 			if w.hasSpatialLayer(int32(i)) {
 				tls = buff.BitrateTemporalCumulative()
 			}

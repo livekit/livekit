@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
