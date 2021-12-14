@@ -686,10 +686,10 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 			numAudioTracks++
 		} else {
 			pubLoss += pubTrack.PublishLossPercentage()
-		}
-		publishing, registered := pubTrack.NumUpTracks()
-		if registered > 0 && publishing != registered {
-			reducedQualityPub = true
+			publishing, registered := pubTrack.NumUpTracks()
+			if registered > 0 && publishing != registered {
+				reducedQualityPub = true
+			}
 		}
 	}
 

@@ -32,7 +32,7 @@ var (
 
 const (
 	lostUpdateDelta         = time.Second
-	lastUpdateDelta         = 1 * time.Second
+	lastUpdateDelta         = 5 * time.Second
 	layerSelectionTolerance = 0.8
 )
 
@@ -67,7 +67,7 @@ type MediaTrack struct {
 	maxUpFracLostTs   time.Time
 	connectionStatsUp *ConnectionStats
 
-	done    chan bool
+	done    chan struct{}
 	onClose []func()
 }
 
@@ -110,7 +110,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		streamID:          track.StreamID(),
 		codec:             track.Codec(),
 		connectionStatsUp: NewConnectionStats(),
-		done:              make(chan bool),
+		done:              make(chan struct{}),
 	}
 
 	if params.TrackInfo.Muted {
