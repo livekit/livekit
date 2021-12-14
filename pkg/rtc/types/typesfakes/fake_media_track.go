@@ -52,6 +52,16 @@ type FakeMediaTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsSimulcastStub        func() bool
+	isSimulcastMutex       sync.RWMutex
+	isSimulcastArgsForCall []struct {
+	}
+	isSimulcastReturns struct {
+		result1 bool
+	}
+	isSimulcastReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsSubscriberStub        func(string) bool
 	isSubscriberMutex       sync.RWMutex
 	isSubscriberArgsForCall []struct {
@@ -96,6 +106,16 @@ type FakeMediaTrack struct {
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
 		arg1 bool
+	}
+	SourceStub        func() livekit.TrackSource
+	sourceMutex       sync.RWMutex
+	sourceArgsForCall []struct {
+	}
+	sourceReturns struct {
+		result1 livekit.TrackSource
+	}
+	sourceReturnsOnCall map[int]struct {
+		result1 livekit.TrackSource
 	}
 	UpdateVideoLayersStub        func([]*livekit.VideoLayer)
 	updateVideoLayersMutex       sync.RWMutex
@@ -331,6 +351,59 @@ func (fake *FakeMediaTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsSimulcast() bool {
+	fake.isSimulcastMutex.Lock()
+	ret, specificReturn := fake.isSimulcastReturnsOnCall[len(fake.isSimulcastArgsForCall)]
+	fake.isSimulcastArgsForCall = append(fake.isSimulcastArgsForCall, struct {
+	}{})
+	stub := fake.IsSimulcastStub
+	fakeReturns := fake.isSimulcastReturns
+	fake.recordInvocation("IsSimulcast", []interface{}{})
+	fake.isSimulcastMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) IsSimulcastCallCount() int {
+	fake.isSimulcastMutex.RLock()
+	defer fake.isSimulcastMutex.RUnlock()
+	return len(fake.isSimulcastArgsForCall)
+}
+
+func (fake *FakeMediaTrack) IsSimulcastCalls(stub func() bool) {
+	fake.isSimulcastMutex.Lock()
+	defer fake.isSimulcastMutex.Unlock()
+	fake.IsSimulcastStub = stub
+}
+
+func (fake *FakeMediaTrack) IsSimulcastReturns(result1 bool) {
+	fake.isSimulcastMutex.Lock()
+	defer fake.isSimulcastMutex.Unlock()
+	fake.IsSimulcastStub = nil
+	fake.isSimulcastReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) IsSimulcastReturnsOnCall(i int, result1 bool) {
+	fake.isSimulcastMutex.Lock()
+	defer fake.isSimulcastMutex.Unlock()
+	fake.IsSimulcastStub = nil
+	if fake.isSimulcastReturnsOnCall == nil {
+		fake.isSimulcastReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isSimulcastReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -590,6 +663,59 @@ func (fake *FakeMediaTrack) SetMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeMediaTrack) Source() livekit.TrackSource {
+	fake.sourceMutex.Lock()
+	ret, specificReturn := fake.sourceReturnsOnCall[len(fake.sourceArgsForCall)]
+	fake.sourceArgsForCall = append(fake.sourceArgsForCall, struct {
+	}{})
+	stub := fake.SourceStub
+	fakeReturns := fake.sourceReturns
+	fake.recordInvocation("Source", []interface{}{})
+	fake.sourceMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) SourceCallCount() int {
+	fake.sourceMutex.RLock()
+	defer fake.sourceMutex.RUnlock()
+	return len(fake.sourceArgsForCall)
+}
+
+func (fake *FakeMediaTrack) SourceCalls(stub func() livekit.TrackSource) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = stub
+}
+
+func (fake *FakeMediaTrack) SourceReturns(result1 livekit.TrackSource) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = nil
+	fake.sourceReturns = struct {
+		result1 livekit.TrackSource
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) SourceReturnsOnCall(i int, result1 livekit.TrackSource) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = nil
+	if fake.sourceReturnsOnCall == nil {
+		fake.sourceReturnsOnCall = make(map[int]struct {
+			result1 livekit.TrackSource
+		})
+	}
+	fake.sourceReturnsOnCall[i] = struct {
+		result1 livekit.TrackSource
+	}{result1}
+}
+
 func (fake *FakeMediaTrack) UpdateVideoLayers(arg1 []*livekit.VideoLayer) {
 	var arg1Copy []*livekit.VideoLayer
 	if arg1 != nil {
@@ -638,6 +764,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.isSimulcastMutex.RLock()
+	defer fake.isSimulcastMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
 	defer fake.isSubscriberMutex.RUnlock()
 	fake.kindMutex.RLock()
@@ -650,6 +778,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
+	fake.sourceMutex.RLock()
+	defer fake.sourceMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()
 	defer fake.updateVideoLayersMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

@@ -40,6 +40,16 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	PublishedTrackStub        func() types.MediaTrack
+	publishedTrackMutex       sync.RWMutex
+	publishedTrackArgsForCall []struct {
+	}
+	publishedTrackReturns struct {
+		result1 types.MediaTrack
+	}
+	publishedTrackReturnsOnCall map[int]struct {
+		result1 types.MediaTrack
+	}
 	PublisherIdentityStub        func() string
 	publisherIdentityMutex       sync.RWMutex
 	publisherIdentityArgsForCall []struct {
@@ -234,6 +244,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
 		result1 bool
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) PublishedTrack() types.MediaTrack {
+	fake.publishedTrackMutex.Lock()
+	ret, specificReturn := fake.publishedTrackReturnsOnCall[len(fake.publishedTrackArgsForCall)]
+	fake.publishedTrackArgsForCall = append(fake.publishedTrackArgsForCall, struct {
+	}{})
+	stub := fake.PublishedTrackStub
+	fakeReturns := fake.publishedTrackReturns
+	fake.recordInvocation("PublishedTrack", []interface{}{})
+	fake.publishedTrackMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) PublishedTrackCallCount() int {
+	fake.publishedTrackMutex.RLock()
+	defer fake.publishedTrackMutex.RUnlock()
+	return len(fake.publishedTrackArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) PublishedTrackCalls(stub func() types.MediaTrack) {
+	fake.publishedTrackMutex.Lock()
+	defer fake.publishedTrackMutex.Unlock()
+	fake.PublishedTrackStub = stub
+}
+
+func (fake *FakeSubscribedTrack) PublishedTrackReturns(result1 types.MediaTrack) {
+	fake.publishedTrackMutex.Lock()
+	defer fake.publishedTrackMutex.Unlock()
+	fake.PublishedTrackStub = nil
+	fake.publishedTrackReturns = struct {
+		result1 types.MediaTrack
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) PublishedTrackReturnsOnCall(i int, result1 types.MediaTrack) {
+	fake.publishedTrackMutex.Lock()
+	defer fake.publishedTrackMutex.Unlock()
+	fake.PublishedTrackStub = nil
+	if fake.publishedTrackReturnsOnCall == nil {
+		fake.publishedTrackReturnsOnCall = make(map[int]struct {
+			result1 types.MediaTrack
+		})
+	}
+	fake.publishedTrackReturnsOnCall[i] = struct {
+		result1 types.MediaTrack
 	}{result1}
 }
 
@@ -440,6 +503,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.publishedTrackMutex.RLock()
+	defer fake.publishedTrackMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
 	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()

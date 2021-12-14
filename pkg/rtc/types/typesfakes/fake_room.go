@@ -8,17 +8,6 @@ import (
 )
 
 type FakeRoom struct {
-	GetParticipantStub        func(string) types.Participant
-	getParticipantMutex       sync.RWMutex
-	getParticipantArgsForCall []struct {
-		arg1 string
-	}
-	getParticipantReturns struct {
-		result1 types.Participant
-	}
-	getParticipantReturnsOnCall map[int]struct {
-		result1 types.Participant
-	}
 	NameStub        func() string
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
@@ -44,67 +33,6 @@ type FakeRoom struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeRoom) GetParticipant(arg1 string) types.Participant {
-	fake.getParticipantMutex.Lock()
-	ret, specificReturn := fake.getParticipantReturnsOnCall[len(fake.getParticipantArgsForCall)]
-	fake.getParticipantArgsForCall = append(fake.getParticipantArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.GetParticipantStub
-	fakeReturns := fake.getParticipantReturns
-	fake.recordInvocation("GetParticipant", []interface{}{arg1})
-	fake.getParticipantMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeRoom) GetParticipantCallCount() int {
-	fake.getParticipantMutex.RLock()
-	defer fake.getParticipantMutex.RUnlock()
-	return len(fake.getParticipantArgsForCall)
-}
-
-func (fake *FakeRoom) GetParticipantCalls(stub func(string) types.Participant) {
-	fake.getParticipantMutex.Lock()
-	defer fake.getParticipantMutex.Unlock()
-	fake.GetParticipantStub = stub
-}
-
-func (fake *FakeRoom) GetParticipantArgsForCall(i int) string {
-	fake.getParticipantMutex.RLock()
-	defer fake.getParticipantMutex.RUnlock()
-	argsForCall := fake.getParticipantArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeRoom) GetParticipantReturns(result1 types.Participant) {
-	fake.getParticipantMutex.Lock()
-	defer fake.getParticipantMutex.Unlock()
-	fake.GetParticipantStub = nil
-	fake.getParticipantReturns = struct {
-		result1 types.Participant
-	}{result1}
-}
-
-func (fake *FakeRoom) GetParticipantReturnsOnCall(i int, result1 types.Participant) {
-	fake.getParticipantMutex.Lock()
-	defer fake.getParticipantMutex.Unlock()
-	fake.GetParticipantStub = nil
-	if fake.getParticipantReturnsOnCall == nil {
-		fake.getParticipantReturnsOnCall = make(map[int]struct {
-			result1 types.Participant
-		})
-	}
-	fake.getParticipantReturnsOnCall[i] = struct {
-		result1 types.Participant
-	}{result1}
 }
 
 func (fake *FakeRoom) Name() string {
@@ -231,8 +159,6 @@ func (fake *FakeRoom) UpdateSubscriptionsReturnsOnCall(i int, result1 error) {
 func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.getParticipantMutex.RLock()
-	defer fake.getParticipantMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
 	fake.updateSubscriptionsMutex.RLock()
