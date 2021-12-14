@@ -134,6 +134,10 @@ type Event struct {
 	Data      interface{}
 }
 
+func (e Event) String() string {
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
+}
+
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
 		logger:      params.Logger,
@@ -272,6 +276,9 @@ func (s *StreamAllocator) postEvent(event Event) {
 
 func (s *StreamAllocator) processEvents() {
 	for event := range s.eventCh {
+		if event.Signal != SignalEstimate && event.Signal != SignalReceiverReport {
+			s.logger.Debugw("RAJA processing event", "event", event.String())	// REMOVE
+		}
 		s.handleEvent(&event)
 	}
 }
@@ -432,6 +439,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	if !found {
 		if len(remb.SSRCs) == 0 {
 			s.logger.Warnw("no SSRC to track REMB", nil)
+			s.logger.Warnw("RAJA no SSRC to track REMB", nil)
 			return
 		}
 
@@ -460,6 +468,10 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 			"old(bps)", s.prevReceivedEstimate,
 			"new(bps)", s.receivedEstimate,
 		)
+		s.logger.Debugw("RAJA received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
 	}
 
 	if s.maybeCommitEstimate() {
@@ -478,12 +490,15 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 // https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/modules/congestion_controller/goog_cc/loss_based_bandwidth_estimation.cc;bpv=0;bpt=1
 // LK-TODO-END
 func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
+	ttype := "NONE"	// REMOVE
 	var track *Track
 	ok := false
 	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
+		ttype = "AUDIO"	// REMOVE
 		track, ok = s.audioTracks[event.DownTrack.ID()]
 	case webrtc.RTPCodecTypeVideo:
+		ttype = "VIDEO"	// REMOVE
 		track, ok = s.videoTracks[event.DownTrack.ID()]
 	}
 	if !ok {
@@ -492,6 +507,8 @@ func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
 
 	rr, _ := event.Data.(*rtcp.ReceiverReport)
 	track.UpdatePacketStats(rr)
+	p, l := track.GetPacketStats()	// REMOVE
+	s.logger.Debugw("RAJA RR", "type", ttype, "p", p, "l", l, "lsn", rr.Reports[0].LastSequenceNumber, "tl", rr.Reports[0].TotalLost)	// REMOVE
 }
 
 func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
@@ -566,6 +583,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
 		s.logger.Infow("state change", "from", s.state, "to", state)
+		s.logger.Infow("RAJA state change", "from", s.state, "to", state)
 	}
 
 	s.state = state
@@ -619,6 +637,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.lastCommitTime = time.Now()
 
 	s.logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
+	s.logger.Debugw("RAJA committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
 	return
 }
 
@@ -627,6 +646,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	if s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.Allocate(ChannelCapacityInfinity)
+		s.logger.Debugw("RAJA allocate on single", "track", track, "allocation", allocation)
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -664,6 +684,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	//
 	for _, track := range s.exemptVideoTracksSorted {
 		allocation := track.Allocate(ChannelCapacityInfinity)
+		s.logger.Debugw("RAJA allocate all on exempt", "track", track, "allocation", allocation)
 		update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -677,6 +698,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 		// nothing left for managed tracks, pause them all
 		for _, track := range s.managedVideoTracksSorted {
 			allocation := track.Pause()
+			s.logger.Debugw("RAJA allocate all pause on managed", "track", track, "allocation", allocation)
 			update.HandleStreamingChange(allocation.change, track)
 		}
 	} else {
@@ -703,6 +725,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 		for _, track := range s.managedVideoTracksSorted {
 			allocation := track.ProvisionalAllocateCommit()
+			s.logger.Debugw("RAJA allocate all on managed", "track", track, "allocation", allocation)
 			update.HandleStreamingChange(allocation.change, track)
 		}
 	}
@@ -718,15 +741,21 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 	}
 
 	s.logger.Debugw("streamed tracks changed", "update", update)
+	s.logger.Debugw("RAJA streamed tracks changed", "update", update)
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
 			s.logger.Errorw("could not send streamed tracks update", err)
+			s.logger.Errorw("RAJA could not send streamed tracks update", err)
 		}
 	}
 }
 
 func (s *StreamAllocator) finalizeTracks() {
+	for _, t := range s.exemptVideoTracksSorted {
+		t.FinalizeAllocate()
+	}
+
 	for _, t := range s.managedVideoTracksSorted {
 		t.FinalizeAllocate()
 	}
@@ -799,6 +828,7 @@ func (s *StreamAllocator) maybeBoostLayer() {
 		}
 
 		allocation, boosted := track.AllocateNextHigher()
+		s.logger.Debugw("RAJA boost", "track", track, "allocation", allocation, "boosted", boosted)
 		if boosted {
 			s.lastBoostTime = time.Now()
 
@@ -817,14 +847,16 @@ func (s *StreamAllocator) isTimeToBoost() bool {
 	// Checking against last estimate boost prevents multiple artificial boosts
 	// in situations where multiple tracks become available in a short span.
 	if !s.lastBoostTime.IsZero() {
+		s.logger.Debugw("RAJA boost check", "boost", time.Since(s.lastBoostTime))
 		return time.Since(s.lastBoostTime) > BoostWaitMs
 	} else {
+		s.logger.Debugw("RAJA boost check", "estimate", time.Since(s.lastEstimateDecreaseTime))
 		return time.Since(s.lastEstimateDecreaseTime) > ProbeWaitMs
 	}
 }
 
 func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.Now()
+	s.lastBoostTime = time.Time{}
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {

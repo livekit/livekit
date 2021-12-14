@@ -287,7 +287,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if d.sequencer != nil {
-		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, 0, extPkt.Head)
+		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, uint8(layer), extPkt.Head)
 		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.header)
 		}
@@ -833,6 +833,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
 		if err != nil {
+			fmt.Printf("RAJA could not find rtx, %d -> %d\n", meta.targetSeqNo, meta.sourceSeqNo)	// REMOVE
 			if err == io.EOF {
 				break
 			}
@@ -877,6 +878,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
 			Logger.Error(err, "Writing rtx packet err")
 		} else {
+			fmt.Printf("RAJA retransmitted: %d\n", pkt.Header.SequenceNumber)	// REMOVE
 			pktSize := pkt.Header.MarshalSize() + len(payload)
 			for _, f := range d.onPacketSent {
 				f(d, pktSize)
