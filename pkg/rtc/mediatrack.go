@@ -32,7 +32,7 @@ var (
 
 const (
 	lostUpdateDelta         = time.Second
-	lastUpdateDelta         = 5 * time.Second
+	lastUpdateDelta         = 1 * time.Second
 	layerSelectionTolerance = 0.8
 )
 
@@ -627,7 +627,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		current.Jitter = jitter
 		current.Delay = delay
 		current.FractionLost = maxLost
-		current.PacketsLost = totalLost
+		current.PacketsLost += totalLost
 		if now.Sub(t.connectionStatsUp.LastUpdated) > lastUpdateDelta {
 			// calculate score and store it
 			t.connectionStatsUp.Score = ConnectionScore(current, t.Kind())

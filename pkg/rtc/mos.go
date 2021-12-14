@@ -8,7 +8,7 @@ import (
 // available @ https://github.com/oanguenot/webrtc-stats
 
 const (
-	rtt = 10
+	rtt = 70
 )
 
 func score2Rating(score float64) livekit.ConnectionQuality {
@@ -16,7 +16,7 @@ func score2Rating(score float64) livekit.ConnectionQuality {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 3.5 {
+	if score > 2.5 {
 		return livekit.ConnectionQuality_GOOD
 	}
 	return livekit.ConnectionQuality_POOR

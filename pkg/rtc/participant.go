@@ -722,7 +722,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	// map loss to mos scores (> 4 -> bad[3.0], (4><2 -> good[3.5]), (<2 -> excellent[4.3])
 	avgLossScore := 3.5
 	if avgLoss >= 4 {
-		avgLossScore = 3.0
+		avgLossScore = 2.5
 	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
 		avgLossScore = 4.3
 	}
