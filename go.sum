@@ -136,6 +136,8 @@ github.com/livekit/protocol v0.11.1-0.20211210234141-81dc05762739 h1:/y/ve7kJ+2a
 github.com/livekit/protocol v0.11.1-0.20211210234141-81dc05762739/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
 github.com/livekit/protocol v0.11.1-0.20211214141401-9abafcbfec13 h1:jNsiROnpu+4aHu+8vqF/yNkF+mIOGBGLDF68VnqJycI=
 github.com/livekit/protocol v0.11.1-0.20211214141401-9abafcbfec13/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
+github.com/livekit/protocol v0.11.1-0.20211214211352-ab9990927341 h1:pVZYEBJofMtFd5c296gL/rTmhvJBdZnACac+XmjYX9g=
+github.com/livekit/protocol v0.11.1-0.20211214211352-ab9990927341/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
 github.com/magefile/mage v1.11.0 h1:C/55Ywp9BpgVVclD3lRnSYCwXTYxmSppIgLeDYlNuls=
 github.com/magefile/mage v1.11.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/mattn/go-runewidth v0.0.9 h1:Lm995f3rfxdpd6TSmuVCHVb/QhupuXlYr8sCI/QdE+0=
