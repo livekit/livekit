@@ -3,6 +3,7 @@ package telemetrytest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
@@ -34,6 +35,8 @@ func Test_TelemetrySerice_Downstream_Stats(t *testing.T) {
 
 	//call participant left to trigget sending of analytics
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
+
+	time.Sleep(time.Millisecond * 100) // wait for Update function to be called in go routine
 
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 	_, stats := fixture.analytics.SendStatsArgsForCall(0)
