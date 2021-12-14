@@ -122,7 +122,7 @@ func (t *MediaTrack) Source() livekit.TrackSource {
 }
 
 func (t *MediaTrack) IsSimulcast() bool {
-	return t.params.TrackInfo.Simulcast
+	return t.simulcasted.Get()
 }
 
 func (t *MediaTrack) Name() string {
