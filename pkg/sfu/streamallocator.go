@@ -678,6 +678,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 	bandwidthAcquired := int64(0)
 	var contributingTracks []*Track
+
+	for _, t := range minDistanceSorted {
+		t.ProvisionalAllocatePrepare()
+	}
+
 	for _, t := range minDistanceSorted {
 		tx := t.ProvisionalAllocateGetBestWeightedTransition()
 		if tx.bandwidthDelta < 0 {
@@ -705,6 +710,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// commit the track that needs change
 	allocation := track.ProvisionalAllocateCommit()
 	update.HandleStreamingChange(allocation.change, track)
+
+	// LK-TODO if got too much extra, can potentially give it to some deficient track
 
 	s.maybeSendUpdate(update)
 

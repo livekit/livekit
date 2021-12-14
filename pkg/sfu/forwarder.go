@@ -630,7 +630,6 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 	// starting from mimimum to target, find transition which gives the best
 	// transition taking into account bits saved vs cost of such a transition
-	// required transision could be up or down. Find the minimal need to not pause
 	bestLayers := InvalidLayers
 	bestBandwidthDelta := int64(0)
 	bestValue := float32(0)
@@ -647,7 +646,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 				transitionCost = TransitionCostSpatial
 			}
 
-			qualityCost := ((maxReachableLayerTemporal+1)*(f.targetLayers.spatial-s) + f.targetLayers.temporal - t)
+			qualityCost := (maxReachableLayerTemporal+1)*(f.targetLayers.spatial-s) + (f.targetLayers.temporal - t)
 
 			value := float32(0)
 			if (transitionCost + qualityCost) != 0 {
