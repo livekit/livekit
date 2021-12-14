@@ -260,7 +260,7 @@ func TestConnectionQuality(t *testing.T) {
 		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
 		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
 
-		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality())
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("reduced publishing", func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestConnectionQuality(t *testing.T) {
 		p.publishedTracks["video"] = testPublishedTrack(3, 2, 3)
 		p.publishedTracks["audio"] = testPublishedTrack(3, 1, 1)
 
-		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality())
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 }
 
