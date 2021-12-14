@@ -142,7 +142,7 @@ func (v VideoLayers) String() string {
 }
 
 func (v VideoLayers) GreaterThan(v2 VideoLayers) bool {
-	return v.spatial > v2.spatial || v.temporal > v2.temporal
+	return v.spatial > v2.spatial || (v.spatial == v2.spatial && v.temporal > v2.temporal)
 }
 
 const (
