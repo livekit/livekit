@@ -4,6 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"io"
 	"strings"
 	"sync"
@@ -17,6 +20,10 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+)
+
+const (
+	lastUpdateDelta = 5 * time.Second
 )
 
 // TrackSender defines a  interface send media to remote peer
@@ -104,9 +111,12 @@ type DownTrack struct {
 	closeOnce               sync.Once
 
 	// Report helpers
-	primaryStats atomic.Value // contains *PacketStats
-	rtxStats     atomic.Value // contains *PacketStats
-	paddingStats atomic.Value // contains *PacketStats
+	primaryStats    atomic.Value // contains *PacketStats
+	rtxStats        atomic.Value // contains *PacketStats
+	paddingStats    atomic.Value // contains *PacketStats
+	statsLock       sync.Mutex
+	connectionStats *connectionquality.ConnectionStats
+	done            chan struct{}
 
 	lossFraction atomicUint8
 
@@ -145,15 +155,17 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	d := &DownTrack{
-		id:            r.TrackID(),
-		peerID:        peerID,
-		maxTrack:      mt,
-		streamID:      r.StreamID(),
-		bufferFactory: bf,
-		receiver:      r,
-		codec:         c,
-		kind:          kind,
-		forwarder:     NewForwarder(c, kind),
+		id:              r.TrackID(),
+		peerID:          peerID,
+		maxTrack:        mt,
+		streamID:        r.StreamID(),
+		bufferFactory:   bf,
+		receiver:        r,
+		codec:           c,
+		kind:            kind,
+		forwarder:       NewForwarder(c, kind),
+		connectionStats: connectionquality.NewConnectionStats(),
+		done:            make(chan struct{}),
 	}
 
 	d.primaryStats.Store(new(PacketStats))
@@ -165,6 +177,8 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	} else {
 		d.trackType = SimpleDownTrack
 	}
+
+	go d.updateStats()
 
 	return d, nil
 }
@@ -443,6 +457,7 @@ func (d *DownTrack) Close() {
 			d.onCloseHandler()
 		}
 	})
+	close(d.done)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -776,6 +791,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
+	var hasReport bool
+	var delay uint32
+	var jitter uint32
+	var totalLost uint32
+	var maxSeqNum uint32
+
 	maxRatePacketLoss := uint8(0)
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
@@ -801,6 +822,18 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if maxRatePacketLoss == 0 || maxRatePacketLoss < r.FractionLost {
 					maxRatePacketLoss = r.FractionLost
 				}
+				if r.Delay > delay {
+					delay = r.Delay
+				}
+				if r.Jitter > jitter {
+					jitter = r.Jitter
+				}
+				if r.LastSequenceNumber > maxSeqNum {
+					maxSeqNum = r.LastSequenceNumber
+				}
+				totalLost += r.TotalLost
+
+				hasReport = true
 			}
 			d.lossFraction.set(maxRatePacketLoss)
 			if len(rr.Reports) > 0 {
@@ -809,6 +842,18 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					l(d, rr)
 				}
 				d.listenerLock.RUnlock()
+			}
+			if hasReport {
+				d.statsLock.Lock()
+				// update feedback stats
+				current := d.connectionStats.Curr
+				current.Jitter = jitter
+				current.Delay = delay
+				current.PacketsLost += totalLost
+				current.LastSeqNum = maxSeqNum
+				d.statsLock.Unlock()
+				logger.Debugw("*******", "delay", current.Delay, "jitter", current.Jitter, "lost",
+					current.PacketsLost, "total", current.LastSeqNum)
 			}
 		case *rtcp.TransportLayerNack:
 			var nackedPackets []packetMeta
@@ -993,5 +1038,27 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"Muted":               d.forwarder.Muted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
 		"Stats":               stats,
+	}
+}
+
+func (d *DownTrack) GetUpConnectionScore() float64 {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
+	return d.connectionStats.Score
+}
+func (d *DownTrack) updateStats() {
+	for {
+		select {
+		case _, ok := <-d.done:
+			if !ok {
+				return
+			}
+		case <-time.After(lastUpdateDelta):
+			d.statsLock.Lock()
+			if d.Kind() == webrtc.RTPCodecTypeAudio {
+				d.connectionStats.CalculateScore(livekit.TrackType_AUDIO)
+			}
+			d.statsLock.Unlock()
+		}
 	}
 }

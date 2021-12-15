@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"errors"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -65,7 +66,7 @@ type MediaTrack struct {
 	currentUpFracLost uint32
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
-	connectionStatsUp *ConnectionStats
+	connectionStatsUp *connectionquality.ConnectionStats
 
 	done    chan struct{}
 	onClose []func()
@@ -85,31 +86,13 @@ type MediaTrackParams struct {
 	Logger              logger.Logger
 }
 
-type ConnectionStat struct {
-	PacketsLost  uint32
-	Delay        uint32
-	Jitter       uint32
-	TotalPackets uint32
-	LastSeqNum   uint32
-}
-
-type ConnectionStats struct {
-	Curr  *ConnectionStat
-	Prev  *ConnectionStat
-	Score float64
-}
-
-func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}}
-}
-
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params:            params,
 		ssrc:              track.SSRC(),
 		streamID:          track.StreamID(),
 		codec:             track.Codec(),
-		connectionStatsUp: NewConnectionStats(),
+		connectionStatsUp: connectionquality.NewConnectionStats(),
 		done:              make(chan struct{}),
 	}
 
@@ -582,10 +565,6 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	}()
 }
 
-func seqWrapHandler(cur, prev uint16) uint16 {
-	return cur - prev
-}
-
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
 	var hasReport bool
@@ -599,6 +578,9 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		// sfu.Buffer generates ReceiverReports for the publisher
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
+				if rr.FractionLost > maxLost {
+					maxLost = rr.FractionLost
+				}
 
 				if rr.Delay > delay {
 					delay = rr.Delay
@@ -643,7 +625,8 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 }
 
 // handles max loss for audio packets
-func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
+func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack,
+	report *rtcp.ReceiverReport) {
 	var (
 		shouldUpdate bool
 		maxLost      uint8
@@ -714,15 +697,6 @@ func (t *MediaTrack) closeChan() {
 	close(t.done)
 }
 
-func getTotalPackets(curSN, prevSN uint32) uint32 {
-	delta := curSN - prevSN
-	// lower 16 bits is the counter
-	counter := uint16(delta)
-	// upper 16 bits contains the cycles/wrap
-	cycles := uint16(delta >> 16)
-	return (uint32(cycles) * (1 << 16)) + uint32(counter)
-}
-
 func (t *MediaTrack) updateStats() {
 	for {
 		select {
@@ -732,16 +706,7 @@ func (t *MediaTrack) updateStats() {
 			}
 		case <-time.After(lastUpdateDelta):
 			t.statsLock.Lock()
-			// update feedback stats
-			current := t.connectionStatsUp.Curr
-			previous := t.connectionStatsUp.Prev
-			// Update TotalPackets from SeqNum here
-			current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
-			t.connectionStatsUp.Score = ConnectionScore(current, t.connectionStatsUp.Prev, t.Kind())
-
-			// store previous stats
-			t.connectionStatsUp.Prev = current
-			t.connectionStatsUp.Curr = &ConnectionStat{TotalPackets: t.connectionStatsUp.Prev.TotalPackets}
+			t.connectionStatsUp.CalculateScore(t.Kind())
 			t.statsLock.Unlock()
 		}
 	}

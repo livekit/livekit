@@ -1,4 +1,4 @@
-package rtc
+package connectionquality
 
 import (
 	"github.com/livekit/protocol/livekit"
@@ -11,7 +11,7 @@ const (
 	rtt = 70
 )
 
-func score2Rating(score float64) livekit.ConnectionQuality {
+func Score2Rating(score float64) livekit.ConnectionQuality {
 	if score > 4.00 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
