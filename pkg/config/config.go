@@ -103,12 +103,13 @@ type CodecSpec struct {
 }
 
 type TURNConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Domain   string `yaml:"domain"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
-	TLSPort  int    `yaml:"tls_port"`
-	UDPPort  int    `yaml:"udp_port"`
+	Enabled     bool   `yaml:"enabled"`
+	Domain      string `yaml:"domain"`
+	CertFile    string `yaml:"cert_file"`
+	KeyFile     string `yaml:"key_file"`
+	TLSPort     int    `yaml:"tls_port"`
+	UDPPort     int    `yaml:"udp_port"`
+	ExternalTLS bool   `yaml:"external_tls"`
 }
 
 type WebHookConfig struct {

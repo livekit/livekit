@@ -55,26 +55,39 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			return nil, errors.New("TURN domain is not correct")
 		}
 
-		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-		if err != nil {
-			return nil, errors.Wrap(err, "TURN tls cert required")
-		}
+		if !turnConf.ExternalTLS {
+			cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+			if err != nil {
+				return nil, errors.Wrap(err, "TURN tls cert required")
+			}
 
-		tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
-			&tls.Config{
-				MinVersion:   tls.VersionTLS12,
-				Certificates: []tls.Certificate{cert},
-			})
-		if err != nil {
-			return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-		}
+			tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
+				&tls.Config{
+					MinVersion:   tls.VersionTLS12,
+					Certificates: []tls.Certificate{cert},
+				})
+			if err != nil {
+				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+			}
 
-		listenerConfig := turn.ListenerConfig{
-			Listener:              tlsListener,
-			RelayAddressGenerator: relayAddrGen,
+			listenerConfig := turn.ListenerConfig{
+				Listener:              tlsListener,
+				RelayAddressGenerator: relayAddrGen,
+			}
+			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
+		} else {
+			tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort))
+			if err != nil {
+				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+			}
+
+			listenerConfig := turn.ListenerConfig{
+				Listener:              tcpListener,
+				RelayAddressGenerator: relayAddrGen,
+			}
+			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 		}
-		serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
-		logValues = append(logValues, "turn.portTLS", turnConf.TLSPort)
+		logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
 	}
 
 	if turnConf.UDPPort > 0 {
