@@ -90,13 +90,13 @@ type ConnectionStat struct {
 	Delay        uint32
 	Jitter       uint32
 	TotalPackets uint32
+	LastSeqNum   uint32
 }
 
 type ConnectionStats struct {
-	Curr        *ConnectionStat
-	Prev        *ConnectionStat
-	LastUpdated time.Time
-	Score       float64
+	Curr  *ConnectionStat
+	Prev  *ConnectionStat
+	Score float64
 }
 
 func NewConnectionStats() *ConnectionStats {
@@ -582,12 +582,17 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	}()
 }
 
+func seqWrapHandler(cur, prev uint16) uint16 {
+	return cur - prev
+}
+
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
 	var hasReport bool
 	var delay uint32
 	var jitter uint32
 	var totalLost uint32
+	var maxSeqNum uint32
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
@@ -601,7 +606,11 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.Jitter > jitter {
 					jitter = rr.Jitter
 				}
+				if rr.LastSequenceNumber > maxSeqNum {
+					maxSeqNum = rr.LastSequenceNumber
+				}
 				totalLost += rr.TotalLost
+
 				hasReport = true
 			}
 		}
@@ -624,9 +633,10 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		current.Jitter = jitter
 		current.Delay = delay
 		current.PacketsLost += totalLost
+		current.LastSeqNum = maxSeqNum
 		t.statsLock.Unlock()
-
 	}
+
 	// also look for sender reports
 	// feedback for the source RTCP
 	t.params.RTCPChan <- packets
@@ -704,6 +714,15 @@ func (t *MediaTrack) closeChan() {
 	close(t.done)
 }
 
+func getTotalPackets(curSN, prevSN uint32) uint32 {
+	delta := curSN - prevSN
+	// lower 16 bits is the counter
+	counter := uint16(delta)
+	// upper 16 bits contains the cycles/wrap
+	cycles := uint16(delta >> 16)
+	return (uint32(cycles) * (1 << 16)) + uint32(counter)
+}
+
 func (t *MediaTrack) updateStats() {
 	for {
 		select {
@@ -712,30 +731,17 @@ func (t *MediaTrack) updateStats() {
 				return
 			}
 		case <-time.After(lastUpdateDelta):
-
-			// take lock on track access buffer
-			t.lock.Lock()
-			var stats buffer.Stats
-			if t.buffer != nil {
-				stats = t.buffer.GetStats()
-			}
-			t.lock.Unlock()
-
-			// lock the stats
 			t.statsLock.Lock()
-			t.connectionStatsUp.Curr.TotalPackets += stats.PacketCount
-			now := time.Now()
-			// calculate score if last update > interval
-			if now.Sub(t.connectionStatsUp.LastUpdated) > lastUpdateDelta {
-				// update feedback stats
-				current := t.connectionStatsUp.Curr
-				// calculate score and store it
-				t.connectionStatsUp.Score = ConnectionScore(current, t.connectionStatsUp.Prev, t.Kind())
-				// store previous stats (not used as of now)
-				t.connectionStatsUp.Prev = current
-				t.connectionStatsUp.Curr = &ConnectionStat{}
-				t.connectionStatsUp.LastUpdated = now
-			}
+			// update feedback stats
+			current := t.connectionStatsUp.Curr
+			previous := t.connectionStatsUp.Prev
+			// Update TotalPackets from SeqNum here
+			current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
+			t.connectionStatsUp.Score = ConnectionScore(current, t.connectionStatsUp.Prev, t.Kind())
+
+			// store previous stats
+			t.connectionStatsUp.Prev = current
+			t.connectionStatsUp.Curr = &ConnectionStat{TotalPackets: t.connectionStatsUp.Prev.TotalPackets}
 			t.statsLock.Unlock()
 		}
 	}

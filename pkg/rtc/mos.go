@@ -30,6 +30,10 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 
 	// find percentage of lost packets in this window
 	deltaTotalPackets := cur.TotalPackets - prev.TotalPackets
+	if deltaTotalPackets == 0 {
+		return 0.0
+	}
+
 	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
 	percentageLost := deltaTotalLostPackets / deltaTotalPackets * 100
 
