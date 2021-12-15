@@ -652,8 +652,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// giving back bits
-	if transition.bandwidthDelta < 0 {
+	// lower downgrade, giving back bits
+	if transition.from.GreaterThan(transition.to) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
@@ -662,7 +662,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 		s.adjustState()
 		return
-		// LK-TODO: Should use the bits given back to start any paused track.
+		// LK-TODO-START
+		// Should use the bits given back to start any paused track.
+		// Note layer downgrade may actually have positive delta (i. e. consume more bits)
+		// because of when the measurement is done. Watch for that.
+		// LK-TODO-END
 	}
 
 	//

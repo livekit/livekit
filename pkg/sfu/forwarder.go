@@ -519,6 +519,25 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 }
 
 func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
+	//
+	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
+	// when channel is congested.
+	//
+	// The goal is to provide a co-operative transition. Co-operative stream allocation aims to keep all the streams active
+	// as much as possible.
+	//
+	// When channel is congested, effecting a transition which will consume more bits will lead to more congestion.
+	// So, this routine does the following
+	//   1. When muting, it is not going to increase consumption.
+	//   2. If the stream is currently active and the transition needs more bits (higher layers = more bits), do not make the up move.
+	//      The higher layer requirement could be due to a new published layer becoming available or subscribed layers changing.
+	//   3. If the new target layers are lower than current target, take the move down and save bits.
+	//   4. If not currently streaming, find the minimum layers that can unpause the stream.
+	//
+	// To summarize, co-operative streaming means
+	//   - Try to keep tracks streaming, i. e. no pauses even if not at optimal layers
+	//   - Do not make an upgrade as it could affect other tracks
+	//
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -536,26 +555,40 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	if f.targetLayers != InvalidLayers {
 		// what is the highest that is available
 		maximalLayers := InvalidLayers
+		maximalBandwidthRequired := int64(0)
 		for s := f.maxLayers.spatial; s >= 0; s-- {
 			for t := f.maxLayers.temporal; t >= 0; t-- {
 				if f.provisional.bitrates[s][t] != 0 {
 					maximalLayers = VideoLayers{spatial: s, temporal: t}
+					maximalBandwidthRequired = f.provisional.bitrates[s][t]
 					break
 				}
 			}
 
-			if maximalLayers != InvalidLayers {
+			if maximalBandwidthRequired != 0 {
 				break
 			}
 		}
 
-		if maximalLayers != InvalidLayers && !f.targetLayers.GreaterThan(maximalLayers) && (f.provisional.bitrates[f.targetLayers.spatial][f.targetLayers.temporal] != 0) {
-			// currently streaming and wanting an upgrade, just preserve current target in the cooperative scheme of things
-			f.provisional.layers = f.targetLayers
-			return VideoTransition{
-				from:           f.targetLayers,
-				to:             f.targetLayers,
-				bandwidthDelta: 0,
+		if maximalLayers != InvalidLayers {
+			if !f.targetLayers.GreaterThan(maximalLayers) && (f.provisional.bitrates[f.targetLayers.spatial][f.targetLayers.temporal] != 0) {
+				// currently streaming and wanting an upgrade, just preserve current target in the cooperative scheme of things
+				f.provisional.layers = f.targetLayers
+				return VideoTransition{
+					from:           f.targetLayers,
+					to:             f.targetLayers,
+					bandwidthDelta: 0,
+				}
+			}
+
+			if f.targetLayers.GreaterThan(maximalLayers) {
+				// maximalLayers <= f.targetLayers, make the down move
+				f.provisional.layers = maximalLayers
+				return VideoTransition{
+					from:           f.targetLayers,
+					to:             maximalLayers,
+					bandwidthDelta: maximalBandwidthRequired - f.lastAllocation.bandwidthRequested,
+				}
 			}
 		}
 	}
@@ -592,6 +625,20 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 }
 
 func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
+	//
+	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
+	// when channel is congested.
+	//
+	// The goal is to keep all tracks streaming as much as possible. So, the track that needs a change needs bits to be unpaused.
+	//
+	// This tries to figure out how much it can contribute
+	//   1. Track muted OR feed dry - can contribute everything back in case it was using bits.
+	//   2. Look at all possible down transitions from current target and find the best offer.
+	//      Best offer is calculated as bits saved moving to a down layer divided by cost.
+	//      Cost has two components
+	//        a. Transition cost: Spatial layer switch is expensive due to key frame requiremnt, but temporal layer switch is free.
+	//        b. Quality cost: The farther away from desired layers, the higher the quality cost.
+	//
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

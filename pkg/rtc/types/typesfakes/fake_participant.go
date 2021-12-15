@@ -30,6 +30,11 @@ type FakeParticipant struct {
 	addSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
 	}
+	AddSubscribedTrackToStreamAllocatorStub        func(types.SubscribedTrack)
+	addSubscribedTrackToStreamAllocatorMutex       sync.RWMutex
+	addSubscribedTrackToStreamAllocatorArgsForCall []struct {
+		arg1 types.SubscribedTrack
+	}
 	AddSubscriberStub        func(types.Participant) (int, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
@@ -346,6 +351,11 @@ type FakeParticipant struct {
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
 	}
+	RemoveSubscribedTrackFromStreamAllocatorStub        func(types.SubscribedTrack)
+	removeSubscribedTrackFromStreamAllocatorMutex       sync.RWMutex
+	removeSubscribedTrackFromStreamAllocatorArgsForCall []struct {
+		arg1 types.SubscribedTrack
+	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
 	sendConnectionQualityUpdateArgsForCall []struct {
@@ -586,6 +596,38 @@ func (fake *FakeParticipant) AddSubscribedTrackArgsForCall(i int) types.Subscrib
 	fake.addSubscribedTrackMutex.RLock()
 	defer fake.addSubscribedTrackMutex.RUnlock()
 	argsForCall := fake.addSubscribedTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackToStreamAllocator(arg1 types.SubscribedTrack) {
+	fake.addSubscribedTrackToStreamAllocatorMutex.Lock()
+	fake.addSubscribedTrackToStreamAllocatorArgsForCall = append(fake.addSubscribedTrackToStreamAllocatorArgsForCall, struct {
+		arg1 types.SubscribedTrack
+	}{arg1})
+	stub := fake.AddSubscribedTrackToStreamAllocatorStub
+	fake.recordInvocation("AddSubscribedTrackToStreamAllocator", []interface{}{arg1})
+	fake.addSubscribedTrackToStreamAllocatorMutex.Unlock()
+	if stub != nil {
+		fake.AddSubscribedTrackToStreamAllocatorStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackToStreamAllocatorCallCount() int {
+	fake.addSubscribedTrackToStreamAllocatorMutex.RLock()
+	defer fake.addSubscribedTrackToStreamAllocatorMutex.RUnlock()
+	return len(fake.addSubscribedTrackToStreamAllocatorArgsForCall)
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackToStreamAllocatorCalls(stub func(types.SubscribedTrack)) {
+	fake.addSubscribedTrackToStreamAllocatorMutex.Lock()
+	defer fake.addSubscribedTrackToStreamAllocatorMutex.Unlock()
+	fake.AddSubscribedTrackToStreamAllocatorStub = stub
+}
+
+func (fake *FakeParticipant) AddSubscribedTrackToStreamAllocatorArgsForCall(i int) types.SubscribedTrack {
+	fake.addSubscribedTrackToStreamAllocatorMutex.RLock()
+	defer fake.addSubscribedTrackToStreamAllocatorMutex.RUnlock()
+	argsForCall := fake.addSubscribedTrackToStreamAllocatorArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -2304,6 +2346,38 @@ func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) types.Subsc
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) RemoveSubscribedTrackFromStreamAllocator(arg1 types.SubscribedTrack) {
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.Lock()
+	fake.removeSubscribedTrackFromStreamAllocatorArgsForCall = append(fake.removeSubscribedTrackFromStreamAllocatorArgsForCall, struct {
+		arg1 types.SubscribedTrack
+	}{arg1})
+	stub := fake.RemoveSubscribedTrackFromStreamAllocatorStub
+	fake.recordInvocation("RemoveSubscribedTrackFromStreamAllocator", []interface{}{arg1})
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.Unlock()
+	if stub != nil {
+		fake.RemoveSubscribedTrackFromStreamAllocatorStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) RemoveSubscribedTrackFromStreamAllocatorCallCount() int {
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.RLock()
+	defer fake.removeSubscribedTrackFromStreamAllocatorMutex.RUnlock()
+	return len(fake.removeSubscribedTrackFromStreamAllocatorArgsForCall)
+}
+
+func (fake *FakeParticipant) RemoveSubscribedTrackFromStreamAllocatorCalls(stub func(types.SubscribedTrack)) {
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.Lock()
+	defer fake.removeSubscribedTrackFromStreamAllocatorMutex.Unlock()
+	fake.RemoveSubscribedTrackFromStreamAllocatorStub = stub
+}
+
+func (fake *FakeParticipant) RemoveSubscribedTrackFromStreamAllocatorArgsForCall(i int) types.SubscribedTrack {
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.RLock()
+	defer fake.removeSubscribedTrackFromStreamAllocatorMutex.RUnlock()
+	argsForCall := fake.removeSubscribedTrackFromStreamAllocatorArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
 	fake.sendConnectionQualityUpdateMutex.Lock()
 	ret, specificReturn := fake.sendConnectionQualityUpdateReturnsOnCall[len(fake.sendConnectionQualityUpdateArgsForCall)]
@@ -3119,6 +3193,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.addICECandidateMutex.RUnlock()
 	fake.addSubscribedTrackMutex.RLock()
 	defer fake.addSubscribedTrackMutex.RUnlock()
+	fake.addSubscribedTrackToStreamAllocatorMutex.RLock()
+	defer fake.addSubscribedTrackToStreamAllocatorMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.addTrackMutex.RLock()
@@ -3189,6 +3265,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.rTCPChanMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
+	fake.removeSubscribedTrackFromStreamAllocatorMutex.RLock()
+	defer fake.removeSubscribedTrackFromStreamAllocatorMutex.RUnlock()
 	fake.sendConnectionQualityUpdateMutex.RLock()
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()

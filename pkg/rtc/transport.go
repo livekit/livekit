@@ -263,7 +263,7 @@ func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) 
 	t.streamAllocator.OnStreamStateChange(f)
 }
 
-func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}
@@ -273,7 +273,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), isManaged)
 }
 
-func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}

@@ -406,13 +406,13 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedLayers, f.TargetLayers())
 
-	// from a target that has become unavailable, should switch to the minimal layer
+	// from a target that has become unavailable, should switch to lower available layer
 	targetLayers = VideoLayers{spatial: 2, temporal: 2}
 	f.targetLayers = targetLayers
 	expectedTransition = VideoTransition{
 		from:           targetLayers,
-		to:             VideoLayers{spatial: 0, temporal: 0},
-		bandwidthDelta: -9,
+		to:             VideoLayers{spatial: 2, temporal: 1},
+		bandwidthDelta: 0,
 	}
 	transition = f.ProvisionalAllocateGetCooperativeTransition()
 	require.Equal(t, expectedTransition, transition)
@@ -425,9 +425,9 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 
 	// mute should send target to InvalidLayers
 	expectedTransition = VideoTransition{
-		from:           VideoLayers{spatial: 0, temporal: 0},
+		from:           VideoLayers{spatial: 2, temporal: 1},
 		to:             InvalidLayers,
-		bandwidthDelta: -1,
+		bandwidthDelta: -10,
 	}
 	transition = f.ProvisionalAllocateGetCooperativeTransition()
 	require.Equal(t, expectedTransition, transition)

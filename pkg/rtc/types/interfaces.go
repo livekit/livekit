@@ -86,6 +86,8 @@ type Participant interface {
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
+	AddSubscribedTrackToStreamAllocator(st SubscribedTrack)
+	RemoveSubscribedTrackFromStreamAllocator(st SubscribedTrack)
 
 	DebugInfo() map[string]interface{}
 }
