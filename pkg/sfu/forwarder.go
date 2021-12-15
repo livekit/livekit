@@ -631,7 +631,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	//
 	// The goal is to keep all tracks streaming as much as possible. So, the track that needs a change needs bits to be unpaused.
 	//
-	// This tries to figure out how much it can contribute
+	// This tries to figure out how much this track can contribute back to the pool to enable the track that needs to be unpaused.
 	//   1. Track muted OR feed dry - can contribute everything back in case it was using bits.
 	//   2. Look at all possible down transitions from current target and find the best offer.
 	//      Best offer is calculated as bits saved moving to a down layer divided by cost.
