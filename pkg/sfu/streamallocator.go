@@ -652,7 +652,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// lower downgrade, giving back bits
+	// downgrade, giving back bits
 	if transition.from.GreaterThan(transition.to) {
 		allocation := track.ProvisionalAllocateCommit()
 
