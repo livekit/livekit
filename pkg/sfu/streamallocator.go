@@ -394,6 +394,7 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 		}
 
 		// LK-TODO: use any saved bandwidth to re-distribute
+		s.adjustState()
 	}
 }
 
