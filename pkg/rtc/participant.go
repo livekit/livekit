@@ -673,8 +673,8 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	var pubLoss, subLoss uint32
 	var reducedQualityPub bool
 	var reducedQualitySub bool
-	var pubAudioScore float64
-	var numPubAudioTracks int
+	var audioScores float64
+	var numAudioTracks int
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	for _, pubTrack := range p.publishedTracks {
@@ -683,8 +683,8 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		}
 		// audio has scores available
 		if pubTrack.Kind() == livekit.TrackType_AUDIO {
-			pubAudioScore += pubTrack.GetUpConnectionScore()
-			numPubAudioTracks++
+			audioScores += pubTrack.GetConnectionScore()
+			numAudioTracks++
 		} else {
 			pubLoss += pubTrack.PublishLossPercentage()
 			publishing, registered := pubTrack.NumUpTracks()
@@ -694,20 +694,13 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		}
 	}
 
-	numTracks := uint32(len(p.publishedTracks) - numPubAudioTracks)
-	if numTracks > 0 {
-		pubLoss /= numTracks
-	}
-
-	var subAudioScore float64
-	var numSubAudioTracks int
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if subTrack.DownTrack().Kind() == webrtc.RTPCodecTypeVideo {
-			subAudioScore += subTrack.DownTrack().GetUpConnectionScore()
-			numSubAudioTracks++
+		if subTrack.DownTrack().Kind() == webrtc.RTPCodecTypeAudio {
+			audioScores += subTrack.DownTrack().GetConnectionScore()
+			numAudioTracks++
 		} else {
 			if subTrack.DownTrack().GetForwardingStatus() != sfu.ForwardingStatusOptimal {
 				reducedQualitySub = true
@@ -716,15 +709,21 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		}
 	}
 
-	avgScore := (subAudioScore + pubAudioScore) / float64(numPubAudioTracks+numSubAudioTracks)
-
-	numTracks = uint32(len(p.subscribedTracks) - numSubAudioTracks)
-	if numTracks > 0 {
-		subLoss /= numTracks
+	avgScore := 0.0
+	// find avg loss and avg scores across pub/sub
+	// audio scores fall are in range of [0 - 5] . 5 being best . find avg
+	if numAudioTracks > 0 {
+		avgScore = (audioScores) / float64(numAudioTracks)
 	}
-	avgLoss := (pubLoss + subLoss) / 2
 
-	// map loss to mos scores (> 4 -> bad[3.0], (4><2 -> good[3.5]), (<2 -> excellent[4.3])
+	numTracks := len(p.publishedTracks) + len(p.subscribedTracks) - numAudioTracks
+	avgLoss := 0.0
+	// non audio scores fall in range [x - 0] . 0 being best . find average
+	if numTracks > 0 {
+		avgLoss = float64(pubLoss+subLoss) / float64(numTracks)
+	}
+
+	// map video to avgLossScores (> 4 -> bad[3.0], (4><2 -> good[3.5]), (<2 -> excellent[4.3])
 	avgLossScore := 3.5
 	if avgLoss >= 4 {
 		avgLossScore = 2.5

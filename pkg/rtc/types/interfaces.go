@@ -117,7 +117,7 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	GetUpConnectionScore() float64
+	GetConnectionScore() float64
 }
 
 // PublishedTrack is the main interface representing a track published to the room

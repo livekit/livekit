@@ -247,7 +247,7 @@ func TestMuteSetting(t *testing.T) {
 func TestConnectionQuality(t *testing.T) {
 	testPublishedTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
 		t := &typesfakes.FakePublishedTrack{}
-		t.PublishLossPercentageReturns(loss)
+		t.GetConnectionScoreReturns(float64(loss))
 		t.NumUpTracksReturns(numPublishing, numRegistered)
 		return t
 	}
@@ -257,8 +257,8 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("smooth sailing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
-		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
+		p.publishedTracks["video"] = testPublishedTrack(4, 3, 3)
+		p.publishedTracks["audio"] = testPublishedTrack(4, 1, 1)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})

@@ -66,7 +66,7 @@ type MediaTrack struct {
 	currentUpFracLost uint32
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
-	connectionStatsUp *connectionquality.ConnectionStats
+	connectionStats   *connectionquality.ConnectionStats
 
 	done    chan struct{}
 	onClose []func()
@@ -88,12 +88,12 @@ type MediaTrackParams struct {
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:            params,
-		ssrc:              track.SSRC(),
-		streamID:          track.StreamID(),
-		codec:             track.Codec(),
-		connectionStatsUp: connectionquality.NewConnectionStats(),
-		done:              make(chan struct{}),
+		params:          params,
+		ssrc:            track.SSRC(),
+		streamID:        track.StreamID(),
+		codec:           track.Codec(),
+		connectionStats: connectionquality.NewConnectionStats(),
+		done:            make(chan struct{}),
 	}
 
 	if params.TrackInfo.Muted {
@@ -611,7 +611,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			t.maxUpFracLostTs = now
 		}
 		// update feedback stats
-		current := t.connectionStatsUp.Curr
+		current := t.connectionStats.Curr
 		current.Jitter = jitter
 		current.Delay = delay
 		current.PacketsLost += totalLost
@@ -687,10 +687,10 @@ func (t *MediaTrack) Receiver() sfu.TrackReceiver {
 	return t.receiver
 }
 
-func (t *MediaTrack) GetUpConnectionScore() float64 {
+func (t *MediaTrack) GetConnectionScore() float64 {
 	t.statsLock.Lock()
 	defer t.statsLock.Unlock()
-	return t.connectionStatsUp.Score
+	return t.connectionStats.Score
 }
 
 func (t *MediaTrack) closeChan() {
@@ -706,7 +706,7 @@ func (t *MediaTrack) updateStats() {
 			}
 		case <-time.After(lastUpdateDelta):
 			t.statsLock.Lock()
-			t.connectionStatsUp.CalculateScore(t.Kind())
+			t.connectionStats.CalculateScore(t.Kind())
 			t.statsLock.Unlock()
 		}
 	}

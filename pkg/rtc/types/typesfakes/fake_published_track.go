@@ -26,6 +26,16 @@ type FakePublishedTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetConnectionScoreStub        func() float64
+	getConnectionScoreMutex       sync.RWMutex
+	getConnectionScoreArgsForCall []struct {
+	}
+	getConnectionScoreReturns struct {
+		result1 float64
+	}
+	getConnectionScoreReturnsOnCall map[int]struct {
+		result1 float64
+	}
 	GetQualityForDimensionStub        func(uint32, uint32) livekit.VideoQuality
 	getQualityForDimensionMutex       sync.RWMutex
 	getQualityForDimensionArgsForCall []struct {
@@ -37,16 +47,6 @@ type FakePublishedTrack struct {
 	}
 	getQualityForDimensionReturnsOnCall map[int]struct {
 		result1 livekit.VideoQuality
-	}
-	GetUpConnectionScoreStub        func() float64
-	getUpConnectionScoreMutex       sync.RWMutex
-	getUpConnectionScoreArgsForCall []struct {
-	}
-	getUpConnectionScoreReturns struct {
-		result1 float64
-	}
-	getUpConnectionScoreReturnsOnCall map[int]struct {
-		result1 float64
 	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
@@ -297,6 +297,59 @@ func (fake *FakePublishedTrack) AddSubscriberReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
+func (fake *FakePublishedTrack) GetConnectionScore() float64 {
+	fake.getConnectionScoreMutex.Lock()
+	ret, specificReturn := fake.getConnectionScoreReturnsOnCall[len(fake.getConnectionScoreArgsForCall)]
+	fake.getConnectionScoreArgsForCall = append(fake.getConnectionScoreArgsForCall, struct {
+	}{})
+	stub := fake.GetConnectionScoreStub
+	fakeReturns := fake.getConnectionScoreReturns
+	fake.recordInvocation("GetConnectionScore", []interface{}{})
+	fake.getConnectionScoreMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) GetConnectionScoreCallCount() int {
+	fake.getConnectionScoreMutex.RLock()
+	defer fake.getConnectionScoreMutex.RUnlock()
+	return len(fake.getConnectionScoreArgsForCall)
+}
+
+func (fake *FakePublishedTrack) GetConnectionScoreCalls(stub func() float64) {
+	fake.getConnectionScoreMutex.Lock()
+	defer fake.getConnectionScoreMutex.Unlock()
+	fake.GetConnectionScoreStub = stub
+}
+
+func (fake *FakePublishedTrack) GetConnectionScoreReturns(result1 float64) {
+	fake.getConnectionScoreMutex.Lock()
+	defer fake.getConnectionScoreMutex.Unlock()
+	fake.GetConnectionScoreStub = nil
+	fake.getConnectionScoreReturns = struct {
+		result1 float64
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetConnectionScoreReturnsOnCall(i int, result1 float64) {
+	fake.getConnectionScoreMutex.Lock()
+	defer fake.getConnectionScoreMutex.Unlock()
+	fake.GetConnectionScoreStub = nil
+	if fake.getConnectionScoreReturnsOnCall == nil {
+		fake.getConnectionScoreReturnsOnCall = make(map[int]struct {
+			result1 float64
+		})
+	}
+	fake.getConnectionScoreReturnsOnCall[i] = struct {
+		result1 float64
+	}{result1}
+}
+
 func (fake *FakePublishedTrack) GetQualityForDimension(arg1 uint32, arg2 uint32) livekit.VideoQuality {
 	fake.getQualityForDimensionMutex.Lock()
 	ret, specificReturn := fake.getQualityForDimensionReturnsOnCall[len(fake.getQualityForDimensionArgsForCall)]
@@ -356,59 +409,6 @@ func (fake *FakePublishedTrack) GetQualityForDimensionReturnsOnCall(i int, resul
 	}
 	fake.getQualityForDimensionReturnsOnCall[i] = struct {
 		result1 livekit.VideoQuality
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) GetUpConnectionScore() float64 {
-	fake.getUpConnectionScoreMutex.Lock()
-	ret, specificReturn := fake.getUpConnectionScoreReturnsOnCall[len(fake.getUpConnectionScoreArgsForCall)]
-	fake.getUpConnectionScoreArgsForCall = append(fake.getUpConnectionScoreArgsForCall, struct {
-	}{})
-	stub := fake.GetUpConnectionScoreStub
-	fakeReturns := fake.getUpConnectionScoreReturns
-	fake.recordInvocation("GetUpConnectionScore", []interface{}{})
-	fake.getUpConnectionScoreMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) GetUpConnectionScoreCallCount() int {
-	fake.getUpConnectionScoreMutex.RLock()
-	defer fake.getUpConnectionScoreMutex.RUnlock()
-	return len(fake.getUpConnectionScoreArgsForCall)
-}
-
-func (fake *FakePublishedTrack) GetUpConnectionScoreCalls(stub func() float64) {
-	fake.getUpConnectionScoreMutex.Lock()
-	defer fake.getUpConnectionScoreMutex.Unlock()
-	fake.GetUpConnectionScoreStub = stub
-}
-
-func (fake *FakePublishedTrack) GetUpConnectionScoreReturns(result1 float64) {
-	fake.getUpConnectionScoreMutex.Lock()
-	defer fake.getUpConnectionScoreMutex.Unlock()
-	fake.GetUpConnectionScoreStub = nil
-	fake.getUpConnectionScoreReturns = struct {
-		result1 float64
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) GetUpConnectionScoreReturnsOnCall(i int, result1 float64) {
-	fake.getUpConnectionScoreMutex.Lock()
-	defer fake.getUpConnectionScoreMutex.Unlock()
-	fake.GetUpConnectionScoreStub = nil
-	if fake.getUpConnectionScoreReturnsOnCall == nil {
-		fake.getUpConnectionScoreReturnsOnCall = make(map[int]struct {
-			result1 float64
-		})
-	}
-	fake.getUpConnectionScoreReturnsOnCall[i] = struct {
-		result1 float64
 	}{result1}
 }
 
@@ -1244,10 +1244,10 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.getConnectionScoreMutex.RLock()
+	defer fake.getConnectionScoreMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
 	defer fake.getQualityForDimensionMutex.RUnlock()
-	fake.getUpConnectionScoreMutex.RLock()
-	defer fake.getUpConnectionScoreMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()

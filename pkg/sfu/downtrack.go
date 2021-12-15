@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	livekit "github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"io"
 	"strings"
 	"sync"
@@ -456,8 +455,8 @@ func (d *DownTrack) Close() {
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
+		close(d.done)
 	})
-	close(d.done)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -852,8 +851,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				current.PacketsLost += totalLost
 				current.LastSeqNum = maxSeqNum
 				d.statsLock.Unlock()
-				logger.Debugw("*******", "delay", current.Delay, "jitter", current.Jitter, "lost",
-					current.PacketsLost, "total", current.LastSeqNum)
 			}
 		case *rtcp.TransportLayerNack:
 			var nackedPackets []packetMeta
@@ -1041,11 +1038,12 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) GetUpConnectionScore() float64 {
+func (d *DownTrack) GetConnectionScore() float64 {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 	return d.connectionStats.Score
 }
+
 func (d *DownTrack) updateStats() {
 	for {
 		select {
