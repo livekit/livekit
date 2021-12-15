@@ -11,36 +11,47 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/go/pkg/mod
-          ~/go/bin
-          ~/.cache
-        key: livekit-server
-    - uses: shogo82148/actions-setup-redis@v1.10.3
-      with:
-        redis-version: '6.x'
-        auto-start: true
-    - run: redis-cli ping
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/go/bin
+            ~/.cache
+          key: livekit-server
+      - uses: shogo82148/actions-setup-redis@v1.10.3
+        with:
+          redis-version: '6.x'
+          auto-start: true
+      - run: redis-cli ping
 
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.17
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17
 
-    - name: Download Go modules
-      run: go mod download
+      - name: Set up gotestfmt
+        run: go install github.com/haveyoudebuggedit/gotestfmt/v2/cmd/gotestfmt@latest
 
-    - name: Mage Build
-      uses: magefile/mage-action@v1
-      with:
-        version: latest
-        args: build
+      - name: Download Go modules
+        run: go mod download
 
-    - name: Mage Test
-      uses: magefile/mage-action@v1
-      with:
-        version: latest
-        args: testall
+      - name: Mage Build
+        uses: magefile/mage-action@v1
+        with:
+          version: latest
+          args: build
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          go test -json -v ./... 2>&1 | tee /tmp/gotest.log | gotestfmt
+
+      # Upload the original go test log as an artifact for later review.
+      - name: Upload test log
+        uses: actions/upload-artifact@v2
+        if: always()
+        with:
+          name: test-log
+          path: /tmp/gotest.log
+          if-no-files-found: error
