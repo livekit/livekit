@@ -729,7 +729,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 
 	var score float64
 	// now scores in the same range, find avg (or max if only pub or sub)
-	if avgLoss != 0 && avgPubAudioScore != 0 {
+	if avgLossScore != 0 && avgPubAudioScore != 0 {
 		score = (avgPubAudioScore + avgLossScore) / 2
 	} else {
 		score = math.Max(avgPubAudioScore, avgLossScore)
@@ -737,6 +737,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 
 	rating := score2Rating(score)
 
+	logger.Debugw("-------", "score", score, "rating", rating)
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: p.ID(),
 		Quality:        rating,
