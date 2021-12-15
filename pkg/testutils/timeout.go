@@ -10,7 +10,7 @@ import (
 
 var (
 	SyncDelay      = 100 * time.Millisecond
-	ConnectTimeout = 10 * time.Second
+	ConnectTimeout = 30 * time.Second
 )
 
 func WithTimeout(t *testing.T, description string, f func() bool) bool {
