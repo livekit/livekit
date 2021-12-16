@@ -254,6 +254,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
 		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
 	})
+	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
 		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
 	})

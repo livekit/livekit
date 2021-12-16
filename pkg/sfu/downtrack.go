@@ -130,6 +130,9 @@ type DownTrack struct {
 
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
+
+	// padding packet sent callback
+	onPaddingSent []func(dt *DownTrack, size int)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -391,12 +394,9 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 		size := hdr.MarshalSize() + len(payload)
 		d.UpdatePaddingStats(uint32(size))
-		// LK-TOOD-START:
-		// Maybe call onPacketSent callbacks? But, a couple of issues to think about
-		//   - Analytics - should padding bytes be counted?
-		//   - StreamAllocator probing - should not include padding
-		// Maybe a separate callback for `onPaddingSent`?
-		// LK-TODO-END
+		for _, f := range d.onPaddingSent {
+			f(d, size)
+		}
 
 		// LK-TODO-START
 		// NACK buffer for these probe packets.
@@ -524,6 +524,10 @@ func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers Vide
 
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
+}
+
+func (d *DownTrack) OnPaddingSent(fn func(dt *DownTrack, size int)) {
+	d.onPaddingSent = append(d.onPaddingSent, fn)
 }
 
 func (d *DownTrack) IsDeficient() bool {
