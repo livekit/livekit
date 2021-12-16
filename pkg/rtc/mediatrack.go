@@ -105,8 +105,10 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
 	// on close signal via closing channel to workers
-	t.AddOnClose(t.closeChan)
-	go t.updateStats()
+	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_AUDIO {
+		t.AddOnClose(t.closeChan)
+		go t.updateStats()
+	}
 
 	return t
 }
@@ -591,7 +593,8 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.LastSequenceNumber > maxSeqNum {
 					maxSeqNum = rr.LastSequenceNumber
 				}
-				totalLost += rr.TotalLost
+
+				totalLost = rr.TotalLost
 
 				hasReport = true
 			}
@@ -612,10 +615,16 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 		}
 		// update feedback stats
 		current := t.connectionStats.Curr
-		current.Jitter = jitter
-		current.Delay = delay
-		current.PacketsLost += totalLost
-		current.LastSeqNum = maxSeqNum
+		if jitter > current.Jitter {
+			current.Jitter = jitter
+		}
+		if delay > current.Delay {
+			current.Delay = delay
+		}
+		if maxSeqNum > current.LastSeqNum {
+			current.LastSeqNum = maxSeqNum
+		}
+		current.PacketsLost = totalLost
 		t.statsLock.Unlock()
 	}
 

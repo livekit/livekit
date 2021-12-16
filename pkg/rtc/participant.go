@@ -723,12 +723,12 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		avgLoss = float64(pubLoss+subLoss) / float64(numTracks)
 	}
 
-	// map video to avgLossScores (> 4 -> bad[3.0], (4><2 -> good[3.5]), (<2 -> excellent[4.3])
+	// map video to avgLossScores (> 4 -> bad[2.0], (4><2 -> good[3.5]), (<2 -> excellent[4.4])
 	avgLossScore := 3.5
 	if avgLoss >= 4 {
-		avgLossScore = 2.5
+		avgLossScore = 2.0
 	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
-		avgLossScore = 4.3
+		avgLossScore = 4.5
 	}
 
 	var score float64

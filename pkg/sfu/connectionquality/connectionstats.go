@@ -37,14 +37,14 @@ func (cs *ConnectionStats) CalculateScore(kind livekit.TrackType) {
 	// update feedback stats
 	current := cs.Curr
 	previous := cs.Prev
+
 	// Update TotalPackets from SeqNum here
 	current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
-
 	cs.Score = ConnectionScore(current, previous, kind)
 
 	// store previous stats
 	cs.Prev = current
-	cs.Curr = &ConnectionStat{TotalPackets: previous.TotalPackets}
+	cs.Curr = &ConnectionStat{TotalPackets: cs.Prev.TotalPackets, PacketsLost: cs.Prev.PacketsLost}
 
 	return
 }

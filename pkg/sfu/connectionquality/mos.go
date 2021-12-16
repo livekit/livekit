@@ -12,7 +12,7 @@ const (
 )
 
 func Score2Rating(score float64) livekit.ConnectionQuality {
-	if score > 4.00 {
+	if score > 3.9 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
@@ -35,12 +35,12 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	}
 
 	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
-	percentageLost := deltaTotalLostPackets / deltaTotalPackets * 100
+	percentageLost := (deltaTotalLostPackets / deltaTotalPackets) * 100
 
 	rx := 93.2 - float64(percentageLost)
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
-	d := float64(rtt + (cur.Delay / 1000) + cur.Jitter)
+	d := float64(rtt + cur.Jitter)
 	h := d - 177.3
 	if h < 0 {
 		h = 0

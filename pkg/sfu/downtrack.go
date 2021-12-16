@@ -177,7 +177,9 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		d.trackType = SimpleDownTrack
 	}
 
-	go d.updateStats()
+	if d.Kind() == webrtc.RTPCodecTypeAudio {
+		go d.updateStats()
+	}
 
 	return d, nil
 }
@@ -830,7 +832,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if r.LastSequenceNumber > maxSeqNum {
 					maxSeqNum = r.LastSequenceNumber
 				}
-				totalLost += r.TotalLost
+				totalLost = r.TotalLost
 
 				hasReport = true
 			}
@@ -846,10 +848,16 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				d.statsLock.Lock()
 				// update feedback stats
 				current := d.connectionStats.Curr
-				current.Jitter = jitter
-				current.Delay = delay
-				current.PacketsLost += totalLost
-				current.LastSeqNum = maxSeqNum
+				if jitter > current.Jitter {
+					current.Jitter = jitter
+				}
+				if delay > current.Delay {
+					current.Delay = delay
+				}
+				if maxSeqNum > current.LastSeqNum {
+					current.LastSeqNum = maxSeqNum
+				}
+				current.PacketsLost = totalLost
 				d.statsLock.Unlock()
 			}
 		case *rtcp.TransportLayerNack:
