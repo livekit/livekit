@@ -248,7 +248,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
-		go sub.AddSubscribedTrackToStreamAllocator(subTrack)
+		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
@@ -295,7 +295,6 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				}
 			}
 
-			sub.RemoveSubscribedTrackFromStreamAllocator(subTrack)
 			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()

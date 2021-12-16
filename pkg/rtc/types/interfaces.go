@@ -86,8 +86,6 @@ type Participant interface {
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
-	AddSubscribedTrackToStreamAllocator(st SubscribedTrack)
-	RemoveSubscribedTrackFromStreamAllocator(st SubscribedTrack)
 
 	DebugInfo() map[string]interface{}
 }
@@ -141,6 +139,7 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
+	OnBind(f func())
 	ID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack

@@ -40,6 +40,11 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	OnBindStub        func(func())
+	onBindMutex       sync.RWMutex
+	onBindArgsForCall []struct {
+		arg1 func()
+	}
 	PublishedTrackStub        func() types.MediaTrack
 	publishedTrackMutex       sync.RWMutex
 	publishedTrackArgsForCall []struct {
@@ -245,6 +250,38 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	fake.isMutedReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) OnBind(arg1 func()) {
+	fake.onBindMutex.Lock()
+	fake.onBindArgsForCall = append(fake.onBindArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.OnBindStub
+	fake.recordInvocation("OnBind", []interface{}{arg1})
+	fake.onBindMutex.Unlock()
+	if stub != nil {
+		fake.OnBindStub(arg1)
+	}
+}
+
+func (fake *FakeSubscribedTrack) OnBindCallCount() int {
+	fake.onBindMutex.RLock()
+	defer fake.onBindMutex.RUnlock()
+	return len(fake.onBindArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) OnBindCalls(stub func(func())) {
+	fake.onBindMutex.Lock()
+	defer fake.onBindMutex.Unlock()
+	fake.OnBindStub = stub
+}
+
+func (fake *FakeSubscribedTrack) OnBindArgsForCall(i int) func() {
+	fake.onBindMutex.RLock()
+	defer fake.onBindMutex.RUnlock()
+	argsForCall := fake.onBindArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeSubscribedTrack) PublishedTrack() types.MediaTrack {
@@ -503,6 +540,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.onBindMutex.RLock()
+	defer fake.onBindMutex.RUnlock()
 	fake.publishedTrackMutex.RLock()
 	defer fake.publishedTrackMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()

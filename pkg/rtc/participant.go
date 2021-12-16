@@ -797,6 +797,9 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
 
+	subTrack.OnBind(func() {
+		p.subscriber.AddTrack(subTrack)
+	})
 	p.subscribedTo.Store(subTrack.PublisherIdentity(), struct{}{})
 }
 
@@ -804,6 +807,8 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("removed subscribedTrack", "publisher", subTrack.PublisherIdentity(),
 		"track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
+
+	p.subscriber.RemoveTrack(subTrack)
 
 	p.lock.Lock()
 	delete(p.subscribedTracks, subTrack.ID())
@@ -818,14 +823,6 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	if numRemaining == 0 {
 		p.subscribedTo.Delete(subTrack.PublisherIdentity())
 	}
-}
-
-func (p *ParticipantImpl) AddSubscribedTrackToStreamAllocator(subTrack types.SubscribedTrack) {
-	p.subscriber.AddTrackToStreamAllocator(subTrack)
-}
-
-func (p *ParticipantImpl) RemoveSubscribedTrackFromStreamAllocator(subTrack types.SubscribedTrack) {
-	p.subscriber.RemoveTrackFromStreamAllocator(subTrack)
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
