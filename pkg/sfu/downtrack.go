@@ -287,7 +287,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if d.sequencer != nil {
-		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, 0, extPkt.Head)
+		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, uint8(layer), extPkt.Head)
 		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.header)
 		}
@@ -548,6 +548,14 @@ func (d *DownTrack) ProvisionalAllocatePrepare() {
 
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
 	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers)
+}
+
+func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
+	return d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+}
+
+func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
+	return d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
 }
 
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {

@@ -797,7 +797,9 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
 
-	p.subscriber.AddTrack(subTrack)
+	subTrack.OnBind(func() {
+		p.subscriber.AddTrack(subTrack)
+	})
 	p.subscribedTo.Store(subTrack.PublisherIdentity(), struct{}{})
 }
 

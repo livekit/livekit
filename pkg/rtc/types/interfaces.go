@@ -139,6 +139,7 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
+	OnBind(f func())
 	ID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
