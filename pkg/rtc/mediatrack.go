@@ -96,6 +96,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 
 	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
+		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
 	return t
 }
@@ -114,6 +115,14 @@ func (t *MediaTrack) SdpCid() string {
 
 func (t *MediaTrack) Kind() livekit.TrackType {
 	return t.params.TrackInfo.Type
+}
+
+func (t *MediaTrack) Source() livekit.TrackSource {
+	return t.params.TrackInfo.Source
+}
+
+func (t *MediaTrack) IsSimulcast() bool {
+	return t.simulcasted.Get()
 }
 
 func (t *MediaTrack) Name() string {
@@ -160,10 +169,6 @@ func (t *MediaTrack) PublishLossPercentage() uint32 {
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
-	if !sub.CanSubscribe() {
-		return ErrPermissionDenied
-	}
-
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -243,6 +248,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	downTrack.SetTransceiver(transceiver)
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
+		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
@@ -269,8 +275,8 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			}
 			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
-				"pIDs", []string{t.params.ParticipantID, sub.ID()},
-				"participant", sub.Identity(),
+				"subscriber", sub.Identity(),
+				"subscriberID", sub.ID(),
 				"kind", t.Kind(),
 			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
@@ -283,7 +289,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					// been set to Inactive
 					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
 						"error", err,
-						"participant", sub.Identity(), "pID", sub.ID())
+						"subscriber", sub.Identity(),
+						"subscriberID", sub.ID(),
+					)
 				}
 			}
 
@@ -331,8 +339,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
 		logger.Errorw("could not retrieve buffer pair", nil,
-			"participant", t.params.ParticipantIdentity,
-			"participantID", t.params.ParticipantID,
 			"track", t.ID())
 		return
 	}
@@ -395,6 +401,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
+	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
 	if atomic.LoadUint32(&t.numUpTracks) > 1 || track.RID() != "" {
 		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
 		t.simulcasted.TrySet(true)

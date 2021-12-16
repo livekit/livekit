@@ -1,13 +1,9 @@
 package routing
 
 import (
-	"crypto/sha1"
-	"fmt"
-	"os"
 	"runtime"
 	"time"
 
-	"github.com/jxskiss/base62"
 	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 
@@ -17,15 +13,15 @@ import (
 type LocalNode *livekit.Node
 
 func NewLocalNode(conf *config.Config) (LocalNode, error) {
-	hostname, err := os.Hostname()
+	nodeID, err := utils.LocalNodeID()
 	if err != nil {
 		return nil, err
 	}
 	if conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
-	return &livekit.Node{
-		Id:      fmt.Sprintf("%s%s", utils.NodePrefix, HashedID(hostname)[:8]),
+	node := &livekit.Node{
+		Id:      nodeID,
 		Ip:      conf.RTC.NodeIP,
 		NumCpus: uint32(runtime.NumCPU()),
 		Region:  conf.Region,
@@ -34,14 +30,7 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 			StartedAt: time.Now().Unix(),
 			UpdatedAt: time.Now().Unix(),
 		},
-	}, nil
-}
+	}
 
-// Creates a hashed ID from a unique string
-func HashedID(id string) string {
-	h := sha1.New()
-	h.Write([]byte(id))
-	val := h.Sum(nil)
-
-	return base62.EncodeToString(val)
+	return node, nil
 }

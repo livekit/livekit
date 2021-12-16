@@ -90,6 +90,13 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
+// Room is a container of participants, and can provide room level actions
+//counterfeiter:generate . Room
+type Room interface {
+	Name() string
+	UpdateSubscriptions(participant Participant, trackIDs []string, subscribe bool) error
+}
+
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
@@ -99,6 +106,8 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
+	Source() livekit.TrackSource
+	IsSimulcast() bool
 
 	// subscribers
 	AddSubscriber(participant Participant) error
@@ -130,9 +139,11 @@ type PublishedTrack interface {
 
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
+	OnBind(f func())
 	ID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
+	PublishedTrack() MediaTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)

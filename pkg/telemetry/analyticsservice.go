@@ -3,13 +3,14 @@ package telemetry
 import (
 	"context"
 
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . AnalyticsService
 type AnalyticsService interface {
 	SendStats(ctx context.Context, stats []*livekit.AnalyticsStat)
 	SendEvent(ctx context.Context, events *livekit.AnalyticsEvent)

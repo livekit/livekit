@@ -1,100 +1,3 @@
-//
-// Design of StreamAllocator
-//
-// Each participant uses one peer connection for all downstream
-// traffic. It is possible that the downstream peer connection
-// gets congested. In such an event, the SFU (sender on that
-// peer connection) should take measures to mitigate the
-// media loss and latency that would result from such a congestion.
-//
-// This module is supposed to aggregate down stream tracks and
-// drive bandwidth allocation with the goals of
-//   - Try and send highest quality media
-//   - React as quickly as possible to mitigate congestion
-//
-// Setup:
-// ------
-// The following should be done to set up a stream allocator
-//   - There will be one of these per subscriber peer connection.
-//     Created in livekit-sever/transport.go for subscriber type
-//     peer connections.
-//   - In `AddSubscribedTrack` of livekit-server/participant.go, the created
-//     downTrack is added to the stream allocator.
-//   - In `RemoveSubscribedTrack` of livekit-server/participant.go,
-//     the downTrack is removed from the stream allocator.
-//   - Both video and audio tracks are added to this module. Although the
-//     stream allocator does not act on audio track forwarding, audio track
-//     information like loss rate may be used to adjust available bandwidth.
-//
-// Callbacks:
-// ----------
-// StreamAllocator registers the following callbacks on all registered down tracks
-//   - OnREMB: called when down track receives RTCP REMB. Note that REMB is a
-//     peer connection level aggregate metric. But, it contains all the SSRCs
-//     used in the calculation of that REMB. So, there could be multiple
-//     callbacks per RTCP REMB received (one each from down track pertaining
-//     to the contained SSRCs) with the same estimated channel capacity.
-//   - AddReceiverReportListener: called when down track received RTCP RR (Receiver Report).
-//   - OnAvailableLayersChanged: called when the feeding track changes its layers.
-//     This could happen due to publisher throttling layers due to upstream congestion
-//     in its path.
-//   - OnSubscriptionChanged: called when a down track settings are changed resulting
-//     from client side requests (muting/unmuting)
-//   - OnSubscribedLayersChanged: called when a down track settings are changed resulting
-//     from client side requests (limiting maximum layer).
-//   - OnPacketSent: called when a media packet is forwarded by the down track. As
-//     this happens once per forwarded packet, processing in this callback should be
-//     kept to a minimum.
-//
-// The following may be needed depending on the StreamAllocator algorithm
-//    - OnBitrateUpdate: called periodically to update the bit rate at which a down track
-//      is forwarding. This can be used to measure any overshoot and adjust allocations
-//      accordingly. This may have granular information like primary bitrate, retransmitted
-//      bitrate and padding bitrate.
-//
-// State machine:
-// --------------
-// The most critical component. It should monitor current state of channel and
-// take actions to provide the best user experience by striving to achieve the
-// goals outlined earlier
-//
-//  States:
-//  ------
-//  - StateStable: When all streams are forwarded at their optimal requested layers.
-//
-//                 Before the first estimate is committed, estimated channel capacity
-//                 is initialized to some arbitrarily high value to start streaming
-//                 immediately. Serves two purposes
-//                   1. Gives the bandwidth estimation algorithms data
-//                   2. Start streaming as soon as a user joins. Imagine
-//                      a user joining a room with 10 participants already
-//                      in it. That user should start receiving streams
-//                      from everybody as soon as possible.
-//
-//                 In this state, it is also possible to probe for extra capacity
-//                 to be prepared for cases like new participant joining and streaming OR
-//                 an existing participant starting a new stream like enabling camera or
-//                 screen share.
-//  - StateDeficient: When at least one stream is not able to forward optimal requested layers.
-//
-//  Signals:
-//  -------
-//  Each state should take action based on these signals and advance the state machine based
-//  on the result of the action.
-//  - SignalAddTrack: A new track has been added.
-//  - SignalRemoveTrack: An existing track has been removed.
-//  - SignalEstimate: A new channel capacity estimate has been received.
-//                    Note that when channel gets congested, it is possible to
-//                    get several of these in a very short time window.
-//  - SignalReceiverReport: An RTCP Receiver Report received from some down track.
-//  - SignalAvailableLayersChange: Available layers of publisher changed.
-//  - SignalSubscriptionChange: Subscription changed (mute/unmute)
-//  - SignalSubscribedLayersChange: Subscribed layers changed (requested layers changed).
-//  - SignalPeriodicPing: Periodic ping.
-//  - SignalSendProbe: Request from Prober to send padding probes.
-//
-// There are several interesting challenges which are documented in relevant code below.
-//
 package sfu
 
 import (
@@ -192,13 +95,11 @@ func (s Signal) String() string {
 }
 
 type StreamAllocatorParams struct {
-	ParticipantID string
-	Logger        logger.Logger
+	Logger logger.Logger
 }
 
 type StreamAllocator struct {
-	participantID string
-	logger        logger.Logger
+	logger logger.Logger
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
@@ -213,9 +114,10 @@ type StreamAllocator struct {
 
 	lastGratuitousProbeTime time.Time
 
-	audioTracks       map[string]*Track
-	videoTracks       map[string]*Track
-	videoTracksSorted TrackSorter
+	audioTracks              map[string]*Track
+	videoTracks              map[string]*Track
+	exemptVideoTracksSorted  TrackSorter
+	managedVideoTracksSorted TrackSorter
 
 	prober *Prober
 
@@ -232,15 +134,17 @@ type Event struct {
 	Data      interface{}
 }
 
+func (e Event) String() string {
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
+}
+
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		participantID: params.ParticipantID,
-		logger:        params.Logger,
-		audioTracks:   make(map[string]*Track),
-		videoTracks:   make(map[string]*Track),
+		logger:      params.Logger,
+		audioTracks: make(map[string]*Track),
+		videoTracks: make(map[string]*Track),
 		prober: NewProber(ProberParams{
-			ParticipantID: params.ParticipantID,
-			Logger:        params.Logger,
+			Logger: params.Logger,
 		}),
 		eventCh:   make(chan Event, 20),
 		runningCh: make(chan struct{}),
@@ -270,10 +174,11 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack) {
+func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
 	s.postEvent(Event{
 		Signal:    SignalAddTrack,
 		DownTrack: downTrack,
+		Data:      isManaged,
 	})
 
 	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
@@ -337,17 +242,11 @@ func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 }
 
 // called when subscribed layers changes (limiting max layers)
-func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers, layerPref LayerPreference) {
+func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
 	s.postEvent(Event{
 		Signal:    SignalSubscribedLayersChange,
 		DownTrack: downTrack,
-		Data: struct {
-			layers    VideoLayers
-			layerPref LayerPreference
-		}{
-			layers:    layers,
-			layerPref: layerPref,
-		},
+		Data:      layers,
 	})
 }
 
@@ -429,15 +328,22 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
-	track := newTrack(event.DownTrack)
+	isManaged, _ := event.Data.(bool)
+	track := newTrack(event.DownTrack, isManaged)
+
 	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
 		s.audioTracks[event.DownTrack.ID()] = track
 	case webrtc.RTPCodecTypeVideo:
 		s.videoTracks[event.DownTrack.ID()] = track
 
-		s.videoTracksSorted = append(s.videoTracksSorted, track)
-		sort.Sort(s.videoTracksSorted)
+		if isManaged {
+			s.managedVideoTracksSorted = append(s.managedVideoTracksSorted, track)
+			sort.Sort(s.managedVideoTracksSorted)
+		} else {
+			s.exemptVideoTracksSorted = append(s.exemptVideoTracksSorted, track)
+			sort.Sort(s.exemptVideoTracksSorted)
+		}
 
 		s.allocateTrack(track)
 	}
@@ -459,23 +365,36 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 
 		delete(s.videoTracks, event.DownTrack.ID())
 
-		n := len(s.videoTracksSorted)
-		for idx, videoTrack := range s.videoTracksSorted {
-			if videoTrack.DownTrack() == event.DownTrack {
-				s.videoTracksSorted[idx] = s.videoTracksSorted[n-1]
-				s.videoTracksSorted = s.videoTracksSorted[:n-1]
-				break
+		if track.IsManaged() {
+			n := len(s.managedVideoTracksSorted)
+			for idx, videoTrack := range s.managedVideoTracksSorted {
+				if videoTrack.DownTrack() == event.DownTrack {
+					s.managedVideoTracksSorted[idx] = s.managedVideoTracksSorted[n-1]
+					s.managedVideoTracksSorted = s.managedVideoTracksSorted[:n-1]
+					break
+				}
 			}
+			sort.Sort(s.managedVideoTracksSorted)
+		} else {
+			n := len(s.exemptVideoTracksSorted)
+			for idx, videoTrack := range s.exemptVideoTracksSorted {
+				if videoTrack.DownTrack() == event.DownTrack {
+					s.exemptVideoTracksSorted[idx] = s.exemptVideoTracksSorted[n-1]
+					s.exemptVideoTracksSorted = s.exemptVideoTracksSorted[:n-1]
+					break
+				}
+			}
+			sort.Sort(s.exemptVideoTracksSorted)
 		}
-		sort.Sort(s.videoTracksSorted)
 
-		// re-initialize estimate if all tracks are removed, let it get a fresh start
-		if len(s.videoTracksSorted) == 0 {
+		// re-initialize estimate if all managed tracks are removed, let it get a fresh start
+		if len(s.managedVideoTracksSorted) == 0 {
 			s.initializeEstimate()
 			return
 		}
 
-		s.unallocateTrack(track)
+		// LK-TODO: use any saved bandwidth to re-distribute
+		s.adjustState()
 	}
 }
 
@@ -502,7 +421,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	// LK-TODO-END
 
 	// if there are no video tracks, ignore any straggler REMB
-	if len(s.videoTracksSorted) == 0 {
+	if len(s.managedVideoTracksSorted) == 0 {
 		return
 	}
 
@@ -517,7 +436,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	}
 	if !found {
 		if len(remb.SSRCs) == 0 {
-			s.logger.Warnw("no SSRC to track REMB", nil, "participant", s.participantID)
+			s.logger.Warnw("no SSRC to track REMB", nil)
 			return
 		}
 
@@ -542,7 +461,10 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate", "participant", s.participantID, "old(bps)", s.prevReceivedEstimate, "new(bps)", s.receivedEstimate)
+		s.logger.Debugw("received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
 	}
 
 	if s.maybeCommitEstimate() {
@@ -601,12 +523,13 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 		return
 	}
 
-	data := event.Data.(struct {
-		layers    VideoLayers
-		layerPref LayerPreference
-	})
-	track.UpdatePriority(data.layers, data.layerPref)
-	sort.Sort(s.videoTracksSorted)
+	layers := event.Data.(VideoLayers)
+	track.UpdateMaxLayers(layers)
+	if track.IsManaged() {
+		sort.Sort(s.managedVideoTracksSorted)
+	} else {
+		sort.Sort(s.exemptVideoTracksSorted)
+	}
 
 	s.allocateTrack(track)
 }
@@ -647,14 +570,14 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.logger.Infow("state change", "participant", s.participantID, "from", s.state, "to", state)
+		s.logger.Infow("state change", "from", s.state, "to", state)
 	}
 
 	s.state = state
 }
 
 func (s *StreamAllocator) adjustState() {
-	for _, videoTrack := range s.videoTracksSorted {
+	for _, videoTrack := range s.managedVideoTracksSorted {
 		if videoTrack.IsDeficient() {
 			s.setState(StateDeficient)
 			return
@@ -700,13 +623,13 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
 
-	s.logger.Debugw("committing channel capacity", "participant", s.participantID, "capacity(bps)", s.committedChannelCapacity)
+	s.logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
 	return
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
-	if s.state == StateStable {
+	if s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.Allocate(ChannelCapacityInfinity)
 		update.HandleStreamingChange(allocation.change, track)
@@ -714,153 +637,157 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// slice into higher priority tracks and lower priority tracks
-	var hpTracks []*Track
-	var lpTracks []*Track
-	for idx, t := range s.videoTracksSorted {
-		if t == track {
-			hpTracks = s.videoTracksSorted[:idx]
-			lpTracks = s.videoTracksSorted[idx+1:]
-			break
-		}
-	}
-
-	// check how much can be stolen from lower priority tracks
-	lpExpectedBps := int64(0)
-	for _, t := range lpTracks {
-		lpExpectedBps += t.BandwidthRequested()
-	}
-
 	//
-	// Note that there might be no lower priority tracks and nothing to steal.
-	// But, a TryAllocate is done irrespective of any stolen bits as the
-	// track may be downgrading due to mute or reduction in subscribed layers
-	// and actually giving back some bits.
+	// In DEFICIENT state,
+	//   1. Find cooperative transition from track that needs allocation.
+	//   2. If track is currently streaming at minimum, do not do anything.
+	//   3. If that track is giving back bits, apply the transition.
+	//   4. If this track needs more, ask for best offer from others and try to use it.
 	//
-	update := NewStreamStateUpdate()
+	track.ProvisionalAllocatePrepare()
+	transition := track.ProvisionalAllocateGetCooperativeTransition()
 
-	allocation := track.TryAllocate(lpExpectedBps)
-
-	update.HandleStreamingChange(allocation.change, track)
-
-	delta := lpExpectedBps - allocation.bandwidthDelta
-	if delta > 0 {
-		// gotten some bits back, check if any deficient higher priority track can make use of it
-		delta = s.tryAllocateTracks(hpTracks, delta, update)
-	}
-
-	// allocate all lower priority tracks with left over capacity
-	if delta < 0 {
-		// stolen too much
-		delta = 0
-	}
-
-	for _, t := range lpTracks {
-		allocation := t.Allocate(delta)
-		update.HandleStreamingChange(allocation.change, t)
-
-		delta -= allocation.bandwidthRequested
-		if delta < 0 {
-			delta = 0
-		}
-	}
-
-	s.maybeSendUpdate(update)
-
-	s.adjustState()
-}
-
-func (s *StreamAllocator) unallocateTrack(track *Track) {
-	if s.state == StateStable {
+	// track is currently streaming at minimum
+	if transition.bandwidthDelta == 0 {
 		return
 	}
 
-	update := NewStreamStateUpdate()
+	// downgrade, giving back bits
+	if transition.from.GreaterThan(transition.to) {
+		allocation := track.ProvisionalAllocateCommit()
 
-	unallocatedBps := track.BandwidthRequested()
-	if unallocatedBps > 0 {
-		s.tryAllocateTracks(s.videoTracksSorted, unallocatedBps, update)
+		update := NewStreamStateUpdate()
+		update.HandleStreamingChange(allocation.change, track)
+		s.maybeSendUpdate(update)
+
+		s.adjustState()
+		return
+		// LK-TODO-START
+		// Should use the bits given back to start any paused track.
+		// Note layer downgrade may actually have positive delta (i. e. consume more bits)
+		// because of when the measurement is done. Watch for that.
+		// LK-TODO-END
 	}
+
+	//
+	// This track is currently not streaming and needs bits to start.
+	// Try to redistribute starting with tracks that are closest to their desired.
+	//
+	var minDistanceSorted MinDistanceSorter
+	for _, t := range s.managedVideoTracksSorted {
+		if t != track {
+			minDistanceSorted = append(minDistanceSorted, t)
+		}
+	}
+	sort.Sort(minDistanceSorted)
+
+	bandwidthAcquired := int64(0)
+	var contributingTracks []*Track
+
+	for _, t := range minDistanceSorted {
+		t.ProvisionalAllocatePrepare()
+	}
+
+	for _, t := range minDistanceSorted {
+		tx := t.ProvisionalAllocateGetBestWeightedTransition()
+		if tx.bandwidthDelta < 0 {
+			contributingTracks = append(contributingTracks, t)
+
+			bandwidthAcquired += -tx.bandwidthDelta
+			if bandwidthAcquired >= transition.bandwidthDelta {
+				break
+			}
+		}
+	}
+
+	if bandwidthAcquired < transition.bandwidthDelta {
+		// could not get enough from other tracks, let probing deal with starting the track
+		return
+	}
+
+	// commit the tracks that contributed
+	update := NewStreamStateUpdate()
+	for _, t := range contributingTracks {
+		allocation := t.ProvisionalAllocateCommit()
+		update.HandleStreamingChange(allocation.change, t)
+	}
+
+	// commit the track that needs change
+	allocation := track.ProvisionalAllocateCommit()
+	update.HandleStreamingChange(allocation.change, track)
+
+	// LK-TODO if got too much extra, can potentially give it to some deficient track
 
 	s.maybeSendUpdate(update)
 
 	s.adjustState()
-}
-
-func (s *StreamAllocator) tryAllocateTracks(tracks []*Track, additionalBps int64, update *StreamStateUpdate) int64 {
-	for _, t := range tracks {
-		if !t.IsDeficient() {
-			continue
-		}
-
-		allocation := t.TryAllocate(additionalBps)
-		update.HandleStreamingChange(allocation.change, t)
-
-		additionalBps -= allocation.bandwidthDelta
-		if additionalBps <= 0 {
-			// used up all the extra bits
-			break
-		}
-	}
-
-	return additionalBps
 }
 
 func (s *StreamAllocator) allocateAllTracks() {
 	s.resetBoost()
 
 	//
-	// LK-TODO-START
-	// Calculate the aggregate loss. This may or may not
-	// be necessary depending on the algorithm we choose. In this
-	// pass, we could also calculate audio & video track loss
-	// separately and use different rules.
+	// Goals:
+	//   1. Stream as many tracks as possible, i. e. no pauses.
+	//   2. Try to give fair allocation to all track.
 	//
-	// The loss calculation should be for the window between last
-	// allocation and now. The `lastPackets*` field in
-	// `Track` structure is used to cache the packet stats
-	// at the last allocation. Potentially need to think about
-	// giving higher weight to recent losses. So, might have
-	// to update the `lastPackets*` periodically even when
-	// there is no allocation for a long time to ensure loss calculation
-	// remains fresh.
-	// LK-TODO-END
+	// Start with the lowest layers and give each track a chance at that layer and keep going up.
+	// As long as there is enough bandwidth for tracks to stream at the lowest layers, the first goal is achieved.
 	//
-
+	// Tracks that have higher subscribed layers can use any additional available bandwidth. This tried to achieve the second goal.
 	//
-	// Ask down tracks adjust their forwarded layers.
+	// If there is not enough bandwidth even for the lowest layers, tracks at lower priorities will be paused.
 	//
 	update := NewStreamStateUpdate()
 
 	availableChannelCapacity := s.committedChannelCapacity
-	for _, track := range s.videoTracksSorted {
-		//
-		// `video` tracks could do one of the following
-		//    - no change, i. e. currently forwarding optimal available
-		//      layer and there is enough bandwidth for that.
-		//    - adjust layers up or down
-		//    - pause if there is not enough capacity for any layer
-		//
-		allocation := track.Allocate(availableChannelCapacity)
 
+	//
+	// This pass is just to find out if there is any left over channel capacity.
+	// Infinite channel capacity is given so that exempt tracks do not stall
+	//
+	for _, track := range s.exemptVideoTracksSorted {
+		allocation := track.Allocate(ChannelCapacityInfinity)
 		update.HandleStreamingChange(allocation.change, track)
 
+		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
 		availableChannelCapacity -= allocation.bandwidthRequested
-		if availableChannelCapacity < 0 || allocation.state == VideoAllocationStateDeficient {
-			//
-			// This is walking down tracks in priortized order.
-			// Once one of those streams do not fit, set
-			// the availableChannelCapacity to 0 so that no
-			// other lower priority stream gets forwarded.
-			// Note that a lower priority stream may have
-			// a layer which might fit in the left over
-			// capacity. This is one type of policy
-			// implementation. There may be other policies
-			// which might allow lower priority to go through too.
-			// So, we need some sort of policy framework here
-			// to decide which streams get priority
-			//
-			availableChannelCapacity = 0
+	}
+
+	if availableChannelCapacity < 0 {
+		availableChannelCapacity = 0
+	}
+	if availableChannelCapacity == 0 {
+		// nothing left for managed tracks, pause them all
+		for _, track := range s.managedVideoTracksSorted {
+			allocation := track.Pause()
+			update.HandleStreamingChange(allocation.change, track)
+		}
+	} else {
+		for _, track := range s.managedVideoTracksSorted {
+			track.ProvisionalAllocatePrepare()
+		}
+
+		for spatial := int32(0); spatial <= DefaultMaxLayerSpatial; spatial++ {
+			for temporal := int32(0); temporal <= DefaultMaxLayerTemporal; temporal++ {
+				layers := VideoLayers{
+					spatial:  spatial,
+					temporal: temporal,
+				}
+
+				for _, track := range s.managedVideoTracksSorted {
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers)
+					availableChannelCapacity -= usedChannelCapacity
+					if availableChannelCapacity < 0 {
+						availableChannelCapacity = 0
+					}
+				}
+			}
+		}
+
+		for _, track := range s.managedVideoTracksSorted {
+			allocation := track.ProvisionalAllocateCommit()
+			update.HandleStreamingChange(allocation.change, track)
 		}
 	}
 
@@ -874,17 +801,21 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 		return
 	}
 
-	s.logger.Debugw("streamed tracks changed", "participant", s.participantID, "update", update)
+	s.logger.Debugw("streamed tracks changed", "update", update)
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
-			s.logger.Errorw("could not send streamed tracks update", err, "participant", s.participantID)
+			s.logger.Errorw("could not send streamed tracks update", err)
 		}
 	}
 }
 
 func (s *StreamAllocator) finalizeTracks() {
-	for _, t := range s.videoTracksSorted {
+	for _, t := range s.exemptVideoTracksSorted {
+		t.FinalizeAllocate()
+	}
+
+	for _, t := range s.managedVideoTracksSorted {
 		t.FinalizeAllocate()
 	}
 
@@ -943,8 +874,14 @@ func (s *StreamAllocator) maybeProbe() {
 }
 
 func (s *StreamAllocator) maybeBoostLayer() {
+	var maxDistanceSorted MaxDistanceSorter
+	for _, track := range s.managedVideoTracksSorted {
+		maxDistanceSorted = append(maxDistanceSorted, track)
+	}
+	sort.Sort(maxDistanceSorted)
+
 	// boost first deficient track in priority order
-	for _, track := range s.videoTracksSorted {
+	for _, track := range maxDistanceSorted {
 		if !track.IsDeficient() {
 			continue
 		}
@@ -975,11 +912,11 @@ func (s *StreamAllocator) isTimeToBoost() bool {
 }
 
 func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.Now()
+	s.lastBoostTime = time.Time{}
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
-	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs || len(s.videoTracksSorted) == 0 {
+	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs || len(s.managedVideoTracksSorted) == 0 {
 		return false
 	}
 
@@ -1066,52 +1003,34 @@ func (s *StreamStateUpdate) Empty() bool {
 
 //------------------------------------------------
 
-type ForwardingState int
-
-const (
-	ForwardingStateOptimistic ForwardingState = iota
-	ForwardingStateDryFeed
-	ForwardingStateDeficient
-	ForwardingStateOptimal
-)
-
-func (f ForwardingState) String() string {
-	switch f {
-	case ForwardingStateOptimistic:
-		return "OPTIMISTIC"
-	case ForwardingStateDryFeed:
-		return "DRY_FEED"
-	case ForwardingStateDeficient:
-		return "DEFICIENT"
-	case ForwardingStateOptimal:
-		return "OPTIMAL"
-	default:
-		return fmt.Sprintf("%d", int(f))
-	}
-}
-
 type Track struct {
 	downTrack *DownTrack
+	isManaged bool
 
 	highestSN       uint32
 	packetsLost     uint32
 	lastHighestSN   uint32
 	lastPacketsLost uint32
 
-	priority int32
+	maxLayers VideoLayers
 }
 
-func newTrack(downTrack *DownTrack) *Track {
+func newTrack(downTrack *DownTrack, isManaged bool) *Track {
 	t := &Track{
 		downTrack: downTrack,
+		isManaged: isManaged,
 	}
-	t.UpdatePriority(downTrack.MaxLayers(), downTrack.GetLayerPreference())
+	t.UpdateMaxLayers(downTrack.MaxLayers())
 
 	return t
 }
 
 func (t *Track) DownTrack() *DownTrack {
 	return t.downTrack
+}
+
+func (t *Track) IsManaged() bool {
+	return t.isManaged
 }
 
 func (t *Track) ID() string {
@@ -1137,17 +1056,8 @@ func (t *Track) UpdatePacketStats(rr *rtcp.ReceiverReport) {
 	}
 }
 
-func (t *Track) UpdatePriority(layers VideoLayers, pref LayerPreference) {
-	switch pref {
-	case LayerPreferenceSpatial:
-		t.priority = layers.spatial*10 + layers.temporal
-	case LayerPreferenceTemporal:
-		t.priority = layers.temporal*10 + layers.spatial
-	}
-}
-
-func (t *Track) Priority() int32 {
-	return t.priority
+func (t *Track) UpdateMaxLayers(layers VideoLayers) {
+	t.maxLayers = layers
 }
 
 func (t *Track) GetPacketStats() (uint32, uint32) {
@@ -1162,41 +1072,52 @@ func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocation {
 	return t.downTrack.Allocate(availableChannelCapacity)
 }
 
-func (t *Track) TryAllocate(additionalChannelCapacity int64) VideoAllocation {
-	return t.downTrack.TryAllocate(additionalChannelCapacity)
+func (t *Track) ProvisionalAllocatePrepare() {
+	t.downTrack.ProvisionalAllocatePrepare()
 }
 
-func (t *Track) FinalizeAllocate() {
-	t.downTrack.FinalizeAllocate()
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
+	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers)
+}
+
+func (t *Track) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
+	return t.downTrack.ProvisionalAllocateGetCooperativeTransition()
+}
+
+func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
+	return t.downTrack.ProvisionalAllocateGetBestWeightedTransition()
+}
+
+func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
+	return t.downTrack.ProvisionalAllocateCommit()
 }
 
 func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
 	return t.downTrack.AllocateNextHigher()
 }
 
+func (t *Track) FinalizeAllocate() {
+	t.downTrack.FinalizeAllocate()
+}
+
+func (t *Track) Pause() VideoAllocation {
+	return t.downTrack.Pause()
+}
+
 func (t *Track) IsDeficient() bool {
-	return t.downTrack.LastAllocation().state == VideoAllocationStateDeficient
+	return t.downTrack.IsDeficient()
 }
 
 func (t *Track) BandwidthRequested() int64 {
-	return t.downTrack.LastAllocation().bandwidthRequested
+	return t.downTrack.BandwidthRequested()
+}
+
+func (t *Track) DistanceToDesired() int32 {
+	return t.downTrack.DistanceToDesired()
 }
 
 //------------------------------------------------
 
-// LK-TODO-START
-// Typically, in a system like this, there are track priorities.
-// It is either implemented as policy
-//   Examples:
-//     1. active speaker gets hi-res, all else lo-res
-//     2. screen share streams get hi-res, all else lo-res
-// OR
-// It is left up to the clients to subscribe explicitly to the quality they want.
-//
-// This sorter is prioritizing tracks by max layer subscribed and layer preference.
-// But, with simple tracks, there is only one layer. But, it is possible they should
-// be higher priority, for e.g. screen share track.
-// LK-TODO-END
 type TrackSorter []*Track
 
 func (t TrackSorter) Len() int {
@@ -1208,7 +1129,43 @@ func (t TrackSorter) Swap(i, j int) {
 }
 
 func (t TrackSorter) Less(i, j int) bool {
-	return t[i].priority > t[j].priority
+	if t[i].maxLayers.spatial != t[j].maxLayers.spatial {
+		return t[i].maxLayers.spatial > t[j].maxLayers.spatial
+	}
+
+	return t[i].maxLayers.temporal > t[j].maxLayers.temporal
+}
+
+//------------------------------------------------
+
+type MaxDistanceSorter []*Track
+
+func (m MaxDistanceSorter) Len() int {
+	return len(m)
+}
+
+func (m MaxDistanceSorter) Swap(i, j int) {
+	m[i], m[j] = m[j], m[i]
+}
+
+func (m MaxDistanceSorter) Less(i, j int) bool {
+	return m[i].DistanceToDesired() > m[j].DistanceToDesired()
+}
+
+//------------------------------------------------
+
+type MinDistanceSorter []*Track
+
+func (m MinDistanceSorter) Len() int {
+	return len(m)
+}
+
+func (m MinDistanceSorter) Swap(i, j int) {
+	m[i], m[j] = m[j], m[i]
+}
+
+func (m MinDistanceSorter) Less(i, j int) bool {
+	return m[i].DistanceToDesired() < m[j].DistanceToDesired()
 }
 
 //------------------------------------------------

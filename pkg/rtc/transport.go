@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/webrtc/v3"
@@ -107,8 +107,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
-			ParticipantID: params.ParticipantID,
-			Logger:        params.Logger,
+			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
 	}
@@ -276,7 +275,9 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 		return
 	}
 
-	t.streamAllocator.AddTrack(subTrack.DownTrack())
+	source := subTrack.PublishedTrack().Source()
+	isManaged := (source != livekit.TrackSource_SCREEN_SHARE && source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || subTrack.PublishedTrack().IsSimulcast()
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), isManaged)
 }
 
 func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {

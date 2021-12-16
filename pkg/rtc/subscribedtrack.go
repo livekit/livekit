@@ -24,6 +24,8 @@ type SubscribedTrack struct {
 	pubMuted          utils.AtomicFlag
 	settings          atomic.Value // *livekit.UpdateTrackSettings
 
+	onBind func()
+
 	debouncer func(func())
 }
 
@@ -33,6 +35,16 @@ func NewSubscribedTrack(mediaTrack types.MediaTrack, publisherIdentity string, d
 		publisherIdentity: publisherIdentity,
 		dt:                dt,
 		debouncer:         debounce.New(subscriptionDebounceInterval),
+	}
+}
+
+func (t *SubscribedTrack) OnBind(f func()) {
+	t.onBind = f
+}
+
+func (t *SubscribedTrack) Bound() {
+	if t.onBind != nil {
+		t.onBind()
 	}
 }
 
@@ -46,6 +58,10 @@ func (t *SubscribedTrack) PublisherIdentity() string {
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.dt
+}
+
+func (t *SubscribedTrack) PublishedTrack() types.MediaTrack {
+	return t.publishedTrack
 }
 
 func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {

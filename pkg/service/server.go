@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -183,7 +183,7 @@ func (s *LivekitServer) Start() error {
 	go s.backgroundWorker()
 
 	// give time for Serve goroutine to start
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	s.running.TrySet(true)
 

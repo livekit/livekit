@@ -6,8 +6,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/go-logr/logr"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	livekit "github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -129,4 +130,25 @@ func Recover() {
 		}
 		logger.GetLogger().Error(err, "recovered panic", "panic", r)
 	}
+}
+
+// logger helpers
+func LoggerWithParticipant(l logger.Logger, identity, sid string) logger.Logger {
+	lr := logr.Logger(l)
+	if identity != "" {
+		lr = lr.WithValues("participant", identity)
+	}
+	if sid != "" {
+		lr = lr.WithValues("pID", sid)
+	}
+	return logger.Logger(lr)
+}
+
+func LoggerWithRoom(l logger.Logger, name string) logger.Logger {
+	lr := logr.Logger(l)
+	return logger.Logger(
+		lr.WithValues(
+			"room", name,
+		),
+	)
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -39,6 +39,7 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 		Type:      livekit.AnalyticsEventType_ROOM_ENDED,
 		Timestamp: timestamppb.Now(),
 		RoomSid:   room.Sid,
+		Room:      room,
 	})
 }
 
@@ -60,6 +61,7 @@ func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 		Timestamp:   timestamppb.Now(),
 		RoomSid:     room.Sid,
 		Participant: participant,
+		Room:        room,
 	})
 }
 
@@ -84,29 +86,34 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 		Timestamp:     timestamppb.Now(),
 		RoomSid:       room.Sid,
 		ParticipantId: participant.Sid,
+		Room:          room,
 	})
 }
 
 func (t *telemetryService) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.AddPublishedTrack(track.Type.String())
 
+	roomID, roomName := t.getRoomDetails(participantID)
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED,
 		Timestamp:     timestamppb.Now(),
-		RoomSid:       t.getRoomID(participantID),
+		RoomSid:       roomID,
 		ParticipantId: participantID,
 		Track:         track,
+		Room:          &livekit.Room{Name: roomName},
 	})
 }
 
 func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := ""
+	roomName := ""
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
 		roomID = w.roomID
 		w.RemoveBuffer(ssrc)
+		roomName = w.roomName
 	}
 
 	prometheus.SubPublishedTrack(track.Type.String())
@@ -117,30 +124,35 @@ func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID s
 		RoomSid:       roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
+		Room:          &livekit.Room{Name: roomName},
 	})
 }
 
 func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
+	roomID, roomName := t.getRoomDetails(participantID)
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_SUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
-		RoomSid:       t.getRoomID(participantID),
+		RoomSid:       roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
+		Room:          &livekit.Room{Name: roomName},
 	})
 }
 
 func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.SubSubscribedTrack(track.Type.String())
 
+	roomID, roomName := t.getRoomDetails(participantID)
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
-		RoomSid:       t.getRoomID(participantID),
+		RoomSid:       roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
+		Room:          &livekit.Room{Name: roomName},
 	})
 }
 
@@ -154,6 +166,7 @@ func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.Rec
 		Type:        livekit.AnalyticsEventType_RECORDING_STARTED,
 		Timestamp:   timestamppb.Now(),
 		RecordingId: ri.Id,
+		Room:        &livekit.Room{Name: ri.RoomName},
 	})
 }
 
@@ -167,17 +180,18 @@ func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.Recor
 		Type:        livekit.AnalyticsEventType_RECORDING_ENDED,
 		Timestamp:   timestamppb.Now(),
 		RecordingId: ri.Id,
+		Room:        &livekit.Room{Name: ri.RoomName},
 	})
 }
 
-func (t *telemetryService) getRoomID(participantID string) string {
+func (t *telemetryService) getRoomDetails(participantID string) (string, string) {
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
-		return w.roomID
+		return w.roomID, w.roomName
 	}
-	return ""
+	return "", ""
 }
 
 func (t *telemetryService) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
