@@ -181,7 +181,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.logger.V(1).Info("NewBuffer", "MaxBitRate", o.MaxBitRate)
 }
 
-// Write adds a RTP Packet, out of order, new packet may be arrived later
+// Write adds an RTP Packet, out of order, new packet may be arrived later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
@@ -679,7 +679,7 @@ func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
 		if delta > 0 && (int32(s.maxSeqNo)+delta-0x10000) >= 0 {
 			// wrap backwards, should not less than 0 in this case:
 			//   at start time, received seq 1, set s.maxSeqNo =1 ,
-			//   then a out of order seq 65534 coming, we can't unwrap
+			//   then an out of order seq 65534 coming, we can't unwrap
 			//   the seq to -2
 			delta -= 0x10000
 		}

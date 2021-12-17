@@ -175,13 +175,13 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		if ic == nil {
 			return
 		}
-		c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
+		_ = c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
 	c.subscriber.PeerConnection().OnICECandidate(func(ic *webrtc.ICECandidate) {
 		if ic == nil {
 			return
 		}
-		c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
+		_ = c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
 
 	c.subscriber.PeerConnection().OnTrack(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
@@ -283,7 +283,7 @@ func (c *RTCClient) Run() error {
 			// logger.Debugw("received server answer",
 			//	"participant", c.localParticipant.Identity,
 			//	"answer", msg.Answer.Sdp)
-			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
+			_ = c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
 		case *livekit.SignalResponse_Offer:
 			logger.Infow("received server offer",
 				"participant", c.localParticipant.Identity,
@@ -360,7 +360,7 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 		msg := &livekit.SignalResponse{}
 		switch messageType {
 		case websocket.PingMessage:
-			c.conn.WriteMessage(websocket.PongMessage, nil)
+			_ = c.conn.WriteMessage(websocket.PongMessage, nil)
 			continue
 		case websocket.BinaryMessage:
 			// protobuf encoded
@@ -398,7 +398,7 @@ func (c *RTCClient) Stop() {
 	})
 	c.connected.TrySet(false)
 	c.iceConnected.TrySet(false)
-	c.conn.Close()
+	_ = c.conn.Close()
 	c.publisher.Close()
 	c.subscriber.Close()
 	c.cancel()
@@ -722,5 +722,5 @@ func (c *RTCClient) SendNacks(count int) {
 	}
 	c.lock.Unlock()
 
-	c.subscriber.PeerConnection().WriteRTCP(packets)
+	_ = c.subscriber.PeerConnection().WriteRTCP(packets)
 }

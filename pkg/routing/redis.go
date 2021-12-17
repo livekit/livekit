@@ -155,7 +155,7 @@ func (s *SignalNodeSink) Close() {
 	if !s.isClosed.TrySet(true) {
 		return
 	}
-	publishSignalMessage(s.rc, s.nodeId, s.connectionId, &livekit.EndSession{})
+	_ = publishSignalMessage(s.rc, s.nodeId, s.connectionId, &livekit.EndSession{})
 	if s.onClose != nil {
 		s.onClose()
 	}

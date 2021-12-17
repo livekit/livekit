@@ -24,7 +24,7 @@ func createFixture() *telemetryServiceFixture {
 	return fixture
 }
 
-func Test_TelemetrySerice_Downstream_Stats(t *testing.T) {
+func Test_TelemetryService_Downstream_Stats(t *testing.T) {
 	fixture := createFixture()
 
 	room := &livekit.Room{}

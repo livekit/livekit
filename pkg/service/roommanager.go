@@ -101,7 +101,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName string) error {
 	return err
 }
 
-// CleanupRooms cleans up after old rooms that have been around for awhile
+// CleanupRooms cleans up after old rooms that have been around for a while
 func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	ctx := context.Background()

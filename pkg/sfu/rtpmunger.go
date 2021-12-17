@@ -121,7 +121,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 		// if padding only packet, can be dropped and sequence number adjusted
 		// as it is contiguous and in order. That means this is the highest
-		// incoming sequence number and it is a good point to adjust
+		// incoming sequence number, and it is a good point to adjust
 		// sequence number offset.
 		if len(extPkt.Packet.Payload) == 0 {
 			r.highestIncomingSN = extPkt.Packet.SequenceNumber
@@ -134,10 +134,10 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	}
 
 	// in-order incoming packet, may or may not be contiguous.
-	// In the case of loss (i. e. incoming sequence number is not contiguous),
+	// In the case of loss (i.e. incoming sequence number is not contiguous),
 	// forward even if it is a padding only packet. With temporal scalability,
 	// it is unclear if the current packet should be dropped if it is not
-	// contiguous. Hence forward anything that is not contiguous.
+	// contiguous. Hence, forward anything that is not contiguous.
 	// Reference: http://www.rtcbits.com/2017/04/howto-implement-temporal-scalability.html
 	mungedSN := extPkt.Packet.SequenceNumber - r.snOffset
 	mungedTS := extPkt.Packet.Timestamp - r.tsOffset

@@ -280,7 +280,9 @@ func (r *RedisRouter) Start() error {
 
 func (r *RedisRouter) Drain() {
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
-	r.RegisterNode()
+	if err := r.RegisterNode(); err != nil {
+		logger.Errorw("failed to mark as draining", err, "nodeID", r.currentNode.Id)
+	}
 }
 
 func (r *RedisRouter) Stop() {

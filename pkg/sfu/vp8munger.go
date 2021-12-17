@@ -185,7 +185,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	}
 
 	// in-order incoming sequence number, may or may not be contiguous.
-	// In the case of loss (i. e. incoming sequence number is not contiguous),
+	// In the case of loss (i.e. incoming sequence number is not contiguous),
 	// forward even if it is a filtered layer. With temporal scalability,
 	// it is unclear if the current packet should be dropped if it is not
 	// contiguous. Hence forward anything that is not contiguous.

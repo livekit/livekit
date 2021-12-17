@@ -11,23 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func CreateTestPacket(pktStamp *SequenceNumberAndTimeStamp) *rtp.Packet {
-	if pktStamp == nil {
-		return &rtp.Packet{
-			Header:  rtp.Header{},
-			Payload: []byte{1, 2, 3},
-		}
-	}
-
-	return &rtp.Packet{
-		Header: rtp.Header{
-			SequenceNumber: pktStamp.SequenceNumber,
-			Timestamp:      pktStamp.Timestamp,
-		},
-		Payload: []byte{1, 2, 3},
-	}
-}
-
 type SequenceNumberAndTimeStamp struct {
 	SequenceNumber uint16
 	Timestamp      uint32
@@ -223,7 +206,7 @@ func TestNewBuffer(t *testing.T) {
 
 			for _, p := range TestPackets {
 				buf, _ := p.Marshal()
-				buff.Write(buf)
+				_, _ = buff.Write(buf)
 			}
 			// assert.Equal(t, 6, buff.PacketQueue.size)
 			assert.Equal(t, uint32(1<<16), buff.seqHdlr.Cycles())

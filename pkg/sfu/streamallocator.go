@@ -29,7 +29,7 @@ const (
 
 	// LK-TODO-START
 	// These constants will definitely require more tweaking.
-	// In fact, simple time tresholded rules most proably will not be enough.
+	// In fact, simple time threshold rules most probably will not be enough.
 	// LK-TODO-END
 	EstimateCommit          = 2 * 1000 * time.Millisecond // 2 seconds
 	ProbeWait               = 8 * 1000 * time.Millisecond // 8 seconds
@@ -405,7 +405,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	//
 	// A couple of things to keep in mind
 	//   - REMB reports could be sent gratuitously as a way of providing
-	//     periodic feedback, i. e. even if the estimated capacity does not
+	//     periodic feedback, i.e. even if the estimated capacity does not
 	//     change, there could be REMB packets on the wire. Those gratuitous
 	//     REMBs should not trigger anything bad.
 	//   - As each down track will issue this callback for the same REMB packet
@@ -663,7 +663,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 		// LK-TODO-START
 		// Should use the bits given back to start any paused track.
-		// Note layer downgrade may actually have positive delta (i. e. consume more bits)
+		// Note layer downgrade may actually have positive delta (i.e. consume more bits)
 		// because of when the measurement is done. Watch for that.
 		// LK-TODO-END
 	}
@@ -727,7 +727,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 	//
 	// Goals:
-	//   1. Stream as many tracks as possible, i. e. no pauses.
+	//   1. Stream as many tracks as possible, i.e. no pauses.
 	//   2. Try to give fair allocation to all track.
 	//
 	// Start with the lowest layers and give each track a chance at that layer and keep going up.
