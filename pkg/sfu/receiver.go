@@ -29,7 +29,6 @@ type TrackReceiver interface {
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
-	IsSimulcast() bool
 }
 
 // Receiver defines a interface for a track receivers
@@ -37,7 +36,6 @@ type Receiver interface {
 	TrackID() string
 	StreamID() string
 	Codec() webrtc.RTPCodecCapability
-	IsSimulcast() bool
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
@@ -173,10 +171,6 @@ func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
-}
-
-func (w *WebRTCReceiver) IsSimulcast() bool {
-	return w.isSimulcast
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
