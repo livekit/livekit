@@ -12,15 +12,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/thoas/go-funk"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 )
@@ -62,7 +61,7 @@ type RTCClient struct {
 	OnConnected         func()
 	OnDataReceived      func(data []byte, sid string)
 
-	// map of track Id and last packet
+	// map of track ID and last packet
 	lastPackets   map[string]*rtp.Packet
 	bytesReceived map[string]uint64
 }

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/stretchr/testify/require"
@@ -25,7 +25,7 @@ func testTurnServer(t *testing.T) {
 
 	currentNode, err := routing.NewLocalNode(conf)
 	require.NoError(t, err)
-	currentNode.Id = utils.NewGuid(nodeId1)
+	currentNode.Id = utils.NewGuid(nodeID1)
 
 	// local routing and store
 	s, err := service.InitializeServer(conf, currentNode)

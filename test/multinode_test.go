@@ -48,8 +48,8 @@ func TestMultiNodeRouting(t *testing.T) {
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
-		streamId, _ := rtc.UnpackStreamID(tr1.StreamID())
-		require.Equal(t, c1.ID(), streamId)
+		streamID, _ := rtc.UnpackStreamID(tr1.StreamID())
+		require.Equal(t, c1.ID(), streamID)
 		return true
 	})
 }

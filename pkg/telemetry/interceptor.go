@@ -1,7 +1,7 @@
 package telemetry
 
 import (
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 )

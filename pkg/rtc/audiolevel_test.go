@@ -3,8 +3,9 @@ package rtc_test
 import (
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 const (

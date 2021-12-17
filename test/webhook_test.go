@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
@@ -103,7 +103,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	if err != nil {
 		return
 	}
-	currentNode.Id = utils.NewGuid(nodeId1)
+	currentNode.Id = utils.NewGuid(nodeID1)
 
 	server, err = service.InitializeServer(conf, currentNode)
 	if err != nil {

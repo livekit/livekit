@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
@@ -42,7 +42,7 @@ func (r *LocalRouter) GetNodeForRoom(ctx context.Context, roomName string) (*liv
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(ctx context.Context, roomName, nodeId string) error {
+func (r *LocalRouter) SetNodeForRoom(ctx context.Context, roomName, nodeID string) error {
 	return nil
 }
 
@@ -63,8 +63,8 @@ func (r *LocalRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
-	if nodeId == r.currentNode.Id {
+func (r *LocalRouter) GetNode(nodeID string) (*livekit.Node, error) {
+	if nodeID == r.currentNode.Id {
 		return r.currentNode, nil
 	}
 	return nil, ErrNotFound
@@ -76,7 +76,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionID string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
