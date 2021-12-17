@@ -5,7 +5,7 @@ import (
 	"regexp"
 
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 

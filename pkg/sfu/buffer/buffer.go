@@ -17,13 +17,11 @@ import (
 )
 
 const (
-	MaxSN = 1 << 16
-
 	ReportDelta = 1e9
 )
 
 // Logger is an implementation of logr.Logger. If is not provided - will be turned off.
-var Logger logr.Logger = logr.Discard()
+var Logger = logr.Discard()
 
 type pendingPackets struct {
 	arrivalTime int64
@@ -36,7 +34,7 @@ type ExtPacket struct {
 	Packet   rtp.Packet
 	Payload  interface{}
 	KeyFrame bool
-	//audio level for voice, l&0x80 == 0 means audio level not present
+	// audio level for voice, l&0x80 == 0 means audio level not present
 	AudioLevel uint8
 	RawPacket  []byte
 }
@@ -183,7 +181,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.logger.V(1).Info("NewBuffer", "MaxBitRate", o.MaxBitRate)
 }
 
-// Write adds a RTP Packet, out of order, new packet may be arrived later
+// Write adds an RTP Packet, out of order, new packet may be arrived later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
@@ -416,7 +414,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			bitrates = make([]int64, len(b.bitrateHelper))
 		}
 		for i := 0; i < len(b.bitrateHelper); i++ {
-			br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / int64(diff)
+			br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / diff
 			bitrates[i] = br
 			b.bitrateHelper[i] = 0
 		}
@@ -681,7 +679,7 @@ func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
 		if delta > 0 && (int32(s.maxSeqNo)+delta-0x10000) >= 0 {
 			// wrap backwards, should not less than 0 in this case:
 			//   at start time, received seq 1, set s.maxSeqNo =1 ,
-			//   then a out of order seq 65534 coming, we can't unwrap
+			//   then an out of order seq 65534 coming, we can't unwrap
 			//   the seq to -2
 			delta -= 0x10000
 		}

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
@@ -84,7 +84,7 @@ func TestWebhooks(t *testing.T) {
 	require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
 }
 
-func setupServerWithWebhook() (server *service.LivekitServer, testServer *webookTestServer, finishFunc func(), err error) {
+func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhookTestServer, finishFunc func(), err error) {
 	conf, err := config.NewConfig("", nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
@@ -103,7 +103,7 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	if err != nil {
 		return
 	}
-	currentNode.Id = utils.NewGuid(nodeId1)
+	currentNode.Id = utils.NewGuid(nodeID1)
 
 	server, err = service.InitializeServer(conf, currentNode)
 	if err != nil {
@@ -125,15 +125,15 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webook
 	return
 }
 
-type webookTestServer struct {
+type webhookTestServer struct {
 	server   *http.Server
 	events   map[string]*livekit.WebhookEvent
 	lock     sync.Mutex
 	provider auth.KeyProvider
 }
 
-func newTestServer(addr string) *webookTestServer {
-	s := &webookTestServer{
+func newTestServer(addr string) *webhookTestServer {
+	s := &webhookTestServer{
 		events:   make(map[string]*livekit.WebhookEvent),
 		provider: auth.NewFileBasedKeyProviderFromMap(map[string]string{testApiKey: testApiSecret}),
 	}
@@ -144,7 +144,7 @@ func newTestServer(addr string) *webookTestServer {
 	return s
 }
 
-func (s *webookTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *webhookTestServer) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
 	data, err := webhook.Receive(r, s.provider)
 	if err != nil {
 		logger.Errorw("could not receive webhook", err)
@@ -162,19 +162,19 @@ func (s *webookTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.lock.Unlock()
 }
 
-func (s *webookTestServer) GetEvent(name string) *livekit.WebhookEvent {
+func (s *webhookTestServer) GetEvent(name string) *livekit.WebhookEvent {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	return s.events[name]
 }
 
-func (s *webookTestServer) ClearEvents() {
+func (s *webhookTestServer) ClearEvents() {
 	s.lock.Lock()
 	s.events = make(map[string]*livekit.WebhookEvent)
 	s.lock.Unlock()
 }
 
-func (s *webookTestServer) Start() error {
+func (s *webhookTestServer) Start() error {
 	l, err := net.Listen("tcp", s.server.Addr)
 	if err != nil {
 		return err
@@ -183,6 +183,6 @@ func (s *webookTestServer) Start() error {
 	return nil
 }
 
-func (s *webookTestServer) Stop() {
+func (s *webhookTestServer) Stop() {
 	_ = s.server.Shutdown(context.Background())
 }

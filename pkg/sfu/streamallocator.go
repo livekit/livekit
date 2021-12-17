@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
-
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 )
@@ -18,25 +17,25 @@ const (
 
 	EstimateEpsilon = 2000 // 2 kbps
 
-	GratuitousProbeHeadroomBps   = 1 * 1000 * 1000 // if headroom > 1 Mbps, don't probe
-	GratuitousProbePct           = 10
-	GratuitousProbeMinBps        = 100 * 1000 // 100 kbps
-	GratuitousProbeMaxBps        = 300 * 1000 // 300 kbps
-	GratuitousProbeMinDurationMs = 500 * time.Millisecond
-	GratuitousProbeMaxDurationMs = 600 * time.Millisecond
+	GratuitousProbeHeadroomBps = 1 * 1000 * 1000 // if headroom > 1 Mbps, don't probe
+	GratuitousProbePct         = 10
+	GratuitousProbeMinBps      = 100 * 1000 // 100 kbps
+	GratuitousProbeMaxBps      = 300 * 1000 // 300 kbps
+	GratuitousProbeMinDuration = 500 * time.Millisecond
+	GratuitousProbeMaxDuration = 600 * time.Millisecond
 
 	AudioLossWeight = 0.75
 	VideoLossWeight = 0.25
 
 	// LK-TODO-START
 	// These constants will definitely require more tweaking.
-	// In fact, simple time tresholded rules most proably will not be enough.
+	// In fact, simple time threshold rules most probably will not be enough.
 	// LK-TODO-END
-	EstimateCommitMs          = 2 * 1000 * time.Millisecond // 2 seconds
-	ProbeWaitMs               = 8 * 1000 * time.Millisecond // 8 seconds
-	BoostWaitMs               = 5 * 1000 * time.Millisecond // 5 seconds
-	GratuitousProbeWaitMs     = 8 * 1000 * time.Millisecond // 8 seconds
-	GratuitousProbeMoreWaitMs = 5 * 1000 * time.Millisecond // 5 seconds
+	EstimateCommit          = 2 * 1000 * time.Millisecond // 2 seconds
+	ProbeWait               = 8 * 1000 * time.Millisecond // 8 seconds
+	BoostWait               = 5 * 1000 * time.Millisecond // 5 seconds
+	GratuitousProbeWait     = 8 * 1000 * time.Millisecond // 8 seconds
+	GratuitousProbeMoreWait = 5 * 1000 * time.Millisecond // 5 seconds
 )
 
 type State int
@@ -200,7 +199,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 
 func (s *StreamAllocator) initializeEstimate() {
 	s.committedChannelCapacity = ChannelCapacityInfinity
-	s.lastCommitTime = time.Now().Add(-EstimateCommitMs)
+	s.lastCommitTime = time.Now().Add(-EstimateCommit)
 	s.receivedEstimate = ChannelCapacityInfinity
 	s.lastEstimateDecreaseTime = time.Now()
 
@@ -406,7 +405,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	//
 	// A couple of things to keep in mind
 	//   - REMB reports could be sent gratuitously as a way of providing
-	//     periodic feedback, i. e. even if the estimated capacity does not
+	//     periodic feedback, i.e. even if the estimated capacity does not
 	//     change, there could be REMB packets on the wire. Those gratuitous
 	//     REMBs should not trigger anything bad.
 	//   - As each down track will issue this callback for the same REMB packet
@@ -594,14 +593,14 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
 		// too large a change, wait for estimate to settle.
 		// Unless estimate has been oscillating for too long.
-		if time.Since(s.lastCommitTime) < EstimateCommitMs {
+		if time.Since(s.lastCommitTime) < EstimateCommit {
 			return
 		}
 	}
 
 	// don't commit too often even if the change is small.
 	// Small changes will also get picked up during periodic check.
-	if time.Since(s.lastCommitTime) < EstimateCommitMs {
+	if time.Since(s.lastCommitTime) < EstimateCommit {
 		return
 	}
 
@@ -664,7 +663,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 		// LK-TODO-START
 		// Should use the bits given back to start any paused track.
-		// Note layer downgrade may actually have positive delta (i. e. consume more bits)
+		// Note layer downgrade may actually have positive delta (i.e. consume more bits)
 		// because of when the measurement is done. Watch for that.
 		// LK-TODO-END
 	}
@@ -728,7 +727,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 	//
 	// Goals:
-	//   1. Stream as many tracks as possible, i. e. no pauses.
+	//   1. Stream as many tracks as possible, i.e. no pauses.
 	//   2. Try to give fair allocation to all track.
 	//
 	// Start with the lowest layers and give each track a chance at that layer and keep going up.
@@ -905,9 +904,9 @@ func (s *StreamAllocator) isTimeToBoost() bool {
 	// Checking against last estimate boost prevents multiple artificial boosts
 	// in situations where multiple tracks become available in a short span.
 	if !s.lastBoostTime.IsZero() {
-		return time.Since(s.lastBoostTime) > BoostWaitMs
+		return time.Since(s.lastBoostTime) > BoostWait
 	} else {
-		return time.Since(s.lastEstimateDecreaseTime) > ProbeWaitMs
+		return time.Since(s.lastEstimateDecreaseTime) > ProbeWait
 	}
 }
 
@@ -916,12 +915,12 @@ func (s *StreamAllocator) resetBoost() {
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
-	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWaitMs || len(s.managedVideoTracksSorted) == 0 {
+	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWait || len(s.managedVideoTracksSorted) == 0 {
 		return false
 	}
 
 	// don't gratuitously probe too often
-	if time.Since(s.lastGratuitousProbeTime) < GratuitousProbeMoreWaitMs {
+	if time.Since(s.lastGratuitousProbeTime) < GratuitousProbeMoreWait {
 		return false
 	}
 
@@ -944,8 +943,8 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 	s.prober.AddCluster(
 		int(s.receivedEstimate+probeRateBps),
 		int(expectedRateBps),
-		GratuitousProbeMinDurationMs,
-		GratuitousProbeMaxDurationMs,
+		GratuitousProbeMinDuration,
+		GratuitousProbeMaxDuration,
 	)
 
 	s.lastGratuitousProbeTime = time.Now()
@@ -957,7 +956,7 @@ func (s *StreamAllocator) resetGratuitousProbe() {
 	s.lastGratuitousProbeTime = time.Now()
 }
 
-//------------------------------------------------
+// ------------------------------------------------
 
 type StreamState int
 
@@ -1001,7 +1000,7 @@ func (s *StreamStateUpdate) Empty() bool {
 	return len(s.StreamStates) == 0
 }
 
-//------------------------------------------------
+// ------------------------------------------------
 
 type Track struct {
 	downTrack *DownTrack
@@ -1116,7 +1115,7 @@ func (t *Track) DistanceToDesired() int32 {
 	return t.downTrack.DistanceToDesired()
 }
 
-//------------------------------------------------
+// ------------------------------------------------
 
 type TrackSorter []*Track
 
@@ -1136,7 +1135,7 @@ func (t TrackSorter) Less(i, j int) bool {
 	return t[i].maxLayers.temporal > t[j].maxLayers.temporal
 }
 
-//------------------------------------------------
+// ------------------------------------------------
 
 type MaxDistanceSorter []*Track
 
@@ -1152,7 +1151,7 @@ func (m MaxDistanceSorter) Less(i, j int) bool {
 	return m[i].DistanceToDesired() > m[j].DistanceToDesired()
 }
 
-//------------------------------------------------
+// ------------------------------------------------
 
 type MinDistanceSorter []*Track
 
@@ -1168,4 +1167,4 @@ func (m MinDistanceSorter) Less(i, j int) bool {
 	return m[i].DistanceToDesired() < m[j].DistanceToDesired()
 }
 
-//------------------------------------------------
+// ------------------------------------------------

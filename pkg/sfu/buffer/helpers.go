@@ -70,7 +70,7 @@ type VP8 struct {
 }
 
 // Unmarshal parses the passed byte slice and stores the result in the VP8 this method is called upon
-func (p *VP8) Unmarshal(payload []byte) error {
+func (v *VP8) Unmarshal(payload []byte) error {
 	if payload == nil {
 		return errNilPacket
 	}
@@ -82,7 +82,7 @@ func (p *VP8) Unmarshal(payload []byte) error {
 	}
 
 	idx := 0
-	p.FirstByte = payload[idx]
+	v.FirstByte = payload[idx]
 	S := payload[idx]&0x10 > 0
 	// Check for extended bit control
 	if payload[idx]&0x80 > 0 {
@@ -103,7 +103,7 @@ func (p *VP8) Unmarshal(payload []byte) error {
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			p.PictureIDPresent = 1
+			v.PictureIDPresent = 1
 			pid := payload[idx] & 0x7f
 			// Check if m is 1, then Picture ID is 15 bits
 			if payload[idx]&0x80 > 0 {
@@ -111,10 +111,10 @@ func (p *VP8) Unmarshal(payload []byte) error {
 				if payloadLen < idx+1 {
 					return errShortPacket
 				}
-				p.MBit = true
-				p.PictureID = binary.BigEndian.Uint16([]byte{pid, payload[idx]})
+				v.MBit = true
+				v.PictureID = binary.BigEndian.Uint16([]byte{pid, payload[idx]})
 			} else {
-				p.PictureID = uint16(pid)
+				v.PictureID = uint16(pid)
 			}
 		}
 		// Check if TL0PICIDX is present
@@ -123,12 +123,12 @@ func (p *VP8) Unmarshal(payload []byte) error {
 			if payloadLen < idx+1 {
 				return errShortPacket
 			}
-			p.TL0PICIDXPresent = 1
+			v.TL0PICIDXPresent = 1
 
-			if int(idx) >= payloadLen {
+			if idx >= payloadLen {
 				return errShortPacket
 			}
-			p.TL0PICIDX = payload[idx]
+			v.TL0PICIDX = payload[idx]
 		}
 		if T || K {
 			idx++
@@ -136,13 +136,13 @@ func (p *VP8) Unmarshal(payload []byte) error {
 				return errShortPacket
 			}
 			if T {
-				p.TIDPresent = 1
-				p.TID = (payload[idx] & 0xc0) >> 6
-				p.Y = (payload[idx] & 0x20) >> 5
+				v.TIDPresent = 1
+				v.TID = (payload[idx] & 0xc0) >> 6
+				v.Y = (payload[idx] & 0x20) >> 5
 			}
 			if K {
-				p.KEYIDXPresent = 1
-				p.KEYIDX = payload[idx] & 0x1f
+				v.KEYIDXPresent = 1
+				v.KEYIDX = payload[idx] & 0x1f
 			}
 		}
 		if idx >= payloadLen {
@@ -153,16 +153,16 @@ func (p *VP8) Unmarshal(payload []byte) error {
 			return errShortPacket
 		}
 		// Check is packet is a keyframe by looking at P bit in vp8 payload
-		p.IsKeyFrame = payload[idx]&0x01 == 0 && S
+		v.IsKeyFrame = payload[idx]&0x01 == 0 && S
 	} else {
 		idx++
 		if payloadLen < idx+1 {
 			return errShortPacket
 		}
 		// Check is packet is a keyframe by looking at P bit in vp8 payload
-		p.IsKeyFrame = payload[idx]&0x01 == 0 && S
+		v.IsKeyFrame = payload[idx]&0x01 == 0 && S
 	}
-	p.HeaderSize = idx
+	v.HeaderSize = idx
 	return nil
 }
 
@@ -189,16 +189,16 @@ func (v *VP8) MarshalTo(buf []byte) error {
 			}
 		}
 		if v.TL0PICIDXPresent == 1 {
-			buf[idx] = byte(v.TL0PICIDX)
+			buf[idx] = v.TL0PICIDX
 			idx++
 		}
 		if v.TIDPresent == 1 || v.KEYIDXPresent == 1 {
 			buf[idx] = 0
 			if v.TIDPresent == 1 {
-				buf[idx] = byte(v.TID<<6) | byte(v.Y<<5)
+				buf[idx] = v.TID<<6 | v.Y<<5
 			}
 			if v.KEYIDXPresent == 1 {
-				buf[idx] |= byte(v.KEYIDX & 0x1f)
+				buf[idx] |= v.KEYIDX & 0x1f
 			}
 			idx++
 		}

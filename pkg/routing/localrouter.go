@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
@@ -35,18 +35,18 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error) {
+func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ string) (*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(ctx context.Context, roomName, nodeId string) error {
+func (r *LocalRouter) SetNodeForRoom(_ context.Context, _, _ string) error {
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(ctx context.Context, roomName string) error {
+func (r *LocalRouter) ClearRoomState(_ context.Context, _ string) error {
 	// do nothing
 	return nil
 }
@@ -63,8 +63,8 @@ func (r *LocalRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *LocalRouter) GetNode(nodeId string) (*livekit.Node, error) {
-	if nodeId == r.currentNode.Id {
+func (r *LocalRouter) GetNode(nodeID string) (*livekit.Node, error) {
+	if nodeID == r.currentNode.Id {
 		return r.currentNode, nil
 	}
 	return nil, ErrNotFound
@@ -76,7 +76,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionID string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
@@ -110,7 +110,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return pi.Identity, reqChan, resChan, nil
 }
 
-func (r *LocalRouter) WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
@@ -124,7 +124,7 @@ func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName, identity strin
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }
 
-func (r *LocalRouter) WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()

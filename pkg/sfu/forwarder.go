@@ -26,13 +26,6 @@ const (
 	ForwardingStatusOptimal
 )
 
-type LayerDirection int
-
-const (
-	LayerDirectionLowToHigh LayerDirection = iota
-	LayerDirectionHighToLow
-)
-
 type VideoStreamingChange int
 
 const (
@@ -152,11 +145,6 @@ var (
 	InvalidLayers = VideoLayers{
 		spatial:  -1,
 		temporal: -1,
-	}
-
-	MinLayers = VideoLayers{
-		spatial:  0,
-		temporal: 0,
 	}
 
 	DefaultMaxLayers = VideoLayers{
@@ -539,7 +527,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	//   4. If not currently streaming, find the minimum layers that can unpause the stream.
 	//
 	// To summarize, co-operative streaming means
-	//   - Try to keep tracks streaming, i. e. no pauses even if not at optimal layers
+	//   - Try to keep tracks streaming, i.e. no pauses even if not at optimal layers
 	//   - Do not make an upgrade as it could affect other tracks
 	//
 	f.lock.Lock()
@@ -1097,7 +1085,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// this will take client subscription as the winning vote and
 		// continue to stream current spatial layer till switch point.
 		// That could lead to congesting the channel.
-		// LK-TODO: Improve the above case, i. e. distinguish server
+		// LK-TODO: Improve the above case, i.e. distinguish server
 		// applied restriction from client requested restriction.
 		//
 		tp.shouldDrop = true

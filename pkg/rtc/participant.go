@@ -17,12 +17,11 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
@@ -289,7 +288,7 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
 	p.params.Logger.Debugw("answering pub offer",
 		"state", p.State().String(),
-		//"sdp", sdp.SDP,
+		// "sdp", sdp.SDP,
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {

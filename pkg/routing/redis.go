@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"google.golang.org/protobuf/proto"
 )
@@ -61,7 +61,7 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 		return err
 	}
 
-	//logger.Debugw("publishing to rtc", "rtcChannel", rtcNodeChannel(nodeId),
+	// logger.Debugw("publishing to rtc", "rtcChannel", rtcNodeChannel(nodeId),
 	//	"message", rm.Message)
 	return rc.Publish(redisCtx, rtcNodeChannel(nodeId), data).Err()
 }
@@ -87,7 +87,7 @@ func publishSignalMessage(rc *redis.Client, nodeId string, connectionId string, 
 		return err
 	}
 
-	//logger.Debugw("publishing to signal", "signalChannel", signalNodeChannel(nodeId),
+	// logger.Debugw("publishing to signal", "signalChannel", signalNodeChannel(nodeId),
 	//	"message", rm.Message)
 	return rc.Publish(redisCtx, signalNodeChannel(nodeId), data).Err()
 }
@@ -155,7 +155,7 @@ func (s *SignalNodeSink) Close() {
 	if !s.isClosed.TrySet(true) {
 		return
 	}
-	publishSignalMessage(s.rc, s.nodeId, s.connectionId, &livekit.EndSession{})
+	_ = publishSignalMessage(s.rc, s.nodeId, s.connectionId, &livekit.EndSession{})
 	if s.onClose != nil {
 		s.onClose()
 	}

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 )
@@ -25,12 +25,12 @@ func TestMessageChannel_WriteMessageClosed(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			m.WriteMessage(&livekit.RTCNodeMessage{})
+			_ = m.WriteMessage(&livekit.RTCNodeMessage{})
 		}
 	}()
-	m.WriteMessage(&livekit.RTCNodeMessage{})
+	_ = m.WriteMessage(&livekit.RTCNodeMessage{})
 	m.Close()
-	m.WriteMessage(&livekit.RTCNodeMessage{})
+	_ = m.WriteMessage(&livekit.RTCNodeMessage{})
 
 	wg.Wait()
 }

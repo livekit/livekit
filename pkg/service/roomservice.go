@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
@@ -40,7 +40,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	return
 }
 
-func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (res *livekit.ListRoomsResponse, err error) {
+func (s *RoomService) ListRooms(ctx context.Context, _ *livekit.ListRoomsRequest) (res *livekit.ListRoomsResponse, err error) {
 	err = EnsureListPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
