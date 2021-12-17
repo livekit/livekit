@@ -493,7 +493,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
-		bitrates:           [3][4]int64{},
+		bitrates:           Bitrates{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
