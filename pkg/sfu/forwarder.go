@@ -602,7 +602,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
 	for s := int32(0); s <= f.maxLayers.spatial; s++ {
-		for t := int32(0); s <= f.maxLayers.temporal; t++ {
+		for t := int32(0); t <= f.maxLayers.temporal; t++ {
 			if f.provisional.bitrates[s][t] != 0 {
 				minimalLayers = VideoLayers{spatial: s, temporal: t}
 				bandwidthRequired = f.provisional.bitrates[s][t]
