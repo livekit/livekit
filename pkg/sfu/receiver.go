@@ -173,10 +173,6 @@ func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
 }
 
-func (w *WebRTCReceiver) IsSimulcast() bool {
-	return w.isSimulcast
-}
-
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
 	if w.closed.get() {
 		return
