@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
