@@ -11,11 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type SequenceNumberAndTimeStamp struct {
-	SequenceNumber uint16
-	Timestamp      uint32
-}
-
 var vp8Codec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:  "video/vp8",
