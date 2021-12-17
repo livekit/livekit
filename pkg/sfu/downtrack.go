@@ -30,14 +30,6 @@ type TrackSender interface {
 	PeerID() string
 }
 
-// DownTrackType determines the type of track
-type DownTrackType int
-
-const (
-	SimpleDownTrack DownTrackType = iota + 1
-	SimulcastDownTrack
-)
-
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
@@ -87,7 +79,6 @@ type DownTrack struct {
 	maxTrack      int
 	payloadType   uint8
 	sequencer     *sequencer
-	trackType     DownTrackType
 	bufferFactory *buffer.Factory
 
 	forwarder *Forwarder
@@ -159,12 +150,6 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	d.primaryStats.Store(new(PacketStats))
 	d.rtxStats.Store(new(PacketStats))
 	d.paddingStats.Store(new(PacketStats))
-
-	if r.IsSimulcast() {
-		d.trackType = SimulcastDownTrack
-	} else {
-		d.trackType = SimpleDownTrack
-	}
 
 	return d, nil
 }
