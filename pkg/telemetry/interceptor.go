@@ -20,7 +20,7 @@ type StatsInterceptorFactory struct {
 	identity      string
 }
 
-func (f *StatsInterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
+func (f *StatsInterceptorFactory) NewInterceptor(_ string) (interceptor.Interceptor, error) {
 	return &StatsInterceptor{
 		t:             f.t,
 		participantID: f.participantID,

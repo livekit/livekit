@@ -286,7 +286,7 @@ func (v *VP8Munger) PictureIdOffset(extPictureId int32) (int32, bool) {
 	return value.(int32), ok
 }
 
-//-----------------------------
+// -----------------------------
 
 //
 // VP8PictureIdWrapHandler

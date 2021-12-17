@@ -66,7 +66,7 @@ func NewLocalRoomManager(
 	return r, nil
 }
 
-func (r *RoomManager) GetRoom(ctx context.Context, roomName string) *rtc.Room {
+func (r *RoomManager) GetRoom(_ context.Context, roomName string) *rtc.Room {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.rooms[roomName]
@@ -381,7 +381,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 }
 
 // handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) {
+func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()

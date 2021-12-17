@@ -78,7 +78,7 @@ func TestMultinodePublishingUponJoining(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultinodePublishingUponJoining")
 	defer finish()
 
-	scenarioPublishingUponJoining(t, defaultServerPort, secondServerPort)
+	scenarioPublishingUponJoining(t)
 }
 
 func TestMultinodeReceiveBeforePublish(t *testing.T) {

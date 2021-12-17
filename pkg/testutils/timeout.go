@@ -9,7 +9,6 @@ import (
 )
 
 var (
-	SyncDelay      = 100 * time.Millisecond
 	ConnectTimeout = 30 * time.Second
 )
 

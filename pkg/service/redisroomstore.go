@@ -35,7 +35,7 @@ func NewRedisRoomStore(rc *redis.Client) *RedisRoomStore {
 	}
 }
 
-func (p *RedisRoomStore) StoreRoom(ctx context.Context, room *livekit.Room) error {
+func (p *RedisRoomStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -54,7 +54,7 @@ func (p *RedisRoomStore) StoreRoom(ctx context.Context, room *livekit.Room) erro
 	return nil
 }
 
-func (p *RedisRoomStore) LoadRoom(ctx context.Context, name string) (*livekit.Room, error) {
+func (p *RedisRoomStore) LoadRoom(_ context.Context, name string) (*livekit.Room, error) {
 	data, err := p.rc.HGet(p.ctx, RoomsKey, name).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -72,7 +72,7 @@ func (p *RedisRoomStore) LoadRoom(ctx context.Context, name string) (*livekit.Ro
 	return &room, nil
 }
 
-func (p *RedisRoomStore) ListRooms(ctx context.Context) ([]*livekit.Room, error) {
+func (p *RedisRoomStore) ListRooms(_ context.Context) ([]*livekit.Room, error) {
 	items, err := p.rc.HVals(p.ctx, RoomsKey).Result()
 	if err != nil && err != redis.Nil {
 		return nil, errors.Wrap(err, "could not get rooms")
@@ -105,7 +105,7 @@ func (p *RedisRoomStore) DeleteRoom(ctx context.Context, name string) error {
 	return err
 }
 
-func (p *RedisRoomStore) LockRoom(ctx context.Context, name string, duration time.Duration) (string, error) {
+func (p *RedisRoomStore) LockRoom(_ context.Context, name string, duration time.Duration) (string, error) {
 	token := utils.NewGuid("LOCK")
 	key := RoomLockPrefix + name
 
@@ -130,7 +130,7 @@ func (p *RedisRoomStore) LockRoom(ctx context.Context, name string, duration tim
 	return "", ErrRoomLockFailed
 }
 
-func (p *RedisRoomStore) UnlockRoom(ctx context.Context, name string, uid string) error {
+func (p *RedisRoomStore) UnlockRoom(_ context.Context, name string, uid string) error {
 	key := RoomLockPrefix + name
 
 	val, err := p.rc.Get(p.ctx, key).Result()
@@ -147,7 +147,7 @@ func (p *RedisRoomStore) UnlockRoom(ctx context.Context, name string, uid string
 	return p.rc.Del(p.ctx, key).Err()
 }
 
-func (p *RedisRoomStore) StoreParticipant(ctx context.Context, roomName string, participant *livekit.ParticipantInfo) error {
+func (p *RedisRoomStore) StoreParticipant(_ context.Context, roomName string, participant *livekit.ParticipantInfo) error {
 	key := RoomParticipantsPrefix + roomName
 
 	data, err := proto.Marshal(participant)
@@ -158,7 +158,7 @@ func (p *RedisRoomStore) StoreParticipant(ctx context.Context, roomName string, 
 	return p.rc.HSet(p.ctx, key, participant.Identity, data).Err()
 }
 
-func (p *RedisRoomStore) LoadParticipant(ctx context.Context, roomName, identity string) (*livekit.ParticipantInfo, error) {
+func (p *RedisRoomStore) LoadParticipant(_ context.Context, roomName, identity string) (*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + roomName
 	data, err := p.rc.HGet(p.ctx, key, identity).Result()
 	if err == redis.Nil {
@@ -174,7 +174,7 @@ func (p *RedisRoomStore) LoadParticipant(ctx context.Context, roomName, identity
 	return &pi, nil
 }
 
-func (p *RedisRoomStore) ListParticipants(ctx context.Context, roomName string) ([]*livekit.ParticipantInfo, error) {
+func (p *RedisRoomStore) ListParticipants(_ context.Context, roomName string) ([]*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + roomName
 	items, err := p.rc.HVals(p.ctx, key).Result()
 	if err == redis.Nil {
@@ -194,7 +194,7 @@ func (p *RedisRoomStore) ListParticipants(ctx context.Context, roomName string) 
 	return participants, nil
 }
 
-func (p *RedisRoomStore) DeleteParticipant(ctx context.Context, roomName, identity string) error {
+func (p *RedisRoomStore) DeleteParticipant(_ context.Context, roomName, identity string) error {
 	key := RoomParticipantsPrefix + roomName
 
 	return p.rc.HDel(p.ctx, key, identity).Err()

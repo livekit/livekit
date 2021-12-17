@@ -3,12 +3,13 @@ package serverlogger
 import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 var (
@@ -21,10 +22,6 @@ func LoggerFactory() logging.LoggerFactory {
 		defaultFactory = logging.NewDefaultLoggerFactory()
 	}
 	return defaultFactory
-}
-
-func SetLoggerFactory(lf logging.LoggerFactory) {
-	defaultFactory = lf
 }
 
 // Note: only pass in logr.Logger with default depth

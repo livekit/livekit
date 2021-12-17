@@ -45,7 +45,6 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
-	ErrNoRequiredBuff                    = errors.New("buff size if less than required")
 )
 
 var (

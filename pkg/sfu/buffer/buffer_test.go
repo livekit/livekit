@@ -33,16 +33,7 @@ type SequenceNumberAndTimeStamp struct {
 	Timestamp      uint32
 }
 
-func CreateTestListPackets(snsAndTSs []SequenceNumberAndTimeStamp) (packetList []*rtp.Packet) {
-	for _, item := range snsAndTSs {
-		item := item
-		packetList = append(packetList, CreateTestPacket(&item))
-	}
-
-	return packetList
-}
-
-var vp8Codec webrtc.RTPCodecParameters = webrtc.RTPCodecParameters{
+var vp8Codec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:  "video/vp8",
 		ClockRate: 90000,
@@ -53,7 +44,7 @@ var vp8Codec webrtc.RTPCodecParameters = webrtc.RTPCodecParameters{
 	PayloadType: 96,
 }
 
-var opusCodec webrtc.RTPCodecParameters = webrtc.RTPCodecParameters{
+var opusCodec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:  "audio/opus",
 		ClockRate: 48000,
@@ -291,7 +282,7 @@ func TestSeqWrapHandler(t *testing.T) {
 	assert.Equal(t, uint32(1), s.MaxSeqNo())
 
 	type caseInfo struct {
-		seqs  []uint32 //{seq1, seq2, unwrap of seq2}
+		seqs  []uint32 // {seq1, seq2, unwrap of seq2}
 		newer bool     // seq2 is newer than seq1
 	}
 	// test normal case, name -> {seq1, seq2, unwrap of seq2}

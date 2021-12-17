@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 )
 
 type telemetryServiceFixture struct {
@@ -33,7 +34,7 @@ func Test_TelemetrySerice_Downstream_Stats(t *testing.T) {
 	totalBytes := 33
 	fixture.sut.OnDownstreamPacket(partSID, totalBytes)
 
-	//call participant left to trigget sending of analytics
+	// call participant left to trigget sending of analytics
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
 
 	time.Sleep(time.Millisecond * 100) // wait for Update function to be called in go routine

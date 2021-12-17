@@ -24,14 +24,14 @@ type analyticsService struct {
 	stats  livekit.AnalyticsRecorderService_IngestStatsClient
 }
 
-func NewAnalyticsService(conf *config.Config, currentNode routing.LocalNode) AnalyticsService {
+func NewAnalyticsService(_ *config.Config, currentNode routing.LocalNode) AnalyticsService {
 	return &analyticsService{
 		analyticsKey: "", // TODO: conf.AnalyticsKey
 		nodeID:       currentNode.Id,
 	}
 }
 
-func (a *analyticsService) SendStats(ctx context.Context, stats []*livekit.AnalyticsStat) {
+func (a *analyticsService) SendStats(_ context.Context, stats []*livekit.AnalyticsStat) {
 	if a.stats == nil {
 		return
 	}
@@ -45,7 +45,7 @@ func (a *analyticsService) SendStats(ctx context.Context, stats []*livekit.Analy
 	}
 }
 
-func (a *analyticsService) SendEvent(ctx context.Context, event *livekit.AnalyticsEvent) {
+func (a *analyticsService) SendEvent(_ context.Context, event *livekit.AnalyticsEvent) {
 	if a.events == nil {
 		return
 	}

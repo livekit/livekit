@@ -26,13 +26,6 @@ const (
 	ForwardingStatusOptimal
 )
 
-type LayerDirection int
-
-const (
-	LayerDirectionLowToHigh LayerDirection = iota
-	LayerDirectionHighToLow
-)
-
 type VideoStreamingChange int
 
 const (
@@ -152,11 +145,6 @@ var (
 	InvalidLayers = VideoLayers{
 		spatial:  -1,
 		temporal: -1,
-	}
-
-	MinLayers = VideoLayers{
-		spatial:  0,
-		temporal: 0,
 	}
 
 	DefaultMaxLayers = VideoLayers{

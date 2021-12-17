@@ -7,7 +7,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-//-----------------------------------------------------------
+// -----------------------------------------------------------
 
 type TestExtPacketParams struct {
 	SetMarker      bool
@@ -23,7 +23,7 @@ type TestExtPacketParams struct {
 	ArrivalTime    int64
 }
 
-//-----------------------------------------------------------
+// -----------------------------------------------------------
 
 func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	packet := rtp.Packet{
@@ -56,7 +56,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	return ep, nil
 }
 
-//--------------------------------------
+// --------------------------------------
 
 func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.ExtPacket, error) {
 	ep, err := GetTestExtPacket(params)
@@ -69,7 +69,7 @@ func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.
 	return ep, nil
 }
 
-//--------------------------------------
+// --------------------------------------
 
 var TestVP8Codec = webrtc.RTPCodecCapability{
 	MimeType:  "video/vp8",
@@ -81,4 +81,4 @@ var TestOpusCodec = webrtc.RTPCodecCapability{
 	ClockRate: 48000,
 }
 
-//--------------------------------------
+// --------------------------------------

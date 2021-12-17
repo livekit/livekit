@@ -314,7 +314,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	numPadding := 10
 	clockRate := uint32(10)
 	frameRate := uint32(5)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,

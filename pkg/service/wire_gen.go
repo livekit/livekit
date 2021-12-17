@@ -28,7 +28,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(conf, client, currentNode)
+	router := routing.CreateRouter(client, currentNode)
 	roomStore := createStore(client)
 	roomAllocator, err := NewRoomAllocator(conf, router, roomStore)
 	if err != nil {
@@ -72,7 +72,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(conf, client, currentNode)
+	router := routing.CreateRouter(client, currentNode)
 	return router, nil
 }
 

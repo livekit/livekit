@@ -288,7 +288,7 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
 func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
 	p.params.Logger.Debugw("answering pub offer",
 		"state", p.State().String(),
-		//"sdp", sdp.SDP,
+		// "sdp", sdp.SDP,
 	)
 
 	if err = p.publisher.SetRemoteDescription(sdp); err != nil {

@@ -280,7 +280,7 @@ func (c *RTCClient) Run() error {
 
 			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
 		case *livekit.SignalResponse_Answer:
-			//logger.Debugw("received server answer",
+			// logger.Debugw("received server answer",
 			//	"participant", c.localParticipant.Identity,
 			//	"answer", msg.Answer.Sdp)
 			c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
@@ -613,7 +613,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 	// send remote an answer
 	logger.Infow("sending subscriber answer",
 		"participant", c.localParticipant.Identity,
-		//"sdp", answer,
+		// "sdp", answer,
 	)
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Answer{

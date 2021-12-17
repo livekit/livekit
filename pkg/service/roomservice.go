@@ -40,7 +40,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	return
 }
 
-func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (res *livekit.ListRoomsResponse, err error) {
+func (s *RoomService) ListRooms(ctx context.Context, _ *livekit.ListRoomsRequest) (res *livekit.ListRoomsResponse, err error) {
 	err = EnsureListPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)

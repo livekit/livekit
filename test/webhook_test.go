@@ -144,7 +144,7 @@ func newTestServer(addr string) *webookTestServer {
 	return s
 }
 
-func (s *webookTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *webookTestServer) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
 	data, err := webhook.Receive(r, s.provider)
 	if err != nil {
 		logger.Errorw("could not receive webhook", err)

@@ -1410,7 +1410,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	numPadding := 5
 	clockRate := uint32(0)
 	frameRate := uint32(5)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,
@@ -1477,7 +1477,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	numPadding := RTPBlankFramesMax + 1
 	clockRate := testutils.TestVP8Codec.ClockRate
 	frameRate := uint32(30)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,

@@ -261,7 +261,7 @@ func (p *Prober) run() {
 	}
 }
 
-//---------------------------------
+// ---------------------------------
 
 type Cluster struct {
 	// LK-TODO-START
@@ -289,7 +289,7 @@ func NewCluster(desiredRateBps int, expectedRateBps int, minDuration time.Durati
 	expectedBytes := int((int64(expectedRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
 
 	// pace based on sending approximately 1000 bytes per probe
-	numProbes := int((desiredBytes - expectedBytes + 999) / 1000)
+	numProbes := (desiredBytes - expectedBytes + 999) / 1000
 	sleepDurationMicroSeconds := int(float64(minDurationMs*1000)/float64(numProbes) + 0.5)
 	c := &Cluster{
 		desiredBytes:  desiredBytes,

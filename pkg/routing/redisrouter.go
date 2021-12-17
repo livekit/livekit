@@ -75,7 +75,7 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error) {
+func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName string) (*livekit.Node, error) {
 	nodeID, err := r.rc.HGet(r.ctx, NodeRoomKey, roomName).Result()
 	if err == redis.Nil {
 		return nil, ErrNotFound
@@ -86,11 +86,11 @@ func (r *RedisRouter) GetNodeForRoom(ctx context.Context, roomName string) (*liv
 	return r.GetNode(nodeID)
 }
 
-func (r *RedisRouter) SetNodeForRoom(ctx context.Context, roomName, nodeID string) error {
+func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName, nodeID string) error {
 	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeID).Err()
 }
 
-func (r *RedisRouter) ClearRoomState(ctx context.Context, roomName string) error {
+func (r *RedisRouter) ClearRoomState(_ context.Context, roomName string) error {
 	if err := r.rc.HDel(r.ctx, NodeRoomKey, roomName).Err(); err != nil {
 		return errors.Wrap(err, "could not clear room state")
 	}
@@ -169,7 +169,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 	return connectionID, sink, resChan, nil
 }
 
-func (r *RedisRouter) WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
 	pkey := participantKey(roomName, identity)
 	rtcNode, err := r.getParticipantRTCNode(pkey)
 	if err != nil {
@@ -190,7 +190,7 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName, identity strin
 	return r.WriteNodeRTC(ctx, node.Id, msg)
 }
 
-func (r *RedisRouter) WriteNodeRTC(ctx context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
+func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
 	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, msg.ParticipantKey)
 	return r.writeRTCMessage(rtcSink, msg)
 }

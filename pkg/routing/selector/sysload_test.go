@@ -33,7 +33,7 @@ var (
 func TestSystemLoadSelector_SelectNode(t *testing.T) {
 	selector := selector.SystemLoadSelector{SysloadLimit: 1.0}
 
-	nodes := []*livekit.Node{}
+	var nodes []*livekit.Node
 	_, err := selector.SelectNode(nodes)
 	require.Error(t, err, "should error no available nodes")
 

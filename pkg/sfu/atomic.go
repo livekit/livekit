@@ -25,30 +25,6 @@ func (a *atomicUint8) get() uint8 {
 	return uint8(atomic.LoadUint32((*uint32)(a)))
 }
 
-type atomicUint16 uint32
-
-func (a *atomicUint16) set(value uint16) {
-	atomic.StoreUint32((*uint32)(a), uint32(value))
-}
-
-func (a *atomicUint16) get() uint16 {
-	return uint16(atomic.LoadUint32((*uint32)(a)))
-}
-
-func (a *atomicUint16) add(value uint16) {
-	atomic.AddUint32((*uint32)(a), uint32(value))
-}
-
-type atomicInt32 int32
-
-func (a *atomicInt32) set(value int32) {
-	atomic.StoreInt32((*int32)(a), value)
-}
-
-func (a *atomicInt32) get() int32 {
-	return atomic.LoadInt32((*int32)(a))
-}
-
 type atomicUint32 uint32
 
 func (a *atomicUint32) set(value uint32) {

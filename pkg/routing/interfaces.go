@@ -7,8 +7,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/livekit/livekit-server/pkg/config"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -78,7 +76,7 @@ type MessageRouter interface {
 	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) Router {
+func CreateRouter(rc *redis.Client, node LocalNode) Router {
 	if rc != nil {
 		return NewRedisRouter(node, rc)
 	}
