@@ -287,11 +287,15 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
+	if f.muted || len(f.availableLayers) == 0 {
+		return ForwardingStatusOptimal
+	}
+
 	if f.targetLayers == InvalidLayers {
 		return ForwardingStatusOff
 	}
 
-	if f.targetLayers.spatial < f.maxLayers.spatial {
+	if f.targetLayers.spatial < f.maxLayers.spatial && f.targetLayers.spatial < int32(f.availableLayers[len(f.availableLayers)-1]) {
 		return ForwardingStatusPartial
 	}
 
@@ -598,7 +602,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
 	for s := int32(0); s <= f.maxLayers.spatial; s++ {
-		for t := int32(0); s <= f.maxLayers.temporal; t++ {
+		for t := int32(0); t <= f.maxLayers.temporal; t++ {
 			if f.provisional.bitrates[s][t] != 0 {
 				minimalLayers = VideoLayers{spatial: s, temporal: t}
 				bandwidthRequired = f.provisional.bitrates[s][t]
