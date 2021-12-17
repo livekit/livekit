@@ -188,7 +188,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 	// In the case of loss (i.e. incoming sequence number is not contiguous),
 	// forward even if it is a filtered layer. With temporal scalability,
 	// it is unclear if the current packet should be dropped if it is not
-	// contiguous. Hence forward anything that is not contiguous.
+	// contiguous. Hence, forward anything that is not contiguous.
 	// Reference: http://www.rtcbits.com/2017/04/howto-implement-temporal-scalability.html
 	extMungedPictureId := extPictureId - v.pictureIdOffset
 	mungedPictureId := uint16(extMungedPictureId & 0x7fff)

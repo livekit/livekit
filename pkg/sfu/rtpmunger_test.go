@@ -273,7 +273,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	_, ok := r.missingSNs[65533]
 	require.False(t, ok)
 
-	// three after last received misisng with wrap-around
+	// three after last received missing with wrap-around
 	offset, ok := r.missingSNs[65534]
 	require.True(t, ok)
 	require.Equal(t, uint16(0), offset)

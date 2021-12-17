@@ -34,7 +34,7 @@ func Test_TelemetryService_Downstream_Stats(t *testing.T) {
 	totalBytes := 33
 	fixture.sut.OnDownstreamPacket(partSID, totalBytes)
 
-	// call participant left to trigget sending of analytics
+	// call participant left to trigger sending of analytics
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
 
 	time.Sleep(time.Millisecond * 100) // wait for Update function to be called in go routine

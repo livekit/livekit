@@ -1205,7 +1205,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	//     the transceivers, but there are no tracks in the
 	//     transceiver yet
 	//   - before calling `CreateAnswer`
-	// Due to the absensce of tracks when it is required to set DTX,
+	// Due to the absence of tracks when it is required to set DTX,
 	// it is not possible to cross reference against a pending track
 	// with the same track id.
 	//

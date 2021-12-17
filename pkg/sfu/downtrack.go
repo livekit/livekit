@@ -319,7 +319,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 	// LK-TODO-START
 	// Potentially write padding even if muted. Given that padding
-	// can be sent only on frame boudaries, writing on disabled tracks
+	// can be sent only on frame boundaries, writing on disabled tracks
 	// will give more options.
 	// LK-TODO-END
 	if d.forwarder.Muted() {
@@ -345,7 +345,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
 		// That is definitive proof that the remote side knows about this RTP stream.
 		// The packet count check at the beginning of this function gates sending padding
-		// on as yet unstarted streams which is a reasonble check.
+		// on as yet unstarted streams which is a reasonable check.
 		// LK-TODO-END
 
 		hdr := rtp.Header{
@@ -385,7 +385,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// LK-TODO-START
 		// NACK buffer for these probe packets.
 		// Probably okay to absorb the NACKs for these and ignore them.
-		// Retransmssion is probably a sign of network congestion/badness.
+		// Retransmission is probably a sign of network congestion/badness.
 		// So, retransmitting padding packets is only going to make matters worse.
 		// LK-TODO-END
 

@@ -661,7 +661,7 @@ func (s *SeqWrapHandler) MaxSeqNo() uint32 {
 	return s.maxSeqNo
 }
 
-// unwrap seq and update the maxSeqNo. return unwraped value, and whether seq is newer
+// unwrap seq and update the maxSeqNo. return unwrapped value, and whether seq is newer
 func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
 
 	maxSeqNo := uint16(s.maxSeqNo)

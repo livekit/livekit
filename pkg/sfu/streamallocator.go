@@ -614,7 +614,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 		// But, this bypasses the case where streaming starts on a bunch of
 		// tracks simultaneously (imagine a participant joining a large room
 		// with a lot of video tracks). In that case, it is possible that the
-		// channel is hitting congestion. It will caught on the next estimate
+		// channel is hitting congestion. It will be caught on the next estimate
 		// decrease.
 		s.lastEstimateDecreaseTime = time.Now()
 		isDecreasing = true

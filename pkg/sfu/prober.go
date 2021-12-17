@@ -1,7 +1,7 @@
 //
 // Design of Prober
 //
-// Probing is used to to check for existence of excess channel capacity.
+// Probing is used to check for existence of excess channel capacity.
 // This is especially useful in the downstream direction of SFU.
 // SFU forwards audio/video streams from one or more publishers to
 // all the subscribers. But, the downstream channel of a subscriber
@@ -40,7 +40,7 @@
 //     probing window boundary as the packet forwarding path
 //     may not have a packet to forward. But, it should not
 //     be a major concern as long as some stream(s) is/are
-//     forwarded as there should be a packet atleast every
+//     forwarded as there should be a packet at least every
 //     60 ms or so (forwarding only one stream at 15 fps).
 //     Usually, it will be serviced much more frequently when
 //     there are multiple streams getting forwarded.

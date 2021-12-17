@@ -628,7 +628,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	//   2. Look at all possible down transitions from current target and find the best offer.
 	//      Best offer is calculated as bits saved moving to a down layer divided by cost.
 	//      Cost has two components
-	//        a. Transition cost: Spatial layer switch is expensive due to key frame requiremnt, but temporal layer switch is free.
+	//        a. Transition cost: Spatial layer switch is expensive due to key frame requirement, but temporal layer switch is free.
 	//        b. Quality cost: The farther away from desired layers, the higher the quality cost.
 	//
 	f.lock.Lock()
