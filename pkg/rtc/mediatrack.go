@@ -32,9 +32,9 @@ var (
 )
 
 const (
-	lostUpdateDelta         = time.Second
-	lastUpdateDelta         = 5 * time.Second
-	layerSelectionTolerance = 0.8
+	lostUpdateDelta                 = time.Second
+	connectionQualityUpdateInterval = 5 * time.Second
+	layerSelectionTolerance         = 0.8
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -105,10 +105,8 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
 	// on close signal via closing channel to workers
-	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_AUDIO {
-		t.AddOnClose(t.closeChan)
-		go t.updateStats()
-	}
+	t.AddOnClose(t.closeChan)
+	go t.updateStats()
 
 	return t
 }
@@ -709,14 +707,25 @@ func (t *MediaTrack) closeChan() {
 func (t *MediaTrack) updateStats() {
 	for {
 		select {
-		case _, ok := <-t.done:
-			if !ok {
-				return
-			}
-		case <-time.After(lastUpdateDelta):
+		case <-t.done:
+			return
+		case <-time.After(connectionQualityUpdateInterval):
 			t.statsLock.Lock()
-			t.connectionStats.CalculateScore(t.Kind())
+			if t.Kind() == livekit.TrackType_AUDIO {
+				t.connectionStats.CalculateAudioScore(livekit.TrackType_AUDIO)
+			} else {
+				t.calculateVideoScore()
+			}
 			t.statsLock.Unlock()
 		}
 	}
+}
+
+func (t *MediaTrack) calculateVideoScore() {
+	var reducedQuality bool
+	publishing, registered := t.NumUpTracks()
+	if registered > 0 && publishing != registered {
+		reducedQuality = true
+	}
+	t.connectionStats.Score = connectionquality.Loss2Score(t.PublishLossPercentage(), reducedQuality)
 }

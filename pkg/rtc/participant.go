@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"io"
-	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -670,81 +669,37 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	// avg loss across all tracks, weigh published the same as subscribed
-	var pubLoss, subLoss uint32
-	var reducedQualityPub bool
-	var reducedQualitySub bool
-	var audioScores float64
-	var numAudioTracks int
+	var scores float64
+	var numTracks int
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	for _, pubTrack := range p.publishedTracks {
 		if pubTrack.IsMuted() {
 			continue
 		}
-		// audio has scores available
-		if pubTrack.Kind() == livekit.TrackType_AUDIO {
-			audioScores += pubTrack.GetConnectionScore()
-			numAudioTracks++
-		} else {
-			pubLoss += pubTrack.PublishLossPercentage()
-			publishing, registered := pubTrack.NumUpTracks()
-			if registered > 0 && publishing != registered {
-				reducedQualityPub = true
-			}
-		}
+		scores += pubTrack.GetConnectionScore()
 	}
 
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if subTrack.DownTrack().Kind() == webrtc.RTPCodecTypeAudio {
-			audioScores += subTrack.DownTrack().GetConnectionScore()
-			numAudioTracks++
-		} else {
-			if subTrack.DownTrack().GetForwardingStatus() != sfu.ForwardingStatusOptimal {
-				reducedQualitySub = true
-			}
-			subLoss += subTrack.SubscribeLossPercentage()
-		}
+		numTracks++
+		scores += subTrack.DownTrack().GetConnectionScore()
+
 	}
 
-	avgScore := 0.0
-	// find avg loss and avg scores across pub/sub
-	// audio scores fall are in range of [0 - 5] . 5 being best . find avg
-	if numAudioTracks > 0 {
-		avgScore = (audioScores) / float64(numAudioTracks)
-	}
-
-	numTracks := len(p.publishedTracks) + len(p.subscribedTracks) - numAudioTracks
-	avgLoss := 0.0
-	// non audio scores fall in range [x - 0] . 0 being best . find average
+	var avgScore float64
 	if numTracks > 0 {
-		avgLoss = float64(pubLoss+subLoss) / float64(numTracks)
+		avgScore = scores / float64(numTracks)
 	}
 
-	// map video to avgLossScores (> 4 -> bad[2.0], (4><2 -> good[3.5]), (<2 -> excellent[4.4])
-	avgLossScore := 3.5
-	if avgLoss >= 4 {
-		avgLossScore = 2.0
-	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
-		avgLossScore = 4.5
-	}
-
-	var score float64
-	// now scores in the same range, find avg (or max if only pub or sub)
-	if avgLossScore != 0 && avgScore != 0 {
-		score = (avgScore + avgLossScore) / 2
-	} else {
-		score = math.Max(avgScore, avgLossScore)
-	}
-
-	rating := connectionquality.Score2Rating(score)
+	rating := connectionquality.Score2Rating(avgScore)
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: p.ID(),
 		Quality:        rating,
-		Score:          float32(score),
+		Score:          float32(avgScore),
 	}
 }
 

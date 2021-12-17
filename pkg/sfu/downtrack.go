@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	lastUpdateDelta = 5 * time.Second
+	connectionQualityUpdateInterval = 5 * time.Second
 )
 
 // TrackSender defines a  interface send media to remote peer
@@ -162,10 +162,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	d.rtxStats.Store(new(PacketStats))
 	d.paddingStats.Store(new(PacketStats))
 
-
-	if d.Kind() == webrtc.RTPCodecTypeAudio {
-		go d.updateStats()
-	}
+	go d.updateStats()
 
 	return d, nil
 }
@@ -1041,16 +1038,30 @@ func (d *DownTrack) GetConnectionScore() float64 {
 func (d *DownTrack) updateStats() {
 	for {
 		select {
-		case _, ok := <-d.done:
-			if !ok {
-				return
-			}
-		case <-time.After(lastUpdateDelta):
+		case <-d.done:
+			return
+		case <-time.After(connectionQualityUpdateInterval):
 			d.statsLock.Lock()
 			if d.Kind() == webrtc.RTPCodecTypeAudio {
-				d.connectionStats.CalculateScore(livekit.TrackType_AUDIO)
+				d.connectionStats.CalculateAudioScore(livekit.TrackType_AUDIO)
+			} else {
+				d.calculateVideoScore()
 			}
 			d.statsLock.Unlock()
 		}
 	}
+}
+
+// converts a fixed point number to the number part of %
+func FixedPointToPercent(frac uint8) uint32 {
+	return (uint32(frac) * 100) >> 8
+}
+
+func (d *DownTrack) calculateVideoScore() {
+	var reducedQuality bool
+	if d.GetForwardingStatus() != ForwardingStatusOptimal {
+		reducedQuality = true
+	}
+	d.connectionStats.Score = connectionquality.Loss2Score(FixedPointToPercent(d.CurrentMaxLossFraction()), reducedQuality)
+	return
 }

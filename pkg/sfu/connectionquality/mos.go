@@ -60,6 +60,19 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	return score
 }
 
+func Loss2Score(loss uint32, reducedQuality bool) float64 {
+	if loss == 0 {
+		return 0
+	}
+	score := 3.5
+	if loss >= 4 {
+		score = 2.0
+	} else if loss <= 2 && !reducedQuality {
+		score = 4.5
+	}
+	return score
+}
+
 func ConnectionScore(cur, prev *ConnectionStat, kind livekit.TrackType) float64 {
 	if kind == livekit.TrackType_AUDIO {
 		return mosAudioEmodel(cur, prev)

@@ -33,7 +33,7 @@ func getTotalPackets(curSN, prevSN uint32) uint32 {
 	return increment
 }
 
-func (cs *ConnectionStats) CalculateScore(kind livekit.TrackType) {
+func (cs *ConnectionStats) CalculateAudioScore(kind livekit.TrackType) {
 	// update feedback stats
 	current := cs.Curr
 	previous := cs.Prev
