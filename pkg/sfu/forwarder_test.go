@@ -90,12 +90,30 @@ func TestForwarderLayersVideo(t *testing.T) {
 func TestForwarderGetForwardingStatus(t *testing.T) {
 	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
+	// no available layers, should be optimal
+	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
+
+	// with available layers, should be off
+	availableLayers := []uint16{0, 1, 2}
+	f.UptrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOff, f.GetForwardingStatus())
 
+	// when muted, should be optimal
+	f.Mute(true)
+	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
+
+	// when target is the max, should be optimal
+	f.Mute(false)
+	f.targetLayers.spatial = DefaultMaxLayerSpatial
+	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
+
+	// when target is less than max subscribed and max available, should be partial
 	f.targetLayers.spatial = DefaultMaxLayerSpatial - 1
 	require.Equal(t, ForwardingStatusPartial, f.GetForwardingStatus())
 
-	f.targetLayers.spatial = DefaultMaxLayerSpatial
+	// when available layers are lower than max subscribed, optimal as long as target is at max available
+	availableLayers = []uint16{0, 1}
+	f.UptrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
 }
 
