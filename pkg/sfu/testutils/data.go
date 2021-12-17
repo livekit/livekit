@@ -1,10 +1,10 @@
 package testutils
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 //-----------------------------------------------------------

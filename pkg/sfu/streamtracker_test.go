@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 func TestStreamTracker(t *testing.T) {

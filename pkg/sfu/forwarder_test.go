@@ -4,12 +4,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pion/webrtc/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-
-	"github.com/pion/webrtc/v3"
-
-	"github.com/stretchr/testify/require"
 )
 
 func disable(f *Forwarder) {

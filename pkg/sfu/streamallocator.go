@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
-
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 )

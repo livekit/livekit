@@ -112,7 +112,6 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
-
 	"github.com/livekit/protocol/logger"
 )
 

@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
 func TestSetLastSnTs(t *testing.T) {
