@@ -151,7 +151,6 @@ type SubscribedTrack interface {
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
-	SubscribeLossPercentage() uint32
 }
 
 // interface for properties of webrtc.TrackRemote

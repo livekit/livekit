@@ -61,13 +61,16 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 }
 
 func Loss2Score(loss uint32, reducedQuality bool) float64 {
-	if loss == 0 {
-		return 0
+	// No Loss, excellent
+	if loss == 0 && !reducedQuality {
+		return 5
 	}
-	score := 3.5
+	score := 3.0
+	// loss is bad
 	if loss >= 4 {
 		score = 2.0
 	} else if loss <= 2 && !reducedQuality {
+		// loss is acceptable and at reduced quality
 		score = 4.5
 	}
 	return score

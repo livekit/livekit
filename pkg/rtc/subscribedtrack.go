@@ -64,10 +64,6 @@ func (t *SubscribedTrack) PublishedTrack() types.MediaTrack {
 	return t.publishedTrack
 }
 
-func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {
-	return FixedPointToPercent(t.DownTrack().CurrentMaxLossFraction())
-}
-
 // has subscriber indicated it wants to mute this track
 func (t *SubscribedTrack) IsMuted() bool {
 	return t.subMuted.Get()

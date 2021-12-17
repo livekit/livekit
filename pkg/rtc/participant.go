@@ -678,15 +678,15 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 			continue
 		}
 		scores += pubTrack.GetConnectionScore()
+		numTracks++
 	}
 
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() {
 			continue
 		}
-		numTracks++
 		scores += subTrack.DownTrack().GetConnectionScore()
-
+		numTracks++
 	}
 
 	var avgScore float64
