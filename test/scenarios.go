@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
@@ -14,7 +14,7 @@ import (
 )
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
-func scenarioPublishingUponJoining(t *testing.T, ports ...int) {
+func scenarioPublishingUponJoining(t *testing.T) {
 	c1 := createRTCClient("puj_1", defaultServerPort, nil)
 	c2 := createRTCClient("puj_2", secondServerPort, &testclient.Options{AutoSubscribe: true})
 	c3 := createRTCClient("puj_3", defaultServerPort, &testclient.Options{AutoSubscribe: true})
@@ -142,14 +142,6 @@ func scenarioDataPublish(t *testing.T) {
 }
 
 // websocket reconnects
-func scenarioWSReconnect(t *testing.T) {
-	c1 := createRTCClient("wsr_1", defaultServerPort, nil)
-	c2 := createRTCClient("wsr_2", defaultServerPort, nil)
-
-	waitUntilConnected(t, c1, c2)
-
-	// c1 publishes track, but disconnects websockets and reconnects
-}
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")

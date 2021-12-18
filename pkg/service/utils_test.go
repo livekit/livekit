@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/service"
 )
 
 func redisClient() *redis.Client {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
@@ -92,8 +92,8 @@ func TestTrackPublishing(t *testing.T) {
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		//track := &typesfakes.FakePublishedTrack{}
-		//track.IDReturns("id")
+		// track := &typesfakes.FakePublishedTrack{}
+		// track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:    "cid",
@@ -115,8 +115,8 @@ func TestTrackPublishing(t *testing.T) {
 
 	t.Run("should not allow adding of duplicate tracks", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		//track := &typesfakes.FakePublishedTrack{}
-		//track.IDReturns("id")
+		// track := &typesfakes.FakePublishedTrack{}
+		// track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",

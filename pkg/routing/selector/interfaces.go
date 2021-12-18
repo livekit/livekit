@@ -3,7 +3,7 @@ package selector
 import (
 	"errors"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )

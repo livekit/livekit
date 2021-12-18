@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 func Test_sequencer(t *testing.T) {

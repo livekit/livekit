@@ -21,9 +21,8 @@ func TestTrackInfo(t *testing.T) {
 		Muted:     true,
 	}
 
-	ti2 := ti
 	mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{
-		TrackInfo: &ti2,
+		TrackInfo: &ti,
 	})
 	outInfo := mt.ToProto()
 	require.Equal(t, ti.Muted, outInfo.Muted)

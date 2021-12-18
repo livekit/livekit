@@ -26,13 +26,6 @@ const (
 	ForwardingStatusOptimal
 )
 
-type LayerDirection int
-
-const (
-	LayerDirectionLowToHigh LayerDirection = iota
-	LayerDirectionHighToLow
-)
-
 type VideoStreamingChange int
 
 const (
@@ -152,11 +145,6 @@ var (
 	InvalidLayers = VideoLayers{
 		spatial:  -1,
 		temporal: -1,
-	}
-
-	MinLayers = VideoLayers{
-		spatial:  0,
-		temporal: 0,
 	}
 
 	DefaultMaxLayers = VideoLayers{
@@ -539,7 +527,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	//   4. If not currently streaming, find the minimum layers that can unpause the stream.
 	//
 	// To summarize, co-operative streaming means
-	//   - Try to keep tracks streaming, i. e. no pauses even if not at optimal layers
+	//   - Try to keep tracks streaming, i.e. no pauses even if not at optimal layers
 	//   - Do not make an upgrade as it could affect other tracks
 	//
 	f.lock.Lock()
@@ -602,7 +590,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
 	for s := int32(0); s <= f.maxLayers.spatial; s++ {
-		for t := int32(0); s <= f.maxLayers.temporal; t++ {
+		for t := int32(0); t <= f.maxLayers.temporal; t++ {
 			if f.provisional.bitrates[s][t] != 0 {
 				minimalLayers = VideoLayers{spatial: s, temporal: t}
 				bandwidthRequired = f.provisional.bitrates[s][t]
@@ -640,7 +628,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	//   2. Look at all possible down transitions from current target and find the best offer.
 	//      Best offer is calculated as bits saved moving to a down layer divided by cost.
 	//      Cost has two components
-	//        a. Transition cost: Spatial layer switch is expensive due to key frame requiremnt, but temporal layer switch is free.
+	//        a. Transition cost: Spatial layer switch is expensive due to key frame requirement, but temporal layer switch is free.
 	//        b. Quality cost: The farther away from desired layers, the higher the quality cost.
 	//
 	f.lock.Lock()
@@ -1097,7 +1085,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// this will take client subscription as the winning vote and
 		// continue to stream current spatial layer till switch point.
 		// That could lead to congesting the channel.
-		// LK-TODO: Improve the above case, i. e. distinguish server
+		// LK-TODO: Improve the above case, i.e. distinguish server
 		// applied restriction from client requested restriction.
 		//
 		tp.shouldDrop = true

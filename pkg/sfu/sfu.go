@@ -7,7 +7,7 @@ import (
 )
 
 // Logger is an implementation of logr.Logger. If is not provided - will be turned off.
-var Logger logr.Logger = logr.Discard()
+var Logger = logr.Discard()
 
 var (
 	PacketFactory *sync.Pool

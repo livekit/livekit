@@ -1,7 +1,7 @@
 //
 // Design of Prober
 //
-// Probing is to used to check for existence of excess channel capacity.
+// Probing is used to check for existence of excess channel capacity.
 // This is especially useful in the downstream direction of SFU.
 // SFU forwards audio/video streams from one or more publishers to
 // all the subscribers. But, the downstream channel of a subscriber
@@ -40,7 +40,7 @@
 //     probing window boundary as the packet forwarding path
 //     may not have a packet to forward. But, it should not
 //     be a major concern as long as some stream(s) is/are
-//     forwarded as there should be a packet atleast every
+//     forwarded as there should be a packet at least every
 //     60 ms or so (forwarding only one stream at 15 fps).
 //     Usually, it will be serviced much more frequently when
 //     there are multiple streams getting forwarded.
@@ -75,7 +75,7 @@
 //
 // A further assumption is that if there are multiple publishers for
 // a subscriber peer connection, all the publishers are not pacing
-// in sync, i. e. each publisher's pacer is completely independent
+// in sync, i.e. each publisher's pacer is completely independent
 // and SFU will be receiving the media packets with a good spread and
 // not clumped together.
 //
@@ -112,7 +112,6 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
-
 	"github.com/livekit/protocol/logger"
 )
 
@@ -262,7 +261,7 @@ func (p *Prober) run() {
 	}
 }
 
-//---------------------------------
+// ---------------------------------
 
 type Cluster struct {
 	// LK-TODO-START
@@ -290,7 +289,7 @@ func NewCluster(desiredRateBps int, expectedRateBps int, minDuration time.Durati
 	expectedBytes := int((int64(expectedRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
 
 	// pace based on sending approximately 1000 bytes per probe
-	numProbes := int((desiredBytes - expectedBytes + 999) / 1000)
+	numProbes := (desiredBytes - expectedBytes + 999) / 1000
 	sleepDurationMicroSeconds := int(float64(minDurationMs*1000)/float64(numProbes) + 0.5)
 	c := &Cluster{
 		desiredBytes:  desiredBytes,

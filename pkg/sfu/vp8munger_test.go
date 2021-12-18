@@ -4,10 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-
-	"github.com/stretchr/testify/require"
 )
 
 func compare(expected *VP8Munger, actual *VP8Munger) bool {

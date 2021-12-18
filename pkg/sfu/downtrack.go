@@ -25,7 +25,7 @@ const (
 	connectionQualityUpdateInterval = 5 * time.Second
 )
 
-// TrackSender defines a  interface send media to remote peer
+// TrackSender defines an interface send media to remote peer
 type TrackSender interface {
 	UptrackLayersChange(availableLayers []uint16)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
@@ -51,7 +51,6 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
-	ErrNoRequiredBuff                    = errors.New("buff size if less than required")
 )
 
 var (
@@ -169,7 +168,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 
 // Bind is called by the PeerConnection after negotiation is complete
 // This asserts that the code requested is supported by the remote peer.
-// If so it setups all the state (SSRC and PayloadType) to have a call
+// If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
 	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
 	if codec, err := codecParametersFuzzySearch(parameters, t.CodecParameters()); err == nil {
@@ -240,7 +239,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
-// WriteRTP writes a RTP Packet to the DownTrack
+// WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	var pool *[]byte
 	defer func() {
@@ -333,7 +332,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 	// LK-TODO-START
 	// Potentially write padding even if muted. Given that padding
-	// can be sent only on frame boudaries, writing on disabled tracks
+	// can be sent only on frame boundaries, writing on disabled tracks
 	// will give more options.
 	// LK-TODO-END
 	if d.forwarder.Muted() {
@@ -359,7 +358,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
 		// That is definitive proof that the remote side knows about this RTP stream.
 		// The packet count check at the beginning of this function gates sending padding
-		// on as yet unstarted streams which is a reasonble check.
+		// on as yet unstarted streams which is a reasonable check.
 		// LK-TODO-END
 
 		hdr := rtp.Header{
@@ -399,7 +398,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// LK-TODO-START
 		// NACK buffer for these probe packets.
 		// Probably okay to absorb the NACKs for these and ignore them.
-		// Retransmssion is probably a sign of network congestion/badness.
+		// Retransmission is probably a sign of network congestion/badness.
 		// So, retransmitting padding packets is only going to make matters worse.
 		// LK-TODO-END
 
@@ -433,7 +432,7 @@ func (d *DownTrack) Close() {
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
 	// Otherwise, with transceiver re-use last frame from previous stream is held in the
 	// display buffer and there could be a brief moment where the previous stream is displayed.
-	d.writeBlankFrameRTP()
+	_ = d.writeBlankFrameRTP()
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)

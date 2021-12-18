@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/twitchtv/twirp"
@@ -28,9 +28,9 @@ const (
 	testApiSecret     = "apiSecret"
 	testRoom          = "mytestroom"
 	defaultServerPort = 7880
-	secondServerPort  = 8880
-	nodeId1           = "node-1"
-	nodeId2           = "node-2"
+	secondServerPort = 8880
+	nodeID1 = "node-1"
+	nodeID2 = "node-2"
 
 	syncDelay = 100 * time.Millisecond
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)
@@ -70,8 +70,8 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 
 func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s1 := createMultiNodeServer(utils.NewGuid(nodeId1), defaultServerPort)
-	s2 := createMultiNodeServer(utils.NewGuid(nodeId2), secondServerPort)
+	s1 := createMultiNodeServer(utils.NewGuid(nodeID1), defaultServerPort)
+	s2 := createMultiNodeServer(utils.NewGuid(nodeID2), secondServerPort)
 	go s1.Start()
 	go s2.Start()
 
@@ -145,7 +145,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	if err != nil {
 		panic(fmt.Sprintf("could not create local node: %v", err))
 	}
-	currentNode.Id = utils.NewGuid(nodeId1)
+	currentNode.Id = utils.NewGuid(nodeID1)
 
 	s, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
@@ -156,7 +156,7 @@ func createSingleNodeServer() *service.LivekitServer {
 	return s
 }
 
-func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
+func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", nil)
 	if err != nil {
@@ -173,7 +173,7 @@ func createMultiNodeServer(nodeId string, port uint32) *service.LivekitServer {
 	if err != nil {
 		panic(err)
 	}
-	currentNode.Id = nodeId
+	currentNode.Id = nodeID
 
 	// redis routing and store
 	s, err := service.InitializeServer(conf, currentNode)
