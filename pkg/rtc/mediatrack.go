@@ -303,6 +303,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				}
 			}
 
+			t.NotifySubscriberMute(sub.ID())
 			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()
@@ -317,6 +318,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
+		t.NotifySubscriberMaxQuality(sub.ID(), livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
@@ -678,13 +680,9 @@ func (t *MediaTrack) NotifySubscriberMute(subscriberID string) {
 	}
 
 	delete(t.maxSubscriberQuality, subscriberID)
-
-	subscribedQualities := t.getQualityChanges()
 	t.maxQualityLock.Unlock()
 
-	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
-		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
-	}
+	t.updateQualityChange()
 }
 
 func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality) {
@@ -700,16 +698,15 @@ func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality liv
 	}
 
 	t.maxSubscriberQuality[subscriberID] = quality
-
-	subscribedQualities := t.getQualityChanges()
 	t.maxQualityLock.Unlock()
 
-	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
-		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
-	}
+	t.updateQualityChange()
 }
 
-func (t *MediaTrack) getQualityChanges() []*livekit.SubscribedQuality {
+func (t *MediaTrack) updateQualityChange() {
+	var subscribedQualities []*livekit.SubscribedQuality
+
+	t.maxQualityLock.Lock()
 	allSubscribersMuted := false
 	maxSubscribedQuality := livekit.VideoQuality_LOW
 	if len(t.maxSubscriberQuality) == 0 {
@@ -733,11 +730,9 @@ func (t *MediaTrack) getQualityChanges() []*livekit.SubscribedQuality {
 	}
 
 	if allSubscribersMuted {
-		if t.allSubscribersMuted {
-			return []*livekit.SubscribedQuality{}
-		} else {
+		if !t.allSubscribersMuted {
 			t.allSubscribersMuted = true
-			return []*livekit.SubscribedQuality{
+			subscribedQualities = []*livekit.SubscribedQuality{
 				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
 				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
@@ -745,24 +740,27 @@ func (t *MediaTrack) getQualityChanges() []*livekit.SubscribedQuality {
 		}
 	} else {
 		t.allSubscribersMuted = false
-		if maxSubscribedQuality == t.maxSubscribedQuality {
-			return []*livekit.SubscribedQuality{}
-		} else {
+		if maxSubscribedQuality != t.maxSubscribedQuality {
 			t.maxSubscribedQuality = maxSubscribedQuality
-			subscribedQualities := []*livekit.SubscribedQuality{}
+
 			subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true})
+
 			if t.maxSubscribedQuality == livekit.VideoQuality_LOW {
 				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false})
 			} else {
 				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true})
 			}
+
 			if t.maxSubscribedQuality != livekit.VideoQuality_HIGH {
 				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false})
 			} else {
 				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true})
 			}
-
-			return subscribedQualities
 		}
+	}
+	t.maxQualityLock.Unlock()
+
+	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
+		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
 	}
 }
