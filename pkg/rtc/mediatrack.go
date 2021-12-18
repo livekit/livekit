@@ -704,6 +704,10 @@ func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality liv
 }
 
 func (t *MediaTrack) updateQualityChange() {
+	if t.IsMuted() {
+		return
+	}
+
 	var subscribedQualities []*livekit.SubscribedQuality
 
 	t.maxQualityLock.Lock()
