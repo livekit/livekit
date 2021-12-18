@@ -209,7 +209,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(t, t.params.ParticipantID, t.params.ParticipantIdentity, downTrack)
+	subTrack := NewSubscribedTrack(t, sub.ID(), t.params.ParticipantIdentity, downTrack)
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
