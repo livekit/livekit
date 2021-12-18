@@ -157,6 +157,11 @@ func (t *MediaTrack) SetMuted(muted bool) {
 		}
 		return true
 	})
+
+	// update quality based on subscription if unmuting
+	if !muted {
+		t.updateQualityChange()
+	}
 }
 
 func (t *MediaTrack) AddOnClose(f func()) {
