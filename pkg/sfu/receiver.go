@@ -29,7 +29,6 @@ type TrackReceiver interface {
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
-	NotifyMaxSubscribedLayer(peerID string, layer int32)
 }
 
 // Receiver defines an interface for a track receivers
@@ -37,7 +36,6 @@ type Receiver interface {
 	TrackID() string
 	StreamID() string
 	Codec() webrtc.RTPCodecCapability
-	NotifyMaxSubscribedLayer(peerID string, layer int32)
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
@@ -86,8 +84,6 @@ type WebRTCReceiver struct {
 	free        map[int]struct{}
 	numProcs    int
 	lbThreshold int
-
-	maxSubscribedLayer map[string]int32
 }
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
@@ -136,8 +132,6 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		index:       make(map[string]int),
 		free:        make(map[int]struct{}),
 		numProcs:    runtime.NumCPU(),
-		maxSubscribedLayer: make(map[string]int32),
-		maxRequestedLayer: DefaultMaxLayerSpatial,
 	}
 	if runtime.GOMAXPROCS(0) < w.numProcs {
 		w.numProcs = runtime.GOMAXPROCS(0)
@@ -177,49 +171,6 @@ func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
-}
-
-func (w *WebRTCReceiver) NotifyMaxSubscribedLayer(peerID string, layer int32) {
-	w.upTrackMu.Lock()
-	maxLayer, ok := w.maxSubscribedLayer[peerID]
-	if ok && maxLayer == layer {
-		w.upTrackMu.Unlock()
-		return
-	}
-
-	w.maxSubscribedLayer[peerID] = layer
-
-	maxRequestedLayer := -1
-	for _, maxLayer = range w.maxSubscribedLayer {
-		if maxLayer > maxRequestedLayer {
-			maxRequestedLayer = maxLayer
-		}
-
-		if maxRequestedLayer == DefaultMaxLayerSpatial {
-			// cannot go higher
-			break
-		}
-	}
-
-	if maxRequestedLayer == w.maxRequestedLayer {
-		w.upTrackMu.Unlock()
-		return
-	}
-
-	w.maxRequestedLayer = maxRequestedLayer
-	w.upTrackMu.Unlock()
-
-	var requestedLayers []string = []
-	switch maxRequestedLayer {
-	case 0:
-		requestedLayers = [QuarterResolution]
-	case 1:
-		requestedLayers = [QuarterResolution, HalfResolution]
-	case 2:
-		requestedLayers = [QuarterResolution, HalfResolution, FullResolution]
-	}
-
-	// RAJA-TODO notify
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {

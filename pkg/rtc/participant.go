@@ -938,6 +938,8 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			Logger:              p.params.Logger,
 		})
 
+		mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+
 		// add to published and clean up pending
 		p.publishedTracks[mt.ID()] = mt
 		delete(p.pendingTracks, signalCid)
@@ -1308,6 +1310,23 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_StreamStateUpdate{
 			StreamStateUpdate: streamStateUpdate,
+		},
+	})
+}
+
+func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
+	if len(subscribedQualities) == 0 {
+		return nil
+	}
+
+	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
+		TrackSid:            trackSid,
+		SubscribedQualities: subscribedQualities,
+	}
+
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
+			SubscribedQualityUpdate: subscribedQualityUpdate,
 		},
 	})
 }
