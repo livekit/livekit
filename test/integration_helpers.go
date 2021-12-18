@@ -28,9 +28,9 @@ const (
 	testApiSecret     = "apiSecret"
 	testRoom          = "mytestroom"
 	defaultServerPort = 7880
-	secondServerPort = 8880
-	nodeID1 = "node-1"
-	nodeID2 = "node-2"
+	secondServerPort  = 8880
+	nodeID1           = "node-1"
+	nodeID2           = "node-2"
 
 	syncDelay = 100 * time.Millisecond
 	// if there are deadlocks, it's helpful to set a short test timeout (i.e. go test -timeout=30s)

@@ -10,12 +10,12 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
-	"github.com/livekit/protocol/livekit"
-	"github.com/pkg/errors"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
+	"github.com/pkg/errors"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
