@@ -3,9 +3,10 @@ package selector
 import (
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/thoas/go-funk"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 const AvailableSeconds = 5

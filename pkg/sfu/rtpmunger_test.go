@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
 func TestSetLastSnTs(t *testing.T) {
@@ -273,7 +273,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	_, ok := r.missingSNs[65533]
 	require.False(t, ok)
 
-	// three after last received misisng with wrap-around
+	// three after last received missing with wrap-around
 	offset, ok := r.missingSNs[65534]
 	require.True(t, ok)
 	require.Equal(t, uint16(0), offset)
@@ -314,7 +314,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	numPadding := 10
 	clockRate := uint32(10)
 	frameRate := uint32(5)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,

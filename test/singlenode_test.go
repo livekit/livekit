@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
-
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
@@ -74,7 +73,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 			return false
 		}
 
-		//participant ID can be appended with '#..' . but should contain orig id as prefix
+		// participant ID can be appended with '#..' . but should contain orig id as prefix
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
 		participantId1, _ := rtc.UnpackStreamID(tr1.StreamID())
 		require.Equal(t, c1.ID(), participantId1)

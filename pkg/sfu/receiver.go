@@ -18,7 +18,7 @@ import (
 
 type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 
-// TrackReceiver defines a interface receive media from remote peer
+// TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
 	TrackID() string
 	StreamID() string
@@ -32,7 +32,7 @@ type TrackReceiver interface {
 	NotifyMaxSubscribedLayer(peerID string, layer int32)
 }
 
-// Receiver defines a interface for a track receivers
+// Receiver defines an interface for a track receivers
 type Receiver interface {
 	TrackID() string
 	StreamID() string

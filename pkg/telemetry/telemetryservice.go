@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/gammazero/workerpool"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
 

@@ -4,11 +4,9 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/livekit/livekit-server/pkg/config"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -60,6 +58,12 @@ type Router interface {
 	Start() error
 	Drain()
 	Stop()
+
+	// OnNewParticipantRTC is called to start a new participant's RTC connection
+	OnNewParticipantRTC(callback NewParticipantCallback)
+
+	// OnRTCMessage is called to execute actions on the RTC node
+	OnRTCMessage(callback RTCMessageCallback)
 }
 
 type MessageRouter interface {
@@ -70,15 +74,9 @@ type MessageRouter interface {
 	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
 	WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
 	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
-
-	// OnNewParticipantRTC is called to start a new participant's RTC connection
-	OnNewParticipantRTC(callback NewParticipantCallback)
-
-	// OnRTCMessage is called to execute actions on the RTC node
-	OnRTCMessage(callback RTCMessageCallback)
 }
 
-func CreateRouter(conf *config.Config, rc *redis.Client, node LocalNode) Router {
+func CreateRouter(rc *redis.Client, node LocalNode) Router {
 	if rc != nil {
 		return NewRedisRouter(node, rc)
 	}

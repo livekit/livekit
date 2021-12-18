@@ -16,7 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
-func generateKeys(c *cli.Context) error {
+func generateKeys(_ *cli.Context) error {
 	apiKey := utils.NewGuid(utils.APIKeyPrefix)
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)

@@ -3,7 +3,7 @@ package rtc
 import (
 	"strings"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
@@ -86,8 +86,8 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	// select a new node
-	nodeId := req.NodeId
-	if nodeId == "" {
+	nodeID := req.NodeId
+	if nodeID == "" {
 		nodes, err := r.router.ListNodes()
 		if err != nil {
 			return nil, err
@@ -98,11 +98,11 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			return nil, err
 		}
 
-		nodeId = node.Id
+		nodeID = node.Id
 	}
 
-	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeId)
-	err = r.router.SetNodeForRoom(ctx, rm.Name, nodeId)
+	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeID)
+	err = r.router.SetNodeForRoom(ctx, rm.Name, nodeID)
 	if err != nil {
 		return nil, err
 	}
