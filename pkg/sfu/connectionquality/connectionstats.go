@@ -19,7 +19,7 @@ type ConnectionStats struct {
 }
 
 func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}}
+	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}, Score: 4.0}
 }
 
 func getTotalPackets(curSN, prevSN uint32) uint32 {
