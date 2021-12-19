@@ -721,19 +721,9 @@ func (t *MediaTrack) updateQualityChange() {
 	if len(t.maxSubscriberQuality) == 0 {
 		allSubscribersMuted = true
 	} else {
-		for _, maxQuality := range t.maxSubscriberQuality {
-			switch maxSubscribedQuality {
-			case livekit.VideoQuality_LOW:
-				maxSubscribedQuality = maxQuality
-			case livekit.VideoQuality_MEDIUM:
-				if maxQuality == livekit.VideoQuality_HIGH {
-					maxSubscribedQuality = maxQuality
-				}
-			}
-
-			if maxSubscribedQuality == livekit.VideoQuality_HIGH {
-				// cannot go higher
-				break
+		for _, subQuality := range t.maxSubscriberQuality {
+			if subQuality > maxSubscribedQuality {
+				maxSubscribedQuality = subQuality
 			}
 		}
 	}
