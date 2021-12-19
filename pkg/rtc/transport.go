@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/webrtc/v3"
 
@@ -57,8 +59,9 @@ type TransportParams struct {
 	Logger              logger.Logger
 }
 
-func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, *gcc.InterceptorFactory, error) {
 	var me *webrtc.MediaEngine
+	var gf *gcc.InterceptorFactory
 	var err error
 	if params.Target == livekit.SignalTarget_PUBLISHER {
 		me, err = createPubMediaEngine(params.EnabledCodecs)
@@ -66,7 +69,7 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 		me, err = createSubMediaEngine(params.EnabledCodecs)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
@@ -78,9 +81,14 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 		ir.Add(f)
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
-		f, err := twcc.NewHeaderExtensionInterceptor()
+		gf, err = gcc.NewInterceptor(gcc.InitialBitrate(100*1000*1000), gcc.SetPacer(gcc.NewNoOpPacer()))
 		if err == nil {
-			ir.Add(f)
+			ir.Add(gf)
+
+			tf, err := twcc.NewHeaderExtensionInterceptor()
+			if err == nil {
+				ir.Add(tf)
+			}
 		}
 	}
 	api := webrtc.NewAPI(
@@ -89,11 +97,11 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
-	return pc, me, err
+	return pc, me, gf, err
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
-	pc, me, err := newPeerConnection(params)
+	pc, me, gf, err := newPeerConnection(params)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +118,13 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+
+		if gf != nil {
+			gf.OnNewPeerConnection(func(id string, estimator gcc.BandwidthEstimator) {
+				fmt.Printf("RAJA id: %s\n", id) // REMOVE
+				t.streamAllocator.SetBandwidthEstimator(estimator)
+			})
+		}
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 )
@@ -62,6 +63,7 @@ const (
 	SignalAddTrack Signal = iota
 	SignalRemoveTrack
 	SignalEstimate
+	SignalTargetBitrate
 	SignalReceiverReport
 	SignalAvailableLayersChange
 	SignalSubscriptionChange
@@ -78,6 +80,8 @@ func (s Signal) String() string {
 		return "REMOVE_TRACK"
 	case SignalEstimate:
 		return "ESTIMATE"
+	case SignalTargetBitrate:
+		return "TARGET_BITRATE"
 	case SignalReceiverReport:
 		return "RECEIVER_REPORT"
 	case SignalSubscriptionChange:
@@ -91,6 +95,16 @@ func (s Signal) String() string {
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
+}
+
+type Event struct {
+	Signal    Signal
+	DownTrack *DownTrack
+	Data      interface{}
+}
+
+func (e Event) String() string {
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
 }
 
 type StreamAllocatorParams struct {
@@ -127,16 +141,6 @@ type StreamAllocator struct {
 	runningCh chan struct{}
 }
 
-type Event struct {
-	Signal    Signal
-	DownTrack *DownTrack
-	Data      interface{}
-}
-
-func (e Event) String() string {
-	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
-}
-
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
 		logger:      params.Logger,
@@ -171,6 +175,10 @@ func (s *StreamAllocator) Stop() {
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
 	s.onStreamStateChange = f
+}
+
+func (s *StreamAllocator) SetBandwidthEstimator(estimator gcc.BandwidthEstimator) {
+	estimator.OnTargetBitrateChange(s.onTargetBitrateChange)
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
@@ -212,6 +220,14 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 		Signal:    SignalEstimate,
 		DownTrack: downTrack,
 		Data:      remb,
+	})
+}
+
+// called when target bitrate changes
+func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
+	s.postEvent(Event{
+		Signal: SignalTargetBitrate,
+		Data:   bitrate,
 	})
 }
 
@@ -311,6 +327,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalRemoveTrack(event)
 	case SignalEstimate:
 		s.handleSignalEstimate(event)
+	case SignalTargetBitrate:
+		s.handleSignalTargetBitrate(event)
 	case SignalReceiverReport:
 		s.handleSignalReceiverReport(event)
 	case SignalAvailableLayersChange:
@@ -459,6 +477,22 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.logger.Debugw("received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
+	}
+
+	if s.maybeCommitEstimate() {
+		s.allocateAllTracks()
+	}
+}
+
+func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
+	receivedEstimate, _ := event.Data.(int)
+	s.prevReceivedEstimate = s.receivedEstimate
+	s.receivedEstimate = int64(receivedEstimate)
 	if s.prevReceivedEstimate != s.receivedEstimate {
 		s.logger.Debugw("received new estimate",
 			"old(bps)", s.prevReceivedEstimate,

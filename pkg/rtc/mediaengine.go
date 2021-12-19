@@ -98,7 +98,7 @@ func createSubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) 
 	}
 
 	for _, extension := range []string{
-		sdp.ABSSendTimeURI,
+		//sdp.ABSSendTimeURI,
 		sdp.TransportCCURI,
 	} {
 		if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: extension}, webrtc.RTPCodecTypeVideo); err != nil {
