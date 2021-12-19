@@ -65,6 +65,13 @@ type MediaTrack struct {
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
 
+	// quality level enable/disable
+	maxQualityLock               sync.Mutex
+	maxSubscriberQuality         map[string]livekit.VideoQuality
+	maxSubscribedQuality         livekit.VideoQuality
+	allSubscribersMuted          bool
+	onSubscribedMaxQualityChange func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
+
 	onClose []func()
 }
 
@@ -84,10 +91,11 @@ type MediaTrackParams struct {
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:   params,
-		ssrc:     track.SSRC(),
-		streamID: track.StreamID(),
-		codec:    track.Codec(),
+		params:               params,
+		ssrc:                 track.SSRC(),
+		streamID:             track.StreamID(),
+		codec:                track.Codec(),
+		maxSubscriberQuality: make(map[string]livekit.VideoQuality),
 	}
 
 	if params.TrackInfo.Muted {
@@ -149,6 +157,11 @@ func (t *MediaTrack) SetMuted(muted bool) {
 		}
 		return true
 	})
+
+	// update quality based on subscription if unmuting
+	if !muted {
+		t.updateQualityChange()
+	}
 }
 
 func (t *MediaTrack) AddOnClose(f func()) {
@@ -201,7 +214,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(t, t.params.ParticipantIdentity, downTrack)
+	subTrack := NewSubscribedTrack(t, sub.ID(), t.params.ParticipantIdentity, downTrack)
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
@@ -295,6 +308,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 				}
 			}
 
+			t.NotifySubscriberMute(sub.ID())
 			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()
@@ -309,6 +323,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
+		t.NotifySubscriberMaxQuality(sub.ID(), livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
@@ -651,4 +666,100 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 
 func (t *MediaTrack) Receiver() sfu.TrackReceiver {
 	return t.receiver
+}
+
+func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
+	t.onSubscribedMaxQualityChange = f
+}
+
+func (t *MediaTrack) NotifySubscriberMute(subscriberID string) {
+	if !t.IsSimulcast() {
+		return
+	}
+
+	t.maxQualityLock.Lock()
+	_, ok := t.maxSubscriberQuality[subscriberID]
+	if !ok {
+		t.maxQualityLock.Unlock()
+		return
+	}
+
+	delete(t.maxSubscriberQuality, subscriberID)
+	t.maxQualityLock.Unlock()
+
+	t.updateQualityChange()
+}
+
+func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality) {
+	if !t.IsSimulcast() {
+		return
+	}
+
+	t.maxQualityLock.Lock()
+	maxQuality, ok := t.maxSubscriberQuality[subscriberID]
+	if ok && maxQuality == quality {
+		t.maxQualityLock.Unlock()
+		return
+	}
+
+	t.maxSubscriberQuality[subscriberID] = quality
+	t.maxQualityLock.Unlock()
+
+	t.updateQualityChange()
+}
+
+func (t *MediaTrack) updateQualityChange() {
+	if t.IsMuted() {
+		return
+	}
+
+	var subscribedQualities []*livekit.SubscribedQuality
+
+	t.maxQualityLock.Lock()
+	allSubscribersMuted := false
+	maxSubscribedQuality := livekit.VideoQuality_LOW
+	if len(t.maxSubscriberQuality) == 0 {
+		allSubscribersMuted = true
+	} else {
+		for _, subQuality := range t.maxSubscriberQuality {
+			if subQuality > maxSubscribedQuality {
+				maxSubscribedQuality = subQuality
+			}
+		}
+	}
+
+	if allSubscribersMuted {
+		if !t.allSubscribersMuted {
+			t.allSubscribersMuted = true
+			subscribedQualities = []*livekit.SubscribedQuality{
+				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			}
+		}
+	} else {
+		t.allSubscribersMuted = false
+		if maxSubscribedQuality != t.maxSubscribedQuality {
+			t.maxSubscribedQuality = maxSubscribedQuality
+
+			subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true})
+
+			if t.maxSubscribedQuality == livekit.VideoQuality_LOW {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false})
+			} else {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true})
+			}
+
+			if t.maxSubscribedQuality != livekit.VideoQuality_HIGH {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false})
+			} else {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true})
+			}
+		}
+	}
+	t.maxQualityLock.Unlock()
+
+	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
+		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
+	}
 }
