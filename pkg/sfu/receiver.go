@@ -42,7 +42,7 @@ type Receiver interface {
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	DeleteDownTrack(ID string)
+	DeleteDownTrack(peerID string)
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
@@ -319,7 +319,7 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 		w.upTrackMu.Unlock()
 		return
 	}
-	newLayers := make([]uint16, 0, 3)
+	newLayers := make([]uint16, 0, DefaultMaxLayerSpatial+1)
 	for _, l := range layers {
 		if l != layer {
 			newLayers = append(newLayers, l)

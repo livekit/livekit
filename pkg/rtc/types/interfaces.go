@@ -118,6 +118,9 @@ type MediaTrack interface {
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
 	GetConnectionScore() float64
+	NotifySubscriberMute(subscriberID string)
+	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
+	OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
 }
 
 // PublishedTrack is the main interface representing a track published to the room

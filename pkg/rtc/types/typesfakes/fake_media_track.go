@@ -103,6 +103,22 @@ type FakeMediaTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	NotifySubscriberMaxQualityStub        func(string, livekit.VideoQuality)
+	notifySubscriberMaxQualityMutex       sync.RWMutex
+	notifySubscriberMaxQualityArgsForCall []struct {
+		arg1 string
+		arg2 livekit.VideoQuality
+	}
+	NotifySubscriberMuteStub        func(string)
+	notifySubscriberMuteMutex       sync.RWMutex
+	notifySubscriberMuteArgsForCall []struct {
+		arg1 string
+	}
+	OnSubscribedMaxQualityChangeStub        func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
+	onSubscribedMaxQualityChangeMutex       sync.RWMutex
+	onSubscribedMaxQualityChangeArgsForCall []struct {
+		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
+	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
@@ -638,6 +654,103 @@ func (fake *FakeMediaTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeMediaTrack) NotifySubscriberMaxQuality(arg1 string, arg2 livekit.VideoQuality) {
+	fake.notifySubscriberMaxQualityMutex.Lock()
+	fake.notifySubscriberMaxQualityArgsForCall = append(fake.notifySubscriberMaxQualityArgsForCall, struct {
+		arg1 string
+		arg2 livekit.VideoQuality
+	}{arg1, arg2})
+	stub := fake.NotifySubscriberMaxQualityStub
+	fake.recordInvocation("NotifySubscriberMaxQuality", []interface{}{arg1, arg2})
+	fake.notifySubscriberMaxQualityMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriberMaxQualityStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMaxQualityCallCount() int {
+	fake.notifySubscriberMaxQualityMutex.RLock()
+	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
+	return len(fake.notifySubscriberMaxQualityArgsForCall)
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMaxQualityCalls(stub func(string, livekit.VideoQuality)) {
+	fake.notifySubscriberMaxQualityMutex.Lock()
+	defer fake.notifySubscriberMaxQualityMutex.Unlock()
+	fake.NotifySubscriberMaxQualityStub = stub
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMaxQualityArgsForCall(i int) (string, livekit.VideoQuality) {
+	fake.notifySubscriberMaxQualityMutex.RLock()
+	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
+	argsForCall := fake.notifySubscriberMaxQualityArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMute(arg1 string) {
+	fake.notifySubscriberMuteMutex.Lock()
+	fake.notifySubscriberMuteArgsForCall = append(fake.notifySubscriberMuteArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.NotifySubscriberMuteStub
+	fake.recordInvocation("NotifySubscriberMute", []interface{}{arg1})
+	fake.notifySubscriberMuteMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriberMuteStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMuteCallCount() int {
+	fake.notifySubscriberMuteMutex.RLock()
+	defer fake.notifySubscriberMuteMutex.RUnlock()
+	return len(fake.notifySubscriberMuteArgsForCall)
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMuteCalls(stub func(string)) {
+	fake.notifySubscriberMuteMutex.Lock()
+	defer fake.notifySubscriberMuteMutex.Unlock()
+	fake.NotifySubscriberMuteStub = stub
+}
+
+func (fake *FakeMediaTrack) NotifySubscriberMuteArgsForCall(i int) string {
+	fake.notifySubscriberMuteMutex.RLock()
+	defer fake.notifySubscriberMuteMutex.RUnlock()
+	argsForCall := fake.notifySubscriberMuteArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) OnSubscribedMaxQualityChange(arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
+	fake.onSubscribedMaxQualityChangeMutex.Lock()
+	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
+		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
+	}{arg1})
+	stub := fake.OnSubscribedMaxQualityChangeStub
+	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
+	fake.onSubscribedMaxQualityChangeMutex.Unlock()
+	if stub != nil {
+		fake.OnSubscribedMaxQualityChangeStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCallCount() int {
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
+	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
+}
+
+func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)) {
+	fake.onSubscribedMaxQualityChangeMutex.Lock()
+	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
+	fake.OnSubscribedMaxQualityChangeStub = stub
+}
+
+func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
+	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeMediaTrack) RemoveAllSubscribers() {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
@@ -837,6 +950,12 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.notifySubscriberMaxQualityMutex.RLock()
+	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
+	fake.notifySubscriberMuteMutex.RLock()
+	defer fake.notifySubscriberMuteMutex.RUnlock()
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
