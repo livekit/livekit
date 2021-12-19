@@ -4,12 +4,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pion/webrtc/v3"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-
-	"github.com/pion/webrtc/v3"
-
-	"github.com/stretchr/testify/require"
 )
 
 func disable(f *Forwarder) {
@@ -180,7 +179,7 @@ func TestForwarderAllocate(t *testing.T) {
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
-	// awaiting measurement, i. e. bitrates are not available, but layers available
+	// awaiting measurement, i.e. bitrates are not available, but layers available
 	f.lastAllocation.state = VideoAllocationStateNone
 	disable(f)
 	f.UptrackLayersChange([]uint16{0})
@@ -494,7 +493,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
-		bitrates:           [3][4]int64{},
+		bitrates:           Bitrates{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
@@ -653,7 +652,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.False(t, boosted)
 
-	// move from (0, 0) -> (0, 1), i. e. a higher temporal layer is available in the same spatial layer
+	// move from (0, 0) -> (0, 1), i.e. a higher temporal layer is available in the same spatial layer
 	expectedTargetLayers := VideoLayers{
 		spatial:  0,
 		temporal: 1,
@@ -674,7 +673,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 	require.True(t, boosted)
 
-	// move from (0, 1) -> (1, 0), i. e. a higher spatial layer is available
+	// move from (0, 1) -> (1, 0), i.e. a higher spatial layer is available
 	f.currentLayers.temporal = 1
 	expectedTargetLayers = VideoLayers{
 		spatial:  1,
@@ -1399,7 +1398,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	f.currentLayers = InvalidLayers
 
 	// send it through so that forwarder locks onto stream
-	f.GetTranslationParams(extPkt, 0)
+	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// pause stream and get padding, it should still work
 	disable(f)
@@ -1411,7 +1410,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	numPadding := 5
 	clockRate := uint32(0)
 	frameRate := uint32(5)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,
@@ -1467,7 +1466,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	f.currentLayers = InvalidLayers
 
 	// send it through so that forwarder locks onto stream
-	f.GetTranslationParams(extPkt, 0)
+	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
 	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames()
@@ -1478,7 +1477,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	numPadding := RTPBlankFramesMax + 1
 	clockRate := testutils.TestVP8Codec.ClockRate
 	frameRate := uint32(30)
-	var sntsExpected []SnTs = make([]SnTs, numPadding)
+	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,
@@ -1538,7 +1537,7 @@ func TestForwardGetPaddingVP8(t *testing.T) {
 	f.currentLayers = InvalidLayers
 
 	// send it through so that forwarder locks onto stream
-	f.GetTranslationParams(extPkt, 0)
+	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// getting padding with frame end needed, should repeat the last picture id
 	expectedVP8 := buffer.VP8{

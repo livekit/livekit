@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/service"
@@ -18,7 +18,7 @@ func TestParticipantPersistence(t *testing.T) {
 	rs := service.NewRedisRoomStore(redisClient())
 
 	roomName := "room1"
-	rs.DeleteRoom(ctx, roomName)
+	_ = rs.DeleteRoom(ctx, roomName)
 
 	p := &livekit.ParticipantInfo{
 		Sid:      "PA_test",
@@ -93,7 +93,7 @@ func TestRoomLock(t *testing.T) {
 		// release after 2 ms
 		time.Sleep(2 * time.Millisecond)
 		atomic.StoreUint32(&unlocked, 1)
-		rs.UnlockRoom(ctx, roomName, token)
+		_ = rs.UnlockRoom(ctx, roomName, token)
 
 		wg.Wait()
 	})
@@ -106,6 +106,6 @@ func TestRoomLock(t *testing.T) {
 		time.Sleep(lockInterval + time.Millisecond)
 		token2, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
-		rs.UnlockRoom(ctx, roomName, token2)
+		_ = rs.UnlockRoom(ctx, roomName, token2)
 	})
 }

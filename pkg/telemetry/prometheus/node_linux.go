@@ -5,7 +5,7 @@ package prometheus
 
 import (
 	linuxproc "github.com/c9s/goprocinfo/linux"
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 )
 
 func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) error {

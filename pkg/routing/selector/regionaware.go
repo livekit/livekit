@@ -3,7 +3,7 @@ package selector
 import (
 	"math"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/livekit-server/pkg/config"

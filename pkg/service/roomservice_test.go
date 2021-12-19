@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
-	"github.com/livekit/protocol/auth"
-	livekit "github.com/livekit/protocol/livekit"
-	"github.com/stretchr/testify/require"
 )
 
 const grantsKey = "grants"

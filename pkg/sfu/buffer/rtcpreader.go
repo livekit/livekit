@@ -8,7 +8,7 @@ import (
 type RTCPReader struct {
 	ssrc     uint32
 	closed   atomicBool
-	onPacket atomic.Value //func([]byte)
+	onPacket atomic.Value // func([]byte)
 	onClose  func()
 }
 

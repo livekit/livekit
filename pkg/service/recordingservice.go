@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	livekit "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/recording"
 	"github.com/livekit/protocol/utils"
@@ -46,14 +46,14 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		return nil, errors.New("recording not configured (redis required)")
 	}
 
-	// reserve a recorde
-	recordingId, err := recording.ReserveRecorder(s.bus)
+	// reserve a recorder
+	recordingID, err := recording.ReserveRecorder(s.bus)
 	if err != nil {
 		return nil, err
 	}
 
 	// start the recording
-	err = recording.RPC(ctx, s.bus, recordingId, &livekit.RecordingRequest{
+	err = recording.RPC(ctx, s.bus, recordingID, &livekit.RecordingRequest{
 		Request: &livekit.RecordingRequest_Start{
 			Start: req,
 		},
@@ -63,16 +63,16 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 	}
 
 	ri := &livekit.RecordingInfo{
-		Id:     recordingId,
+		Id:     recordingID,
 		Active: true,
 	}
 	if template := req.Input.(*livekit.StartRecordingRequest_Template); template != nil {
 		ri.RoomName = template.Template.RoomName
 	}
-	logger.Debugw("recording started", "recordingID", recordingId)
+	logger.Debugw("recording started", "recordingID", recordingID)
 	s.telemetry.RecordingStarted(ctx, ri)
 
-	return &livekit.StartRecordingResponse{RecordingId: recordingId}, nil
+	return &livekit.StartRecordingResponse{RecordingId: recordingID}, nil
 }
 
 func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutputRequest) (*emptypb.Empty, error) {

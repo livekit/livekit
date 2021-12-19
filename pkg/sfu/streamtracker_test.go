@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 func TestStreamTracker(t *testing.T) {
@@ -44,7 +44,7 @@ func TestStreamTracker(t *testing.T) {
 		})
 		require.Equal(t, StreamStatusActive, tracker.Status())
 
-		// run a single interation
+		// run a single iteration
 		tracker.detectChanges()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 		require.True(t, callbackCalled.get())
