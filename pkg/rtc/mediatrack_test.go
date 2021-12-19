@@ -99,3 +99,144 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(1000, 700))
 	})
 }
+
+func TestSubscribedMaxQuality(t *testing.T) {
+	t.Run("subscribers muted", func(t *testing.T) {
+		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Sid:    "v1",
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   960,
+					Height:  540,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+		mt.simulcasted.TrySet(true)
+
+		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
+
+		actualTrackSid := ""
+		actualSubscribedQualities := []*livekit.SubscribedQuality{}
+		mt.OnSubscribedMaxQualityChange(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
+			actualTrackSid = trackSid
+			actualSubscribedQualities = subscribedQualities
+			return nil
+		})
+
+		// mute all subscribers
+		mt.NotifySubscriberMute("s1")
+
+		expectedSubscribedQualities := []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+	})
+
+	t.Run("subscribers max quality", func(t *testing.T) {
+		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+			Sid:    "v1",
+			Type:   livekit.TrackType_VIDEO,
+			Width:  1080,
+			Height: 720,
+			Layers: []*livekit.VideoLayer{
+				{
+					Quality: livekit.VideoQuality_LOW,
+					Width:   480,
+					Height:  270,
+				},
+				{
+					Quality: livekit.VideoQuality_MEDIUM,
+					Width:   960,
+					Height:  540,
+				},
+				{
+					Quality: livekit.VideoQuality_HIGH,
+					Width:   1080,
+					Height:  720,
+				},
+			},
+		}})
+		mt.simulcasted.TrySet(true)
+
+		actualTrackSid := ""
+		actualSubscribedQualities := []*livekit.SubscribedQuality{}
+		mt.OnSubscribedMaxQualityChange(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
+			actualTrackSid = trackSid
+			actualSubscribedQualities = subscribedQualities
+			return nil
+		})
+
+		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
+		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_MEDIUM)
+
+		expectedSubscribedQualities := []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+
+		// "s1" dropping to MEDIUM should disable HIGH layer
+		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_MEDIUM)
+
+		expectedSubscribedQualities = []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+
+		// "s1" and "s1" dropping to LOW should disable HIGH & MEDIUM
+		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
+		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_LOW)
+
+		expectedSubscribedQualities = []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+
+		// muting one should still produce LOW
+		mt.NotifySubscriberMute("s1")
+
+		expectedSubscribedQualities = []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+
+		// muting "s2" should disable all qualities
+		mt.NotifySubscriberMute("s2")
+
+		expectedSubscribedQualities = []*livekit.SubscribedQuality{
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.Equal(t, "v1", actualTrackSid)
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+	})
+}
