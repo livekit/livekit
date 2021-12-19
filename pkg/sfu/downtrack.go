@@ -106,8 +106,9 @@ type DownTrack struct {
 	pktsDropped atomicUint32
 
 	// RTCP callbacks
-	onRTCP func([]rtcp.Packet)
-	onREMB func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
+	onRTCP                func([]rtcp.Packet)
+	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
+	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
 
 	// simulcast layer availability change callback
 	onAvailableLayersChanged func(dt *DownTrack)
@@ -484,6 +485,10 @@ func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMa
 	d.onREMB = fn
 }
 
+func (d *DownTrack) OnTransportCCFeedback(fn func(dt *DownTrack, cc *rtcp.TransportLayerCC)) {
+	d.onTransportCCFeedback = fn
+}
+
 func (d *DownTrack) CurrentMaxLossFraction() uint8 {
 	return d.lossFraction.get()
 }
@@ -800,6 +805,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
 			}
 			go d.retransmitPackets(nackedPackets)
+		case *rtcp.TransportLayerCC:
+			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
+				d.onTransportCCFeedback(d, p)
+			}
 		}
 	}
 }

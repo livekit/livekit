@@ -24,7 +24,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec) error {
 	}
 
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
-		{Type: webrtc.TypeRTCPFBGoogREMB, Parameter: ""},
+		{Type: webrtc.TypeRTCPFBTransportCC, Parameter: ""},
 		{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 		{Type: webrtc.TypeRTCPFBNACK, Parameter: ""},
 		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
@@ -98,7 +98,6 @@ func createSubMediaEngine(codecs []*livekit.Codec) (*webrtc.MediaEngine, error) 
 	}
 
 	for _, extension := range []string{
-		//sdp.ABSSendTimeURI,
 		sdp.TransportCCURI,
 	} {
 		if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: extension}, webrtc.RTPCodecTypeVideo); err != nil {

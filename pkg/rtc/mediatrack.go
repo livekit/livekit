@@ -25,9 +25,10 @@ import (
 
 var (
 	FeedbackTypes = []webrtc.RTCPFeedback{
-		{Type: webrtc.TypeRTCPFBGoogREMB},
+		{Type: webrtc.TypeRTCPFBTransportCC},
 		{Type: webrtc.TypeRTCPFBNACK},
-		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"}}
+		{Type: webrtc.TypeRTCPFBNACK},
+	}
 )
 
 const (

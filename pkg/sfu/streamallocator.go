@@ -116,7 +116,10 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	trackingSSRC             uint32
+	rembTrackingSSRC uint32
+
+	gccBwe gcc.BandwidthEstimator
+
 	committedChannelCapacity int64
 	lastCommitTime           time.Time
 	prevReceivedEstimate     int64
@@ -178,7 +181,10 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 }
 
 func (s *StreamAllocator) SetBandwidthEstimator(estimator gcc.BandwidthEstimator) {
-	estimator.OnTargetBitrateChange(s.onTargetBitrateChange)
+	if estimator != nil {
+		estimator.OnTargetBitrateChange(s.onTargetBitrateChange)
+	}
+	s.gccBwe = estimator
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
@@ -190,6 +196,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
 
 	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
 		downTrack.OnREMB(s.onREMB)
+		downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
 		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
@@ -221,6 +228,13 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 		DownTrack: downTrack,
 		Data:      remb,
 	})
+}
+
+// called when a new transport-cc feedback is received
+func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
+	if s.gccBwe != nil {
+		s.gccBwe.AddFeedback(fb)
+	}
 }
 
 // called when target bitrate changes
@@ -446,7 +460,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	found := false
 	for _, ssrc := range remb.SSRCs {
-		if ssrc == s.trackingSSRC {
+		if ssrc == s.rembTrackingSSRC {
 			found = true
 			break
 		}
@@ -460,18 +474,18 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 		// try to lock to track which is sending this update
 		for _, ssrc := range remb.SSRCs {
 			if ssrc == event.DownTrack.SSRC() {
-				s.trackingSSRC = event.DownTrack.SSRC()
+				s.rembTrackingSSRC = event.DownTrack.SSRC()
 				found = true
 				break
 			}
 		}
 
 		if !found {
-			s.trackingSSRC = remb.SSRCs[0]
+			s.rembTrackingSSRC = remb.SSRCs[0]
 		}
 	}
 
-	if s.trackingSSRC != event.DownTrack.SSRC() {
+	if s.rembTrackingSSRC != event.DownTrack.SSRC() {
 		return
 	}
 
