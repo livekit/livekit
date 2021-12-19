@@ -712,7 +712,7 @@ func (t *MediaTrack) updateStats() {
 		case <-time.After(connectionQualityUpdateInterval):
 			t.statsLock.Lock()
 			if t.Kind() == livekit.TrackType_AUDIO {
-				t.connectionStats.CalculateAudioScore(livekit.TrackType_AUDIO)
+				t.connectionStats.CalculateAudioScore()
 			} else {
 				t.calculateVideoScore()
 			}

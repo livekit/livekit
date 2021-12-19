@@ -33,18 +33,18 @@ func getTotalPackets(curSN, prevSN uint32) uint32 {
 	return increment
 }
 
-func (cs *ConnectionStats) CalculateAudioScore(kind livekit.TrackType) {
+func (cs *ConnectionStats) CalculateAudioScore() float64 {
 	// update feedback stats
 	current := cs.Curr
 	previous := cs.Prev
 
 	// Update TotalPackets from SeqNum here
 	current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
-	cs.Score = ConnectionScore(current, previous, kind)
+	cs.Score = ConnectionScore(current, previous, livekit.TrackType_AUDIO)
 
 	// store previous stats
 	cs.Prev = current
 	cs.Curr = &ConnectionStat{TotalPackets: cs.Prev.TotalPackets, PacketsLost: cs.Prev.PacketsLost}
 
-	return
+	return cs.Score
 }

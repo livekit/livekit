@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	livekit "github.com/livekit/protocol/livekit"
 	"io"
 	"strings"
 	"sync"
@@ -1042,7 +1041,7 @@ func (d *DownTrack) updateStats() {
 		case <-time.After(connectionQualityUpdateInterval):
 			d.statsLock.Lock()
 			if d.Kind() == webrtc.RTPCodecTypeAudio {
-				d.connectionStats.CalculateAudioScore(livekit.TrackType_AUDIO)
+				d.connectionStats.CalculateAudioScore()
 			} else {
 				d.calculateVideoScore()
 			}

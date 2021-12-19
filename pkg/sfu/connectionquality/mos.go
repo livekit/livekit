@@ -35,9 +35,9 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	}
 
 	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
-	percentageLost := (deltaTotalLostPackets / deltaTotalPackets) * 100
+	percentageLost := (float64(deltaTotalLostPackets) / float64(deltaTotalPackets)) * 100
 
-	rx := 93.2 - float64(percentageLost)
+	rx := 93.2 - percentageLost
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
 	d := float64(rtt + cur.Jitter)
