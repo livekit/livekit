@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -11,12 +10,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-const updateFrequency = time.Second * 10
-
 // StatsWorker handles participant stats
 type StatsWorker struct {
 	ctx           context.Context
-	t             TelemetryService
+	t             TelemetryReporter
 	roomID        string
 	roomName      string
 	participantID string
@@ -27,8 +24,6 @@ type StatsWorker struct {
 
 	incoming *Stats
 	outgoing *Stats
-
-	close chan struct{}
 }
 
 type Stats struct {
@@ -40,7 +35,7 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, participantID string) *StatsWorker {
+func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID, roomName, participantID string) *StatsWorker {
 	s := &StatsWorker{
 		ctx:           ctx,
 		t:             t,
@@ -63,24 +58,8 @@ func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, p
 			ParticipantId: participantID,
 			RoomName:      roomName,
 		}},
-
-		close: make(chan struct{}, 1),
 	}
-	go s.run()
 	return s
-}
-
-func (s *StatsWorker) run() {
-	for {
-		select {
-		case <-s.close:
-			// drain
-			s.Update()
-			return
-		case <-time.After(updateFrequency):
-			s.Update()
-		}
-	}
 }
 
 func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
@@ -190,5 +169,5 @@ func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
 }
 
 func (s *StatsWorker) Close() {
-	close(s.close)
+	s.Update()
 }

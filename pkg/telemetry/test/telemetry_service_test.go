@@ -3,7 +3,6 @@ package telemetrytest
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
@@ -13,18 +12,18 @@ import (
 )
 
 type telemetryServiceFixture struct {
-	sut       telemetry.TelemetryService
+	sut       telemetry.TelemetryServiceInternal
 	analytics *telemetryfakes.FakeAnalyticsService
 }
 
 func createFixture() *telemetryServiceFixture {
 	fixture := &telemetryServiceFixture{}
 	fixture.analytics = &telemetryfakes.FakeAnalyticsService{}
-	fixture.sut = telemetry.NewTelemetryService(nil, fixture.analytics)
+	fixture.sut = telemetry.NewTelemetryServiceInternal(nil, fixture.analytics)
 	return fixture
 }
 
-func Test_TelemetryService_Downstream_Stats(t *testing.T) {
+func Test_OnDownstreamPacket(t *testing.T) {
 	fixture := createFixture()
 
 	room := &livekit.Room{}
@@ -32,17 +31,19 @@ func Test_TelemetryService_Downstream_Stats(t *testing.T) {
 	clientInfo := &livekit.ClientInfo{Sdk: 2}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo)
-	totalBytes := 33
-	fixture.sut.OnDownstreamPacket(partSID, totalBytes)
+	packets := []int{33, 23}
+	totalBytes := packets[0] + packets[1]
+	totalPackets := len(packets)
+	for i := range packets {
+		fixture.sut.OnDownstreamPacket(partSID, packets[i])
+	}
 
-	// call participant left to trigger sending of analytics
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
-
-	time.Sleep(time.Millisecond * 100) // wait for Update function to be called in go routine
+	fixture.sut.SendAnalytics()
 
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 	_, stats := fixture.analytics.SendStatsArgsForCall(0)
 	require.Equal(t, 1, len(stats))
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
 	require.Equal(t, totalBytes, int(stats[0].TotalBytes))
+	require.Equal(t, totalPackets, int(stats[0].TotalPackets))
 }
