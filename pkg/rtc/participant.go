@@ -688,7 +688,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		numTracks++
 	}
 
-	var avgScore float64
+	avgScore := 5.0
 	if numTracks > 0 {
 		avgScore = scores / float64(numTracks)
 	}
