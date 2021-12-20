@@ -681,7 +681,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	for _, subTrack := range p.subscribedTracks {
-		if subTrack.IsMuted() {
+		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
 		scores += subTrack.DownTrack().GetConnectionScore()
