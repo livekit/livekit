@@ -27,7 +27,7 @@ var (
 	FeedbackTypes = []webrtc.RTCPFeedback{
 		{Type: webrtc.TypeRTCPFBTransportCC},
 		{Type: webrtc.TypeRTCPFBNACK},
-		{Type: webrtc.TypeRTCPFBNACK},
+		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
 	}
 )
 
