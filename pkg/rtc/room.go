@@ -474,7 +474,7 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	// subscribe all existing participants to this MediaTrack
+	// subscribe all existing participants to this PublishedTrack
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
 			// skip publishing participant
