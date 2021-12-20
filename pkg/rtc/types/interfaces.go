@@ -55,7 +55,7 @@ type Participant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
-	GetConnectionQuality() livekit.ConnectionQuality
+	GetConnectionQuality() *livekit.ConnectionQualityInfo
 	IsSubscribedTo(identity string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
@@ -117,6 +117,7 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
+	GetConnectionScore() float64
 	NotifySubscriberMute(subscriberID string)
 	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
 	OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
@@ -153,7 +154,6 @@ type SubscribedTrack interface {
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
-	SubscribeLossPercentage() uint32
 }
 
 // interface for properties of webrtc.TrackRemote

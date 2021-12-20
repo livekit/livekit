@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"fmt"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"io"
 	"strings"
 	"sync"
@@ -665,50 +666,40 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	return
 }
 
-func (p *ParticipantImpl) GetConnectionQuality() livekit.ConnectionQuality {
+func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	// avg loss across all tracks, weigh published the same as subscribed
-	var pubLoss, subLoss uint32
-	var reducedQualityPub bool
-	var reducedQualitySub bool
+	var scores float64
+	var numTracks int
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	for _, pubTrack := range p.publishedTracks {
 		if pubTrack.IsMuted() {
 			continue
 		}
-		pubLoss += pubTrack.PublishLossPercentage()
-		publishing, registered := pubTrack.NumUpTracks()
-		if registered > 0 && publishing != registered {
-			reducedQualityPub = true
-		}
-	}
-	numTracks := uint32(len(p.publishedTracks))
-	if numTracks > 0 {
-		pubLoss /= numTracks
+		scores += pubTrack.GetConnectionScore()
+		numTracks++
 	}
 
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() {
 			continue
 		}
-		if subTrack.DownTrack().GetForwardingStatus() != sfu.ForwardingStatusOptimal {
-			reducedQualitySub = true
-		}
-		subLoss += subTrack.SubscribeLossPercentage()
+		scores += subTrack.DownTrack().GetConnectionScore()
+		numTracks++
 	}
-	numTracks = uint32(len(p.subscribedTracks))
+
+	var avgScore float64
 	if numTracks > 0 {
-		subLoss /= numTracks
+		avgScore = scores / float64(numTracks)
 	}
 
-	avgLoss := (pubLoss + subLoss) / 2
-	if avgLoss >= 4 {
-		return livekit.ConnectionQuality_POOR
-	} else if avgLoss <= 2 && !reducedQualityPub && !reducedQualitySub {
-		return livekit.ConnectionQuality_EXCELLENT
-	}
+	rating := connectionquality.Score2Rating(avgScore)
 
-	return livekit.ConnectionQuality_GOOD
+	return &livekit.ConnectionQualityInfo{
+		ParticipantSid: p.ID(),
+		Quality:        rating,
+		Score:          float32(avgScore),
+	}
 }
 
 func (p *ParticipantImpl) IsSubscribedTo(identity string) bool {
