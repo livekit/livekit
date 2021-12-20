@@ -148,7 +148,7 @@ type SubscribedTrack interface {
 	ID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
-	PublishedTrack() MediaTrack
+	MediaTrack() MediaTrack
 	IsMuted() bool
 	SetPublisherMuted(muted bool)
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)

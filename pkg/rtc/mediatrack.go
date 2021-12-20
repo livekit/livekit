@@ -3,11 +3,12 @@ package rtc
 import (
 	"context"
 	"errors"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -38,7 +39,7 @@ const (
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
-// Implements the PublishedTrack interface
+// Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params      MediaTrackParams
 	ssrc        webrtc.SSRC
@@ -224,7 +225,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(t, sub.ID(), t.params.ParticipantIdentity, downTrack)
+	subTrack := NewSubscribedTrack(SubscribedTrackParams{
+		PublisherIdentity: t.params.ParticipantIdentity,
+		SubscriberID:      sub.ID(),
+		MediaTrack:        t,
+		DownTrack:         downTrack,
+	})
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
@@ -689,7 +695,7 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	t.subscribedTracks.Range(func(_, val interface{}) bool {
 		if track, ok := val.(*SubscribedTrack); ok {
-			dt := track.dt.DebugInfo()
+			dt := track.DownTrack().DebugInfo()
 			dt["PubMuted"] = track.pubMuted.Get()
 			dt["SubMuted"] = track.subMuted.Get()
 			subscribedTrackInfo = append(subscribedTrackInfo, dt)
@@ -812,9 +818,9 @@ func (t *MediaTrack) updateQualityChange() {
 		if !t.allSubscribersMuted {
 			t.allSubscribersMuted = true
 			subscribedQualities = []*livekit.SubscribedQuality{
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 			}
 		}
 	} else {
@@ -840,6 +846,6 @@ func (t *MediaTrack) updateQualityChange() {
 	t.maxQualityLock.Unlock()
 
 	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
-		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
+		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
 	}
 }
