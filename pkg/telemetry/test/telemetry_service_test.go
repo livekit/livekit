@@ -29,8 +29,9 @@ func Test_TelemetryService_Downstream_Stats(t *testing.T) {
 
 	room := &livekit.Room{}
 	partSID := "part1"
+	clientInfo := &livekit.ClientInfo{Sdk: 2}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo)
 	totalBytes := 33
 	fixture.sut.OnDownstreamPacket(partSID, totalBytes)
 

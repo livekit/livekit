@@ -43,7 +43,8 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	})
 }
 
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room,
+	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
 	t.Lock()
 	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, room.Name, participant.Sid)
 	t.Unlock()
@@ -62,6 +63,7 @@ func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 		RoomSid:     room.Sid,
 		Participant: participant,
 		Room:        room,
+		SdkType:     clientInfo.GetSdk(),
 	})
 }
 

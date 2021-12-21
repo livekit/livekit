@@ -24,7 +24,7 @@ type TelemetryService interface {
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
-	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
+	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo)
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
 	TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo)
 	TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32)
