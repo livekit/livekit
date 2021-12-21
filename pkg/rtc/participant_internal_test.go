@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"testing"
 	"time"
 
@@ -245,11 +246,40 @@ func TestMuteSetting(t *testing.T) {
 }
 
 func TestConnectionQuality(t *testing.T) {
-	testPublishedTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
-		t := &typesfakes.FakePublishedTrack{}
-		t.PublishLossPercentageReturns(loss)
-		t.NumUpTracksReturns(numPublishing, numRegistered)
-		return t
+
+	// loss based score is currently a publisher method.
+	videoScore := func(loss, numPublishing, numRegistered uint32) float64 {
+		var reducedQuality bool
+		if numRegistered > 0 && numPublishing != numRegistered {
+			reducedQuality = true
+		}
+		return connectionquality.Loss2Score(loss, reducedQuality)
+	}
+
+	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
+		tr := &typesfakes.FakePublishedTrack{}
+		score := videoScore(loss, numPublishing, numRegistered)
+		t.Log("video score: ", score)
+		tr.GetConnectionScoreReturns(score)
+		return tr
+	}
+
+	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakePublishedTrack {
+		tr := &typesfakes.FakePublishedTrack{}
+
+		stat := &connectionquality.ConnectionStat{
+			PacketsLost:  packetsLost,
+			TotalPackets: totalPackets,
+			LastSeqNum:   0,
+		}
+		stats := &connectionquality.ConnectionStats{
+			Curr: stat,
+			Prev: &connectionquality.ConnectionStat{},
+		}
+		stats.CalculateAudioScore()
+		t.Log("audio score: ", stats.Score)
+		tr.GetConnectionScoreReturns(stats.Score)
+		return tr
 	}
 
 	// TODO: this test is rather limited since we cannot mock DownTrack's Target & Max spatial layers
@@ -257,18 +287,32 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("smooth sailing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["video"] = testPublishedTrack(1, 3, 3)
-		p.publishedTracks["audio"] = testPublishedTrack(0, 1, 1)
+		p.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
+		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
 
-		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality())
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["video"] = testPublishedTrack(3, 2, 3)
-		p.publishedTracks["audio"] = testPublishedTrack(3, 1, 1)
+		p.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
+		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
 
-		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality())
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("audio smooth publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("audio reduced publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 }
 

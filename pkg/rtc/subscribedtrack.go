@@ -17,27 +17,27 @@ const (
 	subscriptionDebounceInterval = 100 * time.Millisecond
 )
 
+type SubscribedTrackParams struct {
+	PublisherIdentity string
+	SubscriberID      string
+	MediaTrack        types.MediaTrack
+	DownTrack         *sfu.DownTrack
+}
 type SubscribedTrack struct {
-	publishedTrack    types.MediaTrack
-	dt                *sfu.DownTrack
-	publisherIdentity string
-	subscriberID      string
-	subMuted          utils.AtomicFlag
-	pubMuted          utils.AtomicFlag
-	settings          atomic.Value // *livekit.UpdateTrackSettings
+	params   SubscribedTrackParams
+	subMuted utils.AtomicFlag
+	pubMuted utils.AtomicFlag
+	settings atomic.Value // *livekit.UpdateTrackSettings
 
 	onBind func()
 
 	debouncer func(func())
 }
 
-func NewSubscribedTrack(mediaTrack types.MediaTrack, publisherIdentity string, subscriberID string, dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 	return &SubscribedTrack{
-		publishedTrack:    mediaTrack,
-		publisherIdentity: publisherIdentity,
-		subscriberID:      subscriberID,
-		dt:                dt,
-		debouncer:         debounce.New(subscriptionDebounceInterval),
+		params:    params,
+		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 }
 
@@ -52,23 +52,19 @@ func (t *SubscribedTrack) Bound() {
 }
 
 func (t *SubscribedTrack) ID() string {
-	return t.dt.ID()
+	return t.params.DownTrack.ID()
 }
 
 func (t *SubscribedTrack) PublisherIdentity() string {
-	return t.publisherIdentity
+	return t.params.PublisherIdentity
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
-	return t.dt
+	return t.params.DownTrack
 }
 
-func (t *SubscribedTrack) PublishedTrack() types.MediaTrack {
-	return t.publishedTrack
-}
-
-func (t *SubscribedTrack) SubscribeLossPercentage() uint32 {
-	return FixedPointToPercent(t.DownTrack().CurrentMaxLossFraction())
+func (t *SubscribedTrack) MediaTrack() types.MediaTrack {
+	return t.params.MediaTrack
 }
 
 // has subscriber indicated it wants to mute this track
@@ -94,11 +90,11 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 
 func (t *SubscribedTrack) UpdateVideoLayer() {
 	t.updateDownTrackMute()
-	if t.dt.Kind() != webrtc.RTPCodecTypeVideo {
+	if t.DownTrack().Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
 	if t.subMuted.Get() {
-		t.publishedTrack.NotifySubscriberMute(t.subscriberID)
+		t.MediaTrack().NotifySubscriberMute(t.params.SubscriberID)
 		return
 	}
 	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
@@ -108,16 +104,16 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 
 	quality := settings.Quality
 	if settings.Width > 0 {
-		quality = t.publishedTrack.GetQualityForDimension(settings.Width, settings.Height)
+		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
-	t.dt.SetMaxSpatialLayer(spatialLayerForQuality(quality))
+	t.DownTrack().SetMaxSpatialLayer(spatialLayerForQuality(quality))
 
-	t.publishedTrack.NotifySubscriberMaxQuality(t.subscriberID, quality)
+	t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, quality)
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
-	t.dt.Mute(muted)
+	t.DownTrack().Mute(muted)
 }
 
 func spatialLayerForQuality(quality livekit.VideoQuality) int32 {

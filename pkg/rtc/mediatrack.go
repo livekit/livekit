@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -32,12 +34,13 @@ var (
 )
 
 const (
-	lostUpdateDelta         = time.Second
-	layerSelectionTolerance = 0.8
+	lostUpdateDelta                 = time.Second
+	connectionQualityUpdateInterval = 5 * time.Second
+	layerSelectionTolerance         = 0.8
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
-// Implements the PublishedTrack interface
+// Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params      MediaTrackParams
 	ssrc        webrtc.SSRC
@@ -59,13 +62,15 @@ type MediaTrack struct {
 	layerDimensions  sync.Map // quality => *livekit.VideoLayer
 
 	// track audio fraction lost
-	fracLostLock      sync.Mutex
+	statsLock         sync.Mutex
 	maxDownFracLost   uint8
 	maxDownFracLostTs time.Time
 	currentUpFracLost uint32
 	maxUpFracLost     uint8
 	maxUpFracLostTs   time.Time
+	connectionStats   *connectionquality.ConnectionStats
 
+	done chan struct{}
 	// quality level enable/disable
 	maxQualityLock               sync.Mutex
 	maxSubscriberQuality         map[string]livekit.VideoQuality
@@ -96,6 +101,8 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		ssrc:                 track.SSRC(),
 		streamID:             track.StreamID(),
 		codec:                track.Codec(),
+		connectionStats:      connectionquality.NewConnectionStats(),
+		done:                 make(chan struct{}),
 		maxSubscriberQuality: make(map[string]livekit.VideoQuality),
 	}
 
@@ -107,6 +114,10 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		t.UpdateVideoLayers(params.TrackInfo.Layers)
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
+	// on close signal via closing channel to workers
+	t.AddOnClose(t.closeChan)
+	go t.updateStats()
+
 	return t
 }
 
@@ -215,7 +226,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	if err != nil {
 		return err
 	}
-	subTrack := NewSubscribedTrack(t, sub.ID(), t.params.ParticipantIdentity, downTrack)
+	subTrack := NewSubscribedTrack(SubscribedTrackParams{
+		PublisherIdentity: t.params.ParticipantIdentity,
+		SubscriberID:      sub.ID(),
+		MediaTrack:        t,
+		DownTrack:         downTrack,
+	})
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
@@ -266,6 +282,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+	})
+	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
 		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
@@ -574,6 +593,11 @@ func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var maxLost uint8
 	var hasReport bool
+	var delay uint32
+	var jitter uint32
+	var totalLost uint32
+	var maxSeqNum uint32
+
 	for _, p := range packets {
 		switch pkt := p.(type) {
 		// sfu.Buffer generates ReceiverReports for the publisher
@@ -582,13 +606,26 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
+
+				if rr.Delay > delay {
+					delay = rr.Delay
+				}
+				if rr.Jitter > jitter {
+					jitter = rr.Jitter
+				}
+				if rr.LastSequenceNumber > maxSeqNum {
+					maxSeqNum = rr.LastSequenceNumber
+				}
+
+				totalLost = rr.TotalLost
+
 				hasReport = true
 			}
 		}
 	}
 
 	if hasReport {
-		t.fracLostLock.Lock()
+		t.statsLock.Lock()
 		if maxLost > t.maxUpFracLost {
 			t.maxUpFracLost = maxLost
 		}
@@ -599,7 +636,19 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			t.maxUpFracLost = 0
 			t.maxUpFracLostTs = now
 		}
-		t.fracLostLock.Unlock()
+		// update feedback stats
+		current := t.connectionStats.Curr
+		if jitter > current.Jitter {
+			current.Jitter = jitter
+		}
+		if delay > current.Delay {
+			current.Delay = delay
+		}
+		if maxSeqNum > current.LastSeqNum {
+			current.LastSeqNum = maxSeqNum
+		}
+		current.PacketsLost = totalLost
+		t.statsLock.Unlock()
 	}
 
 	// also look for sender reports
@@ -608,12 +657,13 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 }
 
 // handles max loss for audio packets
-func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
+func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack,
+	report *rtcp.ReceiverReport) {
 	var (
 		shouldUpdate bool
 		maxLost      uint8
 	)
-	t.fracLostLock.Lock()
+	t.statsLock.Lock()
 	for _, rr := range report.Reports {
 		if t.maxDownFracLost < rr.FractionLost {
 			t.maxDownFracLost = rr.FractionLost
@@ -627,7 +677,7 @@ func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.Receiv
 		t.maxDownFracLost = 0
 		t.maxDownFracLostTs = now
 	}
-	t.fracLostLock.Unlock()
+	t.statsLock.Unlock()
 
 	if shouldUpdate && t.buffer != nil {
 		// ok to access buffer since receivers are added before subscribers
@@ -646,7 +696,7 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	t.subscribedTracks.Range(func(_, val interface{}) bool {
 		if track, ok := val.(*SubscribedTrack); ok {
-			dt := track.dt.DebugInfo()
+			dt := track.DownTrack().DebugInfo()
 			dt["PubMuted"] = track.pubMuted.Get()
 			dt["SubMuted"] = track.subMuted.Get()
 			subscribedTrackInfo = append(subscribedTrackInfo, dt)
@@ -667,6 +717,42 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 
 func (t *MediaTrack) Receiver() sfu.TrackReceiver {
 	return t.receiver
+}
+
+func (t *MediaTrack) GetConnectionScore() float64 {
+	t.statsLock.Lock()
+	defer t.statsLock.Unlock()
+	return t.connectionStats.Score
+}
+
+func (t *MediaTrack) closeChan() {
+	close(t.done)
+}
+
+func (t *MediaTrack) updateStats() {
+	for {
+		select {
+		case <-t.done:
+			return
+		case <-time.After(connectionQualityUpdateInterval):
+			t.statsLock.Lock()
+			if t.Kind() == livekit.TrackType_AUDIO {
+				t.connectionStats.CalculateAudioScore()
+			} else {
+				t.calculateVideoScore()
+			}
+			t.statsLock.Unlock()
+		}
+	}
+}
+
+func (t *MediaTrack) calculateVideoScore() {
+	var reducedQuality bool
+	publishing, registered := t.NumUpTracks()
+	if registered > 0 && publishing != registered {
+		reducedQuality = true
+	}
+	t.connectionStats.Score = connectionquality.Loss2Score(t.PublishLossPercentage(), reducedQuality)
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
@@ -733,9 +819,9 @@ func (t *MediaTrack) updateQualityChange() {
 		if !t.allSubscribersMuted {
 			t.allSubscribersMuted = true
 			subscribedQualities = []*livekit.SubscribedQuality{
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-				&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 			}
 		}
 	} else {
@@ -761,6 +847,6 @@ func (t *MediaTrack) updateQualityChange() {
 	t.maxQualityLock.Unlock()
 
 	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
-		t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
+		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
 	}
 }

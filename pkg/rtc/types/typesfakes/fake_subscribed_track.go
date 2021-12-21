@@ -40,20 +40,20 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	MediaTrackStub        func() types.MediaTrack
+	mediaTrackMutex       sync.RWMutex
+	mediaTrackArgsForCall []struct {
+	}
+	mediaTrackReturns struct {
+		result1 types.MediaTrack
+	}
+	mediaTrackReturnsOnCall map[int]struct {
+		result1 types.MediaTrack
+	}
 	OnBindStub        func(func())
 	onBindMutex       sync.RWMutex
 	onBindArgsForCall []struct {
 		arg1 func()
-	}
-	PublishedTrackStub        func() types.MediaTrack
-	publishedTrackMutex       sync.RWMutex
-	publishedTrackArgsForCall []struct {
-	}
-	publishedTrackReturns struct {
-		result1 types.MediaTrack
-	}
-	publishedTrackReturnsOnCall map[int]struct {
-		result1 types.MediaTrack
 	}
 	PublisherIdentityStub        func() string
 	publisherIdentityMutex       sync.RWMutex
@@ -69,16 +69,6 @@ type FakeSubscribedTrack struct {
 	setPublisherMutedMutex       sync.RWMutex
 	setPublisherMutedArgsForCall []struct {
 		arg1 bool
-	}
-	SubscribeLossPercentageStub        func() uint32
-	subscribeLossPercentageMutex       sync.RWMutex
-	subscribeLossPercentageArgsForCall []struct {
-	}
-	subscribeLossPercentageReturns struct {
-		result1 uint32
-	}
-	subscribeLossPercentageReturnsOnCall map[int]struct {
-		result1 uint32
 	}
 	UpdateSubscriberSettingsStub        func(*livekit.UpdateTrackSettings)
 	updateSubscriberSettingsMutex       sync.RWMutex
@@ -252,6 +242,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeSubscribedTrack) MediaTrack() types.MediaTrack {
+	fake.mediaTrackMutex.Lock()
+	ret, specificReturn := fake.mediaTrackReturnsOnCall[len(fake.mediaTrackArgsForCall)]
+	fake.mediaTrackArgsForCall = append(fake.mediaTrackArgsForCall, struct {
+	}{})
+	stub := fake.MediaTrackStub
+	fakeReturns := fake.mediaTrackReturns
+	fake.recordInvocation("MediaTrack", []interface{}{})
+	fake.mediaTrackMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) MediaTrackCallCount() int {
+	fake.mediaTrackMutex.RLock()
+	defer fake.mediaTrackMutex.RUnlock()
+	return len(fake.mediaTrackArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) MediaTrackCalls(stub func() types.MediaTrack) {
+	fake.mediaTrackMutex.Lock()
+	defer fake.mediaTrackMutex.Unlock()
+	fake.MediaTrackStub = stub
+}
+
+func (fake *FakeSubscribedTrack) MediaTrackReturns(result1 types.MediaTrack) {
+	fake.mediaTrackMutex.Lock()
+	defer fake.mediaTrackMutex.Unlock()
+	fake.MediaTrackStub = nil
+	fake.mediaTrackReturns = struct {
+		result1 types.MediaTrack
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) MediaTrackReturnsOnCall(i int, result1 types.MediaTrack) {
+	fake.mediaTrackMutex.Lock()
+	defer fake.mediaTrackMutex.Unlock()
+	fake.MediaTrackStub = nil
+	if fake.mediaTrackReturnsOnCall == nil {
+		fake.mediaTrackReturnsOnCall = make(map[int]struct {
+			result1 types.MediaTrack
+		})
+	}
+	fake.mediaTrackReturnsOnCall[i] = struct {
+		result1 types.MediaTrack
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) OnBind(arg1 func()) {
 	fake.onBindMutex.Lock()
 	fake.onBindArgsForCall = append(fake.onBindArgsForCall, struct {
@@ -282,59 +325,6 @@ func (fake *FakeSubscribedTrack) OnBindArgsForCall(i int) func() {
 	defer fake.onBindMutex.RUnlock()
 	argsForCall := fake.onBindArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeSubscribedTrack) PublishedTrack() types.MediaTrack {
-	fake.publishedTrackMutex.Lock()
-	ret, specificReturn := fake.publishedTrackReturnsOnCall[len(fake.publishedTrackArgsForCall)]
-	fake.publishedTrackArgsForCall = append(fake.publishedTrackArgsForCall, struct {
-	}{})
-	stub := fake.PublishedTrackStub
-	fakeReturns := fake.publishedTrackReturns
-	fake.recordInvocation("PublishedTrack", []interface{}{})
-	fake.publishedTrackMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeSubscribedTrack) PublishedTrackCallCount() int {
-	fake.publishedTrackMutex.RLock()
-	defer fake.publishedTrackMutex.RUnlock()
-	return len(fake.publishedTrackArgsForCall)
-}
-
-func (fake *FakeSubscribedTrack) PublishedTrackCalls(stub func() types.MediaTrack) {
-	fake.publishedTrackMutex.Lock()
-	defer fake.publishedTrackMutex.Unlock()
-	fake.PublishedTrackStub = stub
-}
-
-func (fake *FakeSubscribedTrack) PublishedTrackReturns(result1 types.MediaTrack) {
-	fake.publishedTrackMutex.Lock()
-	defer fake.publishedTrackMutex.Unlock()
-	fake.PublishedTrackStub = nil
-	fake.publishedTrackReturns = struct {
-		result1 types.MediaTrack
-	}{result1}
-}
-
-func (fake *FakeSubscribedTrack) PublishedTrackReturnsOnCall(i int, result1 types.MediaTrack) {
-	fake.publishedTrackMutex.Lock()
-	defer fake.publishedTrackMutex.Unlock()
-	fake.PublishedTrackStub = nil
-	if fake.publishedTrackReturnsOnCall == nil {
-		fake.publishedTrackReturnsOnCall = make(map[int]struct {
-			result1 types.MediaTrack
-		})
-	}
-	fake.publishedTrackReturnsOnCall[i] = struct {
-		result1 types.MediaTrack
-	}{result1}
 }
 
 func (fake *FakeSubscribedTrack) PublisherIdentity() string {
@@ -422,59 +412,6 @@ func (fake *FakeSubscribedTrack) SetPublisherMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
-func (fake *FakeSubscribedTrack) SubscribeLossPercentage() uint32 {
-	fake.subscribeLossPercentageMutex.Lock()
-	ret, specificReturn := fake.subscribeLossPercentageReturnsOnCall[len(fake.subscribeLossPercentageArgsForCall)]
-	fake.subscribeLossPercentageArgsForCall = append(fake.subscribeLossPercentageArgsForCall, struct {
-	}{})
-	stub := fake.SubscribeLossPercentageStub
-	fakeReturns := fake.subscribeLossPercentageReturns
-	fake.recordInvocation("SubscribeLossPercentage", []interface{}{})
-	fake.subscribeLossPercentageMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeSubscribedTrack) SubscribeLossPercentageCallCount() int {
-	fake.subscribeLossPercentageMutex.RLock()
-	defer fake.subscribeLossPercentageMutex.RUnlock()
-	return len(fake.subscribeLossPercentageArgsForCall)
-}
-
-func (fake *FakeSubscribedTrack) SubscribeLossPercentageCalls(stub func() uint32) {
-	fake.subscribeLossPercentageMutex.Lock()
-	defer fake.subscribeLossPercentageMutex.Unlock()
-	fake.SubscribeLossPercentageStub = stub
-}
-
-func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturns(result1 uint32) {
-	fake.subscribeLossPercentageMutex.Lock()
-	defer fake.subscribeLossPercentageMutex.Unlock()
-	fake.SubscribeLossPercentageStub = nil
-	fake.subscribeLossPercentageReturns = struct {
-		result1 uint32
-	}{result1}
-}
-
-func (fake *FakeSubscribedTrack) SubscribeLossPercentageReturnsOnCall(i int, result1 uint32) {
-	fake.subscribeLossPercentageMutex.Lock()
-	defer fake.subscribeLossPercentageMutex.Unlock()
-	fake.SubscribeLossPercentageStub = nil
-	if fake.subscribeLossPercentageReturnsOnCall == nil {
-		fake.subscribeLossPercentageReturnsOnCall = make(map[int]struct {
-			result1 uint32
-		})
-	}
-	fake.subscribeLossPercentageReturnsOnCall[i] = struct {
-		result1 uint32
-	}{result1}
-}
-
 func (fake *FakeSubscribedTrack) UpdateSubscriberSettings(arg1 *livekit.UpdateTrackSettings) {
 	fake.updateSubscriberSettingsMutex.Lock()
 	fake.updateSubscriberSettingsArgsForCall = append(fake.updateSubscriberSettingsArgsForCall, struct {
@@ -540,16 +477,14 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.mediaTrackMutex.RLock()
+	defer fake.mediaTrackMutex.RUnlock()
 	fake.onBindMutex.RLock()
 	defer fake.onBindMutex.RUnlock()
-	fake.publishedTrackMutex.RLock()
-	defer fake.publishedTrackMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
 	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
-	fake.subscribeLossPercentageMutex.RLock()
-	defer fake.subscribeLossPercentageMutex.RUnlock()
 	fake.updateSubscriberSettingsMutex.RLock()
 	defer fake.updateSubscriberSettingsMutex.RUnlock()
 	fake.updateVideoLayerMutex.RLock()

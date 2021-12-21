@@ -120,15 +120,15 @@ type FakeParticipant struct {
 		result1 uint8
 		result2 bool
 	}
-	GetConnectionQualityStub        func() livekit.ConnectionQuality
+	GetConnectionQualityStub        func() *livekit.ConnectionQualityInfo
 	getConnectionQualityMutex       sync.RWMutex
 	getConnectionQualityArgsForCall []struct {
 	}
 	getConnectionQualityReturns struct {
-		result1 livekit.ConnectionQuality
+		result1 *livekit.ConnectionQualityInfo
 	}
 	getConnectionQualityReturnsOnCall map[int]struct {
-		result1 livekit.ConnectionQuality
+		result1 *livekit.ConnectionQualityInfo
 	}
 	GetPublishedTrackStub        func(string) types.PublishedTrack
 	getPublishedTrackMutex       sync.RWMutex
@@ -1059,7 +1059,7 @@ func (fake *FakeParticipant) GetAudioLevelReturnsOnCall(i int, result1 uint8, re
 	}{result1, result2}
 }
 
-func (fake *FakeParticipant) GetConnectionQuality() livekit.ConnectionQuality {
+func (fake *FakeParticipant) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	fake.getConnectionQualityMutex.Lock()
 	ret, specificReturn := fake.getConnectionQualityReturnsOnCall[len(fake.getConnectionQualityArgsForCall)]
 	fake.getConnectionQualityArgsForCall = append(fake.getConnectionQualityArgsForCall, struct {
@@ -1083,32 +1083,32 @@ func (fake *FakeParticipant) GetConnectionQualityCallCount() int {
 	return len(fake.getConnectionQualityArgsForCall)
 }
 
-func (fake *FakeParticipant) GetConnectionQualityCalls(stub func() livekit.ConnectionQuality) {
+func (fake *FakeParticipant) GetConnectionQualityCalls(stub func() *livekit.ConnectionQualityInfo) {
 	fake.getConnectionQualityMutex.Lock()
 	defer fake.getConnectionQualityMutex.Unlock()
 	fake.GetConnectionQualityStub = stub
 }
 
-func (fake *FakeParticipant) GetConnectionQualityReturns(result1 livekit.ConnectionQuality) {
+func (fake *FakeParticipant) GetConnectionQualityReturns(result1 *livekit.ConnectionQualityInfo) {
 	fake.getConnectionQualityMutex.Lock()
 	defer fake.getConnectionQualityMutex.Unlock()
 	fake.GetConnectionQualityStub = nil
 	fake.getConnectionQualityReturns = struct {
-		result1 livekit.ConnectionQuality
+		result1 *livekit.ConnectionQualityInfo
 	}{result1}
 }
 
-func (fake *FakeParticipant) GetConnectionQualityReturnsOnCall(i int, result1 livekit.ConnectionQuality) {
+func (fake *FakeParticipant) GetConnectionQualityReturnsOnCall(i int, result1 *livekit.ConnectionQualityInfo) {
 	fake.getConnectionQualityMutex.Lock()
 	defer fake.getConnectionQualityMutex.Unlock()
 	fake.GetConnectionQualityStub = nil
 	if fake.getConnectionQualityReturnsOnCall == nil {
 		fake.getConnectionQualityReturnsOnCall = make(map[int]struct {
-			result1 livekit.ConnectionQuality
+			result1 *livekit.ConnectionQualityInfo
 		})
 	}
 	fake.getConnectionQualityReturnsOnCall[i] = struct {
-		result1 livekit.ConnectionQuality
+		result1 *livekit.ConnectionQualityInfo
 	}{result1}
 }
 

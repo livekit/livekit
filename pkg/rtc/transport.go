@@ -292,8 +292,8 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 		return
 	}
 
-	source := subTrack.PublishedTrack().Source()
-	isManaged := (source != livekit.TrackSource_SCREEN_SHARE && source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || subTrack.PublishedTrack().IsSimulcast()
+	source := subTrack.MediaTrack().Source()
+	isManaged := (source != livekit.TrackSource_SCREEN_SHARE && source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || subTrack.MediaTrack().IsSimulcast()
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), isManaged)
 }
 

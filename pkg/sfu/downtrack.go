@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"io"
 	"strings"
 	"sync"
@@ -17,6 +18,10 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+)
+
+const (
+	connectionQualityUpdateInterval = 5 * time.Second
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -94,9 +99,12 @@ type DownTrack struct {
 	closeOnce               sync.Once
 
 	// Report helpers
-	primaryStats atomic.Value // contains *PacketStats
-	rtxStats     atomic.Value // contains *PacketStats
-	paddingStats atomic.Value // contains *PacketStats
+	primaryStats    atomic.Value // contains *PacketStats
+	rtxStats        atomic.Value // contains *PacketStats
+	paddingStats    atomic.Value // contains *PacketStats
+	statsLock       sync.Mutex
+	connectionStats *connectionquality.ConnectionStats
+	done            chan struct{}
 
 	lossFraction atomicUint8
 
@@ -121,6 +129,9 @@ type DownTrack struct {
 
 	// packet sent callback
 	onPacketSent []func(dt *DownTrack, size int)
+
+	// padding packet sent callback
+	onPaddingSent []func(dt *DownTrack, size int)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -136,20 +147,24 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	d := &DownTrack{
-		id:            r.TrackID(),
-		peerID:        peerID,
-		maxTrack:      mt,
-		streamID:      r.StreamID(),
-		bufferFactory: bf,
-		receiver:      r,
-		codec:         c,
-		kind:          kind,
-		forwarder:     NewForwarder(c, kind),
+		id:              r.TrackID(),
+		peerID:          peerID,
+		maxTrack:        mt,
+		streamID:        r.StreamID(),
+		bufferFactory:   bf,
+		receiver:        r,
+		codec:           c,
+		kind:            kind,
+		forwarder:       NewForwarder(c, kind),
+		connectionStats: connectionquality.NewConnectionStats(),
+		done:            make(chan struct{}),
 	}
 
 	d.primaryStats.Store(new(PacketStats))
 	d.rtxStats.Store(new(PacketStats))
 	d.paddingStats.Store(new(PacketStats))
+
+	go d.updateStats()
 
 	return d, nil
 }
@@ -376,12 +391,9 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 		size := hdr.MarshalSize() + len(payload)
 		d.UpdatePaddingStats(uint32(size))
-		// LK-TOOD-START:
-		// Maybe call onPacketSent callbacks? But, a couple of issues to think about
-		//   - Analytics - should padding bytes be counted?
-		//   - StreamAllocator probing - should not include padding
-		// Maybe a separate callback for `onPaddingSent`?
-		// LK-TODO-END
+		for _, f := range d.onPaddingSent {
+			f(d, size)
+		}
 
 		// LK-TODO-START
 		// NACK buffer for these probe packets.
@@ -427,6 +439,7 @@ func (d *DownTrack) Close() {
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
+		close(d.done)
 	})
 }
 
@@ -513,6 +526,10 @@ func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers Vide
 
 func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
 	d.onPacketSent = append(d.onPacketSent, fn)
+}
+
+func (d *DownTrack) OnPaddingSent(fn func(dt *DownTrack, size int)) {
+	d.onPaddingSent = append(d.onPaddingSent, fn)
 }
 
 func (d *DownTrack) IsDeficient() bool {
@@ -765,6 +782,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
+	var hasReport bool
+	var delay uint32
+	var jitter uint32
+	var totalLost uint32
+	var maxSeqNum uint32
+
 	maxRatePacketLoss := uint8(0)
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
@@ -790,6 +813,18 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if maxRatePacketLoss == 0 || maxRatePacketLoss < r.FractionLost {
 					maxRatePacketLoss = r.FractionLost
 				}
+				if r.Delay > delay {
+					delay = r.Delay
+				}
+				if r.Jitter > jitter {
+					jitter = r.Jitter
+				}
+				if r.LastSequenceNumber > maxSeqNum {
+					maxSeqNum = r.LastSequenceNumber
+				}
+				totalLost = r.TotalLost
+
+				hasReport = true
 			}
 			d.lossFraction.set(maxRatePacketLoss)
 			if len(rr.Reports) > 0 {
@@ -798,6 +833,22 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					l(d, rr)
 				}
 				d.listenerLock.RUnlock()
+			}
+			if hasReport {
+				d.statsLock.Lock()
+				// update feedback stats
+				current := d.connectionStats.Curr
+				if jitter > current.Jitter {
+					current.Jitter = jitter
+				}
+				if delay > current.Delay {
+					current.Delay = delay
+				}
+				if maxSeqNum > current.LastSeqNum {
+					current.LastSeqNum = maxSeqNum
+				}
+				current.PacketsLost = totalLost
+				d.statsLock.Unlock()
 			}
 		case *rtcp.TransportLayerNack:
 			var nackedPackets []packetMeta
@@ -987,4 +1038,41 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
 		"Stats":               stats,
 	}
+}
+
+func (d *DownTrack) GetConnectionScore() float64 {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
+	return d.connectionStats.Score
+}
+
+func (d *DownTrack) updateStats() {
+	for {
+		select {
+		case <-d.done:
+			return
+		case <-time.After(connectionQualityUpdateInterval):
+			d.statsLock.Lock()
+			if d.Kind() == webrtc.RTPCodecTypeAudio {
+				d.connectionStats.CalculateAudioScore()
+			} else {
+				d.calculateVideoScore()
+			}
+			d.statsLock.Unlock()
+		}
+	}
+}
+
+// converts a fixed point number to the number part of %
+func FixedPointToPercent(frac uint8) uint32 {
+	return (uint32(frac) * 100) >> 8
+}
+
+func (d *DownTrack) calculateVideoScore() {
+	var reducedQuality bool
+	if d.GetForwardingStatus() != ForwardingStatusOptimal {
+		reducedQuality = true
+	}
+	d.connectionStats.Score = connectionquality.Loss2Score(FixedPointToPercent(d.CurrentMaxLossFraction()), reducedQuality)
+	return
 }

@@ -70,10 +70,9 @@ type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
 	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
-	// Write a message to a participant, room, or node
+	// Write a message to a participant or room
 	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
 	WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
-	WriteNodeRTC(ctx context.Context, nodeID string, msg *livekit.RTCNodeMessage) error
 }
 
 func CreateRouter(rc *redis.Client, node LocalNode) Router {
