@@ -58,7 +58,7 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	room := &livekit.Room{}
 	partSID := "part1"
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	//do
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
