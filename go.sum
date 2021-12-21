@@ -134,6 +134,14 @@ github.com/lithammer/shortuuid/v3 v3.0.6 h1:pr15YQyvhiSX/qPxncFtqk+v4xLEpOZObbsY
 github.com/lithammer/shortuuid/v3 v3.0.6/go.mod h1:vMk8ke37EmiewwolSO1NLW8vP4ZaKlRuDIi8tWWmAts=
 github.com/livekit/protocol v0.11.1 h1:SY9oZlbHD9s2fNjus5zSmTapI3uOIbb6YLkZYtIJESs=
 github.com/livekit/protocol v0.11.1/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
+github.com/livekit/protocol v0.11.2-0.20211221222839-d29ce9d21dfa h1:iQSZPOdeos/5QxpELcVWk9qtHV8z48F84WAct/WDH5c=
+github.com/livekit/protocol v0.11.2-0.20211221222839-d29ce9d21dfa/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
+github.com/livekit/protocol v0.11.2-0.20211221223544-0603cafa0783 h1:867Pln0RYDV3ubCP8ozRyLxKgSgPRGJGSGBBE47py1U=
+github.com/livekit/protocol v0.11.2-0.20211221223544-0603cafa0783/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
+github.com/livekit/protocol v0.11.2-0.20211221223813-2db329c9f054 h1:DOFCUIbznopXFLfu4SHukGk16leY3fD9Du/VwjDNS/I=
+github.com/livekit/protocol v0.11.2-0.20211221223813-2db329c9f054/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
+github.com/livekit/protocol v0.11.2-0.20211221231848-0895daea96f7 h1:02pPgSP7nsEQQu4Q79GW9N+/+lnOMyxj5X4F9FWHoA4=
+github.com/livekit/protocol v0.11.2-0.20211221231848-0895daea96f7/go.mod h1:YoHW9YbWbPnuVsgwBB4hAINKT+V68jmfh9zXBSSn6Wg=
 github.com/magefile/mage v1.11.0 h1:C/55Ywp9BpgVVclD3lRnSYCwXTYxmSppIgLeDYlNuls=
 github.com/magefile/mage v1.11.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/mattn/go-runewidth v0.0.9 h1:Lm995f3rfxdpd6TSmuVCHVb/QhupuXlYr8sCI/QdE+0=

@@ -761,7 +761,26 @@ func (r *Room) connectionQualityWorker() {
 			}
 		}
 
+		r.updateStatsConnectionScores(participants)
 		time.Sleep(time.Second * 5)
+	}
+}
+
+func (r *Room) updateStatsConnectionScores(participants []types.Participant) {
+	for _, p := range participants {
+		for _, track := range p.GetPublishedTracks() {
+			if track.IsMuted() {
+				continue
+			}
+			r.telemetry.UpdateRating(p.ID(), track.ID(), livekit.StreamType_UPSTREAM, track.GetConnectionScore())
+		}
+
+		for _, track := range p.GetSubscribedTracks() {
+			if track.IsMuted() || track.MediaTrack().IsMuted() {
+				continue
+			}
+			r.telemetry.UpdateRating(p.ID(), track.ID(), livekit.StreamType_DOWNSTREAM, track.DownTrack().GetConnectionScore())
+		}
 	}
 }
 

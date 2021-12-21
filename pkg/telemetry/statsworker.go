@@ -25,6 +25,10 @@ type StatsWorker struct {
 	buffers map[uint32]*buffer.Buffer
 	drain   map[uint32]bool
 
+	// ratings are per track
+	incomingRatings map[string]float64
+	outgoingRatings map[string]float64
+
 	incoming *Stats
 	outgoing *Stats
 
@@ -63,6 +67,8 @@ func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, p
 			ParticipantId: participantID,
 			RoomName:      roomName,
 		}},
+		incomingRatings: make(map[string]float64),
+		outgoingRatings: make(map[string]float64),
 
 		close: make(chan struct{}, 1),
 	}
@@ -153,7 +159,7 @@ func (s *StatsWorker) Update() {
 	if downstream != nil {
 		stats = append(stats, downstream)
 	}
-
+	stats = append(stats, s.dumpRatings()...)
 	s.t.Report(s.ctx, stats)
 }
 
@@ -191,4 +197,43 @@ func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
 
 func (s *StatsWorker) Close() {
 	close(s.close)
+}
+
+func (s *StatsWorker) UpdateConnectionScores(trackSid string, kind livekit.StreamType, rating float64) {
+	s.Lock()
+	if kind == livekit.StreamType_UPSTREAM {
+		s.incomingRatings[trackSid] = rating
+	} else {
+		s.outgoingRatings[trackSid] = rating
+	}
+	s.Unlock()
+}
+
+func (s *StatsWorker) dumpRatings() []*livekit.AnalyticsStat {
+	var resp []*livekit.AnalyticsStat
+	for trackID, score := range s.incomingRatings {
+		stat := &livekit.AnalyticsStat{
+			RoomId:          s.roomID,
+			ParticipantId:   s.participantID,
+			RoomName:        s.roomName,
+			TrackId:         trackID,
+			ConnectionScore: float32(score),
+			Kind:            livekit.StreamType_UPSTREAM,
+			TimeStamp:       timestamppb.New(time.Now()),
+		}
+		resp = append(resp, stat)
+	}
+	for trackID, score := range s.outgoingRatings {
+		stat := &livekit.AnalyticsStat{
+			RoomId:          s.roomID,
+			ParticipantId:   s.participantID,
+			RoomName:        s.roomName,
+			TrackId:         trackID,
+			ConnectionScore: float32(score),
+			Kind:            livekit.StreamType_DOWNSTREAM,
+			TimeStamp:       timestamppb.New(time.Now()),
+		}
+		resp = append(resp, stat)
+	}
+	return resp
 }

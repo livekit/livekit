@@ -20,6 +20,7 @@ type TelemetryService interface {
 	OnDownstreamPacket(participantID string, bytes int)
 	HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet)
 	Report(ctx context.Context, stats []*livekit.AnalyticsStat)
+	UpdateRating(participantID string, trackSid string, kind livekit.StreamType, rating float64)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
@@ -43,6 +44,14 @@ type telemetryService struct {
 	workers map[string]*StatsWorker
 
 	analytics AnalyticsService
+}
+
+func (t *telemetryService) UpdateRating(participantID string, trackSid string, kind livekit.StreamType, rating float64) {
+
+	t.RLock()
+	w := t.workers[participantID]
+	t.RUnlock()
+	w.UpdateConnectionScores(trackSid, kind, rating)
 }
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
