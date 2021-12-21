@@ -273,7 +273,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 		}
 	}
 
-	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
+	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
 	participant.OnClose(func(p types.Participant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
