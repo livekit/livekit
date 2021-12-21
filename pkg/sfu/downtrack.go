@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/protocol/logger"
 	"io"
 	"strings"
 	"sync"
@@ -155,7 +156,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		codec:           c,
 		kind:            kind,
 		forwarder:       NewForwarder(c, kind),
-		connectionStats: connectionquality.NewConnectionStats(),
+		connectionStats: connectionquality.NewConnectionStats("DownTrack"),
 		done:            make(chan struct{}),
 	}
 
@@ -1065,5 +1066,10 @@ func (d *DownTrack) calculateVideoScore() {
 		reducedQuality = true
 	}
 	d.connectionStats.Score = connectionquality.Loss2Score(FixedPointToPercent(d.CurrentMaxLossFraction()), reducedQuality)
+
+	if d.connectionStats.Score < 4 {
+		logger.Debugw("video connection stats", "kind", "DownTrack", "score", d.connectionStats.Score,
+			"loss_percentage", FixedPointToPercent(d.CurrentMaxLossFraction()), "reduced_quality", reducedQuality)
+	}
 	return
 }

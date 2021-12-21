@@ -2,6 +2,7 @@ package connectionquality
 
 import (
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type ConnectionStat struct {
@@ -16,10 +17,11 @@ type ConnectionStats struct {
 	Curr  *ConnectionStat
 	Prev  *ConnectionStat
 	Score float64
+	Kind  string
 }
 
-func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}, Score: 4.0}
+func NewConnectionStats(kind string) *ConnectionStats {
+	return &ConnectionStats{Kind: kind, Curr: &ConnectionStat{}, Prev: &ConnectionStat{}, Score: 5.0}
 }
 
 func getTotalPackets(curSN, prevSN uint32) uint32 {
@@ -42,9 +44,18 @@ func (cs *ConnectionStats) CalculateAudioScore() float64 {
 	current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
 	cs.Score = ConnectionScore(current, previous, livekit.TrackType_AUDIO)
 
+	if cs.Score < 4 {
+		cs.DebugInfo()
+	}
 	// store previous stats
 	cs.Prev = current
 	cs.Curr = &ConnectionStat{TotalPackets: cs.Prev.TotalPackets, PacketsLost: cs.Prev.PacketsLost}
 
 	return cs.Score
+}
+
+func (cs *ConnectionStats) DebugInfo() {
+	logger.Debugw("audio connection stats", "kind", cs.Kind, "score", cs.Score, "delay", cs.Curr.Delay,
+		"jitter", cs.Curr.Jitter, "delta_packets", cs.Curr.TotalPackets-cs.Prev.TotalPackets,
+		"delta_packets_lost", cs.Curr.PacketsLost-cs.Prev.PacketsLost)
 }

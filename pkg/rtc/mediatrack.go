@@ -100,7 +100,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		ssrc:                 track.SSRC(),
 		streamID:             track.StreamID(),
 		codec:                track.Codec(),
-		connectionStats:      connectionquality.NewConnectionStats(),
+		connectionStats:      connectionquality.NewConnectionStats("MediaTrack"),
 		done:                 make(chan struct{}),
 		maxSubscriberQuality: make(map[string]livekit.VideoQuality),
 	}
@@ -752,6 +752,10 @@ func (t *MediaTrack) calculateVideoScore() {
 		reducedQuality = true
 	}
 	t.connectionStats.Score = connectionquality.Loss2Score(t.PublishLossPercentage(), reducedQuality)
+	if t.connectionStats.Score < 4 {
+		logger.Debugw("video connection stats", "kind", "MediaTrack", "score", t.connectionStats.Score,
+			"loss_percentage", t.PublishLossPercentage(), "reduced_quality", reducedQuality)
+	}
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
