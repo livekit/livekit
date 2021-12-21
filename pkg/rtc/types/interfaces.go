@@ -117,7 +117,6 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	GetConnectionScore() float64
 	NotifySubscriberMute(subscriberID string)
 	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
 	OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
@@ -137,6 +136,7 @@ type PublishedTrack interface {
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
+	GetConnectionScore() float64
 
 	// callbacks
 	AddOnClose(func())
