@@ -533,8 +533,7 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant) (int, error) {
 		if err := track.AddSubscriber(op); err != nil {
 			return n, err
 		}
-		// RAJA-TODO may need to change this to op.Identity()
-		if track.IsSubscriber(op.ID()) {
+		if track.IsSubscriber(op.Identity()) {
 			n += 1
 		}
 		if track.IsRejectedSubscriber(op.Identity()) {

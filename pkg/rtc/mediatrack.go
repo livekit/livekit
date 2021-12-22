@@ -190,8 +190,8 @@ func (t *MediaTrack) AddOnClose(f func()) {
 	t.onClose = append(t.onClose, f)
 }
 
-func (t *MediaTrack) IsSubscriber(subId string) bool {
-	_, ok := t.subscribedTracks.Load(subId)
+func (t *MediaTrack) IsSubscriber(subscriberIdentity string) bool {
+	_, ok := t.subscribedTracks.Load(subscriberIdentity)
 	return ok
 }
 
@@ -235,16 +235,17 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	if !t.isAllowedSubscriber(sub.Identity()) {
+	subscriberID := sub.ID()
+	subscriberIdentity := sub.Identity()
+	if !t.isAllowedSubscriber(subscriberIdentity) {
 		t.rejectSubscriber(sub)
 		return nil
 	}
 
 	t.reinstateSubscriber(sub)
 
-	subscriberID := sub.ID()
 	// don't subscribe to the same track multiple times
-	if _, ok := t.subscribedTracks.Load(subscriberID); ok {
+	if _, ok := t.subscribedTracks.Load(subscriberIdentity); ok {
 		return nil
 	}
 
@@ -339,7 +340,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.subscribedTracks.Delete(subscriberID)
+			t.subscribedTracks.Delete(subscriberIdentity)
 			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.ToProto())
 
 			// ignore if the subscribing sub is not connected
@@ -383,7 +384,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 	}
 
-	t.subscribedTracks.Store(subscriberID, subTrack)
+	t.subscribedTracks.Store(subscriberIdentity, subTrack)
 	subTrack.SetPublisherMuted(t.IsMuted())
 
 	t.receiver.AddDownTrack(downTrack)
@@ -496,13 +497,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
 func (t *MediaTrack) RemoveSubscriber(sub types.Participant) {
-	subscriberID := sub.ID()
-	subTrack := t.getSubscribedTrack(subscriberID)
+	subscriberIdentity := sub.Identity()
+	subTrack := t.getSubscribedTrack(subscriberIdentity)
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
 
-	t.rejectedSubscribers.Delete(sub.Identity())
+	t.rejectedSubscribers.Delete(subscriberIdentity)
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
@@ -516,16 +517,19 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 		return true
 	})
 	t.subscribedTracks = sync.Map{}
+
+	t.rejectedSubscribers = sync.Map{}
 }
 
 func (t *MediaTrack) rejectSubscriber(sub types.Participant) {
-	subTrack := t.getSubscribedTrack(sub.ID())
+	subscriberIdentity := sub.Identity()
+	subTrack := t.getSubscribedTrack(subscriberIdentity)
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
 
-	if !t.isRejectedSubscriber(sub.Identity()) {
-		t.rejectedSubscribers.Store(sub.Identity(), true)
+	if !t.isRejectedSubscriber(subscriberIdentity) {
+		t.rejectedSubscribers.Store(subscriberIdentity, true)
 		go sub.AddRejectedTrack(t.ID())
 	}
 }
@@ -615,8 +619,8 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 func (t *MediaTrack) GetSubscribers() []string {
 	var subscribers []string
 	t.subscribedTracks.Range(func(key interface{}, _ interface{}) bool {
-		if subscriberID, ok := key.(string); ok {
-			subscribers = append(subscribers, subscriberID)
+		if subscriberIdentity, ok := key.(string); ok {
+			subscribers = append(subscribers, subscriberIdentity)
 		}
 		return true
 	})
@@ -636,8 +640,8 @@ func (t *MediaTrack) GetRejectedSubscribers() []string {
 	return rejectedSubscribers
 }
 
-func (t *MediaTrack) getSubscribedTrack(subscriberID string) types.SubscribedTrack {
-	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
+func (t *MediaTrack) getSubscribedTrack(subscriberIdentity string) types.SubscribedTrack {
+	if val, ok := t.subscribedTracks.Load(subscriberIdentity); ok {
 		if st, ok := val.(types.SubscribedTrack); ok {
 			return st
 		}
@@ -659,7 +663,7 @@ func (t *MediaTrack) isRejectedSubscriber(subscriberID string) bool {
 func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
 	var sd []rtcp.SourceDescriptionChunk
 
-	subTrack := t.getSubscribedTrack(sub.ID())
+	subTrack := t.getSubscribedTrack(sub.Identity())
 	if subTrack == nil {
 		return
 	}

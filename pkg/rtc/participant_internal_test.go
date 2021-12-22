@@ -1,9 +1,11 @@
 package rtc
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"sort"
 	"testing"
 	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
@@ -224,11 +226,12 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.pendingTracks["cid"] = ti
+		p.pendingTracks["cid"] = &PendingTrack{
+			trackInfo: ti,
+		}
 
 		p.SetTrackMuted(ti.Sid, true, false)
 		require.True(t, ti.Muted)
-
 	})
 
 	t.Run("can publish a muted track", func(t *testing.T) {
@@ -239,9 +242,70 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
-		require.NotNil(t, ti)
-		require.True(t, ti.Muted)
+		_, pt := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		require.NotNil(t, pt.trackInfo)
+		require.True(t, pt.trackInfo.Muted)
+	})
+}
+
+func TestAllowedSubcribers(t *testing.T) {
+	t.Run("can allow any subscriber when track is pending", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		ti := &livekit.TrackInfo{Sid: "testTrack"}
+		p.pendingTracks["cid"] = &PendingTrack{
+			trackInfo: ti,
+		}
+
+		p.AllowAnySubscriberForTrack(ti.Sid)
+		require.Nil(t, p.pendingTracks["cid"].allowedSubscribers)
+	})
+
+	t.Run("can allow specific subscribers when track is pending", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		ti := &livekit.TrackInfo{Sid: "testTrack"}
+		p.pendingTracks["cid"] = &PendingTrack{
+			trackInfo: ti,
+		}
+
+		allowedSubscribers := []string{"s1", "s2"}
+		p.AllowSubscribersForTrack(ti.Sid, allowedSubscribers)
+		require.Equal(t, allowedSubscribers, p.pendingTracks["cid"].allowedSubscribers)
+	})
+
+	t.Run("can set allowed subscribers on published track", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		tr := &typesfakes.FakePublishedTrack{}
+		tr.IDReturns("audio")
+		p.publishedTracks["audio"] = tr
+
+		p.AllowAnySubscriberForTrack("audio")
+
+		allowedSubscribers := []string{"s1", "s2"}
+		p.AllowSubscribersForTrack("audio", allowedSubscribers)
+
+		resNil := tr.SetAllowedSubscribersArgsForCall(0)
+		require.Nil(t, resNil)
+
+		resNotNil := tr.SetAllowedSubscribersArgsForCall(1)
+		require.Equal(t, allowedSubscribers, resNotNil)
+	})
+}
+
+func TestGetTrackSids(t *testing.T) {
+	t.Run("can get all track sids, both published and pending", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		ti := &livekit.TrackInfo{Sid: "testTrack"}
+		p.pendingTracks["cid"] = &PendingTrack{
+			trackInfo: ti,
+		}
+		p.publishedTracks["audio"] = &typesfakes.FakePublishedTrack{}
+		p.publishedTracks["video"] = &typesfakes.FakePublishedTrack{}
+
+		expectedTrackSids := []string{"testTrack", "audio", "video"}
+		sort.Strings(expectedTrackSids)
+		trackSids := p.GetTrackSids()
+		sort.Strings(trackSids)
+		require.Equal(t, expectedTrackSids, trackSids)
 	})
 }
 
