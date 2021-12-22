@@ -649,8 +649,8 @@ func (t *MediaTrack) getSubscribedTrack(subscriberIdentity string) types.Subscri
 	return nil
 }
 
-func (t *MediaTrack) isRejectedSubscriber(subscriberID string) bool {
-	if val, ok := t.rejectedSubscribers.Load(subscriberID); ok {
+func (t *MediaTrack) isRejectedSubscriber(subscriberIdentity string) bool {
+	if val, ok := t.rejectedSubscribers.Load(subscriberIdentity); ok {
 		if rejected, ok := val.(bool); ok {
 			return rejected
 		}
