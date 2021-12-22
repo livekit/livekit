@@ -226,6 +226,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		return err
 	}
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
+		PublisherID:       t.params.ParticipantID,
 		PublisherIdentity: t.params.ParticipantIdentity,
 		SubscriberID:      sub.ID(),
 		MediaTrack:        t,
