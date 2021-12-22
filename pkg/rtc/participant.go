@@ -884,12 +884,13 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	}
 }
 
-func (p *ParticipantImpl) AddRejectedTrack(trackSid string) {
+func (p *ParticipantImpl) AddRejectedTrack(publisherSid string, trackSid string) {
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
-				TrackSid: trackSid,
-				Allowed:  false,
+				ParticipantSid: publisherSid,
+				TrackSid:       trackSid,
+				Allowed:        false,
 			},
 		},
 	})
@@ -898,12 +899,13 @@ func (p *ParticipantImpl) AddRejectedTrack(trackSid string) {
 	}
 }
 
-func (p *ParticipantImpl) RemoveRejectedTrack(trackSid string) {
+func (p *ParticipantImpl) RemoveRejectedTrack(publisherSid string, trackSid string) {
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
-				TrackSid: trackSid,
-				Allowed:  true,
+				ParticipantSid: publisherSid,
+				TrackSid:       trackSid,
+				Allowed:        true,
 			},
 		},
 	})

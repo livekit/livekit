@@ -530,7 +530,7 @@ func (t *MediaTrack) rejectSubscriber(sub types.Participant) {
 
 	if !t.isRejectedSubscriber(subscriberIdentity) {
 		t.rejectedSubscribers.Store(subscriberIdentity, true)
-		go sub.AddRejectedTrack(t.ID())
+		go sub.AddRejectedTrack(t.params.ParticipantID, t.ID())
 	}
 }
 
@@ -538,7 +538,7 @@ func (t *MediaTrack) reinstateSubscriber(sub types.Participant) {
 	subscriberIdentity := sub.Identity()
 	if t.isRejectedSubscriber(subscriberIdentity) {
 		t.rejectedSubscribers.Delete(subscriberIdentity)
-		go sub.RemoveRejectedTrack(t.ID())
+		go sub.RemoveRejectedTrack(t.params.ParticipantID, t.ID())
 	}
 }
 

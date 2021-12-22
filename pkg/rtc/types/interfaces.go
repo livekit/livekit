@@ -93,8 +93,8 @@ type Participant interface {
 	AllowAnySubscriberForTrack(trackSid string)
 	AllowSubscribersForTrack(trackSid string, allowedSubscribers []string) PublishedTrack
 
-	AddRejectedTrack(trackSid string)
-	RemoveRejectedTrack(trackSid string)
+	AddRejectedTrack(publisherSid string, trackSid string)
+	RemoveRejectedTrack(publisherSid string, trackSid string)
 
 	DebugInfo() map[string]interface{}
 }

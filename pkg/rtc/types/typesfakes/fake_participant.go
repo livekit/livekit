@@ -25,10 +25,11 @@ type FakeParticipant struct {
 	addICECandidateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	AddRejectedTrackStub        func(string)
+	AddRejectedTrackStub        func(string, string)
 	addRejectedTrackMutex       sync.RWMutex
 	addRejectedTrackArgsForCall []struct {
 		arg1 string
+		arg2 string
 	}
 	AddSubscribedTrackStub        func(types.SubscribedTrack)
 	addSubscribedTrackMutex       sync.RWMutex
@@ -373,10 +374,11 @@ type FakeParticipant struct {
 	rTCPChanReturnsOnCall map[int]struct {
 		result1 chan []rtcp.Packet
 	}
-	RemoveRejectedTrackStub        func(string)
+	RemoveRejectedTrackStub        func(string, string)
 	removeRejectedTrackMutex       sync.RWMutex
 	removeRejectedTrackArgsForCall []struct {
 		arg1 string
+		arg2 string
 	}
 	RemoveSubscribedTrackStub        func(types.SubscribedTrack)
 	removeSubscribedTrackMutex       sync.RWMutex
@@ -594,16 +596,17 @@ func (fake *FakeParticipant) AddICECandidateReturnsOnCall(i int, result1 error) 
 	}{result1}
 }
 
-func (fake *FakeParticipant) AddRejectedTrack(arg1 string) {
+func (fake *FakeParticipant) AddRejectedTrack(arg1 string, arg2 string) {
 	fake.addRejectedTrackMutex.Lock()
 	fake.addRejectedTrackArgsForCall = append(fake.addRejectedTrackArgsForCall, struct {
 		arg1 string
-	}{arg1})
+		arg2 string
+	}{arg1, arg2})
 	stub := fake.AddRejectedTrackStub
-	fake.recordInvocation("AddRejectedTrack", []interface{}{arg1})
+	fake.recordInvocation("AddRejectedTrack", []interface{}{arg1, arg2})
 	fake.addRejectedTrackMutex.Unlock()
 	if stub != nil {
-		fake.AddRejectedTrackStub(arg1)
+		fake.AddRejectedTrackStub(arg1, arg2)
 	}
 }
 
@@ -613,17 +616,17 @@ func (fake *FakeParticipant) AddRejectedTrackCallCount() int {
 	return len(fake.addRejectedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) AddRejectedTrackCalls(stub func(string)) {
+func (fake *FakeParticipant) AddRejectedTrackCalls(stub func(string, string)) {
 	fake.addRejectedTrackMutex.Lock()
 	defer fake.addRejectedTrackMutex.Unlock()
 	fake.AddRejectedTrackStub = stub
 }
 
-func (fake *FakeParticipant) AddRejectedTrackArgsForCall(i int) string {
+func (fake *FakeParticipant) AddRejectedTrackArgsForCall(i int) (string, string) {
 	fake.addRejectedTrackMutex.RLock()
 	defer fake.addRejectedTrackMutex.RUnlock()
 	argsForCall := fake.addRejectedTrackArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) AddSubscribedTrack(arg1 types.SubscribedTrack) {
@@ -2493,16 +2496,17 @@ func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 chan []rtcp.Pa
 	}{result1}
 }
 
-func (fake *FakeParticipant) RemoveRejectedTrack(arg1 string) {
+func (fake *FakeParticipant) RemoveRejectedTrack(arg1 string, arg2 string) {
 	fake.removeRejectedTrackMutex.Lock()
 	fake.removeRejectedTrackArgsForCall = append(fake.removeRejectedTrackArgsForCall, struct {
 		arg1 string
-	}{arg1})
+		arg2 string
+	}{arg1, arg2})
 	stub := fake.RemoveRejectedTrackStub
-	fake.recordInvocation("RemoveRejectedTrack", []interface{}{arg1})
+	fake.recordInvocation("RemoveRejectedTrack", []interface{}{arg1, arg2})
 	fake.removeRejectedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemoveRejectedTrackStub(arg1)
+		fake.RemoveRejectedTrackStub(arg1, arg2)
 	}
 }
 
@@ -2512,17 +2516,17 @@ func (fake *FakeParticipant) RemoveRejectedTrackCallCount() int {
 	return len(fake.removeRejectedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) RemoveRejectedTrackCalls(stub func(string)) {
+func (fake *FakeParticipant) RemoveRejectedTrackCalls(stub func(string, string)) {
 	fake.removeRejectedTrackMutex.Lock()
 	defer fake.removeRejectedTrackMutex.Unlock()
 	fake.RemoveRejectedTrackStub = stub
 }
 
-func (fake *FakeParticipant) RemoveRejectedTrackArgsForCall(i int) string {
+func (fake *FakeParticipant) RemoveRejectedTrackArgsForCall(i int) (string, string) {
 	fake.removeRejectedTrackMutex.RLock()
 	defer fake.removeRejectedTrackMutex.RUnlock()
 	argsForCall := fake.removeRejectedTrackArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) RemoveSubscribedTrack(arg1 types.SubscribedTrack) {
