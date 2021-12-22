@@ -342,10 +342,95 @@ func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []str
 			if err := track.AddSubscriber(participant); err != nil {
 				return err
 			}
+			if track.IsRejectedSubscriber(participant.Identity()) {
+				r.Logger.Debugw("subscribing to remoteTrack not allowed",
+					"subscriber", participant.Identity(),
+					"subscriberID", participant.ID(),
+					"trackID", track.ID())
+			}
 		} else {
-			track.RemoveSubscriber(participant.ID())
+			track.RemoveSubscriber(participant)
 		}
 	}
+	return nil
+}
+
+func (r *Room) UpdateSubscriptionPermissions(participant types.Participant, permissions *livekit.UpdateSubscriptionPermissions) error {
+	// all_participants takes precedence
+	if permissions.AllParticipants {
+		for _, trackSid := range participant.GetTrackSids() {
+			participant.AllowAnySubscriberForTrack(trackSid)
+		}
+		for _, track := range participant.GetPublishedTracks() {
+			for _, subscriberID := range track.GetRejectedSubscribers() {
+				subscriber := r.GetParticipant(subscriberID)
+				if subscriber != nil {
+					if err := track.AddSubscriber(subscriber); err != nil {
+						r.Logger.Errorw("could not subscribe previously rejected subscriber to remoteTrack", err,
+							"participants", []string{subscriber.Identity(), participant.Identity()},
+							"pIDs", []string{subscriber.ID(), participant.ID()},
+							"track", track.ID())
+					}
+					if track.IsRejectedSubscriber(subscriber.Identity()) {
+						r.Logger.Debugw("could not reinstate previously rejected subscriber to remoteTrack",
+							"subscriber", subscriber.Identity(),
+							"subscriberID", subscriber.ID(),
+							"trackID", track.ID())
+					}
+				}
+			}
+		}
+
+		return nil
+	}
+
+	// apply per participant permissions
+	allowedSubscribersForTracks := make(map[string][]string)
+	for _, trackPerms := range permissions.TrackPermissions {
+		// all_tracks get priority
+		if trackPerms.AllTracks {
+			for _, trackSid := range participant.GetTrackSids() {
+				allowedSubscribersForTracks[trackSid] = append(allowedSubscribersForTracks[trackSid], trackPerms.ParticipantSid)
+			}
+		} else {
+			for _, trackSid := range trackPerms.TrackSids {
+				allowedSubscribersForTracks[trackSid] = append(allowedSubscribersForTracks[trackSid], trackPerms.ParticipantSid)
+			}
+		}
+	}
+
+	// apply permissions and reconcile subscriptions
+	for trackSid, allowedSubscribers := range allowedSubscribersForTracks {
+		track := participant.AllowSubscribersForTrack(trackSid, allowedSubscribers)
+		if track != nil {
+			// subscribe previously rejected subscribers. AddSubscriber will reject if updated permissions still do not allow it.
+			for _, subscriberIdentity := range track.GetRejectedSubscribers() {
+				subscriber := r.GetParticipant(subscriberIdentity)
+				if subscriber != nil {
+					if err := track.AddSubscriber(subscriber); err != nil {
+						r.Logger.Errorw("could not subscribe previously rejected subscriber to remoteTrack", err,
+							"participants", []string{subscriber.Identity(), participant.Identity()},
+							"pIDs", []string{subscriber.ID(), participant.ID()},
+							"track", track.ID())
+					}
+				}
+			}
+
+			// remove subscription if updated permissions revoke a subscriber. AddSubscriber is a no-op for an existing track if permissions are unchanged.
+			for _, subscriberIdentity := range track.GetSubscribers() {
+				subscriber := r.GetParticipant(subscriberIdentity)
+				if subscriber != nil {
+					if err := track.AddSubscriber(subscriber); err != nil {
+						r.Logger.Errorw("could not subscribe to remoteTrack on permissions update", err,
+							"participants", []string{subscriber.Identity(), participant.Identity()},
+							"pIDs", []string{subscriber.ID(), participant.ID()},
+							"track", track.ID())
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -497,6 +582,12 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 				"participants", []string{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []string{participant.ID(), existingParticipant.ID()},
 				"track", track.ID())
+		}
+		if track.IsRejectedSubscriber(existingParticipant.Identity()) {
+			r.Logger.Debugw("subscribing to remoteTrack not allowed",
+				"subscriber", existingParticipant.Identity(),
+				"subscriberID", existingParticipant.ID(),
+				"trackID", track.ID())
 		}
 	}
 

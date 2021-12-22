@@ -59,6 +59,8 @@ type Participant interface {
 	IsSubscribedTo(identity string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
+	// returns a list of tracks published by this participant, including pending tracks
+	GetTrackSids() []string
 
 	// permissions
 	CanPublish() bool
@@ -87,6 +89,13 @@ type Participant interface {
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
 
+	// track level permissions
+	AllowAnySubscriberForTrack(trackSid string)
+	AllowSubscribersForTrack(trackSid string, allowedSubscribers []string) PublishedTrack
+
+	AddRejectedTrack(trackSid string)
+	RemoveRejectedTrack(trackSid string)
+
 	DebugInfo() map[string]interface{}
 }
 
@@ -95,6 +104,7 @@ type Participant interface {
 type Room interface {
 	Name() string
 	UpdateSubscriptions(participant Participant, trackIDs []string, subscribe bool) error
+	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 }
 
 // MediaTrack represents a media track
@@ -111,9 +121,14 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant Participant) error
-	RemoveSubscriber(participantId string)
+	RemoveSubscriber(participant Participant)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	GetSubscribers() []string
+
+	SetAllowedSubscribers(allowedSubscribers []string)
+	GetRejectedSubscribers() []string
+
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
@@ -137,6 +152,8 @@ type PublishedTrack interface {
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
+
+	IsRejectedSubscriber(subscriberIdentity string) bool
 
 	// callbacks
 	AddOnClose(func())

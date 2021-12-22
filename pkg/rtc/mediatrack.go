@@ -50,8 +50,14 @@ type MediaTrack struct {
 	simulcasted utils.AtomicFlag
 	buffer      *buffer.Buffer
 
-	// channel to send RTCP packets to the source
 	lock sync.RWMutex
+
+	// subscriber permissions
+	allowedSubscribers []string
+
+	// subscribers who were rejected because of no permissions
+	rejectedSubscribers sync.Map
+
 	// map of target participantId -> types.SubscribedTrack
 	subscribedTracks sync.Map
 	twcc             *twcc.Responder
@@ -70,6 +76,7 @@ type MediaTrack struct {
 	connectionStats   *connectionquality.ConnectionStats
 
 	done chan struct{}
+
 	// quality level enable/disable
 	maxQualityLock               sync.Mutex
 	maxSubscriberQuality         map[string]livekit.VideoQuality
@@ -86,12 +93,13 @@ type MediaTrackParams struct {
 	SdpCid              string
 	ParticipantID       string
 	ParticipantIdentity string
-	RTCPChan            chan []rtcp.Packet
-	BufferFactory       *buffer.Factory
-	ReceiverConfig      ReceiverConfig
-	AudioConfig         config.AudioConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
+	// channel to send RTCP packets to the source
+	RTCPChan       chan []rtcp.Packet
+	BufferFactory  *buffer.Factory
+	ReceiverConfig ReceiverConfig
+	AudioConfig    config.AudioConfig
+	Telemetry      telemetry.TelemetryService
+	Logger         logger.Logger
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -187,8 +195,39 @@ func (t *MediaTrack) IsSubscriber(subId string) bool {
 	return ok
 }
 
+func (t *MediaTrack) IsRejectedSubscriber(subscriberIdentity string) bool {
+	_, ok := t.rejectedSubscribers.Load(subscriberIdentity)
+	return ok
+}
+
 func (t *MediaTrack) PublishLossPercentage() uint32 {
 	return FixedPointToPercent(uint8(atomic.LoadUint32(&t.currentUpFracLost)))
+}
+
+func (t *MediaTrack) SetAllowedSubscribers(allowedSubscribers []string) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if allowedSubscribers != nil {
+		t.allowedSubscribers = make([]string, len(allowedSubscribers))
+		copy(t.allowedSubscribers, allowedSubscribers)
+	} else {
+		t.allowedSubscribers = nil
+	}
+}
+
+func (t *MediaTrack) isAllowedSubscriber(subscriberIdentity string) bool {
+	if len(t.allowedSubscribers) == 0 {
+		return true
+	}
+
+	for _, allowedSubscriber := range t.allowedSubscribers {
+		if allowedSubscriber == subscriberIdentity {
+			return true
+		}
+	}
+
+	return false
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
@@ -196,8 +235,16 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	if !t.isAllowedSubscriber(sub.Identity()) {
+		t.rejectSubscriber(sub)
+		return nil
+	}
+
+	t.reinstateSubscriber(sub)
+
+	subscriberID := sub.ID()
 	// don't subscribe to the same track multiple times
-	if _, ok := t.subscribedTracks.Load(sub.ID()); ok {
+	if _, ok := t.subscribedTracks.Load(subscriberID); ok {
 		return nil
 	}
 
@@ -221,13 +268,13 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: FeedbackTypes,
-	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.PacketBufferSize)
+	}, receiver, t.params.BufferFactory, subscriberID, t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err
 	}
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
 		PublisherIdentity: t.params.ParticipantIdentity,
-		SubscriberID:      sub.ID(),
+		SubscriberID:      subscriberID,
 		MediaTrack:        t,
 		DownTrack:         downTrack,
 	})
@@ -281,19 +328,19 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
 	})
 	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
-		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, pkts)
 	})
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.subscribedTracks.Delete(sub.ID())
-			t.params.Telemetry.TrackUnsubscribed(context.Background(), sub.ID(), t.ToProto())
+			t.subscribedTracks.Delete(subscriberID)
+			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -308,7 +355,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
 				"subscriber", sub.Identity(),
-				"subscriberID", sub.ID(),
+				"subscriberID", subscriberID,
 				"kind", t.Kind(),
 			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
@@ -322,12 +369,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
 						"error", err,
 						"subscriber", sub.Identity(),
-						"subscriberID", sub.ID(),
+						"subscriberID", subscriberID,
 					)
 				}
 			}
 
-			t.NotifySubscriberMute(sub.ID())
+			t.NotifySubscriberMute(subscriberID)
 			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()
@@ -336,18 +383,18 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 	}
 
-	t.subscribedTracks.Store(sub.ID(), subTrack)
+	t.subscribedTracks.Store(subscriberID, subTrack)
 	subTrack.SetPublisherMuted(t.IsMuted())
 
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		t.NotifySubscriberMaxQuality(sub.ID(), livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
+		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(context.Background(), sub.ID(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.ToProto())
 	return nil
 }
 
@@ -448,11 +495,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrack) RemoveSubscriber(participantId string) {
-	subTrack := t.getSubscribedTrack(participantId)
+func (t *MediaTrack) RemoveSubscriber(sub types.Participant) {
+	subscriberID := sub.ID()
+	subTrack := t.getSubscribedTrack(subscriberID)
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
+
+	t.rejectedSubscribers.Delete(sub.Identity())
 }
 
 func (t *MediaTrack) RemoveAllSubscribers() {
@@ -466,6 +516,26 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 		return true
 	})
 	t.subscribedTracks = sync.Map{}
+}
+
+func (t *MediaTrack) rejectSubscriber(sub types.Participant) {
+	subTrack := t.getSubscribedTrack(sub.ID())
+	if subTrack != nil {
+		go subTrack.DownTrack().Close()
+	}
+
+	if !t.isRejectedSubscriber(sub.Identity()) {
+		t.rejectedSubscribers.Store(sub.Identity(), true)
+		go sub.AddRejectedTrack(t.ID())
+	}
+}
+
+func (t *MediaTrack) reinstateSubscriber(sub types.Participant) {
+	subscriberIdentity := sub.Identity()
+	if t.isRejectedSubscriber(subscriberIdentity) {
+		t.rejectedSubscribers.Delete(subscriberIdentity)
+		go sub.RemoveRejectedTrack(t.ID())
+	}
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
@@ -542,13 +612,46 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
-func (t *MediaTrack) getSubscribedTrack(id string) types.SubscribedTrack {
-	if val, ok := t.subscribedTracks.Load(id); ok {
+func (t *MediaTrack) GetSubscribers() []string {
+	var subscribers []string
+	t.subscribedTracks.Range(func(key interface{}, _ interface{}) bool {
+		if subscriberID, ok := key.(string); ok {
+			subscribers = append(subscribers, subscriberID)
+		}
+		return true
+	})
+
+	return subscribers
+}
+
+func (t *MediaTrack) GetRejectedSubscribers() []string {
+	var rejectedSubscribers []string
+	t.rejectedSubscribers.Range(func(key interface{}, _ interface{}) bool {
+		if subscriberID, ok := key.(string); ok {
+			rejectedSubscribers = append(rejectedSubscribers, subscriberID)
+		}
+		return true
+	})
+
+	return rejectedSubscribers
+}
+
+func (t *MediaTrack) getSubscribedTrack(subscriberID string) types.SubscribedTrack {
+	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
 		if st, ok := val.(types.SubscribedTrack); ok {
 			return st
 		}
 	}
 	return nil
+}
+
+func (t *MediaTrack) isRejectedSubscriber(subscriberID string) bool {
+	if val, ok := t.rejectedSubscribers.Load(subscriberID); ok {
+		if rejected, ok := val.(bool); ok {
+			return rejected
+		}
+	}
+	return false
 }
 
 // TODO: send for all downtracks from the source participant
