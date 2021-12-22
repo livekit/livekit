@@ -40,7 +40,8 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	rx := 93.2 - percentageLost
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
-	d := float64(rtt + cur.Jitter)
+	ld := 30.0
+	d := float64(rtt+cur.Jitter)/2 + ld
 	h := d - 177.3
 	if h < 0 {
 		h = 0
