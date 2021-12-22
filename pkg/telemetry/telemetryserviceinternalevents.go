@@ -59,12 +59,13 @@ func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *
 	})
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_PARTICIPANT_JOINED,
-		Timestamp:   timestamppb.Now(),
-		RoomSid:     room.Sid,
-		Participant: participant,
-		Room:        room,
-		SdkType:     clientInfo.GetSdk(),
+		Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
+		Timestamp:     timestamppb.Now(),
+		RoomSid:       room.Sid,
+		ParticipantId: participant.Sid,
+		Participant:   participant,
+		Room:          room,
+		SdkType:       clientInfo.GetSdk(),
 	})
 }
 
@@ -115,7 +116,7 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	t.RUnlock()
 	if w != nil {
 		roomID = w.roomID
-		w.RemoveBuffer(ssrc)
+		w.RemoveBuffer(track.GetSid())
 		roomName = w.roomName
 	}
 

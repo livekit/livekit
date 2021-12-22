@@ -286,13 +286,13 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
 	})
 	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
-		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, pkts)
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, t.ID(), pkts)
 	})
 
 	downTrack.OnCloseHandler(func() {
@@ -437,7 +437,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	t.receiver.AddUpTrack(track, buff)
-	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
+	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, t.ID(), buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
@@ -630,6 +630,9 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var jitter uint32
 	var totalLost uint32
 	var maxSeqNum uint32
+
+	//forward to telemetry
+	t.params.Telemetry.HandleRTCP(livekit.StreamType_UPSTREAM, t.params.ParticipantID, t.ID(), packets)
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
