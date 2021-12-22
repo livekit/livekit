@@ -749,7 +749,7 @@ func (r *Room) connectionQualityWorker() {
 				update.Updates = append(update.Updates, info)
 			}
 
-			// add connection qulaity of other participants its subscribed to
+			// add connection quality of other participants its subscribed to
 			for _, sid := range op.GetSubscribedParticipants() {
 				if info, ok := connectionInfos[sid]; ok {
 					update.Updates = append(update.Updates, info)
