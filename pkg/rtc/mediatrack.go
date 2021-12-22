@@ -216,13 +216,13 @@ func (t *MediaTrack) SetAllowedSubscribers(allowedSubscribers []string) {
 	}
 }
 
-func (t *MediaTrack) isAllowedSubscriber(subscriberIdentity string) bool {
+func (t *MediaTrack) isAllowedSubscriber(subscriberID string) bool {
 	if len(t.allowedSubscribers) == 0 {
 		return true
 	}
 
 	for _, allowedSubscriber := range t.allowedSubscribers {
-		if allowedSubscriber == subscriberIdentity {
+		if allowedSubscriber == subscriberID {
 			return true
 		}
 	}
@@ -237,7 +237,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	subscriberID := sub.ID()
 	subscriberIdentity := sub.Identity()
-	if !t.isAllowedSubscriber(subscriberIdentity) {
+	if !t.isAllowedSubscriber(subscriberID) {
 		t.rejectSubscriber(sub)
 		return nil
 	}
