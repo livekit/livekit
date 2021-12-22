@@ -631,8 +631,8 @@ func (t *MediaTrack) GetSubscribers() []string {
 func (t *MediaTrack) GetRejectedSubscribers() []string {
 	var rejectedSubscribers []string
 	t.rejectedSubscribers.Range(func(key interface{}, _ interface{}) bool {
-		if subscriberID, ok := key.(string); ok {
-			rejectedSubscribers = append(rejectedSubscribers, subscriberID)
+		if subscriberIdentity, ok := key.(string); ok {
+			rejectedSubscribers = append(rejectedSubscribers, subscriberIdentity)
 		}
 		return true
 	})
