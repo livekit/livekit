@@ -342,22 +342,13 @@ func (r *Room) UpdateSubscriptions(
 	subscribe bool,
 ) error {
 	// find all matching tracks
-	trackInfos := make(map[string]struct {
-		publisher types.Participant
-		track     types.PublishedTrack
-	})
+	trackPublishers := make(map[string]types.Participant)
 	participants := r.GetParticipants()
 	for _, trackSid := range trackIds {
 		for _, p := range participants {
 			track := p.GetPublishedTrack(trackSid)
 			if track != nil {
-				trackInfos[trackSid] = struct {
-					publisher types.Participant
-					track     types.PublishedTrack
-				}{
-					publisher: p,
-					track:     track,
-				}
+				trackPublishers[trackSid] = p
 				break
 			}
 		}
@@ -369,27 +360,18 @@ func (r *Room) UpdateSubscriptions(
 			continue
 		}
 		for _, trackSid := range pt.TrackSids {
-			track := p.GetPublishedTrack(trackSid)
-			if track != nil {
-				trackInfos[trackSid] = struct {
-					publisher types.Participant
-					track     types.PublishedTrack
-				}{
-					publisher: p,
-					track:     track,
-				}
-			}
+			trackPublishers[trackSid] = p
 		}
 	}
 
 	// handle subscription changes
-	for trackSid, trackInfo := range trackInfos {
+	for trackSid, publisher := range trackPublishers {
 		if subscribe {
-			if _, err := trackInfo.publisher.AddSubscriber(participant, types.AddSubscriberParams{TrackSids: []string{trackSid}}); err != nil {
+			if _, err := publisher.AddSubscriber(participant, types.AddSubscriberParams{TrackSids: []string{trackSid}}); err != nil {
 				return err
 			}
 		} else {
-			trackInfo.track.RemoveSubscriber(participant.ID())
+			publisher.RemoveSubscriber(participant, trackSid)
 		}
 	}
 	return nil

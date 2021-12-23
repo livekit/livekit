@@ -50,6 +50,7 @@ type Participant interface {
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op Participant, trackSid string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error

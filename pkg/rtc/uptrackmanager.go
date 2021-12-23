@@ -180,6 +180,18 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 	return n, nil
 }
 
+func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackSid string) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	track := u.getPublishedTrack(trackSid)
+	if track != nil {
+		track.RemoveSubscriber(sub.ID())
+	}
+
+	u.maybeRemovePendingSubscription(trackSid, sub)
+}
+
 func (u *UptrackManager) SetTrackMuted(trackSid string, muted bool) {
 	isPending := false
 	u.lock.RLock()
@@ -417,7 +429,10 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 	track.AddOnClose(func() {
 		// cleanup
 		u.lock.Lock()
-		delete(u.publishedTracks, track.ID())
+		trackSid := track.ID()
+		delete(u.publishedTracks, trackSid)
+		delete(u.pendingSubscriptions, trackSid)
+		delete(u.subscriptionPermissions, trackSid)
 		u.lock.Unlock()
 		// only send this when client is in a ready state
 		if u.onTrackUpdated != nil {
@@ -500,6 +515,23 @@ func (u *UptrackManager) maybeAddPendingSubscription(trackSid string, sub types.
 
 	u.pendingSubscriptions[trackSid] = append(u.pendingSubscriptions[trackSid], subscriberID)
 	go sub.SubscriptionPermissionUpdate(u.params.SID, trackSid, false)
+}
+
+func (u *UptrackManager) maybeRemovePendingSubscription(trackSid string, sub types.Participant) {
+	subscriberID := sub.ID()
+
+	pending := u.pendingSubscriptions[trackSid]
+	n := len(pending)
+	for idx, sid := range pending {
+		if sid == subscriberID {
+			u.pendingSubscriptions[trackSid][idx] = u.pendingSubscriptions[trackSid][n-1]
+			u.pendingSubscriptions[trackSid] = u.pendingSubscriptions[trackSid][:n-1]
+			break
+		}
+	}
+	if len(u.pendingSubscriptions[trackSid]) == 0 {
+		delete(u.pendingSubscriptions, trackSid)
+	}
 }
 
 func (u *UptrackManager) processPendingSubscriptions(resolver func(participantSid string) types.Participant) {

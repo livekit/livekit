@@ -440,6 +440,10 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant, params types.AddSu
 	return p.uptrackManager.AddSubscriber(op, params)
 }
 
+func (p *ParticipantImpl) RemoveSubscriber(op types.Participant, trackSid string) {
+	p.uptrackManager.RemoveSubscriber(op, trackSid)
+}
+
 // signal connection methods
 
 func (p *ParticipantImpl) SendJoinResponse(

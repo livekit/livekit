@@ -336,6 +336,12 @@ type FakeParticipant struct {
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
 	}
+	RemoveSubscriberStub        func(types.Participant, string)
+	removeSubscriberMutex       sync.RWMutex
+	removeSubscriberArgsForCall []struct {
+		arg1 types.Participant
+		arg2 string
+	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
 	sendConnectionQualityUpdateArgsForCall []struct {
@@ -2261,6 +2267,39 @@ func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) types.Subsc
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) RemoveSubscriber(arg1 types.Participant, arg2 string) {
+	fake.removeSubscriberMutex.Lock()
+	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
+		arg1 types.Participant
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.RemoveSubscriberStub
+	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2})
+	fake.removeSubscriberMutex.Unlock()
+	if stub != nil {
+		fake.RemoveSubscriberStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeParticipant) RemoveSubscriberCallCount() int {
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
+	return len(fake.removeSubscriberArgsForCall)
+}
+
+func (fake *FakeParticipant) RemoveSubscriberCalls(stub func(types.Participant, string)) {
+	fake.removeSubscriberMutex.Lock()
+	defer fake.removeSubscriberMutex.Unlock()
+	fake.RemoveSubscriberStub = stub
+}
+
+func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) (types.Participant, string) {
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
+	argsForCall := fake.removeSubscriberArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakeParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
 	fake.sendConnectionQualityUpdateMutex.Lock()
 	ret, specificReturn := fake.sendConnectionQualityUpdateReturnsOnCall[len(fake.sendConnectionQualityUpdateArgsForCall)]
@@ -3240,6 +3279,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.protocolVersionMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
 	fake.sendConnectionQualityUpdateMutex.RLock()
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()
