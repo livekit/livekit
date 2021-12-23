@@ -10,25 +10,19 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type UptrackManagerParams struct {
-	Identity        string
-	SID             string
-	Config          *WebRTCConfig
-	Sink            routing.MessageSink
-	AudioConfig     config.AudioConfig
-	ProtocolVersion types.ProtocolVersion
-	Telemetry       telemetry.TelemetryService
-	ThrottleConfig  config.PLIThrottleConfig
-	EnabledCodecs   []*livekit.Codec
-	Hidden          bool
-	Recorder        bool
-	Logger          logger.Logger
+	Identity       string
+	SID            string
+	Config         *WebRTCConfig
+	AudioConfig    config.AudioConfig
+	Telemetry      telemetry.TelemetryService
+	ThrottleConfig config.PLIThrottleConfig
+	Logger         logger.Logger
 }
 
 type UptrackManager struct {
@@ -44,11 +38,17 @@ type UptrackManager struct {
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
 	// keeps track of subscriptions that are awaiting permissions
-	subscriptionPermissions map[string][]string
+	subscriptionPermissions map[string][]string // trackSid => []subscriberID
 	// keeps tracks of track specific subscribers who are awaiting permission
-	pendingSubscriptions map[string][]string
+	pendingSubscriptions map[string][]string // trackSid => []subscriberID
 
 	lock sync.RWMutex
+
+	// callbacks & handlers
+	onTrackPublished             func(track types.PublishedTrack)
+	onTrackUpdated               func(track types.PublishedTrack, onlyIfReady bool)
+	onWriteRTCP                  func(pkts []rtcp.Packet)
+	onSubscribedMaxQualityChange func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
 }
 
 func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
@@ -92,6 +92,22 @@ func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
+func (u *UptrackManager) OnTrackPublished(f func(track types.PublishedTrack)) {
+	u.onTrackPublished = f
+}
+
+func (u *UptrackManager) OnTrackUpdated(f func(track types.PublishedTrack, onlyIfReady bool)) {
+	u.onTrackUpdated = f
+}
+
+func (u *UptrackManager) OnWriteRTCP(f func(pkts []rtcp.Packet)) {
+	u.onWriteRTCP = f
+}
+
+func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
+	u.onSubscribedMaxQualityChange = f
+}
+
 // AddTrack is called when client intends to publish track.
 // records track details and lets client know it's ok to proceed
 func (u *UptrackManager) AddTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
@@ -124,8 +140,20 @@ func (u *UptrackManager) AddTrack(req *livekit.AddTrackRequest) *livekit.TrackIn
 }
 
 // AddSubscriber subscribes op to all publishedTracks
-func (u *UptrackManager) AddSubscriber(sub types.Participant) (int, error) {
-	tracks := u.GetPublishedTracks()
+func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSubscriberParams) (int, error) {
+	var tracks []types.PublishedTrack
+	if params.AllTracks {
+		tracks = u.GetPublishedTracks()
+	} else {
+		for _, trackSid := range params.TrackSids {
+			track := u.getPublishedTrack(trackSid)
+			if track == nil {
+				continue
+			}
+
+			tracks = append(tracks, track)
+		}
+	}
 	if len(tracks) == 0 {
 		return 0, nil
 	}
@@ -134,21 +162,25 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant) (int, error) {
 		"subscriber", sub.Identity(),
 		"subscriberID", sub.ID(),
 		"numTracks", len(tracks))
-	// RAJA-TODO: check permissions and add to pending if necessary
 
 	n := 0
 	for _, track := range tracks {
+		trackSid := track.ID()
+		subscriberID := sub.ID()
+		if !u.hasPermission(trackSid, subscriberID) {
+			u.maybeAddPendingSubscription(trackSid, sub)
+			continue
+		}
+
 		if err := track.AddSubscriber(sub); err != nil {
 			return n, err
 		}
-		if track.IsSubscriber(sub.ID()) {
-			n += 1
-		}
+		n += 1
 	}
 	return n, nil
 }
 
-func (u *UptrackManager) SetTrackMuted(trackSid string, muted bool, fromAdmin bool) {
+func (u *UptrackManager) SetTrackMuted(trackSid string, muted bool) {
 	isPending := false
 	u.lock.RLock()
 	for _, ti := range u.pendingTracks {
@@ -166,29 +198,15 @@ func (u *UptrackManager) SetTrackMuted(trackSid string, muted bool, fromAdmin bo
 		}
 		return
 	}
-	// RAJA-TODO currentMuted := track.IsMuted()
+	currentMuted := track.IsMuted()
 	track.SetMuted(muted)
 
-	/* RAJA_TODO
-	// when request is coming from admin, send message to current participant
-	if fromAdmin {
-		_ = p.writeMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Mute{
-				Mute: &livekit.MuteTrackRequest{
-					Sid:   trackSid,
-					Muted: muted,
-				},
-			},
-		})
-	}
-
-	if currentMuted != track.IsMuted() && p.onTrackUpdated != nil {
+	if currentMuted != track.IsMuted() && u.onTrackUpdated != nil {
 		u.params.Logger.Debugw("mute status changed",
 			"track", trackSid,
 			"muted", track.IsMuted())
-		p.onTrackUpdated(p, track)
+		u.onTrackUpdated(track, false)
 	}
-	*/
 }
 
 func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
@@ -231,7 +249,7 @@ func (u *UptrackManager) GetPublishedTrack(sid string) types.PublishedTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return u.publishedTracks[sid]
+	return u.getPublishedTrack(sid)
 }
 
 func (u *UptrackManager) GetPublishedTracks() []types.PublishedTrack {
@@ -245,57 +263,43 @@ func (u *UptrackManager) GetPublishedTracks() []types.PublishedTrack {
 	return tracks
 }
 
+func (u *UptrackManager) GetDTX() bool {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	var trackInfo *livekit.TrackInfo
+	for _, ti := range u.pendingTracks {
+		if ti.Type == livekit.TrackType_AUDIO {
+			trackInfo = ti
+			break
+		}
+	}
+
+	if trackInfo == nil {
+		return false
+	}
+
+	return !trackInfo.DisableDtx
+}
+
 func (u *UptrackManager) UpdateSubscriptionPermissions(
 	permissions *livekit.UpdateSubscriptionPermissions,
 	resolver func(participantSid string) types.Participant,
-) {
+) error {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
-	// every update overrides the existing
-	u.subscriptionPermissions = make(map[string][]string)
+	u.updateSubscriptionPermissions(permissions)
 
-	// all_participants takes precedence
-	if permissions.AllParticipants {
-		// everything is allowed, nothing else to do
-		return
-	}
+	u.processPendingSubscriptions(resolver)
 
-	// if track_permissions is empty, nobody is allowed to subscribe to any tracks
-	if permissions.TrackPermissions != nil && len(permissions.TrackPermissions) == 0 {
-		for trackSid, _ := range u.publishedTracks {
-			u.subscriptionPermissions[trackSid] = nil
-		}
+	u.maybeRevokeSubscriptions(resolver)
 
-		for _, ti := range u.pendingTracks {
-			u.subscriptionPermissions[ti.Sid] = nil
-		}
-
-		return
-	}
-
-	// per participant permissions
-	for _, trackPerms := range permissions.TrackPermissions {
-		// all_tracks get precedence
-		if trackPerms.AllTracks {
-			// no restriction for participant, nothing else to do
-			for trackSid, _ := range u.publishedTracks {
-				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
-			}
-
-			for _, ti := range u.pendingTracks {
-				u.subscriptionPermissions[ti.Sid] = append(u.subscriptionPermissions[ti.Sid], trackPerms.ParticipantSid)
-			}
-		} else {
-			for _, trackSid := range trackPerms.TrackSids {
-				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
-			}
-		}
-	}
+	return nil
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
-func (u *UptrackManager) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	var newTrack bool
 
 	// use existing mediatrack to handle simulcast
@@ -309,19 +313,19 @@ func (u *UptrackManager) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *we
 		}
 
 		mt = NewMediaTrack(track, MediaTrackParams{
-			TrackInfo: ti,
-			SignalCid: signalCid,
-			SdpCid:    track.ID(),
-			// RAJA-TODO ParticipantID:       p.params.SID,
-			// RAJA-TODO ParticipantIdentity: p.Identity(),
-			RTCPChan:       u.rtcpCh,
-			BufferFactory:  u.params.Config.BufferFactory,
-			ReceiverConfig: u.params.Config.Receiver,
-			AudioConfig:    u.params.AudioConfig,
-			Telemetry:      u.params.Telemetry,
-			Logger:         u.params.Logger,
+			TrackInfo:           ti,
+			SignalCid:           signalCid,
+			SdpCid:              track.ID(),
+			ParticipantID:       u.params.SID,
+			ParticipantIdentity: u.params.Identity,
+			RTCPChan:            u.rtcpCh,
+			BufferFactory:       u.params.Config.BufferFactory,
+			ReceiverConfig:      u.params.Config.Receiver,
+			AudioConfig:         u.params.AudioConfig,
+			Telemetry:           u.params.Telemetry,
+			Logger:              u.params.Logger,
 		})
-		// RAJA-TODO mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+		mt.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
 
 		// add to published and clean up pending
 		u.publishedTracks[mt.ID()] = mt
@@ -335,7 +339,9 @@ func (u *UptrackManager) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *we
 	if u.twcc == nil {
 		u.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		u.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			// RAJA-TODO _ = p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt})
+			if u.onWriteRTCP != nil {
+				u.onWriteRTCP([]rtcp.Packet{&pkt})
+			}
 		})
 	}
 	u.lock.Unlock()
@@ -345,6 +351,11 @@ func (u *UptrackManager) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *we
 	if newTrack {
 		u.handleTrackPublished(mt)
 	}
+}
+
+// should be called with lock held
+func (u *UptrackManager) getPublishedTrack(sid string) types.PublishedTrack {
+	return u.publishedTracks[sid]
 }
 
 // should be called with lock held
@@ -374,9 +385,12 @@ func (u *UptrackManager) getPendingTrack(clientId string, kind livekit.TrackType
 	signalCid := clientId
 	trackInfo := u.pendingTracks[clientId]
 
-	// then find the first one that matches type. with MediaStreamTrack, it's possible for the client id to
-	// change after being added to SubscriberPC
 	if trackInfo == nil {
+		//
+		// If no match on client id, find first one matching type
+		// as MediaStreamTrack can change client id when transceiver
+		// is added to peer connection.
+		//
 		for cid, ti := range u.pendingTracks {
 			if ti.Type == kind {
 				trackInfo = ti
@@ -406,37 +420,149 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 		delete(u.publishedTracks, track.ID())
 		u.lock.Unlock()
 		// only send this when client is in a ready state
-		/* RAJA-TODO
-		if p.IsReady() && p.onTrackUpdated != nil {
-			p.onTrackUpdated(p, track)
+		if u.onTrackUpdated != nil {
+			u.onTrackUpdated(track, true)
 		}
-		RAJA-TODO*/
 	})
 
-	/* RAJA-TODO
 	if u.onTrackPublished != nil {
-		u.onTrackPublished(p, track)
+		u.onTrackPublished(track)
 	}
-	RAJA-TODO */
 }
 
-func (u *UptrackManager) GetDTX() bool {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
+func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
+	// every update overrides the existing
+	u.subscriptionPermissions = make(map[string][]string)
 
-	var trackInfo *livekit.TrackInfo
-	for _, ti := range u.pendingTracks {
-		if ti.Type == livekit.TrackType_AUDIO {
-			trackInfo = ti
-			break
+	// all_participants takes precedence
+	if permissions.AllParticipants {
+		// everything is allowed, nothing else to do
+		return
+	}
+
+	// if track_permissions is empty, nobody is allowed to subscribe to any tracks
+	if permissions.TrackPermissions != nil && len(permissions.TrackPermissions) == 0 {
+		for trackSid, _ := range u.publishedTracks {
+			u.subscriptionPermissions[trackSid] = []string{}
+		}
+
+		for _, ti := range u.pendingTracks {
+			u.subscriptionPermissions[ti.Sid] = []string{}
+		}
+		return
+	}
+
+	// per participant permissions
+	for _, trackPerms := range permissions.TrackPermissions {
+		// all_tracks get precedence
+		if trackPerms.AllTracks {
+			// no restriction for participant, nothing else to do
+			for trackSid, _ := range u.publishedTracks {
+				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
+			}
+
+			for _, ti := range u.pendingTracks {
+				u.subscriptionPermissions[ti.Sid] = append(u.subscriptionPermissions[ti.Sid], trackPerms.ParticipantSid)
+			}
+		} else {
+			for _, trackSid := range trackPerms.TrackSids {
+				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
+			}
+		}
+	}
+}
+
+func (u *UptrackManager) hasPermission(trackSid string, subscriberID string) bool {
+	allowed, ok := u.subscriptionPermissions[trackSid]
+	if !ok {
+		return true
+	}
+
+	for _, sid := range allowed {
+		if sid == subscriberID {
+			return true
 		}
 	}
 
-	if trackInfo == nil {
-		return false
+	return false
+}
+
+func (u *UptrackManager) maybeAddPendingSubscription(trackSid string, sub types.Participant) {
+	subscriberID := sub.ID()
+
+	pending := u.pendingSubscriptions[trackSid]
+	for _, sid := range pending {
+		if sid == subscriberID {
+			// already pending
+			return
+		}
 	}
 
-	return !trackInfo.DisableDtx
+	u.pendingSubscriptions[trackSid] = append(u.pendingSubscriptions[trackSid], subscriberID)
+	go sub.SubscriptionPermissionUpdate(u.params.SID, trackSid, false)
+}
+
+func (u *UptrackManager) processPendingSubscriptions(resolver func(participantSid string) types.Participant) {
+	updatedPendingSubscriptions := make(map[string][]string)
+	for trackSid, pending := range u.pendingSubscriptions {
+		track := u.getPublishedTrack(trackSid)
+		if track == nil {
+			continue
+		}
+
+		var updatedPending []string
+		for _, sid := range pending {
+			var sub types.Participant
+			if resolver != nil {
+				sub = resolver(sid)
+			}
+			if sub == nil {
+				// do not keep this pending subscription as subscriber may be gone
+				continue
+			}
+
+			if !u.hasPermission(trackSid, sid) {
+				updatedPending = append(updatedPending, sid)
+				continue
+			}
+
+			if err := track.AddSubscriber(sub); err != nil {
+				u.params.Logger.Errorw("error reinstating pending subscription", err)
+				// keep it in pending on error in case the error is transient
+				updatedPending = append(updatedPending, sid)
+				continue
+			}
+
+			go sub.SubscriptionPermissionUpdate(u.params.SID, trackSid, true)
+		}
+
+		updatedPendingSubscriptions[trackSid] = updatedPending
+	}
+
+	u.pendingSubscriptions = updatedPendingSubscriptions
+}
+
+func (u *UptrackManager) maybeRevokeSubscriptions(resolver func(participantSid string) types.Participant) {
+	for _, track := range u.publishedTracks {
+		trackSid := track.ID()
+		allowed, ok := u.subscriptionPermissions[trackSid]
+		if !ok {
+			continue
+		}
+
+		revokedSubscribers := track.RevokeDisallowedSubscribers(allowed)
+		for _, subID := range revokedSubscribers {
+			var sub types.Participant
+			if resolver != nil {
+				sub = resolver(subID)
+			}
+			if sub == nil {
+				continue
+			}
+
+			u.maybeAddPendingSubscription(trackSid, sub)
+		}
+	}
 }
 
 func (u *UptrackManager) rtcpSendWorker() {
@@ -466,13 +592,9 @@ func (u *UptrackManager) rtcpSendWorker() {
 			}
 		}
 
-		/* RAJA-TODO
-		if len(fwdPkts) > 0 {
-			if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
-				p.params.Logger.Errorw("could not write RTCP to participant", err)
-			}
+		if len(fwdPkts) > 0 && u.onWriteRTCP != nil {
+			u.onWriteRTCP(fwdPkts)
 		}
-		*/
 	}
 }
 

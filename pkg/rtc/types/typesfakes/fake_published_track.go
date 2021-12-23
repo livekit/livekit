@@ -48,26 +48,6 @@ type FakePublishedTrack struct {
 	getQualityForDimensionReturnsOnCall map[int]struct {
 		result1 livekit.VideoQuality
 	}
-	GetRejectedSubscribersStub        func() []string
-	getRejectedSubscribersMutex       sync.RWMutex
-	getRejectedSubscribersArgsForCall []struct {
-	}
-	getRejectedSubscribersReturns struct {
-		result1 []string
-	}
-	getRejectedSubscribersReturnsOnCall map[int]struct {
-		result1 []string
-	}
-	GetSubscribersStub        func() []string
-	getSubscribersMutex       sync.RWMutex
-	getSubscribersArgsForCall []struct {
-	}
-	getSubscribersReturns struct {
-		result1 []string
-	}
-	getSubscribersReturnsOnCall map[int]struct {
-		result1 []string
-	}
 	IDStub        func() string
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -86,17 +66,6 @@ type FakePublishedTrack struct {
 		result1 bool
 	}
 	isMutedReturnsOnCall map[int]struct {
-		result1 bool
-	}
-	IsRejectedSubscriberStub        func(string) bool
-	isRejectedSubscriberMutex       sync.RWMutex
-	isRejectedSubscriberArgsForCall []struct {
-		arg1 string
-	}
-	isRejectedSubscriberReturns struct {
-		result1 bool
-	}
-	isRejectedSubscriberReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IsSimulcastStub        func() bool
@@ -192,10 +161,21 @@ type FakePublishedTrack struct {
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
 	}
-	RemoveSubscriberStub        func(types.Participant)
+	RemoveSubscriberStub        func(string)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
-		arg1 types.Participant
+		arg1 string
+	}
+	RevokeDisallowedSubscribersStub        func([]string) []string
+	revokeDisallowedSubscribersMutex       sync.RWMutex
+	revokeDisallowedSubscribersArgsForCall []struct {
+		arg1 []string
+	}
+	revokeDisallowedSubscribersReturns struct {
+		result1 []string
+	}
+	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
+		result1 []string
 	}
 	SdpCidStub        func() string
 	sdpCidMutex       sync.RWMutex
@@ -206,11 +186,6 @@ type FakePublishedTrack struct {
 	}
 	sdpCidReturnsOnCall map[int]struct {
 		result1 string
-	}
-	SetAllowedSubscribersStub        func([]string)
-	setAllowedSubscribersMutex       sync.RWMutex
-	setAllowedSubscribersArgsForCall []struct {
-		arg1 []string
 	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
@@ -464,112 +439,6 @@ func (fake *FakePublishedTrack) GetQualityForDimensionReturnsOnCall(i int, resul
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) GetRejectedSubscribers() []string {
-	fake.getRejectedSubscribersMutex.Lock()
-	ret, specificReturn := fake.getRejectedSubscribersReturnsOnCall[len(fake.getRejectedSubscribersArgsForCall)]
-	fake.getRejectedSubscribersArgsForCall = append(fake.getRejectedSubscribersArgsForCall, struct {
-	}{})
-	stub := fake.GetRejectedSubscribersStub
-	fakeReturns := fake.getRejectedSubscribersReturns
-	fake.recordInvocation("GetRejectedSubscribers", []interface{}{})
-	fake.getRejectedSubscribersMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) GetRejectedSubscribersCallCount() int {
-	fake.getRejectedSubscribersMutex.RLock()
-	defer fake.getRejectedSubscribersMutex.RUnlock()
-	return len(fake.getRejectedSubscribersArgsForCall)
-}
-
-func (fake *FakePublishedTrack) GetRejectedSubscribersCalls(stub func() []string) {
-	fake.getRejectedSubscribersMutex.Lock()
-	defer fake.getRejectedSubscribersMutex.Unlock()
-	fake.GetRejectedSubscribersStub = stub
-}
-
-func (fake *FakePublishedTrack) GetRejectedSubscribersReturns(result1 []string) {
-	fake.getRejectedSubscribersMutex.Lock()
-	defer fake.getRejectedSubscribersMutex.Unlock()
-	fake.GetRejectedSubscribersStub = nil
-	fake.getRejectedSubscribersReturns = struct {
-		result1 []string
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) GetRejectedSubscribersReturnsOnCall(i int, result1 []string) {
-	fake.getRejectedSubscribersMutex.Lock()
-	defer fake.getRejectedSubscribersMutex.Unlock()
-	fake.GetRejectedSubscribersStub = nil
-	if fake.getRejectedSubscribersReturnsOnCall == nil {
-		fake.getRejectedSubscribersReturnsOnCall = make(map[int]struct {
-			result1 []string
-		})
-	}
-	fake.getRejectedSubscribersReturnsOnCall[i] = struct {
-		result1 []string
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) GetSubscribers() []string {
-	fake.getSubscribersMutex.Lock()
-	ret, specificReturn := fake.getSubscribersReturnsOnCall[len(fake.getSubscribersArgsForCall)]
-	fake.getSubscribersArgsForCall = append(fake.getSubscribersArgsForCall, struct {
-	}{})
-	stub := fake.GetSubscribersStub
-	fakeReturns := fake.getSubscribersReturns
-	fake.recordInvocation("GetSubscribers", []interface{}{})
-	fake.getSubscribersMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) GetSubscribersCallCount() int {
-	fake.getSubscribersMutex.RLock()
-	defer fake.getSubscribersMutex.RUnlock()
-	return len(fake.getSubscribersArgsForCall)
-}
-
-func (fake *FakePublishedTrack) GetSubscribersCalls(stub func() []string) {
-	fake.getSubscribersMutex.Lock()
-	defer fake.getSubscribersMutex.Unlock()
-	fake.GetSubscribersStub = stub
-}
-
-func (fake *FakePublishedTrack) GetSubscribersReturns(result1 []string) {
-	fake.getSubscribersMutex.Lock()
-	defer fake.getSubscribersMutex.Unlock()
-	fake.GetSubscribersStub = nil
-	fake.getSubscribersReturns = struct {
-		result1 []string
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) GetSubscribersReturnsOnCall(i int, result1 []string) {
-	fake.getSubscribersMutex.Lock()
-	defer fake.getSubscribersMutex.Unlock()
-	fake.GetSubscribersStub = nil
-	if fake.getSubscribersReturnsOnCall == nil {
-		fake.getSubscribersReturnsOnCall = make(map[int]struct {
-			result1 []string
-		})
-	}
-	fake.getSubscribersReturnsOnCall[i] = struct {
-		result1 []string
-	}{result1}
-}
-
 func (fake *FakePublishedTrack) ID() string {
 	fake.iDMutex.Lock()
 	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
@@ -672,67 +541,6 @@ func (fake *FakePublishedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isMutedReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriber(arg1 string) bool {
-	fake.isRejectedSubscriberMutex.Lock()
-	ret, specificReturn := fake.isRejectedSubscriberReturnsOnCall[len(fake.isRejectedSubscriberArgsForCall)]
-	fake.isRejectedSubscriberArgsForCall = append(fake.isRejectedSubscriberArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.IsRejectedSubscriberStub
-	fakeReturns := fake.isRejectedSubscriberReturns
-	fake.recordInvocation("IsRejectedSubscriber", []interface{}{arg1})
-	fake.isRejectedSubscriberMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriberCallCount() int {
-	fake.isRejectedSubscriberMutex.RLock()
-	defer fake.isRejectedSubscriberMutex.RUnlock()
-	return len(fake.isRejectedSubscriberArgsForCall)
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriberCalls(stub func(string) bool) {
-	fake.isRejectedSubscriberMutex.Lock()
-	defer fake.isRejectedSubscriberMutex.Unlock()
-	fake.IsRejectedSubscriberStub = stub
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriberArgsForCall(i int) string {
-	fake.isRejectedSubscriberMutex.RLock()
-	defer fake.isRejectedSubscriberMutex.RUnlock()
-	argsForCall := fake.isRejectedSubscriberArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriberReturns(result1 bool) {
-	fake.isRejectedSubscriberMutex.Lock()
-	defer fake.isRejectedSubscriberMutex.Unlock()
-	fake.IsRejectedSubscriberStub = nil
-	fake.isRejectedSubscriberReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) IsRejectedSubscriberReturnsOnCall(i int, result1 bool) {
-	fake.isRejectedSubscriberMutex.Lock()
-	defer fake.isRejectedSubscriberMutex.Unlock()
-	fake.IsRejectedSubscriberStub = nil
-	if fake.isRejectedSubscriberReturnsOnCall == nil {
-		fake.isRejectedSubscriberReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isRejectedSubscriberReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1240,10 +1048,10 @@ func (fake *FakePublishedTrack) RemoveAllSubscribersCalls(stub func()) {
 	fake.RemoveAllSubscribersStub = stub
 }
 
-func (fake *FakePublishedTrack) RemoveSubscriber(arg1 types.Participant) {
+func (fake *FakePublishedTrack) RemoveSubscriber(arg1 string) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
-		arg1 types.Participant
+		arg1 string
 	}{arg1})
 	stub := fake.RemoveSubscriberStub
 	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1})
@@ -1259,17 +1067,83 @@ func (fake *FakePublishedTrack) RemoveSubscriberCallCount() int {
 	return len(fake.removeSubscriberArgsForCall)
 }
 
-func (fake *FakePublishedTrack) RemoveSubscriberCalls(stub func(types.Participant)) {
+func (fake *FakePublishedTrack) RemoveSubscriberCalls(stub func(string)) {
 	fake.removeSubscriberMutex.Lock()
 	defer fake.removeSubscriberMutex.Unlock()
 	fake.RemoveSubscriberStub = stub
 }
 
-func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) types.Participant {
+func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribers(arg1 []string) []string {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	ret, specificReturn := fake.revokeDisallowedSubscribersReturnsOnCall[len(fake.revokeDisallowedSubscribersArgsForCall)]
+	fake.revokeDisallowedSubscribersArgsForCall = append(fake.revokeDisallowedSubscribersArgsForCall, struct {
+		arg1 []string
+	}{arg1Copy})
+	stub := fake.RevokeDisallowedSubscribersStub
+	fakeReturns := fake.revokeDisallowedSubscribersReturns
+	fake.recordInvocation("RevokeDisallowedSubscribers", []interface{}{arg1Copy})
+	fake.revokeDisallowedSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersCallCount() int {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	return len(fake.revokeDisallowedSubscribersArgsForCall)
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersCalls(stub func([]string) []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = stub
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersArgsForCall(i int) []string {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	argsForCall := fake.revokeDisallowedSubscribersArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersReturns(result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	fake.revokeDisallowedSubscribersReturns = struct {
+		result1 []string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	if fake.revokeDisallowedSubscribersReturnsOnCall == nil {
+		fake.revokeDisallowedSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []string
+		})
+	}
+	fake.revokeDisallowedSubscribersReturnsOnCall[i] = struct {
+		result1 []string
+	}{result1}
 }
 
 func (fake *FakePublishedTrack) SdpCid() string {
@@ -1323,43 +1197,6 @@ func (fake *FakePublishedTrack) SdpCidReturnsOnCall(i int, result1 string) {
 	fake.sdpCidReturnsOnCall[i] = struct {
 		result1 string
 	}{result1}
-}
-
-func (fake *FakePublishedTrack) SetAllowedSubscribers(arg1 []string) {
-	var arg1Copy []string
-	if arg1 != nil {
-		arg1Copy = make([]string, len(arg1))
-		copy(arg1Copy, arg1)
-	}
-	fake.setAllowedSubscribersMutex.Lock()
-	fake.setAllowedSubscribersArgsForCall = append(fake.setAllowedSubscribersArgsForCall, struct {
-		arg1 []string
-	}{arg1Copy})
-	stub := fake.SetAllowedSubscribersStub
-	fake.recordInvocation("SetAllowedSubscribers", []interface{}{arg1Copy})
-	fake.setAllowedSubscribersMutex.Unlock()
-	if stub != nil {
-		fake.SetAllowedSubscribersStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) SetAllowedSubscribersCallCount() int {
-	fake.setAllowedSubscribersMutex.RLock()
-	defer fake.setAllowedSubscribersMutex.RUnlock()
-	return len(fake.setAllowedSubscribersArgsForCall)
-}
-
-func (fake *FakePublishedTrack) SetAllowedSubscribersCalls(stub func([]string)) {
-	fake.setAllowedSubscribersMutex.Lock()
-	defer fake.setAllowedSubscribersMutex.Unlock()
-	fake.SetAllowedSubscribersStub = stub
-}
-
-func (fake *FakePublishedTrack) SetAllowedSubscribersArgsForCall(i int) []string {
-	fake.setAllowedSubscribersMutex.RLock()
-	defer fake.setAllowedSubscribersMutex.RUnlock()
-	argsForCall := fake.setAllowedSubscribersArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakePublishedTrack) SetMuted(arg1 bool) {
@@ -1601,16 +1438,10 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.getConnectionScoreMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
 	defer fake.getQualityForDimensionMutex.RUnlock()
-	fake.getRejectedSubscribersMutex.RLock()
-	defer fake.getRejectedSubscribersMutex.RUnlock()
-	fake.getSubscribersMutex.RLock()
-	defer fake.getSubscribersMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
-	fake.isRejectedSubscriberMutex.RLock()
-	defer fake.isRejectedSubscriberMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
 	defer fake.isSimulcastMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
@@ -1635,10 +1466,10 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
 	fake.sdpCidMutex.RLock()
 	defer fake.sdpCidMutex.RUnlock()
-	fake.setAllowedSubscribersMutex.RLock()
-	defer fake.setAllowedSubscribersMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.signalCidMutex.RLock()

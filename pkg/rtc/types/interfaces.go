@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -20,6 +19,11 @@ type WebsocketClient interface {
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
+type AddSubscriberParams struct {
+	AllTracks bool
+	TrackSids []string
+}
+
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
@@ -29,7 +33,6 @@ type Participant interface {
 	IsReady() bool
 	ConnectedAt() time.Time
 	ToProto() *livekit.ParticipantInfo
-	RTCPChan() chan []rtcp.Packet
 	SetMetadata(metadata string)
 	SetPermission(permission *livekit.ParticipantPermission)
 	GetResponseSink() routing.MessageSink
@@ -46,7 +49,7 @@ type Participant interface {
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	AddSubscriber(op Participant) (int, error)
+	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
@@ -59,8 +62,6 @@ type Participant interface {
 	IsSubscribedTo(participantSid string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
-	// returns a list of tracks published by this participant, including pending tracks
-	GetTrackSids() []string
 
 	// permissions
 	CanPublish() bool
@@ -89,13 +90,8 @@ type Participant interface {
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
 
-	// track level permissions
-	AllowAnySubscriberForTrack(trackSid string)
-	AllowSubscribersForTrack(trackSid string, allowedSubscribers []string) PublishedTrack
-
-	AddRejectedTrack(publisherSid string, trackSid string)
-	RemoveRejectedTrack(publisherSid string, trackSid string)
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions)
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantSid string) Participant) error
+	SubscriptionPermissionUpdate(publisherSid string, trackSid string, allowed bool)
 
 	DebugInfo() map[string]interface{}
 }
@@ -122,13 +118,10 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant Participant) error
-	RemoveSubscriber(participant Participant)
+	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
-	GetSubscribers() []string
-
-	SetAllowedSubscribers(allowedSubscribers []string)
-	GetRejectedSubscribers() []string
+	RevokeDisallowedSubscribers(allowedSubscriberIDs []string) []string
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
@@ -153,8 +146,6 @@ type PublishedTrack interface {
 	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
 	GetConnectionScore() float64
-
-	IsRejectedSubscriber(subscriberIdentity string) bool
 
 	// callbacks
 	AddOnClose(func())
