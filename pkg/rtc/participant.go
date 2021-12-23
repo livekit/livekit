@@ -35,11 +35,6 @@ const (
 	sdBatchSize         = 20
 )
 
-type PendingTrack struct {
-	trackInfo          *livekit.TrackInfo
-	allowedSubscribers []string
-}
-
 type ParticipantParams struct {
 	Identity        string
 	SID             string
