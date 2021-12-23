@@ -104,11 +104,6 @@ type FakeMediaTrack struct {
 	notifySubscriberMuteArgsForCall []struct {
 		arg1 string
 	}
-	OnSubscribedMaxQualityChangeStub        func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
-	onSubscribedMaxQualityChangeMutex       sync.RWMutex
-	onSubscribedMaxQualityChangeArgsForCall []struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
@@ -667,38 +662,6 @@ func (fake *FakeMediaTrack) NotifySubscriberMuteArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChange(arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}{arg1})
-	stub := fake.OnSubscribedMaxQualityChangeStub
-	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
-	fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	if stub != nil {
-		fake.OnSubscribedMaxQualityChangeStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCallCount() int {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	fake.OnSubscribedMaxQualityChangeStub = stub
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeMediaTrack) RemoveAllSubscribers() {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
@@ -966,8 +929,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
 	fake.notifySubscriberMuteMutex.RLock()
 	defer fake.notifySubscriberMuteMutex.RUnlock()
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()

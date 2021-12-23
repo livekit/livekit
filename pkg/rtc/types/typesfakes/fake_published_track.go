@@ -132,11 +132,6 @@ type FakePublishedTrack struct {
 		result1 uint32
 		result2 uint32
 	}
-	OnSubscribedMaxQualityChangeStub        func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
-	onSubscribedMaxQualityChangeMutex       sync.RWMutex
-	onSubscribedMaxQualityChangeArgsForCall []struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}
 	PublishLossPercentageStub        func() uint32
 	publishLossPercentageMutex       sync.RWMutex
 	publishLossPercentageArgsForCall []struct {
@@ -886,38 +881,6 @@ func (fake *FakePublishedTrack) NumUpTracksReturnsOnCall(i int, result1 uint32, 
 	}{result1, result2}
 }
 
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChange(arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}{arg1})
-	stub := fake.OnSubscribedMaxQualityChangeStub
-	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
-	fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	if stub != nil {
-		fake.OnSubscribedMaxQualityChangeStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCallCount() int {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	fake.OnSubscribedMaxQualityChangeStub = stub
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
 	fake.publishLossPercentageMutex.Lock()
 	ret, specificReturn := fake.publishLossPercentageReturnsOnCall[len(fake.publishLossPercentageArgsForCall)]
@@ -1456,8 +1419,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMuteMutex.RUnlock()
 	fake.numUpTracksMutex.RLock()
 	defer fake.numUpTracksMutex.RUnlock()
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.receiverMutex.RLock()
