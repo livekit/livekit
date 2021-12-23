@@ -35,7 +35,7 @@ var (
 const (
 	lostUpdateDelta                 = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
-	layerSelectionTolerance         = 0.8
+	layerSelectionTolerance         = 0.9
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -274,6 +274,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		return err
 	}
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
+		PublisherID:       t.params.ParticipantID,
 		PublisherIdentity: t.params.ParticipantIdentity,
 		SubscriberID:      subscriberID,
 		MediaTrack:        t,

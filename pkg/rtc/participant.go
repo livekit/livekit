@@ -602,10 +602,21 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 		return nil
 	}
 
+	var scopedSpeakers []*livekit.SpeakerInfo
+	for _, s := range speakers {
+		if p.IsSubscribedTo(s.Sid) {
+			scopedSpeakers = append(scopedSpeakers, s)
+		}
+	}
+
+	if len(scopedSpeakers) == 0 {
+		return nil
+	}
+
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SpeakersChanged{
 			SpeakersChanged: &livekit.SpeakersChanged{
-				Speakers: speakers,
+				Speakers: scopedSpeakers,
 			},
 		},
 	})
@@ -758,20 +769,20 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 }
 
-func (p *ParticipantImpl) IsSubscribedTo(identity string) bool {
-	_, ok := p.subscribedTo.Load(identity)
+func (p *ParticipantImpl) IsSubscribedTo(participantSid string) bool {
+	_, ok := p.subscribedTo.Load(participantSid)
 	return ok
 }
 
 func (p *ParticipantImpl) GetSubscribedParticipants() []string {
-	var identities []string
+	var participantSids []string
 	p.subscribedTo.Range(func(key, _ interface{}) bool {
-		if identity, ok := key.(string); ok {
-			identities = append(identities, identity)
+		if participantSid, ok := key.(string); ok {
+			participantSids = append(participantSids, participantSid)
 		}
 		return true
 	})
-	return identities
+	return participantSids
 }
 
 func (p *ParticipantImpl) CanPublish() bool {
@@ -852,7 +863,8 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 // AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("added subscribedTrack",
-		"publisher", subTrack.PublisherIdentity(),
+		"publisherID", subTrack.PublisherID(),
+		"publisherIdentity", subTrack.PublisherIdentity(),
 		"track", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
@@ -861,12 +873,14 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	subTrack.OnBind(func() {
 		p.subscriber.AddTrack(subTrack)
 	})
-	p.subscribedTo.Store(subTrack.PublisherIdentity(), struct{}{})
+	p.subscribedTo.Store(subTrack.PublisherID(), struct{}{})
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("removed subscribedTrack", "publisher", subTrack.PublisherIdentity(),
+	p.params.Logger.Debugw("removed subscribedTrack",
+		"publisherID", subTrack.PublisherID(),
+		"publisherIdentity", subTrack.PublisherIdentity(),
 		"track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
 
 	p.subscriber.RemoveTrack(subTrack)
@@ -876,13 +890,13 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	// remove from subscribed map
 	numRemaining := 0
 	for _, st := range p.subscribedTracks {
-		if st.PublisherIdentity() == subTrack.PublisherIdentity() {
+		if st.PublisherID() == subTrack.PublisherID() {
 			numRemaining++
 		}
 	}
 	p.lock.Unlock()
 	if numRemaining == 0 {
-		p.subscribedTo.Delete(subTrack.PublisherIdentity())
+		p.subscribedTo.Delete(subTrack.PublisherID())
 	}
 }
 
