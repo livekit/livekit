@@ -481,13 +481,18 @@ func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []string) 
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
 		if subID, ok := key.(string); ok {
+			found := false
 			for _, allowedID := range allowedSubscriberIDs {
 				if subID == allowedID {
-					if subTrack, ok := val.(types.SubscribedTrack); ok {
-						go subTrack.DownTrack().Close()
-						revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
-						break
-					}
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				if subTrack, ok := val.(types.SubscribedTrack); ok {
+					go subTrack.DownTrack().Close()
+					revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
 				}
 			}
 		}
