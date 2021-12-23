@@ -39,7 +39,12 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 	case *livekit.SignalRequest_Subscription:
 		var err error
 		if participant.CanSubscribe() {
-			updateErr := room.UpdateSubscriptions(participant, msg.Subscription.TrackSids, msg.Subscription.Subscribe)
+			updateErr := room.UpdateSubscriptions(
+				participant,
+				msg.Subscription.TrackSids,
+				msg.Subscription.ParticipantTracks,
+				msg.Subscription.Subscribe,
+			)
 			if updateErr != nil {
 				err = updateErr
 			}

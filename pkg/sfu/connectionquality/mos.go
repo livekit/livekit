@@ -40,7 +40,8 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	rx := 93.2 - percentageLost
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
-	d := float64(rtt + cur.Jitter)
+	//Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
+	d := float64(rtt + (cur.Jitter / 1000))
 	h := d - 177.3
 	if h < 0 {
 		h = 0
@@ -65,7 +66,8 @@ func Loss2Score(loss uint32, reducedQuality bool) float64 {
 	if loss == 0 && !reducedQuality {
 		return 5
 	}
-	score := 3.0
+	// default when loss is minimal, but reducedQuality
+	score := 3.5
 	// loss is bad
 	if loss >= 4 {
 		score = 2.0

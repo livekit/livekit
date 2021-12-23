@@ -273,7 +273,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 		}
 	}
 
-	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto())
+	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
 	participant.OnClose(func(p types.Participant) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
@@ -437,7 +437,12 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity str
 			return
 		}
 		pLogger.Debugw("updating participant subscriptions")
-		if err := room.UpdateSubscriptions(participant, rm.UpdateSubscriptions.TrackSids, rm.UpdateSubscriptions.Subscribe); err != nil {
+		if err := room.UpdateSubscriptions(
+			participant,
+			rm.UpdateSubscriptions.TrackSids,
+			rm.UpdateSubscriptions.ParticipantTracks,
+			rm.UpdateSubscriptions.Subscribe,
+		); err != nil {
 			pLogger.Warnw("could not update subscription", err,
 				"tracks", rm.UpdateSubscriptions.TrackSids,
 				"subscribe", rm.UpdateSubscriptions.Subscribe)

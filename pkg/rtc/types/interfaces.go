@@ -56,7 +56,7 @@ type Participant interface {
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
-	IsSubscribedTo(identity string) bool
+	IsSubscribedTo(participantSid string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
 
@@ -94,7 +94,7 @@ type Participant interface {
 //counterfeiter:generate . Room
 type Room interface {
 	Name() string
-	UpdateSubscriptions(participant Participant, trackIDs []string, subscribe bool) error
+	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 }
 
 // MediaTrack represents a media track
@@ -117,7 +117,6 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	GetConnectionScore() float64
 	NotifySubscriberMute(subscriberID string)
 	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
 	OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
@@ -137,6 +136,7 @@ type PublishedTrack interface {
 	NumUpTracks() (uint32, uint32)
 	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
+	GetConnectionScore() float64
 
 	// callbacks
 	AddOnClose(func())
@@ -146,6 +146,7 @@ type PublishedTrack interface {
 type SubscribedTrack interface {
 	OnBind(f func())
 	ID() string
+	PublisherID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack

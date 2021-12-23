@@ -18,6 +18,7 @@ const (
 )
 
 type SubscribedTrackParams struct {
+	PublisherID       string
 	PublisherIdentity string
 	SubscriberID      string
 	MediaTrack        types.MediaTrack
@@ -53,6 +54,10 @@ func (t *SubscribedTrack) Bound() {
 
 func (t *SubscribedTrack) ID() string {
 	return t.params.DownTrack.ID()
+}
+
+func (t *SubscribedTrack) PublisherID() string {
+	return t.params.PublisherID
 }
 
 func (t *SubscribedTrack) PublisherIdentity() string {
