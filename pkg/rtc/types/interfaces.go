@@ -94,7 +94,7 @@ type Participant interface {
 //counterfeiter:generate . Room
 type Room interface {
 	Name() string
-	UpdateSubscriptions(participant Participant, trackIDs []string, subscribe bool) error
+	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 }
 
 // MediaTrack represents a media track

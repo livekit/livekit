@@ -92,6 +92,19 @@ func (r *Room) GetParticipant(identity string) types.Participant {
 	return r.participants[identity]
 }
 
+func (r *Room) GetParticipantBySid(participantID string) types.Participant {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	for _, p := range r.participants {
+		if p.ID() == participantID {
+			return p
+		}
+	}
+
+	return nil
+}
+
 func (r *Room) GetParticipants() []types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
@@ -322,16 +335,34 @@ func (r *Room) RemoveParticipant(identity string) {
 	}
 }
 
-func (r *Room) UpdateSubscriptions(participant types.Participant, trackIds []string, subscribe bool) error {
+func (r *Room) UpdateSubscriptions(
+	participant types.Participant,
+	trackIds []string,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) error {
 	// find all matching tracks
-	var tracks []types.PublishedTrack
+	tracks := make(map[string]types.PublishedTrack)
 	participants := r.GetParticipants()
-	for _, p := range participants {
-		for _, sid := range trackIds {
-			for _, track := range p.GetPublishedTracks() {
-				if sid == track.ID() {
-					tracks = append(tracks, track)
-				}
+	for _, trackSid := range trackIds {
+		for _, p := range participants {
+			track := p.GetPublishedTrack(trackSid)
+			if track != nil {
+				tracks[trackSid] = track
+				break
+			}
+		}
+	}
+
+	for _, pt := range participantTracks {
+		p := r.GetParticipantBySid(pt.ParticipantSid)
+		if p == nil {
+			continue
+		}
+		for _, trackSid := range pt.TrackSids {
+			track := p.GetPublishedTrack(trackSid)
+			if track != nil {
+				tracks[trackSid] = track
 			}
 		}
 	}
