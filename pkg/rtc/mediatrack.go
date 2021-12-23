@@ -478,9 +478,9 @@ func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []string) 
 	defer t.lock.Unlock()
 
 	var revokedSubscriberIDs []string
+	// LK-TODO: large number of subscribers needs to be solved for this loop
 	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
 		if subID, ok := key.(string); ok {
-			// LK-TODO: large number of subscribers needs to be solved for this loop
 			for _, allowedID := range allowedSubscriberIDs {
 				if subID == allowedID {
 					if subTrack, ok := val.(types.SubscribedTrack); ok {
