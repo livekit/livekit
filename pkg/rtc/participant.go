@@ -417,6 +417,7 @@ func (p *ParticipantImpl) Close() error {
 	}
 	p.publisher.Close()
 	p.subscriber.Close()
+	p.uptrackManager.Close()
 	return nil
 }
 
