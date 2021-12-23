@@ -56,7 +56,7 @@ type Participant interface {
 	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
-	IsSubscribedTo(identity string) bool
+	IsSubscribedTo(participantSid string) bool
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []string
 
@@ -146,6 +146,7 @@ type PublishedTrack interface {
 type SubscribedTrack interface {
 	OnBind(f func())
 	ID() string
+	PublisherID() string
 	PublisherIdentity() string
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
