@@ -95,6 +95,7 @@ type Participant interface {
 
 	AddRejectedTrack(publisherSid string, trackSid string)
 	RemoveRejectedTrack(publisherSid string, trackSid string)
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions)
 
 	DebugInfo() map[string]interface{}
 }

@@ -89,6 +89,8 @@ type ParticipantImpl struct {
 	pendingTracks map[string]*PendingTrack
 	// keep track of other publishers identities that we are subscribed to
 	subscribedTo sync.Map // string => struct{}
+	// keeps track of subscriptions that are awaiting permissions
+	subscriptionPermissions map[string][]string
 
 	lock       sync.RWMutex
 	once       sync.Once
@@ -911,6 +913,52 @@ func (p *ParticipantImpl) RemoveRejectedTrack(publisherSid string, trackSid stri
 	})
 	if err != nil {
 		p.params.Logger.Errorw("could not send subscription permission update", err)
+	}
+}
+
+func (p *ParticipantImpl) UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// every update overrides the existing
+	p.subscriptionPermissions = make(map[string][]string)
+
+	// all_participants takes precedence
+	if permissions.AllParticipants {
+		// everything is allowed, nothing else to do
+		return
+	}
+
+	// if track_permissions is empty, nobody is allowed to subscribe to any tracks
+	if permissions.TrackPermissions != nil && len(permissions.TrackPermissions) == 0 {
+		for trackSid, _ := range p.publishedTracks {
+			p.subscriptionPermissions[trackSid] = []string{}
+		}
+
+		for _, pt := range p.pendingTracks {
+			p.subscriptionPermissions[pt.trackInfo.Sid] = []string{}
+		}
+
+		return
+	}
+
+	// per participant permissions
+	for _, trackPerms := range permissions.TrackPermissions {
+		// all_tracks get precedence
+		if trackPerms.AllTracks {
+			// no restriction for participant, nothing else to do
+			for trackSid, _ := range p.publishedTracks {
+				p.subscriptionPermissions[trackSid] = append(p.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
+			}
+
+			for _, pt := range p.pendingTracks {
+				p.subscriptionPermissions[pt.trackInfo.Sid] = append(p.subscriptionPermissions[pt.trackInfo.Sid], trackPerms.ParticipantSid)
+			}
+		} else {
+			for _, trackSid := range trackPerms.TrackSids {
+				p.subscriptionPermissions[trackSid] = append(p.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
+			}
+		}
 	}
 }
 
