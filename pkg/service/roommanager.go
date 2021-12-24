@@ -225,7 +225,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
-	rtcConf.SetBufferFactory(room.GetBufferFactor())
+	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	sid := utils.NewGuid(utils.ParticipantPrefix)
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
