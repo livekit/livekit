@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 )
 
 func TestIsReady(t *testing.T) {
@@ -52,7 +52,7 @@ func TestICEStateChange(t *testing.T) {
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan struct{})
-		p.onClose = func(participant types.Participant) {
+		p.onClose = func(participant types.Participant, disallowedSubscriptions map[string]string) {
 			close(closeChan)
 		}
 		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)
@@ -80,21 +80,19 @@ func TestTrackPublishing(t *testing.T) {
 		p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
 			published = true
 		})
-		p.handleTrackPublished(track)
+		p.uptrackManager.handleTrackPublished(track)
 
 		require.True(t, published)
 		require.False(t, updated)
-		require.Len(t, p.publishedTracks, 1)
+		require.Len(t, p.uptrackManager.publishedTracks, 1)
 
 		track.AddOnCloseArgsForCall(0)()
-		require.Len(t, p.publishedTracks, 0)
+		require.Len(t, p.uptrackManager.publishedTracks, 0)
 		require.True(t, updated)
 	})
 
 	t.Run("sends back trackPublished event", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		// track := &typesfakes.FakePublishedTrack{}
-		// track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:    "cid",
@@ -116,8 +114,6 @@ func TestTrackPublishing(t *testing.T) {
 
 	t.Run("should not allow adding of duplicate tracks", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		// track := &typesfakes.FakePublishedTrack{}
-		// track.IDReturns("id")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",
@@ -140,7 +136,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakePublishedTrack{}
 		track.SignalCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
-		p.publishedTracks["cid"] = track
+		p.uptrackManager.publishedTracks["cid"] = track
 
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",
@@ -157,7 +153,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakePublishedTrack{}
 		track.SdpCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
-		p.publishedTracks["cid"] = track
+		p.uptrackManager.publishedTracks["cid"] = track
 
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",
@@ -206,7 +202,7 @@ func TestDisconnectTiming(t *testing.T) {
 			}
 		}()
 		track := &typesfakes.FakePublishedTrack{}
-		p.handleTrackPublished(track)
+		p.uptrackManager.handleTrackPublished(track)
 
 		// close channel and then try to Negotiate
 		msg.Close()
@@ -224,11 +220,10 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.pendingTracks["cid"] = ti
+		p.uptrackManager.pendingTracks["cid"] = ti
 
 		p.SetTrackMuted(ti.Sid, true, false)
 		require.True(t, ti.Muted)
-
 	})
 
 	t.Run("can publish a muted track", func(t *testing.T) {
@@ -239,7 +234,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti := p.uptrackManager.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -287,30 +282,30 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("smooth sailing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
-		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
+		p.uptrackManager.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
+		p.uptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
-		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+		p.uptrackManager.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
+		p.uptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio smooth publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
+		p.uptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+		p.uptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})

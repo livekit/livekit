@@ -8,7 +8,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 )
 
@@ -30,10 +29,11 @@ type FakeParticipant struct {
 	addSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
 	}
-	AddSubscriberStub        func(types.Participant) (int, error)
+	AddSubscriberStub        func(types.Participant, types.AddSubscriberParams) (int, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
 		arg1 types.Participant
+		arg2 types.AddSubscriberParams
 	}
 	addSubscriberReturns struct {
 		result1 int
@@ -291,10 +291,10 @@ type FakeParticipant struct {
 	negotiateMutex       sync.RWMutex
 	negotiateArgsForCall []struct {
 	}
-	OnCloseStub        func(func(types.Participant))
+	OnCloseStub        func(func(types.Participant, map[string]string))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
-		arg1 func(types.Participant)
+		arg1 func(types.Participant, map[string]string)
 	}
 	OnDataPacketStub        func(func(types.Participant, *livekit.DataPacket))
 	onDataPacketMutex       sync.RWMutex
@@ -331,20 +331,16 @@ type FakeParticipant struct {
 	protocolVersionReturnsOnCall map[int]struct {
 		result1 types.ProtocolVersion
 	}
-	RTCPChanStub        func() chan []rtcp.Packet
-	rTCPChanMutex       sync.RWMutex
-	rTCPChanArgsForCall []struct {
-	}
-	rTCPChanReturns struct {
-		result1 chan []rtcp.Packet
-	}
-	rTCPChanReturnsOnCall map[int]struct {
-		result1 chan []rtcp.Packet
-	}
 	RemoveSubscribedTrackStub        func(types.SubscribedTrack)
 	removeSubscribedTrackMutex       sync.RWMutex
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
+	}
+	RemoveSubscriberStub        func(types.Participant, string)
+	removeSubscriberMutex       sync.RWMutex
+	removeSubscriberArgsForCall []struct {
+		arg1 types.Participant
+		arg2 string
 	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
@@ -481,6 +477,13 @@ type FakeParticipant struct {
 	subscriberPCReturnsOnCall map[int]struct {
 		result1 *webrtc.PeerConnection
 	}
+	SubscriptionPermissionUpdateStub        func(string, string, bool)
+	subscriptionPermissionUpdateMutex       sync.RWMutex
+	subscriptionPermissionUpdateArgsForCall []struct {
+		arg1 string
+		arg2 string
+		arg3 bool
+	}
 	ToProtoStub        func() *livekit.ParticipantInfo
 	toProtoMutex       sync.RWMutex
 	toProtoArgsForCall []struct {
@@ -490,6 +493,18 @@ type FakeParticipant struct {
 	}
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
+	}
+	UpdateSubscriptionPermissionsStub        func(*livekit.UpdateSubscriptionPermissions, func(participantSid string) types.Participant) error
+	updateSubscriptionPermissionsMutex       sync.RWMutex
+	updateSubscriptionPermissionsArgsForCall []struct {
+		arg1 *livekit.UpdateSubscriptionPermissions
+		arg2 func(participantSid string) types.Participant
+	}
+	updateSubscriptionPermissionsReturns struct {
+		result1 error
+	}
+	updateSubscriptionPermissionsReturnsOnCall map[int]struct {
+		result1 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -589,18 +604,19 @@ func (fake *FakeParticipant) AddSubscribedTrackArgsForCall(i int) types.Subscrib
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant) (int, error) {
+func (fake *FakeParticipant) AddSubscriber(arg1 types.Participant, arg2 types.AddSubscriberParams) (int, error) {
 	fake.addSubscriberMutex.Lock()
 	ret, specificReturn := fake.addSubscriberReturnsOnCall[len(fake.addSubscriberArgsForCall)]
 	fake.addSubscriberArgsForCall = append(fake.addSubscriberArgsForCall, struct {
 		arg1 types.Participant
-	}{arg1})
+		arg2 types.AddSubscriberParams
+	}{arg1, arg2})
 	stub := fake.AddSubscriberStub
 	fakeReturns := fake.addSubscriberReturns
-	fake.recordInvocation("AddSubscriber", []interface{}{arg1})
+	fake.recordInvocation("AddSubscriber", []interface{}{arg1, arg2})
 	fake.addSubscriberMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -614,17 +630,17 @@ func (fake *FakeParticipant) AddSubscriberCallCount() int {
 	return len(fake.addSubscriberArgsForCall)
 }
 
-func (fake *FakeParticipant) AddSubscriberCalls(stub func(types.Participant) (int, error)) {
+func (fake *FakeParticipant) AddSubscriberCalls(stub func(types.Participant, types.AddSubscriberParams) (int, error)) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = stub
 }
 
-func (fake *FakeParticipant) AddSubscriberArgsForCall(i int) types.Participant {
+func (fake *FakeParticipant) AddSubscriberArgsForCall(i int) (types.Participant, types.AddSubscriberParams) {
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	argsForCall := fake.addSubscriberArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) AddSubscriberReturns(result1 int, result2 error) {
@@ -1974,10 +1990,10 @@ func (fake *FakeParticipant) NegotiateCalls(stub func()) {
 	fake.NegotiateStub = stub
 }
 
-func (fake *FakeParticipant) OnClose(arg1 func(types.Participant)) {
+func (fake *FakeParticipant) OnClose(arg1 func(types.Participant, map[string]string)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func(types.Participant)
+		arg1 func(types.Participant, map[string]string)
 	}{arg1})
 	stub := fake.OnCloseStub
 	fake.recordInvocation("OnClose", []interface{}{arg1})
@@ -1993,13 +2009,13 @@ func (fake *FakeParticipant) OnCloseCallCount() int {
 	return len(fake.onCloseArgsForCall)
 }
 
-func (fake *FakeParticipant) OnCloseCalls(stub func(func(types.Participant))) {
+func (fake *FakeParticipant) OnCloseCalls(stub func(func(types.Participant, map[string]string))) {
 	fake.onCloseMutex.Lock()
 	defer fake.onCloseMutex.Unlock()
 	fake.OnCloseStub = stub
 }
 
-func (fake *FakeParticipant) OnCloseArgsForCall(i int) func(types.Participant) {
+func (fake *FakeParticipant) OnCloseArgsForCall(i int) func(types.Participant, map[string]string) {
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]
@@ -2219,59 +2235,6 @@ func (fake *FakeParticipant) ProtocolVersionReturnsOnCall(i int, result1 types.P
 	}{result1}
 }
 
-func (fake *FakeParticipant) RTCPChan() chan []rtcp.Packet {
-	fake.rTCPChanMutex.Lock()
-	ret, specificReturn := fake.rTCPChanReturnsOnCall[len(fake.rTCPChanArgsForCall)]
-	fake.rTCPChanArgsForCall = append(fake.rTCPChanArgsForCall, struct {
-	}{})
-	stub := fake.RTCPChanStub
-	fakeReturns := fake.rTCPChanReturns
-	fake.recordInvocation("RTCPChan", []interface{}{})
-	fake.rTCPChanMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) RTCPChanCallCount() int {
-	fake.rTCPChanMutex.RLock()
-	defer fake.rTCPChanMutex.RUnlock()
-	return len(fake.rTCPChanArgsForCall)
-}
-
-func (fake *FakeParticipant) RTCPChanCalls(stub func() chan []rtcp.Packet) {
-	fake.rTCPChanMutex.Lock()
-	defer fake.rTCPChanMutex.Unlock()
-	fake.RTCPChanStub = stub
-}
-
-func (fake *FakeParticipant) RTCPChanReturns(result1 chan []rtcp.Packet) {
-	fake.rTCPChanMutex.Lock()
-	defer fake.rTCPChanMutex.Unlock()
-	fake.RTCPChanStub = nil
-	fake.rTCPChanReturns = struct {
-		result1 chan []rtcp.Packet
-	}{result1}
-}
-
-func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 chan []rtcp.Packet) {
-	fake.rTCPChanMutex.Lock()
-	defer fake.rTCPChanMutex.Unlock()
-	fake.RTCPChanStub = nil
-	if fake.rTCPChanReturnsOnCall == nil {
-		fake.rTCPChanReturnsOnCall = make(map[int]struct {
-			result1 chan []rtcp.Packet
-		})
-	}
-	fake.rTCPChanReturnsOnCall[i] = struct {
-		result1 chan []rtcp.Packet
-	}{result1}
-}
-
 func (fake *FakeParticipant) RemoveSubscribedTrack(arg1 types.SubscribedTrack) {
 	fake.removeSubscribedTrackMutex.Lock()
 	fake.removeSubscribedTrackArgsForCall = append(fake.removeSubscribedTrackArgsForCall, struct {
@@ -2302,6 +2265,39 @@ func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) types.Subsc
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	argsForCall := fake.removeSubscribedTrackArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) RemoveSubscriber(arg1 types.Participant, arg2 string) {
+	fake.removeSubscriberMutex.Lock()
+	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
+		arg1 types.Participant
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.RemoveSubscriberStub
+	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2})
+	fake.removeSubscriberMutex.Unlock()
+	if stub != nil {
+		fake.RemoveSubscriberStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeParticipant) RemoveSubscriberCallCount() int {
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
+	return len(fake.removeSubscriberArgsForCall)
+}
+
+func (fake *FakeParticipant) RemoveSubscriberCalls(stub func(types.Participant, string)) {
+	fake.removeSubscriberMutex.Lock()
+	defer fake.removeSubscriberMutex.Unlock()
+	fake.RemoveSubscriberStub = stub
+}
+
+func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) (types.Participant, string) {
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
+	argsForCall := fake.removeSubscriberArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
@@ -3059,6 +3055,40 @@ func (fake *FakeParticipant) SubscriberPCReturnsOnCall(i int, result1 *webrtc.Pe
 	}{result1}
 }
 
+func (fake *FakeParticipant) SubscriptionPermissionUpdate(arg1 string, arg2 string, arg3 bool) {
+	fake.subscriptionPermissionUpdateMutex.Lock()
+	fake.subscriptionPermissionUpdateArgsForCall = append(fake.subscriptionPermissionUpdateArgsForCall, struct {
+		arg1 string
+		arg2 string
+		arg3 bool
+	}{arg1, arg2, arg3})
+	stub := fake.SubscriptionPermissionUpdateStub
+	fake.recordInvocation("SubscriptionPermissionUpdate", []interface{}{arg1, arg2, arg3})
+	fake.subscriptionPermissionUpdateMutex.Unlock()
+	if stub != nil {
+		fake.SubscriptionPermissionUpdateStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeParticipant) SubscriptionPermissionUpdateCallCount() int {
+	fake.subscriptionPermissionUpdateMutex.RLock()
+	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
+	return len(fake.subscriptionPermissionUpdateArgsForCall)
+}
+
+func (fake *FakeParticipant) SubscriptionPermissionUpdateCalls(stub func(string, string, bool)) {
+	fake.subscriptionPermissionUpdateMutex.Lock()
+	defer fake.subscriptionPermissionUpdateMutex.Unlock()
+	fake.SubscriptionPermissionUpdateStub = stub
+}
+
+func (fake *FakeParticipant) SubscriptionPermissionUpdateArgsForCall(i int) (string, string, bool) {
+	fake.subscriptionPermissionUpdateMutex.RLock()
+	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
+	argsForCall := fake.subscriptionPermissionUpdateArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
 func (fake *FakeParticipant) ToProto() *livekit.ParticipantInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
@@ -3109,6 +3139,68 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}
 	fake.toProtoReturnsOnCall[i] = struct {
 		result1 *livekit.ParticipantInfo
+	}{result1}
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissions(arg1 *livekit.UpdateSubscriptionPermissions, arg2 func(participantSid string) types.Participant) error {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	ret, specificReturn := fake.updateSubscriptionPermissionsReturnsOnCall[len(fake.updateSubscriptionPermissionsArgsForCall)]
+	fake.updateSubscriptionPermissionsArgsForCall = append(fake.updateSubscriptionPermissionsArgsForCall, struct {
+		arg1 *livekit.UpdateSubscriptionPermissions
+		arg2 func(participantSid string) types.Participant
+	}{arg1, arg2})
+	stub := fake.UpdateSubscriptionPermissionsStub
+	fakeReturns := fake.updateSubscriptionPermissionsReturns
+	fake.recordInvocation("UpdateSubscriptionPermissions", []interface{}{arg1, arg2})
+	fake.updateSubscriptionPermissionsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissionsCallCount() int {
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
+	return len(fake.updateSubscriptionPermissionsArgsForCall)
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissionsCalls(stub func(*livekit.UpdateSubscriptionPermissions, func(participantSid string) types.Participant) error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = stub
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissionsArgsForCall(i int) (*livekit.UpdateSubscriptionPermissions, func(participantSid string) types.Participant) {
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
+	argsForCall := fake.updateSubscriptionPermissionsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissionsReturns(result1 error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = nil
+	fake.updateSubscriptionPermissionsReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) UpdateSubscriptionPermissionsReturnsOnCall(i int, result1 error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = nil
+	if fake.updateSubscriptionPermissionsReturnsOnCall == nil {
+		fake.updateSubscriptionPermissionsReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateSubscriptionPermissionsReturnsOnCall[i] = struct {
+		result1 error
 	}{result1}
 }
 
@@ -3185,10 +3277,10 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	fake.protocolVersionMutex.RLock()
 	defer fake.protocolVersionMutex.RUnlock()
-	fake.rTCPChanMutex.RLock()
-	defer fake.rTCPChanMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
+	fake.removeSubscriberMutex.RLock()
+	defer fake.removeSubscriberMutex.RUnlock()
 	fake.sendConnectionQualityUpdateMutex.RLock()
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()
@@ -3219,8 +3311,12 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriberMediaEngineMutex.RUnlock()
 	fake.subscriberPCMutex.RLock()
 	defer fake.subscriberPCMutex.RUnlock()
+	fake.subscriptionPermissionUpdateMutex.RLock()
+	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

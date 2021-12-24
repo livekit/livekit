@@ -51,10 +51,10 @@ type MediaTrack struct {
 	simulcasted utils.AtomicFlag
 	buffer      *buffer.Buffer
 
-	// channel to send RTCP packets to the source
 	lock sync.RWMutex
+
 	// map of target participantId -> types.SubscribedTrack
-	subscribedTracks sync.Map
+	subscribedTracks sync.Map // participantSid => types.SubscribedTrack
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
@@ -71,6 +71,7 @@ type MediaTrack struct {
 	connectionStats   *connectionquality.ConnectionStats
 
 	done chan struct{}
+
 	// quality level enable/disable
 	maxQualityLock               sync.Mutex
 	maxSubscriberQuality         map[string]livekit.VideoQuality
@@ -87,12 +88,13 @@ type MediaTrackParams struct {
 	SdpCid              string
 	ParticipantID       string
 	ParticipantIdentity string
-	RTCPChan            chan []rtcp.Packet
-	BufferFactory       *buffer.Factory
-	ReceiverConfig      ReceiverConfig
-	AudioConfig         config.AudioConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
+	// channel to send RTCP packets to the source
+	RTCPChan       chan []rtcp.Packet
+	BufferFactory  *buffer.Factory
+	ReceiverConfig ReceiverConfig
+	AudioConfig    config.AudioConfig
+	Telemetry      telemetry.TelemetryService
+	Logger         logger.Logger
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -197,8 +199,10 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	subscriberID := sub.ID()
+
 	// don't subscribe to the same track multiple times
-	if _, ok := t.subscribedTracks.Load(sub.ID()); ok {
+	if _, ok := t.subscribedTracks.Load(subscriberID); ok {
 		return nil
 	}
 
@@ -222,14 +226,14 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
 		RTCPFeedback: FeedbackTypes,
-	}, receiver, t.params.BufferFactory, sub.ID(), t.params.ReceiverConfig.PacketBufferSize)
+	}, receiver, t.params.BufferFactory, subscriberID, t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err
 	}
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
 		PublisherID:       t.params.ParticipantID,
 		PublisherIdentity: t.params.ParticipantIdentity,
-		SubscriberID:      sub.ID(),
+		SubscriberID:      subscriberID,
 		MediaTrack:        t,
 		DownTrack:         downTrack,
 	})
@@ -283,19 +287,19 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
 	})
 	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(sub.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
-		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, sub.ID(), pkts)
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, pkts)
 	})
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.subscribedTracks.Delete(sub.ID())
-			t.params.Telemetry.TrackUnsubscribed(context.Background(), sub.ID(), t.ToProto())
+			t.subscribedTracks.Delete(subscriberID)
+			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.ToProto())
 
 			// ignore if the subscribing sub is not connected
 			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
@@ -310,7 +314,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 			t.params.Logger.Debugw("removing peerconnection track",
 				"track", t.ID(),
 				"subscriber", sub.Identity(),
-				"subscriberID", sub.ID(),
+				"subscriberID", subscriberID,
 				"kind", t.Kind(),
 			)
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
@@ -324,12 +328,12 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
 						"error", err,
 						"subscriber", sub.Identity(),
-						"subscriberID", sub.ID(),
+						"subscriberID", subscriberID,
 					)
 				}
 			}
 
-			t.NotifySubscriberMute(sub.ID())
+			t.NotifySubscriberMute(subscriberID)
 			sub.RemoveSubscribedTrack(subTrack)
 			sub.Negotiate()
 		}()
@@ -338,18 +342,18 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 	}
 
-	t.subscribedTracks.Store(sub.ID(), subTrack)
+	t.subscribedTracks.Store(subscriberID, subTrack)
 	subTrack.SetPublisherMuted(t.IsMuted())
 
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		t.NotifySubscriberMaxQuality(sub.ID(), livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
+		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
 
-	t.params.Telemetry.TrackSubscribed(context.Background(), sub.ID(), t.ToProto())
+	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.ToProto())
 	return nil
 }
 
@@ -470,6 +474,35 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.subscribedTracks = sync.Map{}
 }
 
+func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []string) []string {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	var revokedSubscriberIDs []string
+	// LK-TODO: large number of subscribers needs to be solved for this loop
+	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
+		if subID, ok := key.(string); ok {
+			found := false
+			for _, allowedID := range allowedSubscriberIDs {
+				if subID == allowedID {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				if subTrack, ok := val.(types.SubscribedTrack); ok {
+					go subTrack.DownTrack().Close()
+					revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
+				}
+			}
+		}
+		return true
+	})
+
+	return revokedSubscriberIDs
+}
+
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.params.TrackInfo
 	info.Muted = t.IsMuted()
@@ -544,8 +577,8 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
-func (t *MediaTrack) getSubscribedTrack(id string) types.SubscribedTrack {
-	if val, ok := t.subscribedTracks.Load(id); ok {
+func (t *MediaTrack) getSubscribedTrack(subscriberID string) types.SubscribedTrack {
+	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
 		if st, ok := val.(types.SubscribedTrack); ok {
 			return st
 		}

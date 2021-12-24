@@ -19,6 +19,18 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
+	UpdateSubscriptionPermissionsStub        func(types.Participant, *livekit.UpdateSubscriptionPermissions) error
+	updateSubscriptionPermissionsMutex       sync.RWMutex
+	updateSubscriptionPermissionsArgsForCall []struct {
+		arg1 types.Participant
+		arg2 *livekit.UpdateSubscriptionPermissions
+	}
+	updateSubscriptionPermissionsReturns struct {
+		result1 error
+	}
+	updateSubscriptionPermissionsReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateSubscriptionsStub        func(types.Participant, []string, []*livekit.ParticipantTracks, bool) error
 	updateSubscriptionsMutex       sync.RWMutex
 	updateSubscriptionsArgsForCall []struct {
@@ -87,6 +99,68 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 string) {
 	}
 	fake.nameReturnsOnCall[i] = struct {
 		result1 string
+	}{result1}
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissions(arg1 types.Participant, arg2 *livekit.UpdateSubscriptionPermissions) error {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	ret, specificReturn := fake.updateSubscriptionPermissionsReturnsOnCall[len(fake.updateSubscriptionPermissionsArgsForCall)]
+	fake.updateSubscriptionPermissionsArgsForCall = append(fake.updateSubscriptionPermissionsArgsForCall, struct {
+		arg1 types.Participant
+		arg2 *livekit.UpdateSubscriptionPermissions
+	}{arg1, arg2})
+	stub := fake.UpdateSubscriptionPermissionsStub
+	fakeReturns := fake.updateSubscriptionPermissionsReturns
+	fake.recordInvocation("UpdateSubscriptionPermissions", []interface{}{arg1, arg2})
+	fake.updateSubscriptionPermissionsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissionsCallCount() int {
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
+	return len(fake.updateSubscriptionPermissionsArgsForCall)
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissionsCalls(stub func(types.Participant, *livekit.UpdateSubscriptionPermissions) error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = stub
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissionsArgsForCall(i int) (types.Participant, *livekit.UpdateSubscriptionPermissions) {
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
+	argsForCall := fake.updateSubscriptionPermissionsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissionsReturns(result1 error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = nil
+	fake.updateSubscriptionPermissionsReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoom) UpdateSubscriptionPermissionsReturnsOnCall(i int, result1 error) {
+	fake.updateSubscriptionPermissionsMutex.Lock()
+	defer fake.updateSubscriptionPermissionsMutex.Unlock()
+	fake.UpdateSubscriptionPermissionsStub = nil
+	if fake.updateSubscriptionPermissionsReturnsOnCall == nil {
+		fake.updateSubscriptionPermissionsReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateSubscriptionPermissionsReturnsOnCall[i] = struct {
+		result1 error
 	}{result1}
 }
 
@@ -169,6 +243,8 @@ func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.updateSubscriptionPermissionsMutex.RLock()
+	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
 	fake.updateSubscriptionsMutex.RLock()
 	defer fake.updateSubscriptionsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

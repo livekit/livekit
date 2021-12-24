@@ -491,12 +491,14 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
-	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate",
-			"old(bps)", s.prevReceivedEstimate,
-			"new(bps)", s.receivedEstimate,
-		)
-	}
+	/*
+		if s.prevReceivedEstimate != s.receivedEstimate {
+			s.logger.Debugw("received new estimate",
+				"old(bps)", s.prevReceivedEstimate,
+				"new(bps)", s.receivedEstimate,
+			)
+		}
+	*/
 
 	if s.maybeCommitEstimate() {
 		s.allocateAllTracks()
