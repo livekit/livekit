@@ -454,14 +454,8 @@ func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.Upda
 		return
 	}
 
-	u.subscriptionPermissions = make(map[string]*livekit.TrackPermission)
-
-	// if track_permissions is empty, nobody is allowed to subscribe to any tracks
-	if permissions.TrackPermissions != nil && len(permissions.TrackPermissions) == 0 {
-		return
-	}
-
 	// per participant permissions
+	u.subscriptionPermissions = make(map[string]*livekit.TrackPermission)
 	for _, trackPerms := range permissions.TrackPermissions {
 		u.subscriptionPermissions[trackPerms.ParticipantSid] = trackPerms
 	}
