@@ -80,6 +80,12 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 		track.UpdateVideoLayers(msg.UpdateLayers.Layers)
 	case *livekit.SignalRequest_Leave:
 		_ = participant.Close()
+	case *livekit.SignalRequest_SubscriptionPermissions:
+		err := room.UpdateSubscriptionPermissions(participant, msg.SubscriptionPermissions)
+		if err != nil {
+			pLogger.Warnw("could not update subscription permissions", err,
+				"permissions", msg.SubscriptionPermissions)
+		}
 	}
 	return nil
 }

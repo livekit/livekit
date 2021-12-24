@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -20,6 +19,11 @@ type WebsocketClient interface {
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 }
 
+type AddSubscriberParams struct {
+	AllTracks bool
+	TrackSids []string
+}
+
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
@@ -29,7 +33,6 @@ type Participant interface {
 	IsReady() bool
 	ConnectedAt() time.Time
 	ToProto() *livekit.ParticipantInfo
-	RTCPChan() chan []rtcp.Packet
 	SetMetadata(metadata string)
 	SetPermission(permission *livekit.ParticipantPermission)
 	GetResponseSink() routing.MessageSink
@@ -46,7 +49,8 @@ type Participant interface {
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	AddSubscriber(op Participant) (int, error)
+	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op Participant, trackSid string)
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
@@ -72,7 +76,6 @@ type Participant interface {
 	Close() error
 
 	// callbacks
-
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
@@ -80,12 +83,15 @@ type Participant interface {
 	OnTrackUpdated(callback func(Participant, PublishedTrack))
 	OnMetadataUpdate(callback func(Participant))
 	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(func(Participant))
+	OnClose(func(Participant, map[string]string))
 
 	// package methods
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
+
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantSid string) Participant) error
+	SubscriptionPermissionUpdate(publisherSid string, trackSid string, allowed bool)
 
 	DebugInfo() map[string]interface{}
 }
@@ -95,6 +101,7 @@ type Participant interface {
 type Room interface {
 	Name() string
 	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 }
 
 // MediaTrack represents a media track
@@ -114,12 +121,13 @@ type MediaTrack interface {
 	RemoveSubscriber(participantId string)
 	IsSubscriber(subId string) bool
 	RemoveAllSubscribers()
+	RevokeDisallowedSubscribers(allowedSubscriberIDs []string) []string
+
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
 	NotifySubscriberMute(subscriberID string)
 	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
-	OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
 }
 
 // PublishedTrack is the main interface representing a track published to the room

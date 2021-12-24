@@ -95,7 +95,9 @@ func TestRoomJoin(t *testing.T) {
 			mockP := op.(*typesfakes.FakeParticipant)
 			require.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
-			require.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
+			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
+			require.Equal(t, p, sub)
+			require.Equal(t, types.AddSubscriberParams{AllTracks: true}, params)
 		}
 	})
 
@@ -253,14 +255,16 @@ func TestNewTrack(t *testing.T) {
 
 		pub := participants[2].(*typesfakes.FakeParticipant)
 
-		// p3 adds track
+		// pub adds track
 		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
-		// only p2 should've been called
-		require.Equal(t, 1, track.AddSubscriberCallCount())
-		require.Equal(t, p1, track.AddSubscriberArgsForCall(0))
+		// only p1 should've been called
+		require.Equal(t, 1, pub.AddSubscriberCallCount())
+		sub, params := pub.AddSubscriberArgsForCall(pub.AddSubscriberCallCount() - 1)
+		require.Equal(t, p1, sub)
+		require.Equal(t, types.AddSubscriberParams{TrackSids: []string{track.ID()}}, params)
 	})
 }
 
@@ -518,7 +522,9 @@ func TestHiddenParticipants(t *testing.T) {
 			mockP := op.(*typesfakes.FakeParticipant)
 			require.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
-			require.Equal(t, p, mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount()-1))
+			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
+			require.Equal(t, p, sub)
+			require.Equal(t, types.AddSubscriberParams{AllTracks: true}, params)
 		}
 	})
 }

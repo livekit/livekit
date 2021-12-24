@@ -132,11 +132,6 @@ type FakePublishedTrack struct {
 		result1 uint32
 		result2 uint32
 	}
-	OnSubscribedMaxQualityChangeStub        func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
-	onSubscribedMaxQualityChangeMutex       sync.RWMutex
-	onSubscribedMaxQualityChangeArgsForCall []struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}
 	PublishLossPercentageStub        func() uint32
 	publishLossPercentageMutex       sync.RWMutex
 	publishLossPercentageArgsForCall []struct {
@@ -165,6 +160,17 @@ type FakePublishedTrack struct {
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
 		arg1 string
+	}
+	RevokeDisallowedSubscribersStub        func([]string) []string
+	revokeDisallowedSubscribersMutex       sync.RWMutex
+	revokeDisallowedSubscribersArgsForCall []struct {
+		arg1 []string
+	}
+	revokeDisallowedSubscribersReturns struct {
+		result1 []string
+	}
+	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
+		result1 []string
 	}
 	SdpCidStub        func() string
 	sdpCidMutex       sync.RWMutex
@@ -875,38 +881,6 @@ func (fake *FakePublishedTrack) NumUpTracksReturnsOnCall(i int, result1 uint32, 
 	}{result1, result2}
 }
 
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChange(arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}{arg1})
-	stub := fake.OnSubscribedMaxQualityChangeStub
-	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
-	fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	if stub != nil {
-		fake.OnSubscribedMaxQualityChangeStub(arg1)
-	}
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCallCount() int {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	fake.OnSubscribedMaxQualityChangeStub = stub
-}
-
-func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
 	fake.publishLossPercentageMutex.Lock()
 	ret, specificReturn := fake.publishLossPercentageReturnsOnCall[len(fake.publishLossPercentageArgsForCall)]
@@ -1067,6 +1041,72 @@ func (fake *FakePublishedTrack) RemoveSubscriberArgsForCall(i int) string {
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribers(arg1 []string) []string {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	ret, specificReturn := fake.revokeDisallowedSubscribersReturnsOnCall[len(fake.revokeDisallowedSubscribersArgsForCall)]
+	fake.revokeDisallowedSubscribersArgsForCall = append(fake.revokeDisallowedSubscribersArgsForCall, struct {
+		arg1 []string
+	}{arg1Copy})
+	stub := fake.RevokeDisallowedSubscribersStub
+	fakeReturns := fake.revokeDisallowedSubscribersReturns
+	fake.recordInvocation("RevokeDisallowedSubscribers", []interface{}{arg1Copy})
+	fake.revokeDisallowedSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersCallCount() int {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	return len(fake.revokeDisallowedSubscribersArgsForCall)
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersCalls(stub func([]string) []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = stub
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersArgsForCall(i int) []string {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	argsForCall := fake.revokeDisallowedSubscribersArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersReturns(result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	fake.revokeDisallowedSubscribersReturns = struct {
+		result1 []string
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	if fake.revokeDisallowedSubscribersReturnsOnCall == nil {
+		fake.revokeDisallowedSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []string
+		})
+	}
+	fake.revokeDisallowedSubscribersReturnsOnCall[i] = struct {
+		result1 []string
+	}{result1}
 }
 
 func (fake *FakePublishedTrack) SdpCid() string {
@@ -1379,8 +1419,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMuteMutex.RUnlock()
 	fake.numUpTracksMutex.RLock()
 	defer fake.numUpTracksMutex.RUnlock()
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.receiverMutex.RLock()
@@ -1389,6 +1427,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
 	fake.sdpCidMutex.RLock()
 	defer fake.sdpCidMutex.RUnlock()
 	fake.setMutedMutex.RLock()

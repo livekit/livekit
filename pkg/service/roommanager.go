@@ -274,7 +274,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
-	participant.OnClose(func(p types.Participant) {
+	participant.OnClose(func(p types.Participant, disallowedSubscriptions map[string]string) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -286,6 +286,8 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 			}
 		}
 		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
+
+		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)

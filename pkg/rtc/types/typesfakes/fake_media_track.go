@@ -104,11 +104,6 @@ type FakeMediaTrack struct {
 	notifySubscriberMuteArgsForCall []struct {
 		arg1 string
 	}
-	OnSubscribedMaxQualityChangeStub        func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)
-	onSubscribedMaxQualityChangeMutex       sync.RWMutex
-	onSubscribedMaxQualityChangeArgsForCall []struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}
 	RemoveAllSubscribersStub        func()
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
@@ -117,6 +112,17 @@ type FakeMediaTrack struct {
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
 		arg1 string
+	}
+	RevokeDisallowedSubscribersStub        func([]string) []string
+	revokeDisallowedSubscribersMutex       sync.RWMutex
+	revokeDisallowedSubscribersArgsForCall []struct {
+		arg1 []string
+	}
+	revokeDisallowedSubscribersReturns struct {
+		result1 []string
+	}
+	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
+		result1 []string
 	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
@@ -656,38 +662,6 @@ func (fake *FakeMediaTrack) NotifySubscriberMuteArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChange(arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
-		arg1 func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
-	}{arg1})
-	stub := fake.OnSubscribedMaxQualityChangeStub
-	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
-	fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	if stub != nil {
-		fake.OnSubscribedMaxQualityChangeStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCallCount() int {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error)) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	fake.OnSubscribedMaxQualityChangeStub = stub
-}
-
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeMediaTrack) RemoveAllSubscribers() {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
@@ -742,6 +716,72 @@ func (fake *FakeMediaTrack) RemoveSubscriberArgsForCall(i int) string {
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribers(arg1 []string) []string {
+	var arg1Copy []string
+	if arg1 != nil {
+		arg1Copy = make([]string, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	ret, specificReturn := fake.revokeDisallowedSubscribersReturnsOnCall[len(fake.revokeDisallowedSubscribersArgsForCall)]
+	fake.revokeDisallowedSubscribersArgsForCall = append(fake.revokeDisallowedSubscribersArgsForCall, struct {
+		arg1 []string
+	}{arg1Copy})
+	stub := fake.RevokeDisallowedSubscribersStub
+	fakeReturns := fake.revokeDisallowedSubscribersReturns
+	fake.recordInvocation("RevokeDisallowedSubscribers", []interface{}{arg1Copy})
+	fake.revokeDisallowedSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribersCallCount() int {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	return len(fake.revokeDisallowedSubscribersArgsForCall)
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribersCalls(stub func([]string) []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = stub
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribersArgsForCall(i int) []string {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	argsForCall := fake.revokeDisallowedSubscribersArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribersReturns(result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	fake.revokeDisallowedSubscribersReturns = struct {
+		result1 []string
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []string) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	if fake.revokeDisallowedSubscribersReturnsOnCall == nil {
+		fake.revokeDisallowedSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []string
+		})
+	}
+	fake.revokeDisallowedSubscribersReturnsOnCall[i] = struct {
+		result1 []string
+	}{result1}
 }
 
 func (fake *FakeMediaTrack) SetMuted(arg1 bool) {
@@ -889,12 +929,12 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
 	fake.notifySubscriberMuteMutex.RLock()
 	defer fake.notifySubscriberMuteMutex.RUnlock()
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.sourceMutex.RLock()
