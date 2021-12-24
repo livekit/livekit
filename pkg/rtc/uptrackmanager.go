@@ -38,7 +38,7 @@ type UptrackManager struct {
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
 	// keeps track of subscriptions that are awaiting permissions
-	subscriptionPermissions map[string][]string // trackSid => []subscriberID
+	subscriptionPermissions map[string]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
 	pendingSubscriptions map[string][]string // trackSid => []subscriberID
 
@@ -53,13 +53,12 @@ type UptrackManager struct {
 
 func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
 	return &UptrackManager{
-		params:                  params,
-		rtcpCh:                  make(chan []rtcp.Packet, 50),
-		pliThrottle:             newPLIThrottle(params.ThrottleConfig),
-		publishedTracks:         make(map[string]types.PublishedTrack, 0),
-		pendingTracks:           make(map[string]*livekit.TrackInfo),
-		subscriptionPermissions: make(map[string][]string),
-		pendingSubscriptions:    make(map[string][]string),
+		params:               params,
+		rtcpCh:               make(chan []rtcp.Packet, 50),
+		pliThrottle:          newPLIThrottle(params.ThrottleConfig),
+		publishedTracks:      make(map[string]types.PublishedTrack, 0),
+		pendingTracks:        make(map[string]*livekit.TrackInfo),
+		pendingSubscriptions: make(map[string][]string),
 	}
 }
 
@@ -432,7 +431,7 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 		trackSid := track.ID()
 		delete(u.publishedTracks, trackSid)
 		delete(u.pendingSubscriptions, trackSid)
-		delete(u.subscriptionPermissions, trackSid)
+		// not modifying subscription permissions, will get reset on next update from partiicpant
 		u.lock.Unlock()
 		// only send this when client is in a ready state
 		if u.onTrackUpdated != nil {
@@ -447,59 +446,71 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 
 func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
 	// every update overrides the existing
-	u.subscriptionPermissions = make(map[string][]string)
 
 	// all_participants takes precedence
 	if permissions.AllParticipants {
 		// everything is allowed, nothing else to do
+		u.subscriptionPermissions = nil
 		return
 	}
 
+	u.subscriptionPermissions = make(map[string]*livekit.TrackPermission)
+
 	// if track_permissions is empty, nobody is allowed to subscribe to any tracks
 	if permissions.TrackPermissions != nil && len(permissions.TrackPermissions) == 0 {
-		for trackSid, _ := range u.publishedTracks {
-			u.subscriptionPermissions[trackSid] = []string{}
-		}
-
-		for _, ti := range u.pendingTracks {
-			u.subscriptionPermissions[ti.Sid] = []string{}
-		}
 		return
 	}
 
 	// per participant permissions
 	for _, trackPerms := range permissions.TrackPermissions {
-		// all_tracks get precedence
-		if trackPerms.AllTracks {
-			// no restriction for participant, nothing else to do
-			for trackSid, _ := range u.publishedTracks {
-				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
-			}
-
-			for _, ti := range u.pendingTracks {
-				u.subscriptionPermissions[ti.Sid] = append(u.subscriptionPermissions[ti.Sid], trackPerms.ParticipantSid)
-			}
-		} else {
-			for _, trackSid := range trackPerms.TrackSids {
-				u.subscriptionPermissions[trackSid] = append(u.subscriptionPermissions[trackSid], trackPerms.ParticipantSid)
-			}
-		}
+		u.subscriptionPermissions[trackPerms.ParticipantSid] = trackPerms
 	}
 }
 
 func (u *UptrackManager) hasPermission(trackSid string, subscriberID string) bool {
-	allowed, ok := u.subscriptionPermissions[trackSid]
-	if !ok {
+	if u.subscriptionPermissions == nil {
 		return true
 	}
 
-	for _, sid := range allowed {
-		if sid == subscriberID {
+	perms, ok := u.subscriptionPermissions[subscriberID]
+	if !ok {
+		return false
+	}
+
+	if perms.AllTracks {
+		return true
+	}
+
+	for _, sid := range perms.TrackSids {
+		if sid == trackSid {
 			return true
 		}
 	}
 
 	return false
+}
+
+func (u *UptrackManager) getAllowedSubscribers(trackSid string) []string {
+	if u.subscriptionPermissions == nil {
+		return nil
+	}
+
+	allowed := []string{}
+	for subscriberID, perms := range u.subscriptionPermissions {
+		if perms.AllTracks {
+			allowed = append(allowed, subscriberID)
+			continue
+		}
+
+		for _, sid := range perms.TrackSids {
+			if sid == trackSid {
+				allowed = append(allowed, subscriberID)
+				break
+			}
+		}
+	}
+
+	return allowed
 }
 
 func (u *UptrackManager) maybeAddPendingSubscription(trackSid string, sub types.Participant) {
@@ -548,7 +559,7 @@ func (u *UptrackManager) processPendingSubscriptions(resolver func(participantSi
 			if resolver != nil {
 				sub = resolver(sid)
 			}
-			if sub == nil {
+			if sub == nil || sub.State() == livekit.ParticipantInfo_DISCONNECTED {
 				// do not keep this pending subscription as subscriber may be gone
 				continue
 			}
@@ -577,8 +588,9 @@ func (u *UptrackManager) processPendingSubscriptions(resolver func(participantSi
 func (u *UptrackManager) maybeRevokeSubscriptions(resolver func(participantSid string) types.Participant) {
 	for _, track := range u.publishedTracks {
 		trackSid := track.ID()
-		allowed, ok := u.subscriptionPermissions[trackSid]
-		if !ok {
+		allowed := u.getAllowedSubscribers(trackSid)
+		if allowed == nil {
+			// no restrictions
 			continue
 		}
 

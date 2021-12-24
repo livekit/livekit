@@ -78,6 +78,8 @@ type ParticipantImpl struct {
 
 	// tracks the current participant is subscribed to, map of sid => DownTrack
 	subscribedTracks map[string]types.SubscribedTrack
+	// keeps track of disallowed tracks
+	disallowedSubscriptions map[string]string // trackSid -> publisherSid
 	// keep track of other publishers identities that we are subscribed to
 	subscribedTo sync.Map // string => struct{}
 
@@ -91,16 +93,17 @@ type ParticipantImpl struct {
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.Participant)
 	onDataPacket     func(types.Participant, *livekit.DataPacket)
-	onClose          func(types.Participant)
+	onClose          func(types.Participant, map[string]string)
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
-		params:           params,
-		subscribedTracks: make(map[string]types.SubscribedTrack),
-		connectedAt:      time.Now(),
+		params:                  params,
+		subscribedTracks:        make(map[string]types.SubscribedTrack),
+		disallowedSubscriptions: make(map[string]string),
+		connectedAt:             time.Now(),
 	}
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
@@ -268,7 +271,7 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.Participant, *livekit
 	p.onDataPacket = callback
 }
 
-func (p *ParticipantImpl) OnClose(callback func(types.Participant)) {
+func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[string]string)) {
 	p.onClose = callback
 }
 
@@ -393,8 +396,13 @@ func (p *ParticipantImpl) Close() error {
 
 	p.uptrackManager.Close()
 
-	// remove all downtracks
 	p.lock.Lock()
+	disallowedSubscriptions := make(map[string]string)
+	for trackSid, publisherSid := range p.disallowedSubscriptions {
+		disallowedSubscriptions[trackSid] = publisherSid
+	}
+
+	// remove all downtracks
 	var downtracksToClose []*sfu.DownTrack
 	for _, st := range p.subscribedTracks {
 		downtracksToClose = append(downtracksToClose, st.DownTrack())
@@ -413,7 +421,7 @@ func (p *ParticipantImpl) Close() error {
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
-		onClose(p)
+		onClose(p, disallowedSubscriptions)
 	}
 	p.publisher.Close()
 	p.subscriber.Close()
@@ -731,6 +739,14 @@ func (p *ParticipantImpl) UpdateSubscriptionPermissions(
 }
 
 func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherSid string, trackSid string, allowed bool) {
+	p.lock.Lock()
+	if allowed {
+		delete(p.disallowedSubscriptions, trackSid)
+	} else {
+		p.disallowedSubscriptions[trackSid] = publisherSid
+	}
+	p.lock.Unlock()
+
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{

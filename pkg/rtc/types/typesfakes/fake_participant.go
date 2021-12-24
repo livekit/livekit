@@ -291,10 +291,10 @@ type FakeParticipant struct {
 	negotiateMutex       sync.RWMutex
 	negotiateArgsForCall []struct {
 	}
-	OnCloseStub        func(func(types.Participant))
+	OnCloseStub        func(func(types.Participant, map[string]string))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
-		arg1 func(types.Participant)
+		arg1 func(types.Participant, map[string]string)
 	}
 	OnDataPacketStub        func(func(types.Participant, *livekit.DataPacket))
 	onDataPacketMutex       sync.RWMutex
@@ -1990,10 +1990,10 @@ func (fake *FakeParticipant) NegotiateCalls(stub func()) {
 	fake.NegotiateStub = stub
 }
 
-func (fake *FakeParticipant) OnClose(arg1 func(types.Participant)) {
+func (fake *FakeParticipant) OnClose(arg1 func(types.Participant, map[string]string)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func(types.Participant)
+		arg1 func(types.Participant, map[string]string)
 	}{arg1})
 	stub := fake.OnCloseStub
 	fake.recordInvocation("OnClose", []interface{}{arg1})
@@ -2009,13 +2009,13 @@ func (fake *FakeParticipant) OnCloseCallCount() int {
 	return len(fake.onCloseArgsForCall)
 }
 
-func (fake *FakeParticipant) OnCloseCalls(stub func(func(types.Participant))) {
+func (fake *FakeParticipant) OnCloseCalls(stub func(func(types.Participant, map[string]string))) {
 	fake.onCloseMutex.Lock()
 	defer fake.onCloseMutex.Unlock()
 	fake.OnCloseStub = stub
 }
 
-func (fake *FakeParticipant) OnCloseArgsForCall(i int) func(types.Participant) {
+func (fake *FakeParticipant) OnCloseArgsForCall(i int) func(types.Participant, map[string]string) {
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]

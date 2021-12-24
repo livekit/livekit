@@ -52,7 +52,7 @@ func TestICEStateChange(t *testing.T) {
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan struct{})
-		p.onClose = func(participant types.Participant) {
+		p.onClose = func(participant types.Participant, disallowedSubscriptions map[string]string) {
 			close(closeChan)
 		}
 		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)

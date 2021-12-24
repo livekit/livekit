@@ -76,7 +76,6 @@ type Participant interface {
 	Close() error
 
 	// callbacks
-
 	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
@@ -84,7 +83,7 @@ type Participant interface {
 	OnTrackUpdated(callback func(Participant, PublishedTrack))
 	OnMetadataUpdate(callback func(Participant))
 	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(func(Participant))
+	OnClose(func(Participant, map[string]string))
 
 	// package methods
 	AddSubscribedTrack(st SubscribedTrack)

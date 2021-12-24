@@ -25,54 +25,61 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			AllParticipants: true,
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Equal(t, 0, len(um.subscriptionPermissions))
+		require.Nil(t, um.subscriptionPermissions)
 
 		// nobody is allowed to subscribe
 		permissions = &livekit.UpdateSubscriptionPermissions{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Equal(t, 2, len(um.subscriptionPermissions))
+		require.NotNil(t, um.subscriptionPermissions)
+		require.Equal(t, 0, len(um.subscriptionPermissions))
 
 		// allow all tracks for participants
+		perms1 := &livekit.TrackPermission{
+			ParticipantSid: "p1",
+			AllTracks:      true,
+		}
+		perms2 := &livekit.TrackPermission{
+			ParticipantSid: "p2",
+			AllTracks:      true,
+		}
 		permissions = &livekit.UpdateSubscriptionPermissions{
 			TrackPermissions: []*livekit.TrackPermission{
-				{
-					ParticipantSid: "p1",
-					AllTracks:      true,
-				},
-				{
-					ParticipantSid: "p2",
-					AllTracks:      true,
-				},
+				perms1,
+				perms2,
 			},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
 		require.Equal(t, 2, len(um.subscriptionPermissions))
-		require.Equal(t, []string{"p1", "p2"}, um.subscriptionPermissions["audio"])
-		require.Equal(t, []string{"p1", "p2"}, um.subscriptionPermissions["video"])
+		require.EqualValues(t, perms1, um.subscriptionPermissions["p1"])
+		require.EqualValues(t, perms2, um.subscriptionPermissions["p2"])
 
 		// allow all tracks for some and restrictive for others
+		perms1 = &livekit.TrackPermission{
+			ParticipantSid: "p1",
+			AllTracks:      true,
+		}
+		perms2 = &livekit.TrackPermission{
+			ParticipantSid: "p2",
+			TrackSids:      []string{"audio"},
+		}
+		perms3 := &livekit.TrackPermission{
+			ParticipantSid: "p3",
+			TrackSids:      []string{"video"},
+		}
 		permissions = &livekit.UpdateSubscriptionPermissions{
 			TrackPermissions: []*livekit.TrackPermission{
-				{
-					ParticipantSid: "p1",
-					AllTracks:      true,
-				},
-				{
-					ParticipantSid: "p2",
-					TrackSids:      []string{"audio"},
-				},
-				{
-					ParticipantSid: "p3",
-					TrackSids:      []string{"video"},
-				},
+				perms1,
+				perms2,
+				perms3,
 			},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Equal(t, 2, len(um.subscriptionPermissions))
-		require.Equal(t, []string{"p1", "p2"}, um.subscriptionPermissions["audio"])
-		require.Equal(t, []string{"p1", "p3"}, um.subscriptionPermissions["video"])
+		require.Equal(t, 3, len(um.subscriptionPermissions))
+		require.EqualValues(t, perms1, um.subscriptionPermissions["p1"])
+		require.EqualValues(t, perms2, um.subscriptionPermissions["p2"])
+		require.EqualValues(t, perms3, um.subscriptionPermissions["p3"])
 	})
 }
 

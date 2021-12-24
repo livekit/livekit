@@ -381,6 +381,17 @@ func (r *Room) UpdateSubscriptionPermissions(participant types.Participant, perm
 	return participant.UpdateSubscriptionPermissions(permissions, r.GetParticipantBySid)
 }
 
+func (r *Room) RemoveDisallowedSubscriptions(sub types.Participant, disallowedSubscriptions map[string]string) {
+	for trackSid, publisherSid := range disallowedSubscriptions {
+		pub := r.GetParticipantBySid(publisherSid)
+		if pub == nil {
+			continue
+		}
+
+		pub.RemoveSubscriber(sub, trackSid)
+	}
+}
+
 func (r *Room) IsClosed() bool {
 	select {
 	case <-r.closed:
