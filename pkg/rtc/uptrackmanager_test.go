@@ -130,6 +130,18 @@ func TestPermissions(t *testing.T) {
 		require.True(t, um.hasPermission("audio", "p2"))
 		require.True(t, um.hasPermission("video", "p2"))
 
+		// add a new track after permissions are set
+		trs := &typesfakes.FakePublishedTrack{}
+		trs.IDReturns("screen")
+		um.publishedTracks["screen"] = trs
+
+		require.True(t, um.hasPermission("audio", "p1"))
+		require.True(t, um.hasPermission("video", "p1"))
+		require.True(t, um.hasPermission("screen", "p1"))
+		require.True(t, um.hasPermission("audio", "p2"))
+		require.True(t, um.hasPermission("video", "p2"))
+		require.True(t, um.hasPermission("screen", "p2"))
+
 		// allow all tracks for some and restrictive for others
 		permissions = &livekit.UpdateSubscriptionPermissions{
 			TrackPermissions: []*livekit.TrackPermission{
@@ -150,9 +162,34 @@ func TestPermissions(t *testing.T) {
 		um.UpdateSubscriptionPermissions(permissions, nil)
 		require.True(t, um.hasPermission("audio", "p1"))
 		require.True(t, um.hasPermission("video", "p1"))
+		require.True(t, um.hasPermission("screen", "p1"))
+
 		require.True(t, um.hasPermission("audio", "p2"))
 		require.False(t, um.hasPermission("video", "p2"))
+		require.False(t, um.hasPermission("screen", "p2"))
+
 		require.False(t, um.hasPermission("audio", "p3"))
 		require.True(t, um.hasPermission("video", "p3"))
+		require.False(t, um.hasPermission("screen", "p3"))
+
+		// add a new track after restrictive permissions are set
+		trw := &typesfakes.FakePublishedTrack{}
+		trw.IDReturns("watch")
+		um.publishedTracks["watch"] = trw
+
+		require.True(t, um.hasPermission("audio", "p1"))
+		require.True(t, um.hasPermission("video", "p1"))
+		require.True(t, um.hasPermission("screen", "p1"))
+		require.True(t, um.hasPermission("watch", "p1"))
+
+		require.True(t, um.hasPermission("audio", "p2"))
+		require.False(t, um.hasPermission("video", "p2"))
+		require.False(t, um.hasPermission("screen", "p2"))
+		require.False(t, um.hasPermission("watch", "p2"))
+
+		require.False(t, um.hasPermission("audio", "p3"))
+		require.True(t, um.hasPermission("video", "p3"))
+		require.False(t, um.hasPermission("screen", "p3"))
+		require.False(t, um.hasPermission("watch", "p3"))
 	})
 }

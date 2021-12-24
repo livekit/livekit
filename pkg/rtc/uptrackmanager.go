@@ -431,7 +431,7 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 		trackSid := track.ID()
 		delete(u.publishedTracks, trackSid)
 		delete(u.pendingSubscriptions, trackSid)
-		// not modifying subscription permissions, will get reset on next update from partiicpant
+		// not modifying subscription permissions, will get reset on next update from participant
 		u.lock.Unlock()
 		// only send this when client is in a ready state
 		if u.onTrackUpdated != nil {
