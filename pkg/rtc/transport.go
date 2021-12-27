@@ -80,8 +80,12 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		ir.Add(f)
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
-		gf, err := cc.NewInterceptor(gcc.NewSendSideBWE, gcc.SendSideBWEInitialBitrate(1*1000*1000))
-		// RAJA-TODO gf, err := cc.NewInterceptor(cc.InitialBitrate(1*1000*1000), cc.SetPacer(cc.NewNoOpPacer()))
+		gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
+			return gcc.NewSendSideBWE(
+				gcc.SendSideBWEInitialBitrate(1*1000*1000),
+				gcc.SendSideBWEPacer(gcc.NewNoOpPacer()),
+			)
+		})
 		if err == nil {
 			gf.OnNewPeerConnection(func(id string, estimator cc.BandwidthEstimator) {
 				if onBandwidthEstimator != nil {
