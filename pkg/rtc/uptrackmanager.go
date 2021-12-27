@@ -36,13 +36,13 @@ type UptrackManager struct {
 	twcc *twcc.Responder
 
 	// publishedTracks that participant is publishing
-	publishedTracks map[string]types.PublishedTrack
+	publishedTracks map[livekit.TrackSid]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
 	pendingTracks map[string]*livekit.TrackInfo
 	// keeps track of subscriptions that are awaiting permissions
 	subscriptionPermissions map[string]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
-	pendingSubscriptions map[string][]string // trackSid => []subscriberID
+	pendingSubscriptions map[livekit.TrackSid][]string // trackSid => []subscriberID
 
 	lock sync.RWMutex
 
@@ -58,9 +58,9 @@ func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
 		params:               params,
 		rtcpCh:               make(chan []rtcp.Packet, 50),
 		pliThrottle:          newPLIThrottle(params.ThrottleConfig),
-		publishedTracks:      make(map[string]types.PublishedTrack, 0),
+		publishedTracks:      make(map[livekit.TrackSid]types.PublishedTrack, 0),
 		pendingTracks:        make(map[string]*livekit.TrackInfo),
-		pendingSubscriptions: make(map[string][]string),
+		pendingSubscriptions: make(map[livekit.TrackSid][]string),
 	}
 }
 
@@ -108,7 +108,7 @@ func (u *UptrackManager) OnWriteRTCP(f func(pkts []rtcp.Packet)) {
 	u.onWriteRTCP = f
 }
 
-func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
+func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackSid livekit.TrackSid, subscribedQualities []*livekit.SubscribedQuality) error) {
 	u.onSubscribedMaxQualityChange = f
 }
 
@@ -184,7 +184,7 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 	return n, nil
 }
 
-func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackSid string) {
+func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackSid livekit.TrackSid) {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
@@ -196,7 +196,7 @@ func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackSid string
 	u.maybeRemovePendingSubscription(trackSid, sub)
 }
 
-func (u *UptrackManager) SetTrackMuted(trackSid string, muted bool) {
+func (u *UptrackManager) SetTrackMuted(trackSid livekit.TrackSid, muted bool) {
 	isPending := false
 	u.lock.RLock()
 	for _, ti := range u.pendingTracks {
@@ -261,7 +261,7 @@ func (u *UptrackManager) GetConnectionQuality() (scores float64, numTracks int) 
 	return
 }
 
-func (u *UptrackManager) GetPublishedTrack(sid string) types.PublishedTrack {
+func (u *UptrackManager) GetPublishedTrack(sid livekit.TrackSid) types.PublishedTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
@@ -370,7 +370,7 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 }
 
 // should be called with lock held
-func (u *UptrackManager) getPublishedTrack(sid string) types.PublishedTrack {
+func (u *UptrackManager) getPublishedTrack(sid livekit.TrackSid) types.PublishedTrack {
 	return u.publishedTracks[sid]
 }
 
@@ -471,7 +471,7 @@ func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.Upda
 	}
 }
 
-func (u *UptrackManager) hasPermission(trackSid string, subscriberID string) bool {
+func (u *UptrackManager) hasPermission(trackSid livekit.TrackSid, subscriberID string) bool {
 	if u.subscriptionPermissions == nil {
 		return true
 	}
@@ -494,7 +494,7 @@ func (u *UptrackManager) hasPermission(trackSid string, subscriberID string) boo
 	return false
 }
 
-func (u *UptrackManager) getAllowedSubscribers(trackSid string) []string {
+func (u *UptrackManager) getAllowedSubscribers(trackSid livekit.TrackSid) []string {
 	if u.subscriptionPermissions == nil {
 		return nil
 	}
@@ -517,7 +517,7 @@ func (u *UptrackManager) getAllowedSubscribers(trackSid string) []string {
 	return allowed
 }
 
-func (u *UptrackManager) maybeAddPendingSubscription(trackSid string, sub types.Participant) {
+func (u *UptrackManager) maybeAddPendingSubscription(trackSid livekit.TrackSid, sub types.Participant) {
 	subscriberID := sub.ID()
 
 	pending := u.pendingSubscriptions[trackSid]
@@ -532,7 +532,7 @@ func (u *UptrackManager) maybeAddPendingSubscription(trackSid string, sub types.
 	go sub.SubscriptionPermissionUpdate(u.params.SID, trackSid, false)
 }
 
-func (u *UptrackManager) maybeRemovePendingSubscription(trackSid string, sub types.Participant) {
+func (u *UptrackManager) maybeRemovePendingSubscription(trackSid livekit.TrackSid, sub types.Participant) {
 	subscriberID := sub.ID()
 
 	pending := u.pendingSubscriptions[trackSid]
