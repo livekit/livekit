@@ -433,8 +433,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 	for {
 		w.bufferMu.RLock()
-		pkt, err := w.buffers[layer].ReadExtended()
+		buf := w.buffers[layer]
 		w.bufferMu.RUnlock()
+		pkt, err := buf.ReadExtended()
 		if err == io.EOF {
 			return
 		}
