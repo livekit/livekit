@@ -30,6 +30,8 @@ type UptrackManager struct {
 	rtcpCh      chan []rtcp.Packet
 	pliThrottle *pliThrottle
 
+	closed bool
+
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
@@ -70,13 +72,16 @@ func (u *UptrackManager) Close() {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
+	u.closed = true
+
 	// remove all subscribers
 	for _, t := range u.publishedTracks {
-		// skip updates
 		t.RemoveAllSubscribers()
 	}
 
-	close(u.rtcpCh)
+	if len(u.publishedTracks) == 0 {
+		close(u.rtcpCh)
+	}
 }
 
 func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
@@ -432,6 +437,11 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 		delete(u.publishedTracks, trackSid)
 		delete(u.pendingSubscriptions, trackSid)
 		// not modifying subscription permissions, will get reset on next update from participant
+
+		// as rtcpCh handles RTCP for all published tracks, close only after all published tracks are closed
+		if u.closed && len(u.publishedTracks) == 0 {
+			close(u.rtcpCh)
+		}
 		u.lock.Unlock()
 		// only send this when client is in a ready state
 		if u.onTrackUpdated != nil {

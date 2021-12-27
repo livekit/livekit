@@ -136,7 +136,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
-func (r *Room) GetBufferFactor() *buffer.Factory {
+func (r *Room) GetBufferFactory() *buffer.Factory {
 	return r.bufferFactory
 }
 
