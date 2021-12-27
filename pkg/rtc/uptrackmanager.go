@@ -30,6 +30,8 @@ type UptrackManager struct {
 	rtcpCh      chan []rtcp.Packet
 	pliThrottle *pliThrottle
 
+	closed bool
+
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
@@ -70,9 +72,15 @@ func (u *UptrackManager) Close() {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
+	u.closed = true
+
 	// remove all subscribers
 	for _, t := range u.publishedTracks {
 		t.RemoveAllSubscribers()
+	}
+
+	if len(u.publishedTracks) == 0 {
+		close(u.rtcpCh)
 	}
 }
 
@@ -431,7 +439,7 @@ func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
 		// not modifying subscription permissions, will get reset on next update from participant
 
 		// as rtcpCh handles RTCP for all published tracks, close only after all published tracks are closed
-		if len(u.publishedTracks) == 0 {
+		if u.closed && len(u.publishedTracks) == 0 {
 			close(u.rtcpCh)
 		}
 		u.lock.Unlock()
