@@ -230,6 +230,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:        pi.Identity,
+		Name:            pi.Name,
 		SID:             sid,
 		Config:          &rtcConf,
 		Sink:            responseSink,

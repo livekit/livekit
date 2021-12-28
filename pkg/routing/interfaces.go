@@ -28,6 +28,7 @@ type MessageSource interface {
 
 type ParticipantInit struct {
 	Identity      string
+	Name          string
 	Metadata      string
 	Reconnect     bool
 	Permission    *livekit.ParticipantPermission

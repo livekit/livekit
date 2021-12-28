@@ -151,6 +151,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName strin
 		RoomName: roomName,
 		Identity: pi.Identity,
 		Metadata: pi.Metadata,
+		Name:     pi.Name,
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId:  connectionID,
 		Reconnect:     pi.Reconnect,
@@ -240,6 +241,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	pi := ParticipantInit{
 		Identity:      ss.Identity,
 		Metadata:      ss.Metadata,
+		Name:          ss.Name,
 		Reconnect:     ss.Reconnect,
 		Permission:    ss.Permission,
 		Client:        ss.Client,
