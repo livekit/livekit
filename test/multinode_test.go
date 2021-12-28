@@ -20,7 +20,7 @@ func TestMultiNodeRouting(t *testing.T) {
 	defer finish()
 
 	// creating room on node 1
-	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
 		Name: testRoom,
 	})
 	require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 	defer finish()
 
 	// creating room on node 1
-	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
 		Name:   testRoom,
 		NodeId: s2.Node().Id,
 	})
@@ -135,4 +135,15 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	defer finish()
 
 	scenarioDataPublish(t)
+}
+
+func TestMultiNodeRoomList(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, _, finish := setupMultiNodeTest("TestMultiNodeRoomList")
+	defer finish()
+
+	roomServiceListRoom(t)
 }

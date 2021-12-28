@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -42,6 +43,9 @@ func TestWebhooks(t *testing.T) {
 	// first participant join should have started the room
 	started := ts.GetEvent(webhook.EventRoomStarted)
 	require.Equal(t, testRoom, started.Room.Name)
+	require.NotEmpty(t, started.Id)
+	require.Greater(t, started.CreatedAt, time.Now().Unix()-100)
+	require.GreaterOrEqual(t, time.Now().Unix(), started.CreatedAt)
 	joined := ts.GetEvent(webhook.EventParticipantJoined)
 	require.Equal(t, "c1", joined.Participant.Identity)
 	ts.ClearEvents()

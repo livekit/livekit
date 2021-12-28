@@ -50,10 +50,11 @@ type FakeRoomStore struct {
 		result1 []*livekit.ParticipantInfo
 		result2 error
 	}
-	ListRoomsStub        func(context.Context) ([]*livekit.Room, error)
+	ListRoomsStub        func(context.Context, []string) ([]*livekit.Room, error)
 	listRoomsMutex       sync.RWMutex
 	listRoomsArgsForCall []struct {
 		arg1 context.Context
+		arg2 []string
 	}
 	listRoomsReturns struct {
 		result1 []*livekit.Room
@@ -339,18 +340,24 @@ func (fake *FakeRoomStore) ListParticipantsReturnsOnCall(i int, result1 []*livek
 	}{result1, result2}
 }
 
-func (fake *FakeRoomStore) ListRooms(arg1 context.Context) ([]*livekit.Room, error) {
+func (fake *FakeRoomStore) ListRooms(arg1 context.Context, arg2 []string) ([]*livekit.Room, error) {
+	var arg2Copy []string
+	if arg2 != nil {
+		arg2Copy = make([]string, len(arg2))
+		copy(arg2Copy, arg2)
+	}
 	fake.listRoomsMutex.Lock()
 	ret, specificReturn := fake.listRoomsReturnsOnCall[len(fake.listRoomsArgsForCall)]
 	fake.listRoomsArgsForCall = append(fake.listRoomsArgsForCall, struct {
 		arg1 context.Context
-	}{arg1})
+		arg2 []string
+	}{arg1, arg2Copy})
 	stub := fake.ListRoomsStub
 	fakeReturns := fake.listRoomsReturns
-	fake.recordInvocation("ListRooms", []interface{}{arg1})
+	fake.recordInvocation("ListRooms", []interface{}{arg1, arg2Copy})
 	fake.listRoomsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -364,17 +371,17 @@ func (fake *FakeRoomStore) ListRoomsCallCount() int {
 	return len(fake.listRoomsArgsForCall)
 }
 
-func (fake *FakeRoomStore) ListRoomsCalls(stub func(context.Context) ([]*livekit.Room, error)) {
+func (fake *FakeRoomStore) ListRoomsCalls(stub func(context.Context, []string) ([]*livekit.Room, error)) {
 	fake.listRoomsMutex.Lock()
 	defer fake.listRoomsMutex.Unlock()
 	fake.ListRoomsStub = stub
 }
 
-func (fake *FakeRoomStore) ListRoomsArgsForCall(i int) context.Context {
+func (fake *FakeRoomStore) ListRoomsArgsForCall(i int) (context.Context, []string) {
 	fake.listRoomsMutex.RLock()
 	defer fake.listRoomsMutex.RUnlock()
 	argsForCall := fake.listRoomsArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeRoomStore) ListRoomsReturns(result1 []*livekit.Room, result2 error) {
