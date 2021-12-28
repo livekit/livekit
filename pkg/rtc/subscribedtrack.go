@@ -111,7 +111,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if settings.Width > 0 {
 		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
-	t.DownTrack().SetMaxSpatialLayer(spatialLayerForQuality(quality))
+	t.DownTrack().SetMaxSpatialLayer(SpatialLayerForQuality(quality))
 
 	t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, quality)
 }
@@ -119,15 +119,4 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
 	t.DownTrack().Mute(muted)
-}
-
-func spatialLayerForQuality(quality livekit.VideoQuality) int32 {
-	switch quality {
-	case livekit.VideoQuality_LOW:
-		return 0
-	case livekit.VideoQuality_MEDIUM:
-		return 1
-	default:
-		return 2
-	}
 }

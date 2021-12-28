@@ -121,6 +121,21 @@ func (s *StreamTracker) Stop() {
 	}
 }
 
+func (s *StreamTracker) Reset() {
+	s.Stop()
+
+	s.countSinceLast = 0
+	s.cycleCount = 0
+
+	s.initMu.Lock()
+	s.initialized = false
+	s.initMu.Unlock()
+
+	s.statusMu.Lock()
+	s.status = StreamStatusStopped
+	s.statusMu.Unlock()
+}
+
 func (s *StreamTracker) SetPaused(paused bool) {
 	s.paused.set(paused)
 }
@@ -146,9 +161,11 @@ func (s *StreamTracker) Observe(sn uint16) {
 	s.initMu.Lock()
 	if !s.initialized {
 		// first packet
-		s.lastSN = sn
 		s.initialized = true
 		s.initMu.Unlock()
+
+		s.lastSN = sn
+		atomic.AddUint32(&s.countSinceLast, 1)
 
 		// declare stream active and start the detect worker
 		go s.init()

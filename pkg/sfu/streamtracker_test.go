@@ -81,4 +81,47 @@ func TestStreamTracker(t *testing.T) {
 		tracker.detectChanges()
 		require.Equal(t, StreamStatusActive, tracker.Status())
 	})
+
+	t.Run("flips back to active on first observe after reset", func(t *testing.T) {
+		callbackCalled := atomicUint32(0)
+		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		tracker.OnStatusChanged(func(status StreamStatus) {
+			callbackCalled.add(1)
+		})
+		require.Equal(t, StreamStatusStopped, tracker.Status())
+
+		// observe first packet
+		tracker.Observe(1)
+
+		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
+			return callbackCalled.get() == 1
+		})
+
+		require.Equal(t, StreamStatusActive, tracker.Status())
+		require.Equal(t, uint32(1), callbackCalled.get())
+
+		// obaerver a few more
+		tracker.Observe(2)
+		tracker.Observe(3)
+		tracker.Observe(4)
+		tracker.Observe(5)
+		tracker.detectChanges()
+
+		// should still be active
+		require.Equal(t, StreamStatusActive, tracker.Status())
+
+		// Reset. The first packet after reset should flip state again
+		tracker.Reset()
+		require.Equal(t, StreamStatusStopped, tracker.Status())
+
+		// first packet after reset
+		tracker.Observe(1)
+
+		testutils.WithTimeout(t, "first packet after reset makes stream active", func() bool {
+			return callbackCalled.get() == 2
+		})
+
+		require.Equal(t, StreamStatusActive, tracker.Status())
+		require.Equal(t, uint32(2), callbackCalled.get())
+	})
 }
