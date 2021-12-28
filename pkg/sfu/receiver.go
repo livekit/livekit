@@ -222,7 +222,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 				// on the first packet of the layer on restart.
 				//
 				// As there may be packets from client before a layer expected to stop actually stops,
-				// So, use a window in which a status stopped is treated as an expected stop.
+				// use a window in which a status stopped is treated as an expected stop.
 				// If the stop happens outside the window, treat it like an unexpected stop.
 				//
 				maxExpectedLayer, ok := w.maxExpectedLayer.Load().(MaxExpectedSpatialLayer)
