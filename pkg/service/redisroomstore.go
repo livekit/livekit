@@ -72,10 +72,25 @@ func (p *RedisRoomStore) LoadRoom(_ context.Context, name string) (*livekit.Room
 	return &room, nil
 }
 
-func (p *RedisRoomStore) ListRooms(_ context.Context) ([]*livekit.Room, error) {
-	items, err := p.rc.HVals(p.ctx, RoomsKey).Result()
-	if err != nil && err != redis.Nil {
-		return nil, errors.Wrap(err, "could not get rooms")
+func (p *RedisRoomStore) ListRooms(_ context.Context, names []string) ([]*livekit.Room, error) {
+	var items []string
+	var err error
+	if names == nil {
+		items, err = p.rc.HVals(p.ctx, RoomsKey).Result()
+		if err != nil && err != redis.Nil {
+			return nil, errors.Wrap(err, "could not get rooms")
+		}
+	} else {
+		var results []interface{}
+		results, err = p.rc.HMGet(p.ctx, RoomsKey, names...).Result()
+		if err != nil && err != redis.Nil {
+			return nil, errors.Wrap(err, "could not get rooms by names")
+		}
+		for _, r := range results {
+			if item, ok := r.(string); ok {
+				items = append(items, item)
+			}
+		}
 	}
 
 	rooms := make([]*livekit.Room, 0, len(items))

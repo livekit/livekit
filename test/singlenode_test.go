@@ -291,5 +291,15 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 	if !success {
 		t.FailNow()
 	}
+}
 
+func TestSingleNodeRoomList(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList", testRoom)
+	defer finish()
+
+	roomServiceListRoom(t)
 }
