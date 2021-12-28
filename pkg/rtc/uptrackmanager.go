@@ -328,6 +328,8 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 			return
 		}
 
+		ti.MimeType = track.Codec().MimeType
+
 		mt = NewMediaTrack(track, MediaTrackParams{
 			TrackInfo:           ti,
 			SignalCid:           signalCid,

@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -200,6 +201,9 @@ func (t *telemetryService) notifyEvent(ctx context.Context, event *livekit.Webho
 	if t.notifier == nil {
 		return
 	}
+
+	event.CreatedAt = time.Now().Unix()
+	event.Id = utils.NewGuid("EV_")
 
 	t.webhookPool.Submit(func() {
 		if err := t.notifier.Notify(ctx, event); err != nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/thoas/go-funk"
 )
 
 // encapsulates CRUD operations for room settings
@@ -47,12 +48,14 @@ func (p *LocalRoomStore) LoadRoom(_ context.Context, name string) (*livekit.Room
 	return room, nil
 }
 
-func (p *LocalRoomStore) ListRooms(_ context.Context) ([]*livekit.Room, error) {
+func (p *LocalRoomStore) ListRooms(_ context.Context, names []string) ([]*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	rooms := make([]*livekit.Room, 0, len(p.rooms))
 	for _, r := range p.rooms {
-		rooms = append(rooms, r)
+		if names == nil || funk.Contains(names, r.Name) {
+			rooms = append(rooms, r)
+		}
 	}
 	return rooms, nil
 }
