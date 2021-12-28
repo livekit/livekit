@@ -29,7 +29,9 @@ type RoomStore interface {
 //counterfeiter:generate . RORoomStore
 type RORoomStore interface {
 	LoadRoom(ctx context.Context, name string) (*livekit.Room, error)
-	ListRooms(ctx context.Context) ([]*livekit.Room, error)
+	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
+	// only rooms that match
+	ListRooms(ctx context.Context, names []string) ([]*livekit.Room, error)
 
 	LoadParticipant(ctx context.Context, roomName, identity string) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName string) ([]*livekit.ParticipantInfo, error)

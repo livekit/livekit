@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/stun"
 	"github.com/pkg/errors"
 )
@@ -17,12 +16,17 @@ func (conf *Config) determineIP() (string, error) {
 		if len(stunServers) == 0 {
 			stunServers = DefaultStunServers
 		}
-		ip, err := GetExternalIP(stunServers)
-		if err == nil {
-			return ip, nil
-		} else {
-			logger.Errorw("could not get external IP", err)
+		var err error
+		for i := 0; i < 3; i++ {
+			var ip string
+			ip, err = GetExternalIP(stunServers)
+			if err == nil {
+				return ip, nil
+			} else {
+				time.Sleep(500 * time.Millisecond)
+			}
 		}
+		return "", errors.Errorf("could not resolve external IP: %v", err)
 	}
 
 	// use local ip instead

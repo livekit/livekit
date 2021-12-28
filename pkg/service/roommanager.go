@@ -105,7 +105,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName string) error {
 func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	ctx := context.Background()
-	rooms, err := r.roomStore.ListRooms(ctx)
+	rooms, err := r.roomStore.ListRooms(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -230,6 +230,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:        pi.Identity,
+		Name:            pi.Name,
 		SID:             sid,
 		Config:          &rtcConf,
 		Sink:            responseSink,
