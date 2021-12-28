@@ -73,6 +73,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
+	keepSubscribe := r.FormValue("keep_subscribe")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -99,6 +100,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
+		KeepSubscribe: boolValue(keepSubscribe),
 		Identity:      claims.Identity,
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,

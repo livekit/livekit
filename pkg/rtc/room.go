@@ -55,6 +55,7 @@ type Room struct {
 
 type ParticipantOptions struct {
 	AutoSubscribe bool
+	KeepSubscribe bool
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
@@ -197,8 +198,13 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			// subscribe participant to existing publishedTracks
-			r.subscribeToExistingTracks(p)
+			if !opts.KeepSubscribe {
+				// subscribe participant to existing publishedTracks
+				r.subscribeToExistingTracks(p)
+			} else {
+				// if tracks changed during reconnect, should negotiate new tracks
+				p.Negotiate()
+			}
 
 			// start the workers once connectivity is established
 			p.Start()
@@ -251,8 +257,15 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	}
 
 	if participant.SubscriberAsPrimary() {
-		// initiates sub connection as primary
-		participant.Negotiate()
+		// if client need keep subscribe state, wait for first UpdateSubscription msg
+		if !opts.KeepSubscribe {
+			go func() {
+				// r.subscribeToExistingTracks(participant)
+				// initiates sub connection as primary
+				// participant.Negotiate()
+				participant.SetSubscribeReady(true)
+			}()
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
@@ -260,7 +273,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	return nil
 }
 
-func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink) error {
+func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink, keepSubscribe bool) error {
 	// close previous sink, and link to new one
 	if prevSink := p.GetResponseSink(); prevSink != nil {
 		prevSink.Close()
@@ -272,8 +285,13 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 		return err
 	}
 
-	if err := p.ICERestart(); err != nil {
-		return err
+	if keepSubscribe {
+		// client will offer ice restart, wait for offer
+		p.SetSubscribeReady(false)
+	} else {
+		if err := p.ICERestart(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -375,6 +393,21 @@ func (r *Room) UpdateSubscriptions(
 		}
 	}
 	return nil
+}
+
+func (r *Room) SyncSubscriptionState(participant types.Participant, state *livekit.SyncSubscriptionState) error {
+	err := participant.SubscriberPC().SetRemoteDescription(FromProtoSessionDescription(state.GetOffer()))
+	if err != nil {
+		return err
+	}
+
+	if !participant.SubscribeReady() {
+		r.subscribeToExistingTracks(participant)
+		defer participant.SetSubscribeReady(true)
+	}
+	err = r.UpdateSubscriptions(participant, state.GetSubscription().GetTrackSids(), state.GetSubscription().GetParticipantTracks(),
+		state.Subscription.GetSubscribe())
+	return err
 }
 
 func (r *Room) UpdateSubscriptionPermissions(participant types.Participant, permissions *livekit.UpdateSubscriptionPermissions) error {

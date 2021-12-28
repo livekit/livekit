@@ -40,6 +40,8 @@ type Participant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
 	ICERestart() error
+	SetSubscribeReady(ready bool)
+	SubscribeReady() bool
 
 	AddTrack(req *livekit.AddTrackRequest)
 	GetPublishedTrack(sid string) PublishedTrack
@@ -102,6 +104,7 @@ type Room interface {
 	Name() string
 	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
+	SyncSubscriptionState(participant Participant, state *livekit.SyncSubscriptionState) error
 }
 
 // MediaTrack represents a media track

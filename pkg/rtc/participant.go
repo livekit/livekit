@@ -94,6 +94,9 @@ type ParticipantImpl struct {
 	onMetadataUpdate func(types.Participant)
 	onDataPacket     func(types.Participant, *livekit.DataPacket)
 	onClose          func(types.Participant, map[string]string)
+
+	// bool, indicate subscriber peerconnection is ready
+	subscribeReady atomic.Value
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -105,6 +108,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		disallowedSubscriptions: make(map[string]string),
 		connectedAt:             time.Now(),
 	}
+	p.subscribeReady.Store(false)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	var err error
@@ -429,7 +433,52 @@ func (p *ParticipantImpl) Close() error {
 }
 
 func (p *ParticipantImpl) Negotiate() {
-	p.subscriber.Negotiate()
+	if p.subscribeReady.Load().(bool) {
+		p.subscriber.Negotiate()
+	}
+}
+
+func (p *ParticipantImpl) SetSubscribeReady(ready bool) {
+	if !ready {
+		p.subscribeReady.Store(ready)
+		return
+	}
+	if p.subscribeReady.CompareAndSwap(false, true) {
+		if p.subscriber.pc.RemoteDescription() == nil {
+			p.subscriber.Negotiate()
+			return
+		}
+
+		answer, err := p.subscriber.pc.CreateAnswer(nil)
+		if err != nil {
+			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
+			err = errors.Wrap(err, "could not create subscriber answer")
+			return
+		}
+
+		if err = p.subscriber.pc.SetLocalDescription(answer); err != nil {
+			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
+			err = errors.Wrap(err, "could not set subscriber local description")
+			return
+		}
+		err = p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_SubscriptionAnswer{
+				SubscriptionAnswer: ToProtoSessionDescription(answer),
+			},
+		})
+		if err != nil {
+			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
+			return
+		}
+
+		prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+
+		return
+	}
+}
+
+func (p *ParticipantImpl) SubscribeReady() bool {
+	return p.subscribeReady.Load().(bool)
 }
 
 // ICERestart restarts subscriber ICE connections

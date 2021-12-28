@@ -111,6 +111,8 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		return nil, errors.New("TCP is forced but not configured")
 	}
 	s.SetNetworkTypes(networkTypes)
+	s.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
+	s.SetLite(true)
 
 	return &WebRTCConfig{
 		Configuration: c,

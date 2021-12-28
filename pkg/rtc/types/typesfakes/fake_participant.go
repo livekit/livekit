@@ -426,6 +426,11 @@ type FakeParticipant struct {
 	setResponseSinkArgsForCall []struct {
 		arg1 routing.MessageSink
 	}
+	SetSubscribeReadyStub        func(bool)
+	setSubscribeReadyMutex       sync.RWMutex
+	setSubscribeReadyArgsForCall []struct {
+		arg1 bool
+	}
 	SetTrackMutedStub        func(string, bool, bool)
 	setTrackMutedMutex       sync.RWMutex
 	setTrackMutedArgsForCall []struct {
@@ -446,6 +451,16 @@ type FakeParticipant struct {
 	}
 	stateReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_State
+	}
+	SubscribeReadyStub        func() bool
+	subscribeReadyMutex       sync.RWMutex
+	subscribeReadyArgsForCall []struct {
+	}
+	subscribeReadyReturns struct {
+		result1 bool
+	}
+	subscribeReadyReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	SubscriberAsPrimaryStub        func() bool
 	subscriberAsPrimaryMutex       sync.RWMutex
@@ -2785,6 +2800,38 @@ func (fake *FakeParticipant) SetResponseSinkArgsForCall(i int) routing.MessageSi
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) SetSubscribeReady(arg1 bool) {
+	fake.setSubscribeReadyMutex.Lock()
+	fake.setSubscribeReadyArgsForCall = append(fake.setSubscribeReadyArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetSubscribeReadyStub
+	fake.recordInvocation("SetSubscribeReady", []interface{}{arg1})
+	fake.setSubscribeReadyMutex.Unlock()
+	if stub != nil {
+		fake.SetSubscribeReadyStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) SetSubscribeReadyCallCount() int {
+	fake.setSubscribeReadyMutex.RLock()
+	defer fake.setSubscribeReadyMutex.RUnlock()
+	return len(fake.setSubscribeReadyArgsForCall)
+}
+
+func (fake *FakeParticipant) SetSubscribeReadyCalls(stub func(bool)) {
+	fake.setSubscribeReadyMutex.Lock()
+	defer fake.setSubscribeReadyMutex.Unlock()
+	fake.SetSubscribeReadyStub = stub
+}
+
+func (fake *FakeParticipant) SetSubscribeReadyArgsForCall(i int) bool {
+	fake.setSubscribeReadyMutex.RLock()
+	defer fake.setSubscribeReadyMutex.RUnlock()
+	argsForCall := fake.setSubscribeReadyArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) SetTrackMuted(arg1 string, arg2 bool, arg3 bool) {
 	fake.setTrackMutedMutex.Lock()
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
@@ -2893,6 +2940,59 @@ func (fake *FakeParticipant) StateReturnsOnCall(i int, result1 livekit.Participa
 	}
 	fake.stateReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantInfo_State
+	}{result1}
+}
+
+func (fake *FakeParticipant) SubscribeReady() bool {
+	fake.subscribeReadyMutex.Lock()
+	ret, specificReturn := fake.subscribeReadyReturnsOnCall[len(fake.subscribeReadyArgsForCall)]
+	fake.subscribeReadyArgsForCall = append(fake.subscribeReadyArgsForCall, struct {
+	}{})
+	stub := fake.SubscribeReadyStub
+	fakeReturns := fake.subscribeReadyReturns
+	fake.recordInvocation("SubscribeReady", []interface{}{})
+	fake.subscribeReadyMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) SubscribeReadyCallCount() int {
+	fake.subscribeReadyMutex.RLock()
+	defer fake.subscribeReadyMutex.RUnlock()
+	return len(fake.subscribeReadyArgsForCall)
+}
+
+func (fake *FakeParticipant) SubscribeReadyCalls(stub func() bool) {
+	fake.subscribeReadyMutex.Lock()
+	defer fake.subscribeReadyMutex.Unlock()
+	fake.SubscribeReadyStub = stub
+}
+
+func (fake *FakeParticipant) SubscribeReadyReturns(result1 bool) {
+	fake.subscribeReadyMutex.Lock()
+	defer fake.subscribeReadyMutex.Unlock()
+	fake.SubscribeReadyStub = nil
+	fake.subscribeReadyReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeParticipant) SubscribeReadyReturnsOnCall(i int, result1 bool) {
+	fake.subscribeReadyMutex.Lock()
+	defer fake.subscribeReadyMutex.Unlock()
+	fake.SubscribeReadyStub = nil
+	if fake.subscribeReadyReturnsOnCall == nil {
+		fake.subscribeReadyReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.subscribeReadyReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -3299,12 +3399,16 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setPermissionMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
+	fake.setSubscribeReadyMutex.RLock()
+	defer fake.setSubscribeReadyMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	fake.startMutex.RLock()
 	defer fake.startMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
+	fake.subscribeReadyMutex.RLock()
+	defer fake.subscribeReadyMutex.RUnlock()
 	fake.subscriberAsPrimaryMutex.RLock()
 	defer fake.subscriberAsPrimaryMutex.RUnlock()
 	fake.subscriberMediaEngineMutex.RLock()

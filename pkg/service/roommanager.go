@@ -190,7 +190,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+			if err = room.ResumeParticipant(participant, responseSink, pi.KeepSubscribe); err != nil {
 				logger.Warnw("could not resume participant", err,
 					"participant", pi.Identity)
 			}
@@ -199,8 +199,9 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 			// we need to clean up the existing participant, so a new one can join
 			room.RemoveParticipant(participant.Identity())
 		}
-	} else if pi.Reconnect {
-		// send leave request if participant is trying to reconnect but missing from the room
+	} else if pi.Reconnect && !pi.KeepSubscribe {
+		// send leave request if participant is trying to reconnect without keep subscribe state
+		// but missing from the room
 		if err = responseSink.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
 				Leave: &livekit.LeaveRequest{
@@ -257,6 +258,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
+		KeepSubscribe: pi.Reconnect && pi.KeepSubscribe,
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		pLogger.Errorw("could not join room", err)
