@@ -37,6 +37,7 @@ const (
 
 type ParticipantParams struct {
 	Identity        string
+	Name            string
 	SID             string
 	Config          *WebRTCConfig
 	Sink            routing.MessageSink
@@ -226,6 +227,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      p.params.SID,
 		Identity: p.params.Identity,
+		Name:     p.params.Name,
 		Metadata: p.metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),

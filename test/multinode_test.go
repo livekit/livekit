@@ -52,6 +52,10 @@ func TestMultiNodeRouting(t *testing.T) {
 		require.Equal(t, c1.ID(), streamID)
 		return true
 	})
+
+	remoteC1 := c2.GetRemoteParticipant(c1.ID())
+	require.Equal(t, "c1", remoteC1.Name)
+	require.Equal(t, "metadatac1", remoteC1.Metadata)
 }
 
 func TestConnectWithoutCreation(t *testing.T) {

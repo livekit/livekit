@@ -100,6 +100,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
 		Identity:      claims.Identity,
+		Name:          claims.Name,
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,

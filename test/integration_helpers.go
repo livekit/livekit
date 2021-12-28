@@ -228,7 +228,9 @@ func redisClient() *redis.Client {
 func joinToken(room, name string) string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomJoin: true, Room: room}).
-		SetIdentity(name)
+		SetIdentity(name).
+		SetName(name).
+		SetMetadata("metadata" + name)
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
@@ -239,7 +241,8 @@ func joinToken(room, name string) string {
 func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(grant).
-		SetIdentity(name)
+		SetIdentity(name).
+		SetName(name)
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
@@ -249,8 +252,7 @@ func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 
 func createRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
-		AddGrant(&auth.VideoGrant{RoomCreate: true}).
-		SetIdentity("testuser")
+		AddGrant(&auth.VideoGrant{RoomCreate: true})
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
