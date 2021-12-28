@@ -10,8 +10,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+	"github.com/thoas/go-funk"
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -123,10 +125,10 @@ func TestSinglePublisher(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// publish a track and ensure clients receive it ok
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
+	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcamaudio")
 	require.NoError(t, err)
 	defer t1.Stop()
-	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcam")
+	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcamvideo")
 	require.NoError(t, err)
 	defer t2.Stop()
 
@@ -146,7 +148,10 @@ func TestSinglePublisher(t *testing.T) {
 	})
 	// ensure mime type is received
 	remoteC1 := c2.GetRemoteParticipant(c1.ID())
-	require.Equal(t, "audio/opus", remoteC1.Tracks[0].MimeType)
+	audioTrack := funk.Find(remoteC1.Tracks, func(ti *livekit.TrackInfo) bool {
+		return ti.Name == "webcamaudio"
+	}).(*livekit.TrackInfo)
+	require.Equal(t, "audio/opus", audioTrack.MimeType)
 
 	// a new client joins and should get the initial stream
 	c3 := createRTCClient("c3", defaultServerPort, nil)
