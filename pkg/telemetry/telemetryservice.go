@@ -32,13 +32,19 @@ type TelemetryService interface {
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 }
 
+type doWorkFunc func()
+
 type telemetryService struct {
 	internalService TelemetryServiceInternal
+	jobQueue        chan doWorkFunc
 }
+
+const jobQueueBufferSize = 100
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
 		internalService: NewTelemetryServiceInternal(notifier, analytics),
+		jobQueue:        make(chan doWorkFunc, jobQueueBufferSize),
 	}
 
 	go t.run()
@@ -47,62 +53,94 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 }
 
 func (t *telemetryService) run() {
+
+	ticker := time.NewTicker(updateFrequency)
 	for {
 		select {
-		case <-time.After(updateFrequency):
+		case <-ticker.C:
 			t.internalService.SendAnalytics()
+		case job, ok := <-t.jobQueue:
+			if ok {
+				job()
+			}
 		}
 	}
 }
 
 func (t *telemetryService) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
-	t.internalService.AddUpTrack(participantID, trackID, buff)
+	t.jobQueue <- func() {
+		t.internalService.AddUpTrack(participantID, trackID, buff)
+	}
 }
 
 func (t *telemetryService) OnDownstreamPacket(participantID string, trackID string, bytes int) {
-	t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
+	t.jobQueue <- func() {
+		t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
+	}
 }
 
 func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet) {
-	t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
+	t.jobQueue <- func() {
+		t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
+	}
 }
 
 func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
-	t.internalService.RoomStarted(ctx, room)
+	t.jobQueue <- func() {
+		t.internalService.RoomStarted(ctx, room)
+	}
 }
 
 func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
-	t.internalService.RoomEnded(ctx, room)
+	t.jobQueue <- func() {
+		t.internalService.RoomEnded(ctx, room)
+	}
 }
 
 func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
-	t.internalService.ParticipantJoined(ctx, room, participant, clientInfo)
+	t.jobQueue <- func() {
+		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo)
+	}
 }
 
 func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	t.internalService.ParticipantLeft(ctx, room, participant)
+	t.jobQueue <- func() {
+		t.internalService.ParticipantLeft(ctx, room, participant)
+	}
 }
 
 func (t *telemetryService) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
-	t.internalService.TrackPublished(ctx, participantID, track)
+	t.jobQueue <- func() {
+		t.internalService.TrackPublished(ctx, participantID, track)
+	}
 }
 
 func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
-	t.internalService.TrackUnpublished(ctx, participantID, track, ssrc)
+	t.jobQueue <- func() {
+		t.internalService.TrackUnpublished(ctx, participantID, track, ssrc)
+	}
 }
 
 func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
-	t.internalService.TrackSubscribed(ctx, participantID, track)
+	t.jobQueue <- func() {
+		t.internalService.TrackSubscribed(ctx, participantID, track)
+	}
 }
 
 func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
-	t.internalService.TrackUnsubscribed(ctx, participantID, track)
+	t.jobQueue <- func() {
+		t.internalService.TrackUnsubscribed(ctx, participantID, track)
+	}
 }
 
 func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.internalService.RecordingStarted(ctx, ri)
+	t.jobQueue <- func() {
+		t.internalService.RecordingStarted(ctx, ri)
+	}
 }
 
 func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.internalService.RecordingEnded(ctx, ri)
+	t.jobQueue <- func() {
+		t.internalService.RecordingEnded(ctx, ri)
+	}
 }
