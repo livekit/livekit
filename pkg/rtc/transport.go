@@ -11,6 +11,7 @@ import (
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -60,16 +61,17 @@ type TransportParams struct {
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	var me *webrtc.MediaEngine
-	var err error
+	var directionConfig DirectionConfig
 	if params.Target == livekit.SignalTarget_PUBLISHER {
-		me, err = createMediaEngine(params.EnabledCodecs, params.Config.Publisher)
+		directionConfig = params.Config.Publisher
 	} else {
-		me, err = createMediaEngine(params.EnabledCodecs, params.Config.Subscriber)
+		directionConfig = params.Config.Subscriber
 	}
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
 
@@ -80,23 +82,39 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		ir.Add(f)
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
-		gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
-			return gcc.NewSendSideBWE(
-				gcc.SendSideBWEInitialBitrate(1*1000*1000),
-				gcc.SendSideBWEPacer(gcc.NewNoOpPacer()),
-			)
-		})
-		if err == nil {
-			gf.OnNewPeerConnection(func(id string, estimator cc.BandwidthEstimator) {
-				if onBandwidthEstimator != nil {
-					onBandwidthEstimator(estimator)
-				}
-			})
-			ir.Add(gf)
+		isSendSideBWE := false
+		for _, ext := range directionConfig.RTPHeaderExtension.Video {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
+		for _, ext := range directionConfig.RTPHeaderExtension.Audio {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
 
-			tf, err := twcc.NewHeaderExtensionInterceptor()
+		if isSendSideBWE {
+			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
+				return gcc.NewSendSideBWE(
+					gcc.SendSideBWEInitialBitrate(1*1000*1000),
+					gcc.SendSideBWEPacer(gcc.NewNoOpPacer()),
+				)
+			})
 			if err == nil {
-				ir.Add(tf)
+				gf.OnNewPeerConnection(func(id string, estimator cc.BandwidthEstimator) {
+					if onBandwidthEstimator != nil {
+						onBandwidthEstimator(estimator)
+					}
+				})
+				ir.Add(gf)
+
+				tf, err := twcc.NewHeaderExtensionInterceptor()
+				if err == nil {
+					ir.Add(tf)
+				}
 			}
 		}
 	}
