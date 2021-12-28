@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/pion/ice/v2"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -15,6 +16,7 @@ import (
 const (
 	minUDPBufferSize     = 5_000_000
 	defaultUDPBufferSize = 16_777_216
+	frameMarking         = "urn:ietf:params:rtp-hdrext:framemarking"
 )
 
 type WebRTCConfig struct {
@@ -25,11 +27,28 @@ type WebRTCConfig struct {
 	UDPMux         ice.UDPMux
 	UDPMuxConn     *net.UDPConn
 	TCPMuxListener *net.TCPListener
+	Publisher      DirectionConfig
+	Subscriber     DirectionConfig
 }
 
 type ReceiverConfig struct {
 	PacketBufferSize int
 	maxBitrate       uint64
+}
+
+type RTPHeaderExtensionConfig struct {
+	Audio []string
+	Video []string
+}
+
+type RTCPFeedbackConfig struct {
+	Audio []webrtc.RTCPFeedback
+	Video []webrtc.RTCPFeedback
+}
+
+type DirectionConfig struct {
+	RTPHeaderExtension RTPHeaderExtensionConfig
+	RTCPFeedback       RTCPFeedbackConfig
 }
 
 // number of packets to buffer up
@@ -112,6 +131,41 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	}
 	s.SetNetworkTypes(networkTypes)
 
+	// publisher configuration
+	publisherConfig := DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Audio: []string{
+				sdp.SDESMidURI,
+				sdp.SDESRTPStreamIDURI,
+				sdp.AudioLevelURI,
+			},
+			Video: []string{
+				sdp.SDESMidURI,
+				sdp.SDESRTPStreamIDURI,
+				sdp.TransportCCURI,
+				frameMarking,
+			},
+		},
+	}
+
+	// subscriber configuration
+	subscriberConfig := DirectionConfig{
+		RTCPFeedback: RTCPFeedbackConfig{
+			Video: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+				{Type: webrtc.TypeRTCPFBNACK},
+				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+			},
+		},
+	}
+	if rtcConf.UseSendSideBWE {
+		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
+		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
+	} else {
+		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.ABSSendTimeURI)
+		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
+	}
+
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
@@ -122,6 +176,8 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		UDPMux:         udpMux,
 		UDPMuxConn:     udpMuxConn,
 		TCPMuxListener: tcpListener,
+		Publisher:      publisherConfig,
+		Subscriber:     subscriberConfig,
 	}, nil
 }
 

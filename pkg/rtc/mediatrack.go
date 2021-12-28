@@ -25,14 +25,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
-var (
-	FeedbackTypes = []webrtc.RTCPFeedback{
-		{Type: webrtc.TypeRTCPFBTransportCC},
-		{Type: webrtc.TypeRTCPFBNACK},
-		{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
-	}
-)
-
 const (
 	lostUpdateDelta                 = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
@@ -95,6 +87,8 @@ type MediaTrackParams struct {
 	AudioConfig    config.AudioConfig
 	Telemetry      telemetry.TelemetryService
 	Logger         logger.Logger
+
+	SubscriberConfig DirectionConfig
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -219,13 +213,22 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		// react-native-webrtc still uses stream based APIs and require this
 		streamId = PackStreamID(t.params.ParticipantID, t.ID())
 	}
+
 	receiver := NewWrappedReceiver(t.receiver, t.ID(), streamId)
+
+	var rtcpFeedback []webrtc.RTCPFeedback
+	switch t.Kind() {
+	case livekit.TrackType_AUDIO:
+		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Audio
+	case livekit.TrackType_VIDEO:
+		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
+	}
 	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
 		MimeType:     codec.MimeType,
 		ClockRate:    codec.ClockRate,
 		Channels:     codec.Channels,
 		SDPFmtpLine:  codec.SDPFmtpLine,
-		RTCPFeedback: FeedbackTypes,
+		RTCPFeedback: rtcpFeedback,
 	}, receiver, t.params.BufferFactory, subscriberID, t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err

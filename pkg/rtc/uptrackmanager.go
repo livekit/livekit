@@ -340,6 +340,7 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 			AudioConfig:         u.params.AudioConfig,
 			Telemetry:           u.params.Telemetry,
 			Logger:              u.params.Logger,
+			SubscriberConfig:    u.params.Config.Subscriber,
 		})
 		mt.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
 

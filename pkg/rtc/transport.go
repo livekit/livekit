@@ -63,9 +63,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	var me *webrtc.MediaEngine
 	var err error
 	if params.Target == livekit.SignalTarget_PUBLISHER {
-		me, err = createPubMediaEngine(params.EnabledCodecs)
+		me, err = createMediaEngine(params.EnabledCodecs, params.Config.Publisher)
 	} else {
-		me, err = createSubMediaEngine(params.EnabledCodecs)
+		me, err = createMediaEngine(params.EnabledCodecs, params.Config.Subscriber)
 	}
 	if err != nil {
 		return nil, nil, err
