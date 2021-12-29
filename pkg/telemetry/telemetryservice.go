@@ -15,10 +15,9 @@ const updateFrequency = time.Second * 10
 
 type TelemetryService interface {
 	// stats
-	NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory
-	AddUpTrack(participantID string, buff *buffer.Buffer)
-	OnDownstreamPacket(participantID string, bytes int)
-	HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet)
+	AddUpTrack(participantID string, trackID string, buff *buffer.Buffer)
+	OnDownstreamPacket(participantID string, trackID string, bytes int)
+	HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
@@ -56,16 +55,16 @@ func (t *telemetryService) run() {
 	}
 }
 
-func (t *telemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
-	t.internalService.AddUpTrack(participantID, buff)
+func (t *telemetryService) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
+	t.internalService.AddUpTrack(participantID, trackID, buff)
 }
 
-func (t *telemetryService) OnDownstreamPacket(participantID string, bytes int) {
-	t.internalService.OnDownstreamPacket(participantID, bytes)
+func (t *telemetryService) OnDownstreamPacket(participantID string, trackID string, bytes int) {
+	t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
 }
 
-func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
-	t.internalService.HandleRTCP(streamType, participantID, pkts)
+func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet) {
+	t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
 }
 
 func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
@@ -106,8 +105,4 @@ func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.Rec
 
 func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.internalService.RecordingEnded(ctx, ri)
-}
-
-func (t *telemetryService) NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory {
-	return t.internalService.NewStatsInterceptorFactory(participantID, identity)
 }
