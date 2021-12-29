@@ -241,6 +241,9 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 }
 
 func (w *WebRTCReceiver) setupTracker(layer int32) {
+	w.upTrackMu.Lock()
+	defer w.upTrackMu.Unlock()
+
 	if w.Kind() != webrtc.RTPCodecTypeVideo || !w.useTrackers {
 		return
 	}
@@ -463,16 +466,22 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
+	w.upTrackMu.RLock()
 	tracker := w.trackers[layer]
+	w.upTrackMu.RUnlock()
 
 	defer func() {
 		w.closeOnce.Do(func() {
 			w.closed.set(true)
 			w.closeTracks()
 		})
+
+		w.upTrackMu.Lock()
 		if tracker != nil {
 			tracker.Stop()
+			w.trackers[layer] = nil
 		}
+		w.upTrackMu.Unlock()
 	}()
 
 	for {

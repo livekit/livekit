@@ -426,9 +426,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithStreamTrackers())
 		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
-			if t.maxQualityTimer != nil {
-				t.maxQualityTimer.Stop()
-			}
+			t.stopMaxQualityTimer()
 
 			t.lock.Lock()
 			t.receiver = nil
@@ -446,9 +444,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.buffer = buff
 		}
 
-		t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
-			t.updateQualityChange()
-		})
+		t.startMaxQualityTimer()
 	}
 
 	t.receiver.AddUpTrack(track, buff)
@@ -846,6 +842,26 @@ func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality liv
 	t.maxQualityLock.Unlock()
 
 	t.updateQualityChange()
+}
+
+func (t *MediaTrack) startMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
+		t.stopMaxQualityTimer()
+		t.updateQualityChange()
+	})
+}
+
+func (t *MediaTrack) stopMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	if t.maxQualityTimer != nil {
+		t.maxQualityTimer.Stop()
+		t.maxQualityTimer = nil
+	}
 }
 
 func (t *MediaTrack) updateQualityChange() {
