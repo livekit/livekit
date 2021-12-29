@@ -46,9 +46,7 @@ func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.
 
 func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *livekit.Room,
 	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
-	t.Lock()
 	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, room.Name, participant.Sid)
-	t.Unlock()
 
 	prometheus.AddParticipant()
 
@@ -70,12 +68,10 @@ func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *
 }
 
 func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	t.Lock()
 	if w := t.workers[participant.Sid]; w != nil {
 		w.Close()
 		delete(t.workers, participant.Sid)
 	}
-	t.Unlock()
 
 	prometheus.SubParticipant()
 
@@ -111,9 +107,7 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := ""
 	roomName := ""
-	t.RLock()
 	w := t.workers[participantID]
-	t.RUnlock()
 	if w != nil {
 		roomID = w.roomID
 		w.RemoveBuffer(track.GetSid())
@@ -189,9 +183,7 @@ func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livek
 }
 
 func (t *telemetryServiceInternal) getRoomDetails(participantID string) (string, string) {
-	t.RLock()
 	w := t.workers[participantID]
-	t.RUnlock()
 	if w != nil {
 		return w.roomID, w.roomName
 	}
