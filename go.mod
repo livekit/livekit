@@ -82,5 +82,3 @@ require (
 	google.golang.org/grpc v1.42.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 )
-
-replace github.com/pion/interceptor => ../interceptor

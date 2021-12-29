@@ -8,9 +8,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
-	"github.com/pion/interceptor/pkg/cc"
-	"github.com/pion/interceptor/pkg/gcc"
-	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
@@ -60,7 +57,8 @@ type TransportParams struct {
 	Logger              logger.Logger
 }
 
-func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+// LK-TODO-SSBWE func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	var directionConfig DirectionConfig
 	if params.Target == livekit.SignalTarget_PUBLISHER {
 		directionConfig = params.Config.Publisher
@@ -97,6 +95,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		}
 
 		if isSendSideBWE {
+			/* LK-TODO-SSBWE
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -116,6 +115,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 					ir.Add(tf)
 				}
 			}
+			*/
 		}
 	}
 	api := webrtc.NewAPI(
@@ -128,10 +128,13 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
+	/* LK-TODO-SSBWE
 	var bwe cc.BandwidthEstimator
 	pc, me, err := newPeerConnection(params, func(estimator cc.BandwidthEstimator) {
 		bwe = estimator
 	})
+	*/
+	pc, me, err := newPeerConnection(params)
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +151,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+		/* LK-TODO-SSBWE
 		if bwe != nil {
 			t.streamAllocator.SetBandwidthEstimator(bwe)
 		}
+		*/
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
