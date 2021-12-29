@@ -38,6 +38,7 @@ type StreamTracker struct {
 	paused         atomicBool
 	countSinceLast uint32 // number of packets received since last check
 	running        chan struct{}
+	generation     atomicUint32
 
 	initMu      sync.Mutex
 	initialized bool
@@ -108,7 +109,7 @@ func (s *StreamTracker) init() {
 		return
 	}
 	s.running = make(chan struct{})
-	go s.detectWorker()
+	go s.detectWorker(s.generation.get())
 }
 
 func (s *StreamTracker) Start() {
@@ -122,6 +123,7 @@ func (s *StreamTracker) Stop() {
 }
 
 func (s *StreamTracker) Reset() {
+	s.generation.add(1)
 	s.Stop()
 
 	s.countSinceLast = 0
@@ -182,12 +184,15 @@ func (s *StreamTracker) Observe(sn uint16) {
 	atomic.AddUint32(&s.countSinceLast, 1)
 }
 
-func (s *StreamTracker) detectWorker() {
+func (s *StreamTracker) detectWorker(generation uint32) {
 	ticker := time.NewTicker(s.cycleDuration)
 
 	for s.isRunning() {
 		<-ticker.C
 		if !s.isRunning() {
+			return
+		}
+		if generation != s.generation.get() {
 			return
 		}
 

@@ -36,6 +36,7 @@ const (
 	lostUpdateDelta                 = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
 	layerSelectionTolerance         = 0.9
+	initialQualityUpdateWait        = 10 * time.Second
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -77,6 +78,7 @@ type MediaTrack struct {
 	maxSubscribedQuality         livekit.VideoQuality
 	allSubscribersMuted          bool
 	onSubscribedMaxQualityChange func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
+	maxQualityTimer              *time.Timer
 
 	onClose []func()
 }
@@ -118,10 +120,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 	// on close signal via closing channel to workers
 	t.AddOnClose(t.closeChan)
 	go t.updateStats()
-
-	time.AfterFunc(30*time.Second, func() {
-		t.updateQualityChange()
-	})
 
 	return t
 }
@@ -361,21 +359,21 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 }
 
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
-	numRegistered := atomic.LoadUint32(&t.numUpTracks)
+	numExpected := atomic.LoadUint32(&t.numUpTracks)
 
 	t.maxQualityLock.RLock()
 	// LK-TODO: take into account t.allSubscribersMuted when turning off layer 0 also
 	maxSubscribed := uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
 	t.maxQualityLock.RUnlock()
-	if maxSubscribed < numRegistered {
-		numRegistered = maxSubscribed
+	if maxSubscribed < numExpected {
+		numExpected = maxSubscribed
 	}
 
 	t.lock.RLock()
 	numPublishing := uint32(t.receiver.NumAvailableSpatialLayers())
 	t.lock.RUnlock()
 
-	return numPublishing, numRegistered
+	return numPublishing, numExpected
 }
 
 // AddReceiver adds a new RTP receiver to the track
@@ -428,10 +426,15 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithStreamTrackers())
 		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
+			if t.maxQualityTimer != nil {
+				t.maxQualityTimer.Stop()
+			}
+
 			t.lock.Lock()
 			t.receiver = nil
 			onclose := t.onClose
 			t.lock.Unlock()
+
 			t.RemoveAllSubscribers()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			for _, f := range onclose {
@@ -442,6 +445,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
+
+		t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
+			t.updateQualityChange()
+		})
 	}
 
 	t.receiver.AddUpTrack(track, buff)
@@ -789,13 +796,13 @@ func (t *MediaTrack) updateStats() {
 
 func (t *MediaTrack) calculateVideoScore() {
 	var reducedQuality bool
-	publishing, registered := t.NumUpTracks()
-	if registered > 0 && publishing < registered {
+	publishing, expected := t.NumUpTracks()
+	if publishing < expected {
 		reducedQuality = true
 	}
 
 	loss := t.PublishLossPercentage()
-	if registered == 0 {
+	if expected == 0 {
 		loss = 0
 	}
 	t.connectionStats.Score = connectionquality.Loss2Score(loss, reducedQuality)
@@ -907,16 +914,16 @@ func (t *MediaTrack) updateQualityChange() {
 	}
 	t.maxQualityLock.Unlock()
 
-	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
-		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
-	}
-
 	if notifyMaxExpected {
 		t.lock.RLock()
 		if t.receiver != nil {
 			t.receiver.SetMaxExpectedSpatialLayer(maxExpectedSpatialLayer)
 		}
 		t.lock.RUnlock()
+	}
+
+	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
+		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
 	}
 }
 

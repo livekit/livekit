@@ -39,7 +39,7 @@ type Receiver interface {
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
-	SetMaxExpectedSpatialLayer(max int32)
+	SetMaxExpectedSpatialLayer(layer int32)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
@@ -52,11 +52,6 @@ type Receiver interface {
 	DebugInfo() map[string]interface{}
 }
 
-type MaxExpectedSpatialLayer struct {
-	setAt time.Time
-	layer int32
-}
-
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
 	peerID           string
@@ -67,7 +62,7 @@ type WebRTCReceiver struct {
 	codec            webrtc.RTPCodecParameters
 	isSimulcast      bool
 	availableLayers  atomic.Value
-	maxExpectedLayer atomic.Value
+	maxExpectedLayer int32
 	onCloseHandler   func()
 	closeOnce        sync.Once
 	closed           atomicBool
@@ -203,40 +198,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
 
-	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
-		samplesRequired := uint32(5)
-		cyclesRequired := uint64(60) // 30s of continuous stream
-		if layer == 0 {
-			// be very forgiving for base layer
-			samplesRequired = 1
-			cyclesRequired = 4 // 2s of continuous stream
-		}
-		tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
-		w.trackers[layer] = tracker
-		tracker.OnStatusChanged(func(status StreamStatus) {
-			if status == StreamStatusStopped {
-				w.removeAvailableLayer(uint16(layer))
-
-				//
-				// If the layer is expected to stop, reset tracker so that it starts up
-				// on the first packet of the layer on restart.
-				//
-				// As there may be packets from client before a layer expected to stop actually stops,
-				// use a window in which a status stopped is treated as an expected stop.
-				// If the stop happens outside the window, treat it like an unexpected stop.
-				//
-				maxExpectedLayer, ok := w.maxExpectedLayer.Load().(MaxExpectedSpatialLayer)
-				if ok {
-					if time.Since(maxExpectedLayer.setAt) < 30*time.Second && layer > maxExpectedLayer.layer {
-						tracker.Reset()
-					}
-				}
-			} else {
-				w.addAvailableLayer(uint16(layer))
-			}
-		})
-		tracker.Start()
-	}
+	w.setupTracker(layer)
 	go w.forwardRTP(layer)
 }
 
@@ -278,6 +240,30 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	w.storeDownTrack(track)
 }
 
+func (w *WebRTCReceiver) setupTracker(layer int32) {
+	if w.Kind() != webrtc.RTPCodecTypeVideo || !w.useTrackers {
+		return
+	}
+
+	samplesRequired := uint32(5)
+	cyclesRequired := uint64(60) // 30s of continuous stream
+	if layer == 0 {
+		// be very forgiving for base layer
+		samplesRequired = 1
+		cyclesRequired = 4 // 2s of continuous stream
+	}
+	tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
+	w.trackers[layer] = tracker
+	tracker.OnStatusChanged(func(status StreamStatus) {
+		if status == StreamStatusStopped {
+			w.removeAvailableLayer(uint16(layer))
+		} else {
+			w.addAvailableLayer(uint16(layer))
+		}
+	})
+	tracker.Start()
+}
+
 func (w *WebRTCReceiver) hasSpatialLayer(layer int32) bool {
 	layers, ok := w.availableLayers.Load().([]uint16)
 	if !ok {
@@ -292,11 +278,38 @@ func (w *WebRTCReceiver) hasSpatialLayer(layer int32) bool {
 	return false
 }
 
-func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(max int32) {
-	w.maxExpectedLayer.Store(MaxExpectedSpatialLayer{
-		setAt: time.Now(),
-		layer: max,
-	})
+func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
+	w.upTrackMu.Lock()
+	defer w.upTrackMu.Unlock()
+
+	if layer <= w.maxExpectedLayer {
+		// some higher layer(s) expected to stop, nothing else to do
+		w.maxExpectedLayer = layer
+		return
+	}
+
+	//
+	// Some higher layer is expected to start.
+	// If the layer was not stopped (i. e. it will still be in available layers),
+	// don't need to do anything. If not, reset the stream tracker so that
+	// the layer is declared available on the first packet
+	//
+	// NOTE: There may be a race between checking if a layer is available and
+	// resetting the tracker, i. e. the track may stop just after checking.
+	// But, those conditions should be rare. In those cases, the restart will
+	// take longer.
+	//
+	for l := w.maxExpectedLayer + 1; l <= layer; l++ {
+		if w.hasSpatialLayer(l) {
+			continue
+		}
+
+		tracker := w.trackers[l]
+		if tracker != nil {
+			tracker.Reset()
+		}
+	}
+	w.maxExpectedLayer = layer
 }
 
 func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
