@@ -7,7 +7,6 @@ import (
 	"github.com/bep/debounce"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -47,8 +46,8 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID       string
-	ParticipantIdentity string
+	ParticipantID       livekit.ParticipantID
+	ParticipantIdentity livekit.ParticipantIdentity
 	Target              livekit.SignalTarget
 	Config              *WebRTCConfig
 	Telemetry           telemetry.TelemetryService
@@ -70,16 +69,9 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
 
-	ir := &interceptor.Registry{}
-	// intercept pub -> SFU rtcp for analytics
-	if params.Telemetry != nil && params.Target == livekit.SignalTarget_PUBLISHER {
-		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
-		ir.Add(f)
-	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
 		webrtc.WithSettingEngine(se),
-		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
 	return pc, me, err

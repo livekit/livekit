@@ -129,10 +129,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
 
-		actualTrackSid := ""
+		actualTrackID := ""
 		actualSubscribedQualities := []*livekit.SubscribedQuality{}
-		mt.OnSubscribedMaxQualityChange(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-			actualTrackSid = trackSid
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error {
+			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
 			return nil
 		})
@@ -146,7 +146,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 	})
 
@@ -176,10 +176,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}})
 		mt.simulcasted.TrySet(true)
 
-		actualTrackSid := ""
+		actualTrackID := ""
 		actualSubscribedQualities := []*livekit.SubscribedQuality{}
-		mt.OnSubscribedMaxQualityChange(func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
-			actualTrackSid = trackSid
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error {
+			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
 			return nil
 		})
@@ -192,7 +192,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// "s1" dropping to MEDIUM should disable HIGH layer
@@ -203,7 +203,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// "s1" and "s1" dropping to LOW should disable HIGH & MEDIUM
@@ -215,7 +215,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// muting one should still produce LOW
@@ -226,7 +226,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// muting "s2" should disable all qualities
@@ -238,7 +238,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
-		require.Equal(t, "v1", actualTrackSid)
+		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 	})
 }

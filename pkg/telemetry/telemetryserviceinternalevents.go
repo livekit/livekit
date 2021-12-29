@@ -13,7 +13,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
+func (t *telemetryServiceInternal) RoomStarted(ctx context.Context, room *livekit.Room) {
 	prometheus.RoomStarted()
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
@@ -28,7 +28,7 @@ func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) 
 	})
 }
 
-func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
+func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.Room) {
 	prometheus.RoomEnded(time.Unix(room.CreationTime, 0))
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
@@ -44,7 +44,7 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	})
 }
 
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room,
+func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *livekit.Room,
 	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
 	t.Lock()
 	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, room.Name, participant.Sid)
@@ -59,16 +59,17 @@ func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 	})
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_PARTICIPANT_JOINED,
-		Timestamp:   timestamppb.Now(),
-		RoomSid:     room.Sid,
-		Participant: participant,
-		Room:        room,
-		SdkType:     clientInfo.GetSdk(),
+		Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
+		Timestamp:     timestamppb.Now(),
+		RoomSid:       room.Sid,
+		ParticipantId: participant.Sid,
+		Participant:   participant,
+		Room:          room,
+		SdkType:       clientInfo.GetSdk(),
 	})
 }
 
-func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
 	t.Lock()
 	if w := t.workers[participant.Sid]; w != nil {
 		w.Close()
@@ -93,7 +94,7 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	})
 }
 
-func (t *telemetryService) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.AddPublishedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -107,7 +108,7 @@ func (t *telemetryService) TrackPublished(ctx context.Context, participantID str
 	})
 }
 
-func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
+func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := ""
 	roomName := ""
 	t.RLock()
@@ -115,7 +116,7 @@ func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID s
 	t.RUnlock()
 	if w != nil {
 		roomID = w.roomID
-		w.RemoveBuffer(ssrc)
+		w.RemoveBuffer(track.GetSid())
 		roomName = w.roomName
 	}
 
@@ -131,7 +132,7 @@ func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID s
 	})
 }
 
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -145,7 +146,7 @@ func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID st
 	})
 }
 
-func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
 	prometheus.SubSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -159,7 +160,7 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 	})
 }
 
-func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
+func (t *telemetryServiceInternal) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event:         webhook.EventRecordingStarted,
 		RecordingInfo: ri,
@@ -173,7 +174,7 @@ func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.Rec
 	})
 }
 
-func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
+func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event:         webhook.EventRecordingFinished,
 		RecordingInfo: ri,
@@ -187,7 +188,7 @@ func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.Recor
 	})
 }
 
-func (t *telemetryService) getRoomDetails(participantID string) (string, string) {
+func (t *telemetryServiceInternal) getRoomDetails(participantID string) (string, string) {
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
@@ -197,7 +198,7 @@ func (t *telemetryService) getRoomDetails(participantID string) (string, string)
 	return "", ""
 }
 
-func (t *telemetryService) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
+func (t *telemetryServiceInternal) notifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
 	if t.notifier == nil {
 		return
 	}

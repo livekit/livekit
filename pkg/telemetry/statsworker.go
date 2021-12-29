@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -11,28 +10,23 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-const updateFrequency = time.Second * 10
-
 // StatsWorker handles participant stats
 type StatsWorker struct {
 	ctx           context.Context
-	t             TelemetryService
+	t             TelemetryReporter
 	roomID        string
 	roomName      string
 	participantID string
 
 	sync.RWMutex
-	buffers map[uint32]*buffer.Buffer
-	drain   map[uint32]bool
+	upstreamBuffers      map[string][]*buffer.Buffer
+	drainUpstreamBuffers map[string]bool
 
-	incoming *Stats
-	outgoing *Stats
-
-	close chan struct{}
+	outgoingPerTrack map[string]*Stats
+	incomingPerTrack map[string]*Stats
 }
 
 type Stats struct {
-	sync.Mutex
 	next         *livekit.AnalyticsStat
 	totalPackets uint32
 	prevPackets  uint32
@@ -40,7 +34,7 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, participantID string) *StatsWorker {
+func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID, roomName, participantID string) *StatsWorker {
 	s := &StatsWorker{
 		ctx:           ctx,
 		t:             t,
@@ -48,64 +42,64 @@ func newStatsWorker(ctx context.Context, t TelemetryService, roomID, roomName, p
 		roomName:      roomName,
 		participantID: participantID,
 
-		buffers: make(map[uint32]*buffer.Buffer),
-		drain:   make(map[uint32]bool),
+		upstreamBuffers:      make(map[string][]*buffer.Buffer),
+		drainUpstreamBuffers: make(map[string]bool),
 
-		incoming: &Stats{next: &livekit.AnalyticsStat{
-			Kind:          livekit.StreamType_UPSTREAM,
-			RoomId:        roomID,
-			ParticipantId: participantID,
-			RoomName:      roomName,
-		}},
-		outgoing: &Stats{next: &livekit.AnalyticsStat{
-			Kind:          livekit.StreamType_DOWNSTREAM,
-			RoomId:        roomID,
-			ParticipantId: participantID,
-			RoomName:      roomName,
-		}},
-
-		close: make(chan struct{}, 1),
+		outgoingPerTrack: make(map[string]*Stats),
+		incomingPerTrack: make(map[string]*Stats),
 	}
-	go s.run()
 	return s
 }
 
-func (s *StatsWorker) run() {
-	for {
-		select {
-		case <-s.close:
-			// drain
-			s.Update()
-			return
-		case <-time.After(updateFrequency):
-			s.Update()
-		}
-	}
-}
-
-func (s *StatsWorker) AddBuffer(buffer *buffer.Buffer) {
+func (s *StatsWorker) AddBuffer(trackID string, buffer *buffer.Buffer) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.buffers[buffer.GetMediaSSRC()] = buffer
+	s.upstreamBuffers[trackID] = append(s.upstreamBuffers[trackID], buffer)
 }
 
-func (s *StatsWorker) OnDownstreamPacket(bytes int) {
-	s.outgoing.Lock()
-	defer s.outgoing.Unlock()
+func (s *StatsWorker) OnDownstreamPacket(trackID string, bytes int) {
+	s.Lock()
+	defer s.Unlock()
 
-	s.outgoing.totalPackets++
-	s.outgoing.totalBytes += uint64(bytes)
+	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalBytes += uint64(bytes)
+	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalPackets++
 }
 
-func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *livekit.AnalyticsStat) {
-	ds := s.incoming
-	if direction == livekit.StreamType_DOWNSTREAM {
-		ds = s.outgoing
+func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID string) *Stats {
+	if s.outgoingPerTrack[trackID] == nil {
+		s.outgoingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_DOWNSTREAM,
+			RoomId:        s.roomID,
+			ParticipantId: s.participantID,
+			RoomName:      s.roomName,
+		}}
 	}
+	return s.outgoingPerTrack[trackID]
+}
 
-	ds.Lock()
-	defer ds.Unlock()
+func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID string) *Stats {
+	if s.incomingPerTrack[trackID] == nil {
+		s.incomingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
+			Kind:          livekit.StreamType_UPSTREAM,
+			RoomId:        s.roomID,
+			ParticipantId: s.participantID,
+			RoomName:      s.roomName,
+		}}
+	}
+	return s.incomingPerTrack[trackID]
+}
+
+func (s *StatsWorker) OnRTCP(trackID string, direction livekit.StreamType, stats *livekit.AnalyticsStat) {
+	s.Lock()
+	defer s.Unlock()
+
+	var ds *Stats
+	if direction == livekit.StreamType_DOWNSTREAM {
+		ds = s.getOrCreateOutgoingStatsIfEmpty(trackID)
+	} else {
+		ds = s.getOrCreateIncomingStatsIfEmpty(trackID)
+	}
 
 	if stats.Delay > ds.next.Delay {
 		ds.next.Delay = stats.Delay
@@ -119,51 +113,69 @@ func (s *StatsWorker) OnRTCP(direction livekit.StreamType, stats *livekit.Analyt
 	ds.next.FirCount += stats.FirCount
 }
 
+func (s *StatsWorker) calculateTotalBytesPackets(allBuffers []*buffer.Buffer) (totalBytes uint64, totalPackets uint32) {
+	totalBytes = 0
+	totalPackets = 0
+
+	for _, buffer := range allBuffers {
+		totalBytes += buffer.GetStats().TotalByte
+		totalPackets += buffer.GetStats().PacketCount
+	}
+	return totalBytes, totalPackets
+}
+
 func (s *StatsWorker) Update() {
-	var packetsIn uint32
-	var bytesIn uint64
-
 	s.Lock()
+	defer s.Unlock()
+
 	ts := timestamppb.Now()
-	for _, buff := range s.buffers {
-		stats := buff.GetStats()
-		packetsIn += stats.PacketCount
-		bytesIn += stats.TotalByte
-	}
+	stats := make([]*livekit.AnalyticsStat, 0)
 
-	if len(s.drain) > 0 {
-		for ssrc := range s.drain {
-			delete(s.buffers, ssrc)
-		}
-		s.drain = make(map[uint32]bool)
-	}
-	s.Unlock()
-
-	s.incoming.Lock()
-	s.incoming.totalPackets = packetsIn
-	s.incoming.totalBytes = bytesIn
-	s.incoming.Unlock()
-
-	stats := make([]*livekit.AnalyticsStat, 0, 2)
-	upstream := s.update(s.incoming, ts)
-	if upstream != nil {
-		stats = append(stats, upstream)
-	}
-	downstream := s.update(s.outgoing, ts)
-	if downstream != nil {
-		stats = append(stats, downstream)
-	}
+	stats = s.collectUpstreamStats(ts, stats)
+	stats = s.collectDownstreamStats(ts, stats)
 
 	s.t.Report(s.ctx, stats)
+}
+
+func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
+	for trackID, trackDownStreamStats := range s.outgoingPerTrack {
+		analyticsStat := s.update(trackDownStreamStats, ts)
+		if analyticsStat != nil {
+			analyticsStat.TrackId = trackID
+			stats = append(stats, analyticsStat)
+		}
+	}
+	return stats
+}
+
+func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
+	for trackID, buffers := range s.upstreamBuffers {
+		totalBytes, totalPackets := s.calculateTotalBytesPackets(buffers)
+
+		s.getOrCreateIncomingStatsIfEmpty(trackID).totalBytes = totalBytes
+		s.getOrCreateIncomingStatsIfEmpty(trackID).totalPackets = totalPackets
+
+		analyticsStats := s.update(s.incomingPerTrack[trackID], ts)
+		if analyticsStats != nil {
+			analyticsStats.TrackId = trackID
+			stats = append(stats, analyticsStats)
+		}
+	}
+
+	if len(s.drainUpstreamBuffers) > 0 {
+		for trackID := range s.drainUpstreamBuffers {
+			delete(s.upstreamBuffers, trackID)
+			delete(s.incomingPerTrack, trackID)
+		}
+		s.drainUpstreamBuffers = make(map[string]bool)
+	}
+	return stats
 }
 
 func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
 	if stats.totalBytes == 0 {
 		return nil
 	}
-
-	stats.Lock()
-	defer stats.Unlock()
 
 	next := stats.next
 	stats.next = &livekit.AnalyticsStat{
@@ -183,12 +195,12 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	return next
 }
 
-func (s *StatsWorker) RemoveBuffer(ssrc uint32) {
+func (s *StatsWorker) RemoveBuffer(trackID string) {
 	s.Lock()
-	s.drain[ssrc] = true
+	s.drainUpstreamBuffers[trackID] = true
 	s.Unlock()
 }
 
 func (s *StatsWorker) Close() {
-	close(s.close)
+	s.Update()
 }
