@@ -66,13 +66,16 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 			stats.FirCount++
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
-				if delay := uint64(rr.Delay); delay > stats.Delay {
-					stats.Delay = delay
-				}
 				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
 					stats.Jitter = jitter
 				}
 				stats.PacketLost += uint64(rr.TotalLost)
+			}
+			if streamType == livekit.StreamType_DOWNSTREAM {
+				rtt := GetRttMs(pkt)
+				if rtt >= 0 {
+					stats.Delay = uint64(rtt)
+				}
 			}
 		}
 	}
