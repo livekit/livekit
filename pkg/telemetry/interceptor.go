@@ -6,7 +6,7 @@ import (
 	"github.com/pion/rtcp"
 )
 
-func (t *telemetryService) NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory {
+func (t *telemetryServiceInternal) NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory {
 	return &StatsInterceptorFactory{
 		t:             t,
 		participantID: participantID,
