@@ -137,8 +137,8 @@ func Test_OnDownStreamRTCP(t *testing.T) {
 		&rtcp.FullIntraRequest{},
 		&rtcp.ReceiverReport{
 			Reports: []rtcp.ReceptionReport{
-				{Delay: 1, Jitter: 5, TotalLost: 3},
-				{Delay: 4, Jitter: 2, TotalLost: 4},
+				{Jitter: 5, TotalLost: 3},
+				{Jitter: 2, TotalLost: 4},
 			},
 		},
 	}
@@ -155,7 +155,7 @@ func Test_OnDownStreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 4, int(stats[0].Delay))      // max of delay, see list of rtcp.ReceptionReport above
+	require.Equal(t, 0, int(stats[0].Delay))
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
 	require.Equal(t, 7, int(stats[0].PacketLost)) // sum of lost packets, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)
@@ -222,8 +222,8 @@ func Test_OnUpstreamRTCP(t *testing.T) {
 		&rtcp.FullIntraRequest{},
 		&rtcp.ReceiverReport{
 			Reports: []rtcp.ReceptionReport{
-				{Delay: 1, Jitter: 5, TotalLost: 3},
-				{Delay: 4, Jitter: 2, TotalLost: 4},
+				{Jitter: 5, TotalLost: 3},
+				{Jitter: 2, TotalLost: 4},
 			},
 		},
 	}
@@ -246,7 +246,7 @@ func Test_OnUpstreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 4, int(stats[0].Delay))      // max of delay, see list of rtcp.ReceptionReport above
+	require.Equal(t, 0, int(stats[0].Delay))
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
 	require.Equal(t, 7, int(stats[0].PacketLost)) // sum of lost packets, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)
