@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
+func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
 	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
 	p.IdentityReturns(identity)
@@ -38,7 +38,7 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden 
 		}
 	}
 
-	p.SetTrackMutedStub = func(sid string, muted bool, fromServer bool) {
+	p.SetTrackMutedStub = func(sid livekit.TrackID, muted bool, fromServer bool) {
 		updateTrack()
 	}
 	p.AddTrackStub = func(req *livekit.AddTrackRequest) {

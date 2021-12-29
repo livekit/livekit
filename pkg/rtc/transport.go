@@ -47,8 +47,8 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID       string
-	ParticipantIdentity string
+	ParticipantID       livekit.ParticipantID
+	ParticipantIdentity livekit.ParticipantIdentity
 	Target              livekit.SignalTarget
 	Config              *WebRTCConfig
 	Telemetry           telemetry.TelemetryService
