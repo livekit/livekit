@@ -149,7 +149,7 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 	if params.AllTracks {
 		tracks = u.GetPublishedTracks()
 	} else {
-		for _, trackID := range params.TrackSids {
+		for _, trackID := range params.TrackIDs {
 			track := u.getPublishedTrack(trackID)
 			if track == nil {
 				continue

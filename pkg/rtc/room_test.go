@@ -176,7 +176,7 @@ func TestParticipantUpdate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 			// remember how many times send has been called for each
-			callCounts := make(map[string]int)
+			callCounts := make(map[livekit.ParticipantID]int)
 			for _, p := range rm.GetParticipants() {
 				fp := p.(*typesfakes.FakeParticipant)
 				callCounts[p.ID()] = fp.SendParticipantUpdateCallCount()
@@ -264,7 +264,7 @@ func TestNewTrack(t *testing.T) {
 		require.Equal(t, 1, pub.AddSubscriberCallCount())
 		sub, params := pub.AddSubscriberArgsForCall(pub.AddSubscriberCallCount() - 1)
 		require.Equal(t, p1, sub)
-		require.Equal(t, types.AddSubscriberParams{TrackSids: []string{track.ID()}}, params)
+		require.Equal(t, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}, params)
 	})
 }
 

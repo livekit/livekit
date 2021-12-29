@@ -21,13 +21,13 @@ type WebsocketClient interface {
 
 type AddSubscriberParams struct {
 	AllTracks bool
-	TrackSids []string
+	TrackIDs  []livekit.TrackID
 }
 
 //counterfeiter:generate . Participant
 type Participant interface {
-	ID() string
-	Identity() string
+	ID() livekit.ParticipantID
+	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
 	ProtocolVersion() ProtocolVersion
 	IsReady() bool
@@ -42,27 +42,27 @@ type Participant interface {
 	ICERestart() error
 
 	AddTrack(req *livekit.AddTrackRequest)
-	GetPublishedTrack(sid string) PublishedTrack
+	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
-	GetSubscribedTrack(sid string) SubscribedTrack
+	GetSubscribedTrack(sid livekit.TrackID) SubscribedTrack
 	GetSubscribedTracks() []SubscribedTrack
 	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackSid string)
+	RemoveSubscriber(op Participant, trackID livekit.TrackID)
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
-	SetTrackMuted(trackId string, muted bool, fromAdmin bool)
+	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
-	IsSubscribedTo(participantSid string) bool
+	IsSubscribedTo(participantID livekit.ParticipantID) bool
 	// returns list of participant identities that the current participant is subscribed to
-	GetSubscribedParticipants() []string
+	GetSubscribedParticipants() []livekit.ParticipantID
 
 	// permissions
 	CanPublish() bool
@@ -83,15 +83,15 @@ type Participant interface {
 	OnTrackUpdated(callback func(Participant, PublishedTrack))
 	OnMetadataUpdate(callback func(Participant))
 	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(func(Participant, map[string]string))
+	OnClose(func(Participant, map[livekit.TrackID]livekit.ParticipantID))
 
 	// package methods
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	SubscriberPC() *webrtc.PeerConnection
 
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantSid string) Participant) error
-	SubscriptionPermissionUpdate(publisherSid string, trackSid string, allowed bool)
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
+	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 
 	DebugInfo() map[string]interface{}
 }
@@ -99,15 +99,15 @@ type Participant interface {
 // Room is a container of participants, and can provide room level actions
 //counterfeiter:generate . Room
 type Room interface {
-	Name() string
-	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	Name() livekit.RoomName
+	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 }
 
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
-	ID() string
+	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
 	IsMuted() bool
@@ -118,16 +118,16 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant Participant) error
-	RemoveSubscriber(participantId string)
-	IsSubscriber(subId string) bool
+	RemoveSubscriber(participantID livekit.ParticipantID)
+	IsSubscriber(subID livekit.ParticipantID) bool
 	RemoveAllSubscribers()
-	RevokeDisallowedSubscribers(allowedSubscriberIDs []string) []string
+	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberMute(subscriberID string)
-	NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality)
+	NotifySubscriberMute(subscriberID livekit.ParticipantID)
+	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 }
 
 // PublishedTrack is the main interface representing a track published to the room
@@ -153,9 +153,9 @@ type PublishedTrack interface {
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())
-	ID() string
-	PublisherID() string
-	PublisherIdentity() string
+	ID() livekit.TrackID
+	PublisherID() livekit.ParticipantID
+	PublisherIdentity() livekit.ParticipantIdentity
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool

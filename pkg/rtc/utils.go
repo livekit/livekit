@@ -18,7 +18,7 @@ const (
 	trackIdSeparator = "|"
 )
 
-func UnpackStreamID(packed string) (participantId string, trackId string) {
+func UnpackStreamID(packed string) (participantID livekit.ParticipantID, trackID livekit.TrackID) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) > 1 {
 		return parts[0], packed[len(parts[0])+1:]
@@ -26,21 +26,21 @@ func UnpackStreamID(packed string) (participantId string, trackId string) {
 	return packed, ""
 }
 
-func PackStreamID(participantId, trackId string) string {
-	return participantId + trackIdSeparator + trackId
+func PackStreamID(participantID livekit.ParticipantID, trackID livekit.TrackID) string {
+	return participantID + trackIdSeparator + trackID
 }
 
-func PackDataTrackLabel(participantId, trackId string, label string) string {
-	return participantId + trackIdSeparator + trackId + trackIdSeparator + label
+func PackDataTrackLabel(participantID livekit.ParticipantID, trackID livekit.TrackID, label string) string {
+	return participantID + trackIdSeparator + trackID + trackIdSeparator + label
 }
 
-func UnpackDataTrackLabel(packed string) (peerId string, trackId string, label string) {
+func UnpackDataTrackLabel(packed string) (peerID livekit.ParticipantID, trackID livekit.TrackID, label string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) != 3 {
 		return "", packed, ""
 	}
-	peerId = parts[0]
-	trackId = parts[1]
+	peerID = parts[0]
+	trackID = parts[1]
 	label = parts[2]
 	return
 }
@@ -133,7 +133,7 @@ func Recover() {
 }
 
 // logger helpers
-func LoggerWithParticipant(l logger.Logger, identity, sid string) logger.Logger {
+func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID) logger.Logger {
 	lr := logr.Logger(l)
 	if identity != "" {
 		lr = lr.WithValues("participant", identity)
@@ -144,7 +144,7 @@ func LoggerWithParticipant(l logger.Logger, identity, sid string) logger.Logger 
 	return logger.Logger(lr)
 }
 
-func LoggerWithRoom(l logger.Logger, name string) logger.Logger {
+func LoggerWithRoom(l logger.Logger, name livekit.RoomName) logger.Logger {
 	lr := logr.Logger(l)
 	return logger.Logger(
 		lr.WithValues(

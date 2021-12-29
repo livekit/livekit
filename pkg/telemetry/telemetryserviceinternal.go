@@ -42,25 +42,25 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 	}
 }
 
-func (t *telemetryServiceInternal) AddUpTrack(participantID string, buff *buffer.Buffer) {
+func (t *telemetryServiceInternal) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
-		w.AddBuffer(buff)
+		w.AddBuffer(trackID, buff)
 	}
 }
 
-func (t *telemetryServiceInternal) OnDownstreamPacket(participantID string, bytes int) {
+func (t *telemetryServiceInternal) OnDownstreamPacket(participantID string, trackID string, bytes int) {
 	t.RLock()
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
-		w.OnDownstreamPacket(bytes)
+		w.OnDownstreamPacket(trackID, bytes)
 	}
 }
 
-func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
+func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet) {
 	stats := &livekit.AnalyticsStat{}
 	for _, pkt := range pkts {
 		switch pkt := pkt.(type) {
@@ -94,7 +94,7 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 	w := t.workers[participantID]
 	t.RUnlock()
 	if w != nil {
-		w.OnRTCP(streamType, stats)
+		w.OnRTCP(trackID, streamType, stats)
 	}
 }
 

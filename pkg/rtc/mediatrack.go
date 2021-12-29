@@ -45,7 +45,7 @@ type MediaTrack struct {
 
 	lock sync.RWMutex
 
-	// map of target participantId -> types.SubscribedTrack
+	// map of target participantID -> types.SubscribedTrack
 	subscribedTracks sync.Map // participantSid => types.SubscribedTrack
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
@@ -66,10 +66,10 @@ type MediaTrack struct {
 
 	// quality level enable/disable
 	maxQualityLock               sync.Mutex
-	maxSubscriberQuality         map[string]livekit.VideoQuality
+	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
 	maxSubscribedQuality         livekit.VideoQuality
 	allSubscribersMuted          bool
-	onSubscribedMaxQualityChange func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error
+	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error
 
 	onClose []func()
 }
@@ -78,8 +78,8 @@ type MediaTrackParams struct {
 	TrackInfo           *livekit.TrackInfo
 	SignalCid           string
 	SdpCid              string
-	ParticipantID       string
-	ParticipantIdentity string
+	ParticipantID       livekit.ParticipantID
+	ParticipantIdentity livekit.ParticipantIdentity
 	// channel to send RTCP packets to the source
 	RTCPChan       chan []rtcp.Packet
 	BufferFactory  *buffer.Factory
@@ -99,7 +99,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		codec:                track.Codec(),
 		connectionStats:      connectionquality.NewConnectionStats(),
 		done:                 make(chan struct{}),
-		maxSubscriberQuality: make(map[string]livekit.VideoQuality),
+		maxSubscriberQuality: make(map[livekit.ParticipantID]livekit.VideoQuality),
 	}
 
 	if params.TrackInfo.Muted {
@@ -117,7 +117,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 	return t
 }
 
-func (t *MediaTrack) ID() string {
+func (t *MediaTrack) ID() livekit.TrackID {
 	return t.params.TrackInfo.Sid
 }
 
@@ -179,8 +179,8 @@ func (t *MediaTrack) AddOnClose(f func()) {
 	t.onClose = append(t.onClose, f)
 }
 
-func (t *MediaTrack) IsSubscriber(subId string) bool {
-	_, ok := t.subscribedTracks.Load(subId)
+func (t *MediaTrack) IsSubscriber(subID livekit.ParticipantID) bool {
+	_, ok := t.subscribedTracks.Load(subID)
 	return ok
 }
 
@@ -290,13 +290,13 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		go t.sendDownTrackBindingReports(sub)
 	})
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
 	})
 	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
-		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, pkts)
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, t.ID(), pkts)
 	})
 
 	downTrack.OnCloseHandler(func() {
@@ -441,7 +441,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	t.receiver.AddUpTrack(track, buff)
-	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, buff)
+	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, t.ID(), buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
@@ -457,8 +457,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrack) RemoveSubscriber(participantId string) {
-	subTrack := t.getSubscribedTrack(participantId)
+func (t *MediaTrack) RemoveSubscriber(participantID livekit.ParticipantID) {
+	subTrack := t.getSubscribedTrack(participantID)
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
@@ -477,11 +477,11 @@ func (t *MediaTrack) RemoveAllSubscribers() {
 	t.subscribedTracks = sync.Map{}
 }
 
-func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []string) []string {
+func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	var revokedSubscriberIDs []string
+	var revokedSubscriberIDs []livekit.ParticipantID
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
 		if subID, ok := key.(string); ok {
@@ -580,7 +580,7 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	return quality
 }
 
-func (t *MediaTrack) getSubscribedTrack(subscriberID string) types.SubscribedTrack {
+func (t *MediaTrack) getSubscribedTrack(subscriberID livekit.ParticipantID) types.SubscribedTrack {
 	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
 		if st, ok := val.(types.SubscribedTrack); ok {
 			return st
@@ -634,6 +634,9 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var jitter uint32
 	var totalLost uint32
 	var maxSeqNum uint32
+
+	//forward to telemetry
+	t.params.Telemetry.HandleRTCP(livekit.StreamType_UPSTREAM, t.params.ParticipantID, t.ID(), packets)
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
@@ -694,8 +697,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 }
 
 // handles max loss for audio packets
-func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack,
-	report *rtcp.ReceiverReport) {
+func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
 	var (
 		shouldUpdate bool
 		maxLost      uint8
@@ -792,11 +794,11 @@ func (t *MediaTrack) calculateVideoScore() {
 	t.connectionStats.Score = connectionquality.Loss2Score(t.PublishLossPercentage(), reducedQuality)
 }
 
-func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error) {
+func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error) {
 	t.onSubscribedMaxQualityChange = f
 }
 
-func (t *MediaTrack) NotifySubscriberMute(subscriberID string) {
+func (t *MediaTrack) NotifySubscriberMute(subscriberID livekit.ParticipantID) {
 	if !t.IsSimulcast() {
 		return
 	}
@@ -814,7 +816,7 @@ func (t *MediaTrack) NotifySubscriberMute(subscriberID string) {
 	t.updateQualityChange()
 }
 
-func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID string, quality livekit.VideoQuality) {
+func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
 	if !t.IsSimulcast() {
 		return
 	}
