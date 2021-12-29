@@ -370,7 +370,10 @@ func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	}
 
 	t.lock.RLock()
-	numPublishing := uint32(t.receiver.NumAvailableSpatialLayers())
+	numPublishing := uint32(0)
+	if t.receiver != nil {
+		numPublishing = uint32(t.receiver.NumAvailableSpatialLayers())
+	}
 	t.lock.RUnlock()
 
 	return numPublishing, numExpected
