@@ -52,7 +52,7 @@ func TestICEStateChange(t *testing.T) {
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan struct{})
-		p.onClose = func(participant types.Participant, disallowedSubscriptions map[string]string) {
+		p.onClose = func(participant types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 			close(closeChan)
 		}
 		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)
@@ -341,7 +341,7 @@ func TestSubscriberAsPrimary(t *testing.T) {
 	})
 }
 
-func newParticipantForTest(identity string) *ParticipantImpl {
+func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
 	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0

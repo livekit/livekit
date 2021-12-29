@@ -52,7 +52,7 @@ type MediaTrack struct {
 
 	lock sync.RWMutex
 
-	// map of target participantId -> types.SubscribedTrack
+	// map of target participantID -> types.SubscribedTrack
 	subscribedTracks sync.Map // participantSid => types.SubscribedTrack
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
