@@ -62,6 +62,7 @@ const (
 	SignalAddTrack Signal = iota
 	SignalRemoveTrack
 	SignalEstimate
+	SignalTargetBitrate
 	SignalReceiverReport
 	SignalAvailableLayersChange
 	SignalSubscriptionChange
@@ -78,6 +79,8 @@ func (s Signal) String() string {
 		return "REMOVE_TRACK"
 	case SignalEstimate:
 		return "ESTIMATE"
+	case SignalTargetBitrate:
+		return "TARGET_BITRATE"
 	case SignalReceiverReport:
 		return "RECEIVER_REPORT"
 	case SignalSubscriptionChange:
@@ -93,6 +96,16 @@ func (s Signal) String() string {
 	}
 }
 
+type Event struct {
+	Signal    Signal
+	DownTrack *DownTrack
+	Data      interface{}
+}
+
+func (e Event) String() string {
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
+}
+
 type StreamAllocatorParams struct {
 	Logger logger.Logger
 }
@@ -102,7 +115,10 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	trackingSSRC             uint32
+	rembTrackingSSRC uint32
+
+	// LK-TODO-SSBWE bwe cc.BandwidthEstimator
+
 	committedChannelCapacity int64
 	lastCommitTime           time.Time
 	prevReceivedEstimate     int64
@@ -125,16 +141,6 @@ type StreamAllocator struct {
 	chMu      sync.RWMutex
 	eventCh   chan Event
 	runningCh chan struct{}
-}
-
-type Event struct {
-	Signal    Signal
-	DownTrack *DownTrack
-	Data      interface{}
-}
-
-func (e Event) String() string {
-	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
 }
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
@@ -173,6 +179,15 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
+/* LK-TODO-SSBWE
+func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
+	if bwe != nil {
+		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
+	}
+	s.bwe = bwe
+}
+*/
+
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
 	s.postEvent(Event{
 		Signal:    SignalAddTrack,
@@ -182,6 +197,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
 
 	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
 		downTrack.OnREMB(s.onREMB)
+		downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
 		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
@@ -212,6 +228,23 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 		Signal:    SignalEstimate,
 		DownTrack: downTrack,
 		Data:      remb,
+	})
+}
+
+// called when a new transport-cc feedback is received
+func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
+	/* LK-TODO-SSBWE
+	if s.bwe != nil {
+		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
+	}
+	*/
+}
+
+// called when target bitrate changes
+func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
+	s.postEvent(Event{
+		Signal: SignalTargetBitrate,
+		Data:   bitrate,
 	})
 }
 
@@ -311,6 +344,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalRemoveTrack(event)
 	case SignalEstimate:
 		s.handleSignalEstimate(event)
+	case SignalTargetBitrate:
+		s.handleSignalTargetBitrate(event)
 	case SignalReceiverReport:
 		s.handleSignalReceiverReport(event)
 	case SignalAvailableLayersChange:
@@ -428,7 +463,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	found := false
 	for _, ssrc := range remb.SSRCs {
-		if ssrc == s.trackingSSRC {
+		if ssrc == s.rembTrackingSSRC {
 			found = true
 			break
 		}
@@ -442,18 +477,18 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 		// try to lock to track which is sending this update
 		for _, ssrc := range remb.SSRCs {
 			if ssrc == event.DownTrack.SSRC() {
-				s.trackingSSRC = event.DownTrack.SSRC()
+				s.rembTrackingSSRC = event.DownTrack.SSRC()
 				found = true
 				break
 			}
 		}
 
 		if !found {
-			s.trackingSSRC = remb.SSRCs[0]
+			s.rembTrackingSSRC = remb.SSRCs[0]
 		}
 	}
 
-	if s.trackingSSRC != event.DownTrack.SSRC() {
+	if s.rembTrackingSSRC != event.DownTrack.SSRC() {
 		return
 	}
 
@@ -467,6 +502,22 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 			)
 		}
 	*/
+
+	if s.maybeCommitEstimate() {
+		s.allocateAllTracks()
+	}
+}
+
+func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
+	receivedEstimate, _ := event.Data.(int)
+	s.prevReceivedEstimate = s.receivedEstimate
+	s.receivedEstimate = int64(receivedEstimate)
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.logger.Debugw("received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
+	}
 
 	if s.maybeCommitEstimate() {
 		s.allocateAllTracks()

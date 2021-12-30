@@ -62,6 +62,9 @@ type RTCConfig struct {
 
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
+
+	// Which side runs bandwidth estimation
+	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation"`
 }
 
 type PLIThrottleConfig struct {

@@ -7,6 +7,8 @@ import (
 	"github.com/bep/debounce"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/interceptor"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -55,29 +57,78 @@ type TransportParams struct {
 	Logger              logger.Logger
 }
 
+// LK-TODO-SSBWE func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	var me *webrtc.MediaEngine
-	var err error
+	var directionConfig DirectionConfig
 	if params.Target == livekit.SignalTarget_PUBLISHER {
-		me, err = createPubMediaEngine(params.EnabledCodecs)
+		directionConfig = params.Config.Publisher
 	} else {
-		me, err = createSubMediaEngine(params.EnabledCodecs)
+		directionConfig = params.Config.Subscriber
 	}
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
 
+	ir := &interceptor.Registry{}
+	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+		isSendSideBWE := false
+		for _, ext := range directionConfig.RTPHeaderExtension.Video {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
+		for _, ext := range directionConfig.RTPHeaderExtension.Audio {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
+
+		if isSendSideBWE {
+			/* LK-TODO-SSBWE
+			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
+				return gcc.NewSendSideBWE(
+					gcc.SendSideBWEInitialBitrate(1*1000*1000),
+					gcc.SendSideBWEPacer(gcc.NewNoOpPacer()),
+				)
+			})
+			if err == nil {
+				gf.OnNewPeerConnection(func(id string, estimator cc.BandwidthEstimator) {
+					if onBandwidthEstimator != nil {
+						onBandwidthEstimator(estimator)
+					}
+				})
+				ir.Add(gf)
+
+				tf, err := twcc.NewHeaderExtensionInterceptor()
+				if err == nil {
+					ir.Add(tf)
+				}
+			}
+			*/
+		}
+	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
 		webrtc.WithSettingEngine(se),
+		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
 	return pc, me, err
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
+	/* LK-TODO-SSBWE
+	var bwe cc.BandwidthEstimator
+	pc, me, err := newPeerConnection(params, func(estimator cc.BandwidthEstimator) {
+		bwe = estimator
+	})
+	*/
 	pc, me, err := newPeerConnection(params)
 	if err != nil {
 		return nil, err
@@ -95,6 +146,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+		/* LK-TODO-SSBWE
+		if bwe != nil {
+			t.streamAllocator.SetBandwidthEstimator(bwe)
+		}
+		*/
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
