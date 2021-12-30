@@ -93,8 +93,8 @@ func (s *StatsWorker) OnRTCP(trackID livekit.TrackID, direction livekit.StreamTy
 	}
 	ds.totalPacketsLost = stats.PacketLost
 
-	if stats.Delay > ds.next.Delay {
-		ds.next.Delay = stats.Delay
+	if stats.Rtt > ds.next.Rtt {
+		ds.next.Rtt = stats.Rtt
 	}
 	if stats.Jitter > ds.next.Jitter {
 		ds.next.Jitter = stats.Jitter
