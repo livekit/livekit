@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"sync"
 
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,7 +17,6 @@ type StatsWorker struct {
 	roomName      string
 	participantID string
 
-	sync.RWMutex
 	upstreamBuffers      map[string][]*buffer.Buffer
 	drainUpstreamBuffers map[string]bool
 
@@ -52,16 +50,10 @@ func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID, roomName, 
 }
 
 func (s *StatsWorker) AddBuffer(trackID string, buffer *buffer.Buffer) {
-	s.Lock()
-	defer s.Unlock()
-
 	s.upstreamBuffers[trackID] = append(s.upstreamBuffers[trackID], buffer)
 }
 
 func (s *StatsWorker) OnDownstreamPacket(trackID string, bytes int) {
-	s.Lock()
-	defer s.Unlock()
-
 	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalBytes += uint64(bytes)
 	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalPackets++
 }
@@ -91,9 +83,6 @@ func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID string) *Stats {
 }
 
 func (s *StatsWorker) OnRTCP(trackID string, direction livekit.StreamType, stats *livekit.AnalyticsStat) {
-	s.Lock()
-	defer s.Unlock()
-
 	var ds *Stats
 	if direction == livekit.StreamType_DOWNSTREAM {
 		ds = s.getOrCreateOutgoingStatsIfEmpty(trackID)
@@ -125,9 +114,6 @@ func (s *StatsWorker) calculateTotalBytesPackets(allBuffers []*buffer.Buffer) (t
 }
 
 func (s *StatsWorker) Update() {
-	s.Lock()
-	defer s.Unlock()
-
 	ts := timestamppb.Now()
 	stats := make([]*livekit.AnalyticsStat, 0)
 
@@ -196,9 +182,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 }
 
 func (s *StatsWorker) RemoveBuffer(trackID string) {
-	s.Lock()
 	s.drainUpstreamBuffers[trackID] = true
-	s.Unlock()
 }
 
 func (s *StatsWorker) Close() {

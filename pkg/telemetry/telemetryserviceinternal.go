@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"sync"
 
 	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/livekit"
@@ -26,7 +25,6 @@ type telemetryServiceInternal struct {
 	notifier    webhook.Notifier
 	webhookPool *workerpool.WorkerPool
 
-	sync.RWMutex
 	// one worker per participant
 	workers map[string]*StatsWorker
 
@@ -43,18 +41,14 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 }
 
 func (t *telemetryServiceInternal) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
-	t.RLock()
 	w := t.workers[participantID]
-	t.RUnlock()
 	if w != nil {
 		w.AddBuffer(trackID, buff)
 	}
 }
 
 func (t *telemetryServiceInternal) OnDownstreamPacket(participantID string, trackID string, bytes int) {
-	t.RLock()
 	w := t.workers[participantID]
-	t.RUnlock()
 	if w != nil {
 		w.OnDownstreamPacket(trackID, bytes)
 	}
@@ -72,13 +66,16 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 			stats.FirCount++
 		case *rtcp.ReceiverReport:
 			for _, rr := range pkt.Reports {
-				if delay := uint64(rr.Delay); delay > stats.Delay {
-					stats.Delay = delay
-				}
 				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
 					stats.Jitter = jitter
 				}
 				stats.PacketLost += uint64(rr.TotalLost)
+			}
+			if streamType == livekit.StreamType_DOWNSTREAM {
+				rtt := GetRttMs(pkt)
+				if rtt >= 0 {
+					stats.Delay = uint64(rtt)
+				}
 			}
 		}
 	}
@@ -90,9 +87,7 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 
 	prometheus.IncrementRTCP(direction, stats.NackCount, stats.PliCount, stats.FirCount)
 
-	t.RLock()
 	w := t.workers[participantID]
-	t.RUnlock()
 	if w != nil {
 		w.OnRTCP(trackID, streamType, stats)
 	}
