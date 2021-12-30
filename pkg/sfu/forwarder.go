@@ -360,7 +360,7 @@ func (f *Forwarder) DistanceToDesired() int32 {
 	return f.lastAllocation.distanceToDesired
 }
 
-func (f *Forwarder) Allocate(availableChannelCapacity int64, brs Bitrates) VideoAllocation {
+func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, brs Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -399,14 +399,18 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, brs Bitrates) Video
 					change = VideoStreamingChangeResuming
 				}
 			} else {
-				// disable forwarding as it is not known how big this stream is
-				// and if it will fit in the available channel capacity
-				f.currentLayers = InvalidLayers
+				if !allowPause {
+					// when pause is disallowed, pick the lowest available
+					targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[0])))
+					targetLayers.temporal = int32(math.Min(0, float64(f.maxLayers.temporal)))
+				} else {
+					// disable forwarding as it is not known how big this stream is
+					// and if it will fit in the available channel capacity
+					state = VideoAllocationStateDeficient
 
-				state = VideoAllocationStateDeficient
-
-				if f.targetLayers != InvalidLayers {
-					change = VideoStreamingChangePausing
+					if f.targetLayers != InvalidLayers {
+						change = VideoStreamingChangePausing
+					}
 				}
 			}
 		}
@@ -445,8 +449,35 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, brs Bitrates) Video
 		if bandwidthRequested == 0 {
 			state = VideoAllocationStateDeficient
 
-			if f.targetLayers != InvalidLayers {
-				change = VideoStreamingChangePausing
+			if !allowPause {
+				// find the lowest layer to prevent pausing
+				for s := int32(0); s <= f.maxLayers.spatial; s++ {
+					for t := int32(0); t <= f.maxLayers.temporal; t++ {
+						if brs[s][t] == 0 {
+							continue
+						}
+
+						targetLayers = VideoLayers{
+							spatial:  s,
+							temporal: t,
+						}
+
+						bandwidthRequested = brs[s][t]
+
+						if f.targetLayers == InvalidLayers {
+							change = VideoStreamingChangeResuming
+						}
+						break
+					}
+
+					if bandwidthRequested != 0 {
+						break
+					}
+				}
+			} else {
+				if f.targetLayers != InvalidLayers {
+					change = VideoStreamingChangePausing
+				}
 			}
 		}
 	}
@@ -480,7 +511,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 	}
 }
 
-func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
+func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -503,6 +534,12 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	}
 
 	if requiredBitrate <= (availableChannelCapacity + alreadyAllocatedBitrate) {
+		f.provisional.layers = layers
+		return requiredBitrate
+	}
+
+	// when pause is disallowed, pick the layer if none allocated already or something lower is available
+	if !allowPause && (f.provisional.layers == InvalidLayers || !layers.GreaterThan(f.provisional.layers)) {
 		f.provisional.layers = layers
 		return requiredBitrate
 	}

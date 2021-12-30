@@ -4,12 +4,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -544,16 +545,16 @@ func (d *DownTrack) DistanceToDesired() int32 {
 	return d.forwarder.DistanceToDesired()
 }
 
-func (d *DownTrack) Allocate(availableChannelCapacity int64) VideoAllocation {
-	return d.forwarder.Allocate(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
+	return d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
 	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
-	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers)
+func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
+	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause)
 }
 
 func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {

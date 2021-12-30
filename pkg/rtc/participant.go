@@ -36,19 +36,20 @@ const (
 )
 
 type ParticipantParams struct {
-	Identity        livekit.ParticipantIdentity
-	Name            livekit.ParticipantName
-	SID             livekit.ParticipantID
-	Config          *WebRTCConfig
-	Sink            routing.MessageSink
-	AudioConfig     config.AudioConfig
-	ProtocolVersion types.ProtocolVersion
-	Telemetry       telemetry.TelemetryService
-	ThrottleConfig  config.PLIThrottleConfig
-	EnabledCodecs   []*livekit.Codec
-	Hidden          bool
-	Recorder        bool
-	Logger          logger.Logger
+	Identity                livekit.ParticipantIdentity
+	Name                    livekit.ParticipantName
+	SID                     livekit.ParticipantID
+	Config                  *WebRTCConfig
+	Sink                    routing.MessageSink
+	AudioConfig             config.AudioConfig
+	ProtocolVersion         types.ProtocolVersion
+	Telemetry               telemetry.TelemetryService
+	ThrottleConfig          config.PLIThrottleConfig
+	CongestionControlConfig config.CongestionControlConfig
+	EnabledCodecs           []*livekit.Codec
+	Hidden                  bool
+	Recorder                bool
+	Logger                  logger.Logger
 }
 
 type ParticipantImpl struct {
@@ -114,25 +115,27 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 	p.publisher, err = NewPCTransport(TransportParams{
-		ParticipantID:       p.params.SID,
-		ParticipantIdentity: p.params.Identity,
-		Target:              livekit.SignalTarget_PUBLISHER,
-		Config:              params.Config,
-		Telemetry:           p.params.Telemetry,
-		EnabledCodecs:       p.params.EnabledCodecs,
-		Logger:              params.Logger,
+		ParticipantID:           p.params.SID,
+		ParticipantIdentity:     p.params.Identity,
+		Target:                  livekit.SignalTarget_PUBLISHER,
+		Config:                  params.Config,
+		CongestionControlConfig: params.CongestionControlConfig,
+		Telemetry:               p.params.Telemetry,
+		EnabledCodecs:           p.params.EnabledCodecs,
+		Logger:                  params.Logger,
 	})
 	if err != nil {
 		return nil, err
 	}
 	p.subscriber, err = NewPCTransport(TransportParams{
-		ParticipantID:       p.params.SID,
-		ParticipantIdentity: p.params.Identity,
-		Target:              livekit.SignalTarget_SUBSCRIBER,
-		Config:              params.Config,
-		Telemetry:           p.params.Telemetry,
-		EnabledCodecs:       p.params.EnabledCodecs,
-		Logger:              params.Logger,
+		ParticipantID:           p.params.SID,
+		ParticipantIdentity:     p.params.Identity,
+		Target:                  livekit.SignalTarget_SUBSCRIBER,
+		Config:                  params.Config,
+		CongestionControlConfig: params.CongestionControlConfig,
+		Telemetry:               p.params.Telemetry,
+		EnabledCodecs:           p.params.EnabledCodecs,
+		Logger:                  params.Logger,
 	})
 	if err != nil {
 		return nil, err
