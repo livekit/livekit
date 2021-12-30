@@ -853,6 +853,10 @@ func (t *MediaTrack) startMaxQualityTimer() {
 	t.maxQualityLock.Lock()
 	defer t.maxQualityLock.Unlock()
 
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
 		t.updateQualityChange()

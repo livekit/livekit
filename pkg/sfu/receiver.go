@@ -128,12 +128,13 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
-		isSimulcast: len(track.RID()) > 0,
-		pliThrottle: 500e6,
-		downTracks:  make([]TrackSender, 0),
-		index:       make(map[string]int),
-		free:        make(map[int]struct{}),
-		numProcs:    runtime.NumCPU(),
+		isSimulcast:      len(track.RID()) > 0,
+		maxExpectedLayer: DefaultMaxLayerSpatial,
+		pliThrottle:      500e6,
+		downTracks:       make([]TrackSender, 0),
+		index:            make(map[string]int),
+		free:             make(map[int]struct{}),
+		numProcs:         runtime.NumCPU(),
 	}
 	if runtime.GOMAXPROCS(0) < w.numProcs {
 		w.numProcs = runtime.GOMAXPROCS(0)
