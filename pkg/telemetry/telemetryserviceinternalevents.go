@@ -90,7 +90,7 @@ func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *li
 	})
 }
 
-func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	prometheus.AddPublishedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -104,7 +104,7 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 	})
 }
 
-func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
+func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := ""
 	roomName := ""
 	w := t.workers[participantID]
@@ -126,7 +126,7 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	})
 }
 
-func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -140,7 +140,7 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 	})
 }
 
-func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	prometheus.SubSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -182,7 +182,7 @@ func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livek
 	})
 }
 
-func (t *telemetryServiceInternal) getRoomDetails(participantID string) (string, string) {
+func (t *telemetryServiceInternal) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
 	w := t.workers[participantID]
 	if w != nil {
 		return w.roomID, w.roomName

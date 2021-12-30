@@ -15,19 +15,19 @@ const updateFrequency = time.Second * 10
 
 type TelemetryService interface {
 	// stats
-	AddUpTrack(participantID string, trackID string, buff *buffer.Buffer)
-	OnDownstreamPacket(participantID string, trackID string, bytes int)
-	HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet)
+	AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer)
+	OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int)
+	HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo)
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
-	TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo)
-	TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32)
-	TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
-	TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
+	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
+	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 }
@@ -67,19 +67,19 @@ func (t *telemetryService) run() {
 	}
 }
 
-func (t *telemetryService) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
+func (t *telemetryService) AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer) {
 	t.jobQueue <- func() {
 		t.internalService.AddUpTrack(participantID, trackID, buff)
 	}
 }
 
-func (t *telemetryService) OnDownstreamPacket(participantID string, trackID string, bytes int) {
+func (t *telemetryService) OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int) {
 	t.jobQueue <- func() {
 		t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
 	}
 }
 
-func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet) {
+func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet) {
 	t.jobQueue <- func() {
 		t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
 	}
@@ -109,25 +109,25 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	}
 }
 
-func (t *telemetryService) TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.jobQueue <- func() {
 		t.internalService.TrackPublished(ctx, participantID, track)
 	}
 }
 
-func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32) {
+func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	t.jobQueue <- func() {
 		t.internalService.TrackUnpublished(ctx, participantID, track, ssrc)
 	}
 }
 
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.jobQueue <- func() {
 		t.internalService.TrackSubscribed(ctx, participantID, track)
 	}
 }
 
-func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.jobQueue <- func() {
 		t.internalService.TrackUnsubscribed(ctx, participantID, track)
 	}

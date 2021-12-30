@@ -13,15 +13,15 @@ import (
 type StatsWorker struct {
 	ctx           context.Context
 	t             TelemetryReporter
-	roomID        string
-	roomName      string
-	participantID string
+	roomID        livekit.RoomID
+	roomName      livekit.RoomName
+	participantID livekit.ParticipantID
 
-	upstreamBuffers      map[string][]*buffer.Buffer
-	drainUpstreamBuffers map[string]bool
+	upstreamBuffers      map[livekit.TrackID][]*buffer.Buffer
+	drainUpstreamBuffers map[livekit.TrackID]bool
 
-	outgoingPerTrack map[string]*Stats
-	incomingPerTrack map[string]*Stats
+	outgoingPerTrack map[livekit.TrackID]*Stats
+	incomingPerTrack map[livekit.TrackID]*Stats
 }
 
 type Stats struct {
@@ -32,7 +32,7 @@ type Stats struct {
 	prevBytes    uint64
 }
 
-func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID, roomName, participantID string) *StatsWorker {
+func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID) *StatsWorker {
 	s := &StatsWorker{
 		ctx:           ctx,
 		t:             t,
@@ -40,25 +40,25 @@ func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID, roomName, 
 		roomName:      roomName,
 		participantID: participantID,
 
-		upstreamBuffers:      make(map[string][]*buffer.Buffer),
-		drainUpstreamBuffers: make(map[string]bool),
+		upstreamBuffers:      make(map[livekit.TrackID][]*buffer.Buffer),
+		drainUpstreamBuffers: make(map[livekit.TrackID]bool),
 
-		outgoingPerTrack: make(map[string]*Stats),
-		incomingPerTrack: make(map[string]*Stats),
+		outgoingPerTrack: make(map[livekit.TrackID]*Stats),
+		incomingPerTrack: make(map[livekit.TrackID]*Stats),
 	}
 	return s
 }
 
-func (s *StatsWorker) AddBuffer(trackID string, buffer *buffer.Buffer) {
+func (s *StatsWorker) AddBuffer(trackID livekit.TrackID, buffer *buffer.Buffer) {
 	s.upstreamBuffers[trackID] = append(s.upstreamBuffers[trackID], buffer)
 }
 
-func (s *StatsWorker) OnDownstreamPacket(trackID string, bytes int) {
+func (s *StatsWorker) OnDownstreamPacket(trackID livekit.TrackID, bytes int) {
 	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalBytes += uint64(bytes)
 	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalPackets++
 }
 
-func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID string) *Stats {
+func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID livekit.TrackID) *Stats {
 	if s.outgoingPerTrack[trackID] == nil {
 		s.outgoingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_DOWNSTREAM,
@@ -70,7 +70,7 @@ func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID string) *Stats {
 	return s.outgoingPerTrack[trackID]
 }
 
-func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID string) *Stats {
+func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID livekit.TrackID) *Stats {
 	if s.incomingPerTrack[trackID] == nil {
 		s.incomingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_UPSTREAM,
@@ -82,7 +82,7 @@ func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID string) *Stats {
 	return s.incomingPerTrack[trackID]
 }
 
-func (s *StatsWorker) OnRTCP(trackID string, direction livekit.StreamType, stats *livekit.AnalyticsStat) {
+func (s *StatsWorker) OnRTCP(trackID livekit.TrackID, direction livekit.StreamType, stats *livekit.AnalyticsStat) {
 	var ds *Stats
 	if direction == livekit.StreamType_DOWNSTREAM {
 		ds = s.getOrCreateOutgoingStatsIfEmpty(trackID)
@@ -153,7 +153,7 @@ func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*l
 			delete(s.upstreamBuffers, trackID)
 			delete(s.incomingPerTrack, trackID)
 		}
-		s.drainUpstreamBuffers = make(map[string]bool)
+		s.drainUpstreamBuffers = make(map[livekit.TrackID]bool)
 	}
 	return stats
 }
@@ -181,7 +181,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	return next
 }
 
-func (s *StatsWorker) RemoveBuffer(trackID string) {
+func (s *StatsWorker) RemoveBuffer(trackID livekit.TrackID) {
 	s.drainUpstreamBuffers[trackID] = true
 }
 
