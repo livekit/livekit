@@ -39,6 +39,7 @@ type Receiver interface {
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
 	SetUpTrackPaused(paused bool)
+	SetMaxExpectedSpatialLayer(layer int32)
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
@@ -53,19 +54,20 @@ type Receiver interface {
 
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
-	peerID          string
-	trackID         string
-	streamID        string
-	kind            webrtc.RTPCodecType
-	receiver        *webrtc.RTPReceiver
-	codec           webrtc.RTPCodecParameters
-	isSimulcast     bool
-	availableLayers atomic.Value
-	onCloseHandler  func()
-	closeOnce       sync.Once
-	closed          atomicBool
-	trackers        [DefaultMaxLayerSpatial + 1]*StreamTracker
-	useTrackers     bool
+	peerID           string
+	trackID          string
+	streamID         string
+	kind             webrtc.RTPCodecType
+	receiver         *webrtc.RTPReceiver
+	codec            webrtc.RTPCodecParameters
+	isSimulcast      bool
+	availableLayers  atomic.Value
+	maxExpectedLayer int32
+	onCloseHandler   func()
+	closeOnce        sync.Once
+	closed           atomicBool
+	trackers         [DefaultMaxLayerSpatial + 1]*StreamTracker
+	useTrackers      bool
 
 	rtcpMu      sync.Mutex
 	rtcpCh      chan []rtcp.Packet
@@ -126,12 +128,13 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
-		isSimulcast: len(track.RID()) > 0,
-		pliThrottle: 500e6,
-		downTracks:  make([]TrackSender, 0),
-		index:       make(map[string]int),
-		free:        make(map[int]struct{}),
-		numProcs:    runtime.NumCPU(),
+		isSimulcast:      len(track.RID()) > 0,
+		maxExpectedLayer: DefaultMaxLayerSpatial,
+		pliThrottle:      500e6,
+		downTracks:       make([]TrackSender, 0),
+		index:            make(map[string]int),
+		free:             make(map[int]struct{}),
+		numProcs:         runtime.NumCPU(),
 	}
 	if runtime.GOMAXPROCS(0) < w.numProcs {
 		w.numProcs = runtime.GOMAXPROCS(0)
@@ -196,25 +199,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
 
-	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
-		samplesRequired := uint32(5)
-		cyclesRequired := uint64(60) // 30s of continuous stream
-		if layer == 0 {
-			// be very forgiving for base layer
-			samplesRequired = 1
-			cyclesRequired = 4 // 2s of continuous stream
-		}
-		tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
-		w.trackers[layer] = tracker
-		tracker.OnStatusChanged(func(status StreamStatus) {
-			if status == StreamStatusStopped {
-				w.removeAvailableLayer(uint16(layer))
-			} else {
-				w.addAvailableLayer(uint16(layer))
-			}
-		})
-		tracker.Start()
-	}
+	w.setupTracker(layer)
 	go w.forwardRTP(layer)
 }
 
@@ -256,6 +241,33 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	w.storeDownTrack(track)
 }
 
+func (w *WebRTCReceiver) setupTracker(layer int32) {
+	w.upTrackMu.Lock()
+	defer w.upTrackMu.Unlock()
+
+	if w.Kind() != webrtc.RTPCodecTypeVideo || !w.useTrackers {
+		return
+	}
+
+	samplesRequired := uint32(5)
+	cyclesRequired := uint64(60) // 30s of continuous stream
+	if layer == 0 {
+		// be very forgiving for base layer
+		samplesRequired = 1
+		cyclesRequired = 4 // 2s of continuous stream
+	}
+	tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
+	w.trackers[layer] = tracker
+	tracker.OnStatusChanged(func(status StreamStatus) {
+		if status == StreamStatusStopped {
+			w.removeAvailableLayer(uint16(layer))
+		} else {
+			w.addAvailableLayer(uint16(layer))
+		}
+	})
+	tracker.Start()
+}
+
 func (w *WebRTCReceiver) hasSpatialLayer(layer int32) bool {
 	layers, ok := w.availableLayers.Load().([]uint16)
 	if !ok {
@@ -270,6 +282,40 @@ func (w *WebRTCReceiver) hasSpatialLayer(layer int32) bool {
 	return false
 }
 
+func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
+	w.upTrackMu.Lock()
+	defer w.upTrackMu.Unlock()
+
+	if layer <= w.maxExpectedLayer {
+		// some higher layer(s) expected to stop, nothing else to do
+		w.maxExpectedLayer = layer
+		return
+	}
+
+	//
+	// Some higher layer is expected to start.
+	// If the layer was not stopped (i. e. it will still be in available layers),
+	// don't need to do anything. If not, reset the stream tracker so that
+	// the layer is declared available on the first packet
+	//
+	// NOTE: There may be a race between checking if a layer is available and
+	// resetting the tracker, i. e. the track may stop just after checking.
+	// But, those conditions should be rare. In those cases, the restart will
+	// take longer.
+	//
+	for l := w.maxExpectedLayer + 1; l <= layer; l++ {
+		if w.hasSpatialLayer(l) {
+			continue
+		}
+
+		tracker := w.trackers[l]
+		if tracker != nil {
+			tracker.Reset()
+		}
+	}
+	w.maxExpectedLayer = layer
+}
+
 func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
 	layers, ok := w.availableLayers.Load().([]uint16)
 	if !ok {
@@ -281,8 +327,10 @@ func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
 
 func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16) {
 	w.downTrackMu.RLock()
-	defer w.downTrackMu.RUnlock()
-	for _, dt := range w.downTracks {
+	downTracks := w.downTracks
+	w.downTrackMu.RUnlock()
+
+	for _, dt := range downTracks {
 		if dt != nil {
 			dt.UptrackLayersChange(layers)
 		}
@@ -419,16 +467,22 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
+	w.upTrackMu.RLock()
 	tracker := w.trackers[layer]
+	w.upTrackMu.RUnlock()
 
 	defer func() {
 		w.closeOnce.Do(func() {
 			w.closed.set(true)
 			w.closeTracks()
 		})
+
+		w.upTrackMu.Lock()
 		if tracker != nil {
 			tracker.Stop()
+			w.trackers[layer] = nil
 		}
+		w.upTrackMu.Unlock()
 	}()
 
 	for {

@@ -36,6 +36,7 @@ const (
 	lostUpdateDelta                 = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
 	layerSelectionTolerance         = 0.9
+	initialQualityUpdateWait        = 10 * time.Second
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -72,11 +73,12 @@ type MediaTrack struct {
 	done chan struct{}
 
 	// quality level enable/disable
-	maxQualityLock               sync.Mutex
+	maxQualityLock               sync.RWMutex
 	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
 	maxSubscribedQuality         livekit.VideoQuality
 	allSubscribersMuted          bool
 	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error
+	maxQualityTimer              *time.Timer
 
 	onClose []func()
 }
@@ -357,17 +359,24 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 }
 
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
-	numRegistered := atomic.LoadUint32(&t.numUpTracks)
-	var numPublishing uint32
-	if t.simulcasted.Get() {
-		t.lock.RLock()
-		numPublishing = uint32(t.receiver.NumAvailableSpatialLayers())
-		t.lock.RUnlock()
-	} else {
-		numPublishing = 1
+	numExpected := atomic.LoadUint32(&t.numUpTracks)
+
+	t.maxQualityLock.RLock()
+	// LK-TODO: take into account t.allSubscribersMuted when turning off layer 0 also
+	maxSubscribed := uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
+	t.maxQualityLock.RUnlock()
+	if maxSubscribed < numExpected {
+		numExpected = maxSubscribed
 	}
 
-	return numPublishing, numRegistered
+	t.lock.RLock()
+	numPublishing := uint32(0)
+	if t.receiver != nil {
+		numPublishing = uint32(t.receiver.NumAvailableSpatialLayers())
+	}
+	t.lock.RUnlock()
+
+	return numPublishing, numExpected
 }
 
 // AddReceiver adds a new RTP receiver to the track
@@ -420,10 +429,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithStreamTrackers())
 		t.receiver.SetRTCPCh(t.params.RTCPChan)
 		t.receiver.OnCloseHandler(func() {
+			t.stopMaxQualityTimer()
+
 			t.lock.Lock()
 			t.receiver = nil
 			onclose := t.onClose
 			t.lock.Unlock()
+
 			t.RemoveAllSubscribers()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.params.ParticipantID, t.ToProto(), uint32(track.SSRC()))
 			for _, f := range onclose {
@@ -434,6 +446,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		if t.Kind() == livekit.TrackType_AUDIO {
 			t.buffer = buff
 		}
+
+		t.startMaxQualityTimer()
 	}
 
 	t.receiver.AddUpTrack(track, buff)
@@ -783,11 +797,16 @@ func (t *MediaTrack) updateStats() {
 
 func (t *MediaTrack) calculateVideoScore() {
 	var reducedQuality bool
-	publishing, registered := t.NumUpTracks()
-	if registered > 0 && publishing != registered {
+	publishing, expected := t.NumUpTracks()
+	if publishing < expected {
 		reducedQuality = true
 	}
-	t.connectionStats.Score = connectionquality.Loss2Score(t.PublishLossPercentage(), reducedQuality)
+
+	loss := t.PublishLossPercentage()
+	if expected == 0 {
+		loss = 0
+	}
+	t.connectionStats.Score = connectionquality.Loss2Score(loss, reducedQuality)
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error) {
@@ -830,8 +849,32 @@ func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID livekit.Participant
 	t.updateQualityChange()
 }
 
+func (t *MediaTrack) startMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
+		t.stopMaxQualityTimer()
+		t.updateQualityChange()
+	})
+}
+
+func (t *MediaTrack) stopMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	if t.maxQualityTimer != nil {
+		t.maxQualityTimer.Stop()
+		t.maxQualityTimer = nil
+	}
+}
+
 func (t *MediaTrack) updateQualityChange() {
-	if t.IsMuted() {
+	if t.IsMuted() || !t.IsSimulcast() {
 		return
 	}
 
@@ -850,11 +893,24 @@ func (t *MediaTrack) updateQualityChange() {
 		}
 	}
 
+	notifyMaxExpected := false
+	maxExpectedSpatialLayer := int32(-1)
 	if allSubscribersMuted {
 		if !t.allSubscribersMuted {
+			notifyMaxExpected = true
 			t.allSubscribersMuted = true
+
+			// LK-TODO: do not set this when turning off LOW also below
+			t.maxSubscribedQuality = livekit.VideoQuality_LOW
+			maxExpectedSpatialLayer = SpatialLayerForQuality(t.maxSubscribedQuality)
+
 			subscribedQualities = []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				// LK-TODO-START
+				// Restarting layers and subscribers getting video involves several things in the path
+				// which adds up to a few seconds of latency on re-subscription. Do not turn off the
+				// base layer till there is a good design to reduce re-subscription delays
+				// LK-TODO-END
+				{Quality: livekit.VideoQuality_LOW, Enabled: true},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 			}
@@ -862,7 +918,9 @@ func (t *MediaTrack) updateQualityChange() {
 	} else {
 		t.allSubscribersMuted = false
 		if maxSubscribedQuality != t.maxSubscribedQuality {
+			notifyMaxExpected = true
 			t.maxSubscribedQuality = maxSubscribedQuality
+			maxExpectedSpatialLayer = SpatialLayerForQuality(t.maxSubscribedQuality)
 
 			subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true})
 
@@ -881,7 +939,28 @@ func (t *MediaTrack) updateQualityChange() {
 	}
 	t.maxQualityLock.Unlock()
 
+	if notifyMaxExpected {
+		t.lock.RLock()
+		if t.receiver != nil {
+			t.receiver.SetMaxExpectedSpatialLayer(maxExpectedSpatialLayer)
+		}
+		t.lock.RUnlock()
+	}
+
 	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
 		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
+	}
+}
+
+//---------------------------
+
+func SpatialLayerForQuality(quality livekit.VideoQuality) int32 {
+	switch quality {
+	case livekit.VideoQuality_LOW:
+		return 0
+	case livekit.VideoQuality_MEDIUM:
+		return 1
+	default:
+		return 2
 	}
 }
