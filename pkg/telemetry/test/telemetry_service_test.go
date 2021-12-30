@@ -155,7 +155,7 @@ func Test_OnDownStreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 0, int(stats[0].Delay))      // TODO: test for RTT
+	require.Equal(t, 0, int(stats[0].Rtt))        // TODO: test for RTT
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
 	require.Equal(t, 4, int(stats[0].PacketLost)) // last reported packets lost, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)
@@ -290,7 +290,7 @@ func Test_OnUpstreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 0, int(stats[0].Delay))      // TODO: test for RTT
+	require.Equal(t, 0, int(stats[0].Rtt))        // TODO: test for RTT
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
 	require.Equal(t, 4, int(stats[0].PacketLost)) // last reported packets lost, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)

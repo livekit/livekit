@@ -76,7 +76,7 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 			if streamType == livekit.StreamType_DOWNSTREAM {
 				rtt := GetRttMs(pkt)
 				if rtt >= 0 {
-					stats.Delay = uint64(rtt)
+					stats.Rtt = uint32(rtt)
 				}
 			}
 		}
