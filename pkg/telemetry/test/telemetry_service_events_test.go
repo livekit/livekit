@@ -26,7 +26,7 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_JOINED, event.Type)
 	require.Equal(t, partSID, event.ParticipantId)
 	require.Equal(t, participantInfo, event.Participant)
-	require.Equal(t, room.Sid, event.RoomSid)
+	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, room, event.Room)
 	require.Equal(t, clientInfo.Sdk, event.SdkType)
 }
@@ -47,6 +47,6 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	_, event := fixture.analytics.SendEventArgsForCall(0)
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_LEFT, event.Type)
 	require.Equal(t, partSID, event.ParticipantId)
-	require.Equal(t, room.Sid, event.RoomSid)
+	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, room, event.Room)
 }
