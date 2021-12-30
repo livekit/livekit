@@ -155,10 +155,54 @@ func Test_OnDownStreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 0, int(stats[0].Delay))      // TODO: test for RTT
+	require.Equal(t, 0, int(stats[0].Rtt))        // TODO: test for RTT
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
-	require.Equal(t, 7, int(stats[0].PacketLost)) // sum of lost packets, see list of rtcp.ReceptionReport above
+	require.Equal(t, 4, int(stats[0].PacketLost)) // last reported packets lost, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)
+}
+
+func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
+	fixture := createFixture()
+
+	//prepare
+	room := &livekit.Room{}
+	partSID := "part1"
+	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
+
+	//do
+	pkts1 := []rtcp.Packet{
+		&rtcp.ReceiverReport{
+			Reports: []rtcp.ReceptionReport{
+				{Delay: 0, Jitter: 0, TotalLost: 1},
+			},
+		},
+	}
+	pkts2 := []rtcp.Packet{
+		&rtcp.ReceiverReport{
+			Reports: []rtcp.ReceptionReport{
+				{Delay: 0, Jitter: 0, TotalLost: 4}, // diff with previous is 3, so in second call to SendAnalytics, 3 should be sent
+			},
+		},
+	}
+	trackID := "trackID1"
+	fixture.sut.OnDownstreamPacket(partSID, trackID, 1) // there should be bytes reported so that stats are sent
+	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID, pkts1)
+	fixture.sut.SendAnalytics()
+	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID, pkts2)
+	fixture.sut.SendAnalytics()
+
+	//test
+	require.Equal(t, 2, fixture.analytics.SendStatsCallCount()) // 2 calls to fixture.sut.SendAnalytics()
+	_, stats := fixture.analytics.SendStatsArgsForCall(0)
+	require.Equal(t, 1, len(stats))
+	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
+	require.Equal(t, 1, int(stats[0].PacketLost)) // see pkts1
+
+	_, stats = fixture.analytics.SendStatsArgsForCall(1)
+	require.Equal(t, 1, len(stats))
+	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
+	require.Equal(t, 3, int(stats[0].PacketLost)) // see diff of TotalLost between pkts2 and pkts1
 }
 
 func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
@@ -246,9 +290,9 @@ func Test_OnUpstreamRTCP(t *testing.T) {
 	require.Equal(t, 1, int(stats[0].NackCount))
 	require.Equal(t, 1, int(stats[0].PliCount))
 	require.Equal(t, 1, int(stats[0].FirCount))
-	require.Equal(t, 0, int(stats[0].Delay))      // TODO: test for RTT
+	require.Equal(t, 0, int(stats[0].Rtt))        // TODO: test for RTT
 	require.Equal(t, 5, int(stats[0].Jitter))     // max of jitter, see list of rtcp.ReceptionReport above
-	require.Equal(t, 7, int(stats[0].PacketLost)) // sum of lost packets, see list of rtcp.ReceptionReport above
+	require.Equal(t, 4, int(stats[0].PacketLost)) // last reported packets lost, see list of rtcp.ReceptionReport above
 	require.Equal(t, trackID, stats[0].TrackId)
 }
 

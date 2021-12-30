@@ -26,7 +26,7 @@ type telemetryServiceInternal struct {
 	webhookPool *workerpool.WorkerPool
 
 	// one worker per participant
-	workers map[string]*StatsWorker
+	workers map[livekit.ParticipantID]*StatsWorker
 
 	analytics AnalyticsService
 }
@@ -35,26 +35,26 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 	return &telemetryServiceInternal{
 		notifier:    notifier,
 		webhookPool: workerpool.New(1),
-		workers:     make(map[string]*StatsWorker),
+		workers:     make(map[livekit.ParticipantID]*StatsWorker),
 		analytics:   analytics,
 	}
 }
 
-func (t *telemetryServiceInternal) AddUpTrack(participantID string, trackID string, buff *buffer.Buffer) {
+func (t *telemetryServiceInternal) AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer) {
 	w := t.workers[participantID]
 	if w != nil {
 		w.AddBuffer(trackID, buff)
 	}
 }
 
-func (t *telemetryServiceInternal) OnDownstreamPacket(participantID string, trackID string, bytes int) {
+func (t *telemetryServiceInternal) OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int) {
 	w := t.workers[participantID]
 	if w != nil {
 		w.OnDownstreamPacket(trackID, bytes)
 	}
 }
 
-func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, participantID string, trackID string, pkts []rtcp.Packet) {
+func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet) {
 	stats := &livekit.AnalyticsStat{}
 	for _, pkt := range pkts {
 		switch pkt := pkt.(type) {
@@ -69,12 +69,14 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
 					stats.Jitter = jitter
 				}
-				stats.PacketLost += uint64(rr.TotalLost)
+				if totalLost := uint64(rr.TotalLost); totalLost > stats.PacketLost {
+					stats.PacketLost = totalLost
+				}
 			}
 			if streamType == livekit.StreamType_DOWNSTREAM {
 				rtt := GetRttMs(pkt)
 				if rtt >= 0 {
-					stats.Delay = uint64(rtt)
+					stats.Rtt = uint32(rtt)
 				}
 			}
 		}
