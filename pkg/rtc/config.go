@@ -146,6 +146,15 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				frameMarking,
 			},
 		},
+		RTCPFeedback: RTCPFeedbackConfig{
+			Video: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBGoogREMB},
+				{Type: webrtc.TypeRTCPFBTransportCC},
+				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+				{Type: webrtc.TypeRTCPFBNACK},
+				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+			},
+		},
 	}
 
 	// subscriber configuration
