@@ -11,6 +11,7 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -48,13 +49,14 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID       livekit.ParticipantID
-	ParticipantIdentity livekit.ParticipantIdentity
-	Target              livekit.SignalTarget
-	Config              *WebRTCConfig
-	Telemetry           telemetry.TelemetryService
-	EnabledCodecs       []*livekit.Codec
-	Logger              logger.Logger
+	ParticipantID           livekit.ParticipantID
+	ParticipantIdentity     livekit.ParticipantIdentity
+	Target                  livekit.SignalTarget
+	Config                  *WebRTCConfig
+	CongestionControlConfig config.CongestionControlConfig
+	Telemetry               telemetry.TelemetryService
+	EnabledCodecs           []*livekit.Codec
+	Logger                  logger.Logger
 }
 
 // LK-TODO-SSBWE func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -143,6 +145,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
+			Config: params.CongestionControlConfig,
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
@@ -316,9 +319,10 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 		return
 	}
 
-	source := subTrack.MediaTrack().Source()
-	isManaged := (source != livekit.TrackSource_SCREEN_SHARE && source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || subTrack.MediaTrack().IsSimulcast()
-	t.streamAllocator.AddTrack(subTrack.DownTrack(), isManaged)
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
+		Source:      subTrack.MediaTrack().Source(),
+		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+	})
 }
 
 func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {

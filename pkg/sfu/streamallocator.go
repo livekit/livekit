@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -107,11 +109,12 @@ func (e Event) String() string {
 }
 
 type StreamAllocatorParams struct {
+	Config config.CongestionControlConfig
 	Logger logger.Logger
 }
 
 type StreamAllocator struct {
-	logger logger.Logger
+	params StreamAllocatorParams
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
@@ -145,7 +148,7 @@ type StreamAllocator struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		logger:      params.Logger,
+		params:      params,
 		audioTracks: make(map[string]*Track),
 		videoTracks: make(map[string]*Track),
 		prober: NewProber(ProberParams{
@@ -188,11 +191,16 @@ func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 }
 */
 
-func (s *StreamAllocator) AddTrack(downTrack *DownTrack, isManaged bool) {
+type AddTrackParams struct {
+	Source      livekit.TrackSource
+	IsSimulcast bool
+}
+
+func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) {
 	s.postEvent(Event{
 		Signal:    SignalAddTrack,
 		DownTrack: downTrack,
-		Data:      isManaged,
+		Data:      params,
 	})
 
 	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
@@ -362,7 +370,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
-	isManaged, _ := event.Data.(bool)
+	params, _ := event.Data.(AddTrackParams)
+	isManaged := (params.Source != livekit.TrackSource_SCREEN_SHARE && params.Source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || params.IsSimulcast
 	track := newTrack(event.DownTrack, isManaged)
 
 	switch event.DownTrack.Kind() {
@@ -470,7 +479,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	}
 	if !found {
 		if len(remb.SSRCs) == 0 {
-			s.logger.Warnw("no SSRC to track REMB", nil)
+			s.params.Logger.Warnw("no SSRC to track REMB", nil)
 			return
 		}
 
@@ -496,7 +505,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	s.receivedEstimate = int64(remb.Bitrate)
 	/*
 		if s.prevReceivedEstimate != s.receivedEstimate {
-			s.logger.Debugw("received new estimate",
+			s.params.Logger.Debugw("received new estimate",
 				"old(bps)", s.prevReceivedEstimate,
 				"new(bps)", s.receivedEstimate,
 			)
@@ -512,12 +521,14 @@ func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(receivedEstimate)
-	if s.prevReceivedEstimate != s.receivedEstimate {
-		s.logger.Debugw("received new estimate",
-			"old(bps)", s.prevReceivedEstimate,
-			"new(bps)", s.receivedEstimate,
-		)
-	}
+	/*
+		if s.prevReceivedEstimate != s.receivedEstimate {
+			s.params.Logger.Debugw("received new estimate",
+				"old(bps)", s.prevReceivedEstimate,
+				"new(bps)", s.receivedEstimate,
+			)
+		}
+	*/
 
 	if s.maybeCommitEstimate() {
 		s.allocateAllTracks()
@@ -622,7 +633,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.logger.Infow("state change", "from", s.state, "to", state)
+		s.params.Logger.Infow("state change", "from", s.state, "to", state)
 	}
 
 	s.state = state
@@ -675,15 +686,15 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
 
-	s.logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
+	s.params.Logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
 	return
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
-	if s.state == StateStable || !track.IsManaged() {
+	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.Allocate(ChannelCapacityInfinity)
+		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -704,8 +715,13 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	// downgrade, giving back bits
-	if transition.from.GreaterThan(transition.to) {
+	//
+	// One of
+	//   - downgrade, giving back bits, commit the allocation.
+	//   - if not a downgrade, the stream was paused and trying to restart.
+	//     If pause is disallowed, commit the allocation to get stream started again.
+	//
+	if !s.params.Config.AllowPause || transition.from.GreaterThan(transition.to) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
@@ -776,6 +792,11 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 }
 
 func (s *StreamAllocator) allocateAllTracks() {
+	if !s.params.Config.Enabled {
+		// nothing else to do when disabled
+		return
+	}
+
 	s.resetBoost()
 
 	//
@@ -799,7 +820,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	// Infinite channel capacity is given so that exempt tracks do not stall
 	//
 	for _, track := range s.exemptVideoTracksSorted {
-		allocation := track.Allocate(ChannelCapacityInfinity)
+		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
 		update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -828,7 +849,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 				}
 
 				for _, track := range s.managedVideoTracksSorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers)
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers, s.params.Config.AllowPause)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -853,11 +874,11 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 		return
 	}
 
-	s.logger.Debugw("streamed tracks changed", "update", update)
+	s.params.Logger.Debugw("streamed tracks changed", "update", update)
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
-			s.logger.Errorw("could not send streamed tracks update", err)
+			s.params.Logger.Errorw("could not send streamed tracks update", err)
 		}
 	}
 }
@@ -1120,16 +1141,16 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) Allocate(availableChannelCapacity int64) VideoAllocation {
-	return t.downTrack.Allocate(availableChannelCapacity)
+func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
+	return t.downTrack.Allocate(availableChannelCapacity, allowPause)
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {
 	t.downTrack.ProvisionalAllocatePrepare()
 }
 
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers) int64 {
-	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers)
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
+	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers, allowPause)
 }
 
 func (t *Track) ProvisionalAllocateGetCooperativeTransition() VideoTransition {

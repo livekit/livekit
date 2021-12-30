@@ -229,18 +229,19 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	sid := utils.NewGuid(utils.ParticipantPrefix)
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
-		Identity:        pi.Identity,
-		Name:            pi.Name,
-		SID:             sid,
-		Config:          &rtcConf,
-		Sink:            responseSink,
-		AudioConfig:     r.config.Audio,
-		ProtocolVersion: pv,
-		Telemetry:       r.telemetry,
-		ThrottleConfig:  r.config.RTC.PLIThrottle,
-		EnabledCodecs:   room.Room.EnabledCodecs,
-		Hidden:          pi.Hidden,
-		Logger:          pLogger,
+		Identity:                pi.Identity,
+		Name:                    pi.Name,
+		SID:                     sid,
+		Config:                  &rtcConf,
+		Sink:                    responseSink,
+		AudioConfig:             r.config.Audio,
+		ProtocolVersion:         pv,
+		Telemetry:               r.telemetry,
+		ThrottleConfig:          r.config.RTC.PLIThrottle,
+		CongestionControlConfig: r.config.RTC.CongestionControl,
+		EnabledCodecs:           room.Room.EnabledCodecs,
+		Hidden:                  pi.Hidden,
+		Logger:                  pLogger,
 	})
 
 	if err != nil {
