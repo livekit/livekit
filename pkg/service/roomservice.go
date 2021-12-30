@@ -46,7 +46,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 		return nil, twirpAuthError(err)
 	}
 
-	var names []string
+	var names []livekit.RoomName
 	if len(req.Names) > 0 {
 		names = req.Names
 	}
@@ -225,7 +225,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	return room, nil
 }
 
-func (s *RoomService) writeParticipantMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
+func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return twirpAuthError(err)
 	}
@@ -238,7 +238,7 @@ func (s *RoomService) writeParticipantMessage(ctx context.Context, room, identit
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
 }
 
-func (s *RoomService) writeRoomMessage(ctx context.Context, room, identity string, msg *livekit.RTCNodeMessage) error {
+func (s *RoomService) writeRoomMessage(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return twirpAuthError(err)
 	}
