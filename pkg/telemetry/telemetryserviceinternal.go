@@ -69,7 +69,9 @@ func (t *telemetryServiceInternal) HandleRTCP(streamType livekit.StreamType, par
 				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
 					stats.Jitter = jitter
 				}
-				stats.PacketLost += uint64(rr.TotalLost)
+				if totalLost := uint64(rr.TotalLost); totalLost > stats.PacketLost {
+					stats.PacketLost = totalLost
+				}
 			}
 			if streamType == livekit.StreamType_DOWNSTREAM {
 				rtt := GetRttMs(pkt)
