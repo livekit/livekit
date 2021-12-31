@@ -137,14 +137,17 @@ func (v VideoLayers) GreaterThan(v2 VideoLayers) bool {
 }
 
 const (
+	InvalidLayerSpatial  = int32(-1)
+	InvalidLayerTemporal = int32(-1)
+
 	DefaultMaxLayerSpatial  = int32(2)
 	DefaultMaxLayerTemporal = int32(3)
 )
 
 var (
 	InvalidLayers = VideoLayers{
-		spatial:  -1,
-		temporal: -1,
+		spatial:  InvalidLayerSpatial,
+		temporal: InvalidLayerTemporal,
 	}
 
 	DefaultMaxLayers = VideoLayers{
