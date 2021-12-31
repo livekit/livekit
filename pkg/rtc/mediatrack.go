@@ -366,8 +366,10 @@ func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	numExpected := atomic.LoadUint32(&t.numUpTracks)
 
 	t.maxQualityLock.RLock()
-	// LK-TODO: take into account t.allSubscribersMuted when turning off layer 0 also
-	maxSubscribed := uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
+	maxSubscribed := uint32(0)
+	if !t.allSubscribersMuted {
+		maxSubscribed = uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
+	}
 	t.maxQualityLock.RUnlock()
 	if maxSubscribed < numExpected {
 		numExpected = maxSubscribed
@@ -818,7 +820,7 @@ func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID
 }
 
 func (t *MediaTrack) NotifySubscriberMute(subscriberID livekit.ParticipantID) {
-	if !t.IsSimulcast() {
+	if t.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
 
@@ -836,7 +838,7 @@ func (t *MediaTrack) NotifySubscriberMute(subscriberID livekit.ParticipantID) {
 }
 
 func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
-	if !t.IsSimulcast() {
+	if t.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
 
@@ -878,7 +880,7 @@ func (t *MediaTrack) stopMaxQualityTimer() {
 }
 
 func (t *MediaTrack) updateQualityChange() {
-	if t.IsMuted() || !t.IsSimulcast() {
+	if t.Kind() != livekit.TrackType_VIDEO || t.IsMuted() {
 		return
 	}
 
@@ -902,19 +904,12 @@ func (t *MediaTrack) updateQualityChange() {
 	if allSubscribersMuted {
 		if !t.allSubscribersMuted {
 			notifyMaxExpected = true
+			maxExpectedSpatialLayer = sfu.InvalidLayerSpatial
+
 			t.allSubscribersMuted = true
 
-			// LK-TODO: do not set this when turning off LOW also below
-			t.maxSubscribedQuality = livekit.VideoQuality_LOW
-			maxExpectedSpatialLayer = SpatialLayerForQuality(t.maxSubscribedQuality)
-
 			subscribedQualities = []*livekit.SubscribedQuality{
-				// LK-TODO-START
-				// Restarting layers and subscribers getting video involves several things in the path
-				// which adds up to a few seconds of latency on re-subscription. Do not turn off the
-				// base layer till there is a good design to reduce re-subscription delays
-				// LK-TODO-END
-				{Quality: livekit.VideoQuality_LOW, Enabled: true},
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 			}
@@ -923,8 +918,9 @@ func (t *MediaTrack) updateQualityChange() {
 		t.allSubscribersMuted = false
 		if maxSubscribedQuality != t.maxSubscribedQuality {
 			notifyMaxExpected = true
+			maxExpectedSpatialLayer = SpatialLayerForQuality(maxSubscribedQuality)
+
 			t.maxSubscribedQuality = maxSubscribedQuality
-			maxExpectedSpatialLayer = SpatialLayerForQuality(t.maxSubscribedQuality)
 
 			subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true})
 

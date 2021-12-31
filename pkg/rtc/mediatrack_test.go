@@ -125,7 +125,6 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}})
-		mt.simulcasted.TrySet(true)
 
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
 
@@ -138,11 +137,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		})
 
 		// mute all subscribers
-		// LK-TODO: layer 0 is not disabled
 		mt.NotifySubscriberMute("s1")
 
 		expectedSubscribedQualities := []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
@@ -174,7 +172,6 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}})
-		mt.simulcasted.TrySet(true)
 
 		actualTrackID := ""
 		actualSubscribedQualities := []*livekit.SubscribedQuality{}
@@ -218,8 +215,8 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
-		// muting one should still produce LOW
-		mt.NotifySubscriberMute("s1")
+		// muting "s2" only should not disable all qualities
+		mt.NotifySubscriberMute("s2")
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
@@ -229,12 +226,11 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
-		// muting "s2" should disable all qualities
-		// LK-TODO: layer 0 is not disabled
-		mt.NotifySubscriberMute("s2")
+		// muting "s1" also should disable all qualities
+		mt.NotifySubscriberMute("s1")
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
