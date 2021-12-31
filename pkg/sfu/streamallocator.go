@@ -715,13 +715,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		return
 	}
 
-	//
-	// One of
-	//   - downgrade, giving back bits, commit the allocation.
-	//   - if not a downgrade, the stream was paused and trying to restart.
-	//     If pause is disallowed, commit the allocation to get stream started again.
-	//
-	if !s.params.Config.AllowPause || transition.from.GreaterThan(transition.to) {
+	// downgrade, giving back bits
+	if transition.from.GreaterThan(transition.to) {
 		allocation := track.ProvisionalAllocateCommit()
 
 		update := NewStreamStateUpdate()
@@ -768,23 +763,27 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 		}
 	}
 
+	update := NewStreamStateUpdate()
 	if bandwidthAcquired < transition.bandwidthDelta {
 		// could not get enough from other tracks, let probing deal with starting the track
-		return
+		// commit if not allowed to pause
+		if !s.params.Config.AllowPause {
+			allocation := track.ProvisionalAllocateCommit()
+			update.HandleStreamingChange(allocation.change, track)
+		}
+	} else {
+		// commit the tracks that contributed
+		for _, t := range contributingTracks {
+			allocation := t.ProvisionalAllocateCommit()
+			update.HandleStreamingChange(allocation.change, t)
+		}
+
+		// commit the track that needs change
+		allocation := track.ProvisionalAllocateCommit()
+		update.HandleStreamingChange(allocation.change, track)
+
+		// LK-TODO if got too much extra, can potentially give it to some deficient track
 	}
-
-	// commit the tracks that contributed
-	update := NewStreamStateUpdate()
-	for _, t := range contributingTracks {
-		allocation := t.ProvisionalAllocateCommit()
-		update.HandleStreamingChange(allocation.change, t)
-	}
-
-	// commit the track that needs change
-	allocation := track.ProvisionalAllocateCommit()
-	update.HandleStreamingChange(allocation.change, track)
-
-	// LK-TODO if got too much extra, can potentially give it to some deficient track
 
 	s.maybeSendUpdate(update)
 
