@@ -764,25 +764,20 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	}
 
 	update := NewStreamStateUpdate()
-	if bandwidthAcquired < transition.bandwidthDelta {
-		// could not get enough from other tracks, let probing deal with starting the track
-		// commit if not allowed to pause
-		if !s.params.Config.AllowPause {
-			allocation := track.ProvisionalAllocateCommit()
-			update.HandleStreamingChange(allocation.change, track)
-		}
-	} else {
+	if bandwidthAcquired >= transition.bandwidthDelta {
 		// commit the tracks that contributed
 		for _, t := range contributingTracks {
 			allocation := t.ProvisionalAllocateCommit()
 			update.HandleStreamingChange(allocation.change, t)
 		}
 
-		// commit the track that needs change
+		// LK-TODO if got too much extra, can potentially give it to some deficient track
+	}
+
+	// commit the track that needs change if enough could be acquired or pause not allowed
+	if !s.params.Config.AllowPause || bandwidthAcquired >= transition.bandwidthDelta {
 		allocation := track.ProvisionalAllocateCommit()
 		update.HandleStreamingChange(allocation.change, track)
-
-		// LK-TODO if got too much extra, can potentially give it to some deficient track
 	}
 
 	s.maybeSendUpdate(update)
