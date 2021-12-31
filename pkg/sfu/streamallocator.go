@@ -830,7 +830,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	if availableChannelCapacity < 0 {
 		availableChannelCapacity = 0
 	}
-	if availableChannelCapacity == 0 {
+	if availableChannelCapacity == 0 && s.params.Config.AllowPause {
 		// nothing left for managed tracks, pause them all
 		for _, track := range s.managedVideoTracksSorted {
 			allocation := track.Pause()
