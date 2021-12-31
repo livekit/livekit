@@ -60,7 +60,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), room.Name),
+		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), livekit.RoomName(room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
@@ -83,7 +83,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 }
 
 func (r *Room) Name() livekit.RoomName {
-	return r.Room.Name
+	return livekit.RoomName(r.Room.Name)
 }
 
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.Participant {

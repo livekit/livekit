@@ -46,7 +46,7 @@ func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.
 
 func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *livekit.Room,
 	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
-	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, room.Name, participant.Sid)
+	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, livekit.RoomName(room.Name), participant.Sid)
 
 	prometheus.AddParticipant()
 
@@ -100,13 +100,13 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 		RoomId:        roomID,
 		ParticipantId: participantID,
 		Track:         track,
-		Room:          &livekit.Room{Name: roomName},
+		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
 
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := ""
-	roomName := ""
+	roomName := livekit.RoomName("")
 	w := t.workers[participantID]
 	if w != nil {
 		roomID = w.roomID
@@ -122,7 +122,7 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 		RoomId:        roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
-		Room:          &livekit.Room{Name: roomName},
+		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
 
@@ -136,7 +136,7 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 		RoomId:        roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
-		Room:          &livekit.Room{Name: roomName},
+		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
 
@@ -150,7 +150,7 @@ func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, partic
 		RoomId:        roomID,
 		ParticipantId: participantID,
 		TrackId:       track.Sid,
-		Room:          &livekit.Room{Name: roomName},
+		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
 

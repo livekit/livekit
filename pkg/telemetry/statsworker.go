@@ -66,7 +66,7 @@ func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID livekit.TrackID) *
 			Kind:          livekit.StreamType_DOWNSTREAM,
 			RoomId:        s.roomID,
 			ParticipantId: s.participantID,
-			RoomName:      s.roomName,
+			RoomName:      string(s.roomName),
 		}}
 	}
 	return s.outgoingPerTrack[trackID]
@@ -78,7 +78,7 @@ func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID livekit.TrackID) *
 			Kind:          livekit.StreamType_UPSTREAM,
 			RoomId:        s.roomID,
 			ParticipantId: s.participantID,
-			RoomName:      s.roomName,
+			RoomName:      string(s.roomName),
 		}}
 	}
 	return s.incomingPerTrack[trackID]
@@ -170,7 +170,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 		Kind:          next.Kind,
 		RoomId:        s.roomID,
 		ParticipantId: s.participantID,
-		RoomName:      s.roomName,
+		RoomName:      string(s.roomName),
 	}
 
 	next.TimeStamp = ts

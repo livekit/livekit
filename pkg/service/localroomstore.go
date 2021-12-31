@@ -32,7 +32,7 @@ func (p *LocalRoomStore) StoreRoom(_ context.Context, room *livekit.Room) error 
 		room.CreationTime = time.Now().Unix()
 	}
 	p.lock.Lock()
-	p.rooms[room.Name] = room
+	p.rooms[livekit.RoomName(room.Name)] = room
 	p.lock.Unlock()
 	return nil
 }
@@ -71,8 +71,8 @@ func (p *LocalRoomStore) DeleteRoom(ctx context.Context, name livekit.RoomName) 
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	delete(p.participants, room.Name)
-	delete(p.rooms, room.Name)
+	delete(p.participants, livekit.RoomName(room.Name))
+	delete(p.rooms, livekit.RoomName(room.Name))
 	return nil
 }
 
@@ -99,7 +99,7 @@ func (p *LocalRoomStore) StoreParticipant(_ context.Context, roomName livekit.Ro
 	return nil
 }
 
-func (p *LocalRoomStore) LoadParticipant(_ context.Context, roomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) LoadParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -132,7 +132,7 @@ func (p *LocalRoomStore) ListParticipants(_ context.Context, roomName livekit.Ro
 	return items, nil
 }
 
-func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName, identity livekit.ParticipantIdentity) error {
+func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 

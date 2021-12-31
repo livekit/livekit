@@ -101,7 +101,7 @@ func EnsureJoinPermission(ctx context.Context) (name livekit.RoomName, err error
 	}
 
 	if claims.Video.RoomJoin {
-		name = claims.Video.Room
+		name = livekit.RoomName(claims.Video.Room)
 	} else {
 		err = ErrPermissionDenied
 	}
@@ -114,7 +114,7 @@ func EnsureAdminPermission(ctx context.Context, room livekit.RoomName) error {
 		return ErrPermissionDenied
 	}
 
-	if !claims.Video.RoomAdmin || room != claims.Video.Room {
+	if !claims.Video.RoomAdmin || room != livekit.RoomName(claims.Video.Room) {
 		return ErrPermissionDenied
 	}
 
