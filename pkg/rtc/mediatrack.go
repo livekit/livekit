@@ -353,7 +353,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
+		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_MEDIUM) // start with MEDIUM, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
@@ -915,25 +915,17 @@ func (t *MediaTrack) updateQualityChange() {
 			}
 		}
 	} else {
-		t.allSubscribersMuted = false
-		if maxSubscribedQuality != t.maxSubscribedQuality {
+		if t.allSubscribersMuted || maxSubscribedQuality != t.maxSubscribedQuality {
+			t.allSubscribersMuted = false
 			notifyMaxExpected = true
 			maxExpectedSpatialLayer = SpatialLayerForQuality(maxSubscribedQuality)
-
 			t.maxSubscribedQuality = maxSubscribedQuality
 
-			subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true})
-
-			if t.maxSubscribedQuality == livekit.VideoQuality_LOW {
-				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false})
-			} else {
-				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true})
-			}
-
-			if t.maxSubscribedQuality != livekit.VideoQuality_HIGH {
-				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false})
-			} else {
-				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true})
+			for q := livekit.VideoQuality_LOW; q <= livekit.VideoQuality_HIGH; q++ {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{
+					Quality: q,
+					Enabled: q <= t.maxSubscribedQuality,
+				})
 			}
 		}
 	}
