@@ -353,7 +353,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.receiver.AddDownTrack(downTrack)
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_MEDIUM) // start with MEDIUM, let subscription change it later
+		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
