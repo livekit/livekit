@@ -113,7 +113,7 @@ func (r *RoomManager) CleanupRooms() error {
 	now := time.Now().Unix()
 	for _, room := range rooms {
 		if (now - room.CreationTime) > roomPurgeSeconds {
-			if err := r.DeleteRoom(ctx, room.Name); err != nil {
+			if err := r.DeleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
 				return err
 			}
 		}
@@ -385,7 +385,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 }
 
 // handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
+func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()

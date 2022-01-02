@@ -37,16 +37,16 @@ func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
 func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	token, err := r.roomStore.LockRoom(ctx, req.Name, 5*time.Second)
+	token, err := r.roomStore.LockRoom(ctx, livekit.RoomName(req.Name), 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		_ = r.roomStore.UnlockRoom(ctx, req.Name, token)
+		_ = r.roomStore.UnlockRoom(ctx, livekit.RoomName(req.Name), token)
 	}()
 
 	// find existing room and update it
-	rm, err := r.roomStore.LoadRoom(ctx, req.Name)
+	rm, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name))
 	if err == ErrRoomNotFound {
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -70,7 +70,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	// check if room already assigned
-	existing, err := r.router.GetNodeForRoom(ctx, rm.Name)
+	existing, err := r.router.GetNodeForRoom(ctx, livekit.RoomName(rm.Name))
 	if err != routing.ErrNotFound && err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeID)
-	err = r.router.SetNodeForRoom(ctx, rm.Name, nodeID)
+	err = r.router.SetNodeForRoom(ctx, livekit.RoomName(rm.Name), nodeID)
 	if err != nil {
 		return nil, err
 	}

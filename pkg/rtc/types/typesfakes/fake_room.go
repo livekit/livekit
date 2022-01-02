@@ -9,15 +9,15 @@ import (
 )
 
 type FakeRoom struct {
-	NameStub        func() string
+	NameStub        func() livekit.RoomName
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
 	}
 	nameReturns struct {
-		result1 string
+		result1 livekit.RoomName
 	}
 	nameReturnsOnCall map[int]struct {
-		result1 string
+		result1 livekit.RoomName
 	}
 	UpdateSubscriptionPermissionsStub        func(types.Participant, *livekit.UpdateSubscriptionPermissions) error
 	updateSubscriptionPermissionsMutex       sync.RWMutex
@@ -49,7 +49,7 @@ type FakeRoom struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeRoom) Name() string {
+func (fake *FakeRoom) Name() livekit.RoomName {
 	fake.nameMutex.Lock()
 	ret, specificReturn := fake.nameReturnsOnCall[len(fake.nameArgsForCall)]
 	fake.nameArgsForCall = append(fake.nameArgsForCall, struct {
@@ -73,32 +73,32 @@ func (fake *FakeRoom) NameCallCount() int {
 	return len(fake.nameArgsForCall)
 }
 
-func (fake *FakeRoom) NameCalls(stub func() string) {
+func (fake *FakeRoom) NameCalls(stub func() livekit.RoomName) {
 	fake.nameMutex.Lock()
 	defer fake.nameMutex.Unlock()
 	fake.NameStub = stub
 }
 
-func (fake *FakeRoom) NameReturns(result1 string) {
+func (fake *FakeRoom) NameReturns(result1 livekit.RoomName) {
 	fake.nameMutex.Lock()
 	defer fake.nameMutex.Unlock()
 	fake.NameStub = nil
 	fake.nameReturns = struct {
-		result1 string
+		result1 livekit.RoomName
 	}{result1}
 }
 
-func (fake *FakeRoom) NameReturnsOnCall(i int, result1 string) {
+func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	fake.nameMutex.Lock()
 	defer fake.nameMutex.Unlock()
 	fake.NameStub = nil
 	if fake.nameReturnsOnCall == nil {
 		fake.nameReturnsOnCall = make(map[int]struct {
-			result1 string
+			result1 livekit.RoomName
 		})
 	}
 	fake.nameReturnsOnCall[i] = struct {
-		result1 string
+		result1 livekit.RoomName
 	}{result1}
 }
 

@@ -42,7 +42,7 @@ func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ livekit.RoomName) (*li
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(_ context.Context, _, _ livekit.RoomName) error {
+func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ string) error {
 	return nil
 }
 
