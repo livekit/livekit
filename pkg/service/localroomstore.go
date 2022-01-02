@@ -51,9 +51,10 @@ func (p *LocalRoomStore) LoadRoom(_ context.Context, name livekit.RoomName) (*li
 func (p *LocalRoomStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
+	roomNames := livekit.RoomNamesAsStrings(names)
 	rooms := make([]*livekit.Room, 0, len(p.rooms))
 	for _, r := range p.rooms {
-		if names == nil || funk.Contains(names, r.Name) {
+		if roomNames == nil || funk.Contains(roomNames, r.Name) {
 			rooms = append(rooms, r)
 		}
 	}
