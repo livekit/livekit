@@ -46,7 +46,7 @@ func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.
 
 func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *livekit.Room,
 	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
-	t.workers[participant.Sid] = newStatsWorker(ctx, t, room.Sid, livekit.RoomName(room.Name), participant.Sid)
+	t.workers[livekit.ParticipantID(participant.Sid)] = newStatsWorker(ctx, t, livekit.RoomID(room.Sid), livekit.RoomName(room.Name), livekit.ParticipantID(participant.Sid))
 
 	prometheus.AddParticipant()
 
@@ -68,9 +68,9 @@ func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *
 }
 
 func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	if w := t.workers[participant.Sid]; w != nil {
+	if w := t.workers[livekit.ParticipantID(participant.Sid)]; w != nil {
 		w.Close()
-		delete(t.workers, participant.Sid)
+		delete(t.workers, livekit.ParticipantID(participant.Sid))
 	}
 
 	prometheus.SubParticipant()
@@ -97,20 +97,20 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED,
 		Timestamp:     timestamppb.Now(),
-		RoomId:        roomID,
-		ParticipantId: participantID,
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
 		Track:         track,
 		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
 
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
-	roomID := ""
+	roomID := livekit.RoomID("")
 	roomName := livekit.RoomName("")
 	w := t.workers[participantID]
 	if w != nil {
 		roomID = w.roomID
-		w.RemoveBuffer(track.GetSid())
+		w.RemoveBuffer(livekit.TrackID(track.GetSid()))
 		roomName = w.roomName
 	}
 
@@ -119,8 +119,8 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_UNPUBLISHED,
 		Timestamp:     timestamppb.Now(),
-		RoomId:        roomID,
-		ParticipantId: participantID,
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
 		TrackId:       track.Sid,
 		Room:          &livekit.Room{Name: string(roomName)},
 	})
@@ -133,8 +133,8 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_SUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
-		RoomId:        roomID,
-		ParticipantId: participantID,
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
 		TrackId:       track.Sid,
 		Room:          &livekit.Room{Name: string(roomName)},
 	})
@@ -147,8 +147,8 @@ func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, partic
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_TRACK_UNSUBSCRIBED,
 		Timestamp:     timestamppb.Now(),
-		RoomId:        roomID,
-		ParticipantId: participantID,
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
 		TrackId:       track.Sid,
 		Room:          &livekit.Room{Name: string(roomName)},
 	})

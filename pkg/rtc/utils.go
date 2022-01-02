@@ -21,26 +21,26 @@ const (
 func UnpackStreamID(packed string) (participantID livekit.ParticipantID, trackID livekit.TrackID) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) > 1 {
-		return parts[0], packed[len(parts[0])+1:]
+		return livekit.ParticipantID(parts[0]), livekit.TrackID(packed[len(parts[0])+1:])
 	}
-	return packed, ""
+	return livekit.ParticipantID(packed), ""
 }
 
 func PackStreamID(participantID livekit.ParticipantID, trackID livekit.TrackID) string {
-	return participantID + trackIdSeparator + trackID
+	return string(participantID) + trackIdSeparator + string(trackID)
 }
 
 func PackDataTrackLabel(participantID livekit.ParticipantID, trackID livekit.TrackID, label string) string {
-	return participantID + trackIdSeparator + trackID + trackIdSeparator + label
+	return string(participantID) + trackIdSeparator + string(trackID) + trackIdSeparator + label
 }
 
 func UnpackDataTrackLabel(packed string) (peerID livekit.ParticipantID, trackID livekit.TrackID, label string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) != 3 {
-		return "", packed, ""
+		return "", livekit.TrackID(packed), ""
 	}
-	peerID = parts[0]
-	trackID = parts[1]
+	peerID = livekit.ParticipantID(parts[0])
+	trackID = livekit.TrackID(parts[1])
 	label = parts[2]
 	return
 }

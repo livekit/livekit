@@ -10,7 +10,7 @@ import (
 
 func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
-	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
+	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
@@ -50,7 +50,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 
 func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
 	t := &typesfakes.FakePublishedTrack{}
-	t.IDReturns(utils.NewGuid(utils.TrackPrefix))
+	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
 	return t

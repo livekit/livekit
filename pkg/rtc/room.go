@@ -124,7 +124,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 			continue
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
-			Sid:    p.ID(),
+			Sid:    string(p.ID()),
 			Level:  ConvertAudioLevel(level),
 			Active: active,
 		})
@@ -355,11 +355,11 @@ func (r *Room) UpdateSubscriptions(
 	}
 
 	for _, pt := range participantTracks {
-		p := r.GetParticipantBySid(pt.ParticipantSid)
+		p := r.GetParticipantBySid(livekit.ParticipantID(pt.ParticipantSid))
 		if p == nil {
 			continue
 		}
-		for _, trackID := range pt.TrackSids {
+		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
 			trackPublishers[trackID] = p
 		}
 	}
@@ -580,7 +580,7 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 		if len(dest) > 0 {
 			found := false
 			for _, dID := range dest {
-				if op.ID() == dID {
+				if op.ID() == livekit.ParticipantID(dID) {
 					found = true
 					break
 				}
@@ -701,7 +701,7 @@ func (r *Room) audioUpdateWorker() {
 		activeSpeakers := r.GetActiveSpeakers()
 		if smoothValues != nil {
 			for _, speaker := range activeSpeakers {
-				sid := speaker.Sid
+				sid := livekit.ParticipantID(speaker.Sid)
 				level := smoothValues[sid]
 				delete(smoothValues, sid)
 				// exponential moving average (EMA)
@@ -715,7 +715,7 @@ func (r *Room) audioUpdateWorker() {
 				level += -level * smoothFactor
 				if level > activeThreshold {
 					activeSpeakers = append(activeSpeakers, &livekit.SpeakerInfo{
-						Sid:    sid,
+						Sid:    string(sid),
 						Level:  level,
 						Active: true,
 					})
@@ -724,7 +724,7 @@ func (r *Room) audioUpdateWorker() {
 
 			// smoothValues map is drained, now repopulate it back
 			for _, speaker := range activeSpeakers {
-				smoothValues[speaker.Sid] = speaker.Level
+				smoothValues[livekit.ParticipantID(speaker.Sid)] = speaker.Level
 			}
 
 			sort.Slice(activeSpeakers, func(i, j int) bool {
@@ -740,11 +740,11 @@ func (r *Room) audioUpdateWorker() {
 		changedSpeakers := make([]*livekit.SpeakerInfo, 0, len(activeSpeakers))
 		nextActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo, len(activeSpeakers))
 		for _, speaker := range activeSpeakers {
-			prev := lastActiveMap[speaker.Sid]
+			prev := lastActiveMap[livekit.ParticipantID(speaker.Sid)]
 			if prev == nil || prev.Level != speaker.Level {
 				changedSpeakers = append(changedSpeakers, speaker)
 			}
-			nextActiveMap[speaker.Sid] = speaker
+			nextActiveMap[livekit.ParticipantID(speaker.Sid)] = speaker
 		}
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
@@ -818,7 +818,7 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	participants := r.GetParticipants()
 	participantInfo := make(map[string]interface{})
 	for _, p := range participants {
-		participantInfo[p.Identity()] = p.DebugInfo()
+		participantInfo[string(p.Identity())] = p.DebugInfo()
 	}
 	info["Participants"] = participantInfo
 

@@ -176,7 +176,7 @@ func (p *RedisRoomStore) StoreParticipant(_ context.Context, roomName livekit.Ro
 
 func (p *RedisRoomStore) LoadParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + string(roomName)
-	data, err := p.rc.HGet(p.ctx, key, identity).Result()
+	data, err := p.rc.HGet(p.ctx, key, string(identity)).Result()
 	if err == redis.Nil {
 		return nil, ErrParticipantNotFound
 	} else if err != nil {
@@ -213,5 +213,5 @@ func (p *RedisRoomStore) ListParticipants(_ context.Context, roomName livekit.Ro
 func (p *RedisRoomStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	key := RoomParticipantsPrefix + string(roomName)
 
-	return p.rc.HDel(p.ctx, key, identity).Err()
+	return p.rc.HDel(p.ctx, key, string(identity)).Err()
 }

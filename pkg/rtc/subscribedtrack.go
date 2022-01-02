@@ -52,8 +52,8 @@ func (t *SubscribedTrack) Bound() {
 	}
 }
 
-func (t *SubscribedTrack) ID() string {
-	return t.params.DownTrack.ID()
+func (t *SubscribedTrack) ID() livekit.TrackID {
+	return livekit.TrackID(t.params.DownTrack.ID())
 }
 
 func (t *SubscribedTrack) PublisherID() livekit.ParticipantID {

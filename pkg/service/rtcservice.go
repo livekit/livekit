@@ -99,8 +99,8 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
-		Identity:      claims.Identity,
-		Name:          claims.Name,
+		Identity:      livekit.ParticipantIdentity(claims.Identity),
+		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,

@@ -129,7 +129,7 @@ func scenarioDataPublish(t *testing.T) {
 
 	received := utils.AtomicFlag{}
 	c2.OnDataReceived = func(data []byte, sid string) {
-		if string(data) == payload && sid == c1.ID() {
+		if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
 			received.TrySet(true)
 		}
 	}

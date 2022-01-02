@@ -30,7 +30,7 @@ const (
 )
 
 type RTCClient struct {
-	id         string
+	id         livekit.ParticipantID
 	conn       *websocket.Conn
 	publisher  *rtc.PCTransport
 	subscriber *rtc.PCTransport
@@ -43,9 +43,9 @@ type RTCClient struct {
 	connected          utils.AtomicFlag
 	iceConnected       utils.AtomicFlag
 	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
-	subscribedTracks   map[string][]*webrtc.TrackRemote
+	subscribedTracks   map[livekit.ParticipantID][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
-	remoteParticipants map[string]*livekit.ParticipantInfo
+	remoteParticipants map[livekit.ParticipantID]*livekit.ParticipantInfo
 
 	reliableDC          *webrtc.DataChannel
 	reliableDCSub       *webrtc.DataChannel
@@ -61,9 +61,9 @@ type RTCClient struct {
 	OnConnected         func()
 	OnDataReceived      func(data []byte, sid string)
 
-	// map of track ID and last packet
-	lastPackets   map[string]*rtp.Packet
-	bytesReceived map[string]uint64
+	// map of livekit.ParticipantID and last packet
+	lastPackets   map[livekit.ParticipantID]*rtp.Packet
+	bytesReceived map[livekit.ParticipantID]uint64
 }
 
 var (
@@ -115,11 +115,11 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		conn:                   conn,
 		localTracks:            make(map[string]webrtc.TrackLocal),
 		pendingPublishedTracks: make(map[string]*livekit.TrackInfo),
-		subscribedTracks:       make(map[string][]*webrtc.TrackRemote),
-		remoteParticipants:     make(map[string]*livekit.ParticipantInfo),
+		subscribedTracks:       make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
+		remoteParticipants:     make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
 		me:                     &webrtc.MediaEngine{},
-		lastPackets:            make(map[string]*rtp.Packet),
-		bytesReceived:          make(map[string]uint64),
+		lastPackets:            make(map[livekit.ParticipantID]*rtp.Packet),
+		bytesReceived:          make(map[livekit.ParticipantID]uint64),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
@@ -241,7 +241,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	return c, nil
 }
 
-func (c *RTCClient) ID() string {
+func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
 }
 
@@ -266,10 +266,10 @@ func (c *RTCClient) Run() error {
 		switch msg := res.Message.(type) {
 		case *livekit.SignalResponse_Join:
 			c.localParticipant = msg.Join.Participant
-			c.id = msg.Join.Participant.Sid
+			c.id = livekit.ParticipantID(msg.Join.Participant.Sid)
 			c.lock.Lock()
 			for _, p := range msg.Join.OtherParticipants {
-				c.remoteParticipants[p.Sid] = p
+				c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
 			}
 			c.lock.Unlock()
 			// if publish only, negotiate
@@ -309,9 +309,9 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				if p.State != livekit.ParticipantInfo_DISCONNECTED {
-					c.remoteParticipants[p.Sid] = p
+					c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
 				} else {
-					delete(c.remoteParticipants, p.Sid)
+					delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
 				}
 			}
 			c.lock.Unlock()
@@ -332,7 +332,7 @@ func (c *RTCClient) WaitUntilConnected() error {
 	for {
 		select {
 		case <-ctx.Done():
-			id := c.ID()
+			id := string(c.ID())
 			if c.localParticipant != nil {
 				id = c.localParticipant.Identity
 			}
@@ -372,11 +372,11 @@ func (c *RTCClient) ReadResponse() (*livekit.SignalResponse, error) {
 	}
 }
 
-func (c *RTCClient) SubscribedTracks() map[string][]*webrtc.TrackRemote {
+func (c *RTCClient) SubscribedTracks() map[livekit.ParticipantID][]*webrtc.TrackRemote {
 	// create a copy of this
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	tracks := make(map[string][]*webrtc.TrackRemote, len(c.subscribedTracks))
+	tracks := make(map[livekit.ParticipantID][]*webrtc.TrackRemote, len(c.subscribedTracks))
 	for key, val := range c.subscribedTracks {
 		tracks[key] = val
 	}
@@ -389,7 +389,7 @@ func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
 	return funk.Values(c.remoteParticipants).([]*livekit.ParticipantInfo)
 }
 
-func (c *RTCClient) GetRemoteParticipant(sid string) *livekit.ParticipantInfo {
+func (c *RTCClient) GetRemoteParticipant(sid livekit.ParticipantID) *livekit.ParticipantInfo {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.remoteParticipants[sid]
@@ -659,7 +659,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
 	pId, trackId := rtc.UnpackStreamID(track.StreamID())
 	if trackId == "" {
-		trackId = track.ID()
+		trackId = livekit.TrackID(track.ID())
 	}
 	c.lock.Lock()
 	c.subscribedTracks[pId] = append(c.subscribedTracks[pId], track)

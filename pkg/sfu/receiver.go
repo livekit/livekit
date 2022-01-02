@@ -14,18 +14,19 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/livekit"
 )
 
 type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
-	TrackID() string
+	TrackID() livekit.TrackID
 	StreamID() string
 	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	AddDownTrack(track TrackSender)
-	DeleteDownTrack(peerID string)
+	DeleteDownTrack(peerID livekit.ParticipantID)
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
@@ -33,7 +34,7 @@ type TrackReceiver interface {
 
 // Receiver defines an interface for a track receivers
 type Receiver interface {
-	TrackID() string
+	TrackID() livekit.TrackID
 	StreamID() string
 	Codec() webrtc.RTPCodecCapability
 	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
@@ -43,7 +44,7 @@ type Receiver interface {
 	NumAvailableSpatialLayers() int
 	GetBitrateTemporalCumulative() Bitrates
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	DeleteDownTrack(peerID string)
+	DeleteDownTrack(peerID livekit.ParticipantID)
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
@@ -54,8 +55,8 @@ type Receiver interface {
 
 // WebRTCReceiver receives a video track
 type WebRTCReceiver struct {
-	peerID           string
-	trackID          string
+	peerID           livekit.ParticipantID
+	trackID          livekit.TrackID
 	streamID         string
 	kind             webrtc.RTPCodecType
 	receiver         *webrtc.RTPReceiver
@@ -82,7 +83,7 @@ type WebRTCReceiver struct {
 
 	downTrackMu sync.RWMutex
 	downTracks  []TrackSender
-	index       map[string]int
+	index       map[livekit.ParticipantID]int
 	free        map[int]struct{}
 	numProcs    int
 	lbThreshold int
@@ -119,11 +120,11 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 }
 
 // NewWebRTCReceiver creates a new webrtc track receivers
-func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid string, opts ...ReceiverOpts) Receiver {
+func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid livekit.ParticipantID, opts ...ReceiverOpts) Receiver {
 	w := &WebRTCReceiver{
 		peerID:   pid,
 		receiver: receiver,
-		trackID:  track.ID(),
+		trackID:  livekit.TrackID(track.ID()),
 		streamID: track.StreamID(),
 		codec:    track.Codec(),
 		kind:     track.Kind(),
@@ -132,7 +133,7 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 		maxExpectedLayer: DefaultMaxLayerSpatial,
 		pliThrottle:      500e6,
 		downTracks:       make([]TrackSender, 0),
-		index:            make(map[string]int),
+		index:            make(map[livekit.ParticipantID]int),
 		free:             make(map[int]struct{}),
 		numProcs:         runtime.NumCPU(),
 	}
@@ -145,7 +146,7 @@ func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, 
 	return w
 }
 
-func (w *WebRTCReceiver) SetTrackMeta(trackID, streamID string) {
+func (w *WebRTCReceiver) SetTrackMeta(trackID livekit.TrackID, streamID string) {
 	w.streamID = streamID
 	w.trackID = trackID
 }
@@ -154,7 +155,7 @@ func (w *WebRTCReceiver) StreamID() string {
 	return w.streamID
 }
 
-func (w *WebRTCReceiver) TrackID() string {
+func (w *WebRTCReceiver) TrackID() livekit.TrackID {
 	return w.trackID
 }
 
@@ -407,7 +408,7 @@ func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 }
 
 // DeleteDownTrack removes a DownTrack from a Receiver
-func (w *WebRTCReceiver) DeleteDownTrack(peerID string) {
+func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 	if w.closed.get() {
 		return
 	}
@@ -544,7 +545,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 func (w *WebRTCReceiver) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
 	if err := dt.WriteRTP(pkt, layer); err != nil {
-		log.Error().Err(err).Str("id", dt.ID()).Msg("Error writing to down track")
+		log.Error().Err(err).Str("id", string(dt.ID())).Msg("Error writing to down track")
 	}
 }
 
@@ -557,7 +558,7 @@ func (w *WebRTCReceiver) closeTracks() {
 		}
 	}
 	w.downTracks = make([]TrackSender, 0)
-	w.index = make(map[string]int)
+	w.index = make(map[livekit.ParticipantID]int)
 	w.free = make(map[int]struct{})
 	w.downTrackMu.Unlock()
 

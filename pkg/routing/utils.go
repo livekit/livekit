@@ -8,7 +8,7 @@ import (
 )
 
 func participantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) string {
-	return string(roomName) + "|" + identity
+	return string(roomName) + "|" + string(identity)
 }
 
 func parseParticipantKey(pkey string) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
@@ -18,5 +18,5 @@ func parseParticipantKey(pkey string) (roomName livekit.RoomName, identity livek
 		return
 	}
 
-	return livekit.RoomName(parts[0]), parts[1], nil
+	return livekit.RoomName(parts[0]), livekit.ParticipantIdentity(parts[1]), nil
 }

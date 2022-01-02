@@ -132,8 +132,8 @@ type StreamAllocator struct {
 
 	lastGratuitousProbeTime time.Time
 
-	audioTracks              map[string]*Track
-	videoTracks              map[string]*Track
+	audioTracks              map[livekit.TrackID]*Track
+	videoTracks              map[livekit.TrackID]*Track
 	exemptVideoTracksSorted  TrackSorter
 	managedVideoTracksSorted TrackSorter
 
@@ -149,8 +149,8 @@ type StreamAllocator struct {
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
 		params:      params,
-		audioTracks: make(map[string]*Track),
-		videoTracks: make(map[string]*Track),
+		audioTracks: make(map[livekit.TrackID]*Track),
+		videoTracks: make(map[livekit.TrackID]*Track),
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
@@ -374,11 +374,12 @@ func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
 	isManaged := (params.Source != livekit.TrackSource_SCREEN_SHARE && params.Source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || params.IsSimulcast
 	track := newTrack(event.DownTrack, isManaged)
 
+	trackID := livekit.TrackID(event.DownTrack.ID())
 	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
-		s.audioTracks[event.DownTrack.ID()] = track
+		s.audioTracks[trackID] = track
 	case webrtc.RTPCodecTypeVideo:
-		s.videoTracks[event.DownTrack.ID()] = track
+		s.videoTracks[trackID] = track
 
 		if isManaged {
 			s.managedVideoTracksSorted = append(s.managedVideoTracksSorted, track)
@@ -393,20 +394,21 @@ func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
+	trackID := livekit.TrackID(event.DownTrack.ID())
 	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
-		if _, ok := s.audioTracks[event.DownTrack.ID()]; !ok {
+		if _, ok := s.audioTracks[trackID]; !ok {
 			return
 		}
 
-		delete(s.audioTracks, event.DownTrack.ID())
+		delete(s.audioTracks, trackID)
 	case webrtc.RTPCodecTypeVideo:
-		track, ok := s.videoTracks[event.DownTrack.ID()]
+		track, ok := s.videoTracks[trackID]
 		if !ok {
 			return
 		}
 
-		delete(s.videoTracks, event.DownTrack.ID())
+		delete(s.videoTracks, trackID)
 
 		if track.IsManaged() {
 			n := len(s.managedVideoTracksSorted)
@@ -548,11 +550,13 @@ func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
 	var track *Track
 	ok := false
+
+	trackID := livekit.TrackID(event.DownTrack.ID())
 	switch event.DownTrack.Kind() {
 	case webrtc.RTPCodecTypeAudio:
-		track, ok = s.audioTracks[event.DownTrack.ID()]
+		track, ok = s.audioTracks[trackID]
 	case webrtc.RTPCodecTypeVideo:
-		track, ok = s.videoTracks[event.DownTrack.ID()]
+		track, ok = s.videoTracks[trackID]
 	}
 	if !ok {
 		return
@@ -563,7 +567,7 @@ func (s *StreamAllocator) handleSignalReceiverReport(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
-	track, ok := s.videoTracks[event.DownTrack.ID()]
+	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
 	if !ok {
 		return
 	}
@@ -572,7 +576,7 @@ func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
-	track, ok := s.videoTracks[event.DownTrack.ID()]
+	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
 	if !ok {
 		return
 	}
@@ -581,7 +585,7 @@ func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
-	track, ok := s.videoTracks[event.DownTrack.ID()]
+	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
 	if !ok {
 		return
 	}
@@ -1034,9 +1038,9 @@ const (
 )
 
 type StreamStateInfo struct {
-	ParticipantSid string
-	TrackSid       string
-	State          StreamState
+	ParticipantID livekit.ParticipantID
+	TrackID       livekit.TrackID
+	State         StreamState
 }
 
 type StreamStateUpdate struct {
@@ -1051,15 +1055,15 @@ func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, t
 	switch change {
 	case VideoStreamingChangePausing:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantSid: track.PeerID(),
-			TrackSid:       track.ID(),
-			State:          StreamStatePaused,
+			ParticipantID: track.PeerID(),
+			TrackID:       track.ID(),
+			State:         StreamStatePaused,
 		})
 	case VideoStreamingChangeResuming:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantSid: track.PeerID(),
-			TrackSid:       track.ID(),
-			State:          StreamStateActive,
+			ParticipantID: track.PeerID(),
+			TrackID:       track.ID(),
+			State:         StreamStateActive,
 		})
 	}
 }
@@ -1100,11 +1104,11 @@ func (t *Track) IsManaged() bool {
 	return t.isManaged
 }
 
-func (t *Track) ID() string {
-	return t.downTrack.ID()
+func (t *Track) ID() livekit.TrackID {
+	return livekit.TrackID(t.downTrack.ID())
 }
 
-func (t *Track) PeerID() string {
+func (t *Track) PeerID() livekit.ParticipantID {
 	return t.downTrack.PeerID()
 }
 

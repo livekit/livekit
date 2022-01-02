@@ -31,11 +31,11 @@ type FakeRoom struct {
 	updateSubscriptionPermissionsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscriptionsStub        func(types.Participant, []string, []*livekit.ParticipantTracks, bool) error
+	UpdateSubscriptionsStub        func(types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error
 	updateSubscriptionsMutex       sync.RWMutex
 	updateSubscriptionsArgsForCall []struct {
 		arg1 types.Participant
-		arg2 []string
+		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
 	}
@@ -164,10 +164,10 @@ func (fake *FakeRoom) UpdateSubscriptionPermissionsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateSubscriptions(arg1 types.Participant, arg2 []string, arg3 []*livekit.ParticipantTracks, arg4 bool) error {
-	var arg2Copy []string
+func (fake *FakeRoom) UpdateSubscriptions(arg1 types.Participant, arg2 []livekit.TrackID, arg3 []*livekit.ParticipantTracks, arg4 bool) error {
+	var arg2Copy []livekit.TrackID
 	if arg2 != nil {
-		arg2Copy = make([]string, len(arg2))
+		arg2Copy = make([]livekit.TrackID, len(arg2))
 		copy(arg2Copy, arg2)
 	}
 	var arg3Copy []*livekit.ParticipantTracks
@@ -179,7 +179,7 @@ func (fake *FakeRoom) UpdateSubscriptions(arg1 types.Participant, arg2 []string,
 	ret, specificReturn := fake.updateSubscriptionsReturnsOnCall[len(fake.updateSubscriptionsArgsForCall)]
 	fake.updateSubscriptionsArgsForCall = append(fake.updateSubscriptionsArgsForCall, struct {
 		arg1 types.Participant
-		arg2 []string
+		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
 	}{arg1, arg2Copy, arg3Copy, arg4})
@@ -202,13 +202,13 @@ func (fake *FakeRoom) UpdateSubscriptionsCallCount() int {
 	return len(fake.updateSubscriptionsArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.Participant, []string, []*livekit.ParticipantTracks, bool) error) {
+func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error) {
 	fake.updateSubscriptionsMutex.Lock()
 	defer fake.updateSubscriptionsMutex.Unlock()
 	fake.UpdateSubscriptionsStub = stub
 }
 
-func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.Participant, []string, []*livekit.ParticipantTracks, bool) {
+func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) {
 	fake.updateSubscriptionsMutex.RLock()
 	defer fake.updateSubscriptionsMutex.RUnlock()
 	argsForCall := fake.updateSubscriptionsArgsForCall[i]
