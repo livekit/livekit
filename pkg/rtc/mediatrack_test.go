@@ -236,5 +236,14 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}
 		require.Equal(t, "v1", actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+
+		// unmuting "s1" should enable previously set max quality
+		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
+		expectedSubscribedQualities = []*livekit.SubscribedQuality{
+			{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		}
+		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 	})
 }
