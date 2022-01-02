@@ -87,7 +87,7 @@ func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomNam
 }
 
 func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomName, nodeID string) error {
-	return r.rc.HSet(r.ctx, NodeRoomKey, roomName, nodeID).Err()
+	return r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), nodeID).Err()
 }
 
 func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) error {

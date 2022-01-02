@@ -17,7 +17,7 @@ func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 
-	roomName := "room1"
+	roomName := livekit.RoomName("room1")
 	_ = rs.DeleteRoom(ctx, roomName)
 
 	p := &livekit.ParticipantInfo{
@@ -64,7 +64,7 @@ func TestRoomLock(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 	lockInterval := 5 * time.Millisecond
-	roomName := "myroom"
+	roomName := livekit.RoomName("myroom")
 
 	t.Run("normal locking", func(t *testing.T) {
 		token, err := rs.LockRoom(ctx, roomName, lockInterval)
