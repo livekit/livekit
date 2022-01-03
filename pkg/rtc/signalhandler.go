@@ -35,13 +35,13 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			pLogger.Warnw("could not handle trickle", err)
 		}
 	case *livekit.SignalRequest_Mute:
-		participant.SetTrackMuted(msg.Mute.Sid, msg.Mute.Muted, false)
+		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
 		var err error
 		if participant.CanSubscribe() {
 			updateErr := room.UpdateSubscriptions(
 				participant,
-				msg.Subscription.TrackSids,
+				livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
 				msg.Subscription.ParticipantTracks,
 				msg.Subscription.Subscribe,
 			)
@@ -57,7 +57,7 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 				"subscribe", msg.Subscription.Subscribe)
 		}
 	case *livekit.SignalRequest_TrackSetting:
-		for _, sid := range msg.TrackSetting.TrackSids {
+		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
 			subTrack := participant.GetSubscribedTrack(sid)
 			if subTrack == nil {
 				pLogger.Warnw("unable to find SubscribedTrack", nil,
@@ -71,7 +71,7 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
-		track := participant.GetPublishedTrack(msg.UpdateLayers.TrackSid)
+		track := participant.GetPublishedTrack(livekit.TrackID(msg.UpdateLayers.TrackSid))
 		if track == nil {
 			pLogger.Warnw("could not find published track", nil,
 				"track", msg.UpdateLayers.TrackSid)

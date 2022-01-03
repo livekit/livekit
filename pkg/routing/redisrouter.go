@@ -149,9 +149,9 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	// sends a message to start session
 	err = sink.WriteMessage(&livekit.StartSession{
 		RoomName: string(roomName),
-		Identity: pi.Identity,
+		Identity: string(pi.Identity),
 		Metadata: pi.Metadata,
-		Name:     pi.Name,
+		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
 		ConnectionId:  connectionID,
 		Reconnect:     pi.Reconnect,
@@ -239,9 +239,9 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	pi := ParticipantInit{
-		Identity:      ss.Identity,
+		Identity:      livekit.ParticipantIdentity(ss.Identity),
 		Metadata:      ss.Metadata,
-		Name:          ss.Name,
+		Name:          livekit.ParticipantName(ss.Name),
 		Reconnect:     ss.Reconnect,
 		Permission:    ss.Permission,
 		Client:        ss.Client,

@@ -38,12 +38,12 @@ type FakeRORoomStore struct {
 		result1 []*livekit.Room
 		result2 error
 	}
-	LoadParticipantStub        func(context.Context, livekit.RoomName, string) (*livekit.ParticipantInfo, error)
+	LoadParticipantStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
 	loadParticipantMutex       sync.RWMutex
 	loadParticipantArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 string
+		arg3 livekit.ParticipantIdentity
 	}
 	loadParticipantReturns struct {
 		result1 *livekit.ParticipantInfo
@@ -206,13 +206,13 @@ func (fake *FakeRORoomStore) ListRoomsReturnsOnCall(i int, result1 []*livekit.Ro
 	}{result1, result2}
 }
 
-func (fake *FakeRORoomStore) LoadParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 string) (*livekit.ParticipantInfo, error) {
+func (fake *FakeRORoomStore) LoadParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
 	fake.loadParticipantMutex.Lock()
 	ret, specificReturn := fake.loadParticipantReturnsOnCall[len(fake.loadParticipantArgsForCall)]
 	fake.loadParticipantArgsForCall = append(fake.loadParticipantArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 string
+		arg3 livekit.ParticipantIdentity
 	}{arg1, arg2, arg3})
 	stub := fake.LoadParticipantStub
 	fakeReturns := fake.loadParticipantReturns
@@ -233,13 +233,13 @@ func (fake *FakeRORoomStore) LoadParticipantCallCount() int {
 	return len(fake.loadParticipantArgsForCall)
 }
 
-func (fake *FakeRORoomStore) LoadParticipantCalls(stub func(context.Context, livekit.RoomName, string) (*livekit.ParticipantInfo, error)) {
+func (fake *FakeRORoomStore) LoadParticipantCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)) {
 	fake.loadParticipantMutex.Lock()
 	defer fake.loadParticipantMutex.Unlock()
 	fake.LoadParticipantStub = stub
 }
 
-func (fake *FakeRORoomStore) LoadParticipantArgsForCall(i int) (context.Context, livekit.RoomName, string) {
+func (fake *FakeRORoomStore) LoadParticipantArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity) {
 	fake.loadParticipantMutex.RLock()
 	defer fake.loadParticipantMutex.RUnlock()
 	argsForCall := fake.loadParticipantArgsForCall[i]

@@ -47,7 +47,7 @@ type MediaTrack struct {
 	lock sync.RWMutex
 
 	// map of target participantID -> types.SubscribedTrack
-	subscribedTracks sync.Map // participantSid => types.SubscribedTrack
+	subscribedTracks sync.Map // participantID => types.SubscribedTrack
 	twcc             *twcc.Responder
 	audioLevel       *AudioLevel
 	receiver         sfu.Receiver
@@ -120,7 +120,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 }
 
 func (t *MediaTrack) ID() livekit.TrackID {
-	return t.params.TrackInfo.Sid
+	return livekit.TrackID(t.params.TrackInfo.Sid)
 }
 
 func (t *MediaTrack) SignalCid() string {
@@ -209,7 +209,7 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 
 	codec := t.receiver.Codec()
 	// using DownTrack from ion-sfu
-	streamId := t.params.ParticipantID
+	streamId := string(t.params.ParticipantID)
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
 		// when possible, pack both IDs in streamID to allow new streams to be generated
 		// react-native-webrtc still uses stream based APIs and require this
@@ -500,7 +500,7 @@ func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.
 	var revokedSubscriberIDs []livekit.ParticipantID
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
-		if subID, ok := key.(string); ok {
+		if subID, ok := key.(livekit.ParticipantID); ok {
 			found := false
 			for _, allowedID := range allowedSubscriberIDs {
 				if subID == allowedID {

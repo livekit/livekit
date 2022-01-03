@@ -16,8 +16,8 @@ import (
 )
 
 type UptrackManagerParams struct {
-	Identity       string
-	SID            string
+	Identity       livekit.ParticipantIdentity
+	SID            livekit.ParticipantID
 	Config         *WebRTCConfig
 	AudioConfig    config.AudioConfig
 	Telemetry      telemetry.TelemetryService
@@ -200,7 +200,7 @@ func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) {
 	isPending := false
 	u.lock.RLock()
 	for _, ti := range u.pendingTracks {
-		if ti.Sid == trackID {
+		if livekit.TrackID(ti.Sid) == trackID {
 			ti.Muted = muted
 			isPending = true
 		}
@@ -470,7 +470,7 @@ func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.Upda
 	// per participant permissions
 	u.subscriptionPermissions = make(map[livekit.ParticipantID]*livekit.TrackPermission)
 	for _, trackPerms := range permissions.TrackPermissions {
-		u.subscriptionPermissions[trackPerms.ParticipantSid] = trackPerms
+		u.subscriptionPermissions[livekit.ParticipantID(trackPerms.ParticipantSid)] = trackPerms
 	}
 }
 
@@ -489,7 +489,7 @@ func (u *UptrackManager) hasPermission(trackID livekit.TrackID, subscriberID liv
 	}
 
 	for _, sid := range perms.TrackSids {
-		if sid == trackID {
+		if livekit.TrackID(sid) == trackID {
 			return true
 		}
 	}
@@ -497,12 +497,12 @@ func (u *UptrackManager) hasPermission(trackID livekit.TrackID, subscriberID liv
 	return false
 }
 
-func (u *UptrackManager) getAllowedSubscribers(trackID livekit.TrackID) []string {
+func (u *UptrackManager) getAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantID {
 	if u.subscriptionPermissions == nil {
 		return nil
 	}
 
-	allowed := []string{}
+	allowed := []livekit.ParticipantID{}
 	for subscriberID, perms := range u.subscriptionPermissions {
 		if perms.AllTracks {
 			allowed = append(allowed, subscriberID)
@@ -510,7 +510,7 @@ func (u *UptrackManager) getAllowedSubscribers(trackID livekit.TrackID) []string
 		}
 
 		for _, sid := range perms.TrackSids {
-			if sid == trackID {
+			if livekit.TrackID(sid) == trackID {
 				allowed = append(allowed, subscriberID)
 				break
 			}
@@ -651,7 +651,7 @@ func (u *UptrackManager) rtcpSendWorker() {
 
 func (u *UptrackManager) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{}
-	publishedTrackInfo := make(map[string]interface{})
+	publishedTrackInfo := make(map[livekit.TrackID]interface{})
 	pendingTrackInfo := make(map[string]interface{})
 
 	u.lock.RLock()

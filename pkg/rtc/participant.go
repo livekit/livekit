@@ -228,9 +228,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
-		Sid:      p.params.SID,
-		Identity: p.params.Identity,
-		Name:     p.params.Name,
+		Sid:      string(p.params.SID),
+		Identity: string(p.params.Identity),
+		Name:     string(p.params.Name),
 		Metadata: p.metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
@@ -513,7 +513,8 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 
 	var scopedSpeakers []*livekit.SpeakerInfo
 	for _, s := range speakers {
-		if p.IsSubscribedTo(s.Sid) || s.Sid == p.ID() {
+		participantID := livekit.ParticipantID(s.Sid)
+		if p.IsSubscribedTo(participantID) || participantID == p.ID() {
 			scopedSpeakers = append(scopedSpeakers, s)
 		}
 	}
@@ -586,7 +587,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 		_ = p.writeMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Mute{
 				Mute: &livekit.MuteTrackRequest{
-					Sid:   trackID,
+					Sid:   string(trackID),
 					Muted: muted,
 				},
 			},
@@ -622,7 +623,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	rating := connectionquality.Score2Rating(avgScore)
 
 	return &livekit.ConnectionQualityInfo{
-		ParticipantSid: p.ID(),
+		ParticipantSid: string(p.ID()),
 		Quality:        rating,
 		Score:          float32(avgScore),
 	}
@@ -755,8 +756,8 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
-				ParticipantSid: publisherID,
-				TrackSid:       trackID,
+				ParticipantSid: string(publisherID),
+				TrackSid:       string(trackID),
 				Allowed:        allowed,
 			},
 		},
@@ -927,7 +928,7 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
 		if p.onDataPacket != nil {
-			payload.User.ParticipantSid = p.params.SID
+			payload.User.ParticipantSid = string(p.params.SID)
 			p.onDataPacket(p, &dp)
 		}
 	default:
@@ -1108,8 +1109,8 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 			state = livekit.StreamState_PAUSED
 		}
 		streamStateUpdate.StreamStates = append(streamStateUpdate.StreamStates, &livekit.StreamStateInfo{
-			ParticipantSid: streamStateInfo.ParticipantSid,
-			TrackSid:       streamStateInfo.TrackSid,
+			ParticipantSid: string(streamStateInfo.ParticipantID),
+			TrackSid:       string(streamStateInfo.TrackID),
 			State:          state,
 		})
 	}
@@ -1127,7 +1128,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
-		TrackSid:            trackID,
+		TrackSid:            string(trackID),
 		SubscribedQualities: subscribedQualities,
 	}
 
@@ -1146,7 +1147,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 
 	uptrackManagerInfo := p.uptrackManager.DebugInfo()
 
-	subscribedTrackInfo := make(map[string]interface{})
+	subscribedTrackInfo := make(map[livekit.TrackID]interface{})
 	p.lock.RLock()
 	for _, track := range p.subscribedTracks {
 		dt := track.DownTrack().DebugInfo()

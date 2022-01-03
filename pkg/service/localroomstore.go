@@ -95,7 +95,7 @@ func (p *LocalRoomStore) StoreParticipant(_ context.Context, roomName livekit.Ro
 		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
 		p.participants[roomName] = roomParticipants
 	}
-	roomParticipants[participant.Identity] = participant
+	roomParticipants[livekit.ParticipantIdentity(participant.Identity)] = participant
 	return nil
 }
 

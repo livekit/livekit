@@ -3,21 +3,22 @@ package rtc
 import (
 	"testing"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPackStreamId(t *testing.T) {
 	packed := "PA_123abc|uuid-id"
 	pID, trackID := UnpackStreamID(packed)
-	require.Equal(t, "PA_123abc", pID)
-	require.Equal(t, "uuid-id", trackID)
+	require.Equal(t, livekit.ParticipantID("PA_123abc"), pID)
+	require.Equal(t, livekit.TrackID("uuid-id"), trackID)
 
 	require.Equal(t, packed, PackStreamID(pID, trackID))
 }
 
 func TestPackDataTrackLabel(t *testing.T) {
-	pID := "PA_123abc"
-	trackID := "TR_b3da25"
+	pID := livekit.ParticipantID("PA_123abc")
+	trackID := livekit.TrackID("TR_b3da25")
 	label := "trackLabel"
 	packed := "PA_123abc|TR_b3da25|trackLabel"
 	require.Equal(t, packed, PackDataTrackLabel(pID, trackID, label))

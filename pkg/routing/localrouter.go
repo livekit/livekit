@@ -107,7 +107,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		// response sink
 		resChan,
 	)
-	return pi.Identity, reqChan, resChan, nil
+	return string(pi.Identity), reqChan, resChan, nil
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {

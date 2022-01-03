@@ -20,15 +20,15 @@ type FakeSubscribedTrack struct {
 	downTrackReturnsOnCall map[int]struct {
 		result1 *sfu.DownTrack
 	}
-	IDStub        func() string
+	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
 	}
 	iDReturns struct {
-		result1 string
+		result1 livekit.TrackID
 	}
 	iDReturnsOnCall map[int]struct {
-		result1 string
+		result1 livekit.TrackID
 	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
@@ -55,25 +55,25 @@ type FakeSubscribedTrack struct {
 	onBindArgsForCall []struct {
 		arg1 func()
 	}
-	PublisherIDStub        func() string
+	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
 	}
 	publisherIDReturns struct {
-		result1 string
+		result1 livekit.ParticipantID
 	}
 	publisherIDReturnsOnCall map[int]struct {
-		result1 string
+		result1 livekit.ParticipantID
 	}
-	PublisherIdentityStub        func() string
+	PublisherIdentityStub        func() livekit.ParticipantIdentity
 	publisherIdentityMutex       sync.RWMutex
 	publisherIdentityArgsForCall []struct {
 	}
 	publisherIdentityReturns struct {
-		result1 string
+		result1 livekit.ParticipantIdentity
 	}
 	publisherIdentityReturnsOnCall map[int]struct {
-		result1 string
+		result1 livekit.ParticipantIdentity
 	}
 	SetPublisherMutedStub        func(bool)
 	setPublisherMutedMutex       sync.RWMutex
@@ -146,7 +146,7 @@ func (fake *FakeSubscribedTrack) DownTrackReturnsOnCall(i int, result1 *sfu.Down
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) ID() string {
+func (fake *FakeSubscribedTrack) ID() livekit.TrackID {
 	fake.iDMutex.Lock()
 	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
 	fake.iDArgsForCall = append(fake.iDArgsForCall, struct {
@@ -170,32 +170,32 @@ func (fake *FakeSubscribedTrack) IDCallCount() int {
 	return len(fake.iDArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) IDCalls(stub func() string) {
+func (fake *FakeSubscribedTrack) IDCalls(stub func() livekit.TrackID) {
 	fake.iDMutex.Lock()
 	defer fake.iDMutex.Unlock()
 	fake.IDStub = stub
 }
 
-func (fake *FakeSubscribedTrack) IDReturns(result1 string) {
+func (fake *FakeSubscribedTrack) IDReturns(result1 livekit.TrackID) {
 	fake.iDMutex.Lock()
 	defer fake.iDMutex.Unlock()
 	fake.IDStub = nil
 	fake.iDReturns = struct {
-		result1 string
+		result1 livekit.TrackID
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) IDReturnsOnCall(i int, result1 string) {
+func (fake *FakeSubscribedTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
 	fake.iDMutex.Lock()
 	defer fake.iDMutex.Unlock()
 	fake.IDStub = nil
 	if fake.iDReturnsOnCall == nil {
 		fake.iDReturnsOnCall = make(map[int]struct {
-			result1 string
+			result1 livekit.TrackID
 		})
 	}
 	fake.iDReturnsOnCall[i] = struct {
-		result1 string
+		result1 livekit.TrackID
 	}{result1}
 }
 
@@ -337,7 +337,7 @@ func (fake *FakeSubscribedTrack) OnBindArgsForCall(i int) func() {
 	return argsForCall.arg1
 }
 
-func (fake *FakeSubscribedTrack) PublisherID() string {
+func (fake *FakeSubscribedTrack) PublisherID() livekit.ParticipantID {
 	fake.publisherIDMutex.Lock()
 	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
 	fake.publisherIDArgsForCall = append(fake.publisherIDArgsForCall, struct {
@@ -361,36 +361,36 @@ func (fake *FakeSubscribedTrack) PublisherIDCallCount() int {
 	return len(fake.publisherIDArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) PublisherIDCalls(stub func() string) {
+func (fake *FakeSubscribedTrack) PublisherIDCalls(stub func() livekit.ParticipantID) {
 	fake.publisherIDMutex.Lock()
 	defer fake.publisherIDMutex.Unlock()
 	fake.PublisherIDStub = stub
 }
 
-func (fake *FakeSubscribedTrack) PublisherIDReturns(result1 string) {
+func (fake *FakeSubscribedTrack) PublisherIDReturns(result1 livekit.ParticipantID) {
 	fake.publisherIDMutex.Lock()
 	defer fake.publisherIDMutex.Unlock()
 	fake.PublisherIDStub = nil
 	fake.publisherIDReturns = struct {
-		result1 string
+		result1 livekit.ParticipantID
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) PublisherIDReturnsOnCall(i int, result1 string) {
+func (fake *FakeSubscribedTrack) PublisherIDReturnsOnCall(i int, result1 livekit.ParticipantID) {
 	fake.publisherIDMutex.Lock()
 	defer fake.publisherIDMutex.Unlock()
 	fake.PublisherIDStub = nil
 	if fake.publisherIDReturnsOnCall == nil {
 		fake.publisherIDReturnsOnCall = make(map[int]struct {
-			result1 string
+			result1 livekit.ParticipantID
 		})
 	}
 	fake.publisherIDReturnsOnCall[i] = struct {
-		result1 string
+		result1 livekit.ParticipantID
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) PublisherIdentity() string {
+func (fake *FakeSubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	fake.publisherIdentityMutex.Lock()
 	ret, specificReturn := fake.publisherIdentityReturnsOnCall[len(fake.publisherIdentityArgsForCall)]
 	fake.publisherIdentityArgsForCall = append(fake.publisherIdentityArgsForCall, struct {
@@ -414,32 +414,32 @@ func (fake *FakeSubscribedTrack) PublisherIdentityCallCount() int {
 	return len(fake.publisherIdentityArgsForCall)
 }
 
-func (fake *FakeSubscribedTrack) PublisherIdentityCalls(stub func() string) {
+func (fake *FakeSubscribedTrack) PublisherIdentityCalls(stub func() livekit.ParticipantIdentity) {
 	fake.publisherIdentityMutex.Lock()
 	defer fake.publisherIdentityMutex.Unlock()
 	fake.PublisherIdentityStub = stub
 }
 
-func (fake *FakeSubscribedTrack) PublisherIdentityReturns(result1 string) {
+func (fake *FakeSubscribedTrack) PublisherIdentityReturns(result1 livekit.ParticipantIdentity) {
 	fake.publisherIdentityMutex.Lock()
 	defer fake.publisherIdentityMutex.Unlock()
 	fake.PublisherIdentityStub = nil
 	fake.publisherIdentityReturns = struct {
-		result1 string
+		result1 livekit.ParticipantIdentity
 	}{result1}
 }
 
-func (fake *FakeSubscribedTrack) PublisherIdentityReturnsOnCall(i int, result1 string) {
+func (fake *FakeSubscribedTrack) PublisherIdentityReturnsOnCall(i int, result1 livekit.ParticipantIdentity) {
 	fake.publisherIdentityMutex.Lock()
 	defer fake.publisherIdentityMutex.Unlock()
 	fake.PublisherIdentityStub = nil
 	if fake.publisherIdentityReturnsOnCall == nil {
 		fake.publisherIdentityReturnsOnCall = make(map[int]struct {
-			result1 string
+			result1 livekit.ParticipantIdentity
 		})
 	}
 	fake.publisherIdentityReturnsOnCall[i] = struct {
-		result1 string
+		result1 livekit.ParticipantIdentity
 	}{result1}
 }
 

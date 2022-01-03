@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -33,7 +34,7 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	Codec() webrtc.RTPCodecCapability
-	PeerID() string
+	PeerID() livekit.ParticipantID
 }
 
 const (
@@ -74,8 +75,8 @@ type PacketStats struct {
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 type DownTrack struct {
-	id            string
-	peerID        string
+	id            livekit.TrackID
+	peerID        livekit.ParticipantID
 	bound         atomicBool
 	kind          webrtc.RTPCodecType
 	mime          string
@@ -136,7 +137,7 @@ type DownTrack struct {
 }
 
 // NewDownTrack returns a DownTrack.
-func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID string, mt int) (*DownTrack, error) {
+func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID livekit.ParticipantID, mt int) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
 	case strings.HasPrefix(c.MimeType, "audio/"):
@@ -208,7 +209,7 @@ func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 // ID is the unique identifier for this Track. This should be unique for the
 // stream, but doesn't have to globally unique. A common example would be 'audio' or 'video'
 // and StreamID would be 'desktop' or 'webcam'
-func (d *DownTrack) ID() string { return d.id }
+func (d *DownTrack) ID() string { return string(d.id) }
 
 // Codec returns current track codec capability
 func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
@@ -216,7 +217,7 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
 
-func (d *DownTrack) PeerID() string { return d.peerID }
+func (d *DownTrack) PeerID() livekit.ParticipantID { return d.peerID }
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {

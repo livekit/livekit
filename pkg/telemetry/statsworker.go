@@ -64,8 +64,8 @@ func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID livekit.TrackID) *
 	if s.outgoingPerTrack[trackID] == nil {
 		s.outgoingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_DOWNSTREAM,
-			RoomId:        s.roomID,
-			ParticipantId: s.participantID,
+			RoomId:        string(s.roomID),
+			ParticipantId: string(s.participantID),
 			RoomName:      string(s.roomName),
 		}}
 	}
@@ -76,8 +76,8 @@ func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID livekit.TrackID) *
 	if s.incomingPerTrack[trackID] == nil {
 		s.incomingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
 			Kind:          livekit.StreamType_UPSTREAM,
-			RoomId:        s.roomID,
-			ParticipantId: s.participantID,
+			RoomId:        string(s.roomID),
+			ParticipantId: string(s.participantID),
 			RoomName:      string(s.roomName),
 		}}
 	}
@@ -129,7 +129,7 @@ func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []
 	for trackID, trackDownStreamStats := range s.outgoingPerTrack {
 		analyticsStat := s.update(trackDownStreamStats, ts)
 		if analyticsStat != nil {
-			analyticsStat.TrackId = trackID
+			analyticsStat.TrackId = string(trackID)
 			stats = append(stats, analyticsStat)
 		}
 	}
@@ -145,7 +145,7 @@ func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*l
 
 		analyticsStats := s.update(s.incomingPerTrack[trackID], ts)
 		if analyticsStats != nil {
-			analyticsStats.TrackId = trackID
+			analyticsStats.TrackId = string(trackID)
 			stats = append(stats, analyticsStats)
 		}
 	}
@@ -168,8 +168,8 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	next := stats.next
 	stats.next = &livekit.AnalyticsStat{
 		Kind:          next.Kind,
-		RoomId:        s.roomID,
-		ParticipantId: s.participantID,
+		RoomId:        string(s.roomID),
+		ParticipantId: string(s.participantID),
 		RoomName:      string(s.roomName),
 	}
 

@@ -226,7 +226,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
-	sid := utils.NewGuid(utils.ParticipantPrefix)
+	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
@@ -443,7 +443,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 		pLogger.Debugw("updating participant subscriptions")
 		if err := room.UpdateSubscriptions(
 			participant,
-			rm.UpdateSubscriptions.TrackSids,
+			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
 		); err != nil {

@@ -307,8 +307,8 @@ func TestActiveSpeakers(t *testing.T) {
 
 		speakers := rm.GetActiveSpeakers()
 		require.Len(t, speakers, 2)
-		require.Equal(t, p.ID(), speakers[0].Sid)
-		require.Equal(t, p2.ID(), speakers[1].Sid)
+		require.Equal(t, string(p.ID()), speakers[0].Sid)
+		require.Equal(t, string(p2.ID()), speakers[1].Sid)
 	})
 
 	t.Run("participants are getting audio updates (protocol 2)", func(t *testing.T) {
@@ -321,7 +321,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 		speakers := rm.GetActiveSpeakers()
 		require.NotEmpty(t, speakers)
-		require.Equal(t, p.ID(), speakers[0].Sid)
+		require.Equal(t, string(p.ID()), speakers[0].Sid)
 
 		testutils.WithTimeout(t, "ensure everyone has gotten an audio update", func() bool {
 			for _, op := range participants {
@@ -412,7 +412,7 @@ func TestDataChannel(t *testing.T) {
 			Kind: livekit.DataPacket_RELIABLE,
 			Value: &livekit.DataPacket_User{
 				User: &livekit.UserPacket{
-					ParticipantSid: p.ID(),
+					ParticipantSid: string(p.ID()),
 					Payload:        []byte("message.."),
 				},
 			},
@@ -442,9 +442,9 @@ func TestDataChannel(t *testing.T) {
 			Kind: livekit.DataPacket_RELIABLE,
 			Value: &livekit.DataPacket_User{
 				User: &livekit.UserPacket{
-					ParticipantSid:  p.ID(),
+					ParticipantSid:  string(p.ID()),
 					Payload:         []byte("message to p1.."),
-					DestinationSids: []string{p1.ID()},
+					DestinationSids: []string{string(p1.ID())},
 				},
 			},
 		}
@@ -561,7 +561,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 		telemetry.NewTelemetryService(nil, nil),
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
-		identity := fmt.Sprintf("p%d", i)
+		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
 		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
