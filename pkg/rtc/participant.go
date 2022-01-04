@@ -734,6 +734,28 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.lock.Unlock()
 	if numRemaining == 0 {
 		p.subscribedTo.Delete(subTrack.PublisherID())
+
+		//
+		// When a participant leaves OR
+		// this participant unsubscribes from all tracks of another participant,
+		// have to send speaker update indicating that the participant speaker is no long active
+		// so that clients can clean up their speaker state for the leaving/unsubscribed participant
+		//
+		if p.ProtocolVersion().SupportsSpeakerChanged() {
+			_ = p.writeMessage(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_SpeakersChanged{
+					SpeakersChanged: &livekit.SpeakersChanged{
+						Speakers: []*livekit.SpeakerInfo{
+							&livekit.SpeakerInfo{
+								Sid:    string(subTrack.PublisherID()),
+								Level:  0,
+								Active: false,
+							},
+						},
+					},
+				},
+			})
+		}
 	}
 }
 
