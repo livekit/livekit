@@ -28,6 +28,8 @@ type MediaTrackSubscriptions struct {
 
 	subscribedTracks sync.Map // participantID => types.SubscribedTrack
 
+	onNoSubscribers func()
+
 	// quality level enable/disable
 	maxQualityLock               sync.RWMutex
 	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
@@ -56,6 +58,10 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 	}
 
 	return t
+}
+
+func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
+	t.onNoSubscribers = f
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
@@ -179,6 +185,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 	downTrack.OnCloseHandler(func() {
 		go func() {
 			t.subscribedTracks.Delete(subscriberID)
+			t.maybeNotifyNoSubscribers()
 			if t.params.Telemetry != nil {
 				t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 			}
@@ -504,4 +511,23 @@ func (t *MediaTrackSubscriptions) numSubscribed() uint32 {
 	t.maxQualityLock.RUnlock()
 
 	return numSubscribed
+}
+
+func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
+	if t.onNoSubscribers == nil {
+		return
+	}
+
+	empty := true
+	t.subscribedTracks.Range(func(_, value interface{}) bool {
+		if _, ok := value.(types.SubscribedTrack); ok {
+			empty = false
+			return false
+		}
+		return true
+	})
+
+	if empty {
+		t.onNoSubscribers()
+	}
 }
