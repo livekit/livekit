@@ -741,19 +741,21 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 		// have to send speaker update indicating that the participant speaker is no long active
 		// so that clients can clean up their speaker state for the leaving/unsubscribed participant
 		//
-		_ = p.writeMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_SpeakersChanged{
-				SpeakersChanged: &livekit.SpeakersChanged{
-					Speakers: []*livekit.SpeakerInfo{
-						&livekit.SpeakerInfo{
-							Sid:    string(subTrack.PublisherID()),
-							Level:  0,
-							Active: false,
+		if p.ProtocolVersion().SupportsSpeakerChanged() {
+			_ = p.writeMessage(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_SpeakersChanged{
+					SpeakersChanged: &livekit.SpeakersChanged{
+						Speakers: []*livekit.SpeakerInfo{
+							&livekit.SpeakerInfo{
+								Sid:    string(subTrack.PublisherID()),
+								Level:  0,
+								Active: false,
+							},
 						},
 					},
 				},
-			},
-		})
+			})
+		}
 	}
 }
 
