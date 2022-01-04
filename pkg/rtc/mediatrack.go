@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 
 	"github.com/livekit/protocol/livekit"
@@ -16,8 +15,10 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
@@ -28,6 +29,7 @@ const (
 	lostUpdateDelta                 = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
 	layerSelectionTolerance         = 0.9
+	initialQualityUpdateWait        = 10 * time.Second
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -44,11 +46,13 @@ type MediaTrack struct {
 
 	lock sync.RWMutex
 
-	twcc            *twcc.Responder
-	audioLevel      *AudioLevel
-	receiver        sfu.Receiver
-	lastPLI         time.Time
-	layerDimensions sync.Map // quality => *livekit.VideoLayer
+	// map of target participantID -> types.SubscribedTrack
+	subscribedTracks sync.Map // participantID => types.SubscribedTrack
+	twcc             *twcc.Responder
+	audioLevel       *AudioLevel
+	receiver         sfu.Receiver
+	lastPLI          time.Time
+	layerDimensions  sync.Map // quality => *livekit.VideoLayer
 
 	// track audio fraction lost
 	statsLock         sync.Mutex
@@ -61,9 +65,15 @@ type MediaTrack struct {
 
 	done chan struct{}
 
-	onClose []func()
+	// quality level enable/disable
+	maxQualityLock               sync.RWMutex
+	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
+	maxSubscribedQuality         livekit.VideoQuality
+	allSubscribersMuted          bool
+	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error
+	maxQualityTimer              *time.Timer
 
-	*MediaTrackSubscriptions
+	onClose []func()
 }
 
 type MediaTrackParams struct {
@@ -85,22 +95,14 @@ type MediaTrackParams struct {
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:          params,
-		ssrc:            track.SSRC(),
-		streamID:        track.StreamID(),
-		codec:           track.Codec(),
-		connectionStats: connectionquality.NewConnectionStats(),
-		done:            make(chan struct{}),
+		params:               params,
+		ssrc:                 track.SSRC(),
+		streamID:             track.StreamID(),
+		codec:                track.Codec(),
+		connectionStats:      connectionquality.NewConnectionStats(),
+		done:                 make(chan struct{}),
+		maxSubscriberQuality: make(map[livekit.ParticipantID]livekit.VideoQuality),
 	}
-
-	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
-		MediaTrack:       t,
-		BufferFactory:    params.BufferFactory,
-		ReceiverConfig:   params.ReceiverConfig,
-		SubscriberConfig: params.SubscriberConfig,
-		Telemetry:        params.Telemetry,
-		Logger:           params.Logger,
-	})
 
 	if params.TrackInfo.Muted {
 		t.SetMuted(true)
@@ -137,14 +139,6 @@ func (t *MediaTrack) Source() livekit.TrackSource {
 	return t.params.TrackInfo.Source
 }
 
-func (t *MediaTrack) ParticipantID() livekit.ParticipantID {
-	return t.params.ParticipantID
-}
-
-func (t *MediaTrack) ParticipantIdentity() livekit.ParticipantIdentity {
-	return t.params.ParticipantIdentity
-}
-
 func (t *MediaTrack) IsSimulcast() bool {
 	return t.simulcasted.Get()
 }
@@ -166,7 +160,18 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	}
 	t.lock.RUnlock()
 
-	t.MediaTrackSubscriptions.SetMuted(muted)
+	// mute all subscribed tracks
+	t.subscribedTracks.Range(func(_, value interface{}) bool {
+		if st, ok := value.(types.SubscribedTrack); ok {
+			st.SetPublisherMuted(muted)
+		}
+		return true
+	})
+
+	// update quality based on subscription if unmuting
+	if !muted {
+		t.updateQualityChange()
+	}
 }
 
 func (t *MediaTrack) AddOnClose(f func()) {
@@ -174,6 +179,11 @@ func (t *MediaTrack) AddOnClose(f func()) {
 		return
 	}
 	t.onClose = append(t.onClose, f)
+}
+
+func (t *MediaTrack) IsSubscriber(subID livekit.ParticipantID) bool {
+	_, ok := t.subscribedTracks.Load(subID)
+	return ok
 }
 
 func (t *MediaTrack) PublishLossPercentage() uint32 {
@@ -185,11 +195,19 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	subscriberID := sub.ID()
+
+	// don't subscribe to the same track multiple times
+	if _, ok := t.subscribedTracks.Load(subscriberID); ok {
+		return nil
+	}
+
 	if t.receiver == nil {
 		// cannot add, no receiver
 		return errors.New("cannot subscribe without a receiver in place")
 	}
 
+	codec := t.receiver.Codec()
 	// using DownTrack from ion-sfu
 	streamId := string(t.params.ParticipantID)
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
@@ -198,27 +216,163 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 		streamId = PackStreamID(t.params.ParticipantID, t.ID())
 	}
 
-	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, t.receiver.Codec(), NewWrappedReceiver(t.receiver, t.ID(), streamId))
+	receiver := NewWrappedReceiver(t.receiver, t.ID(), streamId)
+
+	var rtcpFeedback []webrtc.RTCPFeedback
+	switch t.Kind() {
+	case livekit.TrackType_AUDIO:
+		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Audio
+	case livekit.TrackType_VIDEO:
+		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
+	}
+	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
+		MimeType:     codec.MimeType,
+		ClockRate:    codec.ClockRate,
+		Channels:     codec.Channels,
+		SDPFmtpLine:  codec.SDPFmtpLine,
+		RTCPFeedback: rtcpFeedback,
+	}, receiver, t.params.BufferFactory, subscriberID, t.params.ReceiverConfig.PacketBufferSize)
 	if err != nil {
 		return err
 	}
+	subTrack := NewSubscribedTrack(SubscribedTrackParams{
+		PublisherID:       t.params.ParticipantID,
+		PublisherIdentity: t.params.ParticipantIdentity,
+		SubscriberID:      subscriberID,
+		MediaTrack:        t,
+		DownTrack:         downTrack,
+	})
 
-	if downTrack != nil {
-		if t.Kind() == livekit.TrackType_AUDIO {
-			downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
+	var transceiver *webrtc.RTPTransceiver
+	var sender *webrtc.RTPSender
+	if sub.ProtocolVersion().SupportsTransceiverReuse() {
+		//
+		// AddTrack will create a new transceiver or re-use an unused one
+		// if the attributes match. This prevents SDP from bloating
+		// because of dormant transceivers building up.
+		//
+		sender, err = sub.SubscriberPC().AddTrack(downTrack)
+		if err != nil {
+			return err
 		}
 
-		t.receiver.AddDownTrack(downTrack)
+		// as there is no way to get transceiver from sender, search
+		for _, tr := range sub.SubscriberPC().GetTransceivers() {
+			if tr.Sender() == sender {
+				transceiver = tr
+				break
+			}
+		}
+		if transceiver == nil {
+			// cannot add, no transceiver
+			return errors.New("cannot subscribe without a transceiver in place")
+		}
+	} else {
+		transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendonly,
+		})
+		if err != nil {
+			return err
+		}
+
+		sender = transceiver.Sender()
+		if sender == nil {
+			// cannot add, no sender
+			return errors.New("cannot subscribe without a sender in place")
+		}
 	}
+
+	sendParameters := sender.GetParameters()
+	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
+
+	downTrack.SetTransceiver(transceiver)
+	// when outtrack is bound, start loop to send reports
+	downTrack.OnBind(func() {
+		go subTrack.Bound()
+		go t.sendDownTrackBindingReports(sub)
+	})
+	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
+	})
+	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.ID(), size)
+	})
+	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, t.ID(), pkts)
+	})
+
+	downTrack.OnCloseHandler(func() {
+		go func() {
+			t.subscribedTracks.Delete(subscriberID)
+			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.ToProto())
+
+			// ignore if the subscribing sub is not connected
+			if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
+				return
+			}
+
+			// if the source has been terminated, we'll need to terminate all of the subscribedtracks
+			// however, if the dest sub has disconnected, then we can skip
+			if sender == nil {
+				return
+			}
+			t.params.Logger.Debugw("removing peerconnection track",
+				"track", t.ID(),
+				"subscriber", sub.Identity(),
+				"subscriberID", subscriberID,
+				"kind", t.Kind(),
+			)
+			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+				if err == webrtc.ErrConnectionClosed {
+					// sub closing, can skip removing subscribedtracks
+					return
+				}
+				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+					// most of these are safe to ignore, since the track state might have already
+					// been set to Inactive
+					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+						"error", err,
+						"subscriber", sub.Identity(),
+						"subscriberID", subscriberID,
+					)
+				}
+			}
+
+			t.NotifySubscriberMute(subscriberID)
+			sub.RemoveSubscribedTrack(subTrack)
+			sub.Negotiate()
+		}()
+	})
+	if t.Kind() == livekit.TrackType_AUDIO {
+		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
+	}
+
+	t.subscribedTracks.Store(subscriberID, subTrack)
+	subTrack.SetPublisherMuted(t.IsMuted())
+
+	t.receiver.AddDownTrack(downTrack)
+	// since sub will lock, run it in a goroutine to avoid deadlocks
+	go func() {
+		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
+		sub.AddSubscribedTrack(subTrack)
+		sub.Negotiate()
+	}()
+
+	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.ToProto())
 	return nil
 }
 
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	numExpected := atomic.LoadUint32(&t.numUpTracks)
 
-	numSubscribed := t.numSubscribed()
-	if numSubscribed < numExpected {
-		numExpected = numSubscribed
+	t.maxQualityLock.RLock()
+	maxSubscribed := uint32(0)
+	if !t.allSubscribersMuted {
+		maxSubscribed = uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
+	}
+	t.maxQualityLock.RUnlock()
+	if maxSubscribed < numExpected {
+		numExpected = maxSubscribed
 	}
 
 	t.lock.RLock()
@@ -317,6 +471,57 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	})
 }
 
+// RemoveSubscriber removes participant from subscription
+// stop all forwarders to the client
+func (t *MediaTrack) RemoveSubscriber(participantID livekit.ParticipantID) {
+	subTrack := t.getSubscribedTrack(participantID)
+	if subTrack != nil {
+		go subTrack.DownTrack().Close()
+	}
+}
+
+func (t *MediaTrack) RemoveAllSubscribers() {
+	t.params.Logger.Debugw("removing all subscribers", "track", t.ID())
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if subTrack, ok := val.(types.SubscribedTrack); ok {
+			go subTrack.DownTrack().Close()
+		}
+		return true
+	})
+	t.subscribedTracks = sync.Map{}
+}
+
+func (t *MediaTrack) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	var revokedSubscriberIDs []livekit.ParticipantID
+	// LK-TODO: large number of subscribers needs to be solved for this loop
+	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
+		if subID, ok := key.(livekit.ParticipantID); ok {
+			found := false
+			for _, allowedID := range allowedSubscriberIDs {
+				if subID == allowedID {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				if subTrack, ok := val.(types.SubscribedTrack); ok {
+					go subTrack.DownTrack().Close()
+					revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
+				}
+			}
+		}
+		return true
+	})
+
+	return revokedSubscriberIDs
+}
+
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.params.TrackInfo
 	info.Muted = t.IsMuted()
@@ -337,9 +542,12 @@ func (t *MediaTrack) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	for _, layer := range layers {
 		t.layerDimensions.Store(layer.Quality, layer)
 	}
-
-	t.MediaTrackSubscriptions.UpdateVideoLayers()
-
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if st, ok := val.(types.SubscribedTrack); ok {
+			st.UpdateVideoLayer()
+		}
+		return true
+	})
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
 }
 
@@ -386,6 +594,53 @@ func (t *MediaTrack) GetQualityForDimension(width, height uint32) livekit.VideoQ
 	}
 
 	return quality
+}
+
+func (t *MediaTrack) getSubscribedTrack(subscriberID livekit.ParticipantID) types.SubscribedTrack {
+	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
+		if st, ok := val.(types.SubscribedTrack); ok {
+			return st
+		}
+	}
+	return nil
+}
+
+// TODO: send for all downtracks from the source participant
+// https://tools.ietf.org/html/rfc7941
+func (t *MediaTrack) sendDownTrackBindingReports(sub types.Participant) {
+	var sd []rtcp.SourceDescriptionChunk
+
+	subTrack := t.getSubscribedTrack(sub.ID())
+	if subTrack == nil {
+		return
+	}
+
+	chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
+	if chunks == nil {
+		return
+	}
+	sd = append(sd, chunks...)
+
+	pkts := []rtcp.Packet{
+		&rtcp.SourceDescription{Chunks: sd},
+	}
+
+	go func() {
+		defer RecoverSilent()
+		batch := pkts
+		i := 0
+		for {
+			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
+				t.params.Logger.Errorw("could not write RTCP", err)
+				return
+			}
+			if i > 5 {
+				return
+			}
+			i++
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
 }
 
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
@@ -493,16 +748,24 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 		"PubMuted": t.muted.Get(),
 	}
 
-	info["DownTracks"] = t.MediaTrackSubscriptions.DebugInfo()
+	subscribedTrackInfo := make([]map[string]interface{}, 0)
+	t.subscribedTracks.Range(func(_, val interface{}) bool {
+		if track, ok := val.(*SubscribedTrack); ok {
+			dt := track.DownTrack().DebugInfo()
+			dt["PubMuted"] = track.pubMuted.Get()
+			dt["SubMuted"] = track.subMuted.Get()
+			subscribedTrackInfo = append(subscribedTrackInfo, dt)
+		}
+		return true
+	})
+	info["DownTracks"] = subscribedTrackInfo
 
-	t.lock.RLock()
 	if t.receiver != nil {
 		receiverInfo := t.receiver.DebugInfo()
 		for k, v := range receiverInfo {
 			info[k] = v
 		}
 	}
-	t.lock.RUnlock()
 
 	return info
 }
@@ -553,17 +816,132 @@ func (t *MediaTrack) calculateVideoScore() {
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error) {
-	t.MediaTrackSubscriptions.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) {
-		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities)
-		}
+	t.onSubscribedMaxQualityChange = f
+}
 
+func (t *MediaTrack) NotifySubscriberMute(subscriberID livekit.ParticipantID) {
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.maxQualityLock.Lock()
+	_, ok := t.maxSubscriberQuality[subscriberID]
+	if !ok {
+		t.maxQualityLock.Unlock()
+		return
+	}
+
+	delete(t.maxSubscriberQuality, subscriberID)
+	t.maxQualityLock.Unlock()
+
+	t.updateQualityChange()
+}
+
+func (t *MediaTrack) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.maxQualityLock.Lock()
+	maxQuality, ok := t.maxSubscriberQuality[subscriberID]
+	if ok && maxQuality == quality {
+		t.maxQualityLock.Unlock()
+		return
+	}
+
+	t.maxSubscriberQuality[subscriberID] = quality
+	t.maxQualityLock.Unlock()
+
+	t.updateQualityChange()
+}
+
+func (t *MediaTrack) startMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	if t.Kind() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
+		t.stopMaxQualityTimer()
+		t.updateQualityChange()
+	})
+}
+
+func (t *MediaTrack) stopMaxQualityTimer() {
+	t.maxQualityLock.Lock()
+	defer t.maxQualityLock.Unlock()
+
+	if t.maxQualityTimer != nil {
+		t.maxQualityTimer.Stop()
+		t.maxQualityTimer = nil
+	}
+}
+
+func (t *MediaTrack) updateQualityChange() {
+	if t.Kind() != livekit.TrackType_VIDEO || t.IsMuted() {
+		return
+	}
+
+	var subscribedQualities []*livekit.SubscribedQuality
+
+	t.maxQualityLock.Lock()
+	allSubscribersMuted := false
+	maxSubscribedQuality := livekit.VideoQuality_LOW
+	if len(t.maxSubscriberQuality) == 0 {
+		allSubscribersMuted = true
+	} else {
+		for _, subQuality := range t.maxSubscriberQuality {
+			if subQuality > maxSubscribedQuality {
+				maxSubscribedQuality = subQuality
+			}
+		}
+	}
+
+	notifyMaxExpected := false
+	maxExpectedSpatialLayer := int32(-1)
+	if allSubscribersMuted {
+		if !t.allSubscribersMuted {
+			notifyMaxExpected = true
+			maxExpectedSpatialLayer = sfu.InvalidLayerSpatial
+
+			t.allSubscribersMuted = true
+
+			subscribedQualities = []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			}
+		}
+	} else {
+		if t.allSubscribersMuted || maxSubscribedQuality != t.maxSubscribedQuality {
+			t.allSubscribersMuted = false
+			notifyMaxExpected = true
+			maxExpectedSpatialLayer = SpatialLayerForQuality(maxSubscribedQuality)
+			t.maxSubscribedQuality = maxSubscribedQuality
+
+			for q := livekit.VideoQuality_LOW; q <= livekit.VideoQuality_HIGH; q++ {
+				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{
+					Quality: q,
+					Enabled: q <= t.maxSubscribedQuality,
+				})
+			}
+		}
+	}
+	t.maxQualityLock.Unlock()
+
+	if notifyMaxExpected {
 		t.lock.RLock()
 		if t.receiver != nil {
-			t.receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(maxSubscribedQuality))
+			t.receiver.SetMaxExpectedSpatialLayer(maxExpectedSpatialLayer)
 		}
 		t.lock.RUnlock()
-	})
+	}
+
+	if len(subscribedQualities) != 0 && t.onSubscribedMaxQualityChange != nil {
+		_ = t.onSubscribedMaxQualityChange(t.ID(), subscribedQualities)
+	}
 }
 
 //---------------------------
@@ -574,11 +952,7 @@ func SpatialLayerForQuality(quality livekit.VideoQuality) int32 {
 		return 0
 	case livekit.VideoQuality_MEDIUM:
 		return 1
-	case livekit.VideoQuality_HIGH:
-		return 2
-	case livekit.VideoQuality_OFF:
-		return -1
 	default:
-		return -1
+		return 2
 	}
 }

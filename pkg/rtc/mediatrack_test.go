@@ -137,7 +137,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		})
 
 		// mute all subscribers
-		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
+		mt.NotifySubscriberMute("s1")
 
 		expectedSubscribedQualities := []*livekit.SubscribedQuality{
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
@@ -216,7 +216,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// muting "s2" only should not disable all qualities
-		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_OFF)
+		mt.NotifySubscriberMute("s2")
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
@@ -227,7 +227,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
 
 		// muting "s1" also should disable all qualities
-		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
+		mt.NotifySubscriberMute("s1")
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
