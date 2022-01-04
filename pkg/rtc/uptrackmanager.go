@@ -232,10 +232,7 @@ func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
 	level = silentAudioLevel
 	for _, pt := range u.publishedTracks {
 		if mt, ok := pt.(*MediaTrack); ok {
-			if mt.audioLevel == nil {
-				continue
-			}
-			tl, ta := mt.audioLevel.GetLevel()
+			tl, ta := mt.GetAudioLevel()
 			if ta {
 				active = true
 				if tl < level {

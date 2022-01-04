@@ -333,6 +333,13 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return info
 }
 
+func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
+	if t.audioLevel == nil {
+		return silentAudioLevel, false
+	}
+	return t.audioLevel.GetLevel()
+}
+
 func (t *MediaTrack) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	for _, layer := range layers {
 		t.layerDimensions.Store(layer.Quality, layer)
