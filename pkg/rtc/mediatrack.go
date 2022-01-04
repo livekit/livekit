@@ -47,8 +47,7 @@ type MediaTrack struct {
 	twcc            *twcc.Responder
 	audioLevel      *AudioLevel
 	receiver        sfu.Receiver
-	lastPLI         time.Time
-	layerDimensions sync.Map // quality => *livekit.VideoLayer
+	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 
 	// track audio fraction lost
 	statsLock         sync.Mutex
