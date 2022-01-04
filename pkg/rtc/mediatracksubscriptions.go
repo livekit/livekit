@@ -46,7 +46,7 @@ type MediaTrackSubscriptionsParams struct {
 
 	Telemetry telemetry.TelemetryService
 
-	Logger logger.Logger
+	Logger *logger.Logger
 }
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
@@ -193,12 +193,14 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 			if sender == nil {
 				return
 			}
-			t.params.Logger.Debugw("removing peerconnection track",
-				"track", t.params.MediaTrack.ID(),
-				"subscriber", sub.Identity(),
-				"subscriberID", subscriberID,
-				"kind", t.params.MediaTrack.Kind(),
-			)
+			if t.params.Logger != nil {
+				t.params.Logger.Debugw("removing peerconnection track",
+					"track", t.params.MediaTrack.ID(),
+					"subscriber", sub.Identity(),
+					"subscriberID", subscriberID,
+					"kind", t.params.MediaTrack.Kind(),
+				)
+			}
 			if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
 				if err == webrtc.ErrConnectionClosed {
 					// sub closing, can skip removing subscribedtracks
@@ -207,11 +209,13 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 					// most of these are safe to ignore, since the track state might have already
 					// been set to Inactive
-					t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
-						"error", err,
-						"subscriber", sub.Identity(),
-						"subscriberID", subscriberID,
-					)
+					if t.params.Logger != nil {
+						t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+							"error", err,
+							"subscriber", sub.Identity(),
+							"subscriberID", subscriberID,
+						)
+					}
 				}
 			}
 
@@ -247,7 +251,9 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
-	t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
+	if t.params.Logger != nil {
+		t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
+	}
 
 	t.subscribedTracks.Range(func(_, val interface{}) bool {
 		if subTrack, ok := val.(types.SubscribedTrack); ok {
@@ -328,7 +334,9 @@ func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.Particip
 		i := 0
 		for {
 			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				t.params.Logger.Errorw("could not write RTCP", err)
+				if t.params.Logger != nil {
+					t.params.Logger.Errorw("could not write RTCP", err)
+				}
 				return
 			}
 			if i > 5 {

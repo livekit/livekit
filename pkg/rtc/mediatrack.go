@@ -99,7 +99,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
 		Telemetry:        params.Telemetry,
-		Logger:           params.Logger,
+		Logger:           &params.Logger,
 	})
 
 	if params.TrackInfo.Muted {
