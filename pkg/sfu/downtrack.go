@@ -94,7 +94,7 @@ type DownTrack struct {
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
-	onCloseHandler          func()
+	onCloseHandlers         []func()
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
@@ -438,8 +438,8 @@ func (d *DownTrack) Close() {
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
-		if d.onCloseHandler != nil {
-			d.onCloseHandler()
+		for _, f := range d.onCloseHandlers {
+			f()
 		}
 		close(d.done)
 	})
@@ -485,7 +485,9 @@ func (d *DownTrack) UptrackLayersChange(availableLayers []uint16) {
 
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func()) {
-	d.onCloseHandler = fn
+	if fn != nil {
+		d.onCloseHandlers = append(d.onCloseHandlers, fn)
+	}
 }
 
 func (d *DownTrack) OnBind(fn func()) {

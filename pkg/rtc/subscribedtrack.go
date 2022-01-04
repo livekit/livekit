@@ -99,7 +99,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 		return
 	}
 	if t.subMuted.Get() {
-		t.MediaTrack().NotifySubscriberMute(t.params.SubscriberID)
+		t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, livekit.VideoQuality_OFF)
 		return
 	}
 	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
