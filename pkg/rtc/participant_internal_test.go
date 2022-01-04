@@ -55,7 +55,7 @@ func TestICEStateChange(t *testing.T) {
 		p.onClose = func(participant types.Participant, disallowedSubscriptions map[string]string) {
 			close(closeChan)
 		}
-		p.handlePrimaryICEStateChange(webrtc.ICEConnectionStateFailed)
+		p.handlePrimaryStateChange(webrtc.PeerConnectionStateFailed)
 
 		select {
 		case <-closeChan:
@@ -220,7 +220,7 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.uptrackManager.pendingTracks["cid"] = ti
+		p.uptrackManager.pendingTracks["cid"] = &pendingTrackInfo{TrackInfo: ti}
 
 		p.SetTrackMuted(ti.Sid, true, false)
 		require.True(t, ti.Muted)

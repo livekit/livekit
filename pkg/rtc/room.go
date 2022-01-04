@@ -56,6 +56,8 @@ type Room struct {
 type ParticipantOptions struct {
 	AutoSubscribe bool
 	KeepSubscribe bool
+	SyncState     *livekit.SyncState
+	MigrateOut      bool
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
@@ -256,16 +258,18 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
+	if !opts.KeepSubscribe {
+		participant.SetMigrateState(types.MigrateComplete)
+	}
+
 	if participant.SubscriberAsPrimary() {
 		// if client need keep subscribe state, wait for first UpdateSubscription msg
-		if !opts.KeepSubscribe {
-			go func() {
-				// r.subscribeToExistingTracks(participant)
-				// initiates sub connection as primary
-				// participant.Negotiate()
-				participant.SetSubscribeReady(true)
-			}()
-		}
+		go func() {
+			// r.subscribeToExistingTracks(participant)
+			// initiates sub connection as primary
+			// participant.Negotiate()
+			participant.Negotiate()
+		}()
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
@@ -285,14 +289,14 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 		return err
 	}
 
-	if keepSubscribe {
-		// client will offer ice restart, wait for offer
-		p.SetSubscribeReady(false)
-	} else {
-		if err := p.ICERestart(); err != nil {
-			return err
-		}
+	// if keepSubscribe {
+	// 	// client will offer ice restart, wait for offer
+	// 	p.SetSubscribeReady(false)
+	// } else {
+	if err := p.ICERestart(); err != nil {
+		return err
 	}
+	// }
 	return nil
 }
 
@@ -395,18 +399,27 @@ func (r *Room) UpdateSubscriptions(
 	return nil
 }
 
-func (r *Room) SyncSubscriptionState(participant types.Participant, state *livekit.SyncSubscriptionState) error {
-	err := participant.SubscriberPC().SetRemoteDescription(FromProtoSessionDescription(state.GetOffer()))
-	if err != nil {
-		return err
+func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState) error {
+	r.lock.Lock()
+	if opt, ok := r.participantOpts[participant.Identity()]; ok {
+		opt.SyncState = state
 	}
-
-	if !participant.SubscribeReady() {
+	r.lock.Unlock()
+	if participant.MigrateState() == types.MigrateStateInit {
+		offer := FromProtoSessionDescription(state.GetOffer())
+		participant.InitSubscribePreviousOffer(&offer)
 		r.subscribeToExistingTracks(participant)
-		defer participant.SetSubscribeReady(true)
+		defer func() {
+			participant.SetMigrateState(types.MigrateStateSync)
+			participant.Negotiate()
+		}()
 	}
-	err = r.UpdateSubscriptions(participant, state.GetSubscription().GetTrackSids(), state.GetSubscription().GetParticipantTracks(),
-		state.Subscription.GetSubscribe())
+	err := r.UpdateSubscriptions(participant, state.GetSubscription().GetTrackSids(), state.GetSubscription().GetParticipantTracks(),
+		state.GetSubscription().GetSubscribe())
+
+	for _, track := range state.GetPublishTracks() {
+		participant.AddMigratedTrack(track.GetCid(), track.GetTrack())
+	}
 	return err
 }
 

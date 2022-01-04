@@ -24,6 +24,14 @@ type AddSubscriberParams struct {
 	TrackSids []string
 }
 
+type MigrateState int32
+
+const (
+	MigrateStateInit MigrateState = iota
+	MigrateStateSync
+	MigrateComplete
+)
+
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() string
@@ -40,10 +48,12 @@ type Participant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
 	ICERestart() error
-	SetSubscribeReady(ready bool)
-	SubscribeReady() bool
+	InitSubscribePreviousOffer(previousOffer *webrtc.SessionDescription)
+	SetMigrateState(s MigrateState)
+	MigrateState() MigrateState
 
 	AddTrack(req *livekit.AddTrackRequest)
+	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
 	GetPublishedTrack(sid string) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
 	GetSubscribedTrack(sid string) SubscribedTrack
@@ -104,7 +114,7 @@ type Room interface {
 	Name() string
 	UpdateSubscriptions(participant Participant, trackIDs []string, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
-	SyncSubscriptionState(participant Participant, state *livekit.SyncSubscriptionState) error
+	SyncState(participant Participant, state *livekit.SyncState) error
 }
 
 // MediaTrack represents a media track

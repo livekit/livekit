@@ -1,6 +1,8 @@
 package rtc
 
 import (
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -28,6 +31,11 @@ const (
 	negotiationRetry
 )
 
+type SimulcastTrackInfo struct {
+	Mid string
+	Rid string
+}
+
 // PCTransport is a wrapper around PeerConnection, with some helper methods
 type PCTransport struct {
 	pc *webrtc.PeerConnection
@@ -44,6 +52,8 @@ type PCTransport struct {
 	streamAllocator *sfu.StreamAllocator
 
 	logger logger.Logger
+
+	previousAnwser *webrtc.SessionDescription
 }
 
 type TransportParams struct {
@@ -54,6 +64,7 @@ type TransportParams struct {
 	Telemetry           telemetry.TelemetryService
 	EnabledCodecs       []*livekit.Codec
 	Logger              logger.Logger
+	SimTracks           map[uint32]SimulcastTrackInfo
 }
 
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -75,6 +86,14 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 	if params.Telemetry != nil && params.Target == livekit.SignalTarget_PUBLISHER {
 		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
 		ir.Add(f)
+	}
+	if len(params.SimTracks) > 0 {
+		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
+		if err != nil {
+			params.Logger.Errorw("NewUnhandleSimulcastInterceptorFactory failed", err)
+		} else {
+			ir.Add(f)
+		}
 	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
@@ -129,6 +148,8 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 		t.lock.Unlock()
 		return nil
 	}
+
+	t.logger.Debugw("add candidate ", "candidate", candidate.Candidate)
 
 	return t.pc.AddICECandidate(candidate)
 }
@@ -233,6 +254,15 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
+	if t.previousAnwser != nil {
+		t.previousAnwser = nil
+		if options == nil {
+			options = &webrtc.OfferOptions{ICERestart: true}
+		} else {
+			options.ICERestart = true
+		}
+	}
+
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
@@ -252,6 +282,96 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	t.restartAfterGathering = false
 
 	go t.onOffer(offer)
+	return nil
+}
+
+func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
+	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
+	// client's subscribe pc after joining, should change this step
+	parsed, err := previousAnswer.Unmarshal()
+	if err != nil {
+		return err
+	}
+	fp, fpHahs, err := extractFingerprint(parsed)
+	if err != nil {
+		return err
+	}
+
+	offer, err := t.pc.CreateOffer(nil)
+	if err != nil {
+		return err
+	}
+
+	t.pc.SetLocalDescription(offer)
+
+	pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		return err
+	}
+	defer pc2.Close()
+
+	pc2.SetRemoteDescription(offer)
+	ans, err := pc2.CreateAnswer(nil)
+	if err != nil {
+		return err
+	}
+	parsedAns, _ := ans.Unmarshal()
+	fpLine := fpHahs + " " + fp
+	replaceFP := func(attrs []sdp.Attribute, fpLine string) {
+		for k := range attrs {
+			if attrs[k].Key == "fingerprint" {
+				attrs[k].Value = fpLine
+			}
+		}
+
+	}
+	replaceFP(parsedAns.Attributes, fpLine)
+	for _, m := range parsedAns.MediaDescriptions {
+		replaceFP(m.Attributes, fpLine)
+	}
+	bytes, err := parsedAns.Marshal()
+	if err != nil {
+		return err
+	}
+	ans.SDP = string(bytes)
+
+	return t.pc.SetRemoteDescription(ans)
+}
+
+func (t *PCTransport) initPCWithPreviousOffer(previousOffer webrtc.SessionDescription) error {
+	if t.pc.RemoteDescription() != nil {
+		return errors.New("already has remote description")
+	}
+
+	if err := t.preparePC(previousOffer); err != nil {
+		return err
+	}
+
+	parsed, err := previousOffer.Unmarshal()
+	if err != nil {
+		return err
+	}
+	for _, m := range parsed.MediaDescriptions {
+		var codecType webrtc.RTPCodecType
+		switch m.MediaName.Media {
+		case "video":
+			codecType = webrtc.RTPCodecTypeVideo
+		case "audio":
+			codecType = webrtc.RTPCodecTypeAudio
+		default:
+			continue
+		}
+		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
+		if err != nil {
+			return err
+		}
+		tr.Stop()
+		mid := getMidValue(m)
+		if mid == "" {
+			return errors.New("mid value not found")
+		}
+		tr.SetMid(mid)
+	}
 	return nil
 }
 
@@ -279,4 +399,52 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	}
 
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
+}
+
+func (t *PCTransport) SetInitPreviousOffer(offer *webrtc.SessionDescription) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	if t.pc.RemoteDescription() == nil && t.previousAnwser == nil {
+		t.previousAnwser = offer
+		t.initPCWithPreviousOffer(*t.previousAnwser)
+	}
+}
+
+func getMidValue(media *sdp.MediaDescription) string {
+	for _, attr := range media.Attributes {
+		if attr.Key == "mid" {
+			return attr.Value
+		}
+	}
+	return ""
+}
+
+func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
+	fingerprints := []string{}
+
+	if fingerprint, haveFingerprint := desc.Attribute("fingerprint"); haveFingerprint {
+		fingerprints = append(fingerprints, fingerprint)
+	}
+
+	for _, m := range desc.MediaDescriptions {
+		if fingerprint, haveFingerprint := m.Attribute("fingerprint"); haveFingerprint {
+			fingerprints = append(fingerprints, fingerprint)
+		}
+	}
+
+	if len(fingerprints) < 1 {
+		return "", "", webrtc.ErrSessionDescriptionNoFingerprint
+	}
+
+	for _, m := range fingerprints {
+		if m != fingerprints[0] {
+			return "", "", webrtc.ErrSessionDescriptionConflictingFingerprints
+		}
+	}
+
+	parts := strings.Split(fingerprints[0], " ")
+	if len(parts) != 2 {
+		return "", "", webrtc.ErrSessionDescriptionInvalidFingerprint
+	}
+	return parts[1], parts[0], nil
 }

@@ -48,6 +48,7 @@ type ParticipantParams struct {
 	Hidden          bool
 	Recorder        bool
 	Logger          logger.Logger
+	SimTracks       map[uint32]SimulcastTrackInfo
 }
 
 type ParticipantImpl struct {
@@ -95,8 +96,8 @@ type ParticipantImpl struct {
 	onDataPacket     func(types.Participant, *livekit.DataPacket)
 	onClose          func(types.Participant, map[string]string)
 
-	// bool, indicate subscriber peerconnection is ready
-	subscribeReady atomic.Value
+	migrateState atomic.Value // types.MigrateState
+	pendingOffer *webrtc.SessionDescription
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -108,7 +109,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		disallowedSubscriptions: make(map[string]string),
 		connectedAt:             time.Now(),
 	}
-	p.subscribeReady.Store(false)
+	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	var err error
@@ -124,6 +125,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Telemetry:           p.params.Telemetry,
 		EnabledCodecs:       p.params.EnabledCodecs,
 		Logger:              params.Logger,
+		SimTracks:           params.SimTracks,
 	})
 	if err != nil {
 		return nil, err
@@ -175,7 +177,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			return nil, err
 		}
 	}
-	primaryPC.OnICEConnectionStateChange(p.handlePrimaryICEStateChange)
+	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
@@ -281,6 +283,13 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[string]st
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+	p.lock.Lock()
+	if p.MigrateState() == types.MigrateStateInit {
+		p.pendingOffer = &sdp
+		p.lock.Unlock()
+		return
+	}
+	p.lock.Unlock()
 	p.params.Logger.Debugw("answering pub offer",
 		"state", p.State().String(),
 		// "sdp", sdp.SDP,
@@ -324,6 +333,10 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return
+}
+
+func (p *ParticipantImpl) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
+	p.uptrackManager.AddMigratedTrack(cid, ti)
 }
 
 // AddTrack is called when client intends to publish track.
@@ -433,53 +446,87 @@ func (p *ParticipantImpl) Close() error {
 }
 
 func (p *ParticipantImpl) Negotiate() {
-	if p.subscribeReady.Load().(bool) {
+	if p.MigrateState() != types.MigrateStateInit {
 		p.subscriber.Negotiate()
 	}
 }
 
-func (p *ParticipantImpl) SetSubscribeReady(ready bool) {
-	if !ready {
-		p.subscribeReady.Store(ready)
+func (p *ParticipantImpl) InitSubscribePreviousOffer(previousOffer *webrtc.SessionDescription) {
+	p.subscriber.SetInitPreviousOffer(previousOffer)
+}
+
+func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
+	p.lock.Lock()
+	preState := p.MigrateState()
+	if preState == types.MigrateComplete || preState == s {
+		p.lock.Unlock()
 		return
 	}
-	if p.subscribeReady.CompareAndSwap(false, true) {
-		if p.subscriber.pc.RemoteDescription() == nil {
-			p.subscriber.Negotiate()
-			return
+	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	p.migrateState.Store(s)
+	if s == types.MigrateStateSync {
+		if !p.uptrackManager.HasPendingMigratedTrack() {
+			p.migrateState.Store(types.MigrateComplete)
 		}
-
-		answer, err := p.subscriber.pc.CreateAnswer(nil)
-		if err != nil {
-			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
-			err = errors.Wrap(err, "could not create subscriber answer")
-			return
+		pendingOffer := p.pendingOffer
+		p.pendingOffer = nil
+		p.lock.Unlock()
+		if pendingOffer != nil {
+			p.HandleOffer(*pendingOffer)
 		}
-
-		if err = p.subscriber.pc.SetLocalDescription(answer); err != nil {
-			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
-			err = errors.Wrap(err, "could not set subscriber local description")
-			return
-		}
-		err = p.writeMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_SubscriptionAnswer{
-				SubscriptionAnswer: ToProtoSessionDescription(answer),
-			},
-		})
-		if err != nil {
-			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-			return
-		}
-
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
-
-		return
+	} else {
+		p.lock.Unlock()
 	}
 }
 
-func (p *ParticipantImpl) SubscribeReady() bool {
-	return p.subscribeReady.Load().(bool)
+func (p *ParticipantImpl) MigrateState() types.MigrateState {
+	return p.migrateState.Load().(types.MigrateState)
 }
+
+func (p *ParticipantImpl) SetReady() {
+	// if !ready {
+	// 	p.subscribeReady.Store(ready)
+	// 	return
+	// }
+
+	// if p.subscribeReady.CompareAndSwap(false, true) {
+	// p.subscriber.SetInitPreviousOffer(previousOffer)
+	// if p.subscriber.pc.RemoteDescription() == nil {
+	// 	p.subscriber.Negotiate()
+	// 	return
+	// }
+
+	// answer, err := p.subscriber.pc.CreateAnswer(nil)
+	// if err != nil {
+	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
+	// 	err = errors.Wrap(err, "could not create subscriber answer")
+	// 	return
+	// }
+
+	// if err = p.subscriber.pc.SetLocalDescription(answer); err != nil {
+	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
+	// 	err = errors.Wrap(err, "could not set subscriber local description")
+	// 	return
+	// }
+	// err = p.writeMessage(&livekit.SignalResponse{
+	// 	Message: &livekit.SignalResponse_SubscriptionAnswer{
+	// 		SubscriptionAnswer: ToProtoSessionDescription(answer),
+	// 	},
+	// })
+	// if err != nil {
+	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
+	// 	return
+	// }
+
+	// prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+
+	// return
+	// }
+}
+
+// func (p *ParticipantImpl) Ready() bool {
+// 	return p.ready.Load().(bool)
+// }
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart() error {
@@ -822,6 +869,9 @@ func (p *ParticipantImpl) setupUptrackManager() {
 	})
 
 	p.uptrackManager.OnTrackPublished(func(track types.PublishedTrack) {
+		if !p.uptrackManager.HasPendingMigratedTrack() {
+			p.SetMigrateState(types.MigrateComplete)
+		}
 		if p.onTrackPublished != nil {
 			p.onTrackPublished(p, track)
 		}
@@ -934,7 +984,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	p.uptrackManager.MediaTrackReceived(track, rtpReceiver)
+	p.uptrackManager.MediaTrackReceived(track, rtpReceiver, p)
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -979,11 +1029,11 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	}
 }
 
-func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnectionState) {
-	if state == webrtc.ICEConnectionStateConnected {
+func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
+	if state == webrtc.PeerConnectionStateConnected {
 		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	} else if state == webrtc.ICEConnectionStateFailed {
+	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
 			_ = p.Close()
