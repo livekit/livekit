@@ -116,6 +116,11 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	IsSimulcast() bool
 
+	ParticipantID() livekit.ParticipantID
+	ParticipantIdentity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.TrackInfo
+
 	// subscribers
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
@@ -126,8 +131,8 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberMute(subscriberID livekit.ParticipantID)
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
+	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
 }
 
 // PublishedTrack is the main interface representing a track published to the room
