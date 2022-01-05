@@ -54,9 +54,10 @@ type MediaTrackSubscriptionsParams struct {
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
 	t := &MediaTrackSubscriptions{
-		params:               params,
-		subscribedTracks:     make(map[livekit.ParticipantID]types.SubscribedTrack),
-		maxSubscriberQuality: make(map[livekit.ParticipantID]livekit.VideoQuality),
+		params:                   params,
+		subscribedTracks:         make(map[livekit.ParticipantID]types.SubscribedTrack),
+		maxSubscriberQuality:     make(map[livekit.ParticipantID]livekit.VideoQuality),
+		maxSubscriberNodeQuality: make(map[string]livekit.VideoQuality),
 	}
 
 	return t
