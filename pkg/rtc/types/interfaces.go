@@ -95,6 +95,8 @@ type Participant interface {
 
 	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
 
+	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+
 	DebugInfo() map[string]interface{}
 }
 
@@ -135,6 +137,8 @@ type MediaTrack interface {
 
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
+
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // PublishedTrack is the main interface representing a track published to the room

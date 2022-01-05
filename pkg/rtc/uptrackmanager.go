@@ -329,6 +329,23 @@ func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.
 	return nil
 }
 
+func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	track := u.getPublishedTrack(trackID)
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find track")
+	}
+
+	if mt, ok := track.(*MediaTrack); ok {
+		mt.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
+	}
+
+	return nil
+}
+
 // when a new remoteTrack is created, creates a Track and adds it to room
 func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	var newTrack bool

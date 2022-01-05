@@ -494,6 +494,19 @@ type FakeParticipant struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
 	}
+	UpdateMediaLossStub        func(string, livekit.TrackID, uint32) error
+	updateMediaLossMutex       sync.RWMutex
+	updateMediaLossArgsForCall []struct {
+		arg1 string
+		arg2 livekit.TrackID
+		arg3 uint32
+	}
+	updateMediaLossReturns struct {
+		result1 error
+	}
+	updateMediaLossReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateSubscribedQualityStub        func(string, livekit.TrackID, livekit.VideoQuality) error
 	updateSubscribedQualityMutex       sync.RWMutex
 	updateSubscribedQualityArgsForCall []struct {
@@ -3155,6 +3168,69 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}{result1}
 }
 
+func (fake *FakeParticipant) UpdateMediaLoss(arg1 string, arg2 livekit.TrackID, arg3 uint32) error {
+	fake.updateMediaLossMutex.Lock()
+	ret, specificReturn := fake.updateMediaLossReturnsOnCall[len(fake.updateMediaLossArgsForCall)]
+	fake.updateMediaLossArgsForCall = append(fake.updateMediaLossArgsForCall, struct {
+		arg1 string
+		arg2 livekit.TrackID
+		arg3 uint32
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateMediaLossStub
+	fakeReturns := fake.updateMediaLossReturns
+	fake.recordInvocation("UpdateMediaLoss", []interface{}{arg1, arg2, arg3})
+	fake.updateMediaLossMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) UpdateMediaLossCallCount() int {
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
+	return len(fake.updateMediaLossArgsForCall)
+}
+
+func (fake *FakeParticipant) UpdateMediaLossCalls(stub func(string, livekit.TrackID, uint32) error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = stub
+}
+
+func (fake *FakeParticipant) UpdateMediaLossArgsForCall(i int) (string, livekit.TrackID, uint32) {
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
+	argsForCall := fake.updateMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeParticipant) UpdateMediaLossReturns(result1 error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = nil
+	fake.updateMediaLossReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) UpdateMediaLossReturnsOnCall(i int, result1 error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = nil
+	if fake.updateMediaLossReturnsOnCall == nil {
+		fake.updateMediaLossReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateMediaLossReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) UpdateSubscribedQuality(arg1 string, arg2 livekit.TrackID, arg3 livekit.VideoQuality) error {
 	fake.updateSubscribedQualityMutex.Lock()
 	ret, specificReturn := fake.updateSubscribedQualityReturnsOnCall[len(fake.updateSubscribedQualityArgsForCall)]
@@ -3391,6 +3467,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
 	fake.updateSubscribedQualityMutex.RLock()
 	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscriptionPermissionsMutex.RLock()

@@ -121,6 +121,12 @@ type FakePublishedTrack struct {
 		arg1 string
 		arg2 livekit.VideoQuality
 	}
+	NotifySubscriberNodeMediaLossStub        func(string, uint8)
+	notifySubscriberNodeMediaLossMutex       sync.RWMutex
+	notifySubscriberNodeMediaLossArgsForCall []struct {
+		arg1 string
+		arg2 uint8
+	}
 	NumUpTracksStub        func() (uint32, uint32)
 	numUpTracksMutex       sync.RWMutex
 	numUpTracksArgsForCall []struct {
@@ -847,6 +853,39 @@ func (fake *FakePublishedTrack) NotifySubscriberNodeMaxQualityArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLoss(arg1 string, arg2 uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	fake.notifySubscriberNodeMediaLossArgsForCall = append(fake.notifySubscriberNodeMediaLossArgsForCall, struct {
+		arg1 string
+		arg2 uint8
+	}{arg1, arg2})
+	stub := fake.NotifySubscriberNodeMediaLossStub
+	fake.recordInvocation("NotifySubscriberNodeMediaLoss", []interface{}{arg1, arg2})
+	fake.notifySubscriberNodeMediaLossMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriberNodeMediaLossStub(arg1, arg2)
+	}
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossCallCount() int {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	return len(fake.notifySubscriberNodeMediaLossArgsForCall)
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossCalls(stub func(string, uint8)) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	defer fake.notifySubscriberNodeMediaLossMutex.Unlock()
+	fake.NotifySubscriberNodeMediaLossStub = stub
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) (string, uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	argsForCall := fake.notifySubscriberNodeMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakePublishedTrack) NumUpTracks() (uint32, uint32) {
 	fake.numUpTracksMutex.Lock()
 	ret, specificReturn := fake.numUpTracksReturnsOnCall[len(fake.numUpTracksArgsForCall)]
@@ -1545,6 +1584,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMaxQualityMutex.RLock()
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	fake.numUpTracksMutex.RLock()
 	defer fake.numUpTracksMutex.RUnlock()
 	fake.participantIDMutex.RLock()

@@ -771,6 +771,10 @@ func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit
 	return p.uptrackManager.UpdateSubscribedQuality(nodeID, trackID, maxQuality)
 }
 
+func (p *ParticipantImpl) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+	return p.uptrackManager.UpdateMediaLoss(nodeID, trackID, fractionalLoss)
+}
+
 func (p *ParticipantImpl) setupUptrackManager() {
 	p.uptrackManager = NewUptrackManager(UptrackManagerParams{
 		Identity:       p.params.Identity,

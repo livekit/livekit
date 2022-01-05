@@ -465,17 +465,34 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 
 // handles max loss for audio packets
 func (t *MediaTrack) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
-	var (
-		shouldUpdate bool
-		maxLost      uint8
-	)
 	t.statsLock.Lock()
 	for _, rr := range report.Reports {
 		if t.maxDownFracLost < rr.FractionLost {
 			t.maxDownFracLost = rr.FractionLost
 		}
 	}
+	t.statsLock.Unlock()
 
+	t.maybeUpdateLoss()
+}
+
+func (t *MediaTrack) NotifySubscriberNodeMediaLoss(_nodeID string, fractionalLoss uint8) {
+	t.statsLock.Lock()
+	if t.maxDownFracLost < fractionalLoss {
+		t.maxDownFracLost = fractionalLoss
+	}
+	t.statsLock.Unlock()
+
+	t.maybeUpdateLoss()
+}
+
+func (t *MediaTrack) maybeUpdateLoss() {
+	var (
+		shouldUpdate bool
+		maxLost      uint8
+	)
+
+	t.statsLock.Lock()
 	now := time.Now()
 	if now.Sub(t.maxDownFracLostTs) > lostUpdateDelta {
 		shouldUpdate = true
