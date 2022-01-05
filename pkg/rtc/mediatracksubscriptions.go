@@ -26,7 +26,8 @@ const (
 type MediaTrackSubscriptions struct {
 	params MediaTrackSubscriptionsParams
 
-	subscribedTracks sync.Map // participantID => types.SubscribedTrack
+	subscribedTracksMu sync.RWMutex
+	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack // participantID => types.SubscribedTrack
 
 	onNoSubscribers func()
 
@@ -54,6 +55,7 @@ type MediaTrackSubscriptionsParams struct {
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
 	t := &MediaTrackSubscriptions{
 		params:               params,
+		subscribedTracks:     make(map[livekit.ParticipantID]types.SubscribedTrack),
 		maxSubscriberQuality: make(map[livekit.ParticipantID]livekit.VideoQuality),
 	}
 
@@ -65,13 +67,14 @@ func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
+	t.subscribedTracksMu.RLock()
+	subscribedTracks := t.subscribedTracks
+	t.subscribedTracksMu.RUnlock()
+
 	// mute all subscribed tracks
-	t.subscribedTracks.Range(func(_, value interface{}) bool {
-		if st, ok := value.(types.SubscribedTrack); ok {
-			st.SetPublisherMuted(muted)
-		}
-		return true
-	})
+	for _, st := range subscribedTracks {
+		st.SetPublisherMuted(muted)
+	}
 
 	// update quality based on subscription if unmuting
 	if !muted {
@@ -80,7 +83,10 @@ func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 }
 
 func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool {
-	_, ok := t.subscribedTracks.Load(subID)
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	_, ok := t.subscribedTracks[subID]
 	return ok
 }
 
@@ -88,8 +94,11 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec webrtc.RTPCodecCapability, wr WrappedReceiver) (*sfu.DownTrack, error) {
 	subscriberID := sub.ID()
 
+	t.subscribedTracksMu.Lock()
+	defer t.subscribedTracksMu.Unlock()
+
 	// don't subscribe to the same track multiple times
-	if _, ok := t.subscribedTracks.Load(subscriberID); ok {
+	if _, ok := t.subscribedTracks[subscriberID]; ok {
 		return nil, nil
 	}
 
@@ -111,8 +120,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 		return nil, err
 	}
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
-		PublisherID:       t.params.MediaTrack.ParticipantID(),
-		PublisherIdentity: t.params.MediaTrack.ParticipantIdentity(),
+		PublisherID:       t.params.MediaTrack.PublisherID(),
+		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
 		SubscriberID:      subscriberID,
 		MediaTrack:        t.params.MediaTrack,
 		DownTrack:         downTrack,
@@ -184,7 +193,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.subscribedTracks.Delete(subscriberID)
+			t.subscribedTracksMu.Lock()
+			delete(t.subscribedTracks, subscriberID)
+			t.subscribedTracksMu.Unlock()
+
 			t.maybeNotifyNoSubscribers()
 			if t.params.Telemetry != nil {
 				t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
@@ -232,7 +244,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 		}()
 	})
 
-	t.subscribedTracks.Store(subscriberID, subTrack)
+	t.subscribedTracks[subscriberID] = subTrack
 	subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 
 	// since sub will lock, run it in a goroutine to avoid deadlocks
@@ -262,57 +274,56 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 		t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
 	}
 
-	t.subscribedTracks.Range(func(_, val interface{}) bool {
-		if subTrack, ok := val.(types.SubscribedTrack); ok {
-			go subTrack.DownTrack().Close()
-		}
-		return true
-	})
-	t.subscribedTracks = sync.Map{}
+	t.subscribedTracksMu.RLock()
+	subscribedTracks := t.subscribedTracks
+	t.subscribedTracksMu.RUnlock()
+
+	for _, subTrack := range subscribedTracks {
+		go subTrack.DownTrack().Close()
+	}
 }
 
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
 	var revokedSubscriberIDs []livekit.ParticipantID
-	// LK-TODO: large number of subscribers needs to be solved for this loop
-	t.subscribedTracks.Range(func(key interface{}, val interface{}) bool {
-		if subID, ok := key.(livekit.ParticipantID); ok {
-			found := false
-			for _, allowedID := range allowedSubscriberIDs {
-				if subID == allowedID {
-					found = true
-					break
-				}
-			}
 
-			if !found {
-				if subTrack, ok := val.(types.SubscribedTrack); ok {
-					go subTrack.DownTrack().Close()
-					revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
-				}
+	t.subscribedTracksMu.RLock()
+	subscribedTracks := t.subscribedTracks
+	t.subscribedTracksMu.RUnlock()
+
+	// LK-TODO: large number of subscribers needs to be solved for this loop
+	for subID, subTrack := range subscribedTracks {
+		found := false
+		for _, allowedID := range allowedSubscriberIDs {
+			if subID == allowedID {
+				found = true
+				break
 			}
 		}
-		return true
-	})
+
+		if !found {
+			go subTrack.DownTrack().Close()
+			revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
+		}
+	}
 
 	return revokedSubscriberIDs
 }
 
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
-	t.subscribedTracks.Range(func(_, val interface{}) bool {
-		if st, ok := val.(types.SubscribedTrack); ok {
-			st.UpdateVideoLayer()
-		}
-		return true
-	})
+	t.subscribedTracksMu.RLock()
+	subscribedTracks := t.subscribedTracks
+	t.subscribedTracksMu.RUnlock()
+
+	for _, st := range subscribedTracks {
+		st.UpdateVideoLayer()
+	}
 }
 
 func (t *MediaTrackSubscriptions) getSubscribedTrack(subscriberID livekit.ParticipantID) types.SubscribedTrack {
-	if val, ok := t.subscribedTracks.Load(subscriberID); ok {
-		if st, ok := val.(types.SubscribedTrack); ok {
-			return st
-		}
-	}
-	return nil
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	return t.subscribedTracks[subscriberID]
 }
 
 // TODO: send for all downtracks from the source participant
@@ -356,16 +367,19 @@ func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.Particip
 }
 
 func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
+	t.subscribedTracksMu.RLock()
+	subscribedTracks := t.subscribedTracks
+	t.subscribedTracksMu.RUnlock()
+
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
-	t.subscribedTracks.Range(func(_, val interface{}) bool {
-		if track, ok := val.(*SubscribedTrack); ok {
-			dt := track.DownTrack().DebugInfo()
-			dt["PubMuted"] = track.pubMuted.Get()
-			dt["SubMuted"] = track.subMuted.Get()
+	for _, val := range subscribedTracks {
+		if st, ok := val.(*SubscribedTrack); ok {
+			dt := st.DownTrack().DebugInfo()
+			dt["PubMuted"] = st.pubMuted.Get()
+			dt["SubMuted"] = st.subMuted.Get()
 			subscribedTrackInfo = append(subscribedTrackInfo, dt)
 		}
-		return true
-	})
+	}
 
 	return subscribedTrackInfo
 }
@@ -502,15 +516,15 @@ func (t *MediaTrackSubscriptions) updateQualityChange() {
 	}
 }
 
-func (t *MediaTrackSubscriptions) numSubscribed() uint32 {
+func (t *MediaTrackSubscriptions) numSubscribedLayers() uint32 {
 	t.maxQualityLock.RLock()
-	numSubscribed := uint32(0)
+	numSubscribedLayers := uint32(0)
 	if t.maxSubscribedQuality != livekit.VideoQuality_OFF {
-		numSubscribed = uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
+		numSubscribedLayers = uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
 	}
 	t.maxQualityLock.RUnlock()
 
-	return numSubscribed
+	return numSubscribedLayers
 }
 
 func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
@@ -518,14 +532,9 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 		return
 	}
 
-	empty := true
-	t.subscribedTracks.Range(func(_, value interface{}) bool {
-		if _, ok := value.(types.SubscribedTrack); ok {
-			empty = false
-			return false
-		}
-		return true
-	})
+	t.subscribedTracksMu.RLock()
+	empty := len(t.subscribedTracks) == 0
+	t.subscribedTracksMu.RUnlock()
 
 	if empty {
 		t.onNoSubscribers()

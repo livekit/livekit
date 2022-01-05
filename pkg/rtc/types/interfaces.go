@@ -120,8 +120,8 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	IsSimulcast() bool
 
-	ParticipantID() livekit.ParticipantID
-	ParticipantIdentity() livekit.ParticipantIdentity
+	PublisherID() livekit.ParticipantID
+	PublisherIdentity() livekit.ParticipantIdentity
 
 	ToProto() *livekit.TrackInfo
 

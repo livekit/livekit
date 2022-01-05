@@ -44,8 +44,11 @@ type MediaTrack struct {
 
 	lock sync.RWMutex
 
-	twcc            *twcc.Responder
-	audioLevel      *AudioLevel
+	twcc *twcc.Responder
+
+	audioLevelMu sync.RWMutex
+	audioLevel   *AudioLevel
+
 	receiver        sfu.Receiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 
@@ -136,11 +139,11 @@ func (t *MediaTrack) Source() livekit.TrackSource {
 	return t.params.TrackInfo.Source
 }
 
-func (t *MediaTrack) ParticipantID() livekit.ParticipantID {
+func (t *MediaTrack) PublisherID() livekit.ParticipantID {
 	return t.params.ParticipantID
 }
 
-func (t *MediaTrack) ParticipantIdentity() livekit.ParticipantIdentity {
+func (t *MediaTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.ParticipantIdentity
 }
 
@@ -215,9 +218,9 @@ func (t *MediaTrack) AddSubscriber(sub types.Participant) error {
 func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	numExpected := atomic.LoadUint32(&t.numUpTracks)
 
-	numSubscribed := t.numSubscribed()
-	if numSubscribed < numExpected {
-		numExpected = numSubscribed
+	numSubscribedLayers := t.numSubscribedLayers()
+	if numSubscribedLayers < numExpected {
+		numExpected = numSubscribedLayers
 	}
 
 	t.lock.RLock()
@@ -244,10 +247,15 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
+		t.audioLevelMu.Lock()
 		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
 		buff.OnAudioLevel(func(level uint8, duration uint32) {
+			t.audioLevelMu.RLock()
+			defer t.audioLevelMu.RUnlock()
+
 			t.audioLevel.Observe(level, duration)
 		})
+		t.audioLevelMu.Unlock()
 	} else if t.Kind() == livekit.TrackType_VIDEO {
 		if twcc != nil {
 			buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
@@ -333,6 +341,9 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 }
 
 func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
+	t.audioLevelMu.RLock()
+	defer t.audioLevelMu.RUnlock()
+
 	if t.audioLevel == nil {
 		return silentAudioLevel, false
 	}
