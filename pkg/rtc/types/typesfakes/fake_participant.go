@@ -494,6 +494,19 @@ type FakeParticipant struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
 	}
+	UpdateSubscribedQualityStub        func(string, livekit.TrackID, livekit.VideoQuality) error
+	updateSubscribedQualityMutex       sync.RWMutex
+	updateSubscribedQualityArgsForCall []struct {
+		arg1 string
+		arg2 livekit.TrackID
+		arg3 livekit.VideoQuality
+	}
+	updateSubscribedQualityReturns struct {
+		result1 error
+	}
+	updateSubscribedQualityReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateSubscriptionPermissionsStub        func(*livekit.UpdateSubscriptionPermissions, func(participantID livekit.ParticipantID) types.Participant) error
 	updateSubscriptionPermissionsMutex       sync.RWMutex
 	updateSubscriptionPermissionsArgsForCall []struct {
@@ -3142,6 +3155,69 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}{result1}
 }
 
+func (fake *FakeParticipant) UpdateSubscribedQuality(arg1 string, arg2 livekit.TrackID, arg3 livekit.VideoQuality) error {
+	fake.updateSubscribedQualityMutex.Lock()
+	ret, specificReturn := fake.updateSubscribedQualityReturnsOnCall[len(fake.updateSubscribedQualityArgsForCall)]
+	fake.updateSubscribedQualityArgsForCall = append(fake.updateSubscribedQualityArgsForCall, struct {
+		arg1 string
+		arg2 livekit.TrackID
+		arg3 livekit.VideoQuality
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateSubscribedQualityStub
+	fakeReturns := fake.updateSubscribedQualityReturns
+	fake.recordInvocation("UpdateSubscribedQuality", []interface{}{arg1, arg2, arg3})
+	fake.updateSubscribedQualityMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) UpdateSubscribedQualityCallCount() int {
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
+	return len(fake.updateSubscribedQualityArgsForCall)
+}
+
+func (fake *FakeParticipant) UpdateSubscribedQualityCalls(stub func(string, livekit.TrackID, livekit.VideoQuality) error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = stub
+}
+
+func (fake *FakeParticipant) UpdateSubscribedQualityArgsForCall(i int) (string, livekit.TrackID, livekit.VideoQuality) {
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
+	argsForCall := fake.updateSubscribedQualityArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeParticipant) UpdateSubscribedQualityReturns(result1 error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = nil
+	fake.updateSubscribedQualityReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) UpdateSubscribedQualityReturnsOnCall(i int, result1 error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = nil
+	if fake.updateSubscribedQualityReturnsOnCall == nil {
+		fake.updateSubscribedQualityReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateSubscribedQualityReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) UpdateSubscriptionPermissions(arg1 *livekit.UpdateSubscriptionPermissions, arg2 func(participantID livekit.ParticipantID) types.Participant) error {
 	fake.updateSubscriptionPermissionsMutex.Lock()
 	ret, specificReturn := fake.updateSubscriptionPermissionsReturnsOnCall[len(fake.updateSubscriptionPermissionsArgsForCall)]
@@ -3315,6 +3391,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscriptionPermissionsMutex.RLock()
 	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

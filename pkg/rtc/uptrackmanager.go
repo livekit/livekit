@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/livekit/protocol/livekit"
@@ -307,6 +308,23 @@ func (u *UptrackManager) UpdateSubscriptionPermissions(
 	u.processPendingSubscriptions(resolver)
 
 	u.maybeRevokeSubscriptions(resolver)
+
+	return nil
+}
+
+func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	track := u.getPublishedTrack(trackID)
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find track")
+	}
+
+	if mt, ok := track.(*MediaTrack); ok {
+		mt.NotifySubscriberNodeMaxQuality(nodeID, maxQuality)
+	}
 
 	return nil
 }
