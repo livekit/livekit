@@ -26,6 +26,18 @@ type FakePublishedTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetAudioLevelStub        func() (uint8, bool)
+	getAudioLevelMutex       sync.RWMutex
+	getAudioLevelArgsForCall []struct {
+	}
+	getAudioLevelReturns struct {
+		result1 uint8
+		result2 bool
+	}
+	getAudioLevelReturnsOnCall map[int]struct {
+		result1 uint8
+		result2 bool
+	}
 	GetConnectionScoreStub        func() float64
 	getConnectionScoreMutex       sync.RWMutex
 	getConnectionScoreArgsForCall []struct {
@@ -344,6 +356,62 @@ func (fake *FakePublishedTrack) AddSubscriberReturnsOnCall(i int, result1 error)
 	fake.addSubscriberReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakePublishedTrack) GetAudioLevel() (uint8, bool) {
+	fake.getAudioLevelMutex.Lock()
+	ret, specificReturn := fake.getAudioLevelReturnsOnCall[len(fake.getAudioLevelArgsForCall)]
+	fake.getAudioLevelArgsForCall = append(fake.getAudioLevelArgsForCall, struct {
+	}{})
+	stub := fake.GetAudioLevelStub
+	fakeReturns := fake.getAudioLevelReturns
+	fake.recordInvocation("GetAudioLevel", []interface{}{})
+	fake.getAudioLevelMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakePublishedTrack) GetAudioLevelCallCount() int {
+	fake.getAudioLevelMutex.RLock()
+	defer fake.getAudioLevelMutex.RUnlock()
+	return len(fake.getAudioLevelArgsForCall)
+}
+
+func (fake *FakePublishedTrack) GetAudioLevelCalls(stub func() (uint8, bool)) {
+	fake.getAudioLevelMutex.Lock()
+	defer fake.getAudioLevelMutex.Unlock()
+	fake.GetAudioLevelStub = stub
+}
+
+func (fake *FakePublishedTrack) GetAudioLevelReturns(result1 uint8, result2 bool) {
+	fake.getAudioLevelMutex.Lock()
+	defer fake.getAudioLevelMutex.Unlock()
+	fake.GetAudioLevelStub = nil
+	fake.getAudioLevelReturns = struct {
+		result1 uint8
+		result2 bool
+	}{result1, result2}
+}
+
+func (fake *FakePublishedTrack) GetAudioLevelReturnsOnCall(i int, result1 uint8, result2 bool) {
+	fake.getAudioLevelMutex.Lock()
+	defer fake.getAudioLevelMutex.Unlock()
+	fake.GetAudioLevelStub = nil
+	if fake.getAudioLevelReturnsOnCall == nil {
+		fake.getAudioLevelReturnsOnCall = make(map[int]struct {
+			result1 uint8
+			result2 bool
+		})
+	}
+	fake.getAudioLevelReturnsOnCall[i] = struct {
+		result1 uint8
+		result2 bool
+	}{result1, result2}
 }
 
 func (fake *FakePublishedTrack) GetConnectionScore() float64 {
@@ -1564,6 +1632,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.getAudioLevelMutex.RLock()
+	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getConnectionScoreMutex.RLock()
 	defer fake.getConnectionScoreMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()

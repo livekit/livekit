@@ -161,6 +161,8 @@ type PublishedTrack interface {
 	Receiver() sfu.TrackReceiver
 	GetConnectionScore() float64
 
+	GetAudioLevel() (level uint8, active bool)
+
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 
 	// callbacks
