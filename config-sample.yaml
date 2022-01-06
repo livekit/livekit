@@ -42,9 +42,16 @@ rtc:
   # # by default LiveKit clients use Google's public STUN servers
   # stun_servers:
   #   - server1
+  # # allows LiveKit to monitor congestion when sending streams and automatically
+  # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
+  # congestion_control:
+  #   enabled: true
+  #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
+  #   # in order to allow others to stream smoothly. You can disable this behavior here
+  #   allow_pause: true
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
-  # # producer. Increasing these times can lead to longer black screens when participants join,
-  # # while reducing them can lead to higher producer bitrates.
+  # # producer. Increasing these times can lead to longer black screens when new participants join,
+  # # while reducing them can lead to higher stream bitrate.
   # pli_throttle:
   #   low_quality: 500ms
   #   mid_quality: 1s
