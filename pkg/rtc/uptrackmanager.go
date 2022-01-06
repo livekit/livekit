@@ -150,6 +150,7 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 	if params.AllTracks {
 		tracks = u.GetPublishedTracks()
 	} else {
+		u.lock.RLock()
 		for _, trackID := range params.TrackIDs {
 			track := u.getPublishedTrack(trackID)
 			if track == nil {
@@ -158,6 +159,7 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 
 			tracks = append(tracks, track)
 		}
+		u.lock.RUnlock()
 	}
 	if len(tracks) == 0 {
 		return 0, nil
@@ -186,15 +188,14 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 }
 
 func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackID livekit.TrackID) {
-	u.lock.Lock()
-	defer u.lock.Unlock()
-
-	track := u.getPublishedTrack(trackID)
+	track := u.GetPublishedTrack(trackID)
 	if track != nil {
 		track.RemoveSubscriber(sub.ID())
 	}
 
+	u.lock.Lock()
 	u.maybeRemovePendingSubscription(trackID, sub)
+	u.lock.Unlock()
 }
 
 func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) {
@@ -313,7 +314,7 @@ func (u *UptrackManager) UpdateSubscriptionPermissions(
 }
 
 func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
-	track := u.getPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
+	track := u.GetPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
 	if track == nil {
 		return errors.New("could not find published track")
 	}
@@ -323,10 +324,7 @@ func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 }
 
 func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	track := u.getPublishedTrack(trackID)
+	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
 		return errors.New("could not find track")
@@ -340,10 +338,7 @@ func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.
 }
 
 func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	track := u.getPublishedTrack(trackID)
+	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
 		return errors.New("could not find track")
