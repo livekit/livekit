@@ -392,6 +392,10 @@ func (r *Room) RemoveDisallowedSubscriptions(sub types.Participant, disallowedSu
 	}
 }
 
+func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
+	return participant.UpdateVideoLayers(updateVideoLayers)
+}
+
 func (r *Room) IsClosed() bool {
 	select {
 	case <-r.closed:

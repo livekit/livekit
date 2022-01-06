@@ -71,13 +71,12 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
-		track := participant.GetPublishedTrack(livekit.TrackID(msg.UpdateLayers.TrackSid))
-		if track == nil {
-			pLogger.Warnw("could not find published track", nil,
-				"track", msg.UpdateLayers.TrackSid)
+		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)
+		if err != nil {
+			pLogger.Warnw("could not update video layers", err,
+				"update", msg.UpdateLayers)
 			return nil
 		}
-		track.UpdateVideoLayers(msg.UpdateLayers.Layers)
 	case *livekit.SignalRequest_Leave:
 		_ = participant.Close()
 	case *livekit.SignalRequest_SubscriptionPermissions:

@@ -230,7 +230,7 @@ func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	level = silentAudioLevel
+	level = SilentAudioLevel
 	for _, pt := range u.publishedTracks {
 		if mt, ok := pt.(*MediaTrack); ok {
 			tl, ta := mt.GetAudioLevel()
@@ -259,11 +259,11 @@ func (u *UptrackManager) GetConnectionQuality() (scores float64, numTracks int) 
 	return
 }
 
-func (u *UptrackManager) GetPublishedTrack(sid livekit.TrackID) types.PublishedTrack {
+func (u *UptrackManager) GetPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return u.getPublishedTrack(sid)
+	return u.getPublishedTrack(trackID)
 }
 
 func (u *UptrackManager) GetPublishedTracks() []types.PublishedTrack {
@@ -309,6 +309,16 @@ func (u *UptrackManager) UpdateSubscriptionPermissions(
 
 	u.maybeRevokeSubscriptions(resolver)
 
+	return nil
+}
+
+func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
+	track := u.getPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
+	if track == nil {
+		return errors.New("could not find published track")
+	}
+
+	track.UpdateVideoLayers(updateVideoLayers.Layers)
 	return nil
 }
 
@@ -405,8 +415,8 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 }
 
 // should be called with lock held
-func (u *UptrackManager) getPublishedTrack(sid livekit.TrackID) types.PublishedTrack {
-	return u.publishedTracks[sid]
+func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
+	return u.publishedTracks[trackID]
 }
 
 // should be called with lock held

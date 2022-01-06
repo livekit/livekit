@@ -345,7 +345,7 @@ func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
 	defer t.audioLevelMu.RUnlock()
 
 	if t.audioLevel == nil {
-		return silentAudioLevel, false
+		return SilentAudioLevel, false
 	}
 	return t.audioLevel.GetLevel()
 }
