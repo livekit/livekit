@@ -611,14 +611,16 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 			// don't send to itself
 			continue
 		}
-		if n, err := op.AddSubscriber(p, types.AddSubscriberParams{AllTracks: true}); err != nil {
+
+		// subscribe to all
+		n, err := op.AddSubscriber(p, types.AddSubscriberParams{AllTracks: true})
+		if err != nil {
 			// TODO: log error? or disconnect?
 			r.Logger.Errorw("could not subscribe to participant", err,
 				"participants", []livekit.ParticipantIdentity{op.Identity(), p.Identity()},
 				"pIDs", []livekit.ParticipantID{op.ID(), p.ID()})
-		} else {
-			tracksAdded += n
 		}
+		tracksAdded += n
 	}
 	if tracksAdded > 0 {
 		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
