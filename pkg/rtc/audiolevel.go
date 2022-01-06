@@ -8,7 +8,7 @@ import (
 const (
 	// duration of audio frames for observe window
 	observeDuration  = 500 // ms
-	silentAudioLevel = 127
+	SilentAudioLevel = 127
 )
 
 // keeps track of audio level for a participant
@@ -29,8 +29,8 @@ func NewAudioLevel(activeLevel uint8, minPercentile uint8) *AudioLevel {
 	l := &AudioLevel{
 		levelThreshold:    activeLevel,
 		minActiveDuration: uint32(minPercentile) * observeDuration / 100,
-		currentLevel:      silentAudioLevel,
-		observeLevel:      silentAudioLevel,
+		currentLevel:      SilentAudioLevel,
+		observeLevel:      SilentAudioLevel,
 	}
 	return l
 }
@@ -52,9 +52,9 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(observeDuration)))
 			atomic.StoreUint32(&l.currentLevel, level)
 		} else {
-			atomic.StoreUint32(&l.currentLevel, silentAudioLevel)
+			atomic.StoreUint32(&l.currentLevel, SilentAudioLevel)
 		}
-		l.observeLevel = silentAudioLevel
+		l.observeLevel = SilentAudioLevel
 		l.activeDuration = 0
 		l.observedDuration = 0
 	}
@@ -63,7 +63,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 // returns current audio level, 0 (loudest) to 127 (silent)
 func (l *AudioLevel) GetLevel() (uint8, bool) {
 	level := uint8(atomic.LoadUint32(&l.currentLevel))
-	active := level != silentAudioLevel
+	active := level != SilentAudioLevel
 	return level, active
 }
 

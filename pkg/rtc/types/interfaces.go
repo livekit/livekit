@@ -93,6 +93,8 @@ type Participant interface {
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 
+	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+
 	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
 
 	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
@@ -106,6 +108,8 @@ type Room interface {
 	Name() livekit.RoomName
 	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
+
+	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }
 
 // MediaTrack represents a media track
@@ -156,6 +160,10 @@ type PublishedTrack interface {
 	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
 	GetConnectionScore() float64
+
+	GetAudioLevel() (level uint8, active bool)
+
+	UpdateVideoLayers(layers []*livekit.VideoLayer)
 
 	// callbacks
 	AddOnClose(func())

@@ -76,7 +76,7 @@ type ParticipantImpl struct {
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
-	uptrackManager *UptrackManager
+	*UptrackManager
 
 	// tracks the current participant is subscribed to, map of sid => DownTrack
 	subscribedTracks map[livekit.TrackID]types.SubscribedTrack
@@ -237,7 +237,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Hidden:   p.Hidden(),
 		Recorder: p.IsRecorder(),
 	}
-	info.Tracks = p.uptrackManager.ToProto()
+	info.Tracks = p.UptrackManager.ToProto()
 
 	return info
 }
@@ -338,7 +338,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	ti := p.uptrackManager.AddTrack(req)
+	ti := p.UptrackManager.AddTrack(req)
 	if ti == nil {
 		return
 	}
@@ -381,7 +381,7 @@ func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, tar
 
 func (p *ParticipantImpl) Start() {
 	p.once.Do(func() {
-		p.uptrackManager.Start()
+		p.UptrackManager.Start()
 		go p.downTracksRTCPWorker()
 	})
 }
@@ -399,7 +399,7 @@ func (p *ParticipantImpl) Close() error {
 		},
 	})
 
-	p.uptrackManager.Close()
+	p.UptrackManager.Close()
 
 	p.lock.Lock()
 	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
@@ -448,17 +448,9 @@ func (p *ParticipantImpl) ICERestart() error {
 	})
 }
 
-// AddSubscriber subscribes op to all publishedTracks or given set of tracks
-func (p *ParticipantImpl) AddSubscriber(op types.Participant, params types.AddSubscriberParams) (int, error) {
-	return p.uptrackManager.AddSubscriber(op, params)
-}
-
-func (p *ParticipantImpl) RemoveSubscriber(op types.Participant, trackID livekit.TrackID) {
-	p.uptrackManager.RemoveSubscriber(op, trackID)
-}
-
+//
 // signal connection methods
-
+//
 func (p *ParticipantImpl) SendJoinResponse(
 	roomInfo *livekit.Room,
 	otherParticipants []*livekit.ParticipantInfo,
@@ -594,16 +586,12 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 		})
 	}
 
-	p.uptrackManager.SetTrackMuted(trackID, muted)
-}
-
-func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
-	return p.uptrackManager.GetAudioLevel()
+	p.UptrackManager.SetTrackMuted(trackID, muted)
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	// avg loss across all tracks, weigh published the same as subscribed
-	scores, numTracks := p.uptrackManager.GetConnectionQuality()
+	scores, numTracks := p.UptrackManager.GetConnectionQuality()
 
 	p.lock.RLock()
 	for _, subTrack := range p.subscribedTracks {
@@ -671,14 +659,6 @@ func (p *ParticipantImpl) SubscriberAsPrimary() bool {
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
-}
-
-func (p *ParticipantImpl) GetPublishedTrack(sid livekit.TrackID) types.PublishedTrack {
-	return p.uptrackManager.GetPublishedTrack(sid)
-}
-
-func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
-	return p.uptrackManager.GetPublishedTracks()
 }
 
 func (p *ParticipantImpl) GetSubscribedTrack(sid livekit.TrackID) types.SubscribedTrack {
@@ -759,13 +739,6 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	}
 }
 
-func (p *ParticipantImpl) UpdateSubscriptionPermissions(
-	permissions *livekit.UpdateSubscriptionPermissions,
-	resolver func(participantID livekit.ParticipantID) types.Participant,
-) error {
-	return p.uptrackManager.UpdateSubscriptionPermissions(permissions, resolver)
-}
-
 func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
 	p.lock.Lock()
 	if allowed {
@@ -789,16 +762,8 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
-	return p.uptrackManager.UpdateSubscribedQuality(nodeID, trackID, maxQuality)
-}
-
-func (p *ParticipantImpl) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
-	return p.uptrackManager.UpdateMediaLoss(nodeID, trackID, fractionalLoss)
-}
-
 func (p *ParticipantImpl) setupUptrackManager() {
-	p.uptrackManager = NewUptrackManager(UptrackManagerParams{
+	p.UptrackManager = NewUptrackManager(UptrackManagerParams{
 		Identity:       p.params.Identity,
 		SID:            p.params.SID,
 		Config:         p.params.Config,
@@ -808,13 +773,13 @@ func (p *ParticipantImpl) setupUptrackManager() {
 		Logger:         p.params.Logger,
 	})
 
-	p.uptrackManager.OnTrackPublished(func(track types.PublishedTrack) {
+	p.UptrackManager.OnTrackPublished(func(track types.PublishedTrack) {
 		if p.onTrackPublished != nil {
 			p.onTrackPublished(p, track)
 		}
 	})
 
-	p.uptrackManager.OnTrackUpdated(func(track types.PublishedTrack, onlyIfReady bool) {
+	p.UptrackManager.OnTrackUpdated(func(track types.PublishedTrack, onlyIfReady bool) {
 		if onlyIfReady && !p.IsReady() {
 			return
 		}
@@ -824,13 +789,13 @@ func (p *ParticipantImpl) setupUptrackManager() {
 		}
 	})
 
-	p.uptrackManager.OnWriteRTCP(func(pkts []rtcp.Packet) {
+	p.UptrackManager.OnWriteRTCP(func(pkts []rtcp.Packet) {
 		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
 			p.params.Logger.Errorw("could not write RTCP to participant", err)
 		}
 	})
 
-	p.uptrackManager.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+	p.UptrackManager.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
@@ -921,7 +886,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	p.uptrackManager.MediaTrackReceived(track, rtpReceiver)
+	p.UptrackManager.MediaTrackReceived(track, rtpReceiver)
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -1079,7 +1044,7 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 	// multiple audio tracks. At that point, there might be a need to
 	// rely on something like order of tracks. TODO
 	//
-	enableDTX := p.uptrackManager.GetDTX()
+	enableDTX := p.UptrackManager.GetDTX()
 	transceivers := p.publisher.pc.GetTransceivers()
 	for _, transceiver := range transceivers {
 		if transceiver.Kind() != webrtc.RTPCodecTypeAudio {
@@ -1175,7 +1140,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 		"State": p.State().String(),
 	}
 
-	uptrackManagerInfo := p.uptrackManager.DebugInfo()
+	uptrackManagerInfo := p.UptrackManager.DebugInfo()
 
 	subscribedTrackInfo := make(map[livekit.TrackID]interface{})
 	p.lock.RLock()
