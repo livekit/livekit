@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/livekit/protocol/livekit"
@@ -232,10 +233,7 @@ func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
 	level = silentAudioLevel
 	for _, pt := range u.publishedTracks {
 		if mt, ok := pt.(*MediaTrack); ok {
-			if mt.audioLevel == nil {
-				continue
-			}
-			tl, ta := mt.audioLevel.GetLevel()
+			tl, ta := mt.GetAudioLevel()
 			if ta {
 				active = true
 				if tl < level {
@@ -310,6 +308,40 @@ func (u *UptrackManager) UpdateSubscriptionPermissions(
 	u.processPendingSubscriptions(resolver)
 
 	u.maybeRevokeSubscriptions(resolver)
+
+	return nil
+}
+
+func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	track := u.getPublishedTrack(trackID)
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find track")
+	}
+
+	if mt, ok := track.(*MediaTrack); ok {
+		mt.NotifySubscriberNodeMaxQuality(nodeID, maxQuality)
+	}
+
+	return nil
+}
+
+func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	track := u.getPublishedTrack(trackID)
+	if track == nil {
+		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find track")
+	}
+
+	if mt, ok := track.(*MediaTrack); ok {
+		mt.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
+	}
 
 	return nil
 }

@@ -93,6 +93,10 @@ type Participant interface {
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 
+	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+
+	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+
 	DebugInfo() map[string]interface{}
 }
 
@@ -116,6 +120,11 @@ type MediaTrack interface {
 	Source() livekit.TrackSource
 	IsSimulcast() bool
 
+	PublisherID() livekit.ParticipantID
+	PublisherIdentity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.TrackInfo
+
 	// subscribers
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
@@ -126,8 +135,10 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberMute(subscriberID livekit.ParticipantID)
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
+	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
+
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // PublishedTrack is the main interface representing a track published to the room

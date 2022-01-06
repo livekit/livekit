@@ -115,10 +115,17 @@ type FakePublishedTrack struct {
 		arg1 livekit.ParticipantID
 		arg2 livekit.VideoQuality
 	}
-	NotifySubscriberMuteStub        func(livekit.ParticipantID)
-	notifySubscriberMuteMutex       sync.RWMutex
-	notifySubscriberMuteArgsForCall []struct {
-		arg1 livekit.ParticipantID
+	NotifySubscriberNodeMaxQualityStub        func(string, livekit.VideoQuality)
+	notifySubscriberNodeMaxQualityMutex       sync.RWMutex
+	notifySubscriberNodeMaxQualityArgsForCall []struct {
+		arg1 string
+		arg2 livekit.VideoQuality
+	}
+	NotifySubscriberNodeMediaLossStub        func(string, uint8)
+	notifySubscriberNodeMediaLossMutex       sync.RWMutex
+	notifySubscriberNodeMediaLossArgsForCall []struct {
+		arg1 string
+		arg2 uint8
 	}
 	NumUpTracksStub        func() (uint32, uint32)
 	numUpTracksMutex       sync.RWMutex
@@ -141,6 +148,26 @@ type FakePublishedTrack struct {
 	}
 	publishLossPercentageReturnsOnCall map[int]struct {
 		result1 uint32
+	}
+	PublisherIDStub        func() livekit.ParticipantID
+	publisherIDMutex       sync.RWMutex
+	publisherIDArgsForCall []struct {
+	}
+	publisherIDReturns struct {
+		result1 livekit.ParticipantID
+	}
+	publisherIDReturnsOnCall map[int]struct {
+		result1 livekit.ParticipantID
+	}
+	PublisherIdentityStub        func() livekit.ParticipantIdentity
+	publisherIdentityMutex       sync.RWMutex
+	publisherIdentityArgsForCall []struct {
+	}
+	publisherIdentityReturns struct {
+		result1 livekit.ParticipantIdentity
+	}
+	publisherIdentityReturnsOnCall map[int]struct {
+		result1 livekit.ParticipantIdentity
 	}
 	ReceiverStub        func() sfu.TrackReceiver
 	receiverMutex       sync.RWMutex
@@ -793,36 +820,70 @@ func (fake *FakePublishedTrack) NotifySubscriberMaxQualityArgsForCall(i int) (li
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakePublishedTrack) NotifySubscriberMute(arg1 livekit.ParticipantID) {
-	fake.notifySubscriberMuteMutex.Lock()
-	fake.notifySubscriberMuteArgsForCall = append(fake.notifySubscriberMuteArgsForCall, struct {
-		arg1 livekit.ParticipantID
-	}{arg1})
-	stub := fake.NotifySubscriberMuteStub
-	fake.recordInvocation("NotifySubscriberMute", []interface{}{arg1})
-	fake.notifySubscriberMuteMutex.Unlock()
+func (fake *FakePublishedTrack) NotifySubscriberNodeMaxQuality(arg1 string, arg2 livekit.VideoQuality) {
+	fake.notifySubscriberNodeMaxQualityMutex.Lock()
+	fake.notifySubscriberNodeMaxQualityArgsForCall = append(fake.notifySubscriberNodeMaxQualityArgsForCall, struct {
+		arg1 string
+		arg2 livekit.VideoQuality
+	}{arg1, arg2})
+	stub := fake.NotifySubscriberNodeMaxQualityStub
+	fake.recordInvocation("NotifySubscriberNodeMaxQuality", []interface{}{arg1, arg2})
+	fake.notifySubscriberNodeMaxQualityMutex.Unlock()
 	if stub != nil {
-		fake.NotifySubscriberMuteStub(arg1)
+		fake.NotifySubscriberNodeMaxQualityStub(arg1, arg2)
 	}
 }
 
-func (fake *FakePublishedTrack) NotifySubscriberMuteCallCount() int {
-	fake.notifySubscriberMuteMutex.RLock()
-	defer fake.notifySubscriberMuteMutex.RUnlock()
-	return len(fake.notifySubscriberMuteArgsForCall)
+func (fake *FakePublishedTrack) NotifySubscriberNodeMaxQualityCallCount() int {
+	fake.notifySubscriberNodeMaxQualityMutex.RLock()
+	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
+	return len(fake.notifySubscriberNodeMaxQualityArgsForCall)
 }
 
-func (fake *FakePublishedTrack) NotifySubscriberMuteCalls(stub func(livekit.ParticipantID)) {
-	fake.notifySubscriberMuteMutex.Lock()
-	defer fake.notifySubscriberMuteMutex.Unlock()
-	fake.NotifySubscriberMuteStub = stub
+func (fake *FakePublishedTrack) NotifySubscriberNodeMaxQualityCalls(stub func(string, livekit.VideoQuality)) {
+	fake.notifySubscriberNodeMaxQualityMutex.Lock()
+	defer fake.notifySubscriberNodeMaxQualityMutex.Unlock()
+	fake.NotifySubscriberNodeMaxQualityStub = stub
 }
 
-func (fake *FakePublishedTrack) NotifySubscriberMuteArgsForCall(i int) livekit.ParticipantID {
-	fake.notifySubscriberMuteMutex.RLock()
-	defer fake.notifySubscriberMuteMutex.RUnlock()
-	argsForCall := fake.notifySubscriberMuteArgsForCall[i]
-	return argsForCall.arg1
+func (fake *FakePublishedTrack) NotifySubscriberNodeMaxQualityArgsForCall(i int) (string, livekit.VideoQuality) {
+	fake.notifySubscriberNodeMaxQualityMutex.RLock()
+	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
+	argsForCall := fake.notifySubscriberNodeMaxQualityArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLoss(arg1 string, arg2 uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	fake.notifySubscriberNodeMediaLossArgsForCall = append(fake.notifySubscriberNodeMediaLossArgsForCall, struct {
+		arg1 string
+		arg2 uint8
+	}{arg1, arg2})
+	stub := fake.NotifySubscriberNodeMediaLossStub
+	fake.recordInvocation("NotifySubscriberNodeMediaLoss", []interface{}{arg1, arg2})
+	fake.notifySubscriberNodeMediaLossMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriberNodeMediaLossStub(arg1, arg2)
+	}
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossCallCount() int {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	return len(fake.notifySubscriberNodeMediaLossArgsForCall)
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossCalls(stub func(string, uint8)) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	defer fake.notifySubscriberNodeMediaLossMutex.Unlock()
+	fake.NotifySubscriberNodeMediaLossStub = stub
+}
+
+func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) (string, uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	argsForCall := fake.notifySubscriberNodeMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakePublishedTrack) NumUpTracks() (uint32, uint32) {
@@ -931,6 +992,112 @@ func (fake *FakePublishedTrack) PublishLossPercentageReturnsOnCall(i int, result
 	}
 	fake.publishLossPercentageReturnsOnCall[i] = struct {
 		result1 uint32
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) PublisherID() livekit.ParticipantID {
+	fake.publisherIDMutex.Lock()
+	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
+	fake.publisherIDArgsForCall = append(fake.publisherIDArgsForCall, struct {
+	}{})
+	stub := fake.PublisherIDStub
+	fakeReturns := fake.publisherIDReturns
+	fake.recordInvocation("PublisherID", []interface{}{})
+	fake.publisherIDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) PublisherIDCallCount() int {
+	fake.publisherIDMutex.RLock()
+	defer fake.publisherIDMutex.RUnlock()
+	return len(fake.publisherIDArgsForCall)
+}
+
+func (fake *FakePublishedTrack) PublisherIDCalls(stub func() livekit.ParticipantID) {
+	fake.publisherIDMutex.Lock()
+	defer fake.publisherIDMutex.Unlock()
+	fake.PublisherIDStub = stub
+}
+
+func (fake *FakePublishedTrack) PublisherIDReturns(result1 livekit.ParticipantID) {
+	fake.publisherIDMutex.Lock()
+	defer fake.publisherIDMutex.Unlock()
+	fake.PublisherIDStub = nil
+	fake.publisherIDReturns = struct {
+		result1 livekit.ParticipantID
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) PublisherIDReturnsOnCall(i int, result1 livekit.ParticipantID) {
+	fake.publisherIDMutex.Lock()
+	defer fake.publisherIDMutex.Unlock()
+	fake.PublisherIDStub = nil
+	if fake.publisherIDReturnsOnCall == nil {
+		fake.publisherIDReturnsOnCall = make(map[int]struct {
+			result1 livekit.ParticipantID
+		})
+	}
+	fake.publisherIDReturnsOnCall[i] = struct {
+		result1 livekit.ParticipantID
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) PublisherIdentity() livekit.ParticipantIdentity {
+	fake.publisherIdentityMutex.Lock()
+	ret, specificReturn := fake.publisherIdentityReturnsOnCall[len(fake.publisherIdentityArgsForCall)]
+	fake.publisherIdentityArgsForCall = append(fake.publisherIdentityArgsForCall, struct {
+	}{})
+	stub := fake.PublisherIdentityStub
+	fakeReturns := fake.publisherIdentityReturns
+	fake.recordInvocation("PublisherIdentity", []interface{}{})
+	fake.publisherIdentityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakePublishedTrack) PublisherIdentityCallCount() int {
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
+	return len(fake.publisherIdentityArgsForCall)
+}
+
+func (fake *FakePublishedTrack) PublisherIdentityCalls(stub func() livekit.ParticipantIdentity) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = stub
+}
+
+func (fake *FakePublishedTrack) PublisherIdentityReturns(result1 livekit.ParticipantIdentity) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	fake.publisherIdentityReturns = struct {
+		result1 livekit.ParticipantIdentity
+	}{result1}
+}
+
+func (fake *FakePublishedTrack) PublisherIdentityReturnsOnCall(i int, result1 livekit.ParticipantIdentity) {
+	fake.publisherIdentityMutex.Lock()
+	defer fake.publisherIdentityMutex.Unlock()
+	fake.PublisherIdentityStub = nil
+	if fake.publisherIdentityReturnsOnCall == nil {
+		fake.publisherIdentityReturnsOnCall = make(map[int]struct {
+			result1 livekit.ParticipantIdentity
+		})
+	}
+	fake.publisherIdentityReturnsOnCall[i] = struct {
+		result1 livekit.ParticipantIdentity
 	}{result1}
 }
 
@@ -1415,12 +1582,18 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.nameMutex.RUnlock()
 	fake.notifySubscriberMaxQualityMutex.RLock()
 	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
-	fake.notifySubscriberMuteMutex.RLock()
-	defer fake.notifySubscriberMuteMutex.RUnlock()
+	fake.notifySubscriberNodeMaxQualityMutex.RLock()
+	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	fake.numUpTracksMutex.RLock()
 	defer fake.numUpTracksMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
+	fake.publisherIDMutex.RLock()
+	defer fake.publisherIDMutex.RUnlock()
+	fake.publisherIdentityMutex.RLock()
+	defer fake.publisherIdentityMutex.RUnlock()
 	fake.receiverMutex.RLock()
 	defer fake.receiverMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()
