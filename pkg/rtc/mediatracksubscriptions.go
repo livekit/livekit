@@ -3,7 +3,6 @@ package rtc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -189,6 +188,12 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
+			t.subscribedTracksMu.Lock()
+			delete(t.subscribedTracks, subscriberID)
+			t.subscribedTracksMu.Unlock()
+
+			t.maybeNotifyNoSubscribers()
+
 			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
 			// ignore if the subscribing sub is not connected
@@ -246,7 +251,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
 func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID) {
-	fmt.Printf("RAJA removing subscriber: %+v\n", participantID) // REMOVE
 	subTrack := t.getSubscribedTrack(participantID)
 
 	t.subscribedTracksMu.Lock()
