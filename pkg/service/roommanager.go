@@ -33,7 +33,7 @@ type RoomManager struct {
 	roomStore   RoomStore
 	telemetry   telemetry.TelemetryService
 
-	rooms map[string]*rtc.Room
+	rooms map[livekit.RoomName]*rtc.Room
 }
 
 func NewLocalRoomManager(
@@ -57,7 +57,7 @@ func NewLocalRoomManager(
 		roomStore:   roomStore,
 		telemetry:   telemetry,
 
-		rooms: make(map[string]*rtc.Room),
+		rooms: make(map[livekit.RoomName]*rtc.Room),
 	}
 
 	// hook up to router
@@ -66,14 +66,14 @@ func NewLocalRoomManager(
 	return r, nil
 }
 
-func (r *RoomManager) GetRoom(_ context.Context, roomName string) *rtc.Room {
+func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc.Room {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.rooms[roomName]
 }
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) DeleteRoom(ctx context.Context, roomName string) error {
+func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
@@ -105,7 +105,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName string) error {
 func (r *RoomManager) CleanupRooms() error {
 	// cleanup rooms that have been left for over a day
 	ctx := context.Background()
-	rooms, err := r.roomStore.ListRooms(ctx)
+	rooms, err := r.roomStore.ListRooms(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (r *RoomManager) CleanupRooms() error {
 	now := time.Now().Unix()
 	for _, room := range rooms {
 		if (now - room.CreationTime) > roomPurgeSeconds {
-			if err := r.DeleteRoom(ctx, room.Name); err != nil {
+			if err := r.DeleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
 				return err
 			}
 		}
@@ -173,7 +173,7 @@ func (r *RoomManager) Stop() {
 }
 
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(ctx, roomName)
 	if err != nil {
 		logger.Errorw("could not create room", err, "room", roomName)
@@ -190,7 +190,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			if err = room.ResumeParticipant(participant, responseSink, pi.KeepSubscribe); err != nil {
+			if err = room.ResumeParticipant(participant, responseSink, pi.Migrate); err != nil {
 				logger.Warnw("could not resume participant", err,
 					"participant", pi.Identity)
 			}
@@ -199,7 +199,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 			// we need to clean up the existing participant, so a new one can join
 			room.RemoveParticipant(participant.Identity())
 		}
-	} else if pi.Reconnect && !pi.KeepSubscribe {
+	} else if pi.Reconnect && !pi.Migrate {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
 		if err = responseSink.WriteMessage(&livekit.SignalResponse{
@@ -226,21 +226,23 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
-	rtcConf.SetBufferFactory(room.GetBufferFactor())
-	sid := utils.NewGuid(utils.ParticipantPrefix)
+	rtcConf.SetBufferFactory(room.GetBufferFactory())
+	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
-		Identity:        pi.Identity,
-		SID:             sid,
-		Config:          &rtcConf,
-		Sink:            responseSink,
-		AudioConfig:     r.config.Audio,
-		ProtocolVersion: pv,
-		Telemetry:       r.telemetry,
-		ThrottleConfig:  r.config.RTC.PLIThrottle,
-		EnabledCodecs:   room.Room.EnabledCodecs,
-		Hidden:          pi.Hidden,
-		Logger:          pLogger,
+		Identity:                pi.Identity,
+		Name:                    pi.Name,
+		SID:                     sid,
+		Config:                  &rtcConf,
+		Sink:                    responseSink,
+		AudioConfig:             r.config.Audio,
+		ProtocolVersion:         pv,
+		Telemetry:               r.telemetry,
+		ThrottleConfig:          r.config.RTC.PLIThrottle,
+		CongestionControlConfig: r.config.RTC.CongestionControl,
+		EnabledCodecs:           room.Room.EnabledCodecs,
+		Hidden:                  pi.Hidden,
+		Logger:                  pLogger,
 	})
 
 	if err != nil {
@@ -258,7 +260,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
-		KeepSubscribe: pi.Reconnect && pi.KeepSubscribe,
+		KeepSubscribe: pi.Reconnect && pi.Migrate,
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		pLogger.Errorw("could not join room", err)
@@ -276,7 +278,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
-	participant.OnClose(func(p types.Participant, disallowedSubscriptions map[string]string) {
+	participant.OnClose(func(p types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -296,7 +298,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName string, pi rout
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName string) (*rtc.Room, error) {
+func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.RoomName) (*rtc.Room, error) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
@@ -385,7 +387,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 }
 
 // handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) {
+func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
@@ -419,7 +421,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity str
 			pLogger.Errorw("cannot unmute track, remote unmute is disabled", nil)
 			return
 		}
-		participant.SetTrackMuted(rm.MuteTrack.TrackSid, rm.MuteTrack.Muted, true)
+		participant.SetTrackMuted(livekit.TrackID(rm.MuteTrack.TrackSid), rm.MuteTrack.Muted, true)
 	case *livekit.RTCNodeMessage_UpdateParticipant:
 		if participant == nil {
 			return
@@ -443,7 +445,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName, identity str
 		pLogger.Debugw("updating participant subscriptions")
 		if err := room.UpdateSubscriptions(
 			participant,
-			rm.UpdateSubscriptions.TrackSids,
+			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
 			rm.UpdateSubscriptions.ParticipantTracks,
 			rm.UpdateSubscriptions.Subscribe,
 		); err != nil {

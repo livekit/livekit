@@ -17,7 +17,7 @@ func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 
-	roomName := "room1"
+	roomName := livekit.RoomName("room1")
 	_ = rs.DeleteRoom(ctx, roomName)
 
 	p := &livekit.ParticipantInfo{
@@ -37,7 +37,7 @@ func TestParticipantPersistence(t *testing.T) {
 	require.NoError(t, rs.StoreParticipant(ctx, roomName, p))
 
 	// result should match
-	pGet, err := rs.LoadParticipant(ctx, roomName, p.Identity)
+	pGet, err := rs.LoadParticipant(ctx, roomName, livekit.ParticipantIdentity(p.Identity))
 	require.NoError(t, err)
 	require.Equal(t, p.Identity, pGet.Identity)
 	require.Equal(t, len(p.Tracks), len(pGet.Tracks))
@@ -49,14 +49,14 @@ func TestParticipantPersistence(t *testing.T) {
 	require.Len(t, participants, 1)
 
 	// deleting participant should return back to normal
-	require.NoError(t, rs.DeleteParticipant(ctx, roomName, p.Identity))
+	require.NoError(t, rs.DeleteParticipant(ctx, roomName, livekit.ParticipantIdentity(p.Identity)))
 
 	participants, err = rs.ListParticipants(ctx, roomName)
 	require.NoError(t, err)
 	require.Len(t, participants, 0)
 
 	// shouldn't be able to get it
-	_, err = rs.LoadParticipant(ctx, roomName, p.Identity)
+	_, err = rs.LoadParticipant(ctx, roomName, livekit.ParticipantIdentity(p.Identity))
 	require.Equal(t, err, service.ErrParticipantNotFound)
 }
 
@@ -64,7 +64,7 @@ func TestRoomLock(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
 	lockInterval := 5 * time.Millisecond
-	roomName := "myroom"
+	roomName := livekit.RoomName("myroom")
 
 	t.Run("normal locking", func(t *testing.T) {
 		token, err := rs.LockRoom(ctx, roomName, lockInterval)

@@ -8,9 +8,9 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
+func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
 	p := &typesfakes.FakeParticipant{}
-	p.IDReturns(utils.NewGuid(utils.ParticipantPrefix))
+	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
@@ -38,7 +38,7 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden 
 		}
 	}
 
-	p.SetTrackMutedStub = func(sid string, muted bool, fromServer bool) {
+	p.SetTrackMutedStub = func(sid livekit.TrackID, muted bool, fromServer bool) {
 		updateTrack()
 	}
 	p.AddTrackStub = func(req *livekit.AddTrackRequest) {
@@ -50,7 +50,7 @@ func newMockParticipant(identity string, protocol types.ProtocolVersion, hidden 
 
 func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
 	t := &typesfakes.FakePublishedTrack{}
-	t.IDReturns(utils.NewGuid(utils.TrackPrefix))
+	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)
 	return t

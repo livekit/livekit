@@ -9,6 +9,7 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 )
 
 const (
@@ -92,7 +93,7 @@ func SetAuthorizationToken(r *http.Request, token string) {
 	r.Header.Set(authorizationHeader, bearerPrefix+token)
 }
 
-func EnsureJoinPermission(ctx context.Context) (name string, err error) {
+func EnsureJoinPermission(ctx context.Context) (name livekit.RoomName, err error) {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil {
 		err = ErrPermissionDenied
@@ -100,20 +101,20 @@ func EnsureJoinPermission(ctx context.Context) (name string, err error) {
 	}
 
 	if claims.Video.RoomJoin {
-		name = claims.Video.Room
+		name = livekit.RoomName(claims.Video.Room)
 	} else {
 		err = ErrPermissionDenied
 	}
 	return
 }
 
-func EnsureAdminPermission(ctx context.Context, room string) error {
+func EnsureAdminPermission(ctx context.Context, room livekit.RoomName) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil {
 		return ErrPermissionDenied
 	}
 
-	if !claims.Video.RoomAdmin || room != claims.Video.Room {
+	if !claims.Video.RoomAdmin || room != livekit.RoomName(claims.Video.Room) {
 		return ErrPermissionDenied
 	}
 

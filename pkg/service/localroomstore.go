@@ -6,22 +6,23 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/thoas/go-funk"
 )
 
 // encapsulates CRUD operations for room settings
 type LocalRoomStore struct {
 	// map of roomName => room
-	rooms map[string]*livekit.Room
+	rooms map[livekit.RoomName]*livekit.Room
 	// map of roomName => { identity: participant }
-	participants map[string]map[string]*livekit.ParticipantInfo
+	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 	lock         sync.RWMutex
 	globalLock   sync.Mutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
-		rooms:        make(map[string]*livekit.Room),
-		participants: make(map[string]map[string]*livekit.ParticipantInfo),
+		rooms:        make(map[livekit.RoomName]*livekit.Room),
+		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		lock:         sync.RWMutex{},
 	}
 }
@@ -31,12 +32,12 @@ func (p *LocalRoomStore) StoreRoom(_ context.Context, room *livekit.Room) error 
 		room.CreationTime = time.Now().Unix()
 	}
 	p.lock.Lock()
-	p.rooms[room.Name] = room
+	p.rooms[livekit.RoomName(room.Name)] = room
 	p.lock.Unlock()
 	return nil
 }
 
-func (p *LocalRoomStore) LoadRoom(_ context.Context, name string) (*livekit.Room, error) {
+func (p *LocalRoomStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -47,17 +48,19 @@ func (p *LocalRoomStore) LoadRoom(_ context.Context, name string) (*livekit.Room
 	return room, nil
 }
 
-func (p *LocalRoomStore) ListRooms(_ context.Context) ([]*livekit.Room, error) {
+func (p *LocalRoomStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	rooms := make([]*livekit.Room, 0, len(p.rooms))
 	for _, r := range p.rooms {
-		rooms = append(rooms, r)
+		if names == nil || funk.Contains(names, livekit.RoomName(r.Name)) {
+			rooms = append(rooms, r)
+		}
 	}
 	return rooms, nil
 }
 
-func (p *LocalRoomStore) DeleteRoom(ctx context.Context, name string) error {
+func (p *LocalRoomStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
 	room, err := p.LoadRoom(ctx, name)
 	if err == ErrRoomNotFound {
 		return nil
@@ -68,35 +71,35 @@ func (p *LocalRoomStore) DeleteRoom(ctx context.Context, name string) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	delete(p.participants, room.Name)
-	delete(p.rooms, room.Name)
+	delete(p.participants, livekit.RoomName(room.Name))
+	delete(p.rooms, livekit.RoomName(room.Name))
 	return nil
 }
 
-func (p *LocalRoomStore) LockRoom(_ context.Context, _ string, _ time.Duration) (string, error) {
+func (p *LocalRoomStore) LockRoom(_ context.Context, _ livekit.RoomName, _ time.Duration) (string, error) {
 	// local rooms lock & unlock globally
 	p.globalLock.Lock()
 	return "", nil
 }
 
-func (p *LocalRoomStore) UnlockRoom(_ context.Context, _ string, _ string) error {
+func (p *LocalRoomStore) UnlockRoom(_ context.Context, _ livekit.RoomName, _ string) error {
 	p.globalLock.Unlock()
 	return nil
 }
 
-func (p *LocalRoomStore) StoreParticipant(_ context.Context, roomName string, participant *livekit.ParticipantInfo) error {
+func (p *LocalRoomStore) StoreParticipant(_ context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	roomParticipants := p.participants[roomName]
 	if roomParticipants == nil {
-		roomParticipants = make(map[string]*livekit.ParticipantInfo)
+		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
 		p.participants[roomName] = roomParticipants
 	}
-	roomParticipants[participant.Identity] = participant
+	roomParticipants[livekit.ParticipantIdentity(participant.Identity)] = participant
 	return nil
 }
 
-func (p *LocalRoomStore) LoadParticipant(_ context.Context, roomName, identity string) (*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) LoadParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -111,7 +114,7 @@ func (p *LocalRoomStore) LoadParticipant(_ context.Context, roomName, identity s
 	return participant, nil
 }
 
-func (p *LocalRoomStore) ListParticipants(_ context.Context, roomName string) ([]*livekit.ParticipantInfo, error) {
+func (p *LocalRoomStore) ListParticipants(_ context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -129,7 +132,7 @@ func (p *LocalRoomStore) ListParticipants(_ context.Context, roomName string) ([
 	return items, nil
 }
 
-func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName, identity string) error {
+func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 

@@ -35,18 +35,18 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ string) (*livekit.Node, error) {
+func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ livekit.RoomName) (*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(_ context.Context, _, _ string) error {
+func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ string) error {
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(_ context.Context, _ string) error {
+func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName) error {
 	// do nothing
 	return nil
 }
@@ -76,7 +76,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 	}, nil
 }
 
-func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionID string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID string, reqSink MessageSink, resSource MessageSource, err error) {
 	// treat it as a new participant connecting
 	if r.onNewParticipant == nil {
 		err = ErrHandlerNotDefined
@@ -107,10 +107,10 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName strin
 		// response sink
 		resChan,
 	)
-	return pi.Identity, reqChan, resChan, nil
+	return string(pi.Identity), reqChan, resChan, nil
 }
 
-func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel()
@@ -119,7 +119,7 @@ func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName, identity 
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
-func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	msg.ParticipantKey = participantKey(roomName, identity)
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }

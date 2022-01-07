@@ -27,10 +27,11 @@ type MessageSource interface {
 }
 
 type ParticipantInit struct {
-	Identity      string
+	Identity      livekit.ParticipantIdentity
+	Name          livekit.ParticipantName
 	Metadata      string
 	Reconnect     bool
-	KeepSubscribe bool
+	Migrate       bool
 	Permission    *livekit.ParticipantPermission
 	AutoSubscribe bool
 	Hidden        bool
@@ -38,8 +39,8 @@ type ParticipantInit struct {
 	Client        *livekit.ClientInfo
 }
 
-type NewParticipantCallback func(ctx context.Context, roomName string, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
-type RTCMessageCallback func(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage)
+type NewParticipantCallback func(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
+type RTCMessageCallback func(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage)
 
 // Router allows multiple nodes to coordinate the participant session
 //counterfeiter:generate . Router
@@ -52,9 +53,9 @@ type Router interface {
 
 	ListNodes() ([]*livekit.Node, error)
 
-	GetNodeForRoom(ctx context.Context, roomName string) (*livekit.Node, error)
-	SetNodeForRoom(ctx context.Context, roomName, nodeId string) error
-	ClearRoomState(ctx context.Context, roomName string) error
+	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
+	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId string) error
+	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
 
 	Start() error
 	Drain()
@@ -69,11 +70,11 @@ type Router interface {
 
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName string, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
 
 	// Write a message to a participant or room
-	WriteParticipantRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName, identity string, msg *livekit.RTCNodeMessage) error
+	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
 }
 
 func CreateRouter(rc *redis.Client, node LocalNode) Router {

@@ -13,6 +13,7 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -57,35 +58,72 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	ParticipantID       string
-	ParticipantIdentity string
-	Target              livekit.SignalTarget
-	Config              *WebRTCConfig
-	Telemetry           telemetry.TelemetryService
-	EnabledCodecs       []*livekit.Codec
-	Logger              logger.Logger
-	SimTracks           map[uint32]SimulcastTrackInfo
+	ParticipantID           livekit.ParticipantID
+	ParticipantIdentity     livekit.ParticipantIdentity
+	Target                  livekit.SignalTarget
+	Config                  *WebRTCConfig
+	CongestionControlConfig config.CongestionControlConfig
+	Telemetry               telemetry.TelemetryService
+	EnabledCodecs           []*livekit.Codec
+	Logger                  logger.Logger
+	SimTracks               map[uint32]SimulcastTrackInfo
 }
 
+// LK-TODO-SSBWE func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	var me *webrtc.MediaEngine
-	var err error
+	var directionConfig DirectionConfig
 	if params.Target == livekit.SignalTarget_PUBLISHER {
-		me, err = createPubMediaEngine(params.EnabledCodecs)
+		directionConfig = params.Config.Publisher
 	} else {
-		me, err = createSubMediaEngine(params.EnabledCodecs)
+		directionConfig = params.Config.Subscriber
 	}
+	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
 
 	ir := &interceptor.Registry{}
-	// intercept pub -> SFU rtcp for analytics
-	if params.Telemetry != nil && params.Target == livekit.SignalTarget_PUBLISHER {
-		f := params.Telemetry.NewStatsInterceptorFactory(params.ParticipantID, params.ParticipantIdentity)
-		ir.Add(f)
+	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+		isSendSideBWE := false
+		for _, ext := range directionConfig.RTPHeaderExtension.Video {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
+		for _, ext := range directionConfig.RTPHeaderExtension.Audio {
+			if ext == sdp.TransportCCURI {
+				isSendSideBWE = true
+				break
+			}
+		}
+
+		if isSendSideBWE {
+			/* LK-TODO-SSBWE
+			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
+				return gcc.NewSendSideBWE(
+					gcc.SendSideBWEInitialBitrate(1*1000*1000),
+					gcc.SendSideBWEPacer(gcc.NewNoOpPacer()),
+				)
+			})
+			if err == nil {
+				gf.OnNewPeerConnection(func(id string, estimator cc.BandwidthEstimator) {
+					if onBandwidthEstimator != nil {
+						onBandwidthEstimator(estimator)
+					}
+				})
+				ir.Add(gf)
+
+				tf, err := twcc.NewHeaderExtensionInterceptor()
+				if err == nil {
+					ir.Add(tf)
+				}
+			}
+			*/
+		}
 	}
 	if len(params.SimTracks) > 0 {
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
@@ -105,6 +143,12 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
+	/* LK-TODO-SSBWE
+	var bwe cc.BandwidthEstimator
+	pc, me, err := newPeerConnection(params, func(estimator cc.BandwidthEstimator) {
+		bwe = estimator
+	})
+	*/
 	pc, me, err := newPeerConnection(params)
 	if err != nil {
 		return nil, err
@@ -119,9 +163,15 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
+			Config: params.CongestionControlConfig,
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
+		/* LK-TODO-SSBWE
+		if bwe != nil {
+			t.streamAllocator.SetBandwidthEstimator(bwe)
+		}
+		*/
 	}
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
@@ -388,9 +438,10 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 		return
 	}
 
-	source := subTrack.MediaTrack().Source()
-	isManaged := (source != livekit.TrackSource_SCREEN_SHARE && source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || subTrack.MediaTrack().IsSimulcast()
-	t.streamAllocator.AddTrack(subTrack.DownTrack(), isManaged)
+	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
+		Source:      subTrack.MediaTrack().Source(),
+		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+	})
 }
 
 func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {

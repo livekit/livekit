@@ -2,124 +2,145 @@ package telemetry
 
 import (
 	"context"
-	"sync"
+	"time"
 
-	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/rtcp"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
+
+const updateFrequency = time.Second * 10
 
 type TelemetryService interface {
 	// stats
-	NewStatsInterceptorFactory(participantID, identity string) *StatsInterceptorFactory
-	AddUpTrack(participantID string, buff *buffer.Buffer)
-	OnDownstreamPacket(participantID string, bytes int)
-	HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet)
-	Report(ctx context.Context, stats []*livekit.AnalyticsStat)
+	AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer)
+	OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int)
+	HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo)
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
-	TrackPublished(ctx context.Context, participantID string, track *livekit.TrackInfo)
-	TrackUnpublished(ctx context.Context, participantID string, track *livekit.TrackInfo, ssrc uint32)
-	TrackSubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
-	TrackUnsubscribed(ctx context.Context, participantID string, track *livekit.TrackInfo)
+	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
+	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 }
 
+type doWorkFunc func()
+
 type telemetryService struct {
-	notifier    webhook.Notifier
-	webhookPool *workerpool.WorkerPool
-
-	sync.RWMutex
-	// one worker per participant
-	workers map[string]*StatsWorker
-
-	analytics AnalyticsService
+	internalService TelemetryServiceInternal
+	jobQueue        chan doWorkFunc
 }
+
+const jobQueueBufferSize = 100
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
-	return &telemetryService{
-		notifier:    notifier,
-		webhookPool: workerpool.New(1),
-		workers:     make(map[string]*StatsWorker),
-		analytics:   analytics,
+	t := &telemetryService{
+		internalService: NewTelemetryServiceInternal(notifier, analytics),
+		jobQueue:        make(chan doWorkFunc, jobQueueBufferSize),
 	}
+
+	go t.run()
+
+	return t
 }
 
-func (t *telemetryService) AddUpTrack(participantID string, buff *buffer.Buffer) {
-	t.RLock()
-	w := t.workers[participantID]
-	t.RUnlock()
-	if w != nil {
-		w.AddBuffer(buff)
-	}
-}
+func (t *telemetryService) run() {
 
-func (t *telemetryService) OnDownstreamPacket(participantID string, bytes int) {
-	t.RLock()
-	w := t.workers[participantID]
-	t.RUnlock()
-	if w != nil {
-		w.OnDownstreamPacket(bytes)
-	}
-}
-
-func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID string, pkts []rtcp.Packet) {
-	stats := &livekit.AnalyticsStat{}
-	for _, pkt := range pkts {
-		switch pkt := pkt.(type) {
-		case *rtcp.TransportLayerNack:
-			stats.NackCount++
-		case *rtcp.PictureLossIndication:
-			stats.PliCount++
-		case *rtcp.FullIntraRequest:
-			stats.FirCount++
-		case *rtcp.ReceiverReport:
-			for _, rr := range pkt.Reports {
-				if delay := uint64(rr.Delay); delay > stats.Delay {
-					stats.Delay = delay
-				}
-				if jitter := float64(rr.Jitter); jitter > stats.Jitter {
-					stats.Jitter = jitter
-				}
-				stats.PacketLost += uint64(rr.TotalLost)
+	ticker := time.NewTicker(updateFrequency)
+	for {
+		select {
+		case <-ticker.C:
+			t.internalService.SendAnalytics()
+		case job, ok := <-t.jobQueue:
+			if ok {
+				job()
 			}
 		}
 	}
+}
 
-	direction := prometheus.Incoming
-	if streamType == livekit.StreamType_DOWNSTREAM {
-		direction = prometheus.Outgoing
-	}
-
-	prometheus.IncrementRTCP(direction, stats.NackCount, stats.PliCount, stats.FirCount)
-
-	t.RLock()
-	w := t.workers[participantID]
-	t.RUnlock()
-	if w != nil {
-		w.OnRTCP(streamType, stats)
+func (t *telemetryService) AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer) {
+	t.jobQueue <- func() {
+		t.internalService.AddUpTrack(participantID, trackID, buff)
 	}
 }
 
-func (t *telemetryService) Report(ctx context.Context, stats []*livekit.AnalyticsStat) {
-	for _, stat := range stats {
-		direction := prometheus.Incoming
-		if stat.Kind == livekit.StreamType_DOWNSTREAM {
-			direction = prometheus.Outgoing
-		}
-
-		prometheus.IncrementPackets(direction, stat.TotalPackets)
-		prometheus.IncrementBytes(direction, stat.TotalBytes)
+func (t *telemetryService) OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int) {
+	t.jobQueue <- func() {
+		t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
 	}
+}
 
-	t.analytics.SendStats(ctx, stats)
+func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet) {
+	t.jobQueue <- func() {
+		t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
+	}
+}
+
+func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
+	t.jobQueue <- func() {
+		t.internalService.RoomStarted(ctx, room)
+	}
+}
+
+func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
+	t.jobQueue <- func() {
+		t.internalService.RoomEnded(ctx, room)
+	}
+}
+
+func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
+	t.jobQueue <- func() {
+		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo)
+	}
+}
+
+func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
+	t.jobQueue <- func() {
+		t.internalService.ParticipantLeft(ctx, room, participant)
+	}
+}
+
+func (t *telemetryService) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+	t.jobQueue <- func() {
+		t.internalService.TrackPublished(ctx, participantID, track)
+	}
+}
+
+func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
+	t.jobQueue <- func() {
+		t.internalService.TrackUnpublished(ctx, participantID, track, ssrc)
+	}
+}
+
+func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+	t.jobQueue <- func() {
+		t.internalService.TrackSubscribed(ctx, participantID, track)
+	}
+}
+
+func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+	t.jobQueue <- func() {
+		t.internalService.TrackUnsubscribed(ctx, participantID, track)
+	}
+}
+
+func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
+	t.jobQueue <- func() {
+		t.internalService.RecordingStarted(ctx, ri)
+	}
+}
+
+func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
+	t.jobQueue <- func() {
+		t.internalService.RecordingEnded(ctx, ri)
+	}
 }

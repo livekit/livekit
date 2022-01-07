@@ -618,6 +618,13 @@ func (b *Buffer) GetStats() (stats Stats) {
 	return
 }
 
+// Used only in tests
+func (b *Buffer) SetStatsTestOnly(stats Stats) {
+	b.Lock()
+	b.stats = stats
+	b.Unlock()
+}
+
 // GetLatestTimestamp returns the latest RTP timestamp factoring in potential RTP timestamp wrap-around
 func (b *Buffer) GetLatestTimestamp() (latestTimestamp uint32, latestTimestampTimeInNanosSinceEpoch int64) {
 	latestTimestamp = atomic.LoadUint32(&b.latestTimestamp)

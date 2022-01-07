@@ -38,6 +38,7 @@ type StreamTracker struct {
 	paused         atomicBool
 	countSinceLast uint32 // number of packets received since last check
 	running        chan struct{}
+	generation     atomicUint32
 
 	initMu      sync.Mutex
 	initialized bool
@@ -108,7 +109,7 @@ func (s *StreamTracker) init() {
 		return
 	}
 	s.running = make(chan struct{})
-	go s.detectWorker()
+	go s.detectWorker(s.generation.get())
 }
 
 func (s *StreamTracker) Start() {
@@ -119,6 +120,22 @@ func (s *StreamTracker) Stop() {
 		close(s.running)
 		s.running = nil
 	}
+}
+
+func (s *StreamTracker) Reset() {
+	s.generation.add(1)
+	s.Stop()
+
+	s.countSinceLast = 0
+	s.cycleCount = 0
+
+	s.initMu.Lock()
+	s.initialized = false
+	s.initMu.Unlock()
+
+	s.statusMu.Lock()
+	s.status = StreamStatusStopped
+	s.statusMu.Unlock()
 }
 
 func (s *StreamTracker) SetPaused(paused bool) {
@@ -146,9 +163,11 @@ func (s *StreamTracker) Observe(sn uint16) {
 	s.initMu.Lock()
 	if !s.initialized {
 		// first packet
-		s.lastSN = sn
 		s.initialized = true
 		s.initMu.Unlock()
+
+		s.lastSN = sn
+		atomic.AddUint32(&s.countSinceLast, 1)
 
 		// declare stream active and start the detect worker
 		go s.init()
@@ -165,12 +184,15 @@ func (s *StreamTracker) Observe(sn uint16) {
 	atomic.AddUint32(&s.countSinceLast, 1)
 }
 
-func (s *StreamTracker) detectWorker() {
+func (s *StreamTracker) detectWorker(generation uint32) {
 	ticker := time.NewTicker(s.cycleDuration)
 
 	for s.isRunning() {
 		<-ticker.C
 		if !s.isRunning() {
+			return
+		}
+		if generation != s.generation.get() {
 			return
 		}
 

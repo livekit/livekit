@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
@@ -111,7 +112,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
-		rm, err := roomStore.LoadRoom(context.Background(), username)
+		rm, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username))
 		if err != nil {
 			return nil, false
 		}

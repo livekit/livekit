@@ -37,8 +37,8 @@ type Room struct {
 	telemetry   telemetry.TelemetryService
 
 	// map of identity -> Participant
-	participants    map[string]types.Participant
-	participantOpts map[string]*ParticipantOptions
+	participants    map[livekit.ParticipantIdentity]types.Participant
+	participantOpts map[livekit.ParticipantIdentity]*ParticipantOptions
 	bufferFactory   *buffer.Factory
 
 	// time the first participant joined the room
@@ -57,18 +57,18 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 	KeepSubscribe bool
 	SyncState     *livekit.SyncState
-	MigrateOut      bool
+	MigrateOut    bool
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), room.Name),
+		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), livekit.RoomName(room.Name)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
-		participants:    make(map[string]types.Participant),
-		participantOpts: make(map[string]*ParticipantOptions),
+		participants:    make(map[livekit.ParticipantIdentity]types.Participant),
+		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize, logr.Logger{}),
 		closed:          make(chan struct{}),
 	}
@@ -85,17 +85,17 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	return r
 }
 
-func (r *Room) Name() string {
-	return r.Room.Name
+func (r *Room) Name() livekit.RoomName {
+	return livekit.RoomName(r.Room.Name)
 }
 
-func (r *Room) GetParticipant(identity string) types.Participant {
+func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.participants[identity]
 }
 
-func (r *Room) GetParticipantBySid(participantID string) types.Participant {
+func (r *Room) GetParticipantBySid(participantID livekit.ParticipantID) types.Participant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -127,7 +127,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 			continue
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
-			Sid:    p.ID(),
+			Sid:    string(p.ID()),
 			Level:  ConvertAudioLevel(level),
 			Active: active,
 		})
@@ -139,7 +139,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	return speakers
 }
 
-func (r *Room) GetBufferFactor() *buffer.Factory {
+func (r *Room) GetBufferFactory() *buffer.Factory {
 	return r.bufferFactory
 }
 
@@ -300,7 +300,7 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 	return nil
 }
 
-func (r *Room) RemoveParticipant(identity string) {
+func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
 	if ok {
@@ -359,41 +359,41 @@ func (r *Room) RemoveParticipant(identity string) {
 
 func (r *Room) UpdateSubscriptions(
 	participant types.Participant,
-	trackIds []string,
+	trackIDs []livekit.TrackID,
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) error {
 	// find all matching tracks
-	trackPublishers := make(map[string]types.Participant)
+	trackPublishers := make(map[livekit.TrackID]types.Participant)
 	participants := r.GetParticipants()
-	for _, trackSid := range trackIds {
+	for _, trackID := range trackIDs {
 		for _, p := range participants {
-			track := p.GetPublishedTrack(trackSid)
+			track := p.GetPublishedTrack(trackID)
 			if track != nil {
-				trackPublishers[trackSid] = p
+				trackPublishers[trackID] = p
 				break
 			}
 		}
 	}
 
 	for _, pt := range participantTracks {
-		p := r.GetParticipantBySid(pt.ParticipantSid)
+		p := r.GetParticipantBySid(livekit.ParticipantID(pt.ParticipantSid))
 		if p == nil {
 			continue
 		}
-		for _, trackSid := range pt.TrackSids {
-			trackPublishers[trackSid] = p
+		for _, trackID := range livekit.StringsAsTrackIDs(pt.TrackSids) {
+			trackPublishers[trackID] = p
 		}
 	}
 
 	// handle subscription changes
-	for trackSid, publisher := range trackPublishers {
+	for trackID, publisher := range trackPublishers {
 		if subscribe {
-			if _, err := publisher.AddSubscriber(participant, types.AddSubscriberParams{TrackSids: []string{trackSid}}); err != nil {
+			if _, err := publisher.AddSubscriber(participant, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{trackID}}); err != nil {
 				return err
 			}
 		} else {
-			publisher.RemoveSubscriber(participant, trackSid)
+			publisher.RemoveSubscriber(participant, trackID)
 		}
 	}
 	return nil
@@ -414,8 +414,8 @@ func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState
 			participant.Negotiate()
 		}()
 	}
-	err := r.UpdateSubscriptions(participant, state.GetSubscription().GetTrackSids(), state.GetSubscription().GetParticipantTracks(),
-		state.GetSubscription().GetSubscribe())
+	err := r.UpdateSubscriptions(participant, livekit.StringsAsTrackIDs(state.GetSubscription().GetTrackSids()),
+		state.GetSubscription().GetParticipantTracks(), state.GetSubscription().GetSubscribe())
 
 	for _, track := range state.GetPublishTracks() {
 		participant.AddMigratedTrack(track.GetCid(), track.GetTrack())
@@ -427,14 +427,14 @@ func (r *Room) UpdateSubscriptionPermissions(participant types.Participant, perm
 	return participant.UpdateSubscriptionPermissions(permissions, r.GetParticipantBySid)
 }
 
-func (r *Room) RemoveDisallowedSubscriptions(sub types.Participant, disallowedSubscriptions map[string]string) {
-	for trackSid, publisherSid := range disallowedSubscriptions {
-		pub := r.GetParticipantBySid(publisherSid)
+func (r *Room) RemoveDisallowedSubscriptions(sub types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+	for trackID, publisherID := range disallowedSubscriptions {
+		pub := r.GetParticipantBySid(publisherID)
 		if pub == nil {
 			continue
 		}
 
-		pub.RemoveSubscriber(sub, trackSid)
+		pub.RemoveSubscriber(sub, trackID)
 	}
 }
 
@@ -578,13 +578,13 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Publi
 		}
 
 		r.Logger.Debugw("subscribing to new track",
-			"participants", []string{participant.Identity(), existingParticipant.Identity()},
-			"pIDs", []string{participant.ID(), existingParticipant.ID()},
+			"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
+			"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
 			"track", track.ID())
-		if _, err := participant.AddSubscriber(existingParticipant, types.AddSubscriberParams{TrackSids: []string{track.ID()}}); err != nil {
+		if _, err := participant.AddSubscriber(existingParticipant, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}); err != nil {
 			r.Logger.Errorw("could not subscribe to remoteTrack", err,
-				"participants", []string{participant.Identity(), existingParticipant.Identity()},
-				"pIDs", []string{participant.ID(), existingParticipant.ID()},
+				"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
+				"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
 				"track", track.ID())
 		}
 	}
@@ -625,8 +625,8 @@ func (r *Room) onDataPacket(source types.Participant, dp *livekit.DataPacket) {
 		}
 		if len(dest) > 0 {
 			found := false
-			for _, dSid := range dest {
-				if op.ID() == dSid {
+			for _, dID := range dest {
+				if op.ID() == livekit.ParticipantID(dID) {
 					found = true
 					break
 				}
@@ -656,8 +656,8 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 		if n, err := op.AddSubscriber(p, types.AddSubscriberParams{AllTracks: true}); err != nil {
 			// TODO: log error? or disconnect?
 			r.Logger.Errorw("could not subscribe to participant", err,
-				"participants", []string{op.Identity(), p.Identity()},
-				"pIDs", []string{op.ID(), p.ID()})
+				"participants", []livekit.ParticipantIdentity{op.Identity(), p.Identity()},
+				"pIDs", []livekit.ParticipantID{op.ID(), p.ID()})
 		} else {
 			tracksAdded += n
 		}
@@ -728,17 +728,17 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 }
 
 func (r *Room) audioUpdateWorker() {
-	var smoothValues map[string]float32
+	var smoothValues map[livekit.ParticipantID]float32
 	var smoothFactor float32
 	var activeThreshold float32
 	if ss := r.audioConfig.SmoothIntervals; ss > 1 {
-		smoothValues = make(map[string]float32)
+		smoothValues = make(map[livekit.ParticipantID]float32)
 		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
 		smoothFactor = 2 / float32(ss+1)
 		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
 	}
 
-	lastActiveMap := make(map[string]*livekit.SpeakerInfo)
+	lastActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo)
 	for {
 		if r.IsClosed() {
 			return
@@ -747,7 +747,7 @@ func (r *Room) audioUpdateWorker() {
 		activeSpeakers := r.GetActiveSpeakers()
 		if smoothValues != nil {
 			for _, speaker := range activeSpeakers {
-				sid := speaker.Sid
+				sid := livekit.ParticipantID(speaker.Sid)
 				level := smoothValues[sid]
 				delete(smoothValues, sid)
 				// exponential moving average (EMA)
@@ -761,7 +761,7 @@ func (r *Room) audioUpdateWorker() {
 				level += -level * smoothFactor
 				if level > activeThreshold {
 					activeSpeakers = append(activeSpeakers, &livekit.SpeakerInfo{
-						Sid:    sid,
+						Sid:    string(sid),
 						Level:  level,
 						Active: true,
 					})
@@ -770,7 +770,7 @@ func (r *Room) audioUpdateWorker() {
 
 			// smoothValues map is drained, now repopulate it back
 			for _, speaker := range activeSpeakers {
-				smoothValues[speaker.Sid] = speaker.Level
+				smoothValues[livekit.ParticipantID(speaker.Sid)] = speaker.Level
 			}
 
 			sort.Slice(activeSpeakers, func(i, j int) bool {
@@ -784,13 +784,13 @@ func (r *Room) audioUpdateWorker() {
 		}
 
 		changedSpeakers := make([]*livekit.SpeakerInfo, 0, len(activeSpeakers))
-		nextActiveMap := make(map[string]*livekit.SpeakerInfo, len(activeSpeakers))
+		nextActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo, len(activeSpeakers))
 		for _, speaker := range activeSpeakers {
-			prev := lastActiveMap[speaker.Sid]
+			prev := lastActiveMap[livekit.ParticipantID(speaker.Sid)]
 			if prev == nil || prev.Level != speaker.Level {
 				changedSpeakers = append(changedSpeakers, speaker)
 			}
-			nextActiveMap[speaker.Sid] = speaker
+			nextActiveMap[livekit.ParticipantID(speaker.Sid)] = speaker
 		}
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
@@ -821,7 +821,7 @@ func (r *Room) connectionQualityWorker() {
 		}
 
 		participants := r.GetParticipants()
-		connectionInfos := make(map[string]*livekit.ConnectionQualityInfo, len(participants))
+		connectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
 
 		for _, p := range participants {
 			connectionInfos[p.ID()] = p.GetConnectionQuality()
@@ -864,7 +864,7 @@ func (r *Room) DebugInfo() map[string]interface{} {
 	participants := r.GetParticipants()
 	participantInfo := make(map[string]interface{})
 	for _, p := range participants {
-		participantInfo[p.Identity()] = p.DebugInfo()
+		participantInfo[string(p.Identity())] = p.DebugInfo()
 	}
 	info["Participants"] = participantInfo
 

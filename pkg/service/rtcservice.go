@@ -57,7 +57,7 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit, int, error) {
+func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
 	// require a claim
 	if claims == nil || claims.Video == nil {
@@ -69,7 +69,7 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 	}
 
-	roomName := r.FormValue("room")
+	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
@@ -100,8 +100,9 @@ func (s *RTCService) validate(r *http.Request) (string, routing.ParticipantInit,
 
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
-		KeepSubscribe: boolValue(keepSubscribe),
-		Identity:      claims.Identity,
+		Migrate: boolValue(keepSubscribe),
+		Identity:      livekit.ParticipantIdentity(claims.Identity),
+		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
@@ -131,7 +132,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
-	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: roomName})
+	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
 		handleError(w, http.StatusInternalServerError, err.Error())

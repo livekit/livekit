@@ -18,9 +18,9 @@ const (
 )
 
 type SubscribedTrackParams struct {
-	PublisherID       string
-	PublisherIdentity string
-	SubscriberID      string
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
+	SubscriberID      livekit.ParticipantID
 	MediaTrack        types.MediaTrack
 	DownTrack         *sfu.DownTrack
 }
@@ -52,15 +52,15 @@ func (t *SubscribedTrack) Bound() {
 	}
 }
 
-func (t *SubscribedTrack) ID() string {
-	return t.params.DownTrack.ID()
+func (t *SubscribedTrack) ID() livekit.TrackID {
+	return livekit.TrackID(t.params.DownTrack.ID())
 }
 
-func (t *SubscribedTrack) PublisherID() string {
+func (t *SubscribedTrack) PublisherID() livekit.ParticipantID {
 	return t.params.PublisherID
 }
 
-func (t *SubscribedTrack) PublisherIdentity() string {
+func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.PublisherIdentity
 }
 
@@ -99,7 +99,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 		return
 	}
 	if t.subMuted.Get() {
-		t.MediaTrack().NotifySubscriberMute(t.params.SubscriberID)
+		t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, livekit.VideoQuality_OFF)
 		return
 	}
 	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
@@ -111,7 +111,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if settings.Width > 0 {
 		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
-	t.DownTrack().SetMaxSpatialLayer(spatialLayerForQuality(quality))
+	t.DownTrack().SetMaxSpatialLayer(SpatialLayerForQuality(quality))
 
 	t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, quality)
 }
@@ -119,15 +119,4 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 func (t *SubscribedTrack) updateDownTrackMute() {
 	muted := t.subMuted.Get() || t.pubMuted.Get()
 	t.DownTrack().Mute(muted)
-}
-
-func spatialLayerForQuality(quality livekit.VideoQuality) int32 {
-	switch quality {
-	case livekit.VideoQuality_LOW:
-		return 0
-	case livekit.VideoQuality_MEDIUM:
-		return 1
-	default:
-		return 2
-	}
 }

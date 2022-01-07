@@ -62,12 +62,22 @@ type RTCConfig struct {
 
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
+
+	// Which side runs bandwidth estimation
+	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation"`
+
+	CongestionControl CongestionControlConfig `yaml:"congestion_control"`
 }
 
 type PLIThrottleConfig struct {
 	LowQuality  time.Duration `yaml:"low_quality"`
 	MidQuality  time.Duration `yaml:"mid_quality"`
 	HighQuality time.Duration `yaml:"high_quality"`
+}
+
+type CongestionControlConfig struct {
+	Enabled    bool `yaml:"enabled"`
+	AllowPause bool `yaml:"allow_pause"`
 }
 
 type AudioConfig struct {
@@ -154,6 +164,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 				LowQuality:  500 * time.Millisecond,
 				MidQuality:  time.Second,
 				HighQuality: time.Second,
+			},
+			CongestionControl: CongestionControlConfig{
+				Enabled:    true,
+				AllowPause: true,
 			},
 		},
 		Audio: AudioConfig{

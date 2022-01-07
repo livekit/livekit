@@ -66,9 +66,12 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 		Id:     recordingID,
 		Active: true,
 	}
-	if template := req.Input.(*livekit.StartRecordingRequest_Template); template != nil {
+
+	switch template := req.Input.(type) {
+	case *livekit.StartRecordingRequest_Template:
 		ri.RoomName = template.Template.RoomName
 	}
+
 	logger.Debugw("recording started", "recordingID", recordingID)
 	s.telemetry.RecordingStarted(ctx, ri)
 

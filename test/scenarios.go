@@ -129,7 +129,7 @@ func scenarioDataPublish(t *testing.T) {
 
 	received := utils.AtomicFlag{}
 	c2.OnDataReceived = func(data []byte, sid string) {
-		if string(data) == payload && sid == c1.ID() {
+		if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
 			received.TrySet(true)
 		}
 	}
@@ -140,8 +140,6 @@ func scenarioDataPublish(t *testing.T) {
 		return received.Get()
 	})
 }
-
-// websocket reconnects
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
@@ -157,4 +155,34 @@ func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*
 		writers = append(writers, tw)
 	}
 	return writers
+}
+
+// Room service tests
+
+func roomServiceListRoom(t *testing.T) {
+	createCtx := contextWithToken(createRoomToken())
+	listCtx := contextWithToken(listRoomToken())
+	// create rooms
+	_, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+		Name: testRoom,
+	})
+	require.NoError(t, err)
+	_, err = roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name: "yourroom",
+	})
+	require.NoError(t, err)
+
+	t.Run("list all rooms", func(t *testing.T) {
+		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{})
+		require.NoError(t, err)
+		require.Len(t, res.Rooms, 2)
+	})
+	t.Run("list specific rooms", func(t *testing.T) {
+		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
+			Names: []string{"yourroom"},
+		})
+		require.NoError(t, err)
+		require.Len(t, res.Rooms, 1)
+		require.Equal(t, "yourroom", res.Rooms[0].Name)
+	})
 }

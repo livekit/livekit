@@ -36,19 +36,21 @@ const (
 )
 
 type ParticipantParams struct {
-	Identity        string
-	SID             string
-	Config          *WebRTCConfig
-	Sink            routing.MessageSink
-	AudioConfig     config.AudioConfig
-	ProtocolVersion types.ProtocolVersion
-	Telemetry       telemetry.TelemetryService
-	ThrottleConfig  config.PLIThrottleConfig
-	EnabledCodecs   []*livekit.Codec
-	Hidden          bool
-	Recorder        bool
-	Logger          logger.Logger
-	SimTracks       map[uint32]SimulcastTrackInfo
+	Identity                livekit.ParticipantIdentity
+	Name                    livekit.ParticipantName
+	SID                     livekit.ParticipantID
+	Config                  *WebRTCConfig
+	Sink                    routing.MessageSink
+	AudioConfig             config.AudioConfig
+	ProtocolVersion         types.ProtocolVersion
+	Telemetry               telemetry.TelemetryService
+	ThrottleConfig          config.PLIThrottleConfig
+	CongestionControlConfig config.CongestionControlConfig
+	EnabledCodecs           []*livekit.Codec
+	Hidden                  bool
+	Recorder                bool
+	Logger                  logger.Logger
+	SimTracks               map[uint32]SimulcastTrackInfo
 }
 
 type ParticipantImpl struct {
@@ -78,11 +80,11 @@ type ParticipantImpl struct {
 	uptrackManager *UptrackManager
 
 	// tracks the current participant is subscribed to, map of sid => DownTrack
-	subscribedTracks map[string]types.SubscribedTrack
+	subscribedTracks map[livekit.TrackID]types.SubscribedTrack
 	// keeps track of disallowed tracks
-	disallowedSubscriptions map[string]string // trackSid -> publisherSid
+	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
 	// keep track of other publishers identities that we are subscribed to
-	subscribedTo sync.Map // string => struct{}
+	subscribedTo sync.Map // livekit.ParticipantID => struct{}
 
 	lock       sync.RWMutex
 	once       sync.Once
@@ -94,10 +96,10 @@ type ParticipantImpl struct {
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.Participant)
 	onDataPacket     func(types.Participant, *livekit.DataPacket)
-	onClose          func(types.Participant, map[string]string)
 
 	migrateState atomic.Value // types.MigrateState
 	pendingOffer *webrtc.SessionDescription
+	onClose      func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -105,8 +107,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p := &ParticipantImpl{
 		params:                  params,
-		subscribedTracks:        make(map[string]types.SubscribedTrack),
-		disallowedSubscriptions: make(map[string]string),
+		subscribedTracks:        make(map[livekit.TrackID]types.SubscribedTrack),
+		disallowedSubscriptions: make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:             time.Now(),
 	}
 	p.migrateState.Store(types.MigrateStateInit)
@@ -118,26 +120,28 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 	p.publisher, err = NewPCTransport(TransportParams{
-		ParticipantID:       p.params.SID,
-		ParticipantIdentity: p.params.Identity,
-		Target:              livekit.SignalTarget_PUBLISHER,
-		Config:              params.Config,
-		Telemetry:           p.params.Telemetry,
-		EnabledCodecs:       p.params.EnabledCodecs,
-		Logger:              params.Logger,
-		SimTracks:           params.SimTracks,
+		ParticipantID:           p.params.SID,
+		ParticipantIdentity:     p.params.Identity,
+		Target:                  livekit.SignalTarget_PUBLISHER,
+		Config:                  params.Config,
+		CongestionControlConfig: params.CongestionControlConfig,
+		Telemetry:               p.params.Telemetry,
+		EnabledCodecs:           p.params.EnabledCodecs,
+		Logger:                  params.Logger,
+		SimTracks:               params.SimTracks,
 	})
 	if err != nil {
 		return nil, err
 	}
 	p.subscriber, err = NewPCTransport(TransportParams{
-		ParticipantID:       p.params.SID,
-		ParticipantIdentity: p.params.Identity,
-		Target:              livekit.SignalTarget_SUBSCRIBER,
-		Config:              params.Config,
-		Telemetry:           p.params.Telemetry,
-		EnabledCodecs:       p.params.EnabledCodecs,
-		Logger:              params.Logger,
+		ParticipantID:           p.params.SID,
+		ParticipantIdentity:     p.params.Identity,
+		Target:                  livekit.SignalTarget_SUBSCRIBER,
+		Config:                  params.Config,
+		CongestionControlConfig: params.CongestionControlConfig,
+		Telemetry:               p.params.Telemetry,
+		EnabledCodecs:           p.params.EnabledCodecs,
+		Logger:                  params.Logger,
 	})
 	if err != nil {
 		return nil, err
@@ -190,11 +194,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	return p, nil
 }
 
-func (p *ParticipantImpl) ID() string {
+func (p *ParticipantImpl) ID() livekit.ParticipantID {
 	return p.params.SID
 }
 
-func (p *ParticipantImpl) Identity() string {
+func (p *ParticipantImpl) Identity() livekit.ParticipantIdentity {
 	return p.params.Identity
 }
 
@@ -230,8 +234,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
-		Sid:      p.params.SID,
-		Identity: p.params.Identity,
+		Sid:      string(p.params.SID),
+		Identity: string(p.params.Identity),
+		Name:     string(p.params.Name),
 		Metadata: p.metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
@@ -277,7 +282,7 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.Participant, *livekit
 	p.onDataPacket = callback
 }
 
-func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[string]string)) {
+func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)) {
 	p.onClose = callback
 }
 
@@ -414,9 +419,9 @@ func (p *ParticipantImpl) Close() error {
 	p.uptrackManager.Close()
 
 	p.lock.Lock()
-	disallowedSubscriptions := make(map[string]string)
-	for trackSid, publisherSid := range p.disallowedSubscriptions {
-		disallowedSubscriptions[trackSid] = publisherSid
+	disallowedSubscriptions := make(map[livekit.TrackID]livekit.ParticipantID)
+	for trackID, publisherID := range p.disallowedSubscriptions {
+		disallowedSubscriptions[trackID] = publisherID
 	}
 
 	// remove all downtracks
@@ -544,8 +549,8 @@ func (p *ParticipantImpl) AddSubscriber(op types.Participant, params types.AddSu
 	return p.uptrackManager.AddSubscriber(op, params)
 }
 
-func (p *ParticipantImpl) RemoveSubscriber(op types.Participant, trackSid string) {
-	p.uptrackManager.RemoveSubscriber(op, trackSid)
+func (p *ParticipantImpl) RemoveSubscriber(op types.Participant, trackID livekit.TrackID) {
+	p.uptrackManager.RemoveSubscriber(op, trackID)
 }
 
 // signal connection methods
@@ -604,7 +609,8 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 
 	var scopedSpeakers []*livekit.SpeakerInfo
 	for _, s := range speakers {
-		if p.IsSubscribedTo(s.Sid) {
+		participantID := livekit.ParticipantID(s.Sid)
+		if p.IsSubscribedTo(participantID) || participantID == p.ID() {
 			scopedSpeakers = append(scopedSpeakers, s)
 		}
 	}
@@ -671,20 +677,20 @@ func (p *ParticipantImpl) SendConnectionQualityUpdate(update *livekit.Connection
 	})
 }
 
-func (p *ParticipantImpl) SetTrackMuted(trackSid string, muted bool, fromAdmin bool) {
+func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) {
 	// when request is coming from admin, send message to current participant
 	if fromAdmin {
 		_ = p.writeMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Mute{
 				Mute: &livekit.MuteTrackRequest{
-					Sid:   trackSid,
+					Sid:   string(trackID),
 					Muted: muted,
 				},
 			},
 		})
 	}
 
-	p.uptrackManager.SetTrackMuted(trackSid, muted)
+	p.uptrackManager.SetTrackMuted(trackID, muted)
 }
 
 func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
@@ -713,26 +719,26 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	rating := connectionquality.Score2Rating(avgScore)
 
 	return &livekit.ConnectionQualityInfo{
-		ParticipantSid: p.ID(),
+		ParticipantSid: string(p.ID()),
 		Quality:        rating,
 		Score:          float32(avgScore),
 	}
 }
 
-func (p *ParticipantImpl) IsSubscribedTo(participantSid string) bool {
-	_, ok := p.subscribedTo.Load(participantSid)
+func (p *ParticipantImpl) IsSubscribedTo(participantID livekit.ParticipantID) bool {
+	_, ok := p.subscribedTo.Load(participantID)
 	return ok
 }
 
-func (p *ParticipantImpl) GetSubscribedParticipants() []string {
-	var participantSids []string
+func (p *ParticipantImpl) GetSubscribedParticipants() []livekit.ParticipantID {
+	var participantIDs []livekit.ParticipantID
 	p.subscribedTo.Range(func(key, _ interface{}) bool {
-		if participantSid, ok := key.(string); ok {
-			participantSids = append(participantSids, participantSid)
+		if participantID, ok := key.(livekit.ParticipantID); ok {
+			participantIDs = append(participantIDs, participantID)
 		}
 		return true
 	})
-	return participantSids
+	return participantIDs
 }
 
 func (p *ParticipantImpl) CanPublish() bool {
@@ -763,7 +769,7 @@ func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
 
-func (p *ParticipantImpl) GetPublishedTrack(sid string) types.PublishedTrack {
+func (p *ParticipantImpl) GetPublishedTrack(sid livekit.TrackID) types.PublishedTrack {
 	return p.uptrackManager.GetPublishedTrack(sid)
 }
 
@@ -771,7 +777,7 @@ func (p *ParticipantImpl) GetPublishedTracks() []types.PublishedTrack {
 	return p.uptrackManager.GetPublishedTracks()
 }
 
-func (p *ParticipantImpl) GetSubscribedTrack(sid string) types.SubscribedTrack {
+func (p *ParticipantImpl) GetSubscribedTrack(sid livekit.TrackID) types.SubscribedTrack {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.subscribedTracks[sid]
@@ -824,30 +830,52 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.lock.Unlock()
 	if numRemaining == 0 {
 		p.subscribedTo.Delete(subTrack.PublisherID())
+
+		//
+		// When a participant leaves OR
+		// this participant unsubscribes from all tracks of another participant,
+		// have to send speaker update indicating that the participant speaker is no long active
+		// so that clients can clean up their speaker state for the leaving/unsubscribed participant
+		//
+		if p.ProtocolVersion().SupportsSpeakerChanged() {
+			_ = p.writeMessage(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_SpeakersChanged{
+					SpeakersChanged: &livekit.SpeakersChanged{
+						Speakers: []*livekit.SpeakerInfo{
+							&livekit.SpeakerInfo{
+								Sid:    string(subTrack.PublisherID()),
+								Level:  0,
+								Active: false,
+							},
+						},
+					},
+				},
+			})
+		}
 	}
 }
 
 func (p *ParticipantImpl) UpdateSubscriptionPermissions(
 	permissions *livekit.UpdateSubscriptionPermissions,
-	resolver func(participantSid string) types.Participant,
+	resolver func(participantID livekit.ParticipantID) types.Participant,
 ) error {
 	return p.uptrackManager.UpdateSubscriptionPermissions(permissions, resolver)
 }
 
-func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherSid string, trackSid string, allowed bool) {
+func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
 	p.lock.Lock()
 	if allowed {
-		delete(p.disallowedSubscriptions, trackSid)
+		delete(p.disallowedSubscriptions, trackID)
 	} else {
-		p.disallowedSubscriptions[trackSid] = publisherSid
+		p.disallowedSubscriptions[trackID] = publisherID
 	}
 	p.lock.Unlock()
 
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
-				ParticipantSid: publisherSid,
-				TrackSid:       trackSid,
+				ParticipantSid: string(publisherID),
+				TrackSid:       string(trackID),
 				Allowed:        allowed,
 			},
 		},
@@ -855,6 +883,14 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherSid string, trac
 	if err != nil {
 		p.params.Logger.Errorw("could not send subscription permission update", err)
 	}
+}
+
+func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+	return p.uptrackManager.UpdateSubscribedQuality(nodeID, trackID, maxQuality)
+}
+
+func (p *ParticipantImpl) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+	return p.uptrackManager.UpdateMediaLoss(nodeID, trackID, fractionalLoss)
 }
 
 func (p *ParticipantImpl) setupUptrackManager() {
@@ -1021,7 +1057,7 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	switch payload := dp.Value.(type) {
 	case *livekit.DataPacket_User:
 		if p.onDataPacket != nil {
-			payload.User.ParticipantSid = p.params.SID
+			payload.User.ParticipantSid = string(p.params.SID)
 			p.onDataPacket(p, &dp)
 		}
 	default:
@@ -1202,8 +1238,8 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 			state = livekit.StreamState_PAUSED
 		}
 		streamStateUpdate.StreamStates = append(streamStateUpdate.StreamStates, &livekit.StreamStateInfo{
-			ParticipantSid: streamStateInfo.ParticipantSid,
-			TrackSid:       streamStateInfo.TrackSid,
+			ParticipantSid: string(streamStateInfo.ParticipantID),
+			TrackSid:       string(streamStateInfo.TrackID),
 			State:          state,
 		})
 	}
@@ -1215,13 +1251,13 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 	})
 }
 
-func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackSid string, subscribedQualities []*livekit.SubscribedQuality) error {
+func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error {
 	if len(subscribedQualities) == 0 {
 		return nil
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
-		TrackSid:            trackSid,
+		TrackSid:            string(trackID),
 		SubscribedQualities: subscribedQualities,
 	}
 
@@ -1240,7 +1276,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 
 	uptrackManagerInfo := p.uptrackManager.DebugInfo()
 
-	subscribedTrackInfo := make(map[string]interface{})
+	subscribedTrackInfo := make(map[livekit.TrackID]interface{})
 	p.lock.RLock()
 	for _, track := range p.subscribedTracks {
 		dt := track.DownTrack().DebugInfo()

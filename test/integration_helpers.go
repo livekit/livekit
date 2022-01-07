@@ -58,7 +58,7 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 	waitForServerToStart(s)
 
 	// create test room
-	_, err := roomClient.CreateRoom(contextWithCreateRoomToken(), &livekit.CreateRoomRequest{Name: roomName})
+	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: roomName})
 	if err != nil {
 		panic(err)
 	}
@@ -86,9 +86,9 @@ func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitSe
 	}
 }
 
-func contextWithCreateRoomToken() context.Context {
+func contextWithToken(token string) context.Context {
 	header := make(http.Header)
-	testclient.SetAuthorizationToken(header, createRoomToken())
+	testclient.SetAuthorizationToken(header, token)
 	tctx, err := twirp.WithHTTPRequestHeaders(context.Background(), header)
 	if err != nil {
 		panic(err)
@@ -228,7 +228,9 @@ func redisClient() *redis.Client {
 func joinToken(room, name string) string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomJoin: true, Room: room}).
-		SetIdentity(name)
+		SetIdentity(name).
+		SetName(name).
+		SetMetadata("metadata" + name)
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
@@ -239,7 +241,8 @@ func joinToken(room, name string) string {
 func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(grant).
-		SetIdentity(name)
+		SetIdentity(name).
+		SetName(name)
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
@@ -249,8 +252,17 @@ func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 
 func createRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
-		AddGrant(&auth.VideoGrant{RoomCreate: true}).
-		SetIdentity("testuser")
+		AddGrant(&auth.VideoGrant{RoomCreate: true})
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func listRoomToken() string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(&auth.VideoGrant{RoomList: true})
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
