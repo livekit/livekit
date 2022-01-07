@@ -31,8 +31,6 @@ type LocalParticipant struct {
 	rtcpCh      chan []rtcp.Packet
 	pliThrottle *pliThrottle
 
-	closed bool
-
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
