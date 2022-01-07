@@ -130,7 +130,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := []*livekit.SubscribedQuality{}
-		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error {
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
 			return nil
@@ -175,7 +175,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := []*livekit.SubscribedQuality{}
-		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error {
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
 			return nil

@@ -80,7 +80,8 @@ func TestTrackPublishing(t *testing.T) {
 		p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
 			published = true
 		})
-		p.UptrackManager.handleTrackPublished(track)
+		p.LocalParticipant.AddPublishedTrack(track)
+		p.LocalParticipant.handleTrackPublished(track)
 
 		require.True(t, published)
 		require.False(t, updated)
@@ -202,7 +203,8 @@ func TestDisconnectTiming(t *testing.T) {
 			}
 		}()
 		track := &typesfakes.FakePublishedTrack{}
-		p.UptrackManager.handleTrackPublished(track)
+		p.LocalParticipant.AddPublishedTrack(track)
+		p.LocalParticipant.handleTrackPublished(track)
 
 		// close channel and then try to Negotiate
 		msg.Close()
@@ -220,7 +222,7 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.UptrackManager.pendingTracks["cid"] = ti
+		p.LocalParticipant.pendingTracks["cid"] = ti
 
 		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
 		require.True(t, ti.Muted)
@@ -234,7 +236,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti := p.UptrackManager.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti := p.LocalParticipant.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})

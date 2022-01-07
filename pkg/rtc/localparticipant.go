@@ -214,8 +214,14 @@ func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpRece
 
 	mt.AddReceiver(rtpReceiver, track, l.twcc)
 
-	if newTrack && l.onTrackPublished != nil {
-		l.onTrackPublished(mt)
+	if newTrack {
+		l.handleTrackPublished(mt)
+	}
+}
+
+func (l *LocalParticipant) handleTrackPublished(track types.PublishedTrack) {
+	if l.onTrackPublished != nil {
+		l.onTrackPublished(track)
 	}
 }
 
@@ -281,9 +287,6 @@ func (l *LocalParticipant) onUptrackManagerClose() {
 }
 
 func (l *LocalParticipant) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
-	l.pendingTracksLock.RLock()
-	defer l.pendingTracksLock.RUnlock()
-
 	signalCid := clientId
 	trackInfo := l.pendingTracks[clientId]
 
