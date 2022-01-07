@@ -102,7 +102,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
 		Telemetry:        params.Telemetry,
-		Logger:           &params.Logger,
+		Logger:           params.Logger,
 	})
 
 	if params.TrackInfo.Muted {
@@ -362,7 +362,7 @@ func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
 	defer t.audioLevelMu.RUnlock()
 
 	if t.audioLevel == nil {
-		return silentAudioLevel, false
+		return SilentAudioLevel, false
 	}
 	return t.audioLevel.GetLevel()
 }

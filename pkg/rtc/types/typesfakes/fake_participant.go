@@ -558,6 +558,17 @@ type FakeParticipant struct {
 	updateSubscriptionPermissionsReturnsOnCall map[int]struct {
 		result1 error
 	}
+	UpdateVideoLayersStub        func(*livekit.UpdateVideoLayers) error
+	updateVideoLayersMutex       sync.RWMutex
+	updateVideoLayersArgsForCall []struct {
+		arg1 *livekit.UpdateVideoLayers
+	}
+	updateVideoLayersReturns struct {
+		result1 error
+	}
+	updateVideoLayersReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -3532,6 +3543,67 @@ func (fake *FakeParticipant) UpdateSubscriptionPermissionsReturnsOnCall(i int, r
 	}{result1}
 }
 
+func (fake *FakeParticipant) UpdateVideoLayers(arg1 *livekit.UpdateVideoLayers) error {
+	fake.updateVideoLayersMutex.Lock()
+	ret, specificReturn := fake.updateVideoLayersReturnsOnCall[len(fake.updateVideoLayersArgsForCall)]
+	fake.updateVideoLayersArgsForCall = append(fake.updateVideoLayersArgsForCall, struct {
+		arg1 *livekit.UpdateVideoLayers
+	}{arg1})
+	stub := fake.UpdateVideoLayersStub
+	fakeReturns := fake.updateVideoLayersReturns
+	fake.recordInvocation("UpdateVideoLayers", []interface{}{arg1})
+	fake.updateVideoLayersMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) UpdateVideoLayersCallCount() int {
+	fake.updateVideoLayersMutex.RLock()
+	defer fake.updateVideoLayersMutex.RUnlock()
+	return len(fake.updateVideoLayersArgsForCall)
+}
+
+func (fake *FakeParticipant) UpdateVideoLayersCalls(stub func(*livekit.UpdateVideoLayers) error) {
+	fake.updateVideoLayersMutex.Lock()
+	defer fake.updateVideoLayersMutex.Unlock()
+	fake.UpdateVideoLayersStub = stub
+}
+
+func (fake *FakeParticipant) UpdateVideoLayersArgsForCall(i int) *livekit.UpdateVideoLayers {
+	fake.updateVideoLayersMutex.RLock()
+	defer fake.updateVideoLayersMutex.RUnlock()
+	argsForCall := fake.updateVideoLayersArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) UpdateVideoLayersReturns(result1 error) {
+	fake.updateVideoLayersMutex.Lock()
+	defer fake.updateVideoLayersMutex.Unlock()
+	fake.UpdateVideoLayersStub = nil
+	fake.updateVideoLayersReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeParticipant) UpdateVideoLayersReturnsOnCall(i int, result1 error) {
+	fake.updateVideoLayersMutex.Lock()
+	defer fake.updateVideoLayersMutex.Unlock()
+	fake.UpdateVideoLayersStub = nil
+	if fake.updateVideoLayersReturnsOnCall == nil {
+		fake.updateVideoLayersReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateVideoLayersReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -3657,6 +3729,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscriptionPermissionsMutex.RLock()
 	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
+	fake.updateVideoLayersMutex.RLock()
+	defer fake.updateVideoLayersMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
