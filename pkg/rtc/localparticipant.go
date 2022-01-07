@@ -112,21 +112,24 @@ func (l *LocalParticipant) AddTrack(req *livekit.AddTrackRequest) *livekit.Track
 
 func (l *LocalParticipant) SetTrackMuted(trackID livekit.TrackID, muted bool) {
 	track := l.UptrackManager.SetTrackMuted(trackID, muted)
+	if track != nil {
+		// handled in UptrackManager for a published track, no need to update state of pending track
+		return
+	}
 
-	if track == nil {
-		isPending := false
-		l.pendingTracksLock.RLock()
-		for _, ti := range l.pendingTracks {
-			if livekit.TrackID(ti.Sid) == trackID {
-				ti.Muted = muted
-				isPending = true
-			}
+	isPending := false
+	l.pendingTracksLock.RLock()
+	for _, ti := range l.pendingTracks {
+		if livekit.TrackID(ti.Sid) == trackID {
+			ti.Muted = muted
+			isPending = true
+			break
 		}
-		l.pendingTracksLock.RUnlock()
+	}
+	l.pendingTracksLock.RUnlock()
 
-		if !isPending {
-			l.params.Logger.Warnw("could not locate track", nil, "track", trackID)
-		}
+	if !isPending {
+		l.params.Logger.Warnw("could not locate track", nil, "track", trackID)
 	}
 }
 

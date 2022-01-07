@@ -246,13 +246,13 @@ func (u *UptrackManager) AddPublishedTrack(track types.PublishedTrack) {
 		}
 		u.lock.Unlock()
 
-		if notifyClose && u.onClose != nil {
-			u.onClose()
-		}
-
 		// only send this when client is in a ready state
 		if u.onTrackUpdated != nil {
 			u.onTrackUpdated(track, true)
+		}
+
+		if notifyClose && u.onClose != nil {
+			u.onClose()
 		}
 	})
 }
