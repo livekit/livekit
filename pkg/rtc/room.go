@@ -55,9 +55,6 @@ type Room struct {
 
 type ParticipantOptions struct {
 	AutoSubscribe bool
-	KeepSubscribe bool
-	SyncState     *livekit.SyncState
-	MigrateOut    bool
 }
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
@@ -200,13 +197,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
-			if !opts.KeepSubscribe {
-				// subscribe participant to existing publishedTracks
-				r.subscribeToExistingTracks(p)
-			} else {
-				// if tracks changed during reconnect, should negotiate new tracks
-				p.Negotiate()
-			}
+			// subscribe participant to existing publishedTracks
+			r.subscribeToExistingTracks(p)
 
 			// start the workers once connectivity is established
 			p.Start()
@@ -258,16 +250,12 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
-	if !opts.KeepSubscribe {
-		participant.SetMigrateState(types.MigrateComplete)
-	}
+	participant.SetMigrateState(types.MigrateComplete)
 
 	if participant.SubscriberAsPrimary() {
 		// if client need keep subscribe state, wait for first UpdateSubscription msg
 		go func() {
-			// r.subscribeToExistingTracks(participant)
 			// initiates sub connection as primary
-			// participant.Negotiate()
 			participant.Negotiate()
 		}()
 	}
@@ -400,27 +388,7 @@ func (r *Room) UpdateSubscriptions(
 }
 
 func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState) error {
-	r.lock.Lock()
-	if opt, ok := r.participantOpts[participant.Identity()]; ok {
-		opt.SyncState = state
-	}
-	r.lock.Unlock()
-	if participant.MigrateState() == types.MigrateStateInit {
-		anwser := FromProtoSessionDescription(state.GetAnwser())
-		participant.InitSubscribePreviousAnwser(&anwser)
-		r.subscribeToExistingTracks(participant)
-		defer func() {
-			participant.SetMigrateState(types.MigrateStateSync)
-			participant.Negotiate()
-		}()
-	}
-	err := r.UpdateSubscriptions(participant, livekit.StringsAsTrackIDs(state.GetSubscription().GetTrackSids()),
-		state.GetSubscription().GetParticipantTracks(), state.GetSubscription().GetSubscribe())
-
-	for _, track := range state.GetPublishTracks() {
-		participant.AddMigratedTrack(track.GetCid(), track.GetTrack())
-	}
-	return err
+	return nil
 }
 
 func (r *Room) UpdateSubscriptionPermissions(participant types.Participant, permissions *livekit.UpdateSubscriptionPermissions) error {

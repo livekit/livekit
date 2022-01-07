@@ -100,17 +100,6 @@ func RidToLayer(rid string) int32 {
 	}
 }
 
-// func LayerToRid(layer int32) string {
-// 	switch layer {
-// 	case 2:
-// 		return FullResolution
-// 	case 1:
-// 		return HalfResolution
-// 	default:
-// 		return QuarterResolution
-// 	}
-// }
-
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottle indicates minimum time(ms) between sending PLIs

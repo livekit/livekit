@@ -260,7 +260,6 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
-		KeepSubscribe: pi.Reconnect && pi.Migrate,
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		pLogger.Errorw("could not join room", err)

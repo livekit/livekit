@@ -488,51 +488,6 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 	return p.migrateState.Load().(types.MigrateState)
 }
 
-func (p *ParticipantImpl) SetReady() {
-	// if !ready {
-	// 	p.subscribeReady.Store(ready)
-	// 	return
-	// }
-
-	// if p.subscribeReady.CompareAndSwap(false, true) {
-	// p.subscriber.SetInitPreviousOffer(previousOffer)
-	// if p.subscriber.pc.RemoteDescription() == nil {
-	// 	p.subscriber.Negotiate()
-	// 	return
-	// }
-
-	// answer, err := p.subscriber.pc.CreateAnswer(nil)
-	// if err != nil {
-	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
-	// 	err = errors.Wrap(err, "could not create subscriber answer")
-	// 	return
-	// }
-
-	// if err = p.subscriber.pc.SetLocalDescription(answer); err != nil {
-	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
-	// 	err = errors.Wrap(err, "could not set subscriber local description")
-	// 	return
-	// }
-	// err = p.writeMessage(&livekit.SignalResponse{
-	// 	Message: &livekit.SignalResponse_SubscriptionAnswer{
-	// 		SubscriptionAnswer: ToProtoSessionDescription(answer),
-	// 	},
-	// })
-	// if err != nil {
-	// 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-	// 	return
-	// }
-
-	// prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
-
-	// return
-	// }
-}
-
-// func (p *ParticipantImpl) Ready() bool {
-// 	return p.ready.Load().(bool)
-// }
-
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart() error {
 	if p.subscriber.pc.RemoteDescription() == nil {
