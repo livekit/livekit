@@ -253,11 +253,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	participant.SetMigrateState(types.MigrateComplete)
 
 	if participant.SubscriberAsPrimary() {
-		// if client need keep subscribe state, wait for first UpdateSubscription msg
-		go func() {
-			// initiates sub connection as primary
-			participant.Negotiate()
-		}()
+		// initiates sub connection as primary
+		participant.Negotiate()
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
