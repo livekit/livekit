@@ -265,7 +265,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 	return nil
 }
 
-func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink, keepSubscribe bool) error {
+func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.MessageSink) error {
 	// close previous sink, and link to new one
 	if prevSink := p.GetResponseSink(); prevSink != nil {
 		prevSink.Close()
@@ -277,14 +277,9 @@ func (r *Room) ResumeParticipant(p types.Participant, responseSink routing.Messa
 		return err
 	}
 
-	// if keepSubscribe {
-	// 	// client will offer ice restart, wait for offer
-	// 	p.SetSubscribeReady(false)
-	// } else {
 	if err := p.ICERestart(); err != nil {
 		return err
 	}
-	// }
 	return nil
 }
 

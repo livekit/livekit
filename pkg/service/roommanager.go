@@ -190,7 +190,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			if err = room.ResumeParticipant(participant, responseSink, pi.Migrate); err != nil {
+			if err = room.ResumeParticipant(participant, responseSink); err != nil {
 				logger.Warnw("could not resume participant", err,
 					"participant", pi.Identity)
 			}
@@ -199,7 +199,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 			// we need to clean up the existing participant, so a new one can join
 			room.RemoveParticipant(participant.Identity())
 		}
-	} else if pi.Reconnect && !pi.Migrate {
+	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
 		if err = responseSink.WriteMessage(&livekit.SignalResponse{
