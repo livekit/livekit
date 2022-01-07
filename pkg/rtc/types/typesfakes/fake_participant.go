@@ -262,9 +262,9 @@ type FakeParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	InitSubscribePreviousOfferStub        func(*webrtc.SessionDescription)
-	initSubscribePreviousOfferMutex       sync.RWMutex
-	initSubscribePreviousOfferArgsForCall []struct {
+	InitSubscribePreviousAnwserStub        func(*webrtc.SessionDescription)
+	initSubscribePreviousAnwserMutex       sync.RWMutex
+	initSubscribePreviousAnwserArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
 	}
 	IsReadyStub        func() bool
@@ -1895,35 +1895,35 @@ func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) InitSubscribePreviousOffer(arg1 *webrtc.SessionDescription) {
-	fake.initSubscribePreviousOfferMutex.Lock()
-	fake.initSubscribePreviousOfferArgsForCall = append(fake.initSubscribePreviousOfferArgsForCall, struct {
+func (fake *FakeParticipant) InitSubscribePreviousAnwser(arg1 *webrtc.SessionDescription) {
+	fake.initSubscribePreviousAnwserMutex.Lock()
+	fake.initSubscribePreviousAnwserArgsForCall = append(fake.initSubscribePreviousAnwserArgsForCall, struct {
 		arg1 *webrtc.SessionDescription
 	}{arg1})
-	stub := fake.InitSubscribePreviousOfferStub
-	fake.recordInvocation("InitSubscribePreviousOffer", []interface{}{arg1})
-	fake.initSubscribePreviousOfferMutex.Unlock()
+	stub := fake.InitSubscribePreviousAnwserStub
+	fake.recordInvocation("InitSubscribePreviousAnwser", []interface{}{arg1})
+	fake.initSubscribePreviousAnwserMutex.Unlock()
 	if stub != nil {
-		fake.InitSubscribePreviousOfferStub(arg1)
+		fake.InitSubscribePreviousAnwserStub(arg1)
 	}
 }
 
-func (fake *FakeParticipant) InitSubscribePreviousOfferCallCount() int {
-	fake.initSubscribePreviousOfferMutex.RLock()
-	defer fake.initSubscribePreviousOfferMutex.RUnlock()
-	return len(fake.initSubscribePreviousOfferArgsForCall)
+func (fake *FakeParticipant) InitSubscribePreviousAnwserCallCount() int {
+	fake.initSubscribePreviousAnwserMutex.RLock()
+	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
+	return len(fake.initSubscribePreviousAnwserArgsForCall)
 }
 
-func (fake *FakeParticipant) InitSubscribePreviousOfferCalls(stub func(*webrtc.SessionDescription)) {
-	fake.initSubscribePreviousOfferMutex.Lock()
-	defer fake.initSubscribePreviousOfferMutex.Unlock()
-	fake.InitSubscribePreviousOfferStub = stub
+func (fake *FakeParticipant) InitSubscribePreviousAnwserCalls(stub func(*webrtc.SessionDescription)) {
+	fake.initSubscribePreviousAnwserMutex.Lock()
+	defer fake.initSubscribePreviousAnwserMutex.Unlock()
+	fake.InitSubscribePreviousAnwserStub = stub
 }
 
-func (fake *FakeParticipant) InitSubscribePreviousOfferArgsForCall(i int) *webrtc.SessionDescription {
-	fake.initSubscribePreviousOfferMutex.RLock()
-	defer fake.initSubscribePreviousOfferMutex.RUnlock()
-	argsForCall := fake.initSubscribePreviousOfferArgsForCall[i]
+func (fake *FakeParticipant) InitSubscribePreviousAnwserArgsForCall(i int) *webrtc.SessionDescription {
+	fake.initSubscribePreviousAnwserMutex.RLock()
+	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
+	argsForCall := fake.initSubscribePreviousAnwserArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -3657,8 +3657,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
-	fake.initSubscribePreviousOfferMutex.RLock()
-	defer fake.initSubscribePreviousOfferMutex.RUnlock()
+	fake.initSubscribePreviousAnwserMutex.RLock()
+	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
 	fake.isRecorderMutex.RLock()

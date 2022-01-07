@@ -406,8 +406,8 @@ func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState
 	}
 	r.lock.Unlock()
 	if participant.MigrateState() == types.MigrateStateInit {
-		offer := FromProtoSessionDescription(state.GetOffer())
-		participant.InitSubscribePreviousOffer(&offer)
+		anwser := FromProtoSessionDescription(state.GetAnwser())
+		participant.InitSubscribePreviousAnwser(&anwser)
 		r.subscribeToExistingTracks(participant)
 		defer func() {
 			participant.SetMigrateState(types.MigrateStateSync)

@@ -73,7 +73,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
-	keepSubscribe := r.FormValue("keep_subscribe")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -100,7 +99,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	pi := routing.ParticipantInit{
 		Reconnect:     boolValue(reconnectParam),
-		Migrate: boolValue(keepSubscribe),
 		Identity:      livekit.ParticipantIdentity(claims.Identity),
 		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
@@ -109,6 +107,8 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Recorder:      claims.Video.Recorder,
 		Client:        s.parseClientInfo(r.Form),
 	}
+
+	pi.Migrate= pi.Reconnect && types.ProtocolVersion(pi.Client.Protocol).SupportsSessionMigrate()
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
 	}

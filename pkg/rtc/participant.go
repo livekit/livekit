@@ -456,8 +456,8 @@ func (p *ParticipantImpl) Negotiate() {
 	}
 }
 
-func (p *ParticipantImpl) InitSubscribePreviousOffer(previousOffer *webrtc.SessionDescription) {
-	p.subscriber.SetInitPreviousOffer(previousOffer)
+func (p *ParticipantImpl) InitSubscribePreviousAnwser(previous *webrtc.SessionDescription) {
+	p.subscriber.SetInitPreviousAnwser(previous)
 }
 
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {

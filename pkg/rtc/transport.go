@@ -452,7 +452,7 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) SetInitPreviousOffer(offer *webrtc.SessionDescription) {
+func (t *PCTransport) SetInitPreviousAnwser(offer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.pc.RemoteDescription() == nil && t.previousAnwser == nil {
