@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -245,14 +246,16 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
 func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID) {
+	fmt.Printf("RAJA removing subscriber: %+v\n", participantID) // REMOVE
 	subTrack := t.getSubscribedTrack(participantID)
-	if subTrack != nil {
-		go subTrack.DownTrack().Close()
-	}
 
 	t.subscribedTracksMu.Lock()
 	delete(t.subscribedTracks, participantID)
 	t.subscribedTracksMu.Unlock()
+
+	if subTrack != nil {
+		go subTrack.DownTrack().Close()
+	}
 
 	t.maybeNotifyNoSubscribers()
 }
@@ -260,17 +263,14 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
 
-	t.subscribedTracksMu.RLock()
+	t.subscribedTracksMu.Lock()
 	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
+	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
+	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
 		go subTrack.DownTrack().Close()
 	}
-
-	t.subscribedTracksMu.Lock()
-	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
-	t.subscribedTracksMu.Unlock()
 
 	t.maybeNotifyNoSubscribers()
 }
