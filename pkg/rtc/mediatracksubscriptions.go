@@ -188,11 +188,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 
 	downTrack.OnCloseHandler(func() {
 		go func() {
-			t.subscribedTracksMu.Lock()
-			delete(t.subscribedTracks, subscriberID)
-			t.subscribedTracksMu.Unlock()
-
-			t.maybeNotifyNoSubscribers()
 			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
 			// ignore if the subscribing sub is not connected
@@ -254,6 +249,12 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
+
+	t.subscribedTracksMu.Lock()
+	delete(t.subscribedTracks, participantID)
+	t.subscribedTracksMu.Unlock()
+
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
@@ -266,6 +267,12 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	for _, subTrack := range subscribedTracks {
 		go subTrack.DownTrack().Close()
 	}
+
+	t.subscribedTracksMu.Lock()
+	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
+	t.subscribedTracksMu.Unlock()
+
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {

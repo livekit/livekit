@@ -6,40 +6,22 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
-	"github.com/pion/rtcp"
-	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type UptrackManagerParams struct {
-	Identity       livekit.ParticipantIdentity
-	SID            livekit.ParticipantID
-	Config         *WebRTCConfig
-	AudioConfig    config.AudioConfig
-	Telemetry      telemetry.TelemetryService
-	ThrottleConfig config.PLIThrottleConfig
-	Logger         logger.Logger
+	SID    livekit.ParticipantID
+	Logger logger.Logger
 }
 
 type UptrackManager struct {
-	params      UptrackManagerParams
-	rtcpCh      chan []rtcp.Packet
-	pliThrottle *pliThrottle
+	params UptrackManagerParams
 
 	closed bool
 
-	// hold reference for MediaTrack
-	twcc *twcc.Responder
-
 	// publishedTracks that participant is publishing
 	publishedTracks map[livekit.TrackID]types.PublishedTrack
-	// client intended to publish, yet to be reconciled
-	pendingTracks map[string]*livekit.TrackInfo
 	// keeps track of subscriptions that are awaiting permissions
 	subscriptionPermissions map[livekit.ParticipantID]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
@@ -48,31 +30,24 @@ type UptrackManager struct {
 	lock sync.RWMutex
 
 	// callbacks & handlers
-	onTrackPublished             func(track types.PublishedTrack)
+	onClose                      func()
 	onTrackUpdated               func(track types.PublishedTrack, onlyIfReady bool)
-	onWriteRTCP                  func(pkts []rtcp.Packet)
-	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error
+	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error
 }
 
 func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
 	return &UptrackManager{
 		params:               params,
-		rtcpCh:               make(chan []rtcp.Packet, 50),
-		pliThrottle:          newPLIThrottle(params.ThrottleConfig),
 		publishedTracks:      make(map[livekit.TrackID]types.PublishedTrack, 0),
-		pendingTracks:        make(map[string]*livekit.TrackInfo),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
 
 func (u *UptrackManager) Start() {
-	go u.rtcpSendWorker()
 }
 
 func (u *UptrackManager) Close() {
 	u.lock.Lock()
-	defer u.lock.Unlock()
-
 	u.closed = true
 
 	// remove all subscribers
@@ -80,9 +55,16 @@ func (u *UptrackManager) Close() {
 		t.RemoveAllSubscribers()
 	}
 
-	if len(u.publishedTracks) == 0 {
-		close(u.rtcpCh)
+	notify := len(u.publishedTracks) == 0
+	u.lock.Unlock()
+
+	if notify && u.onClose != nil {
+		u.onClose()
 	}
+}
+
+func (u *UptrackManager) OnClose(f func()) {
+	u.onClose = f
 }
 
 func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
@@ -97,51 +79,12 @@ func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
-func (u *UptrackManager) OnTrackPublished(f func(track types.PublishedTrack)) {
-	u.onTrackPublished = f
-}
-
 func (u *UptrackManager) OnTrackUpdated(f func(track types.PublishedTrack, onlyIfReady bool)) {
 	u.onTrackUpdated = f
 }
 
-func (u *UptrackManager) OnWriteRTCP(f func(pkts []rtcp.Packet)) {
-	u.onWriteRTCP = f
-}
-
-func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error) {
+func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error) {
 	u.onSubscribedMaxQualityChange = f
-}
-
-// AddTrack is called when client intends to publish track.
-// records track details and lets client know it's ok to proceed
-func (u *UptrackManager) AddTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
-	u.lock.Lock()
-	defer u.lock.Unlock()
-
-	// if track is already published, reject
-	if u.pendingTracks[req.Cid] != nil {
-		return nil
-	}
-
-	if u.getPublishedTrackBySignalCid(req.Cid) != nil || u.getPublishedTrackBySdpCid(req.Cid) != nil {
-		return nil
-	}
-
-	ti := &livekit.TrackInfo{
-		Type:       req.Type,
-		Name:       req.Name,
-		Sid:        utils.NewGuid(utils.TrackPrefix),
-		Width:      req.Width,
-		Height:     req.Height,
-		Muted:      req.Muted,
-		DisableDtx: req.DisableDtx,
-		Source:     req.Source,
-		Layers:     req.Layers,
-	}
-	u.pendingTracks[req.Cid] = ti
-
-	return ti
 }
 
 // AddSubscriber subscribes op to all publishedTracks
@@ -198,33 +141,24 @@ func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackID livekit
 	u.lock.Unlock()
 }
 
-func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) {
-	isPending := false
+func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) types.PublishedTrack {
 	u.lock.RLock()
-	for _, ti := range u.pendingTracks {
-		if livekit.TrackID(ti.Sid) == trackID {
-			ti.Muted = muted
-			isPending = true
-		}
-	}
 	track := u.publishedTracks[trackID]
 	u.lock.RUnlock()
 
-	if track == nil {
-		if !isPending {
-			u.params.Logger.Warnw("could not locate track", nil, "track", trackID)
-		}
-		return
-	}
-	currentMuted := track.IsMuted()
-	track.SetMuted(muted)
+	if track != nil {
+		currentMuted := track.IsMuted()
+		track.SetMuted(muted)
 
-	if currentMuted != track.IsMuted() && u.onTrackUpdated != nil {
-		u.params.Logger.Debugw("mute status changed",
-			"track", trackID,
-			"muted", track.IsMuted())
-		u.onTrackUpdated(track, false)
+		if currentMuted != track.IsMuted() && u.onTrackUpdated != nil {
+			u.params.Logger.Debugw("mute status changed",
+				"track", trackID,
+				"muted", track.IsMuted())
+			u.onTrackUpdated(track, false)
+		}
 	}
+
+	return track
 }
 
 func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
@@ -240,20 +174,6 @@ func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
 				level = tl
 			}
 		}
-	}
-	return
-}
-
-func (u *UptrackManager) GetConnectionQuality() (scores float64, numTracks int) {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	for _, pt := range u.publishedTracks {
-		if pt.IsMuted() {
-			continue
-		}
-		scores += pt.GetConnectionScore()
-		numTracks++
 	}
 	return
 }
@@ -274,25 +194,6 @@ func (u *UptrackManager) GetPublishedTracks() []types.PublishedTrack {
 		tracks = append(tracks, t)
 	}
 	return tracks
-}
-
-func (u *UptrackManager) GetDTX() bool {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	var trackInfo *livekit.TrackInfo
-	for _, ti := range u.pendingTracks {
-		if ti.Type == livekit.TrackType_AUDIO {
-			trackInfo = ti
-			break
-		}
-	}
-
-	if trackInfo == nil {
-		return false
-	}
-
-	return !trackInfo.DisableDtx
 }
 
 func (u *UptrackManager) UpdateSubscriptionPermissions(
@@ -321,95 +222,60 @@ func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find track")
-	}
+func (u *UptrackManager) AddPublishedTrack(track types.PublishedTrack) {
+	track.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
 
-	if mt, ok := track.(*MediaTrack); ok {
-		mt.NotifySubscriberNodeMaxQuality(nodeID, maxQuality)
-	}
-
-	return nil
-}
-
-func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find track")
-	}
-
-	if mt, ok := track.(*MediaTrack); ok {
-		mt.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
-	}
-
-	return nil
-}
-
-// when a new remoteTrack is created, creates a Track and adds it to room
-func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	var newTrack bool
-
-	// use existing mediatrack to handle simulcast
 	u.lock.Lock()
-	mt, ok := u.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
-	if !ok {
-		signalCid, ti := u.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
-		if ti == nil {
-			u.lock.Unlock()
-			return
-		}
-
-		ti.MimeType = track.Codec().MimeType
-
-		mt = NewMediaTrack(track, MediaTrackParams{
-			TrackInfo:           ti,
-			SignalCid:           signalCid,
-			SdpCid:              track.ID(),
-			ParticipantID:       u.params.SID,
-			ParticipantIdentity: u.params.Identity,
-			RTCPChan:            u.rtcpCh,
-			BufferFactory:       u.params.Config.BufferFactory,
-			ReceiverConfig:      u.params.Config.Receiver,
-			AudioConfig:         u.params.AudioConfig,
-			Telemetry:           u.params.Telemetry,
-			Logger:              u.params.Logger,
-			SubscriberConfig:    u.params.Config.Subscriber,
-		})
-		mt.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
-
-		// add to published and clean up pending
-		u.publishedTracks[mt.ID()] = mt
-		delete(u.pendingTracks, signalCid)
-
-		newTrack = true
-	}
-
-	ssrc := uint32(track.SSRC())
-	u.pliThrottle.addTrack(ssrc, track.RID())
-	if u.twcc == nil {
-		u.twcc = twcc.NewTransportWideCCResponder(ssrc)
-		u.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			if u.onWriteRTCP != nil {
-				u.onWriteRTCP([]rtcp.Packet{&pkt})
-			}
-		})
+	if _, ok := u.publishedTracks[track.ID()]; !ok {
+		u.publishedTracks[track.ID()] = track
 	}
 	u.lock.Unlock()
 
-	mt.AddReceiver(rtpReceiver, track, u.twcc)
+	track.AddOnClose(func() {
+		notifyClose := false
 
-	if newTrack {
-		u.handleTrackPublished(mt)
-	}
+		// cleanup
+		u.lock.Lock()
+		trackID := track.ID()
+		delete(u.publishedTracks, trackID)
+		delete(u.pendingSubscriptions, trackID)
+		// not modifying subscription permissions, will get reset on next update from participant
+
+		if u.closed && len(u.publishedTracks) == 0 {
+			notifyClose = true
+		}
+		u.lock.Unlock()
+
+		if notifyClose && u.onClose != nil {
+			u.onClose()
+		}
+
+		// only send this when client is in a ready state
+		if u.onTrackUpdated != nil {
+			u.onTrackUpdated(track, true)
+		}
+	})
+}
+
+func (u *UptrackManager) RemovePublishedTrack(track types.PublishedTrack) {
+	track.RemoveAllSubscribers()
 }
 
 // should be called with lock held
 func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
 	return u.publishedTracks[trackID]
+}
+
+func (u *UptrackManager) GetPublishedTrackBySignalCidOrSdpCid(clientId string) types.PublishedTrack {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	track := u.getPublishedTrackBySignalCid(clientId)
+	if track == nil {
+		track = u.getPublishedTrackBySdpCid(clientId)
+	}
+
+	return track
 }
 
 // should be called with lock held
@@ -423,6 +289,13 @@ func (u *UptrackManager) getPublishedTrackBySignalCid(clientId string) types.Pub
 	return nil
 }
 
+func (u *UptrackManager) GetPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	return u.getPublishedTrackBySdpCid(clientId)
+}
+
 // should be called with lock held
 func (u *UptrackManager) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
 	for _, publishedTrack := range u.publishedTracks {
@@ -432,64 +305,6 @@ func (u *UptrackManager) getPublishedTrackBySdpCid(clientId string) types.Publis
 	}
 
 	return nil
-}
-
-// should be called with lock held
-func (u *UptrackManager) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
-	signalCid := clientId
-	trackInfo := u.pendingTracks[clientId]
-
-	if trackInfo == nil {
-		//
-		// If no match on client id, find first one matching type
-		// as MediaStreamTrack can change client id when transceiver
-		// is added to peer connection.
-		//
-		for cid, ti := range u.pendingTracks {
-			if ti.Type == kind {
-				trackInfo = ti
-				signalCid = cid
-				break
-			}
-		}
-	}
-
-	// if still not found, we are done
-	if trackInfo == nil {
-		u.params.Logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
-	}
-	return signalCid, trackInfo
-}
-
-func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
-	u.lock.Lock()
-	if _, ok := u.publishedTracks[track.ID()]; !ok {
-		u.publishedTracks[track.ID()] = track
-	}
-	u.lock.Unlock()
-
-	track.AddOnClose(func() {
-		// cleanup
-		u.lock.Lock()
-		trackID := track.ID()
-		delete(u.publishedTracks, trackID)
-		delete(u.pendingSubscriptions, trackID)
-		// not modifying subscription permissions, will get reset on next update from participant
-
-		// as rtcpCh handles RTCP for all published tracks, close only after all published tracks are closed
-		if u.closed && len(u.publishedTracks) == 0 {
-			close(u.rtcpCh)
-		}
-		u.lock.Unlock()
-		// only send this when client is in a ready state
-		if u.onTrackUpdated != nil {
-			u.onTrackUpdated(track, true)
-		}
-	})
-
-	if u.onTrackPublished != nil {
-		u.onTrackPublished(track)
-	}
 }
 
 func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
@@ -651,43 +466,9 @@ func (u *UptrackManager) maybeRevokeSubscriptions(resolver func(participantID li
 	}
 }
 
-func (u *UptrackManager) rtcpSendWorker() {
-	defer Recover()
-
-	// read from rtcpChan
-	for pkts := range u.rtcpCh {
-		if pkts == nil {
-			return
-		}
-
-		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
-		for _, pkt := range pkts {
-			switch pkt.(type) {
-			case *rtcp.PictureLossIndication:
-				mediaSSRC := pkt.(*rtcp.PictureLossIndication).MediaSSRC
-				if u.pliThrottle.canSend(mediaSSRC) {
-					fwdPkts = append(fwdPkts, pkt)
-				}
-			case *rtcp.FullIntraRequest:
-				mediaSSRC := pkt.(*rtcp.FullIntraRequest).MediaSSRC
-				if u.pliThrottle.canSend(mediaSSRC) {
-					fwdPkts = append(fwdPkts, pkt)
-				}
-			default:
-				fwdPkts = append(fwdPkts, pkt)
-			}
-		}
-
-		if len(fwdPkts) > 0 && u.onWriteRTCP != nil {
-			u.onWriteRTCP(fwdPkts)
-		}
-	}
-}
-
 func (u *UptrackManager) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{}
 	publishedTrackInfo := make(map[livekit.TrackID]interface{})
-	pendingTrackInfo := make(map[string]interface{})
 
 	u.lock.RLock()
 	for trackID, track := range u.publishedTracks {
@@ -701,18 +482,9 @@ func (u *UptrackManager) DebugInfo() map[string]interface{} {
 			}
 		}
 	}
-
-	for clientID, ti := range u.pendingTracks {
-		pendingTrackInfo[clientID] = map[string]interface{}{
-			"Sid":       ti.Sid,
-			"Type":      ti.Type.String(),
-			"Simulcast": ti.Simulcast,
-		}
-	}
 	u.lock.RUnlock()
 
 	info["PublishedTracks"] = publishedTrackInfo
-	info["PendingTracks"] = pendingTrackInfo
 
 	return info
 }

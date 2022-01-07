@@ -139,17 +139,10 @@ type FakePublishedTrack struct {
 		arg1 string
 		arg2 uint8
 	}
-	NumUpTracksStub        func() (uint32, uint32)
-	numUpTracksMutex       sync.RWMutex
-	numUpTracksArgsForCall []struct {
-	}
-	numUpTracksReturns struct {
-		result1 uint32
-		result2 uint32
-	}
-	numUpTracksReturnsOnCall map[int]struct {
-		result1 uint32
-		result2 uint32
+	OnSubscribedMaxQualityChangeStub        func(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
+	onSubscribedMaxQualityChangeMutex       sync.RWMutex
+	onSubscribedMaxQualityChangeArgsForCall []struct {
+		arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error
 	}
 	PublishLossPercentageStub        func() uint32
 	publishLossPercentageMutex       sync.RWMutex
@@ -954,60 +947,36 @@ func (fake *FakePublishedTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) 
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakePublishedTrack) NumUpTracks() (uint32, uint32) {
-	fake.numUpTracksMutex.Lock()
-	ret, specificReturn := fake.numUpTracksReturnsOnCall[len(fake.numUpTracksArgsForCall)]
-	fake.numUpTracksArgsForCall = append(fake.numUpTracksArgsForCall, struct {
-	}{})
-	stub := fake.NumUpTracksStub
-	fakeReturns := fake.numUpTracksReturns
-	fake.recordInvocation("NumUpTracks", []interface{}{})
-	fake.numUpTracksMutex.Unlock()
+func (fake *FakePublishedTrack) OnSubscribedMaxQualityChange(arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error) {
+	fake.onSubscribedMaxQualityChangeMutex.Lock()
+	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
+		arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error
+	}{arg1})
+	stub := fake.OnSubscribedMaxQualityChangeStub
+	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
+	fake.onSubscribedMaxQualityChangeMutex.Unlock()
 	if stub != nil {
-		return stub()
+		fake.OnSubscribedMaxQualityChangeStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *FakePublishedTrack) NumUpTracksCallCount() int {
-	fake.numUpTracksMutex.RLock()
-	defer fake.numUpTracksMutex.RUnlock()
-	return len(fake.numUpTracksArgsForCall)
+func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCallCount() int {
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
+	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
 }
 
-func (fake *FakePublishedTrack) NumUpTracksCalls(stub func() (uint32, uint32)) {
-	fake.numUpTracksMutex.Lock()
-	defer fake.numUpTracksMutex.Unlock()
-	fake.NumUpTracksStub = stub
+func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)) {
+	fake.onSubscribedMaxQualityChangeMutex.Lock()
+	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
+	fake.OnSubscribedMaxQualityChangeStub = stub
 }
 
-func (fake *FakePublishedTrack) NumUpTracksReturns(result1 uint32, result2 uint32) {
-	fake.numUpTracksMutex.Lock()
-	defer fake.numUpTracksMutex.Unlock()
-	fake.NumUpTracksStub = nil
-	fake.numUpTracksReturns = struct {
-		result1 uint32
-		result2 uint32
-	}{result1, result2}
-}
-
-func (fake *FakePublishedTrack) NumUpTracksReturnsOnCall(i int, result1 uint32, result2 uint32) {
-	fake.numUpTracksMutex.Lock()
-	defer fake.numUpTracksMutex.Unlock()
-	fake.NumUpTracksStub = nil
-	if fake.numUpTracksReturnsOnCall == nil {
-		fake.numUpTracksReturnsOnCall = make(map[int]struct {
-			result1 uint32
-			result2 uint32
-		})
-	}
-	fake.numUpTracksReturnsOnCall[i] = struct {
-		result1 uint32
-		result2 uint32
-	}{result1, result2}
+func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error {
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
+	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
@@ -1656,8 +1625,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMediaLossMutex.RLock()
 	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
-	fake.numUpTracksMutex.RLock()
-	defer fake.numUpTracksMutex.RUnlock()
+	fake.onSubscribedMaxQualityChangeMutex.RLock()
+	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
 	fake.publishLossPercentageMutex.RLock()
 	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.publisherIDMutex.RLock()

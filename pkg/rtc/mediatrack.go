@@ -49,7 +49,7 @@ type MediaTrack struct {
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
 
-	receiver        sfu.Receiver
+	receiver        sfu.TrackReceiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 
 	// track audio fraction lost
@@ -175,7 +175,10 @@ func (t *MediaTrack) AddOnClose(f func()) {
 	if f == nil {
 		return
 	}
+
+	t.lock.Lock()
 	t.onClose = append(t.onClose, f)
+	t.lock.Unlock()
 }
 
 func (t *MediaTrack) PublishLossPercentage() uint32 {
@@ -226,7 +229,7 @@ func (t *MediaTrack) NumUpTracks() (uint32, uint32) {
 	t.lock.RLock()
 	numPublishing := uint32(0)
 	if t.receiver != nil {
-		numPublishing = uint32(t.receiver.NumAvailableSpatialLayers())
+		numPublishing = uint32(t.receiver.(sfu.Receiver).NumAvailableSpatialLayers())
 	}
 	t.lock.RUnlock()
 
@@ -286,8 +289,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			sfu.WithPliThrottle(0),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers())
-		t.receiver.SetRTCPCh(t.params.RTCPChan)
-		t.receiver.OnCloseHandler(func() {
+		t.receiver.(sfu.Receiver).SetRTCPCh(t.params.RTCPChan)
+		t.receiver.(sfu.Receiver).OnCloseHandler(func() {
 			t.stopMaxQualityTimer()
 
 			t.lock.Lock()
@@ -309,7 +312,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.startMaxQualityTimer()
 	}
 
-	t.receiver.AddUpTrack(track, buff)
+	t.receiver.(sfu.Receiver).AddUpTrack(track, buff)
 	t.params.Telemetry.AddUpTrack(t.params.ParticipantID, t.ID(), buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
@@ -531,7 +534,7 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 
 	t.lock.RLock()
 	if t.receiver != nil {
-		receiverInfo := t.receiver.DebugInfo()
+		receiverInfo := t.receiver.(sfu.Receiver).DebugInfo()
 		for k, v := range receiverInfo {
 			info[k] = v
 		}
@@ -542,6 +545,9 @@ func (t *MediaTrack) DebugInfo() map[string]interface{} {
 }
 
 func (t *MediaTrack) Receiver() sfu.TrackReceiver {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
 	return t.receiver
 }
 
@@ -586,10 +592,10 @@ func (t *MediaTrack) calculateVideoScore() {
 	t.connectionStats.Score = connectionquality.Loss2Score(loss, reducedQuality)
 }
 
-func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality) error) {
+func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error) {
 	t.MediaTrackSubscriptions.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) {
 		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities)
+			_ = f(t.ID(), subscribedQualities, maxSubscribedQuality)
 		}
 
 		t.lock.RLock()

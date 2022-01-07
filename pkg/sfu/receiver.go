@@ -30,6 +30,8 @@ type TrackReceiver interface {
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
+	SetUpTrackPaused(paused bool)
+	SetMaxExpectedSpatialLayer(layer int32)
 }
 
 // Receiver defines an interface for a track receivers
