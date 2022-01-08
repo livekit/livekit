@@ -54,7 +54,7 @@ type PCTransport struct {
 
 	logger logger.Logger
 
-	previousAnwser *webrtc.SessionDescription
+	previousAnswer *webrtc.SessionDescription
 }
 
 type TransportParams struct {
@@ -304,8 +304,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
-	if t.previousAnwser != nil {
-		t.previousAnwser = nil
+	if t.previousAnswer != nil {
+		t.previousAnswer = nil
 		if options == nil {
 			options = &webrtc.OfferOptions{ICERestart: true}
 		} else {
@@ -347,11 +347,14 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 		return err
 	}
 
+	// for pion generate unmatched sdp, it always append data channel to last m-lines,
+	// that is not consistent with our subscribe offer which data channel is first m-lines,
+	// so use a dumb pc to negotiate sdp with only data channel then the data channel will
+	// sticky to first m-lines(subsequent sdp negotiation will keep m-lines's sequence)
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
 		return err
 	}
-
 	t.pc.SetLocalDescription(offer)
 
 	pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
@@ -365,6 +368,13 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	if err != nil {
 		return err
 	}
+
+	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
+	// keep the firgerprint at first call of SetRemoteDescription, if dumb pc and client pc use
+	// different fingerprint, that will cause pion denied dtls data after handshake with client 
+	// complete (can't pass fingerprint change).
+	// in this step, we don't established connection with dump pc(no candidate swap), just use
+	// sdp negotiation to sticky data channel and keep client's fingerprint
 	parsedAns, _ := ans.Unmarshal()
 	fpLine := fpHahs + " " + fp
 	replaceFP := func(attrs []sdp.Attribute, fpLine string) {
@@ -373,7 +383,6 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 				attrs[k].Value = fpLine
 			}
 		}
-
 	}
 	replaceFP(parsedAns.Attributes, fpLine)
 	for _, m := range parsedAns.MediaDescriptions {
@@ -388,11 +397,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousOffer(previousOffer webrtc.SessionDescription) error {
-	if t.pc.RemoteDescription() != nil {
-		return errors.New("already has remote description")
-	}
-
+func (t *PCTransport) initPCWithPreviousAnswer(previousOffer webrtc.SessionDescription) error {
 	if err := t.preparePC(previousOffer); err != nil {
 		return err
 	}
@@ -452,12 +457,12 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) SetInitPreviousAnwser(offer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousAnswer(offer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.pc.RemoteDescription() == nil && t.previousAnwser == nil {
-		t.previousAnwser = offer
-		t.initPCWithPreviousOffer(*t.previousAnwser)
+	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
+		t.previousAnswer = offer
+		t.initPCWithPreviousAnswer(*t.previousAnswer)
 	}
 }
 

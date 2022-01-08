@@ -31,7 +31,6 @@ type ParticipantInit struct {
 	Name          livekit.ParticipantName
 	Metadata      string
 	Reconnect     bool
-	Migrate       bool
 	Permission    *livekit.ParticipantPermission
 	AutoSubscribe bool
 	Hidden        bool

@@ -456,8 +456,8 @@ func (p *ParticipantImpl) Negotiate() {
 	}
 }
 
-func (p *ParticipantImpl) InitSubscribePreviousAnwser(previous *webrtc.SessionDescription) {
-	p.subscriber.SetInitPreviousAnwser(previous)
+func (p *ParticipantImpl) SetPreviousAnswer(previous *webrtc.SessionDescription) {
+	p.subscriber.SetPreviousAnswer(previous)
 }
 
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
@@ -468,19 +468,18 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		return
 	}
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	var pendingOffer *webrtc.SessionDescription
 	p.migrateState.Store(s)
 	if s == types.MigrateStateSync {
 		if !p.UptrackManager.HasPendingMigratedTrack() {
 			p.migrateState.Store(types.MigrateComplete)
 		}
-		pendingOffer := p.pendingOffer
+		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
-		p.lock.Unlock()
-		if pendingOffer != nil {
-			p.HandleOffer(*pendingOffer)
-		}
-	} else {
-		p.lock.Unlock()
+	}
+	p.lock.Unlock()
+	if pendingOffer != nil {
+		p.HandleOffer(*pendingOffer)
 	}
 }
 

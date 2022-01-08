@@ -26,14 +26,14 @@ type FakePublishedTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
-	GetAllSubscribersStub        func() []livekit.ParticipantID
-	getAllSubscribersMutex       sync.RWMutex
-	getAllSubscribersArgsForCall []struct {
+	GetAllSubscriberIDsStub        func() []livekit.ParticipantID
+	getAllSubscriberIDsMutex       sync.RWMutex
+	getAllSubscriberIDsArgsForCall []struct {
 	}
-	getAllSubscribersReturns struct {
+	getAllSubscriberIDsReturns struct {
 		result1 []livekit.ParticipantID
 	}
-	getAllSubscribersReturnsOnCall map[int]struct {
+	getAllSubscriberIDsReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantID
 	}
 	GetAudioLevelStub        func() (uint8, bool)
@@ -368,15 +368,15 @@ func (fake *FakePublishedTrack) AddSubscriberReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) GetAllSubscribers() []livekit.ParticipantID {
-	fake.getAllSubscribersMutex.Lock()
-	ret, specificReturn := fake.getAllSubscribersReturnsOnCall[len(fake.getAllSubscribersArgsForCall)]
-	fake.getAllSubscribersArgsForCall = append(fake.getAllSubscribersArgsForCall, struct {
+func (fake *FakePublishedTrack) GetAllSubscriberIDs() []livekit.ParticipantID {
+	fake.getAllSubscriberIDsMutex.Lock()
+	ret, specificReturn := fake.getAllSubscriberIDsReturnsOnCall[len(fake.getAllSubscriberIDsArgsForCall)]
+	fake.getAllSubscriberIDsArgsForCall = append(fake.getAllSubscriberIDsArgsForCall, struct {
 	}{})
-	stub := fake.GetAllSubscribersStub
-	fakeReturns := fake.getAllSubscribersReturns
-	fake.recordInvocation("GetAllSubscribers", []interface{}{})
-	fake.getAllSubscribersMutex.Unlock()
+	stub := fake.GetAllSubscriberIDsStub
+	fakeReturns := fake.getAllSubscriberIDsReturns
+	fake.recordInvocation("GetAllSubscriberIDs", []interface{}{})
+	fake.getAllSubscriberIDsMutex.Unlock()
 	if stub != nil {
 		return stub()
 	}
@@ -386,37 +386,37 @@ func (fake *FakePublishedTrack) GetAllSubscribers() []livekit.ParticipantID {
 	return fakeReturns.result1
 }
 
-func (fake *FakePublishedTrack) GetAllSubscribersCallCount() int {
-	fake.getAllSubscribersMutex.RLock()
-	defer fake.getAllSubscribersMutex.RUnlock()
-	return len(fake.getAllSubscribersArgsForCall)
+func (fake *FakePublishedTrack) GetAllSubscriberIDsCallCount() int {
+	fake.getAllSubscriberIDsMutex.RLock()
+	defer fake.getAllSubscriberIDsMutex.RUnlock()
+	return len(fake.getAllSubscriberIDsArgsForCall)
 }
 
-func (fake *FakePublishedTrack) GetAllSubscribersCalls(stub func() []livekit.ParticipantID) {
-	fake.getAllSubscribersMutex.Lock()
-	defer fake.getAllSubscribersMutex.Unlock()
-	fake.GetAllSubscribersStub = stub
+func (fake *FakePublishedTrack) GetAllSubscriberIDsCalls(stub func() []livekit.ParticipantID) {
+	fake.getAllSubscriberIDsMutex.Lock()
+	defer fake.getAllSubscriberIDsMutex.Unlock()
+	fake.GetAllSubscriberIDsStub = stub
 }
 
-func (fake *FakePublishedTrack) GetAllSubscribersReturns(result1 []livekit.ParticipantID) {
-	fake.getAllSubscribersMutex.Lock()
-	defer fake.getAllSubscribersMutex.Unlock()
-	fake.GetAllSubscribersStub = nil
-	fake.getAllSubscribersReturns = struct {
+func (fake *FakePublishedTrack) GetAllSubscriberIDsReturns(result1 []livekit.ParticipantID) {
+	fake.getAllSubscriberIDsMutex.Lock()
+	defer fake.getAllSubscriberIDsMutex.Unlock()
+	fake.GetAllSubscriberIDsStub = nil
+	fake.getAllSubscriberIDsReturns = struct {
 		result1 []livekit.ParticipantID
 	}{result1}
 }
 
-func (fake *FakePublishedTrack) GetAllSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantID) {
-	fake.getAllSubscribersMutex.Lock()
-	defer fake.getAllSubscribersMutex.Unlock()
-	fake.GetAllSubscribersStub = nil
-	if fake.getAllSubscribersReturnsOnCall == nil {
-		fake.getAllSubscribersReturnsOnCall = make(map[int]struct {
+func (fake *FakePublishedTrack) GetAllSubscriberIDsReturnsOnCall(i int, result1 []livekit.ParticipantID) {
+	fake.getAllSubscriberIDsMutex.Lock()
+	defer fake.getAllSubscriberIDsMutex.Unlock()
+	fake.GetAllSubscriberIDsStub = nil
+	if fake.getAllSubscriberIDsReturnsOnCall == nil {
+		fake.getAllSubscriberIDsReturnsOnCall = make(map[int]struct {
 			result1 []livekit.ParticipantID
 		})
 	}
-	fake.getAllSubscribersReturnsOnCall[i] = struct {
+	fake.getAllSubscriberIDsReturnsOnCall[i] = struct {
 		result1 []livekit.ParticipantID
 	}{result1}
 }
@@ -1695,8 +1695,8 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
-	fake.getAllSubscribersMutex.RLock()
-	defer fake.getAllSubscribersMutex.RUnlock()
+	fake.getAllSubscriberIDsMutex.RLock()
+	defer fake.getAllSubscriberIDsMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getConnectionScoreMutex.RLock()

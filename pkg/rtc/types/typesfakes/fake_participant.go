@@ -262,11 +262,6 @@ type FakeParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	InitSubscribePreviousAnwserStub        func(*webrtc.SessionDescription)
-	initSubscribePreviousAnwserMutex       sync.RWMutex
-	initSubscribePreviousAnwserArgsForCall []struct {
-		arg1 *webrtc.SessionDescription
-	}
 	IsReadyStub        func() bool
 	isReadyMutex       sync.RWMutex
 	isReadyArgsForCall []struct {
@@ -446,6 +441,11 @@ type FakeParticipant struct {
 	setPermissionMutex       sync.RWMutex
 	setPermissionArgsForCall []struct {
 		arg1 *livekit.ParticipantPermission
+	}
+	SetPreviousAnswerStub        func(*webrtc.SessionDescription)
+	setPreviousAnswerMutex       sync.RWMutex
+	setPreviousAnswerArgsForCall []struct {
+		arg1 *webrtc.SessionDescription
 	}
 	SetResponseSinkStub        func(routing.MessageSink)
 	setResponseSinkMutex       sync.RWMutex
@@ -1895,38 +1895,6 @@ func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) InitSubscribePreviousAnwser(arg1 *webrtc.SessionDescription) {
-	fake.initSubscribePreviousAnwserMutex.Lock()
-	fake.initSubscribePreviousAnwserArgsForCall = append(fake.initSubscribePreviousAnwserArgsForCall, struct {
-		arg1 *webrtc.SessionDescription
-	}{arg1})
-	stub := fake.InitSubscribePreviousAnwserStub
-	fake.recordInvocation("InitSubscribePreviousAnwser", []interface{}{arg1})
-	fake.initSubscribePreviousAnwserMutex.Unlock()
-	if stub != nil {
-		fake.InitSubscribePreviousAnwserStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) InitSubscribePreviousAnwserCallCount() int {
-	fake.initSubscribePreviousAnwserMutex.RLock()
-	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
-	return len(fake.initSubscribePreviousAnwserArgsForCall)
-}
-
-func (fake *FakeParticipant) InitSubscribePreviousAnwserCalls(stub func(*webrtc.SessionDescription)) {
-	fake.initSubscribePreviousAnwserMutex.Lock()
-	defer fake.initSubscribePreviousAnwserMutex.Unlock()
-	fake.InitSubscribePreviousAnwserStub = stub
-}
-
-func (fake *FakeParticipant) InitSubscribePreviousAnwserArgsForCall(i int) *webrtc.SessionDescription {
-	fake.initSubscribePreviousAnwserMutex.RLock()
-	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
-	argsForCall := fake.initSubscribePreviousAnwserArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeParticipant) IsReady() bool {
 	fake.isReadyMutex.Lock()
 	ret, specificReturn := fake.isReadyReturnsOnCall[len(fake.isReadyArgsForCall)]
@@ -2966,6 +2934,38 @@ func (fake *FakeParticipant) SetPermissionArgsForCall(i int) *livekit.Participan
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) SetPreviousAnswer(arg1 *webrtc.SessionDescription) {
+	fake.setPreviousAnswerMutex.Lock()
+	fake.setPreviousAnswerArgsForCall = append(fake.setPreviousAnswerArgsForCall, struct {
+		arg1 *webrtc.SessionDescription
+	}{arg1})
+	stub := fake.SetPreviousAnswerStub
+	fake.recordInvocation("SetPreviousAnswer", []interface{}{arg1})
+	fake.setPreviousAnswerMutex.Unlock()
+	if stub != nil {
+		fake.SetPreviousAnswerStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerCallCount() int {
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
+	return len(fake.setPreviousAnswerArgsForCall)
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerCalls(stub func(*webrtc.SessionDescription)) {
+	fake.setPreviousAnswerMutex.Lock()
+	defer fake.setPreviousAnswerMutex.Unlock()
+	fake.SetPreviousAnswerStub = stub
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerArgsForCall(i int) *webrtc.SessionDescription {
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
+	argsForCall := fake.setPreviousAnswerArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) SetResponseSink(arg1 routing.MessageSink) {
 	fake.setResponseSinkMutex.Lock()
 	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
@@ -3657,8 +3657,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
-	fake.initSubscribePreviousAnwserMutex.RLock()
-	defer fake.initSubscribePreviousAnwserMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
 	fake.isRecorderMutex.RLock()
@@ -3705,6 +3703,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setMigrateStateMutex.RUnlock()
 	fake.setPermissionMutex.RLock()
 	defer fake.setPermissionMutex.RUnlock()
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()

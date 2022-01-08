@@ -48,7 +48,7 @@ type Participant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
 	ICERestart() error
-	InitSubscribePreviousAnwser(previousOffer *webrtc.SessionDescription)
+	SetPreviousAnswer(previous *webrtc.SessionDescription)
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 
@@ -146,7 +146,7 @@ type MediaTrack interface {
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
-	GetAllSubscribers() []livekit.ParticipantID
+	GetAllSubscriberIDs() []livekit.ParticipantID
 	RemoveAllSubscribers()
 	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
 

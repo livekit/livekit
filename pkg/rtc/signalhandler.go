@@ -89,7 +89,7 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 		err := room.SyncState(participant, msg.SyncState)
 		if err != nil {
 			pLogger.Warnw("could not sync subscribe state", err,
-				"permissions", msg.SyncState)
+				"state", msg.SyncState)
 		}
 	}
 	return nil

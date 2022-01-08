@@ -108,7 +108,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Client:        s.parseClientInfo(r.Form),
 	}
 
-	pi.Migrate= pi.Reconnect && types.ProtocolVersion(pi.Client.Protocol).SupportsSessionMigrate()
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
 	}

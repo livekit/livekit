@@ -524,7 +524,7 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	}
 }
 
-func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
+func (t *MediaTrackSubscriptions) GetAllSubscriberIDs() []livekit.ParticipantID {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
 	ids := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
