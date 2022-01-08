@@ -32,6 +32,7 @@ type MediaTrackReceiver struct {
 	lock            sync.RWMutex
 	receiver        sfu.TrackReceiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
+	layerSsrcs      [livekit.VideoQuality_HIGH + 1]uint32
 
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
@@ -217,6 +218,9 @@ func (t *MediaTrackReceiver) ToProto() *livekit.TrackInfo {
 	layers := make([]*livekit.VideoLayer, 0)
 	t.layerDimensions.Range(func(_, val interface{}) bool {
 		if layer, ok := val.(*livekit.VideoLayer); ok {
+			if int(layer.Quality) < len(t.layerSsrcs) {
+				layer.Ssrc = t.layerSsrcs[layer.Quality]
+			}
 			layers = append(layers, layer)
 		}
 		return true
@@ -244,6 +248,12 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	t.MediaTrackSubscriptions.UpdateVideoLayers()
 
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
+}
+
+func (t *MediaTrackReceiver) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
+	if int(layer) < len(t.layerSsrcs) && t.layerSsrcs[layer] == 0 {
+		t.layerSsrcs[layer] = ssrc
+	}
 }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions

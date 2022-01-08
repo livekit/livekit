@@ -250,6 +250,8 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
+	participant.SetMigrateState(types.MigrateComplete)
+
 	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
 		participant.Negotiate()
@@ -374,6 +376,10 @@ func (r *Room) UpdateSubscriptions(
 			publisher.RemoveSubscriber(participant, trackID)
 		}
 	}
+	return nil
+}
+
+func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState) error {
 	return nil
 }
 

@@ -24,6 +24,12 @@ type FakeParticipant struct {
 	addICECandidateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	AddMigratedTrackStub        func(string, *livekit.TrackInfo)
+	addMigratedTrackMutex       sync.RWMutex
+	addMigratedTrackArgsForCall []struct {
+		arg1 string
+		arg2 *livekit.TrackInfo
+	}
 	AddSubscribedTrackStub        func(types.SubscribedTrack)
 	addSubscribedTrackMutex       sync.RWMutex
 	addSubscribedTrackArgsForCall []struct {
@@ -287,6 +293,16 @@ type FakeParticipant struct {
 	isSubscribedToReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	MigrateStateStub        func() types.MigrateState
+	migrateStateMutex       sync.RWMutex
+	migrateStateArgsForCall []struct {
+	}
+	migrateStateReturns struct {
+		result1 types.MigrateState
+	}
+	migrateStateReturnsOnCall map[int]struct {
+		result1 types.MigrateState
+	}
 	NegotiateStub        func()
 	negotiateMutex       sync.RWMutex
 	negotiateArgsForCall []struct {
@@ -416,10 +432,20 @@ type FakeParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
+	SetMigrateStateStub        func(types.MigrateState)
+	setMigrateStateMutex       sync.RWMutex
+	setMigrateStateArgsForCall []struct {
+		arg1 types.MigrateState
+	}
 	SetPermissionStub        func(*livekit.ParticipantPermission)
 	setPermissionMutex       sync.RWMutex
 	setPermissionArgsForCall []struct {
 		arg1 *livekit.ParticipantPermission
+	}
+	SetPreviousAnswerStub        func(*webrtc.SessionDescription)
+	setPreviousAnswerMutex       sync.RWMutex
+	setPreviousAnswerArgsForCall []struct {
+		arg1 *webrtc.SessionDescription
 	}
 	SetResponseSinkStub        func(routing.MessageSink)
 	setResponseSinkMutex       sync.RWMutex
@@ -607,6 +633,39 @@ func (fake *FakeParticipant) AddICECandidateReturnsOnCall(i int, result1 error) 
 	fake.addICECandidateReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeParticipant) AddMigratedTrack(arg1 string, arg2 *livekit.TrackInfo) {
+	fake.addMigratedTrackMutex.Lock()
+	fake.addMigratedTrackArgsForCall = append(fake.addMigratedTrackArgsForCall, struct {
+		arg1 string
+		arg2 *livekit.TrackInfo
+	}{arg1, arg2})
+	stub := fake.AddMigratedTrackStub
+	fake.recordInvocation("AddMigratedTrack", []interface{}{arg1, arg2})
+	fake.addMigratedTrackMutex.Unlock()
+	if stub != nil {
+		fake.AddMigratedTrackStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeParticipant) AddMigratedTrackCallCount() int {
+	fake.addMigratedTrackMutex.RLock()
+	defer fake.addMigratedTrackMutex.RUnlock()
+	return len(fake.addMigratedTrackArgsForCall)
+}
+
+func (fake *FakeParticipant) AddMigratedTrackCalls(stub func(string, *livekit.TrackInfo)) {
+	fake.addMigratedTrackMutex.Lock()
+	defer fake.addMigratedTrackMutex.Unlock()
+	fake.AddMigratedTrackStub = stub
+}
+
+func (fake *FakeParticipant) AddMigratedTrackArgsForCall(i int) (string, *livekit.TrackInfo) {
+	fake.addMigratedTrackMutex.RLock()
+	defer fake.addMigratedTrackMutex.RUnlock()
+	argsForCall := fake.addMigratedTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) AddSubscribedTrack(arg1 types.SubscribedTrack) {
@@ -2003,6 +2062,59 @@ func (fake *FakeParticipant) IsSubscribedToReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeParticipant) MigrateState() types.MigrateState {
+	fake.migrateStateMutex.Lock()
+	ret, specificReturn := fake.migrateStateReturnsOnCall[len(fake.migrateStateArgsForCall)]
+	fake.migrateStateArgsForCall = append(fake.migrateStateArgsForCall, struct {
+	}{})
+	stub := fake.MigrateStateStub
+	fakeReturns := fake.migrateStateReturns
+	fake.recordInvocation("MigrateState", []interface{}{})
+	fake.migrateStateMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) MigrateStateCallCount() int {
+	fake.migrateStateMutex.RLock()
+	defer fake.migrateStateMutex.RUnlock()
+	return len(fake.migrateStateArgsForCall)
+}
+
+func (fake *FakeParticipant) MigrateStateCalls(stub func() types.MigrateState) {
+	fake.migrateStateMutex.Lock()
+	defer fake.migrateStateMutex.Unlock()
+	fake.MigrateStateStub = stub
+}
+
+func (fake *FakeParticipant) MigrateStateReturns(result1 types.MigrateState) {
+	fake.migrateStateMutex.Lock()
+	defer fake.migrateStateMutex.Unlock()
+	fake.MigrateStateStub = nil
+	fake.migrateStateReturns = struct {
+		result1 types.MigrateState
+	}{result1}
+}
+
+func (fake *FakeParticipant) MigrateStateReturnsOnCall(i int, result1 types.MigrateState) {
+	fake.migrateStateMutex.Lock()
+	defer fake.migrateStateMutex.Unlock()
+	fake.MigrateStateStub = nil
+	if fake.migrateStateReturnsOnCall == nil {
+		fake.migrateStateReturnsOnCall = make(map[int]struct {
+			result1 types.MigrateState
+		})
+	}
+	fake.migrateStateReturnsOnCall[i] = struct {
+		result1 types.MigrateState
+	}{result1}
+}
+
 func (fake *FakeParticipant) Negotiate() {
 	fake.negotiateMutex.Lock()
 	fake.negotiateArgsForCall = append(fake.negotiateArgsForCall, struct {
@@ -2758,6 +2870,38 @@ func (fake *FakeParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
+func (fake *FakeParticipant) SetMigrateState(arg1 types.MigrateState) {
+	fake.setMigrateStateMutex.Lock()
+	fake.setMigrateStateArgsForCall = append(fake.setMigrateStateArgsForCall, struct {
+		arg1 types.MigrateState
+	}{arg1})
+	stub := fake.SetMigrateStateStub
+	fake.recordInvocation("SetMigrateState", []interface{}{arg1})
+	fake.setMigrateStateMutex.Unlock()
+	if stub != nil {
+		fake.SetMigrateStateStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) SetMigrateStateCallCount() int {
+	fake.setMigrateStateMutex.RLock()
+	defer fake.setMigrateStateMutex.RUnlock()
+	return len(fake.setMigrateStateArgsForCall)
+}
+
+func (fake *FakeParticipant) SetMigrateStateCalls(stub func(types.MigrateState)) {
+	fake.setMigrateStateMutex.Lock()
+	defer fake.setMigrateStateMutex.Unlock()
+	fake.SetMigrateStateStub = stub
+}
+
+func (fake *FakeParticipant) SetMigrateStateArgsForCall(i int) types.MigrateState {
+	fake.setMigrateStateMutex.RLock()
+	defer fake.setMigrateStateMutex.RUnlock()
+	argsForCall := fake.setMigrateStateArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeParticipant) SetPermission(arg1 *livekit.ParticipantPermission) {
 	fake.setPermissionMutex.Lock()
 	fake.setPermissionArgsForCall = append(fake.setPermissionArgsForCall, struct {
@@ -2787,6 +2931,38 @@ func (fake *FakeParticipant) SetPermissionArgsForCall(i int) *livekit.Participan
 	fake.setPermissionMutex.RLock()
 	defer fake.setPermissionMutex.RUnlock()
 	argsForCall := fake.setPermissionArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) SetPreviousAnswer(arg1 *webrtc.SessionDescription) {
+	fake.setPreviousAnswerMutex.Lock()
+	fake.setPreviousAnswerArgsForCall = append(fake.setPreviousAnswerArgsForCall, struct {
+		arg1 *webrtc.SessionDescription
+	}{arg1})
+	stub := fake.SetPreviousAnswerStub
+	fake.recordInvocation("SetPreviousAnswer", []interface{}{arg1})
+	fake.setPreviousAnswerMutex.Unlock()
+	if stub != nil {
+		fake.SetPreviousAnswerStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerCallCount() int {
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
+	return len(fake.setPreviousAnswerArgsForCall)
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerCalls(stub func(*webrtc.SessionDescription)) {
+	fake.setPreviousAnswerMutex.Lock()
+	defer fake.setPreviousAnswerMutex.Unlock()
+	fake.SetPreviousAnswerStub = stub
+}
+
+func (fake *FakeParticipant) SetPreviousAnswerArgsForCall(i int) *webrtc.SessionDescription {
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
+	argsForCall := fake.setPreviousAnswerArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -3433,6 +3609,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addICECandidateMutex.RLock()
 	defer fake.addICECandidateMutex.RUnlock()
+	fake.addMigratedTrackMutex.RLock()
+	defer fake.addMigratedTrackMutex.RUnlock()
 	fake.addSubscribedTrackMutex.RLock()
 	defer fake.addSubscribedTrackMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
@@ -3485,6 +3663,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
+	fake.migrateStateMutex.RLock()
+	defer fake.migrateStateMutex.RUnlock()
 	fake.negotiateMutex.RLock()
 	defer fake.negotiateMutex.RUnlock()
 	fake.onCloseMutex.RLock()
@@ -3519,8 +3699,12 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendSpeakerUpdateMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
 	defer fake.setMetadataMutex.RUnlock()
+	fake.setMigrateStateMutex.RLock()
+	defer fake.setMigrateStateMutex.RUnlock()
 	fake.setPermissionMutex.RLock()
 	defer fake.setPermissionMutex.RUnlock()
+	fake.setPreviousAnswerMutex.RLock()
+	defer fake.setPreviousAnswerMutex.RUnlock()
 	fake.setResponseSinkMutex.RLock()
 	defer fake.setResponseSinkMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()

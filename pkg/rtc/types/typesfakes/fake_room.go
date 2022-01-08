@@ -19,6 +19,18 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 livekit.RoomName
 	}
+	SyncStateStub        func(types.Participant, *livekit.SyncState) error
+	syncStateMutex       sync.RWMutex
+	syncStateArgsForCall []struct {
+		arg1 types.Participant
+		arg2 *livekit.SyncState
+	}
+	syncStateReturns struct {
+		result1 error
+	}
+	syncStateReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateSubscriptionPermissionsStub        func(types.Participant, *livekit.UpdateSubscriptionPermissions) error
 	updateSubscriptionPermissionsMutex       sync.RWMutex
 	updateSubscriptionPermissionsArgsForCall []struct {
@@ -111,6 +123,68 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	}
 	fake.nameReturnsOnCall[i] = struct {
 		result1 livekit.RoomName
+	}{result1}
+}
+
+func (fake *FakeRoom) SyncState(arg1 types.Participant, arg2 *livekit.SyncState) error {
+	fake.syncStateMutex.Lock()
+	ret, specificReturn := fake.syncStateReturnsOnCall[len(fake.syncStateArgsForCall)]
+	fake.syncStateArgsForCall = append(fake.syncStateArgsForCall, struct {
+		arg1 types.Participant
+		arg2 *livekit.SyncState
+	}{arg1, arg2})
+	stub := fake.SyncStateStub
+	fakeReturns := fake.syncStateReturns
+	fake.recordInvocation("SyncState", []interface{}{arg1, arg2})
+	fake.syncStateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) SyncStateCallCount() int {
+	fake.syncStateMutex.RLock()
+	defer fake.syncStateMutex.RUnlock()
+	return len(fake.syncStateArgsForCall)
+}
+
+func (fake *FakeRoom) SyncStateCalls(stub func(types.Participant, *livekit.SyncState) error) {
+	fake.syncStateMutex.Lock()
+	defer fake.syncStateMutex.Unlock()
+	fake.SyncStateStub = stub
+}
+
+func (fake *FakeRoom) SyncStateArgsForCall(i int) (types.Participant, *livekit.SyncState) {
+	fake.syncStateMutex.RLock()
+	defer fake.syncStateMutex.RUnlock()
+	argsForCall := fake.syncStateArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoom) SyncStateReturns(result1 error) {
+	fake.syncStateMutex.Lock()
+	defer fake.syncStateMutex.Unlock()
+	fake.SyncStateStub = nil
+	fake.syncStateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoom) SyncStateReturnsOnCall(i int, result1 error) {
+	fake.syncStateMutex.Lock()
+	defer fake.syncStateMutex.Unlock()
+	fake.SyncStateStub = nil
+	if fake.syncStateReturnsOnCall == nil {
+		fake.syncStateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.syncStateReturnsOnCall[i] = struct {
+		result1 error
 	}{result1}
 }
 
@@ -317,6 +391,8 @@ func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.syncStateMutex.RLock()
+	defer fake.syncStateMutex.RUnlock()
 	fake.updateSubscriptionPermissionsMutex.RLock()
 	defer fake.updateSubscriptionPermissionsMutex.RUnlock()
 	fake.updateSubscriptionsMutex.RLock()

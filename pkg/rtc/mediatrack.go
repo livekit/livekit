@@ -197,6 +197,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.MediaTrackReceiver.SetSimulcast(true)
 	}
 
+	if t.IsSimulcast() {
+		layer := sfu.RidToLayer(track.RID())
+		if int(layer) < len(t.layerSsrcs) {
+			t.layerSsrcs[layer] = uint32(track.SSRC())
+		}
+	}
+
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})

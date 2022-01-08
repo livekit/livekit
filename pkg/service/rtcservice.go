@@ -107,6 +107,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Recorder:      claims.Video.Recorder,
 		Client:        s.parseClientInfo(r.Form),
 	}
+
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
 	}

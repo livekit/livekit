@@ -16,6 +16,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
+type pendingTrackInfo struct {
+	*livekit.TrackInfo
+	migrated bool
+}
+
 type LocalParticipantParams struct {
 	Identity       livekit.ParticipantIdentity
 	SID            livekit.ParticipantID
@@ -36,7 +41,7 @@ type LocalParticipant struct {
 
 	// client intended to publish, yet to be reconciled
 	pendingTracksLock sync.RWMutex
-	pendingTracks     map[string]*livekit.TrackInfo
+	pendingTracks     map[string]*pendingTrackInfo
 
 	*UptrackManager
 
@@ -50,7 +55,7 @@ func NewLocalParticipant(params LocalParticipantParams) *LocalParticipant {
 		params:        params,
 		rtcpCh:        make(chan []rtcp.Packet, 50),
 		pliThrottle:   newPLIThrottle(params.ThrottleConfig),
-		pendingTracks: make(map[string]*livekit.TrackInfo),
+		pendingTracks: make(map[string]*pendingTrackInfo),
 	}
 
 	l.setupUptrackManager()
@@ -67,7 +72,7 @@ func (l *LocalParticipant) Close() {
 	l.UptrackManager.Close()
 
 	l.pendingTracksLock.Lock()
-	l.pendingTracks = make(map[string]*livekit.TrackInfo)
+	l.pendingTracks = make(map[string]*pendingTrackInfo)
 	l.pendingTracksLock.Unlock()
 }
 
@@ -105,9 +110,16 @@ func (l *LocalParticipant) AddTrack(req *livekit.AddTrackRequest) *livekit.Track
 		Source:     req.Source,
 		Layers:     req.Layers,
 	}
-	l.pendingTracks[req.Cid] = ti
+	l.pendingTracks[req.Cid] = &pendingTrackInfo{TrackInfo: ti}
 
 	return ti
+}
+
+func (l *LocalParticipant) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
+	l.pendingTracksLock.Lock()
+	defer l.pendingTracksLock.Unlock()
+
+	l.pendingTracks[cid] = &pendingTrackInfo{ti, true}
 }
 
 func (l *LocalParticipant) SetTrackMuted(trackID livekit.TrackID, muted bool) {
@@ -152,7 +164,7 @@ func (l *LocalParticipant) GetDTX() bool {
 	var trackInfo *livekit.TrackInfo
 	for _, ti := range l.pendingTracks {
 		if ti.Type == livekit.TrackType_AUDIO {
-			trackInfo = ti
+			trackInfo = ti.TrackInfo
 			break
 		}
 	}
@@ -164,7 +176,7 @@ func (l *LocalParticipant) GetDTX() bool {
 	return !trackInfo.DisableDtx
 }
 
-func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string) (types.PublishedTrack, bool) {
 	l.pendingTracksLock.Lock()
 	newTrack := false
 
@@ -174,10 +186,11 @@ func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpRece
 		signalCid, ti := l.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
 			l.pendingTracksLock.Unlock()
-			return
+			return nil, false
 		}
 
 		ti.MimeType = track.Codec().MimeType
+		ti.Mid = mid
 
 		mt = NewMediaTrack(track, MediaTrackParams{
 			TrackInfo:           ti,
@@ -218,6 +231,8 @@ func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpRece
 	if newTrack {
 		l.handleTrackPublished(mt)
 	}
+
+	return mt, newTrack
 }
 
 func (l *LocalParticipant) handleTrackPublished(track types.PublishedTrack) {
@@ -252,6 +267,19 @@ func (l *LocalParticipant) UpdateMediaLoss(nodeID string, trackID livekit.TrackI
 	}
 
 	return nil
+}
+
+func (l *LocalParticipant) HasPendingMigratedTrack() bool {
+	l.pendingTracksLock.RLock()
+	defer l.pendingTracksLock.RUnlock()
+
+	for _, t := range l.pendingTracks {
+		if t.migrated {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (l *LocalParticipant) DebugInfo() map[string]interface{} {
@@ -310,7 +338,7 @@ func (l *LocalParticipant) getPendingTrack(clientId string, kind livekit.TrackTy
 	if trackInfo == nil {
 		l.params.Logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	}
-	return signalCid, trackInfo
+	return signalCid, trackInfo.TrackInfo
 }
 
 func (l *LocalParticipant) rtcpSendWorker() {

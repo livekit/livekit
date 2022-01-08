@@ -35,3 +35,7 @@ func (v ProtocolVersion) SupportsTransceiverReuse() bool {
 func (v ProtocolVersion) SupportsConnectionQuality() bool {
 	return v > 4
 }
+
+func (v ProtocolVersion) SupportsSessionMigrate() bool {
+	return v > 5
+}
