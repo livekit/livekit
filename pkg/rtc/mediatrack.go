@@ -51,6 +51,7 @@ type MediaTrack struct {
 
 	receiver        sfu.Receiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
+	layerSsrcs      [livekit.VideoQuality_HIGH + 1]uint32
 
 	// track audio fraction lost
 	statsLock         sync.Mutex
@@ -117,6 +118,12 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 	go t.updateStats()
 
 	return t
+}
+
+func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
+	if int(layer) < len(t.layerSsrcs) && t.layerSsrcs[layer] == 0 {
+		t.layerSsrcs[layer] = ssrc
+	}
 }
 
 func (t *MediaTrack) ID() livekit.TrackID {
@@ -319,6 +326,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.simulcasted.TrySet(true)
 	}
 
+	if t.IsSimulcast() {
+		layer := sfu.RidToLayer(track.RID())
+		if int(layer) < len(t.layerSsrcs) {
+			t.layerSsrcs[layer] = uint32(track.SSRC())
+		}
+	}
+
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
@@ -331,6 +345,9 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	layers := make([]*livekit.VideoLayer, 0)
 	t.layerDimensions.Range(func(_, val interface{}) bool {
 		if layer, ok := val.(*livekit.VideoLayer); ok {
+			if int(layer.Quality) < len(t.layerSsrcs) {
+				layer.Ssrc = t.layerSsrcs[layer.Quality]
+			}
 			layers = append(layers, layer)
 		}
 		return true

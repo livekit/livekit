@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 )
 
@@ -94,7 +95,7 @@ func (b *Bucket) get(sn uint16) []byte {
 
 func (b *Bucket) set(sn uint16, pkt []byte) ([]byte, error) {
 	if b.headSN-sn >= uint16(b.maxSteps+1) {
-		return nil, ErrPacketTooOld
+		return nil, fmt.Errorf("%w, headSN %d, sn %d", ErrPacketTooOld, b.headSN, sn)
 	}
 	pos := b.step - int(b.headSN-sn+1)
 	if pos < 0 {

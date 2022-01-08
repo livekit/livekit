@@ -50,6 +50,7 @@ type ParticipantParams struct {
 	Hidden                  bool
 	Recorder                bool
 	Logger                  logger.Logger
+	SimTracks               map[uint32]SimulcastTrackInfo
 }
 
 type ParticipantImpl struct {
@@ -95,7 +96,10 @@ type ParticipantImpl struct {
 	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.Participant)
 	onDataPacket     func(types.Participant, *livekit.DataPacket)
-	onClose          func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)
+
+	migrateState atomic.Value // types.MigrateState
+	pendingOffer *webrtc.SessionDescription
+	onClose      func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -107,6 +111,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		disallowedSubscriptions: make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:             time.Now(),
 	}
+	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
 	var err error
@@ -123,6 +128,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Telemetry:               p.params.Telemetry,
 		EnabledCodecs:           p.params.EnabledCodecs,
 		Logger:                  params.Logger,
+		SimTracks:               params.SimTracks,
 	})
 	if err != nil {
 		return nil, err
@@ -175,7 +181,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			return nil, err
 		}
 	}
-	primaryPC.OnICEConnectionStateChange(p.handlePrimaryICEStateChange)
+	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
@@ -282,6 +288,13 @@ func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[livekit.T
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+	p.lock.Lock()
+	if p.MigrateState() == types.MigrateStateInit {
+		p.pendingOffer = &sdp
+		p.lock.Unlock()
+		return
+	}
+	p.lock.Unlock()
 	p.params.Logger.Debugw("answering pub offer",
 		"state", p.State().String(),
 		// "sdp", sdp.SDP,
@@ -325,6 +338,10 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return
+}
+
+func (p *ParticipantImpl) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
+	p.UptrackManager.AddMigratedTrack(cid, ti)
 }
 
 // AddTrack is called when client intends to publish track.
@@ -434,7 +451,40 @@ func (p *ParticipantImpl) Close() error {
 }
 
 func (p *ParticipantImpl) Negotiate() {
-	p.subscriber.Negotiate()
+	if p.MigrateState() != types.MigrateStateInit {
+		p.subscriber.Negotiate()
+	}
+}
+
+func (p *ParticipantImpl) SetPreviousAnswer(previous *webrtc.SessionDescription) {
+	p.subscriber.SetPreviousAnswer(previous)
+}
+
+func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
+	p.lock.Lock()
+	preState := p.MigrateState()
+	if preState == types.MigrateComplete || preState == s {
+		p.lock.Unlock()
+		return
+	}
+	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	var pendingOffer *webrtc.SessionDescription
+	p.migrateState.Store(s)
+	if s == types.MigrateStateSync {
+		if !p.UptrackManager.HasPendingMigratedTrack() {
+			p.migrateState.Store(types.MigrateComplete)
+		}
+		pendingOffer = p.pendingOffer
+		p.pendingOffer = nil
+	}
+	p.lock.Unlock()
+	if pendingOffer != nil {
+		p.HandleOffer(*pendingOffer)
+	}
+}
+
+func (p *ParticipantImpl) MigrateState() types.MigrateState {
+	return p.migrateState.Load().(types.MigrateState)
 }
 
 // ICERestart restarts subscriber ICE connections
@@ -774,6 +824,9 @@ func (p *ParticipantImpl) setupUptrackManager() {
 	})
 
 	p.UptrackManager.OnTrackPublished(func(track types.PublishedTrack) {
+		if !p.UptrackManager.HasPendingMigratedTrack() {
+			p.SetMigrateState(types.MigrateComplete)
+		}
 		if p.onTrackPublished != nil {
 			p.onTrackPublished(p, track)
 		}
@@ -886,7 +939,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	p.UptrackManager.MediaTrackReceived(track, rtpReceiver)
+	p.UptrackManager.MediaTrackReceived(track, rtpReceiver, p)
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
@@ -931,11 +984,11 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	}
 }
 
-func (p *ParticipantImpl) handlePrimaryICEStateChange(state webrtc.ICEConnectionState) {
-	if state == webrtc.ICEConnectionStateConnected {
+func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
+	if state == webrtc.PeerConnectionStateConnected {
 		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	} else if state == webrtc.ICEConnectionStateFailed {
+	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
 			_ = p.Close()

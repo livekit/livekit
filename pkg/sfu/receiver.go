@@ -89,6 +89,17 @@ type WebRTCReceiver struct {
 	lbThreshold int
 }
 
+func RidToLayer(rid string) int32 {
+	switch rid {
+	case FullResolution:
+		return 2
+	case HalfResolution:
+		return 1
+	default:
+		return 0
+	}
+}
+
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottle indicates minimum time(ms) between sending PLIs
@@ -182,15 +193,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		return
 	}
 
-	var layer int32
-	switch track.RID() {
-	case FullResolution:
-		layer = 2
-	case HalfResolution:
-		layer = 1
-	default:
-		layer = 0
-	}
+	layer := RidToLayer(track.RID())
 
 	w.upTrackMu.Lock()
 	w.upTracks[layer] = track

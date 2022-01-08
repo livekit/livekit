@@ -24,6 +24,14 @@ type AddSubscriberParams struct {
 	TrackIDs  []livekit.TrackID
 }
 
+type MigrateState int32
+
+const (
+	MigrateStateInit MigrateState = iota
+	MigrateStateSync
+	MigrateComplete
+)
+
 //counterfeiter:generate . Participant
 type Participant interface {
 	ID() livekit.ParticipantID
@@ -40,8 +48,12 @@ type Participant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
 	ICERestart() error
+	SetPreviousAnswer(previous *webrtc.SessionDescription)
+	SetMigrateState(s MigrateState)
+	MigrateState() MigrateState
 
 	AddTrack(req *livekit.AddTrackRequest)
+	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
 	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
 	GetSubscribedTrack(sid livekit.TrackID) SubscribedTrack
@@ -108,6 +120,7 @@ type Room interface {
 	Name() livekit.RoomName
 	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
+	SyncState(participant Participant, state *livekit.SyncState) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }
@@ -133,6 +146,7 @@ type MediaTrack interface {
 	AddSubscriber(participant Participant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
+	GetAllSubscriberIDs() []livekit.ParticipantID
 	RemoveAllSubscribers()
 	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
 

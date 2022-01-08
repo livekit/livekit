@@ -85,6 +85,12 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			pLogger.Warnw("could not update subscription permissions", err,
 				"permissions", msg.SubscriptionPermissions)
 		}
+	case *livekit.SignalRequest_SyncState:
+		err := room.SyncState(participant, msg.SyncState)
+		if err != nil {
+			pLogger.Warnw("could not sync subscribe state", err,
+				"state", msg.SyncState)
+		}
 	}
 	return nil
 }

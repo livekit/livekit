@@ -200,7 +200,8 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 			room.RemoveParticipant(participant.Identity())
 		}
 	} else if pi.Reconnect {
-		// send leave request if participant is trying to reconnect but missing from the room
+		// send leave request if participant is trying to reconnect without keep subscribe state
+		// but missing from the room
 		if err = responseSink.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
 				Leave: &livekit.LeaveRequest{

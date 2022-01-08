@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -24,6 +25,11 @@ type UptrackManagerParams struct {
 	Telemetry      telemetry.TelemetryService
 	ThrottleConfig config.PLIThrottleConfig
 	Logger         logger.Logger
+}
+
+type pendingTrackInfo struct {
+	*livekit.TrackInfo
+	migrated bool
 }
 
 type UptrackManager struct {
@@ -39,7 +45,7 @@ type UptrackManager struct {
 	// publishedTracks that participant is publishing
 	publishedTracks map[livekit.TrackID]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
-	pendingTracks map[string]*livekit.TrackInfo
+	pendingTracks map[string]*pendingTrackInfo
 	// keeps track of subscriptions that are awaiting permissions
 	subscriptionPermissions map[livekit.ParticipantID]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
@@ -60,7 +66,7 @@ func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
 		rtcpCh:               make(chan []rtcp.Packet, 50),
 		pliThrottle:          newPLIThrottle(params.ThrottleConfig),
 		publishedTracks:      make(map[livekit.TrackID]types.PublishedTrack, 0),
-		pendingTracks:        make(map[string]*livekit.TrackInfo),
+		pendingTracks:        make(map[string]*pendingTrackInfo),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
@@ -139,9 +145,15 @@ func (u *UptrackManager) AddTrack(req *livekit.AddTrackRequest) *livekit.TrackIn
 		Source:     req.Source,
 		Layers:     req.Layers,
 	}
-	u.pendingTracks[req.Cid] = ti
+	u.pendingTracks[req.Cid] = &pendingTrackInfo{TrackInfo: ti}
 
 	return ti
+}
+
+func (u *UptrackManager) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+	u.pendingTracks[cid] = &pendingTrackInfo{ti, true}
 }
 
 // AddSubscriber subscribes op to all publishedTracks
@@ -283,7 +295,7 @@ func (u *UptrackManager) GetDTX() bool {
 	var trackInfo *livekit.TrackInfo
 	for _, ti := range u.pendingTracks {
 		if ti.Type == livekit.TrackType_AUDIO {
-			trackInfo = ti
+			trackInfo = ti.TrackInfo
 			break
 		}
 	}
@@ -350,7 +362,7 @@ func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID,
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
-func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, p *ParticipantImpl) {
 	var newTrack bool
 
 	// use existing mediatrack to handle simulcast
@@ -363,7 +375,15 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 			return
 		}
 
+		var mid string
+		for _, tr := range p.publisher.pc.GetTransceivers() {
+			if tr.Receiver() == rtpReceiver {
+				mid = tr.Mid()
+				break
+			}
+		}
 		ti.MimeType = track.Codec().MimeType
+		ti.Mid = mid
 
 		mt = NewMediaTrack(track, MediaTrackParams{
 			TrackInfo:           ti,
@@ -379,6 +399,12 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 			Logger:              u.params.Logger,
 			SubscriberConfig:    u.params.Config.Subscriber,
 		})
+		for ssrc, t := range p.params.SimTracks {
+			if t.Mid != mid {
+				continue
+			}
+			mt.TrySetSimulcastSSRC(uint8(sfu.RidToLayer(t.Rid)), ssrc)
+		}
 		mt.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
 
 		// add to published and clean up pending
@@ -404,6 +430,8 @@ func (u *UptrackManager) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiv
 
 	if newTrack {
 		u.handleTrackPublished(mt)
+	} else {
+		u.onTrackUpdated(mt, true)
 	}
 }
 
@@ -458,7 +486,7 @@ func (u *UptrackManager) getPendingTrack(clientId string, kind livekit.TrackType
 	if trackInfo == nil {
 		u.params.Logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	}
-	return signalCid, trackInfo
+	return signalCid, trackInfo.TrackInfo
 }
 
 func (u *UptrackManager) handleTrackPublished(track types.PublishedTrack) {
@@ -715,4 +743,15 @@ func (u *UptrackManager) DebugInfo() map[string]interface{} {
 	info["PendingTracks"] = pendingTrackInfo
 
 	return info
+}
+
+func (u *UptrackManager) HasPendingMigratedTrack() bool {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+	for _, t := range u.pendingTracks {
+		if t.migrated {
+			return true
+		}
+	}
+	return false
 }
