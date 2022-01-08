@@ -629,10 +629,9 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
-	r.lock.Lock()
 	updatedAt := time.Now()
 	updates := ToProtoParticipants([]types.Participant{p})
-	r.lock.Unlock()
+
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant

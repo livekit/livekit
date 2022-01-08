@@ -144,16 +144,6 @@ type FakePublishedTrack struct {
 	onSubscribedMaxQualityChangeArgsForCall []struct {
 		arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error
 	}
-	PublishLossPercentageStub        func() uint32
-	publishLossPercentageMutex       sync.RWMutex
-	publishLossPercentageArgsForCall []struct {
-	}
-	publishLossPercentageReturns struct {
-		result1 uint32
-	}
-	publishLossPercentageReturnsOnCall map[int]struct {
-		result1 uint32
-	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
@@ -979,59 +969,6 @@ func (fake *FakePublishedTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) f
 	return argsForCall.arg1
 }
 
-func (fake *FakePublishedTrack) PublishLossPercentage() uint32 {
-	fake.publishLossPercentageMutex.Lock()
-	ret, specificReturn := fake.publishLossPercentageReturnsOnCall[len(fake.publishLossPercentageArgsForCall)]
-	fake.publishLossPercentageArgsForCall = append(fake.publishLossPercentageArgsForCall, struct {
-	}{})
-	stub := fake.PublishLossPercentageStub
-	fakeReturns := fake.publishLossPercentageReturns
-	fake.recordInvocation("PublishLossPercentage", []interface{}{})
-	fake.publishLossPercentageMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakePublishedTrack) PublishLossPercentageCallCount() int {
-	fake.publishLossPercentageMutex.RLock()
-	defer fake.publishLossPercentageMutex.RUnlock()
-	return len(fake.publishLossPercentageArgsForCall)
-}
-
-func (fake *FakePublishedTrack) PublishLossPercentageCalls(stub func() uint32) {
-	fake.publishLossPercentageMutex.Lock()
-	defer fake.publishLossPercentageMutex.Unlock()
-	fake.PublishLossPercentageStub = stub
-}
-
-func (fake *FakePublishedTrack) PublishLossPercentageReturns(result1 uint32) {
-	fake.publishLossPercentageMutex.Lock()
-	defer fake.publishLossPercentageMutex.Unlock()
-	fake.PublishLossPercentageStub = nil
-	fake.publishLossPercentageReturns = struct {
-		result1 uint32
-	}{result1}
-}
-
-func (fake *FakePublishedTrack) PublishLossPercentageReturnsOnCall(i int, result1 uint32) {
-	fake.publishLossPercentageMutex.Lock()
-	defer fake.publishLossPercentageMutex.Unlock()
-	fake.PublishLossPercentageStub = nil
-	if fake.publishLossPercentageReturnsOnCall == nil {
-		fake.publishLossPercentageReturnsOnCall = make(map[int]struct {
-			result1 uint32
-		})
-	}
-	fake.publishLossPercentageReturnsOnCall[i] = struct {
-		result1 uint32
-	}{result1}
-}
-
 func (fake *FakePublishedTrack) PublisherID() livekit.ParticipantID {
 	fake.publisherIDMutex.Lock()
 	ret, specificReturn := fake.publisherIDReturnsOnCall[len(fake.publisherIDArgsForCall)]
@@ -1627,8 +1564,6 @@ func (fake *FakePublishedTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	fake.onSubscribedMaxQualityChangeMutex.RLock()
 	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	fake.publishLossPercentageMutex.RLock()
-	defer fake.publishLossPercentageMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()

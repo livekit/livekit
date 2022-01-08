@@ -155,7 +155,6 @@ type PublishedTrack interface {
 	SdpCid() string
 	ToProto() *livekit.TrackInfo
 
-	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
 	GetConnectionScore() float64
 
