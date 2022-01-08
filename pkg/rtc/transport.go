@@ -307,10 +307,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.previousAnswer != nil {
 		t.previousAnswer = nil
 		if options == nil {
-			options = &webrtc.OfferOptions{ICERestart: true}
-		} else {
-			options.ICERestart = true
+			options = &webrtc.OfferOptions{}
 		}
+		options.ICERestart = true
 	}
 
 	offer, err := t.pc.CreateOffer(options)
@@ -371,7 +370,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 
 	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
 	// keep the firgerprint at first call of SetRemoteDescription, if dumb pc and client pc use
-	// different fingerprint, that will cause pion denied dtls data after handshake with client 
+	// different fingerprint, that will cause pion denied dtls data after handshake with client
 	// complete (can't pass fingerprint change).
 	// in this step, we don't established connection with dump pc(no candidate swap), just use
 	// sdp negotiation to sticky data channel and keep client's fingerprint
