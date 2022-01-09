@@ -161,23 +161,6 @@ func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) type
 	return track
 }
 
-func (u *UptrackManager) GetAudioLevel() (level uint8, active bool) {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	level = SilentAudioLevel
-	for _, pt := range u.publishedTracks {
-		tl, ta := pt.GetAudioLevel()
-		if ta {
-			active = true
-			if tl < level {
-				level = tl
-			}
-		}
-	}
-	return
-}
-
 func (u *UptrackManager) GetPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()

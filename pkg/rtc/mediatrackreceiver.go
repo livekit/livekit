@@ -34,9 +34,6 @@ type MediaTrackReceiver struct {
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 	layerSsrcs      [livekit.VideoQuality_HIGH + 1]uint32
 
-	audioLevelMu sync.RWMutex
-	audioLevel   *AudioLevel
-
 	// track audio fraction lost
 	downFracLostLock  sync.Mutex
 	maxDownFracLost   uint8
@@ -92,17 +89,6 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
 	defer t.lock.Unlock()
 
 	t.receiver = receiver
-	if t.Kind() == livekit.TrackType_AUDIO {
-		t.audioLevelMu.Lock()
-		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
-		receiver.OnAudioLevel(func(level uint8, duration uint32) {
-			t.audioLevelMu.RLock()
-			defer t.audioLevelMu.RUnlock()
-
-			t.audioLevel.Observe(level, duration)
-		})
-		t.audioLevelMu.Unlock()
-	}
 }
 
 func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
@@ -228,16 +214,6 @@ func (t *MediaTrackReceiver) ToProto() *livekit.TrackInfo {
 	info.Layers = layers
 
 	return info
-}
-
-func (t *MediaTrackReceiver) GetAudioLevel() (level uint8, active bool) {
-	t.audioLevelMu.RLock()
-	defer t.audioLevelMu.RUnlock()
-
-	if t.audioLevel == nil {
-		return SilentAudioLevel, false
-	}
-	return t.audioLevel.GetLevel()
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {

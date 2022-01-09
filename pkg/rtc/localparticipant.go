@@ -145,6 +145,20 @@ func (l *LocalParticipant) SetTrackMuted(trackID livekit.TrackID, muted bool) {
 	}
 }
 
+func (l *LocalParticipant) GetAudioLevel() (level uint8, active bool) {
+	level = SilentAudioLevel
+	for _, pt := range l.UptrackManager.GetPublishedTracks() {
+		tl, ta := pt.GetAudioLevel()
+		if ta {
+			active = true
+			if tl < level {
+				level = tl
+			}
+		}
+	}
+	return
+}
+
 func (l *LocalParticipant) GetConnectionQuality() (scores float64, numTracks int) {
 	for _, pt := range l.UptrackManager.GetPublishedTracks() {
 		if pt.IsMuted() {
@@ -161,19 +175,25 @@ func (l *LocalParticipant) GetDTX() bool {
 	l.pendingTracksLock.RLock()
 	defer l.pendingTracksLock.RUnlock()
 
-	var trackInfo *livekit.TrackInfo
+	//
+	// Although DTX is set per track, there are cases where
+	// pending track has to be looked up by kind. This happens
+	// when clients change track id between signalling and SDP.
+	// In that case, look at all pending tracks by kind and
+	// enable DTX even if one has it enabled.
+	//
+	// Most of the time in practice, there is going to be one
+	// audio kind track and hence this is fine.
+	//
 	for _, ti := range l.pendingTracks {
 		if ti.Type == livekit.TrackType_AUDIO {
-			trackInfo = ti.TrackInfo
-			break
+			if !ti.TrackInfo.DisableDtx {
+				return true
+			}
 		}
 	}
 
-	if trackInfo == nil {
-		return false
-	}
-
-	return !trackInfo.DisableDtx
+	return false
 }
 
 func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver, mid string) (types.PublishedTrack, bool) {

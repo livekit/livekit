@@ -33,7 +33,6 @@ type TrackReceiver interface {
 	Codec() webrtc.RTPCodecCapability
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
-	OnAudioLevel(h AudioLevelHandle)
 }
 
 // Receiver defines an interface for a track receivers
@@ -213,14 +212,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.bufferMu.Lock()
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
-
-	if w.Kind() == webrtc.RTPCodecTypeAudio {
-		buff.OnAudioLevel(func(level uint8, duration uint32) {
-			if w.onAudioLevel != nil {
-				w.onAudioLevel(level, duration)
-			}
-		})
-	}
 
 	w.setupTracker(layer)
 	go w.forwardRTP(layer)

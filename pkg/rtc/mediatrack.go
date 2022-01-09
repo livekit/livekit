@@ -32,6 +32,9 @@ type MediaTrack struct {
 	numUpTracks uint32
 	buffer      *buffer.Buffer
 
+	audioLevelMu sync.RWMutex
+	audioLevel   *AudioLevel
+
 	statsLock         sync.Mutex
 	currentUpFracLost uint32
 	maxUpFracLost     uint8
@@ -137,7 +140,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 	buff.OnFeedback(t.handlePublisherFeedback)
 
-	if t.Kind() == livekit.TrackType_VIDEO {
+	if t.Kind() == livekit.TrackType_AUDIO {
+		t.audioLevelMu.Lock()
+		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
+		buff.OnAudioLevel(func(level uint8, duration uint32) {
+			t.audioLevelMu.RLock()
+			defer t.audioLevelMu.RUnlock()
+
+			t.audioLevel.Observe(level, duration)
+		})
+		t.audioLevelMu.Unlock()
+	} else if t.Kind() == livekit.TrackType_VIDEO {
 		if twcc != nil {
 			buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
 				twcc.Push(sn, timeNS, marker)
@@ -207,6 +220,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
+}
+
+func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
+	t.audioLevelMu.RLock()
+	defer t.audioLevelMu.RUnlock()
+
+	if t.audioLevel == nil {
+		return SilentAudioLevel, false
+	}
+	return t.audioLevel.GetLevel()
 }
 
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {

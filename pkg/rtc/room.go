@@ -635,8 +635,14 @@ func (r *Room) subscribeToExistingTracks(p types.Participant) {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.Participant, skipSource bool) {
+	//
+	// This is a critical section to ensure that participant update time and
+	// the corresponding data are paired properly.
+	//
+	r.lock.Lock()
 	updatedAt := time.Now()
 	updates := ToProtoParticipants([]types.Participant{p})
+	r.lock.Unlock()
 
 	if p.Hidden() {
 		if !skipSource {
