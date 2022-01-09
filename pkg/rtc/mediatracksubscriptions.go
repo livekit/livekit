@@ -193,6 +193,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 			t.subscribedTracksMu.Unlock()
 
 			t.maybeNotifyNoSubscribers()
+
 			t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
 			// ignore if the subscribing sub is not connected
@@ -251,21 +252,31 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec web
 // stop all forwarders to the client
 func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID) {
 	subTrack := t.getSubscribedTrack(participantID)
+
+	t.subscribedTracksMu.Lock()
+	delete(t.subscribedTracks, participantID)
+	t.subscribedTracksMu.Unlock()
+
 	if subTrack != nil {
 		go subTrack.DownTrack().Close()
 	}
+
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
 
-	t.subscribedTracksMu.RLock()
+	t.subscribedTracksMu.Lock()
 	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
+	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
+	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
 		go subTrack.DownTrack().Close()
 	}
+
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {

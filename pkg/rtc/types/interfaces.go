@@ -169,15 +169,14 @@ type PublishedTrack interface {
 	SdpCid() string
 	ToProto() *livekit.TrackInfo
 
-	// returns number of uptracks that are publishing, registered
-	NumUpTracks() (uint32, uint32)
-	PublishLossPercentage() uint32
 	Receiver() sfu.TrackReceiver
 	GetConnectionScore() float64
 
 	GetAudioLevel() (level uint8, active bool)
 
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
+
+	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
 
 	// callbacks
 	AddOnClose(func())

@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+type AudioLevelHandle func(level uint8, duration uint32)
 type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 
 // TrackReceiver defines an interface receive media from remote peer
@@ -30,6 +31,8 @@ type TrackReceiver interface {
 	SendPLI(layer int32)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
+	SetUpTrackPaused(paused bool)
+	SetMaxExpectedSpatialLayer(layer int32)
 }
 
 // Receiver defines an interface for a track receivers
@@ -48,6 +51,8 @@ type Receiver interface {
 	OnCloseHandler(fn func())
 	SendPLI(layer int32)
 	SetRTCPCh(ch chan []rtcp.Packet)
+
+	OnAudioLevel(h AudioLevelHandle)
 
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	DebugInfo() map[string]interface{}
@@ -75,8 +80,9 @@ type WebRTCReceiver struct {
 	lastPli     atomicInt64
 	pliThrottle int64
 
-	bufferMu sync.RWMutex
-	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	bufferMu     sync.RWMutex
+	buffers      [DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	onAudioLevel AudioLevelHandle
 
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -186,6 +192,10 @@ func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
+}
+
+func (w *WebRTCReceiver) OnAudioLevel(fn AudioLevelHandle) {
+	w.onAudioLevel = fn
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
