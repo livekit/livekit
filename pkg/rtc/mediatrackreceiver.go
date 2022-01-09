@@ -13,7 +13,6 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -53,7 +52,6 @@ type MediaTrackReceiverParams struct {
 	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
-	AudioConfig         config.AudioConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
