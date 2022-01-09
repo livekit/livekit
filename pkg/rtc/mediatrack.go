@@ -79,7 +79,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		BufferFactory:       params.BufferFactory,
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
-		AudioConfig:         params.AudioConfig,
 		Telemetry:           params.Telemetry,
 		Logger:              params.Logger,
 	})
