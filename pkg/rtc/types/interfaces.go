@@ -32,86 +32,110 @@ const (
 	MigrateStateComplete
 )
 
-//counterfeiter:generate . Participant
-type Participant interface {
-	ID() livekit.ParticipantID
-	Identity() livekit.ParticipantIdentity
-	State() livekit.ParticipantInfo_State
+//counterfeiter:generate . LocalParticipant
+type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
-	IsReady() bool
+
 	ConnectedAt() time.Time
-	ToProto() *livekit.ParticipantInfo
-	SetMetadata(metadata string)
-	SetPermission(permission *livekit.ParticipantPermission)
+
+	State() livekit.ParticipantInfo_State
+	IsReady() bool
+
+	IsRecorder() bool
+
+	SubscriberAsPrimary() bool
+
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
-	SubscriberMediaEngine() *webrtc.MediaEngine
-	Negotiate()
-	ICERestart() error
-	SetPreviousAnswer(previous *webrtc.SessionDescription)
-	SetMigrateState(s MigrateState)
-	MigrateState() MigrateState
+
+	// permissions
+	SetPermission(permission *livekit.ParticipantPermission)
+	CanPublish() bool
+	CanSubscribe() bool
+	CanPublishData() bool
+
+	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
+
+	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
 
 	AddTrack(req *livekit.AddTrackRequest)
-	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
-	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
-	GetPublishedTracks() []PublishedTrack
+	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
+
+	SubscriberMediaEngine() *webrtc.MediaEngine
+	SubscriberPC() *webrtc.PeerConnection
+	HandleAnswer(sdp webrtc.SessionDescription) error
+	Negotiate()
+	ICERestart() error
+	AddSubscribedTrack(st SubscribedTrack)
+	RemoveSubscribedTrack(st SubscribedTrack)
 	GetSubscribedTrack(sid livekit.TrackID) SubscribedTrack
 	GetSubscribedTracks() []SubscribedTrack
-	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
-	HandleAnswer(sdp webrtc.SessionDescription) error
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackID livekit.TrackID)
+
+	// returns list of participant identities that the current participant is subscribed to
+	GetSubscribedParticipants() []livekit.ParticipantID
+
+	GetAudioLevel() (level uint8, active bool)
+	GetConnectionQuality() *livekit.ConnectionQualityInfo
+
+	// server sent messages
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
-	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
-	GetAudioLevel() (level uint8, active bool)
-	GetConnectionQuality() *livekit.ConnectionQualityInfo
-	IsSubscribedTo(participantID livekit.ParticipantID) bool
-	// returns list of participant identities that the current participant is subscribed to
-	GetSubscribedParticipants() []livekit.ParticipantID
+	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
+
+	// callbacks
+	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	// OnTrackUpdated - one of its publishedTracks changed in status
+	OnTrackUpdated(callback func(Participant, PublishedTrack))
+	OnMetadataUpdate(callback func(Participant))
+	OnDataPacket(callback func(Participant, *livekit.DataPacket))
+	OnClose(_callback func(Participant, map[livekit.TrackID]livekit.ParticipantID))
+
+	// updates from remotes
+	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+
+	// session migration
+	SetMigrateState(s MigrateState)
+	MigrateState() MigrateState
+	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
+	SetPreviousAnswer(previous *webrtc.SessionDescription)
+}
+
+//counterfeiter:generate . Participant
+type Participant interface {
+	ID() livekit.ParticipantID
+	Identity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.ParticipantInfo
+
+	SetMetadata(metadata string)
+
+	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
+	GetPublishedTracks() []PublishedTrack
+
+	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op Participant, trackID livekit.TrackID)
 
 	// permissions
-	CanPublish() bool
-	CanSubscribe() bool
-	CanPublishData() bool
 	Hidden() bool
-	IsRecorder() bool
-	SubscriberAsPrimary() bool
 
 	Start()
 	Close() error
 
 	// callbacks
-	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a remoteTrack
 	OnTrackPublished(func(Participant, PublishedTrack))
-	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, PublishedTrack))
-	OnMetadataUpdate(callback func(Participant))
-	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(func(Participant, map[livekit.TrackID]livekit.ParticipantID))
-
-	// package methods
-	AddSubscribedTrack(st SubscribedTrack)
-	RemoveSubscribedTrack(st SubscribedTrack)
-	SubscriberPC() *webrtc.PeerConnection
 
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
-	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
-
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 
-	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
-
-	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
-
 	DebugInfo() map[string]interface{}
+
+	LocalParticipant
 }
 
 // Room is a container of participants, and can provide room level actions
@@ -123,6 +147,11 @@ type Room interface {
 	SyncState(participant Participant, state *livekit.SyncState) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
+}
+
+//counterfeiter:generate . LocalMediaTrack
+type LocalMediaTrack interface {
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // MediaTrack represents a media track
@@ -156,7 +185,16 @@ type MediaTrack interface {
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
 
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
+	LocalMediaTrack
+}
+
+//counterfeiter:generate . LocalPublishedTrack
+type LocalPublishedTrack interface {
+	SignalCid() string
+	SdpCid() string
+
+	GetAudioLevel() (level uint8, active bool)
+	GetConnectionScore() float64
 }
 
 // PublishedTrack is the main interface representing a track published to the room
@@ -165,14 +203,9 @@ type MediaTrack interface {
 type PublishedTrack interface {
 	MediaTrack
 
-	SignalCid() string
-	SdpCid() string
 	ToProto() *livekit.TrackInfo
 
 	Receiver() sfu.TrackReceiver
-	GetConnectionScore() float64
-
-	GetAudioLevel() (level uint8, active bool)
 
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 
@@ -180,6 +213,8 @@ type PublishedTrack interface {
 
 	// callbacks
 	AddOnClose(func())
+
+	LocalPublishedTrack
 }
 
 //counterfeiter:generate . SubscribedTrack

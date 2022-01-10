@@ -552,7 +552,7 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 	var scopedSpeakers []*livekit.SpeakerInfo
 	for _, s := range speakers {
 		participantID := livekit.ParticipantID(s.Sid)
-		if p.IsSubscribedTo(participantID) || participantID == p.ID() {
+		if p.isSubscribedTo(participantID) || participantID == p.ID() {
 			scopedSpeakers = append(scopedSpeakers, s)
 		}
 	}
@@ -663,7 +663,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 }
 
-func (p *ParticipantImpl) IsSubscribedTo(participantID livekit.ParticipantID) bool {
+func (p *ParticipantImpl) isSubscribedTo(participantID livekit.ParticipantID) bool {
 	_, ok := p.subscribedTo.Load(participantID)
 	return ok
 }
@@ -829,7 +829,7 @@ func (p *ParticipantImpl) setupLocalParticipant() {
 		}
 	})
 
-	p.LocalParticipant.OnTrackUpdated(func(track types.PublishedTrack, onlyIfReady bool) {
+	p.LocalParticipant.OnPublishedTrackUpdated(func(track types.PublishedTrack, onlyIfReady bool) {
 		if onlyIfReady && !p.IsReady() {
 			return
 		}
