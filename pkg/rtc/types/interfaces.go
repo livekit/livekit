@@ -29,7 +29,7 @@ type MigrateState int32
 const (
 	MigrateStateInit MigrateState = iota
 	MigrateStateSync
-	MigrateComplete
+	MigrateStateComplete
 )
 
 //counterfeiter:generate . Participant

@@ -250,7 +250,7 @@ func (r *Room) Join(participant types.Participant, opts *ParticipantOptions, ice
 		return err
 	}
 
-	participant.SetMigrateState(types.MigrateComplete)
+	participant.SetMigrateState(types.MigrateStateComplete)
 
 	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
