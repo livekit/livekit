@@ -125,7 +125,7 @@ func (l *LocalParticipant) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
 }
 
 func (l *LocalParticipant) SetTrackMuted(trackID livekit.TrackID, muted bool) {
-	track := l.UptrackManager.SetTrackMuted(trackID, muted)
+	track := l.UptrackManager.SetPublishedTrackMuted(trackID, muted)
 	if track != nil {
 		// handled in UptrackManager for a published track, no need to update state of pending track
 		return
@@ -336,7 +336,7 @@ func (l *LocalParticipant) setupUptrackManager() {
 		Logger: l.params.Logger,
 	})
 
-	l.UptrackManager.OnClose(l.onUptrackManagerClose)
+	l.UptrackManager.OnUptrackManagerClose(l.onUptrackManagerClose)
 }
 
 func (l *LocalParticipant) onUptrackManagerClose() {

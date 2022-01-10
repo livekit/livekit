@@ -63,7 +63,7 @@ func (u *UptrackManager) Close() {
 	}
 }
 
-func (u *UptrackManager) OnClose(f func()) {
+func (u *UptrackManager) OnUptrackManagerClose(f func()) {
 	u.onClose = f
 }
 
@@ -79,7 +79,7 @@ func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
-func (u *UptrackManager) OnTrackUpdated(f func(track types.PublishedTrack, onlyIfReady bool)) {
+func (u *UptrackManager) OnPublishedTrackUpdated(f func(track types.PublishedTrack, onlyIfReady bool)) {
 	u.onTrackUpdated = f
 }
 
@@ -143,7 +143,7 @@ func (u *UptrackManager) RemoveSubscriber(sub types.Participant, trackID livekit
 	u.lock.Unlock()
 }
 
-func (u *UptrackManager) SetTrackMuted(trackID livekit.TrackID, muted bool) types.PublishedTrack {
+func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.PublishedTrack {
 	u.lock.RLock()
 	track := u.publishedTracks[trackID]
 	u.lock.RUnlock()
