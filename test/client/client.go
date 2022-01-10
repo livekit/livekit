@@ -127,6 +127,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 		Configuration: rtcConf,
 	}
 	conf.SettingEngine.SetLite(false)
+	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
 	codecs := []*livekit.Codec{
 		{
 			Mime: "audio/opus",
