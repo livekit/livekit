@@ -379,3 +379,14 @@ func SpatialLayerForQuality(quality livekit.VideoQuality) int32 {
 		return -1
 	}
 }
+
+func VideoQualityToRID(q livekit.VideoQuality) string {
+	switch q {
+	case livekit.VideoQuality_HIGH:
+		return sfu.FullResolution
+	case livekit.VideoQuality_MEDIUM:
+		return sfu.HalfResolution
+	default:
+		return sfu.QuarterResolution
+	}
+}
