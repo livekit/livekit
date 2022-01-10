@@ -107,6 +107,8 @@ type LocalParticipant interface {
 
 //counterfeiter:generate . Participant
 type Participant interface {
+	LocalParticipant
+
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 
@@ -134,8 +136,6 @@ type Participant interface {
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 
 	DebugInfo() map[string]interface{}
-
-	LocalParticipant
 }
 
 // Room is a container of participants, and can provide room level actions
@@ -157,6 +157,8 @@ type LocalMediaTrack interface {
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
+	LocalMediaTrack
+
 	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
@@ -184,8 +186,6 @@ type MediaTrack interface {
 
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
-
-	LocalMediaTrack
 }
 
 //counterfeiter:generate . LocalPublishedTrack
