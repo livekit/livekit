@@ -32,8 +32,41 @@ const (
 	MigrateStateComplete
 )
 
+//counterfeiter:generate . Participant
+type Participant interface {
+	ID() livekit.ParticipantID
+	Identity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.ParticipantInfo
+
+	SetMetadata(metadata string)
+
+	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
+	GetPublishedTracks() []PublishedTrack
+
+	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op Participant, trackID livekit.TrackID)
+
+	// permissions
+	Hidden() bool
+
+	Start()
+	Close() error
+
+	// callbacks
+	// OnTrackPublished - remote added a remoteTrack
+	OnTrackPublished(func(Participant, PublishedTrack))
+
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
+	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+
+	DebugInfo() map[string]interface{}
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
+	Participant
+
 	ProtocolVersion() ProtocolVersion
 
 	ConnectedAt() time.Time
@@ -103,39 +136,6 @@ type LocalParticipant interface {
 	MigrateState() MigrateState
 	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
-}
-
-//counterfeiter:generate . Participant
-type Participant interface {
-	LocalParticipant
-
-	ID() livekit.ParticipantID
-	Identity() livekit.ParticipantIdentity
-
-	ToProto() *livekit.ParticipantInfo
-
-	SetMetadata(metadata string)
-
-	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
-	GetPublishedTracks() []PublishedTrack
-
-	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackID livekit.TrackID)
-
-	// permissions
-	Hidden() bool
-
-	Start()
-	Close() error
-
-	// callbacks
-	// OnTrackPublished - remote added a remoteTrack
-	OnTrackPublished(func(Participant, PublishedTrack))
-
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
-	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-
-	DebugInfo() map[string]interface{}
 }
 
 // Room is a container of participants, and can provide room level actions

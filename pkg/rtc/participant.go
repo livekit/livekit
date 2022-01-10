@@ -98,7 +98,7 @@ type ParticipantImpl struct {
 	onClose      func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)
 }
 
-func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
+func NewParticipant(params ParticipantParams) (types.LocalParticipant, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
