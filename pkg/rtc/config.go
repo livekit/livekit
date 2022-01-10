@@ -62,6 +62,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	s := webrtc.SettingEngine{
 		LoggerFactory: serverlogger.LoggerFactory(),
 	}
+	s.SetLite(true)
 
 	if externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
