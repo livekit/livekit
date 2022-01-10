@@ -229,7 +229,7 @@ func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpRece
 			SubscriberConfig:    l.params.Config.Subscriber,
 		})
 
-		for ssrc,info  :=range l.params.SimTracks {
+		for ssrc, info := range l.params.SimTracks {
 			if info.Mid == mid {
 				mt.TrySetSimulcastSSRC(uint8(sfu.RidToLayer(info.Rid)), ssrc)
 			}

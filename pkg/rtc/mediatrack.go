@@ -32,6 +32,8 @@ type MediaTrack struct {
 	numUpTracks uint32
 	buffer      *buffer.Buffer
 
+	layerSsrcs [livekit.VideoQuality_HIGH + 1]uint32
+
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
 
@@ -106,6 +108,21 @@ func (t *MediaTrack) SignalCid() string {
 
 func (t *MediaTrack) SdpCid() string {
 	return t.params.SdpCid
+}
+
+func (t *MediaTrack) ToProto() *livekit.TrackInfo {
+	info := t.params.TrackInfo
+	info.Muted = t.IsMuted()
+	info.Simulcast = t.IsSimulcast()
+	layers := t.MediaTrackReceiver.GetVideoLayers()
+	for _, layer := range layers {
+		if int(layer.Quality) < len(t.layerSsrcs) {
+			layer.Ssrc = t.layerSsrcs[layer.Quality]
+		}
+	}
+	info.Layers = layers
+
+	return info
 }
 
 func (t *MediaTrack) publishLossPercentage() uint32 {
@@ -219,6 +236,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
 		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
 	})
+}
+
+func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
+	if int(layer) < len(t.layerSsrcs) && t.layerSsrcs[layer] == 0 {
+		t.layerSsrcs[layer] = ssrc
+	}
 }
 
 func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
