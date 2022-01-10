@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -29,6 +30,7 @@ type LocalParticipantParams struct {
 	Telemetry      telemetry.TelemetryService
 	ThrottleConfig config.PLIThrottleConfig
 	Logger         logger.Logger
+	SimTracks      map[uint32]SimulcastTrackInfo
 }
 
 type LocalParticipant struct {
@@ -226,6 +228,12 @@ func (l *LocalParticipant) MediaTrackReceived(track *webrtc.TrackRemote, rtpRece
 			Logger:              l.params.Logger,
 			SubscriberConfig:    l.params.Config.Subscriber,
 		})
+
+		for ssrc,info  :=range l.params.SimTracks {
+			if info.Mid == mid {
+				mt.TrySetSimulcastSSRC(uint8(sfu.RidToLayer(info.Rid)), ssrc)
+			}
+		}
 
 		// add to published and clean up pending
 		l.UptrackManager.AddPublishedTrack(mt)
