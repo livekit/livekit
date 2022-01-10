@@ -118,7 +118,9 @@ func (u *UptrackManager) AddSubscriber(sub types.Participant, params types.AddSu
 		trackID := track.ID()
 		subscriberID := sub.ID()
 		if !u.hasPermission(trackID, subscriberID) {
+			u.lock.Lock()
 			u.maybeAddPendingSubscription(trackID, sub)
+			u.lock.Unlock()
 			continue
 		}
 
