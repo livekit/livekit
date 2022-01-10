@@ -194,6 +194,17 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.Participant) error {
 	return nil
 }
 
+func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	t.params.TrackInfo = ti
+	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
+		t.UpdateVideoLayers(ti.Layers)
+	}
+}
+
+func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
+	return t.params.TrackInfo
+}
+
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	for _, layer := range layers {
 		t.layerDimensions.Store(layer.Quality, layer)

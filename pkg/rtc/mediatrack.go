@@ -111,7 +111,7 @@ func (t *MediaTrack) SdpCid() string {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	info := t.params.TrackInfo
+	info := t.MediaTrackReceiver.TrackInfo()
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.IsSimulcast()
 	layers := t.MediaTrackReceiver.GetVideoLayers()
