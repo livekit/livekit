@@ -817,6 +817,7 @@ func (p *ParticipantImpl) setupLocalParticipant() {
 		Telemetry:      p.params.Telemetry,
 		ThrottleConfig: p.params.ThrottleConfig,
 		Logger:         p.params.Logger,
+		SimTracks:      p.params.SimTracks,
 	})
 
 	p.LocalParticipant.OnTrackPublished(func(track types.PublishedTrack) {

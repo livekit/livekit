@@ -31,7 +31,6 @@ type MediaTrackReceiver struct {
 	lock            sync.RWMutex
 	receiver        sfu.TrackReceiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
-	layerSsrcs      [livekit.VideoQuality_HIGH + 1]uint32
 
 	// track audio fraction lost
 	downFracLostLock  sync.Mutex
@@ -195,23 +194,15 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.Participant) error {
 	return nil
 }
 
-func (t *MediaTrackReceiver) ToProto() *livekit.TrackInfo {
-	info := t.params.TrackInfo
-	info.Muted = t.IsMuted()
-	info.Simulcast = t.IsSimulcast()
-	layers := make([]*livekit.VideoLayer, 0)
-	t.layerDimensions.Range(func(_, val interface{}) bool {
-		if layer, ok := val.(*livekit.VideoLayer); ok {
-			if int(layer.Quality) < len(t.layerSsrcs) {
-				layer.Ssrc = t.layerSsrcs[layer.Quality]
-			}
-			layers = append(layers, layer)
-		}
-		return true
-	})
-	info.Layers = layers
+func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	t.params.TrackInfo = ti
+	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
+		t.UpdateVideoLayers(ti.Layers)
+	}
+}
 
-	return info
+func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
+	return t.params.TrackInfo
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
@@ -224,10 +215,16 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
 }
 
-func (t *MediaTrackReceiver) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
-	if int(layer) < len(t.layerSsrcs) && t.layerSsrcs[layer] == 0 {
-		t.layerSsrcs[layer] = ssrc
-	}
+func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
+	layers := make([]*livekit.VideoLayer, 0)
+	t.layerDimensions.Range(func(q, val interface{}) bool {
+		if layer, ok := val.(*livekit.VideoLayer); ok {
+			layers = append(layers, layer)
+		}
+		return true
+	})
+
+	return layers
 }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions
