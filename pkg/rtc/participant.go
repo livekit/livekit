@@ -459,7 +459,7 @@ func (p *ParticipantImpl) SetPreviousAnswer(previous *webrtc.SessionDescription)
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.lock.Lock()
 	preState := p.MigrateState()
-	if preState == types.MigrateComplete || preState == s {
+	if preState == types.MigrateStateComplete || preState == s {
 		p.lock.Unlock()
 		return
 	}
@@ -468,7 +468,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.migrateState.Store(s)
 	if s == types.MigrateStateSync {
 		if !p.LocalParticipant.HasPendingMigratedTrack() {
-			p.migrateState.Store(types.MigrateComplete)
+			p.migrateState.Store(types.MigrateStateComplete)
 		}
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
@@ -821,7 +821,7 @@ func (p *ParticipantImpl) setupLocalParticipant() {
 
 	p.LocalParticipant.OnTrackPublished(func(track types.PublishedTrack) {
 		if !p.LocalParticipant.HasPendingMigratedTrack() {
-			p.SetMigrateState(types.MigrateComplete)
+			p.SetMigrateState(types.MigrateStateComplete)
 		}
 
 		if p.onTrackPublished != nil {
