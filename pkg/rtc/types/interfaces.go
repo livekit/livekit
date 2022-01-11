@@ -51,7 +51,7 @@ type Participant interface {
 	Hidden() bool
 
 	Start()
-	Close() error
+	Close(sendLeave bool) error
 
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
@@ -143,6 +143,7 @@ type Room interface {
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
+	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }

@@ -19,6 +19,18 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 livekit.RoomName
 	}
+	SimulateScenarioStub        func(types.LocalParticipant, *livekit.SimulateScenario) error
+	simulateScenarioMutex       sync.RWMutex
+	simulateScenarioArgsForCall []struct {
+		arg1 types.LocalParticipant
+		arg2 *livekit.SimulateScenario
+	}
+	simulateScenarioReturns struct {
+		result1 error
+	}
+	simulateScenarioReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SyncStateStub        func(types.LocalParticipant, *livekit.SyncState) error
 	syncStateMutex       sync.RWMutex
 	syncStateArgsForCall []struct {
@@ -123,6 +135,68 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	}
 	fake.nameReturnsOnCall[i] = struct {
 		result1 livekit.RoomName
+	}{result1}
+}
+
+func (fake *FakeRoom) SimulateScenario(arg1 types.LocalParticipant, arg2 *livekit.SimulateScenario) error {
+	fake.simulateScenarioMutex.Lock()
+	ret, specificReturn := fake.simulateScenarioReturnsOnCall[len(fake.simulateScenarioArgsForCall)]
+	fake.simulateScenarioArgsForCall = append(fake.simulateScenarioArgsForCall, struct {
+		arg1 types.LocalParticipant
+		arg2 *livekit.SimulateScenario
+	}{arg1, arg2})
+	stub := fake.SimulateScenarioStub
+	fakeReturns := fake.simulateScenarioReturns
+	fake.recordInvocation("SimulateScenario", []interface{}{arg1, arg2})
+	fake.simulateScenarioMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) SimulateScenarioCallCount() int {
+	fake.simulateScenarioMutex.RLock()
+	defer fake.simulateScenarioMutex.RUnlock()
+	return len(fake.simulateScenarioArgsForCall)
+}
+
+func (fake *FakeRoom) SimulateScenarioCalls(stub func(types.LocalParticipant, *livekit.SimulateScenario) error) {
+	fake.simulateScenarioMutex.Lock()
+	defer fake.simulateScenarioMutex.Unlock()
+	fake.SimulateScenarioStub = stub
+}
+
+func (fake *FakeRoom) SimulateScenarioArgsForCall(i int) (types.LocalParticipant, *livekit.SimulateScenario) {
+	fake.simulateScenarioMutex.RLock()
+	defer fake.simulateScenarioMutex.RUnlock()
+	argsForCall := fake.simulateScenarioArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoom) SimulateScenarioReturns(result1 error) {
+	fake.simulateScenarioMutex.Lock()
+	defer fake.simulateScenarioMutex.Unlock()
+	fake.SimulateScenarioStub = nil
+	fake.simulateScenarioReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoom) SimulateScenarioReturnsOnCall(i int, result1 error) {
+	fake.simulateScenarioMutex.Lock()
+	defer fake.simulateScenarioMutex.Unlock()
+	fake.SimulateScenarioStub = nil
+	if fake.simulateScenarioReturnsOnCall == nil {
+		fake.simulateScenarioReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.simulateScenarioReturnsOnCall[i] = struct {
+		result1 error
 	}{result1}
 }
 
@@ -391,6 +465,8 @@ func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
+	fake.simulateScenarioMutex.RLock()
+	defer fake.simulateScenarioMutex.RUnlock()
 	fake.syncStateMutex.RLock()
 	defer fake.syncStateMutex.RUnlock()
 	fake.updateSubscriptionPermissionsMutex.RLock()

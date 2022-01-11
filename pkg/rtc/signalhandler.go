@@ -78,7 +78,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			return nil
 		}
 	case *livekit.SignalRequest_Leave:
-		_ = participant.Close()
+		_ = participant.Close(true)
 	case *livekit.SignalRequest_SubscriptionPermissions:
 		err := room.UpdateSubscriptionPermissions(participant, msg.SubscriptionPermissions)
 		if err != nil {
@@ -90,6 +90,12 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		if err != nil {
 			pLogger.Warnw("could not sync subscribe state", err,
 				"state", msg.SyncState)
+		}
+	case *livekit.SignalRequest_Simulate:
+		err := room.SimulateScenario(participant, msg.Simulate)
+		if err != nil {
+			pLogger.Warnw("could not simulate scenario", err,
+				"simulate", msg.Simulate)
 		}
 	}
 	return nil

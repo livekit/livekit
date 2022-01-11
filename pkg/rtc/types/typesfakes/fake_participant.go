@@ -23,9 +23,10 @@ type FakeParticipant struct {
 		result1 int
 		result2 error
 	}
-	CloseStub        func() error
+	CloseStub        func(bool) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
+		arg1 bool
 	}
 	closeReturns struct {
 		result1 error
@@ -211,17 +212,18 @@ func (fake *FakeParticipant) AddSubscriberReturnsOnCall(i int, result1 int, resu
 	}{result1, result2}
 }
 
-func (fake *FakeParticipant) Close() error {
+func (fake *FakeParticipant) Close(arg1 bool) error {
 	fake.closeMutex.Lock()
 	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
-	}{})
+		arg1 bool
+	}{arg1})
 	stub := fake.CloseStub
 	fakeReturns := fake.closeReturns
-	fake.recordInvocation("Close", []interface{}{})
+	fake.recordInvocation("Close", []interface{}{arg1})
 	fake.closeMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -235,10 +237,17 @@ func (fake *FakeParticipant) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *FakeParticipant) CloseCalls(stub func() error) {
+func (fake *FakeParticipant) CloseCalls(stub func(bool) error) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
+}
+
+func (fake *FakeParticipant) CloseArgsForCall(i int) bool {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	argsForCall := fake.closeArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeParticipant) CloseReturns(result1 error) {

@@ -321,7 +321,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnDataPacket(nil)
 
 	// close participant as well
-	_ = p.Close()
+	_ = p.Close(true)
 
 	r.lock.RLock()
 	if len(r.participants) == 0 {
@@ -503,6 +503,34 @@ func (r *Room) sendRoomUpdateLocked() {
 
 func (r *Room) OnMetadataUpdate(f func(metadata string)) {
 	r.onMetadataUpdate = f
+}
+
+func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
+	switch scenario := simulateScenario.Scenario.(type) {
+	case *livekit.SimulateScenario_SpeakerUpdate:
+		r.Logger.Infow("simulating speaker update", "participant", participant.Identity())
+		go func() {
+			<-time.After(time.Duration(scenario.SpeakerUpdate) * time.Second)
+			r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
+				Sid:    string(participant.ID()),
+				Active: false,
+				Level:  0,
+			}})
+		}()
+		r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
+			Sid:    string(participant.ID()),
+			Active: true,
+			Level:  0.9,
+		}})
+	case *livekit.SimulateScenario_Migration:
+	case *livekit.SimulateScenario_NodeFailure:
+		r.Logger.Infow("simulating node failure", "participant", participant.Identity())
+		// drop participant without necessarily cleaning up
+		if err := participant.Close(false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
