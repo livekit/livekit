@@ -399,7 +399,7 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close() error {
+func (p *ParticipantImpl) Close(bool) error {
 	if !p.isClosed.TrySet(true) {
 		// already closed
 		return nil
@@ -1000,7 +1000,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
-			_ = p.Close()
+			_ = p.Close(false)
 		}()
 	}
 }

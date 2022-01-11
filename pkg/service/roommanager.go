@@ -157,7 +157,7 @@ func (r *RoomManager) Stop() {
 
 	for _, room := range rooms {
 		for _, p := range room.GetParticipants() {
-			_ = p.Close()
+			_ = p.Close(true)
 		}
 		room.Close()
 	}
@@ -352,7 +352,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Partici
 			"room", room.Room.Name,
 			"roomID", room.Room.Sid,
 		)
-		_ = participant.Close()
+		_ = participant.Close(true)
 	}()
 	defer rtc.Recover()
 
@@ -434,7 +434,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		for _, p := range room.GetParticipants() {
-			_ = p.Close()
+			_ = p.Close(true)
 		}
 		room.Close()
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:
