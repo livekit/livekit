@@ -126,7 +126,7 @@ type Participant interface {
 	Hidden() bool
 
 	Start()
-	Close() error
+	Close(sendLeave bool) error
 
 	// callbacks
 	// OnTrackPublished - remote added a remoteTrack
@@ -145,6 +145,7 @@ type Room interface {
 	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 	SyncState(participant Participant, state *livekit.SyncState) error
+	SimulateScenario(participant Participant, scenario *livekit.SimulateScenario) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }

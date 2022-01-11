@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -116,7 +117,7 @@ func PublishDocker() error {
 
 // run unit tests, skipping integration
 func Test() error {
-	mg.Deps(generateWire)
+	mg.Deps(generateWire, macULimit)
 	cmd := exec.Command("go", "test", "-short", "./...")
 	connectStd(cmd)
 	return cmd.Run()
@@ -124,7 +125,7 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
-	mg.Deps(generateWire)
+	mg.Deps(generateWire, macULimit)
 	// "-v", "-race",
 	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m")
 	connectStd(cmd)
@@ -233,6 +234,16 @@ func getToolPath(name string) (string, error) {
 func connectStd(cmd *exec.Cmd) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+}
+
+func macULimit() {
+	// raise ulimit if on mac
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	cmd := exec.Command("ulimit", "-n", "10000")
+	connectStd(cmd)
+	cmd.Run()
 }
 
 // A helper checksum library that generates a fast, non-portable checksum over a directory of files

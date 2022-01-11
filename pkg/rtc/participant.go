@@ -399,18 +399,20 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close() error {
+func (p *ParticipantImpl) Close(sendLeave bool) error {
 	if !p.isClosed.TrySet(true) {
 		// already closed
 		return nil
 	}
 
 	// send leave message
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: &livekit.LeaveRequest{},
-		},
-	})
+	if sendLeave {
+		_ = p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
+				Leave: &livekit.LeaveRequest{},
+			},
+		})
+	}
 
 	p.LocalParticipant.Close()
 
@@ -1000,7 +1002,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
-			_ = p.Close()
+			_ = p.Close(false)
 		}()
 	}
 }
