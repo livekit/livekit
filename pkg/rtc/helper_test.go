@@ -29,7 +29,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		}
 	}
 	updateTrack := func() {
-		var f func(participant types.LocalParticipant, track types.PublishedTrack)
+		var f func(participant types.LocalParticipant, track types.MediaTrack)
 		if p.OnTrackUpdatedCallCount() > 0 {
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
@@ -48,8 +48,8 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	return p
 }
 
-func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
-	t := &typesfakes.FakePublishedTrack{}
+func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
+	t := &typesfakes.FakeMediaTrack{}
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)

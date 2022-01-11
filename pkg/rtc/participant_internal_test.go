@@ -70,14 +70,14 @@ func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.state.Store(livekit.ParticipantInfo_ACTIVE)
-		track := &typesfakes.FakePublishedTrack{}
+		track := &typesfakes.FakeMediaTrack{}
 		track.IDReturns("id")
 		published := false
 		updated := false
-		p.OnTrackUpdated(func(p types.LocalParticipant, track types.PublishedTrack) {
+		p.OnTrackUpdated(func(p types.LocalParticipant, track types.MediaTrack) {
 			updated = true
 		})
-		p.OnTrackPublished(func(p types.LocalParticipant, track types.PublishedTrack) {
+		p.OnTrackPublished(func(p types.LocalParticipant, track types.MediaTrack) {
 			published = true
 		})
 		p.UptrackManager.AddPublishedTrack(track)
@@ -134,7 +134,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
-		track := &typesfakes.FakeLocalPublishedTrack{}
+		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SignalCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UptrackManager.publishedTracks["cid"] = track
@@ -151,7 +151,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
-		track := &typesfakes.FakeLocalPublishedTrack{}
+		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SdpCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UptrackManager.publishedTracks["cid"] = track
@@ -202,7 +202,7 @@ func TestDisconnectTiming(t *testing.T) {
 				t.Log("received message from chan", msg)
 			}
 		}()
-		track := &typesfakes.FakePublishedTrack{}
+		track := &typesfakes.FakeMediaTrack{}
 		p.UptrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
 
@@ -253,16 +253,16 @@ func TestConnectionQuality(t *testing.T) {
 		return connectionquality.Loss2Score(loss, reducedQuality)
 	}
 
-	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakeLocalPublishedTrack {
-		tr := &typesfakes.FakeLocalPublishedTrack{}
+	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
+		tr := &typesfakes.FakeLocalMediaTrack{}
 		score := videoScore(loss, numPublishing, numRegistered)
 		t.Log("video score: ", score)
 		tr.GetConnectionScoreReturns(score)
 		return tr
 	}
 
-	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalPublishedTrack {
-		tr := &typesfakes.FakeLocalPublishedTrack{}
+	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalMediaTrack {
+		tr := &typesfakes.FakeLocalMediaTrack{}
 
 		stat := &connectionquality.ConnectionStat{
 			PacketsLost:  packetsLost,

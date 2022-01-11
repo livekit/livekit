@@ -44,26 +44,26 @@ type FakeParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
-	GetPublishedTrackStub        func(livekit.TrackID) types.PublishedTrack
+	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 	}
 	getPublishedTrackReturns struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}
 	getPublishedTrackReturnsOnCall map[int]struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}
-	GetPublishedTracksStub        func() []types.PublishedTrack
+	GetPublishedTracksStub        func() []types.MediaTrack
 	getPublishedTracksMutex       sync.RWMutex
 	getPublishedTracksArgsForCall []struct {
 	}
 	getPublishedTracksReturns struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}
 	getPublishedTracksReturnsOnCall map[int]struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}
 	HiddenStub        func() bool
 	hiddenMutex       sync.RWMutex
@@ -326,7 +326,7 @@ func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]in
 	}{result1}
 }
 
-func (fake *FakeParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.PublishedTrack {
+func (fake *FakeParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.MediaTrack {
 	fake.getPublishedTrackMutex.Lock()
 	ret, specificReturn := fake.getPublishedTrackReturnsOnCall[len(fake.getPublishedTrackArgsForCall)]
 	fake.getPublishedTrackArgsForCall = append(fake.getPublishedTrackArgsForCall, struct {
@@ -351,7 +351,7 @@ func (fake *FakeParticipant) GetPublishedTrackCallCount() int {
 	return len(fake.getPublishedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) GetPublishedTrackCalls(stub func(livekit.TrackID) types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTrackCalls(stub func(livekit.TrackID) types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = stub
@@ -364,30 +364,30 @@ func (fake *FakeParticipant) GetPublishedTrackArgsForCall(i int) livekit.TrackID
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) GetPublishedTrackReturns(result1 types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTrackReturns(result1 types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = nil
 	fake.getPublishedTrackReturns = struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeParticipant) GetPublishedTrackReturnsOnCall(i int, result1 types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTrackReturnsOnCall(i int, result1 types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = nil
 	if fake.getPublishedTrackReturnsOnCall == nil {
 		fake.getPublishedTrackReturnsOnCall = make(map[int]struct {
-			result1 types.PublishedTrack
+			result1 types.MediaTrack
 		})
 	}
 	fake.getPublishedTrackReturnsOnCall[i] = struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeParticipant) GetPublishedTracks() []types.PublishedTrack {
+func (fake *FakeParticipant) GetPublishedTracks() []types.MediaTrack {
 	fake.getPublishedTracksMutex.Lock()
 	ret, specificReturn := fake.getPublishedTracksReturnsOnCall[len(fake.getPublishedTracksArgsForCall)]
 	fake.getPublishedTracksArgsForCall = append(fake.getPublishedTracksArgsForCall, struct {
@@ -411,32 +411,32 @@ func (fake *FakeParticipant) GetPublishedTracksCallCount() int {
 	return len(fake.getPublishedTracksArgsForCall)
 }
 
-func (fake *FakeParticipant) GetPublishedTracksCalls(stub func() []types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTracksCalls(stub func() []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = stub
 }
 
-func (fake *FakeParticipant) GetPublishedTracksReturns(result1 []types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTracksReturns(result1 []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = nil
 	fake.getPublishedTracksReturns = struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []types.PublishedTrack) {
+func (fake *FakeParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = nil
 	if fake.getPublishedTracksReturnsOnCall == nil {
 		fake.getPublishedTracksReturnsOnCall = make(map[int]struct {
-			result1 []types.PublishedTrack
+			result1 []types.MediaTrack
 		})
 	}
 	fake.getPublishedTracksReturnsOnCall[i] = struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}{result1}
 }
 

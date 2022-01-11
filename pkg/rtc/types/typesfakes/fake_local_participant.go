@@ -137,26 +137,26 @@ type FakeLocalParticipant struct {
 	getConnectionQualityReturnsOnCall map[int]struct {
 		result1 *livekit.ConnectionQualityInfo
 	}
-	GetPublishedTrackStub        func(livekit.TrackID) types.PublishedTrack
+	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 	}
 	getPublishedTrackReturns struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}
 	getPublishedTrackReturnsOnCall map[int]struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}
-	GetPublishedTracksStub        func() []types.PublishedTrack
+	GetPublishedTracksStub        func() []types.MediaTrack
 	getPublishedTracksMutex       sync.RWMutex
 	getPublishedTracksArgsForCall []struct {
 	}
 	getPublishedTracksReturns struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}
 	getPublishedTracksReturnsOnCall map[int]struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}
 	GetResponseSinkStub        func() routing.MessageSink
 	getResponseSinkMutex       sync.RWMutex
@@ -317,15 +317,15 @@ type FakeLocalParticipant struct {
 	onStateChangeArgsForCall []struct {
 		arg1 func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	}
-	OnTrackPublishedStub        func(func(types.LocalParticipant, types.PublishedTrack))
+	OnTrackPublishedStub        func(func(types.LocalParticipant, types.MediaTrack))
 	onTrackPublishedMutex       sync.RWMutex
 	onTrackPublishedArgsForCall []struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
+		arg1 func(types.LocalParticipant, types.MediaTrack)
 	}
-	OnTrackUpdatedStub        func(func(types.LocalParticipant, types.PublishedTrack))
+	OnTrackUpdatedStub        func(func(types.LocalParticipant, types.MediaTrack))
 	onTrackUpdatedMutex       sync.RWMutex
 	onTrackUpdatedArgsForCall []struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
+		arg1 func(types.LocalParticipant, types.MediaTrack)
 	}
 	ProtocolVersionStub        func() types.ProtocolVersion
 	protocolVersionMutex       sync.RWMutex
@@ -1222,7 +1222,7 @@ func (fake *FakeLocalParticipant) GetConnectionQualityReturnsOnCall(i int, resul
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.PublishedTrack {
+func (fake *FakeLocalParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.MediaTrack {
 	fake.getPublishedTrackMutex.Lock()
 	ret, specificReturn := fake.getPublishedTrackReturnsOnCall[len(fake.getPublishedTrackArgsForCall)]
 	fake.getPublishedTrackArgsForCall = append(fake.getPublishedTrackArgsForCall, struct {
@@ -1247,7 +1247,7 @@ func (fake *FakeLocalParticipant) GetPublishedTrackCallCount() int {
 	return len(fake.getPublishedTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTrackCalls(stub func(livekit.TrackID) types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTrackCalls(stub func(livekit.TrackID) types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = stub
@@ -1260,30 +1260,30 @@ func (fake *FakeLocalParticipant) GetPublishedTrackArgsForCall(i int) livekit.Tr
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTrackReturns(result1 types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTrackReturns(result1 types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = nil
 	fake.getPublishedTrackReturns = struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTrackReturnsOnCall(i int, result1 types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTrackReturnsOnCall(i int, result1 types.MediaTrack) {
 	fake.getPublishedTrackMutex.Lock()
 	defer fake.getPublishedTrackMutex.Unlock()
 	fake.GetPublishedTrackStub = nil
 	if fake.getPublishedTrackReturnsOnCall == nil {
 		fake.getPublishedTrackReturnsOnCall = make(map[int]struct {
-			result1 types.PublishedTrack
+			result1 types.MediaTrack
 		})
 	}
 	fake.getPublishedTrackReturnsOnCall[i] = struct {
-		result1 types.PublishedTrack
+		result1 types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTracks() []types.PublishedTrack {
+func (fake *FakeLocalParticipant) GetPublishedTracks() []types.MediaTrack {
 	fake.getPublishedTracksMutex.Lock()
 	ret, specificReturn := fake.getPublishedTracksReturnsOnCall[len(fake.getPublishedTracksArgsForCall)]
 	fake.getPublishedTracksArgsForCall = append(fake.getPublishedTracksArgsForCall, struct {
@@ -1307,32 +1307,32 @@ func (fake *FakeLocalParticipant) GetPublishedTracksCallCount() int {
 	return len(fake.getPublishedTracksArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTracksCalls(stub func() []types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTracksCalls(stub func() []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = stub
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTracksReturns(result1 []types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTracksReturns(result1 []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = nil
 	fake.getPublishedTracksReturns = struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []types.PublishedTrack) {
+func (fake *FakeLocalParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []types.MediaTrack) {
 	fake.getPublishedTracksMutex.Lock()
 	defer fake.getPublishedTracksMutex.Unlock()
 	fake.GetPublishedTracksStub = nil
 	if fake.getPublishedTracksReturnsOnCall == nil {
 		fake.getPublishedTracksReturnsOnCall = make(map[int]struct {
-			result1 []types.PublishedTrack
+			result1 []types.MediaTrack
 		})
 	}
 	fake.getPublishedTracksReturnsOnCall[i] = struct {
-		result1 []types.PublishedTrack
+		result1 []types.MediaTrack
 	}{result1}
 }
 
@@ -2204,10 +2204,10 @@ func (fake *FakeLocalParticipant) OnStateChangeArgsForCall(i int) func(p types.L
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnTrackPublished(arg1 func(types.LocalParticipant, types.PublishedTrack)) {
+func (fake *FakeLocalParticipant) OnTrackPublished(arg1 func(types.LocalParticipant, types.MediaTrack)) {
 	fake.onTrackPublishedMutex.Lock()
 	fake.onTrackPublishedArgsForCall = append(fake.onTrackPublishedArgsForCall, struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
+		arg1 func(types.LocalParticipant, types.MediaTrack)
 	}{arg1})
 	stub := fake.OnTrackPublishedStub
 	fake.recordInvocation("OnTrackPublished", []interface{}{arg1})
@@ -2223,23 +2223,23 @@ func (fake *FakeLocalParticipant) OnTrackPublishedCallCount() int {
 	return len(fake.onTrackPublishedArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnTrackPublishedCalls(stub func(func(types.LocalParticipant, types.PublishedTrack))) {
+func (fake *FakeLocalParticipant) OnTrackPublishedCalls(stub func(func(types.LocalParticipant, types.MediaTrack))) {
 	fake.onTrackPublishedMutex.Lock()
 	defer fake.onTrackPublishedMutex.Unlock()
 	fake.OnTrackPublishedStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnTrackPublishedArgsForCall(i int) func(types.LocalParticipant, types.PublishedTrack) {
+func (fake *FakeLocalParticipant) OnTrackPublishedArgsForCall(i int) func(types.LocalParticipant, types.MediaTrack) {
 	fake.onTrackPublishedMutex.RLock()
 	defer fake.onTrackPublishedMutex.RUnlock()
 	argsForCall := fake.onTrackPublishedArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnTrackUpdated(arg1 func(types.LocalParticipant, types.PublishedTrack)) {
+func (fake *FakeLocalParticipant) OnTrackUpdated(arg1 func(types.LocalParticipant, types.MediaTrack)) {
 	fake.onTrackUpdatedMutex.Lock()
 	fake.onTrackUpdatedArgsForCall = append(fake.onTrackUpdatedArgsForCall, struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
+		arg1 func(types.LocalParticipant, types.MediaTrack)
 	}{arg1})
 	stub := fake.OnTrackUpdatedStub
 	fake.recordInvocation("OnTrackUpdated", []interface{}{arg1})
@@ -2255,13 +2255,13 @@ func (fake *FakeLocalParticipant) OnTrackUpdatedCallCount() int {
 	return len(fake.onTrackUpdatedArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnTrackUpdatedCalls(stub func(func(types.LocalParticipant, types.PublishedTrack))) {
+func (fake *FakeLocalParticipant) OnTrackUpdatedCalls(stub func(func(types.LocalParticipant, types.MediaTrack))) {
 	fake.onTrackUpdatedMutex.Lock()
 	defer fake.onTrackUpdatedMutex.Unlock()
 	fake.OnTrackUpdatedStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnTrackUpdatedArgsForCall(i int) func(types.LocalParticipant, types.PublishedTrack) {
+func (fake *FakeLocalParticipant) OnTrackUpdatedArgsForCall(i int) func(types.LocalParticipant, types.MediaTrack) {
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	argsForCall := fake.onTrackUpdatedArgsForCall[i]

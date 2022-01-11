@@ -548,14 +548,14 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 }
 
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
-func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.PublishedTrack) {
+func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, true)
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	// subscribe all existing participants to this PublishedTrack
+	// subscribe all existing participants to this MediaTrack
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
 			// skip publishing participant
@@ -586,7 +586,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	}
 }
 
-func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.PublishedTrack) {
+func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 	// send track updates to everyone, especially if track was updated by admin
 	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {

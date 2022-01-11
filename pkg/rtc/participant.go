@@ -103,8 +103,8 @@ type ParticipantImpl struct {
 	updateLock sync.Mutex
 
 	// callbacks & handlers
-	onTrackPublished func(types.LocalParticipant, types.PublishedTrack)
-	onTrackUpdated   func(types.LocalParticipant, types.PublishedTrack)
+	onTrackPublished func(types.LocalParticipant, types.MediaTrack)
+	onTrackUpdated   func(types.LocalParticipant, types.MediaTrack)
 	onStateChange    func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.LocalParticipant)
 	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
@@ -277,7 +277,7 @@ func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
 
 // callbacks for clients
 
-func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.MediaTrack)) {
 	p.onTrackPublished = callback
 }
 
@@ -285,7 +285,7 @@ func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, 
 	p.onStateChange = callback
 }
 
-func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.MediaTrack)) {
 	p.onTrackUpdated = callback
 }
 
@@ -667,7 +667,7 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	level = SilentAudioLevel
 	for _, pt := range p.GetPublishedTracks() {
-		tl, ta := pt.(types.LocalPublishedTrack).GetAudioLevel()
+		tl, ta := pt.(types.LocalMediaTrack).GetAudioLevel()
 		if ta {
 			active = true
 			if tl < level {
@@ -880,7 +880,7 @@ func (p *ParticipantImpl) setupUptrackManager() {
 		Logger: p.params.Logger,
 	})
 
-	p.UptrackManager.OnPublishedTrackUpdated(func(track types.PublishedTrack, onlyIfReady bool) {
+	p.UptrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
 		if onlyIfReady && !p.IsReady() {
 			return
 		}
@@ -1296,7 +1296,7 @@ func (p *ParticipantImpl) getPublisherConnectionQuality() (scores float64, numTr
 		if pt.IsMuted() {
 			continue
 		}
-		scores += pt.(types.LocalPublishedTrack).GetConnectionScore()
+		scores += pt.(types.LocalMediaTrack).GetConnectionScore()
 		numTracks++
 	}
 
@@ -1328,7 +1328,7 @@ func (p *ParticipantImpl) getDTX() bool {
 	return false
 }
 
-func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (types.PublishedTrack, bool) {
+func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (types.MediaTrack, bool) {
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
@@ -1401,7 +1401,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	return mt, newTrack
 }
 
-func (p *ParticipantImpl) handleTrackPublished(track types.PublishedTrack) {
+func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 	if !p.hasPendingMigratedTrack() {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
@@ -1454,9 +1454,9 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, trackInfo.TrackInfo
 }
 
-func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.PublishedTrack {
+func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalPublishedTrack).SignalCid() == clientId {
+		if publishedTrack.(types.LocalMediaTrack).SignalCid() == clientId {
 			return publishedTrack
 		}
 	}
@@ -1464,9 +1464,9 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Pu
 	return nil
 }
 
-func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalPublishedTrack).SdpCid() == clientId {
+		if publishedTrack.(types.LocalMediaTrack).SdpCid() == clientId {
 			return publishedTrack
 		}
 	}

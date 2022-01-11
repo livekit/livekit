@@ -41,8 +41,8 @@ type Participant interface {
 
 	SetMetadata(metadata string)
 
-	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
-	GetPublishedTracks() []PublishedTrack
+	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPublishedTracks() []MediaTrack
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID)
@@ -118,9 +118,9 @@ type LocalParticipant interface {
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
 	// OnTrackPublished - remote added a track
-	OnTrackPublished(func(LocalParticipant, PublishedTrack))
+	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(LocalParticipant, PublishedTrack))
+	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
 	OnMetadataUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
@@ -154,16 +154,24 @@ type MediaTrack interface {
 	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
-	IsMuted() bool
-	SetMuted(muted bool)
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	Source() livekit.TrackSource
-	IsSimulcast() bool
+
+	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
 
-	ToProto() *livekit.TrackInfo
+	IsMuted() bool
+	SetMuted(muted bool)
+
+	UpdateVideoLayers(layers []*livekit.VideoLayer)
+	IsSimulcast() bool
+
+	Receiver() sfu.TrackReceiver
+
+	// callbacks
+	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
+	AddOnClose(func())
 
 	// subscribers
 	AddSubscriber(participant LocalParticipant) error
@@ -182,40 +190,18 @@ type MediaTrack interface {
 
 //counterfeiter:generate . LocalMediaTrack
 type LocalMediaTrack interface {
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
-}
-
-// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
-//counterfeiter:generate . PublishedTrack
-type PublishedTrack interface {
 	MediaTrack
-
-	ToProto() *livekit.TrackInfo
-
-	Receiver() sfu.TrackReceiver
-
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
-
-	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
-
-	// callbacks
-	AddOnClose(func())
-}
-
-//counterfeiter:generate . LocalPublishedTrack
-type LocalPublishedTrack interface {
-	PublishedTrack
-
-	LocalMediaTrack
 
 	SignalCid() string
 	SdpCid() string
 
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionScore() float64
+
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
-// PublishedTrack is the main interface representing a track published to the room
+// MediaTrack is the main interface representing a track published to the room
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())

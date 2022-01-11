@@ -12,11 +12,11 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 	t.Run("updates permissions", func(t *testing.T) {
 		um := NewUptrackManager(UptrackManagerParams{})
 
-		tra := &typesfakes.FakePublishedTrack{}
+		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
 		um.publishedTracks["audio"] = tra
 
-		trv := &typesfakes.FakePublishedTrack{}
+		trv := &typesfakes.FakeMediaTrack{}
 		trv.IDReturns("video")
 		um.publishedTracks["video"] = trv
 
@@ -87,11 +87,11 @@ func TestPermissions(t *testing.T) {
 	t.Run("checks permissions", func(t *testing.T) {
 		um := NewUptrackManager(UptrackManagerParams{})
 
-		tra := &typesfakes.FakePublishedTrack{}
+		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
 		um.publishedTracks["audio"] = tra
 
-		trv := &typesfakes.FakePublishedTrack{}
+		trv := &typesfakes.FakeMediaTrack{}
 		trv.IDReturns("video")
 		um.publishedTracks["video"] = trv
 
@@ -131,7 +131,7 @@ func TestPermissions(t *testing.T) {
 		require.True(t, um.hasPermission("video", "p2"))
 
 		// add a new track after permissions are set
-		trs := &typesfakes.FakePublishedTrack{}
+		trs := &typesfakes.FakeMediaTrack{}
 		trs.IDReturns("screen")
 		um.publishedTracks["screen"] = trs
 
@@ -173,7 +173,7 @@ func TestPermissions(t *testing.T) {
 		require.False(t, um.hasPermission("screen", "p3"))
 
 		// add a new track after restrictive permissions are set
-		trw := &typesfakes.FakePublishedTrack{}
+		trw := &typesfakes.FakeMediaTrack{}
 		trw.IDReturns("watch")
 		um.publishedTracks["watch"] = trw
 

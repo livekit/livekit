@@ -21,7 +21,7 @@ type UptrackManager struct {
 	closed bool
 
 	// publishedTracks that participant is publishing
-	publishedTracks map[livekit.TrackID]types.PublishedTrack
+	publishedTracks map[livekit.TrackID]types.MediaTrack
 	// keeps track of subscriptions that are awaiting permissions
 	subscriptionPermissions map[livekit.ParticipantID]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
@@ -31,14 +31,14 @@ type UptrackManager struct {
 
 	// callbacks & handlers
 	onClose                      func()
-	onTrackUpdated               func(track types.PublishedTrack, onlyIfReady bool)
+	onTrackUpdated               func(track types.MediaTrack, onlyIfReady bool)
 	onSubscribedMaxQualityChange func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error
 }
 
 func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
 	return &UptrackManager{
 		params:               params,
-		publishedTracks:      make(map[livekit.TrackID]types.PublishedTrack, 0),
+		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack, 0),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
@@ -79,7 +79,7 @@ func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
-func (u *UptrackManager) OnPublishedTrackUpdated(f func(track types.PublishedTrack, onlyIfReady bool)) {
+func (u *UptrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, onlyIfReady bool)) {
 	u.onTrackUpdated = f
 }
 
@@ -89,7 +89,7 @@ func (u *UptrackManager) OnSubscribedMaxQualityChange(f func(trackID livekit.Tra
 
 // AddSubscriber subscribes op to all publishedTracks
 func (u *UptrackManager) AddSubscriber(sub types.LocalParticipant, params types.AddSubscriberParams) (int, error) {
-	var tracks []types.PublishedTrack
+	var tracks []types.MediaTrack
 	if params.AllTracks {
 		tracks = u.GetPublishedTracks()
 	} else {
@@ -143,7 +143,7 @@ func (u *UptrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID li
 	u.lock.Unlock()
 }
 
-func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.PublishedTrack {
+func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
 	u.lock.RLock()
 	track := u.publishedTracks[trackID]
 	u.lock.RUnlock()
@@ -163,18 +163,18 @@ func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 	return track
 }
 
-func (u *UptrackManager) GetPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
+func (u *UptrackManager) GetPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
 	return u.getPublishedTrack(trackID)
 }
 
-func (u *UptrackManager) GetPublishedTracks() []types.PublishedTrack {
+func (u *UptrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	tracks := make([]types.PublishedTrack, 0, len(u.publishedTracks))
+	tracks := make([]types.MediaTrack, 0, len(u.publishedTracks))
 	for _, t := range u.publishedTracks {
 		tracks = append(tracks, t)
 	}
@@ -207,7 +207,7 @@ func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UptrackManager) AddPublishedTrack(track types.PublishedTrack) {
+func (u *UptrackManager) AddPublishedTrack(track types.MediaTrack) {
 	track.OnSubscribedMaxQualityChange(u.onSubscribedMaxQualityChange)
 
 	u.lock.Lock()
@@ -242,12 +242,12 @@ func (u *UptrackManager) AddPublishedTrack(track types.PublishedTrack) {
 	})
 }
 
-func (u *UptrackManager) RemovePublishedTrack(track types.PublishedTrack) {
+func (u *UptrackManager) RemovePublishedTrack(track types.MediaTrack) {
 	track.RemoveAllSubscribers()
 }
 
 // should be called with lock held
-func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.PublishedTrack {
+func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
 	return u.publishedTracks[trackID]
 }
 
