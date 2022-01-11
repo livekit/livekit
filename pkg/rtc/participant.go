@@ -399,18 +399,20 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close(bool) error {
+func (p *ParticipantImpl) Close(sendLeave bool) error {
 	if !p.isClosed.TrySet(true) {
 		// already closed
 		return nil
 	}
 
 	// send leave message
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: &livekit.LeaveRequest{},
-		},
-	})
+	if sendLeave {
+		_ = p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
+				Leave: &livekit.LeaveRequest{},
+			},
+		})
+	}
 
 	p.LocalParticipant.Close()
 
