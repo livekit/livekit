@@ -379,7 +379,7 @@ func (r *Room) UpdateSubscriptions(
 	return nil
 }
 
-func (r *Room) SyncState(participant types.Participant, state *livekit.SyncState) error {
+func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	return nil
 }
 

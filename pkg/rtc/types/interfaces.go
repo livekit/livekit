@@ -53,10 +53,6 @@ type Participant interface {
 	Start()
 	Close() error
 
-	// callbacks
-	// OnTrackPublished - remote added a remoteTrack
-	OnTrackPublished(func(LocalParticipant, PublishedTrack))
-
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 
@@ -121,6 +117,8 @@ type LocalParticipant interface {
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	// OnTrackPublished - remote added a track
+	OnTrackPublished(func(LocalParticipant, PublishedTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, PublishedTrack))
 	OnMetadataUpdate(callback func(LocalParticipant))
@@ -144,7 +142,7 @@ type Room interface {
 	Name() livekit.RoomName
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
-	SyncState(participant Participant, state *livekit.SyncState) error
+	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }

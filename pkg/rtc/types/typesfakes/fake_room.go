@@ -19,10 +19,10 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 livekit.RoomName
 	}
-	SyncStateStub        func(types.Participant, *livekit.SyncState) error
+	SyncStateStub        func(types.LocalParticipant, *livekit.SyncState) error
 	syncStateMutex       sync.RWMutex
 	syncStateArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SyncState
 	}
 	syncStateReturns struct {
@@ -126,11 +126,11 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	}{result1}
 }
 
-func (fake *FakeRoom) SyncState(arg1 types.Participant, arg2 *livekit.SyncState) error {
+func (fake *FakeRoom) SyncState(arg1 types.LocalParticipant, arg2 *livekit.SyncState) error {
 	fake.syncStateMutex.Lock()
 	ret, specificReturn := fake.syncStateReturnsOnCall[len(fake.syncStateArgsForCall)]
 	fake.syncStateArgsForCall = append(fake.syncStateArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SyncState
 	}{arg1, arg2})
 	stub := fake.SyncStateStub
@@ -152,13 +152,13 @@ func (fake *FakeRoom) SyncStateCallCount() int {
 	return len(fake.syncStateArgsForCall)
 }
 
-func (fake *FakeRoom) SyncStateCalls(stub func(types.Participant, *livekit.SyncState) error) {
+func (fake *FakeRoom) SyncStateCalls(stub func(types.LocalParticipant, *livekit.SyncState) error) {
 	fake.syncStateMutex.Lock()
 	defer fake.syncStateMutex.Unlock()
 	fake.SyncStateStub = stub
 }
 
-func (fake *FakeRoom) SyncStateArgsForCall(i int) (types.Participant, *livekit.SyncState) {
+func (fake *FakeRoom) SyncStateArgsForCall(i int) (types.LocalParticipant, *livekit.SyncState) {
 	fake.syncStateMutex.RLock()
 	defer fake.syncStateMutex.RUnlock()
 	argsForCall := fake.syncStateArgsForCall[i]

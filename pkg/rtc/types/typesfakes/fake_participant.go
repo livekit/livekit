@@ -94,11 +94,6 @@ type FakeParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	OnTrackPublishedStub        func(func(types.LocalParticipant, types.PublishedTrack))
-	onTrackPublishedMutex       sync.RWMutex
-	onTrackPublishedArgsForCall []struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
-	}
 	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
@@ -595,38 +590,6 @@ func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) OnTrackPublished(arg1 func(types.LocalParticipant, types.PublishedTrack)) {
-	fake.onTrackPublishedMutex.Lock()
-	fake.onTrackPublishedArgsForCall = append(fake.onTrackPublishedArgsForCall, struct {
-		arg1 func(types.LocalParticipant, types.PublishedTrack)
-	}{arg1})
-	stub := fake.OnTrackPublishedStub
-	fake.recordInvocation("OnTrackPublished", []interface{}{arg1})
-	fake.onTrackPublishedMutex.Unlock()
-	if stub != nil {
-		fake.OnTrackPublishedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnTrackPublishedCallCount() int {
-	fake.onTrackPublishedMutex.RLock()
-	defer fake.onTrackPublishedMutex.RUnlock()
-	return len(fake.onTrackPublishedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnTrackPublishedCalls(stub func(func(types.LocalParticipant, types.PublishedTrack))) {
-	fake.onTrackPublishedMutex.Lock()
-	defer fake.onTrackPublishedMutex.Unlock()
-	fake.OnTrackPublishedStub = stub
-}
-
-func (fake *FakeParticipant) OnTrackPublishedArgsForCall(i int) func(types.LocalParticipant, types.PublishedTrack) {
-	fake.onTrackPublishedMutex.RLock()
-	defer fake.onTrackPublishedMutex.RUnlock()
-	argsForCall := fake.onTrackPublishedArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
@@ -911,8 +874,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
-	fake.onTrackPublishedMutex.RLock()
-	defer fake.onTrackPublishedMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
