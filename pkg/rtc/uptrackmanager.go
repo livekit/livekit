@@ -251,47 +251,6 @@ func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.Publis
 	return u.publishedTracks[trackID]
 }
 
-func (u *UptrackManager) GetPublishedTrackBySignalCidOrSdpCid(clientId string) types.PublishedTrack {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	track := u.getPublishedTrackBySignalCid(clientId)
-	if track == nil {
-		track = u.getPublishedTrackBySdpCid(clientId)
-	}
-
-	return track
-}
-
-// should be called with lock held
-func (u *UptrackManager) getPublishedTrackBySignalCid(clientId string) types.PublishedTrack {
-	for _, publishedTrack := range u.publishedTracks {
-		if publishedTrack.SignalCid() == clientId {
-			return publishedTrack
-		}
-	}
-
-	return nil
-}
-
-func (u *UptrackManager) GetPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-
-	return u.getPublishedTrackBySdpCid(clientId)
-}
-
-// should be called with lock held
-func (u *UptrackManager) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
-	for _, publishedTrack := range u.publishedTracks {
-		if publishedTrack.SdpCid() == clientId {
-			return publishedTrack
-		}
-	}
-
-	return nil
-}
-
 func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
 	// every update overrides the existing
 

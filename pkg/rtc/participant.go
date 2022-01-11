@@ -662,6 +662,20 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 	p.setTrackMuted(trackID, muted)
 }
 
+func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
+	level = SilentAudioLevel
+	for _, pt := range p.GetPublishedTracks() {
+		tl, ta := pt.(types.LocalPublishedTrack).GetAudioLevel()
+		if ta {
+			active = true
+			if tl < level {
+				level = tl
+			}
+		}
+	}
+	return
+}
+
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	// avg loss across all tracks, weigh published the same as subscribed
 	scores, numTracks := p.getPublisherConnectionQuality()
@@ -830,22 +844,8 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
-	level = SilentAudioLevel
-	for _, pt := range p.UptrackManager.GetPublishedTracks() {
-		tl, ta := pt.GetAudioLevel()
-		if ta {
-			active = true
-			if tl < level {
-				level = tl
-			}
-		}
-	}
-	return
-}
-
 func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
-	track := p.UptrackManager.GetPublishedTrack(trackID)
+	track := p.GetPublishedTrack(trackID)
 	if track == nil {
 		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
 		return errors.New("could not find track")
@@ -859,7 +859,7 @@ func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit
 }
 
 func (p *ParticipantImpl) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
-	track := p.UptrackManager.GetPublishedTrack(trackID)
+	track := p.GetPublishedTrack(trackID)
 	if track == nil {
 		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
 		return errors.New("could not find track")
@@ -1238,15 +1238,15 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil {
+		return nil
+	}
+
 	p.pendingTracksLock.Lock()
 	defer p.pendingTracksLock.Unlock()
 
 	// if track is already published, reject
 	if p.pendingTracks[req.Cid] != nil {
-		return nil
-	}
-
-	if p.UptrackManager.GetPublishedTrackBySignalCidOrSdpCid(req.Cid) != nil {
 		return nil
 	}
 
@@ -1290,11 +1290,11 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 }
 
 func (p *ParticipantImpl) getPublisherConnectionQuality() (scores float64, numTracks int) {
-	for _, pt := range p.UptrackManager.GetPublishedTracks() {
+	for _, pt := range p.GetPublishedTracks() {
 		if pt.IsMuted() {
 			continue
 		}
-		scores += pt.GetConnectionScore()
+		scores += pt.(types.LocalPublishedTrack).GetConnectionScore()
 		numTracks++
 	}
 
@@ -1331,7 +1331,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	newTrack := false
 
 	// use existing mediatrack to handle simulcast
-	mt, ok := p.UptrackManager.GetPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
@@ -1450,6 +1450,26 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		p.params.Logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
 	}
 	return signalCid, trackInfo.TrackInfo
+}
+
+func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.PublishedTrack {
+	for _, publishedTrack := range p.GetPublishedTracks() {
+		if publishedTrack.(types.LocalPublishedTrack).SignalCid() == clientId {
+			return publishedTrack
+		}
+	}
+
+	return nil
+}
+
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.PublishedTrack {
+	for _, publishedTrack := range p.GetPublishedTracks() {
+		if publishedTrack.(types.LocalPublishedTrack).SdpCid() == clientId {
+			return publishedTrack
+		}
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) rtcpSendWorker() {

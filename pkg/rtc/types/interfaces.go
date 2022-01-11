@@ -147,16 +147,9 @@ type Room interface {
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }
 
-//counterfeiter:generate . LocalMediaTrack
-type LocalMediaTrack interface {
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
-}
-
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
-	LocalMediaTrack
-
 	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
@@ -186,16 +179,11 @@ type MediaTrack interface {
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
 }
 
-//counterfeiter:generate . LocalPublishedTrack
-type LocalPublishedTrack interface {
-	SignalCid() string
-	SdpCid() string
-
-	GetAudioLevel() (level uint8, active bool)
-	GetConnectionScore() float64
+//counterfeiter:generate . LocalMediaTrack
+type LocalMediaTrack interface {
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
-// PublishedTrack is the main interface representing a track published to the room
 // it's responsible for managing subscribers and forwarding data from the input track to all subscribers
 //counterfeiter:generate . PublishedTrack
 type PublishedTrack interface {
@@ -211,10 +199,22 @@ type PublishedTrack interface {
 
 	// callbacks
 	AddOnClose(func())
-
-	LocalPublishedTrack
 }
 
+//counterfeiter:generate . LocalPublishedTrack
+type LocalPublishedTrack interface {
+	PublishedTrack
+
+	LocalMediaTrack
+
+	SignalCid() string
+	SdpCid() string
+
+	GetAudioLevel() (level uint8, active bool)
+	GetConnectionScore() float64
+}
+
+// PublishedTrack is the main interface representing a track published to the room
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())
