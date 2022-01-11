@@ -188,7 +188,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			EmptyTimeout: 5 * 60,
 		},
 		TURN: TURNConfig{
-			Enabled: false,
+			Domain:      "dev-turn.luxrobo.com",
+			Enabled:     true,
+			ExternalTLS: true,
+			TLSPort:     3478,
 		},
 		NodeSelector: NodeSelectorConfig{
 			Kind:         "random",
