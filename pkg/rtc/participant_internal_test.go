@@ -52,7 +52,7 @@ func TestICEStateChange(t *testing.T) {
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan struct{})
-		p.onClose = func(participant types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+		p.onClose = func(participant types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 			close(closeChan)
 		}
 		p.handlePrimaryStateChange(webrtc.PeerConnectionStateFailed)
@@ -74,10 +74,10 @@ func TestTrackPublishing(t *testing.T) {
 		track.IDReturns("id")
 		published := false
 		updated := false
-		p.OnTrackUpdated(func(p types.Participant, track types.PublishedTrack) {
+		p.OnTrackUpdated(func(p types.LocalParticipant, track types.PublishedTrack) {
 			updated = true
 		})
-		p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
+		p.OnTrackPublished(func(p types.LocalParticipant, track types.PublishedTrack) {
 			published = true
 		})
 		p.LocalParticipant.AddPublishedTrack(track)

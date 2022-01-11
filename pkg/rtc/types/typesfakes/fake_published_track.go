@@ -15,10 +15,10 @@ type FakePublishedTrack struct {
 	addOnCloseArgsForCall []struct {
 		arg1 func()
 	}
-	AddSubscriberStub        func(types.Participant) error
+	AddSubscriberStub        func(types.LocalParticipant) error
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 	}
 	addSubscriberReturns struct {
 		result1 error
@@ -290,11 +290,11 @@ func (fake *FakePublishedTrack) AddOnCloseArgsForCall(i int) func() {
 	return argsForCall.arg1
 }
 
-func (fake *FakePublishedTrack) AddSubscriber(arg1 types.Participant) error {
+func (fake *FakePublishedTrack) AddSubscriber(arg1 types.LocalParticipant) error {
 	fake.addSubscriberMutex.Lock()
 	ret, specificReturn := fake.addSubscriberReturnsOnCall[len(fake.addSubscriberArgsForCall)]
 	fake.addSubscriberArgsForCall = append(fake.addSubscriberArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 	}{arg1})
 	stub := fake.AddSubscriberStub
 	fakeReturns := fake.addSubscriberReturns
@@ -315,13 +315,13 @@ func (fake *FakePublishedTrack) AddSubscriberCallCount() int {
 	return len(fake.addSubscriberArgsForCall)
 }
 
-func (fake *FakePublishedTrack) AddSubscriberCalls(stub func(types.Participant) error) {
+func (fake *FakePublishedTrack) AddSubscriberCalls(stub func(types.LocalParticipant) error) {
 	fake.addSubscriberMutex.Lock()
 	defer fake.addSubscriberMutex.Unlock()
 	fake.AddSubscriberStub = stub
 }
 
-func (fake *FakePublishedTrack) AddSubscriberArgsForCall(i int) types.Participant {
+func (fake *FakePublishedTrack) AddSubscriberArgsForCall(i int) types.LocalParticipant {
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
 	argsForCall := fake.addSubscriberArgsForCall[i]

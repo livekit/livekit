@@ -277,7 +277,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	}
 
 	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
-	participant.OnClose(func(p types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -329,7 +329,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 			logger.Errorw("could not handle metadata update", err)
 		}
 	})
-	room.OnParticipantChanged(func(p types.Participant) {
+	room.OnParticipantChanged(func(p types.LocalParticipant) {
 		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				logger.Errorw("could not handle participant change", err)
@@ -344,7 +344,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 }
 
 // manages an RTC session for a participant, runs on the RTC node
-func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.Participant, requestSource routing.MessageSource) {
+func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
 	defer func() {
 		logger.Debugw("RTC session finishing",
 			"participant", participant.Identity(),

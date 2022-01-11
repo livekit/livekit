@@ -7,7 +7,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-func HandleParticipantSignal(room types.Room, participant types.Participant, req *livekit.SignalRequest, pLogger logger.Logger) error {
+func HandleParticipantSignal(room types.Room, participant types.LocalParticipant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
 		_, err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))

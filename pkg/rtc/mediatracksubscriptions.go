@@ -92,7 +92,7 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackSubscriptions) AddSubscriber(sub types.Participant, codec webrtc.RTPCodecCapability, wr WrappedReceiver) (*sfu.DownTrack, error) {
+func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, codec webrtc.RTPCodecCapability, wr WrappedReceiver) (*sfu.DownTrack, error) {
 	subscriberID := sub.ID()
 
 	t.subscribedTracksMu.Lock()
@@ -324,7 +324,7 @@ func (t *MediaTrackSubscriptions) getSubscribedTrack(subscriberID livekit.Partic
 
 // TODO: send for all downtracks from the source participant
 // https://tools.ietf.org/html/rfc7941
-func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.Participant) {
+func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalParticipant) {
 	var sd []rtcp.SourceDescriptionChunk
 
 	subTrack := t.getSubscribedTrack(sub.ID())

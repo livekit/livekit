@@ -162,7 +162,7 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackReceiver) AddSubscriber(sub types.Participant) error {
+func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 

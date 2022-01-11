@@ -44,8 +44,8 @@ type Participant interface {
 	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
 	GetPublishedTracks() []PublishedTrack
 
-	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackID livekit.TrackID)
+	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID)
 
 	// permissions
 	Hidden() bool
@@ -55,9 +55,9 @@ type Participant interface {
 
 	// callbacks
 	// OnTrackPublished - remote added a remoteTrack
-	OnTrackPublished(func(Participant, PublishedTrack))
+	OnTrackPublished(func(LocalParticipant, PublishedTrack))
 
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 
 	DebugInfo() map[string]interface{}
@@ -120,12 +120,12 @@ type LocalParticipant interface {
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 
 	// callbacks
-	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
 	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, PublishedTrack))
-	OnMetadataUpdate(callback func(Participant))
-	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(_callback func(Participant, map[livekit.TrackID]livekit.ParticipantID))
+	OnTrackUpdated(callback func(LocalParticipant, PublishedTrack))
+	OnMetadataUpdate(callback func(LocalParticipant))
+	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 
 	// updates from remotes
 	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
@@ -142,7 +142,7 @@ type LocalParticipant interface {
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
-	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 	SyncState(participant Participant, state *livekit.SyncState) error
 
@@ -174,7 +174,7 @@ type MediaTrack interface {
 	ToProto() *livekit.TrackInfo
 
 	// subscribers
-	AddSubscriber(participant Participant) error
+	AddSubscriber(participant LocalParticipant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	GetAllSubscriberIDs() []livekit.ParticipantID

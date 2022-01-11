@@ -87,18 +87,18 @@ type ParticipantImpl struct {
 	updateLock sync.Mutex
 
 	// callbacks & handlers
-	onTrackPublished func(types.Participant, types.PublishedTrack)
-	onTrackUpdated   func(types.Participant, types.PublishedTrack)
-	onStateChange    func(p types.Participant, oldState livekit.ParticipantInfo_State)
-	onMetadataUpdate func(types.Participant)
-	onDataPacket     func(types.Participant, *livekit.DataPacket)
+	onTrackPublished func(types.LocalParticipant, types.PublishedTrack)
+	onTrackUpdated   func(types.LocalParticipant, types.PublishedTrack)
+	onStateChange    func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
+	onMetadataUpdate func(types.LocalParticipant)
+	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
 	pendingOffer *webrtc.SessionDescription
-	onClose      func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)
+	onClose      func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 }
 
-func NewParticipant(params ParticipantParams) (types.LocalParticipant, error) {
+func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
@@ -258,27 +258,27 @@ func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
 
 // callbacks for clients
 
-func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.PublishedTrack)) {
 	p.onTrackPublished = callback
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.Participant, oldState livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
 	p.onStateChange = callback
 }
 
-func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.PublishedTrack)) {
+func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.PublishedTrack)) {
 	p.onTrackUpdated = callback
 }
 
-func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.Participant)) {
+func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.LocalParticipant)) {
 	p.onMetadataUpdate = callback
 }
 
-func (p *ParticipantImpl) OnDataPacket(callback func(types.Participant, *livekit.DataPacket)) {
+func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
 	p.onDataPacket = callback
 }
 
-func (p *ParticipantImpl) OnClose(callback func(types.Participant, map[livekit.TrackID]livekit.ParticipantID)) {
+func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
 	p.onClose = callback
 }
 
