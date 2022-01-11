@@ -8,8 +8,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
-	p := &typesfakes.FakeParticipant{}
+func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeLocalParticipant {
+	p := &typesfakes.FakeLocalParticipant{}
 	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
@@ -20,7 +20,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.HiddenReturns(hidden)
 
 	p.SetMetadataStub = func(m string) {
-		var f func(participant types.Participant)
+		var f func(participant types.LocalParticipant)
 		if p.OnMetadataUpdateCallCount() > 0 {
 			f = p.OnMetadataUpdateArgsForCall(p.OnMetadataUpdateCallCount() - 1)
 		}
@@ -29,7 +29,7 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		}
 	}
 	updateTrack := func() {
-		var f func(participant types.Participant, track types.PublishedTrack)
+		var f func(participant types.LocalParticipant, track types.MediaTrack)
 		if p.OnTrackUpdatedCallCount() > 0 {
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
@@ -48,8 +48,8 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	return p
 }
 
-func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
-	t := &typesfakes.FakePublishedTrack{}
+func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
+	t := &typesfakes.FakeMediaTrack{}
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)

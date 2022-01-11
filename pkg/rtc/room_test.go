@@ -92,7 +92,7 @@ func TestRoomJoin(t *testing.T) {
 			if p == op {
 				continue
 			}
-			mockP := op.(*typesfakes.FakeParticipant)
+			mockP := op.(*typesfakes.FakeLocalParticipant)
 			require.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
 			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
@@ -104,12 +104,12 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		var changedParticipant types.Participant
-		rm.OnParticipantChanged(func(participant types.Participant) {
+		rm.OnParticipantChanged(func(participant types.LocalParticipant) {
 			changedParticipant = participant
 		})
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
-		disconnectedParticipant := participants[1].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
+		disconnectedParticipant := participants[1].(*typesfakes.FakeLocalParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
 		rm.RemoveParticipant(p.Identity())
@@ -123,7 +123,7 @@ func TestRoomJoin(t *testing.T) {
 				require.Zero(t, p.SendParticipantUpdateCallCount())
 				continue
 			}
-			fakeP := op.(*typesfakes.FakeParticipant)
+			fakeP := op.(*typesfakes.FakeLocalParticipant)
 			require.Equal(t, 1, fakeP.SendParticipantUpdateCallCount())
 			numUpdates += 1
 		}
@@ -145,26 +145,26 @@ func TestParticipantUpdate(t *testing.T) {
 	tests := []struct {
 		name         string
 		sendToSender bool // should sender receive it
-		action       func(p types.Participant)
+		action       func(p types.LocalParticipant)
 	}{
 		{
 			"track mutes are sent to everyone",
 			true,
-			func(p types.Participant) {
+			func(p types.LocalParticipant) {
 				p.SetTrackMuted("", true, false)
 			},
 		},
 		{
 			"track metadata updates are sent to everyone",
 			true,
-			func(p types.Participant) {
+			func(p types.LocalParticipant) {
 				p.SetMetadata("")
 			},
 		},
 		{
 			"track publishes are sent to existing participants",
 			true,
-			func(p types.Participant) {
+			func(p types.LocalParticipant) {
 				p.AddTrack(&livekit.AddTrackRequest{
 					Type: livekit.TrackType_VIDEO,
 				})
@@ -178,7 +178,7 @@ func TestParticipantUpdate(t *testing.T) {
 			// remember how many times send has been called for each
 			callCounts := make(map[livekit.ParticipantID]int)
 			for _, p := range rm.GetParticipants() {
-				fp := p.(*typesfakes.FakeParticipant)
+				fp := p.(*typesfakes.FakeLocalParticipant)
 				callCounts[p.ID()] = fp.SendParticipantUpdateCallCount()
 			}
 
@@ -191,7 +191,7 @@ func TestParticipantUpdate(t *testing.T) {
 				if p != sender || test.sendToSender {
 					expected += 1
 				}
-				fp := p.(*typesfakes.FakeParticipant)
+				fp := p.(*typesfakes.FakeLocalParticipant)
 				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
 			}
 		})
@@ -248,12 +248,12 @@ func TestNewTrack(t *testing.T) {
 	t.Run("new track should be added to ready participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 		participants := rm.GetParticipants()
-		p0 := participants[0].(*typesfakes.FakeParticipant)
+		p0 := participants[0].(*typesfakes.FakeLocalParticipant)
 		p0.StateReturns(livekit.ParticipantInfo_JOINED)
-		p1 := participants[1].(*typesfakes.FakeParticipant)
+		p1 := participants[1].(*typesfakes.FakeLocalParticipant)
 		p1.StateReturns(livekit.ParticipantInfo_ACTIVE)
 
-		pub := participants[2].(*typesfakes.FakeParticipant)
+		pub := participants[2].(*typesfakes.FakeLocalParticipant)
 
 		// pub adds track
 		track := newMockTrack(livekit.TrackType_VIDEO, "webcam")
@@ -270,7 +270,7 @@ func TestNewTrack(t *testing.T) {
 
 func TestActiveSpeakers(t *testing.T) {
 	t.Parallel()
-	getActiveSpeakerUpdates := func(p *typesfakes.FakeParticipant) []*livekit.ActiveSpeakerUpdate {
+	getActiveSpeakerUpdates := func(p *typesfakes.FakeLocalParticipant) []*livekit.ActiveSpeakerUpdate {
 		var updates []*livekit.ActiveSpeakerUpdate
 		numCalls := p.SendDataPacketCallCount()
 		for i := 0; i < numCalls; i++ {
@@ -287,7 +287,7 @@ func TestActiveSpeakers(t *testing.T) {
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: types.DefaultProtocol})
 		defer rm.Close()
-		p := rm.GetParticipants()[0].(*typesfakes.FakeParticipant)
+		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
 
 		time.Sleep(audioUpdateDuration)
@@ -300,8 +300,8 @@ func TestActiveSpeakers(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
-		p2 := participants[1].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
+		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
 		p.GetAudioLevelReturns(10, true)
 		p2.GetAudioLevelReturns(20, true)
 
@@ -315,7 +315,7 @@ func TestActiveSpeakers(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
 		p.GetAudioLevelReturns(30, true)
 
@@ -325,7 +325,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 		testutils.WithTimeout(t, "ensure everyone has gotten an audio update", func() bool {
 			for _, op := range participants {
-				op := op.(*typesfakes.FakeParticipant)
+				op := op.(*typesfakes.FakeLocalParticipant)
 				updates := getActiveSpeakerUpdates(op)
 				if len(updates) == 0 {
 					return false
@@ -348,8 +348,8 @@ func TestActiveSpeakers(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothIntervals: 3})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
-		op := participants[1].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
+		op := participants[1].(*typesfakes.FakeLocalParticipant)
 		p.GetAudioLevelReturns(30, true)
 		convertedLevel := rtc.ConvertAudioLevel(30)
 
@@ -406,7 +406,7 @@ func TestDataChannel(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
 
 		packet := livekit.DataPacket{
 			Kind: livekit.DataPacket_RELIABLE,
@@ -421,7 +421,7 @@ func TestDataChannel(t *testing.T) {
 
 		// ensure everyone has received the packet
 		for _, op := range participants {
-			fp := op.(*typesfakes.FakeParticipant)
+			fp := op.(*typesfakes.FakeLocalParticipant)
 			if fp == p {
 				require.Zero(t, fp.SendDataPacketCallCount())
 				continue
@@ -435,8 +435,8 @@ func TestDataChannel(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
-		p1 := participants[1].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
+		p1 := participants[1].(*typesfakes.FakeLocalParticipant)
 
 		packet := livekit.DataPacket{
 			Kind: livekit.DataPacket_RELIABLE,
@@ -452,7 +452,7 @@ func TestDataChannel(t *testing.T) {
 
 		// only p1 should receive the data
 		for _, op := range participants {
-			fp := op.(*typesfakes.FakeParticipant)
+			fp := op.(*typesfakes.FakeLocalParticipant)
 			if fp != p1 {
 				require.Zero(t, fp.SendDataPacketCallCount())
 			}
@@ -465,7 +465,7 @@ func TestDataChannel(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close()
 		participants := rm.GetParticipants()
-		p := participants[0].(*typesfakes.FakeParticipant)
+		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p.CanPublishDataReturns(false)
 
 		packet := livekit.DataPacket{
@@ -480,7 +480,7 @@ func TestDataChannel(t *testing.T) {
 
 		// no one should've been sent packet
 		for _, op := range participants {
-			fp := op.(*typesfakes.FakeParticipant)
+			fp := op.(*typesfakes.FakeLocalParticipant)
 			require.Zero(t, fp.SendDataPacketCallCount())
 		}
 	})
@@ -519,7 +519,7 @@ func TestHiddenParticipants(t *testing.T) {
 			if p == op {
 				continue
 			}
-			mockP := op.(*typesfakes.FakeParticipant)
+			mockP := op.(*typesfakes.FakeLocalParticipant)
 			require.NotZero(t, mockP.AddSubscriberCallCount())
 			// last call should be to add the newest participant
 			sub, params := mockP.AddSubscriberArgsForCall(mockP.AddSubscriberCallCount() - 1)
@@ -537,7 +537,7 @@ func TestRoomUpdate(t *testing.T) {
 		rm.SetMetadata("test metadata...")
 
 		for _, op := range rm.GetParticipants() {
-			fp := op.(*typesfakes.FakeParticipant)
+			fp := op.(*typesfakes.FakeLocalParticipant)
 			require.Equal(t, 1, fp.SendRoomUpdateCallCount())
 		}
 	})

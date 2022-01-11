@@ -32,8 +32,37 @@ const (
 	MigrateStateComplete
 )
 
+//counterfeiter:generate . Participant
+type Participant interface {
+	ID() livekit.ParticipantID
+	Identity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.ParticipantInfo
+
+	SetMetadata(metadata string)
+
+	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPublishedTracks() []MediaTrack
+
+	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID)
+
+	// permissions
+	Hidden() bool
+
+	Start()
+	Close(sendLeave bool) error
+
+	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
+	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+
+	DebugInfo() map[string]interface{}
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
+	Participant
+
 	ProtocolVersion() ProtocolVersion
 
 	ConnectedAt() time.Time
@@ -87,12 +116,14 @@ type LocalParticipant interface {
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
 
 	// callbacks
-	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	// OnTrackPublished - remote added a track
+	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, PublishedTrack))
-	OnMetadataUpdate(callback func(Participant))
-	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(_callback func(Participant, map[livekit.TrackID]livekit.ParticipantID))
+	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
+	OnMetadataUpdate(callback func(LocalParticipant))
+	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 
 	// updates from remotes
 	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
@@ -105,77 +136,45 @@ type LocalParticipant interface {
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 }
 
-//counterfeiter:generate . Participant
-type Participant interface {
-	LocalParticipant
-
-	ID() livekit.ParticipantID
-	Identity() livekit.ParticipantIdentity
-
-	ToProto() *livekit.ParticipantInfo
-
-	SetMetadata(metadata string)
-
-	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
-	GetPublishedTracks() []PublishedTrack
-
-	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackID livekit.TrackID)
-
-	// permissions
-	Hidden() bool
-
-	Start()
-	Close(sendLeave bool) error
-
-	// callbacks
-	// OnTrackPublished - remote added a remoteTrack
-	OnTrackPublished(func(Participant, PublishedTrack))
-
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
-	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-
-	DebugInfo() map[string]interface{}
-}
-
 // Room is a container of participants, and can provide room level actions
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
-	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
-	SyncState(participant Participant, state *livekit.SyncState) error
-	SimulateScenario(participant Participant, scenario *livekit.SimulateScenario) error
+	SyncState(participant LocalParticipant, state *livekit.SyncState) error
+	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
-}
-
-//counterfeiter:generate . LocalMediaTrack
-type LocalMediaTrack interface {
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
-	LocalMediaTrack
-
 	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
-	IsMuted() bool
-	SetMuted(muted bool)
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	Source() livekit.TrackSource
-	IsSimulcast() bool
+
+	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
 
-	ToProto() *livekit.TrackInfo
+	IsMuted() bool
+	SetMuted(muted bool)
+
+	UpdateVideoLayers(layers []*livekit.VideoLayer)
+	IsSimulcast() bool
+
+	Receiver() sfu.TrackReceiver
+
+	// callbacks
+	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
+	AddOnClose(func())
 
 	// subscribers
-	AddSubscriber(participant Participant) error
+	AddSubscriber(participant LocalParticipant) error
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	GetAllSubscriberIDs() []livekit.ParticipantID
@@ -189,35 +188,20 @@ type MediaTrack interface {
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
 }
 
-//counterfeiter:generate . LocalPublishedTrack
-type LocalPublishedTrack interface {
+//counterfeiter:generate . LocalMediaTrack
+type LocalMediaTrack interface {
+	MediaTrack
+
 	SignalCid() string
 	SdpCid() string
 
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionScore() float64
+
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
-// PublishedTrack is the main interface representing a track published to the room
-// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
-//counterfeiter:generate . PublishedTrack
-type PublishedTrack interface {
-	MediaTrack
-
-	ToProto() *livekit.TrackInfo
-
-	Receiver() sfu.TrackReceiver
-
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
-
-	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
-
-	// callbacks
-	AddOnClose(func())
-
-	LocalPublishedTrack
-}
-
+// MediaTrack is the main interface representing a track published to the room
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())

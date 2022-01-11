@@ -52,7 +52,7 @@ func TestICEStateChange(t *testing.T) {
 	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		closeChan := make(chan struct{})
-		p.onClose = func(participant types.Participant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
+		p.onClose = func(participant types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 			close(closeChan)
 		}
 		p.handlePrimaryStateChange(webrtc.PeerConnectionStateFailed)
@@ -70,18 +70,18 @@ func TestTrackPublishing(t *testing.T) {
 	t.Run("should send the correct events", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.state.Store(livekit.ParticipantInfo_ACTIVE)
-		track := &typesfakes.FakePublishedTrack{}
+		track := &typesfakes.FakeMediaTrack{}
 		track.IDReturns("id")
 		published := false
 		updated := false
-		p.OnTrackUpdated(func(p types.Participant, track types.PublishedTrack) {
+		p.OnTrackUpdated(func(p types.LocalParticipant, track types.MediaTrack) {
 			updated = true
 		})
-		p.OnTrackPublished(func(p types.Participant, track types.PublishedTrack) {
+		p.OnTrackPublished(func(p types.LocalParticipant, track types.MediaTrack) {
 			published = true
 		})
-		p.LocalParticipant.AddPublishedTrack(track)
-		p.LocalParticipant.handleTrackPublished(track)
+		p.UptrackManager.AddPublishedTrack(track)
+		p.handleTrackPublished(track)
 
 		require.True(t, published)
 		require.False(t, updated)
@@ -134,7 +134,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
-		track := &typesfakes.FakePublishedTrack{}
+		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SignalCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UptrackManager.publishedTracks["cid"] = track
@@ -151,7 +151,7 @@ func TestTrackPublishing(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
-		track := &typesfakes.FakePublishedTrack{}
+		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SdpCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UptrackManager.publishedTracks["cid"] = track
@@ -202,9 +202,9 @@ func TestDisconnectTiming(t *testing.T) {
 				t.Log("received message from chan", msg)
 			}
 		}()
-		track := &typesfakes.FakePublishedTrack{}
-		p.LocalParticipant.AddPublishedTrack(track)
-		p.LocalParticipant.handleTrackPublished(track)
+		track := &typesfakes.FakeMediaTrack{}
+		p.UptrackManager.AddPublishedTrack(track)
+		p.handleTrackPublished(track)
 
 		// close channel and then try to Negotiate
 		msg.Close()
@@ -222,7 +222,7 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.LocalParticipant.pendingTracks["cid"] = &pendingTrackInfo{TrackInfo: ti}
+		p.pendingTracks["cid"] = &pendingTrackInfo{TrackInfo: ti}
 
 		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
 		require.True(t, ti.Muted)
@@ -236,7 +236,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti := p.LocalParticipant.getPendingTrack("cid", livekit.TrackType_AUDIO)
+		_, ti := p.getPendingTrack("cid", livekit.TrackType_AUDIO)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -253,16 +253,16 @@ func TestConnectionQuality(t *testing.T) {
 		return connectionquality.Loss2Score(loss, reducedQuality)
 	}
 
-	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakePublishedTrack {
-		tr := &typesfakes.FakePublishedTrack{}
+	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
+		tr := &typesfakes.FakeLocalMediaTrack{}
 		score := videoScore(loss, numPublishing, numRegistered)
 		t.Log("video score: ", score)
 		tr.GetConnectionScoreReturns(score)
 		return tr
 	}
 
-	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakePublishedTrack {
-		tr := &typesfakes.FakePublishedTrack{}
+	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalMediaTrack {
+		tr := &typesfakes.FakeLocalMediaTrack{}
 
 		stat := &connectionquality.ConnectionStat{
 			PacketsLost:  packetsLost,

@@ -19,10 +19,10 @@ type FakeRoom struct {
 	nameReturnsOnCall map[int]struct {
 		result1 livekit.RoomName
 	}
-	SimulateScenarioStub        func(types.Participant, *livekit.SimulateScenario) error
+	SimulateScenarioStub        func(types.LocalParticipant, *livekit.SimulateScenario) error
 	simulateScenarioMutex       sync.RWMutex
 	simulateScenarioArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SimulateScenario
 	}
 	simulateScenarioReturns struct {
@@ -31,10 +31,10 @@ type FakeRoom struct {
 	simulateScenarioReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SyncStateStub        func(types.Participant, *livekit.SyncState) error
+	SyncStateStub        func(types.LocalParticipant, *livekit.SyncState) error
 	syncStateMutex       sync.RWMutex
 	syncStateArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SyncState
 	}
 	syncStateReturns struct {
@@ -55,10 +55,10 @@ type FakeRoom struct {
 	updateSubscriptionPermissionsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscriptionsStub        func(types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error
+	UpdateSubscriptionsStub        func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error
 	updateSubscriptionsMutex       sync.RWMutex
 	updateSubscriptionsArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
@@ -138,11 +138,11 @@ func (fake *FakeRoom) NameReturnsOnCall(i int, result1 livekit.RoomName) {
 	}{result1}
 }
 
-func (fake *FakeRoom) SimulateScenario(arg1 types.Participant, arg2 *livekit.SimulateScenario) error {
+func (fake *FakeRoom) SimulateScenario(arg1 types.LocalParticipant, arg2 *livekit.SimulateScenario) error {
 	fake.simulateScenarioMutex.Lock()
 	ret, specificReturn := fake.simulateScenarioReturnsOnCall[len(fake.simulateScenarioArgsForCall)]
 	fake.simulateScenarioArgsForCall = append(fake.simulateScenarioArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SimulateScenario
 	}{arg1, arg2})
 	stub := fake.SimulateScenarioStub
@@ -164,13 +164,13 @@ func (fake *FakeRoom) SimulateScenarioCallCount() int {
 	return len(fake.simulateScenarioArgsForCall)
 }
 
-func (fake *FakeRoom) SimulateScenarioCalls(stub func(types.Participant, *livekit.SimulateScenario) error) {
+func (fake *FakeRoom) SimulateScenarioCalls(stub func(types.LocalParticipant, *livekit.SimulateScenario) error) {
 	fake.simulateScenarioMutex.Lock()
 	defer fake.simulateScenarioMutex.Unlock()
 	fake.SimulateScenarioStub = stub
 }
 
-func (fake *FakeRoom) SimulateScenarioArgsForCall(i int) (types.Participant, *livekit.SimulateScenario) {
+func (fake *FakeRoom) SimulateScenarioArgsForCall(i int) (types.LocalParticipant, *livekit.SimulateScenario) {
 	fake.simulateScenarioMutex.RLock()
 	defer fake.simulateScenarioMutex.RUnlock()
 	argsForCall := fake.simulateScenarioArgsForCall[i]
@@ -200,11 +200,11 @@ func (fake *FakeRoom) SimulateScenarioReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRoom) SyncState(arg1 types.Participant, arg2 *livekit.SyncState) error {
+func (fake *FakeRoom) SyncState(arg1 types.LocalParticipant, arg2 *livekit.SyncState) error {
 	fake.syncStateMutex.Lock()
 	ret, specificReturn := fake.syncStateReturnsOnCall[len(fake.syncStateArgsForCall)]
 	fake.syncStateArgsForCall = append(fake.syncStateArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SyncState
 	}{arg1, arg2})
 	stub := fake.SyncStateStub
@@ -226,13 +226,13 @@ func (fake *FakeRoom) SyncStateCallCount() int {
 	return len(fake.syncStateArgsForCall)
 }
 
-func (fake *FakeRoom) SyncStateCalls(stub func(types.Participant, *livekit.SyncState) error) {
+func (fake *FakeRoom) SyncStateCalls(stub func(types.LocalParticipant, *livekit.SyncState) error) {
 	fake.syncStateMutex.Lock()
 	defer fake.syncStateMutex.Unlock()
 	fake.SyncStateStub = stub
 }
 
-func (fake *FakeRoom) SyncStateArgsForCall(i int) (types.Participant, *livekit.SyncState) {
+func (fake *FakeRoom) SyncStateArgsForCall(i int) (types.LocalParticipant, *livekit.SyncState) {
 	fake.syncStateMutex.RLock()
 	defer fake.syncStateMutex.RUnlock()
 	argsForCall := fake.syncStateArgsForCall[i]
@@ -324,7 +324,7 @@ func (fake *FakeRoom) UpdateSubscriptionPermissionsReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateSubscriptions(arg1 types.Participant, arg2 []livekit.TrackID, arg3 []*livekit.ParticipantTracks, arg4 bool) error {
+func (fake *FakeRoom) UpdateSubscriptions(arg1 types.LocalParticipant, arg2 []livekit.TrackID, arg3 []*livekit.ParticipantTracks, arg4 bool) error {
 	var arg2Copy []livekit.TrackID
 	if arg2 != nil {
 		arg2Copy = make([]livekit.TrackID, len(arg2))
@@ -338,7 +338,7 @@ func (fake *FakeRoom) UpdateSubscriptions(arg1 types.Participant, arg2 []livekit
 	fake.updateSubscriptionsMutex.Lock()
 	ret, specificReturn := fake.updateSubscriptionsReturnsOnCall[len(fake.updateSubscriptionsArgsForCall)]
 	fake.updateSubscriptionsArgsForCall = append(fake.updateSubscriptionsArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 []livekit.TrackID
 		arg3 []*livekit.ParticipantTracks
 		arg4 bool
@@ -362,13 +362,13 @@ func (fake *FakeRoom) UpdateSubscriptionsCallCount() int {
 	return len(fake.updateSubscriptionsArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error) {
+func (fake *FakeRoom) UpdateSubscriptionsCalls(stub func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) error) {
 	fake.updateSubscriptionsMutex.Lock()
 	defer fake.updateSubscriptionsMutex.Unlock()
 	fake.UpdateSubscriptionsStub = stub
 }
 
-func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.Participant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) {
+func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) {
 	fake.updateSubscriptionsMutex.RLock()
 	defer fake.updateSubscriptionsMutex.RUnlock()
 	argsForCall := fake.updateSubscriptionsArgsForCall[i]
