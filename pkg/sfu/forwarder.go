@@ -406,6 +406,10 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, br
 					// when pause is disallowed, pick the lowest available
 					targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[0])))
 					targetLayers.temporal = int32(math.Min(0, float64(f.maxLayers.temporal)))
+
+					if f.targetLayers == InvalidLayers {
+						change = VideoStreamingChangeResuming
+					}
 				} else {
 					// disable forwarding as it is not known how big this stream is
 					// and if it will fit in the available channel capacity
@@ -817,6 +821,7 @@ func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
 	defer f.lock.Unlock()
 
 	if f.lastAllocation.state != VideoAllocationStateAwaitingMeasurement {
+		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation
 	}
 
@@ -886,22 +891,26 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
+		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation, false
 	}
 
 	// if not deficient, nothing to do
 	if f.lastAllocation.state != VideoAllocationStateDeficient {
+		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation, false
 	}
 
 	// if targets are still pending, don't increase
 	if f.targetLayers != InvalidLayers && f.targetLayers != f.currentLayers {
+		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation, false
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
 	if optimalBandwidthNeeded == 0 {
 		// either feed is dry or awaiting measurement, don't hunt for higher
+		f.lastAllocation.change = VideoStreamingChangeNone
 		return f.lastAllocation, false
 	}
 
@@ -968,6 +977,7 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 		}
 	}
 
+	f.lastAllocation.change = VideoStreamingChangeNone
 	return f.lastAllocation, false
 }
 

@@ -687,10 +687,13 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 		s.lastEstimateDecreaseTime = time.Now()
 		isDecreasing = true
 	}
+
+	if s.committedChannelCapacity > s.receivedEstimate {
+		s.params.Logger.Debugw("committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
+	}
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
 
-	s.params.Logger.Debugw("committing channel capacity", "capacity(bps)", s.committedChannelCapacity)
 	return
 }
 
