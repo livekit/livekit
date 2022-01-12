@@ -176,14 +176,15 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
 	})
+	trackID := t.params.MediaTrack.ID()
 	downTrack.OnPacketSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.params.MediaTrack.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, trackID, size)
 	})
 	downTrack.OnPaddingSent(func(_ *sfu.DownTrack, size int) {
-		t.params.Telemetry.OnDownstreamPacket(subscriberID, t.params.MediaTrack.ID(), size)
+		t.params.Telemetry.OnDownstreamPacket(subscriberID, trackID, size)
 	})
 	downTrack.OnRTCP(func(pkts []rtcp.Packet) {
-		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, t.params.MediaTrack.ID(), pkts)
+		t.params.Telemetry.HandleRTCP(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, pkts)
 	})
 
 	downTrack.OnCloseHandler(func() {
