@@ -227,7 +227,7 @@ func TestForwarderAllocate(t *testing.T) {
 	}
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateAwaitingMeasurement,
-		change:             VideoStreamingChangeNone,
+		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    []uint16{0},
