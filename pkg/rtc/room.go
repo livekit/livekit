@@ -529,6 +529,11 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		if err := participant.Close(false); err != nil {
 			return err
 		}
+	case *livekit.SimulateScenario_ServerLeave:
+		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
+		if err := participant.Close(true); err != nil {
+			return err
+		}
 	}
 	return nil
 }
