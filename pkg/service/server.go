@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/cors"
 	"github.com/urfave/negroni"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -63,6 +64,10 @@ func NewLivekitServer(conf *config.Config,
 	middlewares := []negroni.Handler{
 		// always first
 		negroni.NewRecovery(),
+		// CORS is allowed, we rely on token authentication to prevent improper use
+		cors.New(cors.Options{
+			AllowedOrigins: []string{"*"},
+		}),
 	}
 	if keyProvider != nil {
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
@@ -107,6 +112,10 @@ func NewLivekitServer(conf *config.Config,
 
 func (s *LivekitServer) Node() *livekit.Node {
 	return s.currentNode
+}
+
+func (s *LivekitServer) HTTPPort() int {
+	return int(s.config.Port)
 }
 
 func (s *LivekitServer) IsRunning() bool {

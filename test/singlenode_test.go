@@ -2,6 +2,8 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -303,4 +305,21 @@ func TestSingleNodeRoomList(t *testing.T) {
 	defer finish()
 
 	roomServiceListRoom(t)
+}
+
+// Ensure that CORS headers are returned
+func TestSingleNodeCORS(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	s, finish := setupSingleNodeTest("TestSingleNodeCORS", testRoom)
+	defer finish()
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d", s.HTTPPort()), nil)
+	require.NoError(t, err)
+	req.Header.Set("Origin", "testhost.com")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, "*", res.Header.Get("Access-Control-Allow-Origin"))
 }
