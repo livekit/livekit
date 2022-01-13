@@ -14,7 +14,15 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	//prepare
 	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
 	partSID := "part1"
-	clientInfo := &livekit.ClientInfo{Sdk: 2}
+	clientInfo := &livekit.ClientInfo{
+		Sdk:            2,
+		Version:        "v1",
+		Os:             "mac",
+		OsVersion:      "v1",
+		DeviceModel:    "DM1",
+		Browser:        "chrome",
+		BrowserVersion: "97.0.1",
+	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	//do
@@ -29,6 +37,12 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, room, event.Room)
 	require.Equal(t, clientInfo.Sdk, event.SdkType)
+	require.Equal(t, clientInfo.Version, event.ClientVersion)
+	require.Equal(t, clientInfo.Os, event.ClientOs)
+	require.Equal(t, clientInfo.OsVersion, event.ClientOsVersion)
+	require.Equal(t, clientInfo.DeviceModel, event.ClientDeviceModel)
+	require.Equal(t, clientInfo.Browser, event.ClientBrowser)
+	require.Equal(t, clientInfo.BrowserVersion, event.ClientBrowserVersion)
 }
 
 func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
