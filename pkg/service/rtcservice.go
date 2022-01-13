@@ -105,7 +105,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
 		Recorder:      claims.Video.Recorder,
-		Client:        s.parseClientInfo(r.Form),
+		Client:        ParseClientInfo(r.Form),
 	}
 
 	if autoSubParam != "" {
@@ -231,7 +231,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
+func ParseClientInfo(values url.Values) *livekit.ClientInfo {
 	ci := &livekit.ClientInfo{}
 	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
 		ci.Protocol = int32(pv)
@@ -240,15 +240,22 @@ func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
 	switch sdkString {
 	case "js":
 		ci.Sdk = livekit.ClientInfo_JS
-	case "ios":
-		ci.Sdk = livekit.ClientInfo_IOS
+	case "ios", "swift":
+		ci.Sdk = livekit.ClientInfo_SWIFT
 	case "android":
 		ci.Sdk = livekit.ClientInfo_ANDROID
 	case "flutter":
 		ci.Sdk = livekit.ClientInfo_FLUTTER
 	case "go":
 		ci.Sdk = livekit.ClientInfo_GO
+	case "unity":
+		ci.Sdk = livekit.ClientInfo_UNITY
 	}
 	ci.Version = values.Get("version")
+	ci.Os = values.Get("os")
+	ci.OsVersion = values.Get("os_version")
+	ci.Browser = values.Get("browser")
+	ci.BrowserVersion = values.Get("browser_version")
+	ci.DeviceModel = values.Get("device_model")
 	return ci
 }
