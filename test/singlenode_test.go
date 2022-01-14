@@ -316,10 +316,11 @@ func TestSingleNodeCORS(t *testing.T) {
 	s, finish := setupSingleNodeTest("TestSingleNodeCORS", testRoom)
 	defer finish()
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d", s.HTTPPort()), nil)
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", s.HTTPPort()), nil)
 	require.NoError(t, err)
+	req.Header.Set("Authorization", "bearer xyz")
 	req.Header.Set("Origin", "testhost.com")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, "*", res.Header.Get("Access-Control-Allow-Origin"))
+	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
 }

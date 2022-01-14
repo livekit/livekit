@@ -66,7 +66,10 @@ func NewLivekitServer(conf *config.Config,
 		negroni.NewRecovery(),
 		// CORS is allowed, we rely on token authentication to prevent improper use
 		cors.New(cors.Options{
-			AllowedOrigins: []string{"*"},
+			AllowOriginFunc: func(origin string) bool {
+				return true
+			},
+			AllowedHeaders: []string{"*"},
 		}),
 	}
 	if keyProvider != nil {
