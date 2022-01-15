@@ -85,8 +85,9 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
-	se.LoggerFactory = &loggerFactory{
-		logger: logr.Logger(params.Logger),
+	lf := newLoggerFactory(logr.Logger(params.Logger))
+	if lf != nil {
+		se.LoggerFactory = lf
 	}
 
 	ir := &interceptor.Registry{}

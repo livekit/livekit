@@ -12,6 +12,15 @@ type loggerFactory struct {
 	logger logr.Logger
 }
 
+func newLoggerFactory(logger logr.Logger) *loggerFactory {
+	if logger.GetSink() == nil {
+		return nil
+	}
+	return &loggerFactory{
+		logger: logger,
+	}
+}
+
 func (f *loggerFactory) NewLogger(scope string) logging.LeveledLogger {
 	return &logAdapter{
 		logger: f.logger.WithName(scope),
