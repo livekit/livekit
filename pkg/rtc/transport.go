@@ -8,6 +8,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
+	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
@@ -85,7 +86,7 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
-	lf := newLoggerFactory(logr.Logger(params.Logger))
+	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
 	if lf != nil {
 		se.LoggerFactory = lf
 	}

@@ -215,8 +215,8 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"protocol", participant.ProtocolVersion(),
-		"room", r.Room.Name,
-		"roomID", r.Room.Sid)
+		"roomID", r.Room.Sid,
+		"options", opts)
 
 	if participant.IsRecorder() && !r.Room.ActiveRecording {
 		r.Room.ActiveRecording = true

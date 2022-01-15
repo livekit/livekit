@@ -59,6 +59,11 @@ func main() {
 				Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
 				EnvVars: []string{"NODE_IP"},
 			},
+			&cli.IntFlag{
+				Name:    "udp-port",
+				Usage:   "Single UDP port to use for WebRTC traffic",
+				EnvVars: []string{"UDP_PORT"},
+			},
 			&cli.StringFlag{
 				Name:    "redis-host",
 				Usage:   "host (incl. port) to redis server",
@@ -70,6 +75,17 @@ func main() {
 				EnvVars: []string{"REDIS_PASSWORD"},
 			},
 			&cli.StringFlag{
+				Name:    "turn-cert",
+				Usage:   "tls cert file for TURN server",
+				EnvVars: []string{"LIVEKIT_TURN_CERT"},
+			},
+			&cli.StringFlag{
+				Name:    "turn-key",
+				Usage:   "tls key file for TURN server",
+				EnvVars: []string{"LIVEKIT_TURN_KEY"},
+			},
+			// debugging flags
+			&cli.StringFlag{
 				Name:  "cpuprofile",
 				Usage: "write cpu profile to `file`",
 			},
@@ -80,16 +96,6 @@ func main() {
 			&cli.BoolFlag{
 				Name:  "dev",
 				Usage: "sets log-level to debug, and console formatter",
-			},
-			&cli.StringFlag{
-				Name:    "turn-cert",
-				Usage:   "tls cert file for TURN server",
-				EnvVars: []string{"LIVEKIT_TURN_CERT"},
-			},
-			&cli.StringFlag{
-				Name:    "turn-key",
-				Usage:   "tls key file for TURN server",
-				EnvVars: []string{"LIVEKIT_TURN_KEY"},
 			},
 		},
 		Action: startServer,
@@ -160,11 +166,7 @@ func startServer(c *cli.Context) error {
 		return err
 	}
 
-	if conf.Development {
-		serverlogger.InitDevelopment(conf.LogLevel)
-	} else {
-		serverlogger.InitProduction(conf.LogLevel)
-	}
+	serverlogger.InitFromConfig(conf.Logging)
 
 	if cpuProfile != "" {
 		if f, err := os.Create(cpuProfile); err != nil {

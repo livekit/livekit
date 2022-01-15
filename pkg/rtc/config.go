@@ -4,12 +4,13 @@ import (
 	"errors"
 	"net"
 
+	logging "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/ice/v2"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
@@ -60,7 +61,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 	s := webrtc.SettingEngine{
-		LoggerFactory: serverlogger.LoggerFactory(),
+		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 	s.SetLite(true)
 
