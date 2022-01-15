@@ -2,9 +2,6 @@
 # for production setups, this port should be placed behind a load balancer with TLS
 port: 7880
 
-# log level, valid values: debug, info, warning, error
-log_level: info
-
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
 # clients could connect to any node and be routed to the same room
 redis:
@@ -66,6 +63,19 @@ rtc:
 keys:
   key1: secret1
   key2: secret2
+
+# Logging config
+# logging:
+#   # log level, valid values: debug, info, warning, error
+#   level: info
+#   # log level for pion, default error
+#   pion_level: error
+#   # when set to true, emit json fields
+#   json: false
+#   # for production setups, enables sampling algorithm
+#   # https://github.com/uber-go/zap/blob/master/FAQ.md#why-sample-application-logs
+#   sample: false
+
 
 # Default room config
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take

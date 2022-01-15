@@ -37,8 +37,10 @@ type Config struct {
 	KeyFile        string             `yaml:"key_file"`
 	Keys           map[string]string  `yaml:"keys"`
 	Region         string             `yaml:"region"`
-	LogLevel       string             `yaml:"log_level"`
-	Limit          LimitConfig        `yaml:"limit"`
+	// LogLevel is deprecated
+	LogLevel string        `yaml:"log_level"`
+	Logging  LoggingConfig `yaml:"logging"`
+	Limit    LimitConfig   `yaml:"limit"`
 
 	Development bool `yaml:"development"`
 }
@@ -110,6 +112,13 @@ type RoomConfig struct {
 type CodecSpec struct {
 	Mime     string `yaml:"mime"`
 	FmtpLine string `yaml:"fmtp_line"`
+}
+
+type LoggingConfig struct {
+	JSON      bool   `yaml:"json"`
+	Level     string `yaml:"level"`
+	Sample    bool   `yaml:"sample"`
+	PionLevel string `yaml:"pion_level"`
 }
 
 type TURNConfig struct {
@@ -187,6 +196,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			},
 			EmptyTimeout: 5 * 60,
 		},
+		Logging: LoggingConfig{
+			PionLevel: "error",
+		},
 		TURN: TURNConfig{
 			Enabled: false,
 		},
@@ -244,6 +256,13 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
 	}
 
+	if conf.LogLevel != "" {
+		conf.Logging.Level = conf.LogLevel
+	}
+	if conf.Logging.Level == "" && conf.Development {
+		conf.Logging.Level = "debug"
+	}
+
 	return conf, nil
 }
 
@@ -280,6 +299,9 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	}
 	if c.IsSet("node-ip") {
 		conf.RTC.NodeIP = c.String("node-ip")
+	}
+	if c.IsSet("udp-port") {
+		conf.RTC.UDPPort = uint32(c.Int("udp-port"))
 	}
 
 	return nil

@@ -24,7 +24,7 @@ const (
 )
 
 func init() {
-	serverlogger.InitDevelopment("")
+	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}

@@ -36,7 +36,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
-		LoggerFactory: logging.LoggerFactory(),
+		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
