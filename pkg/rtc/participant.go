@@ -1450,7 +1450,9 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	// if still not found, we are done
 	if trackInfo == nil {
 		p.params.Logger.Errorw("track info not published prior to track", nil, "clientId", clientId)
+		return signalCid, nil
 	}
+
 	return signalCid, trackInfo.TrackInfo
 }
 
