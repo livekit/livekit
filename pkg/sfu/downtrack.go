@@ -229,6 +229,11 @@ func (d *DownTrack) Kind() webrtc.RTPCodecType {
 	return d.kind
 }
 
+// RID is required by `webrtc.TrackLocal` interface
+func (d *DownTrack) RID() string {
+	return ""
+}
+
 func (d *DownTrack) SSRC() uint32 {
 	return d.ssrc
 }

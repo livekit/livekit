@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
@@ -84,6 +85,9 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+	se.LoggerFactory = &loggerFactory{
+		logger: logr.Logger(params.Logger),
+	}
 
 	ir := &interceptor.Registry{}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
