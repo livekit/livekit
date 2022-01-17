@@ -9,6 +9,16 @@ import (
 )
 
 type FakeRoom struct {
+	IDStub        func() livekit.RoomID
+	iDMutex       sync.RWMutex
+	iDArgsForCall []struct {
+	}
+	iDReturns struct {
+		result1 livekit.RoomID
+	}
+	iDReturnsOnCall map[int]struct {
+		result1 livekit.RoomID
+	}
 	NameStub        func() livekit.RoomName
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
@@ -83,6 +93,59 @@ type FakeRoom struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeRoom) ID() livekit.RoomID {
+	fake.iDMutex.Lock()
+	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
+	fake.iDArgsForCall = append(fake.iDArgsForCall, struct {
+	}{})
+	stub := fake.IDStub
+	fakeReturns := fake.iDReturns
+	fake.recordInvocation("ID", []interface{}{})
+	fake.iDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) IDCallCount() int {
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
+	return len(fake.iDArgsForCall)
+}
+
+func (fake *FakeRoom) IDCalls(stub func() livekit.RoomID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = stub
+}
+
+func (fake *FakeRoom) IDReturns(result1 livekit.RoomID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	fake.iDReturns = struct {
+		result1 livekit.RoomID
+	}{result1}
+}
+
+func (fake *FakeRoom) IDReturnsOnCall(i int, result1 livekit.RoomID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	if fake.iDReturnsOnCall == nil {
+		fake.iDReturnsOnCall = make(map[int]struct {
+			result1 livekit.RoomID
+		})
+	}
+	fake.iDReturnsOnCall[i] = struct {
+		result1 livekit.RoomID
+	}{result1}
 }
 
 func (fake *FakeRoom) Name() livekit.RoomName {
@@ -463,6 +526,8 @@ func (fake *FakeRoom) UpdateVideoLayersReturnsOnCall(i int, result1 error) {
 func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
 	fake.simulateScenarioMutex.RLock()

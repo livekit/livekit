@@ -144,11 +144,13 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	return logger.Logger(lr)
 }
 
-func LoggerWithRoom(l logger.Logger, name livekit.RoomName) logger.Logger {
+func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
 	lr := logr.Logger(l)
-	return logger.Logger(
-		lr.WithValues(
-			"room", name,
-		),
-	)
+	if name != "" {
+		lr = lr.WithValues("room", name)
+	}
+	if roomID != "" {
+		lr = lr.WithValues("roomID", roomID)
+	}
+	return logger.Logger(lr)
 }
