@@ -140,6 +140,7 @@ type LocalParticipant interface {
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
+	ID() livekit.RoomID
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error

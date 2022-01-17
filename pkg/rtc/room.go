@@ -60,7 +60,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), livekit.RoomName(room.Name)),
+		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
@@ -84,6 +84,10 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 
 func (r *Room) Name() livekit.RoomName {
 	return livekit.RoomName(r.Room.Name)
+}
+
+func (r *Room) ID() livekit.RoomID {
+	return livekit.RoomID(r.Room.Sid)
 }
 
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalParticipant {
@@ -215,7 +219,6 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"protocol", participant.ProtocolVersion(),
-		"roomID", r.Room.Sid,
 		"options", opts)
 
 	if participant.IsRecorder() && !r.Room.ActiveRecording {
@@ -450,7 +453,7 @@ func (r *Room) CloseIfEmpty() {
 func (r *Room) Close() {
 	r.closeOnce.Do(func() {
 		close(r.closed)
-		r.Logger.Infow("closing room", "roomID", r.Room.Sid, "room", r.Room.Name)
+		r.Logger.Infow("closing room")
 		if r.onClose != nil {
 			r.onClose()
 		}
@@ -496,7 +499,7 @@ func (r *Room) sendRoomUpdateLocked() {
 
 		err := p.SendRoomUpdate(r.Room)
 		if err != nil {
-			r.Logger.Warnw("failed to send room update", err, "room", r.Room.Name, "participant", p.Identity())
+			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
 	}
 }
