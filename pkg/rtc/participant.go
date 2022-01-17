@@ -464,7 +464,9 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 
 	// ensure this is synchronized
 	p.lock.RLock()
-	p.params.Sink.Close()
+	if p.params.Sink != nil {
+		p.params.Sink.Close()
+	}
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
