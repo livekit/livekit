@@ -79,7 +79,7 @@ func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 
 	// update quality based on subscription if unmuting
 	if !muted {
-		t.UpdateQualityChange()
+		t.UpdateQualityChange(true)
 	}
 }
 
@@ -408,7 +408,7 @@ func (t *MediaTrackSubscriptions) NotifySubscriberMaxQuality(subscriberID liveki
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange()
+	t.UpdateQualityChange(false)
 }
 
 func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality) {
@@ -436,10 +436,10 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID string, 
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange()
+	t.UpdateQualityChange(false)
 }
 
-func (t *MediaTrackSubscriptions) UpdateQualityChange() {
+func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
@@ -458,7 +458,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange() {
 		}
 	}
 
-	if maxSubscribedQuality == t.maxSubscribedQuality {
+	if maxSubscribedQuality == t.maxSubscribedQuality && !force {
 		t.maxQualityLock.Unlock()
 		return
 	}
@@ -497,7 +497,7 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer() {
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
-		t.UpdateQualityChange()
+		t.UpdateQualityChange(false)
 	})
 }
 
