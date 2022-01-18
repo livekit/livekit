@@ -28,7 +28,7 @@ func init() {
 func main() {
 	app := &cli.App{
 		Name:        "livekit-server",
-		Usage:       "distributed audio/video rooms over WebRTC",
+		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

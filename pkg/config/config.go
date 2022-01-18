@@ -26,55 +26,55 @@ var DefaultStunServers = []string{
 
 type Config struct {
 	Port           uint32             `yaml:"port"`
-	PrometheusPort uint32             `yaml:"prometheus_port"`
-	RTC            RTCConfig          `yaml:"rtc"`
-	Redis          RedisConfig        `yaml:"redis"`
-	Audio          AudioConfig        `yaml:"audio"`
-	Room           RoomConfig         `yaml:"room"`
-	TURN           TURNConfig         `yaml:"turn"`
-	WebHook        WebHookConfig      `yaml:"webhook"`
-	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
-	KeyFile        string             `yaml:"key_file"`
-	Keys           map[string]string  `yaml:"keys"`
-	Region         string             `yaml:"region"`
+	PrometheusPort uint32             `yaml:"prometheus_port,omitempty"`
+	RTC            RTCConfig          `yaml:"rtc,omitempty"`
+	Redis          RedisConfig        `yaml:"redis,omitempty"`
+	Audio          AudioConfig        `yaml:"audio,omitempty"`
+	Room           RoomConfig         `yaml:"room,omitempty"`
+	TURN           TURNConfig         `yaml:"turn,omitempty"`
+	WebHook        WebHookConfig      `yaml:"webhook,omitempty"`
+	NodeSelector   NodeSelectorConfig `yaml:"node_selector,omitempty"`
+	KeyFile        string             `yaml:"key_file,omitempty"`
+	Keys           map[string]string  `yaml:"keys,omitempty"`
+	Region         string             `yaml:"region,omitempty"`
 	// LogLevel is deprecated
-	LogLevel string        `yaml:"log_level"`
-	Logging  LoggingConfig `yaml:"logging"`
-	Limit    LimitConfig   `yaml:"limit"`
+	LogLevel string        `yaml:"log_level,omitempty"`
+	Logging  LoggingConfig `yaml:"logging,omitempty"`
+	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
-	Development bool `yaml:"development"`
+	Development bool `yaml:"development,omitempty"`
 }
 
 type RTCConfig struct {
-	UDPPort           uint32 `yaml:"udp_port"`
-	TCPPort           uint32 `yaml:"tcp_port"`
-	ICEPortRangeStart uint32 `yaml:"port_range_start"`
-	ICEPortRangeEnd   uint32 `yaml:"port_range_end"`
-	NodeIP            string `yaml:"node_ip"`
+	UDPPort           uint32 `yaml:"udp_port,omitempty"`
+	TCPPort           uint32 `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart uint32 `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd   uint32 `yaml:"port_range_end,omitempty"`
+	NodeIP            string `yaml:"node_ip,omitempty"`
 	// for testing, disable UDP
-	ForceTCP      bool     `yaml:"force_tcp"`
-	StunServers   []string `yaml:"stun_servers"`
+	ForceTCP      bool     `yaml:"force_tcp,omitempty"`
+	StunServers   []string `yaml:"stun_servers,omitempty"`
 	UseExternalIP bool     `yaml:"use_external_ip"`
 
 	// Number of packets to buffer for NACK
-	PacketBufferSize int `yaml:"packet_buffer_size"`
+	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
 
 	// Max bitrate for REMB
-	MaxBitrate uint64 `yaml:"max_bitrate"`
+	MaxBitrate uint64 `yaml:"max_bitrate,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
-	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
+	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
 	// Which side runs bandwidth estimation
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation"`
+	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
 
-	CongestionControl CongestionControlConfig `yaml:"congestion_control"`
+	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 }
 
 type PLIThrottleConfig struct {
-	LowQuality  time.Duration `yaml:"low_quality"`
-	MidQuality  time.Duration `yaml:"mid_quality"`
-	HighQuality time.Duration `yaml:"high_quality"`
+	LowQuality  time.Duration `yaml:"low_quality,omitempty"`
+	MidQuality  time.Duration `yaml:"mid_quality,omitempty"`
+	HighQuality time.Duration `yaml:"high_quality,omitempty"`
 }
 
 type CongestionControlConfig struct {
@@ -117,8 +117,8 @@ type CodecSpec struct {
 type LoggingConfig struct {
 	JSON      bool   `yaml:"json"`
 	Level     string `yaml:"level"`
-	Sample    bool   `yaml:"sample"`
-	PionLevel string `yaml:"pion_level"`
+	Sample    bool   `yaml:"sample,omitempty"`
+	PionLevel string `yaml:"pion_level,omitempty"`
 }
 
 type TURNConfig struct {
