@@ -1489,15 +1489,17 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 
 		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
 		for _, pkt := range pkts {
-			switch pkt.(type) {
+			switch packet := pkt.(type) {
 			case *rtcp.PictureLossIndication:
-				mediaSSRC := pkt.(*rtcp.PictureLossIndication).MediaSSRC
+				mediaSSRC := packet.MediaSSRC
 				if p.pliThrottle.canSend(mediaSSRC) {
+					p.params.Logger.Debugw("send pli", "ssrc", mediaSSRC)
 					fwdPkts = append(fwdPkts, pkt)
 				}
 			case *rtcp.FullIntraRequest:
-				mediaSSRC := pkt.(*rtcp.FullIntraRequest).MediaSSRC
+				mediaSSRC := packet.MediaSSRC
 				if p.pliThrottle.canSend(mediaSSRC) {
+					p.params.Logger.Debugw("send fir", "ssrc", mediaSSRC)
 					fwdPkts = append(fwdPkts, pkt)
 				}
 			default:
