@@ -848,34 +848,6 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
-	track := p.GetPublishedTrack(trackID)
-	if track == nil {
-		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find track")
-	}
-
-	if mt, ok := track.(*MediaTrack); ok {
-		mt.NotifySubscriberNodeMaxQuality(nodeID, maxQuality)
-	}
-
-	return nil
-}
-
-func (p *ParticipantImpl) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
-	track := p.GetPublishedTrack(trackID)
-	if track == nil {
-		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find track")
-	}
-
-	if mt, ok := track.(*MediaTrack); ok {
-		mt.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
-	}
-
-	return nil
-}
-
 func (p *ParticipantImpl) setupUptrackManager() {
 	p.UptrackManager = NewUptrackManager(UptrackManagerParams{
 		SID:    p.params.SID,
@@ -891,8 +863,6 @@ func (p *ParticipantImpl) setupUptrackManager() {
 			p.onTrackUpdated(p, track)
 		}
 	})
-
-	p.UptrackManager.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
 	p.UptrackManager.OnUptrackManagerClose(p.onUptrackManagerClose)
 }
@@ -1374,6 +1344,8 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 				mt.TrySetSimulcastSSRC(uint8(sfu.RidToLayer(info.Rid)), ssrc)
 			}
 		}
+
+		mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
 		// add to published and clean up pending
 		p.UptrackManager.AddPublishedTrack(mt)
