@@ -35,6 +35,7 @@ Server SDKs:
 
 - [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
 - [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
+- [Ruby](https://github.com/livekit/server-sdk-ruby)
 
 Tools:
 
@@ -91,8 +92,8 @@ APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
 
 ### Starting the server
 
-In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the API keys it should use
-in `LIVEKIT_KEYS`. LiveKit could also use a [config file](config-sample.yaml) or config environment
+In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the API keys it should
+use in `LIVEKIT_KEYS`. LiveKit could also use a [config file](config-sample.yaml) or config environment
 variable `LIVEKIT_CONFIG`
 
 ```shell
