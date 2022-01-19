@@ -249,7 +249,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID) {
+func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID, resume bool) {
 	subTrack := t.getSubscribedTrack(participantID)
 
 	t.subscribedTracksMu.Lock()
@@ -257,7 +257,7 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	t.subscribedTracksMu.Unlock()
 
 	if subTrack != nil {
-		subTrack.DownTrack().Close()
+		subTrack.DownTrack().CloseWithFlush(!resume)
 	}
 
 	t.maybeNotifyNoSubscribers()

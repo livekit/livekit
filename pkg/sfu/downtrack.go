@@ -430,15 +430,26 @@ func (d *DownTrack) Mute(val bool) {
 	}
 }
 
-// Close track
 func (d *DownTrack) Close() {
+	d.CloseWithFlush(true)
+}
+
+// Close track, flush used to indicate whether send blank frame to flush
+// decoder of client.
+// 1. When transceiver is reused by other participant's video track,
+//    set flush=true to avoid previous video shows before previous stream is displayed.
+// 2. in case of session migration, participant migrate from other node, video track should
+//    be resumed with same participant, set flush=false since we don't need flush decoder.
+func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.forwarder.Mute(true)
 
 	// write blank frames after disabling so that other frames do not interfere.
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
 	// Otherwise, with transceiver re-use last frame from previous stream is held in the
 	// display buffer and there could be a brief moment where the previous stream is displayed.
-	_ = d.writeBlankFrameRTP()
+	if flush {
+		_ = d.writeBlankFrameRTP()
+	}
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)

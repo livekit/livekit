@@ -130,7 +130,7 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) {
 	track := u.GetPublishedTrack(trackID)
 	if track != nil {
-		track.RemoveSubscriber(sub.ID())
+		track.RemoveSubscriber(sub.ID(), false)
 	}
 
 	u.lock.Lock()
