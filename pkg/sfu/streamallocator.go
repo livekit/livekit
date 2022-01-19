@@ -10,6 +10,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 )
@@ -120,7 +121,7 @@ type StreamAllocator struct {
 
 	rembTrackingSSRC uint32
 
-	// LK-TODO-SSBWE bwe cc.BandwidthEstimator
+	bwe cc.BandwidthEstimator
 
 	committedChannelCapacity int64
 	lastCommitTime           time.Time
@@ -182,14 +183,12 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
-/* LK-TODO-SSBWE
 func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 	if bwe != nil {
 		bwe.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
 	s.bwe = bwe
 }
-*/
 
 type AddTrackParams struct {
 	Source      livekit.TrackSource
@@ -241,11 +240,9 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 
 // called when a new transport-cc feedback is received
 func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.TransportLayerCC) {
-	/* LK-TODO-SSBWE
 	if s.bwe != nil {
 		s.bwe.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
-	*/
 }
 
 // called when target bitrate changes
