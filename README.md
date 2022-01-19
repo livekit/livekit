@@ -1,15 +1,18 @@
-# LiveKit - Open source, distributed video/audio rooms over WebRTC
+# LiveKit - Open source, high performance WebRTC infrastructure
 
 LiveKit is an open source project that provides scalable, multi-user conferencing over WebRTC. It's designed to give you
-everything you need to build real time video/audio capabilities in your applications.
+everything you need to build real time video/audio/data capabilities in your applications.
+
+LiveKit is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
 ## Features
 
-- Horizontally scalable WebRTC Selective Forwarding Unit (SFU)
-- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, iOS, Android, and Flutter
+- Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
+- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, React, iOS, Android, and
+  Flutter
 - Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
-- Robust networking & connectivity, over UDP & TCP
-- Easy to deploy - pure Go & single binary
+- Robust networking & connectivity. UDP/TCP/TURN
+- Easy to deploy - single binary, docker & kubernetes
 - Advanced features - speaker detection, simulcast, selective subscription, moderation APIs, and webhooks.
 
 ## Documentation & Guides
@@ -39,12 +42,78 @@ Server SDKs:
 
 Tools:
 
-- [livekit-cli](https://github.com/livekit/livekit-cli)
-- [chrometester](https://github.com/livekit/chrometester)
+- [livekit-cli](https://github.com/livekit/livekit-cli): command line admin & tools
+- [chrometester](https://github.com/livekit/chrometester): load testing with headless-Chrome bots
+- [docker image](https://hub.docker.com/r/livekit/livekit-server)
 
-## Installing
+## Quickstart
 
-### From source
+### Generate config file and keys
+
+```shell
+docker run --rm -v$PWD:/output livekit/generate --local
+```
+
+The above command generates a `livekit.yaml` that can be used to start LiveKit. It'll contain an API key/secret pair
+that can be used with your LiveKit install.
+
+### Starting with docker
+
+```shell
+docker run --rm -p 7880:7880 \
+    -p 7881:7881 \
+    -p 7882:7882/udp \
+    -v $PWD/livekit.yaml:/livekit.yaml \
+    livekit-server \
+    --config /livekit.yaml \
+    --node-ip <machine-ip>
+```
+
+When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service is to be exposed to
+public internet, this should the machine's public IP.
+
+### Test with example app
+
+Head over to the [example app](https://example.livekit.io) and enter the generated token to connect to your LiveKit
+server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
+
+Once connected, your video and audio are now published to the newly set-up LiveKit instance!
+
+### Generating access tokens (JWT)
+
+For additional users in the room, you'll have to create a token for each
+participant. [Learn more about access tokens](https://docs.livekit.io/guides/access-tokens/).
+
+`livekit-server` provides a convenient subcommand to create a development token. This token has an expiration of a
+month, which is useful for development & testing, but not appropriate for production use.
+
+```shell
+docker run --rm -e LIVEKIT_KEYS="<api-key>: <api-secret>" \
+    livekit/livekit-server create-join-token \
+    --room "<room-name>" \
+    --identity "<participant-identity>"
+```
+
+## Deploying to server
+
+Deployment Docs: https://docs.livekit.io/guides/deploy
+
+### Single node server
+
+Use our deploy config generator to set up a single node deployment with automatic TLS termination and built-in TURN.
+
+It includes a cloud-init script that's supported by most cloud environments.
+
+```shell
+docker run --rm -it -v$PWD:/output livekit/generate
+```
+
+### Kubernetes
+
+We publish a [helm chart](https://github.com/livekit/livekit-helm) that helps you to set up a cluster with high
+availability. For detailed instructions, see [Kubernetes guide](https://docs.livekit.io/deploy/kubernetes)
+
+## Building from source
 
 Pre-requisites:
 
@@ -59,87 +128,6 @@ cd livekit-server
 ./bootstrap.sh
 mage
 ```
-
-### Docker
-
-LiveKit is published to Docker Hub under [livekit/livekit-server](https://hub.docker.com/r/livekit/livekit-server)
-
-## Running
-
-### Creating API keys
-
-LiveKit utilizes JWT based access tokens for authentication to all of its APIs. Because of this, the server needs a list
-of valid API keys and secrets to validate the provided tokens. For more,
-see [Access Tokens guide](https://docs.livekit.io/guides/access-tokens).
-
-Generate API key/secret pairs with:
-
-```shell
-./bin/livekit-server generate-keys
-```
-
-or
-
-```shell
-docker run --rm livekit/livekit-server generate-keys
-```
-
-Store the generate keys in a YAML file like:
-
-```yaml
-APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
-```
-
-### Starting the server
-
-In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the API keys it should
-use in `LIVEKIT_KEYS`. LiveKit could also use a [config file](config-sample.yaml) or config environment
-variable `LIVEKIT_CONFIG`
-
-```shell
-LIVEKIT_KEYS="<key>: <secret>" ./bin/livekit-server --dev
-```
-
-or
-
-```shell
-docker run --rm \
-  -p 7880:7880 \
-  -p 7881:7881 \
-  -p 7882:7882/udp \
-  -e LIVEKIT_KEYS="<key>: <secret>" \
-  livekit/livekit-server \
-  --dev \
-  --node-ip=<machine-ip>
-```
-
-When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service is to be exposed to
-public internet, this should the machine's public IP.
-
-The `--dev` flag turns on log verbosity to make it easier for local debugging/development
-
-### Creating a JWT token
-
-To create a join token for clients, livekit-server provides a convenient subcommand to create a **development** token.
-This token has an expiration of a month, which is useful for development & testing, but not appropriate for production
-use.
-
-```shell
-./bin/livekit-server --key-file <path/to/keyfile> create-join-token --room "myroom" --identity "myidentity"
-```
-
-### Sample client
-
-To test your server, you can use our [example web client](https://example.livekit.io/)
-(built with our [React component](https://github.com/livekit/livekit-react))
-
-Enter generated access token and you are connected to a room!
-
-## Deploying for production
-
-LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS.
-
-See deployment docs at https://docs.livekit.io/guides/deploy
 
 ## Contributing
 
