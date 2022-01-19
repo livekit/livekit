@@ -20,7 +20,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pion/ice/v2 v2.1.18
-	github.com/pion/interceptor v0.1.4
+	github.com/pion/interceptor v0.1.6
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.9
 	github.com/pion/rtp v1.7.4
