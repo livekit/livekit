@@ -94,7 +94,7 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 
 	// with available layers, should be off
 	availableLayers := []uint16{0, 1, 2}
-	f.UptrackLayersChange(availableLayers)
+	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOff, f.GetForwardingStatus())
 
 	// when muted, should be optimal
@@ -112,25 +112,25 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 
 	// when available layers are lower than max subscribed, optimal as long as target is at max available
 	availableLayers = []uint16{0, 1}
-	f.UptrackLayersChange(availableLayers)
+	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
 }
 
-func TestForwarderUptrackLayersChange(t *testing.T) {
+func TestForwarderUpTrackLayersChange(t *testing.T) {
 	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	require.Nil(t, f.availableLayers)
 
 	availableLayers := []uint16{0, 1, 2}
-	f.UptrackLayersChange(availableLayers)
+	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 
 	availableLayers = []uint16{0, 2}
-	f.UptrackLayersChange(availableLayers)
+	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 
 	availableLayers = []uint16{}
-	f.UptrackLayersChange(availableLayers)
+	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 }
 
@@ -182,7 +182,7 @@ func TestForwarderAllocate(t *testing.T) {
 	// awaiting measurement, i.e. bitrates are not available, but layers available
 	f.lastAllocation.state = VideoAllocationStateNone
 	disable(f)
-	f.UptrackLayersChange([]uint16{0})
+	f.UpTrackLayersChange([]uint16{0})
 	expectedTargetLayers := VideoLayers{
 		spatial:  0,
 		temporal: DefaultMaxLayerTemporal,
@@ -611,7 +611,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 	// layers available, but still awaiting measurement
 	f.lastAllocation.state = VideoAllocationStateAwaitingMeasurement
 	disable(f)
-	f.UptrackLayersChange([]uint16{0, 1})
+	f.UpTrackLayersChange([]uint16{0, 1})
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateAwaitingMeasurement,
 		change:             VideoStreamingChangeNone,

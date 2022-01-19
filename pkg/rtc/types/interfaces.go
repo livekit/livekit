@@ -135,7 +135,7 @@ type LocalParticipant interface {
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 }
 
-// Room is a container of participants, and can provide room level actions
+// Room is a container of participants, and can provide room-level actions
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
@@ -174,7 +174,7 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant LocalParticipant) error
-	RemoveSubscriber(participantID livekit.ParticipantID)
+	RemoveSubscriber(participantID livekit.ParticipantID, resume bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	GetAllSubscriberIDs() []livekit.ParticipantID
 	RemoveAllSubscribers()

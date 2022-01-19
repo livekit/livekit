@@ -129,7 +129,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
 
 		actualTrackID := livekit.TrackID("")
-		actualSubscribedQualities := []*livekit.SubscribedQuality{}
+		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
 		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
@@ -140,9 +140,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
 
 		expectedSubscribedQualities := []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			{Quality: livekit.VideoQuality_LOW, Enabled: false},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
@@ -174,7 +174,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}})
 
 		actualTrackID := livekit.TrackID("")
-		actualSubscribedQualities := []*livekit.SubscribedQuality{}
+		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
 		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
@@ -185,9 +185,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_MEDIUM)
 
 		expectedSubscribedQualities := []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+			{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: true},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
@@ -196,9 +196,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_MEDIUM)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
@@ -208,9 +208,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_LOW)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
@@ -219,9 +219,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s2", livekit.VideoQuality_OFF)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			{Quality: livekit.VideoQuality_LOW, Enabled: true},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
@@ -230,9 +230,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		mt.NotifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_LOW, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			&livekit.SubscribedQuality{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			{Quality: livekit.VideoQuality_LOW, Enabled: false},
+			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)

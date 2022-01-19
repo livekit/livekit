@@ -108,9 +108,9 @@ func (s *StatsWorker) calculateTotalBytesPackets(allBuffers []*buffer.Buffer) (t
 	totalBytes = 0
 	totalPackets = 0
 
-	for _, buffer := range allBuffers {
-		totalBytes += buffer.GetStats().TotalByte
-		totalPackets += buffer.GetStats().PacketCount
+	for _, buff := range allBuffers {
+		totalBytes += buff.GetStats().TotalByte
+		totalPackets += buff.GetStats().PacketCount
 	}
 	return totalBytes, totalPackets
 }

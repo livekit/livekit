@@ -9,12 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/protocol/livekit"
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
@@ -243,12 +243,12 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		// notify added downtrack of available layers
+		// notify added down track of available layers
 		w.upTrackMu.RLock()
 		layers, ok := w.availableLayers.Load().([]uint16)
 		w.upTrackMu.RUnlock()
 		if ok && len(layers) != 0 {
-			track.UptrackLayersChange(layers)
+			track.UpTrackLayersChange(layers)
 		}
 	}
 
@@ -308,12 +308,12 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 
 	//
 	// Some higher layer is expected to start.
-	// If the layer was not stopped (i. e. it will still be in available layers),
+	// If the layer was not stopped (i.e. it will still be in available layers),
 	// don't need to do anything. If not, reset the stream tracker so that
 	// the layer is declared available on the first packet
 	//
 	// NOTE: There may be a race between checking if a layer is available and
-	// resetting the tracker, i. e. the track may stop just after checking.
+	// resetting the tracker, i.e. the track may stop just after checking.
 	// But, those conditions should be rare. In those cases, the restart will
 	// take longer.
 	//
@@ -339,14 +339,14 @@ func (w *WebRTCReceiver) NumAvailableSpatialLayers() int {
 	return len(layers)
 }
 
-func (w *WebRTCReceiver) downtrackLayerChange(layers []uint16) {
+func (w *WebRTCReceiver) downTrackLayerChange(layers []uint16) {
 	w.downTrackMu.RLock()
 	downTracks := w.downTracks
 	w.downTrackMu.RUnlock()
 
 	for _, dt := range downTracks {
 		if dt != nil {
-			dt.UptrackLayersChange(layers)
+			dt.UpTrackLayersChange(layers)
 		}
 	}
 }
@@ -371,7 +371,7 @@ func (w *WebRTCReceiver) addAvailableLayer(layer uint16) {
 	w.availableLayers.Store(layers)
 	w.upTrackMu.Unlock()
 
-	w.downtrackLayerChange(layers)
+	w.downTrackLayerChange(layers)
 }
 
 func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
@@ -392,7 +392,7 @@ func (w *WebRTCReceiver) removeAvailableLayer(layer uint16) {
 	w.upTrackMu.Unlock()
 
 	// need to immediately switch off unavailable layers
-	w.downtrackLayerChange(newLayers)
+	w.downTrackLayerChange(newLayers)
 }
 
 func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
@@ -558,7 +558,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 func (w *WebRTCReceiver) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
 	if err := dt.WriteRTP(pkt, layer); err != nil {
-		log.Error().Err(err).Str("id", string(dt.ID())).Msg("Error writing to down track")
+		log.Error().Err(err).Str("id", dt.ID()).Msg("Error writing to down track")
 	}
 }
 

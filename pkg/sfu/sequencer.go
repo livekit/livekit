@@ -44,7 +44,7 @@ type packetMeta struct {
 	lastNack uint32
 	// Spatial layer of packet
 	layer uint8
-	// Information that differs depending the codec
+	// Information that differs depending on the codec
 	misc uint64
 }
 

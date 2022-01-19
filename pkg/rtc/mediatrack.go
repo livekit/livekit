@@ -32,7 +32,7 @@ type MediaTrack struct {
 	numUpTracks uint32
 	buffer      *buffer.Buffer
 
-	layerSsrcs [livekit.VideoQuality_HIGH + 1]uint32
+	layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
 
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
@@ -116,8 +116,8 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info.Simulcast = t.IsSimulcast()
 	layers := t.MediaTrackReceiver.GetVideoLayers()
 	for _, layer := range layers {
-		if int(layer.Quality) < len(t.layerSsrcs) {
-			layer.Ssrc = t.layerSsrcs[layer.Quality]
+		if int(layer.Quality) < len(t.layerSSRCs) {
+			layer.Ssrc = t.layerSSRCs[layer.Quality]
 		}
 	}
 	info.Layers = layers
@@ -228,8 +228,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	if t.IsSimulcast() {
 		layer := sfu.RidToLayer(track.RID())
-		if int(layer) < len(t.layerSsrcs) {
-			t.layerSsrcs[layer] = uint32(track.SSRC())
+		if int(layer) < len(t.layerSSRCs) {
+			t.layerSSRCs[layer] = uint32(track.SSRC())
 		}
 	}
 
@@ -239,8 +239,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 }
 
 func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
-	if int(layer) < len(t.layerSsrcs) && t.layerSsrcs[layer] == 0 {
-		t.layerSsrcs[layer] = ssrc
+	if int(layer) < len(t.layerSSRCs) && t.layerSSRCs[layer] == 0 {
+		t.layerSSRCs[layer] = ssrc
 	}
 }
 
@@ -262,7 +262,7 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var totalLost uint32
 	var maxSeqNum uint32
 
-	//forward to telemetry
+	// forward to telemetry
 	t.params.Telemetry.HandleRTCP(livekit.StreamType_UPSTREAM, t.params.ParticipantID, t.ID(), packets)
 
 	for _, p := range packets {

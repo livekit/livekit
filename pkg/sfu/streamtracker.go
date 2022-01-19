@@ -24,7 +24,7 @@ const (
 	StreamStatusActive  StreamStatus = 1
 )
 
-// StreamTracker keeps track of packet flow and ensures a particular uptrack is consistently producing
+// StreamTracker keeps track of packet flow and ensures a particular up track is consistently producing
 // It runs its own goroutine for detection, and fires OnStatusChanged callback
 type StreamTracker struct {
 	// number of samples needed per cycle
@@ -169,7 +169,7 @@ func (s *StreamTracker) Observe(sn uint16) {
 		s.lastSN = sn
 		atomic.AddUint32(&s.countSinceLast, 1)
 
-		// declare stream active and start the detect worker
+		// declare stream active and start the detection worker
 		go s.init()
 
 		return

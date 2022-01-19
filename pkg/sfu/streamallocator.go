@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 const (
@@ -814,7 +815,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	availableChannelCapacity := s.committedChannelCapacity
 
 	//
-	// This pass is just to find out if there is any left over channel capacity.
+	// This pass is just to find out if there is any leftover channel capacity.
 	// Infinite channel capacity is given so that exempt tracks do not stall
 	//
 	for _, track := range s.exemptVideoTracksSorted {
@@ -971,7 +972,7 @@ func (s *StreamAllocator) maybeBoostLayer() {
 }
 
 func (s *StreamAllocator) isTimeToBoost() bool {
-	// if enough time has passed since last esitmate drop or last estimate boost,
+	// if enough time has passed since last estimate drop or last estimate boost,
 	// artificially boost estimate before allocating.
 	// Checking against last estimate boost prevents multiple artificial boosts
 	// in situations where multiple tracks become available in a short span.

@@ -11,7 +11,7 @@ import (
 func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	fixture := createFixture()
 
-	//prepare
+	// prepare
 	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
 	partSID := "part1"
 	clientInfo := &livekit.ClientInfo{
@@ -25,10 +25,10 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
-	//do
+	// do
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo)
 
-	//test
+	// test
 	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
 	_, event := fixture.analytics.SendEventArgsForCall(0)
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_JOINED, event.Type)
@@ -48,15 +48,15 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	fixture := createFixture()
 
-	//prepare
+	// prepare
 	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
 	partSID := "part1"
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
-	//do
+	// do
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
 
-	//test
+	// test
 	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
 	_, event := fixture.analytics.SendEventArgsForCall(0)
 	require.Equal(t, livekit.AnalyticsEventType_PARTICIPANT_LEFT, event.Type)

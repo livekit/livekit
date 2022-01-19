@@ -114,7 +114,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 	p.packVP8(vp8)
 
 	// booleans are not packed, so they will be `false` in unpacked.
-	// Also TID is only two bits, so it should be modulo 3.
+	// Also, TID is only two bits, so it should be modulo 3.
 	expectedVP8 := &buffer.VP8{
 		FirstByte:        25,
 		PictureIDPresent: 1,

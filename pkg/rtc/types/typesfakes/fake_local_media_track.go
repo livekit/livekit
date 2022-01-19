@@ -183,10 +183,11 @@ type FakeLocalMediaTrack struct {
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
 	}
-	RemoveSubscriberStub        func(livekit.ParticipantID)
+	RemoveSubscriberStub        func(livekit.ParticipantID, bool)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
 		arg1 livekit.ParticipantID
+		arg2 bool
 	}
 	RevokeDisallowedSubscribersStub        func([]livekit.ParticipantID) []livekit.ParticipantID
 	revokeDisallowedSubscribersMutex       sync.RWMutex
@@ -1178,16 +1179,17 @@ func (fake *FakeLocalMediaTrack) RemoveAllSubscribersCalls(stub func()) {
 	fake.RemoveAllSubscribersStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID) {
+func (fake *FakeLocalMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID, arg2 bool) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
 		arg1 livekit.ParticipantID
-	}{arg1})
+		arg2 bool
+	}{arg1, arg2})
 	stub := fake.RemoveSubscriberStub
-	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1})
+	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2})
 	fake.removeSubscriberMutex.Unlock()
 	if stub != nil {
-		fake.RemoveSubscriberStub(arg1)
+		fake.RemoveSubscriberStub(arg1, arg2)
 	}
 }
 
@@ -1197,17 +1199,17 @@ func (fake *FakeLocalMediaTrack) RemoveSubscriberCallCount() int {
 	return len(fake.removeSubscriberArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) RemoveSubscriberCalls(stub func(livekit.ParticipantID)) {
+func (fake *FakeLocalMediaTrack) RemoveSubscriberCalls(stub func(livekit.ParticipantID, bool)) {
 	fake.removeSubscriberMutex.Lock()
 	defer fake.removeSubscriberMutex.Unlock()
 	fake.RemoveSubscriberStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) RemoveSubscriberArgsForCall(i int) livekit.ParticipantID {
+func (fake *FakeLocalMediaTrack) RemoveSubscriberArgsForCall(i int) (livekit.ParticipantID, bool) {
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribers(arg1 []livekit.ParticipantID) []livekit.ParticipantID {

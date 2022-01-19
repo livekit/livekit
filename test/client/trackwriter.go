@@ -135,7 +135,7 @@ func (w *TrackWriter) writeOgg() {
 }
 
 func (w *TrackWriter) writeVP8() {
-	// Send our video file frame at a time. Pace our sending so we send it at the same speed it should be played back as.
+	// Send our video file frame at a time. Pace our sending such that we send it at the same speed it should be played back as.
 	// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
 	sleepTime := time.Millisecond * time.Duration((float32(w.ivfheader.TimebaseNumerator)/float32(w.ivfheader.TimebaseDenominator))*1000)
 	for {

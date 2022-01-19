@@ -3,14 +3,15 @@ package rtc
 import (
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
 func TestUpdateSubscriptionPermissions(t *testing.T) {
 	t.Run("updates permissions", func(t *testing.T) {
-		um := NewUptrackManager(UptrackManagerParams{})
+		um := NewUpTrackManager(UpTrackManagerParams{})
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
@@ -85,7 +86,7 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 
 func TestPermissions(t *testing.T) {
 	t.Run("checks permissions", func(t *testing.T) {
-		um := NewUptrackManager(UptrackManagerParams{})
+		um := NewUpTrackManager(UpTrackManagerParams{})
 
 		tra := &typesfakes.FakeMediaTrack{}
 		tra.IDReturns("audio")
