@@ -40,7 +40,7 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	rx := 93.2 - percentageLost
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
-	//Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
+	// Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
 	d := float64(rtt + (cur.Jitter / 1000))
 	h := d - 177.3
 	if h < 0 {

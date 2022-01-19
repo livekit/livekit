@@ -293,7 +293,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	return ForwardingStatusOptimal
 }
 
-func (f *Forwarder) UptrackLayersChange(availableLayers []uint16) {
+func (f *Forwarder) UpTrackLayersChange(availableLayers []uint16) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -711,7 +711,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 		}
 	}
 
-	// starting from mimimum to target, find transition which gives the best
+	// starting from minimum to target, find transition which gives the best
 	// transition taking into account bits saved vs cost of such a transition
 	bestLayers := InvalidLayers
 	bestBandwidthDelta := int64(0)

@@ -37,8 +37,8 @@ func SaturatedUsToCompactNtp(us int64) uint32 {
 }
 
 // TimeMicrosToNtp convert us to NtpTime (from webrtc)
-func TimeMicrosToNtp(time_us int64) *NtpTime {
-	timeNtpUs := time_us + NtpJan1970Sec*MicroSecondsInSecond
+func TimeMicrosToNtp(us int64) *NtpTime {
+	timeNtpUs := us + NtpJan1970Sec*MicroSecondsInSecond
 
 	// Convert seconds to uint32 through uint64 for well-defined cast.
 	// Wrap around (will happen in 2036) is expected for ntp time.

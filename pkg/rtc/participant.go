@@ -89,7 +89,7 @@ type ParticipantImpl struct {
 	pendingTracksLock sync.RWMutex
 	pendingTracks     map[string]*pendingTrackInfo
 
-	*UptrackManager
+	*UpTrackManager
 
 	// tracks the current participant is subscribed to, map of sid => DownTrack
 	subscribedTracks map[livekit.TrackID]types.SubscribedTrack
@@ -204,7 +204,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
 
-	p.setupUptrackManager()
+	p.setupUpTrackManager()
 
 	return p, nil
 }
@@ -258,7 +258,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Hidden:   p.Hidden(),
 		Recorder: p.IsRecorder(),
 	}
-	info.Tracks = p.UptrackManager.ToProto()
+	info.Tracks = p.UpTrackManager.ToProto()
 
 	return info
 }
@@ -416,7 +416,7 @@ func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, tar
 
 func (p *ParticipantImpl) Start() {
 	p.once.Do(func() {
-		p.UptrackManager.Start()
+		p.UpTrackManager.Start()
 		go p.rtcpSendWorker()
 		go p.downTracksRTCPWorker()
 	})
@@ -437,7 +437,7 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		})
 	}
 
-	p.UptrackManager.Close()
+	p.UpTrackManager.Close()
 
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
@@ -449,14 +449,14 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		disallowedSubscriptions[trackID] = publisherID
 	}
 
-	// remove all downtracks
-	var downtracksToClose []*sfu.DownTrack
+	// remove all down tracks
+	var downTracksToClose []*sfu.DownTrack
 	for _, st := range p.subscribedTracks {
-		downtracksToClose = append(downtracksToClose, st.DownTrack())
+		downTracksToClose = append(downTracksToClose, st.DownTrack())
 	}
 	p.lock.Unlock()
 
-	for _, dt := range downtracksToClose {
+	for _, dt := range downTracksToClose {
 		dt.Close()
 	}
 
@@ -812,7 +812,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 				Message: &livekit.SignalResponse_SpeakersChanged{
 					SpeakersChanged: &livekit.SpeakersChanged{
 						Speakers: []*livekit.SpeakerInfo{
-							&livekit.SpeakerInfo{
+							{
 								Sid:    string(subTrack.PublisherID()),
 								Level:  0,
 								Active: false,
@@ -848,13 +848,13 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	}
 }
 
-func (p *ParticipantImpl) setupUptrackManager() {
-	p.UptrackManager = NewUptrackManager(UptrackManagerParams{
+func (p *ParticipantImpl) setupUpTrackManager() {
+	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
 		SID:    p.params.SID,
 		Logger: p.params.Logger,
 	})
 
-	p.UptrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
+	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack, onlyIfReady bool) {
 		if onlyIfReady && !p.IsReady() {
 			return
 		}
@@ -864,7 +864,7 @@ func (p *ParticipantImpl) setupUptrackManager() {
 		}
 	})
 
-	p.UptrackManager.OnUptrackManagerClose(p.onUptrackManagerClose)
+	p.UpTrackManager.OnUpTrackManagerClose(p.onUpTrackManagerClose)
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
@@ -1070,7 +1070,7 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 					if err == io.EOF || err == io.ErrClosedPipe {
 						return
 					}
-					logger.Errorw("could not send downtrack reports", err)
+					logger.Errorw("could not send down track reports", err)
 				}
 			}
 
@@ -1241,9 +1241,9 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 }
 
 func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
-	track := p.UptrackManager.SetPublishedTrackMuted(trackID, muted)
+	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
 	if track != nil {
-		// handled in UptrackManager for a published track, no need to update state of pending track
+		// handled in UpTrackManager for a published track, no need to update state of pending track
 		return
 	}
 
@@ -1348,7 +1348,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
 		// add to published and clean up pending
-		p.UptrackManager.AddPublishedTrack(mt)
+		p.UpTrackManager.AddPublishedTrack(mt)
 		delete(p.pendingTracks, signalCid)
 
 		newTrack = true
@@ -1398,7 +1398,7 @@ func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
 	return false
 }
 
-func (p *ParticipantImpl) onUptrackManagerClose() {
+func (p *ParticipantImpl) onUpTrackManagerClose() {
 	close(p.rtcpCh)
 }
 
@@ -1505,7 +1505,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	p.pendingTracksLock.RUnlock()
 	info["PendingTracks"] = pendingTrackInfo
 
-	info["UptrackManager"] = p.UptrackManager.DebugInfo()
+	info["UpTrackManager"] = p.UpTrackManager.DebugInfo()
 
 	subscribedTrackInfo := make(map[livekit.TrackID]interface{})
 	p.lock.RLock()

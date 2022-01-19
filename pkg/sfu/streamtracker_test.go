@@ -100,7 +100,7 @@ func TestStreamTracker(t *testing.T) {
 		require.Equal(t, StreamStatusActive, tracker.Status())
 		require.Equal(t, uint32(1), callbackCalled.get())
 
-		// obaerver a few more
+		// observe a few more
 		tracker.Observe(2)
 		tracker.Observe(3)
 		tracker.Observe(4)

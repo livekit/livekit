@@ -83,7 +83,7 @@ type Buffer struct {
 
 	latestTimestamp          uint32 // latest received RTP timestamp on packet
 	latestTimestampTime      int64  // Time of the latest timestamp (in nanos since unix epoch)
-	lastFractionLostToReport uint8  // Last fractionlost from subscribers, should report to publisher; Audio only
+	lastFractionLostToReport uint8  // Last fraction lost from subscribers, should report to publisher; Audio only
 
 	// callbacks
 	onClose      func()

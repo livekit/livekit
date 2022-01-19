@@ -23,12 +23,14 @@ func TestGetConfigString(t *testing.T) {
 		{"file", "", nil, "fileContent"},
 	}
 	for _, test := range tests {
-		writeConfigFile(test, t)
-		defer os.Remove(test.configFileName)
+		func() {
+			writeConfigFile(test, t)
+			defer os.Remove(test.configFileName)
 
-		configBody, err := getConfigString(test.configFileName, test.configBody)
-		require.Equal(t, test.expectedError, err)
-		require.Equal(t, test.expectedConfigBody, configBody)
+			configBody, err := getConfigString(test.configFileName, test.configBody)
+			require.Equal(t, test.expectedError, err)
+			require.Equal(t, test.expectedConfigBody, configBody)
+		}()
 	}
 }
 

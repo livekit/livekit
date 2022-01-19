@@ -1,8 +1,9 @@
 package rtc
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/sfu"
 )
 
 // wrapper around WebRTC receiver, overriding its ID

@@ -42,8 +42,8 @@ func GetLocalIPAddresses() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	loopBacks := []string{}
-	addresses := []string{}
+	loopBacks := make([]string, 0)
+	addresses := make([]string, 0)
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
 		if err != nil {

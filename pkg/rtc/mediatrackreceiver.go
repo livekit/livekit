@@ -360,7 +360,7 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 	})
 }
 
-//---------------------------
+// ---------------------------
 
 func SpatialLayerForQuality(quality livekit.VideoQuality) int32 {
 	switch quality {

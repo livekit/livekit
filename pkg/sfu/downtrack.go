@@ -10,9 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/protocol/livekit"
-
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
@@ -20,6 +18,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 )
 
 const (
@@ -28,7 +27,7 @@ const (
 
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
-	UptrackLayersChange(availableLayers []uint16)
+	UpTrackLayersChange(availableLayers []uint16)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	// ID is the globally unique identifier for this Track.
@@ -480,8 +479,8 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }
 
-func (d *DownTrack) UptrackLayersChange(availableLayers []uint16) {
-	d.forwarder.UptrackLayersChange(availableLayers)
+func (d *DownTrack) UpTrackLayersChange(availableLayers []uint16) {
+	d.forwarder.UpTrackLayersChange(availableLayers)
 
 	if d.onAvailableLayersChanged != nil {
 		d.onAvailableLayersChanged(d)
