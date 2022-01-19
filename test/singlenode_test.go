@@ -8,14 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+
+	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -177,7 +178,7 @@ func TestSinglePublisher(t *testing.T) {
 		require.True(t, strings.HasPrefix(tr.ID(), "TR_"), "track should begin with TR")
 	}
 
-	// when c3 disconnects.. ensure subscriber is cleaned up correctly
+	// when c3 disconnects, ensure subscriber is cleaned up correctly
 	c3.Stop()
 
 	testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {

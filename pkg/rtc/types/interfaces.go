@@ -135,7 +135,7 @@ type LocalParticipant interface {
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 }
 
-// Room is a container of participants, and can provide room level actions
+// Room is a container of participants, and can provide room-level actions
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName

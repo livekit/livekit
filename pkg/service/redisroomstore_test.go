@@ -48,7 +48,7 @@ func TestParticipantPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, participants, 1)
 
-	// deleting participant should return back to normal
+	// deleting participant should return to normal
 	require.NoError(t, rs.DeleteParticipant(ctx, roomName, livekit.ParticipantIdentity(p.Identity)))
 
 	participants, err = rs.ListParticipants(ctx, roomName)

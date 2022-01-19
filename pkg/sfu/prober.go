@@ -91,12 +91,12 @@
 //
 // A few things to note
 // 1. When a probe cluster is added, the expected media rate is provided.
-//    So, the wake up interval takes that into account. For example,
+//    So, the wake-up interval takes that into account. For example,
 //    if probing at 5 Mbps for 1/2 second and if 4 Mbps of it is expected
-//    to be provided by media traffic, the wake up interval becomes 8 ms.
+//    to be provided by media traffic, the wake-up interval becomes 8 ms.
 // 2. The amount of probing should actually be capped at some value to
 //    avoid too much self-induced congestion. It maybe something like 500 kbps.
-//    That will increase the wake up interval to 16 ms in the above example.
+//    That will increase the wake-up interval to 16 ms in the above example.
 // 3. In practice, the probing interval may also be shorter. Typically,
 //    it can be run for 2 - 3 RTTs to get a good measurement. For
 //    the longest hauls, RTT could be 250 ms or so leading to the probing
@@ -356,9 +356,9 @@ func (c *Cluster) Process(p *Prober) {
 
 	// Calculate number of probe bytes that should have been sent since start.
 	// Overall goal is to send desired number of probe bytes in minDuration.
-	// However it is possible that timeElapsed is more than minDuration due
+	// However, it is possible that timeElapsed is more than minDuration due
 	// to scheduling variance. When overshooting time budget, use a capped
-	// short fall if there a grace period given.
+	// short fall if there is a grace period given.
 	windowDone := float64(timeElapsed) / float64(c.minDuration)
 	if windowDone > 1.0 {
 		// cluster has been running for longer than  minDuration

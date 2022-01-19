@@ -10,13 +10,13 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-type UptrackManagerParams struct {
+type UpTrackManagerParams struct {
 	SID    livekit.ParticipantID
 	Logger logger.Logger
 }
 
-type UptrackManager struct {
-	params UptrackManagerParams
+type UpTrackManager struct {
+	params UpTrackManagerParams
 
 	closed bool
 
@@ -34,18 +34,18 @@ type UptrackManager struct {
 	onTrackUpdated func(track types.MediaTrack, onlyIfReady bool)
 }
 
-func NewUptrackManager(params UptrackManagerParams) *UptrackManager {
-	return &UptrackManager{
+func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
+	return &UpTrackManager{
 		params:               params,
 		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack, 0),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
 
-func (u *UptrackManager) Start() {
+func (u *UpTrackManager) Start() {
 }
 
-func (u *UptrackManager) Close() {
+func (u *UpTrackManager) Close() {
 	u.lock.Lock()
 	u.closed = true
 
@@ -62,11 +62,11 @@ func (u *UptrackManager) Close() {
 	}
 }
 
-func (u *UptrackManager) OnUptrackManagerClose(f func()) {
+func (u *UpTrackManager) OnUpTrackManagerClose(f func()) {
 	u.onClose = f
 }
 
-func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
+func (u *UpTrackManager) ToProto() []*livekit.TrackInfo {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
@@ -78,12 +78,12 @@ func (u *UptrackManager) ToProto() []*livekit.TrackInfo {
 	return trackInfos
 }
 
-func (u *UptrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, onlyIfReady bool)) {
+func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, onlyIfReady bool)) {
 	u.onTrackUpdated = f
 }
 
 // AddSubscriber subscribes op to all publishedTracks
-func (u *UptrackManager) AddSubscriber(sub types.LocalParticipant, params types.AddSubscriberParams) (int, error) {
+func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.AddSubscriberParams) (int, error) {
 	var tracks []types.MediaTrack
 	if params.AllTracks {
 		tracks = u.GetPublishedTracks()
@@ -127,7 +127,7 @@ func (u *UptrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 	return n, nil
 }
 
-func (u *UptrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) {
+func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) {
 	track := u.GetPublishedTrack(trackID)
 	if track != nil {
 		track.RemoveSubscriber(sub.ID())
@@ -138,7 +138,7 @@ func (u *UptrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID li
 	u.lock.Unlock()
 }
 
-func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
+func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
 	u.lock.RLock()
 	track := u.publishedTracks[trackID]
 	u.lock.RUnlock()
@@ -158,14 +158,14 @@ func (u *UptrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 	return track
 }
 
-func (u *UptrackManager) GetPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
+func (u *UpTrackManager) GetPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
 	return u.getPublishedTrack(trackID)
 }
 
-func (u *UptrackManager) GetPublishedTracks() []types.MediaTrack {
+func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
@@ -176,7 +176,7 @@ func (u *UptrackManager) GetPublishedTracks() []types.MediaTrack {
 	return tracks
 }
 
-func (u *UptrackManager) UpdateSubscriptionPermissions(
+func (u *UpTrackManager) UpdateSubscriptionPermissions(
 	permissions *livekit.UpdateSubscriptionPermissions,
 	resolver func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
@@ -192,7 +192,7 @@ func (u *UptrackManager) UpdateSubscriptionPermissions(
 	return nil
 }
 
-func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
+func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
 	track := u.GetPublishedTrack(livekit.TrackID(updateVideoLayers.TrackSid))
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", livekit.TrackID(updateVideoLayers.TrackSid))
@@ -203,7 +203,7 @@ func (u *UptrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+func (u *UpTrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
 	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
@@ -214,7 +214,7 @@ func (u *UptrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.
 	return nil
 }
 
-func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+func (u *UpTrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
 	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
@@ -225,7 +225,7 @@ func (u *UptrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID,
 	return nil
 }
 
-func (u *UptrackManager) AddPublishedTrack(track types.MediaTrack) {
+func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Lock()
 	if _, ok := u.publishedTracks[track.ID()]; !ok {
 		u.publishedTracks[track.ID()] = track
@@ -258,16 +258,16 @@ func (u *UptrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UptrackManager) RemovePublishedTrack(track types.MediaTrack) {
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack) {
 	track.RemoveAllSubscribers()
 }
 
 // should be called with lock held
-func (u *UptrackManager) getPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
+func (u *UpTrackManager) getPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
 	return u.publishedTracks[trackID]
 }
 
-func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
+func (u *UpTrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
 	// every update overrides the existing
 
 	// all_participants takes precedence
@@ -284,7 +284,7 @@ func (u *UptrackManager) updateSubscriptionPermissions(permissions *livekit.Upda
 	}
 }
 
-func (u *UptrackManager) hasPermission(trackID livekit.TrackID, subscriberID livekit.ParticipantID) bool {
+func (u *UpTrackManager) hasPermission(trackID livekit.TrackID, subscriberID livekit.ParticipantID) bool {
 	if u.subscriptionPermissions == nil {
 		return true
 	}
@@ -307,12 +307,12 @@ func (u *UptrackManager) hasPermission(trackID livekit.TrackID, subscriberID liv
 	return false
 }
 
-func (u *UptrackManager) getAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantID {
+func (u *UpTrackManager) getAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantID {
 	if u.subscriptionPermissions == nil {
 		return nil
 	}
 
-	allowed := []livekit.ParticipantID{}
+	allowed := make([]livekit.ParticipantID, 0)
 	for subscriberID, perms := range u.subscriptionPermissions {
 		if perms.AllTracks {
 			allowed = append(allowed, subscriberID)
@@ -330,7 +330,7 @@ func (u *UptrackManager) getAllowedSubscribers(trackID livekit.TrackID) []liveki
 	return allowed
 }
 
-func (u *UptrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant) {
+func (u *UpTrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant) {
 	subscriberID := sub.ID()
 
 	pending := u.pendingSubscriptions[trackID]
@@ -345,7 +345,7 @@ func (u *UptrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, su
 	go sub.SubscriptionPermissionUpdate(u.params.SID, trackID, false)
 }
 
-func (u *UptrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant) {
+func (u *UpTrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant) {
 	subscriberID := sub.ID()
 
 	pending := u.pendingSubscriptions[trackID]
@@ -362,7 +362,7 @@ func (u *UptrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID,
 	}
 }
 
-func (u *UptrackManager) processPendingSubscriptions(resolver func(participantID livekit.ParticipantID) types.LocalParticipant) {
+func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantID livekit.ParticipantID) types.LocalParticipant) {
 	updatedPendingSubscriptions := make(map[livekit.TrackID][]livekit.ParticipantID)
 	for trackID, pending := range u.pendingSubscriptions {
 		track := u.getPublishedTrack(trackID)
@@ -402,7 +402,7 @@ func (u *UptrackManager) processPendingSubscriptions(resolver func(participantID
 	u.pendingSubscriptions = updatedPendingSubscriptions
 }
 
-func (u *UptrackManager) maybeRevokeSubscriptions(resolver func(participantID livekit.ParticipantID) types.LocalParticipant) {
+func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantID livekit.ParticipantID) types.LocalParticipant) {
 	for _, track := range u.publishedTracks {
 		trackID := track.ID()
 		allowed := u.getAllowedSubscribers(trackID)
@@ -426,7 +426,7 @@ func (u *UptrackManager) maybeRevokeSubscriptions(resolver func(participantID li
 	}
 }
 
-func (u *UptrackManager) DebugInfo() map[string]interface{} {
+func (u *UpTrackManager) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{}
 	publishedTrackInfo := make(map[livekit.TrackID]interface{})
 

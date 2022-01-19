@@ -8,7 +8,6 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
-	"github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
@@ -16,6 +15,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -352,10 +352,10 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 		return err
 	}
 
-	// for pion generate unmatched sdp, it always append data channel to last m-lines,
+	// for pion generate unmatched sdp, it always appends data channel to last m-lines,
 	// that is not consistent with our subscribe offer which data channel is first m-lines,
 	// so use a dumb pc to negotiate sdp with only data channel then the data channel will
-	// sticky to first m-lines(subsequent sdp negotiation will keep m-lines's sequence)
+	// sticky to first m-lines(subsequent sdp negotiation will keep m-lines' sequence)
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
 		return err
@@ -375,7 +375,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	}
 
 	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
-	// keep the firgerprint at first call of SetRemoteDescription, if dumb pc and client pc use
+	// keep the fingerprint at first call of SetRemoteDescription, if dumb pc and client pc use
 	// different fingerprint, that will cause pion denied dtls data after handshake with client
 	// complete (can't pass fingerprint change).
 	// in this step, we don't established connection with dump pc(no candidate swap), just use
@@ -481,7 +481,7 @@ func getMidValue(media *sdp.MediaDescription) string {
 }
 
 func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
-	fingerprints := []string{}
+	fingerprints := make([]string, 0)
 
 	if fingerprint, haveFingerprint := desc.Attribute("fingerprint"); haveFingerprint {
 		fingerprints = append(fingerprints, fingerprint)

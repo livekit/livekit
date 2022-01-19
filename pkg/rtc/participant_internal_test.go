@@ -80,15 +80,15 @@ func TestTrackPublishing(t *testing.T) {
 		p.OnTrackPublished(func(p types.LocalParticipant, track types.MediaTrack) {
 			published = true
 		})
-		p.UptrackManager.AddPublishedTrack(track)
+		p.UpTrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
 
 		require.True(t, published)
 		require.False(t, updated)
-		require.Len(t, p.UptrackManager.publishedTracks, 1)
+		require.Len(t, p.UpTrackManager.publishedTracks, 1)
 
 		track.AddOnCloseArgsForCall(0)()
-		require.Len(t, p.UptrackManager.publishedTracks, 0)
+		require.Len(t, p.UpTrackManager.publishedTracks, 0)
 		require.True(t, updated)
 	})
 
@@ -137,7 +137,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SignalCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
-		p.UptrackManager.publishedTracks["cid"] = track
+		p.UpTrackManager.publishedTracks["cid"] = track
 
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",
@@ -154,7 +154,7 @@ func TestTrackPublishing(t *testing.T) {
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SdpCidReturns("cid")
 		// directly add to publishedTracks without lock - for testing purpose only
-		p.UptrackManager.publishedTracks["cid"] = track
+		p.UpTrackManager.publishedTracks["cid"] = track
 
 		p.AddTrack(&livekit.AddTrackRequest{
 			Cid:  "cid",
@@ -203,7 +203,7 @@ func TestDisconnectTiming(t *testing.T) {
 			}
 		}()
 		track := &typesfakes.FakeMediaTrack{}
-		p.UptrackManager.AddPublishedTrack(track)
+		p.UpTrackManager.AddPublishedTrack(track)
 		p.handleTrackPublished(track)
 
 		// close channel and then try to Negotiate
@@ -284,30 +284,30 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("smooth sailing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UptrackManager.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
-		p.UptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UptrackManager.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
-		p.UptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio smooth publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UptrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})

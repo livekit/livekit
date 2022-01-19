@@ -201,7 +201,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 			return
 		}
 
-		// if the source has been terminated, we'll need to terminate all of the subscribedtracks
+		// if the source has been terminated, we'll need to terminate all the subscribed tracks
 		// however, if the dest sub has disconnected, then we can skip
 		if sender == nil {
 			return
@@ -321,7 +321,7 @@ func (t *MediaTrackSubscriptions) getSubscribedTrack(subscriberID livekit.Partic
 	return t.subscribedTracks[subscriberID]
 }
 
-// TODO: send for all downtracks from the source participant
+// TODO: send for all down tracks from the source participant
 // https://tools.ietf.org/html/rfc7941
 func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalParticipant) {
 	var sd []rtcp.SourceDescriptionChunk
