@@ -53,8 +53,11 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool) error
 
+	// updates from remotes
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -125,10 +128,6 @@ type LocalParticipant interface {
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 
-	// updates from remotes
-	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
-	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
-
 	// session migration
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
@@ -171,7 +170,6 @@ type MediaTrack interface {
 	Receiver() sfu.TrackReceiver
 
 	// callbacks
-	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
 	AddOnClose(func())
 
 	// subscribers
@@ -187,6 +185,8 @@ type MediaTrack interface {
 
 	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
+
+	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 //counterfeiter:generate . LocalMediaTrack
@@ -198,8 +198,6 @@ type LocalMediaTrack interface {
 
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionScore() float64
-
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // MediaTrack is the main interface representing a track published to the room

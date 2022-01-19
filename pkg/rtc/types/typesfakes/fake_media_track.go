@@ -121,10 +121,11 @@ type FakeMediaTrack struct {
 		arg1 string
 		arg2 livekit.VideoQuality
 	}
-	OnSubscribedMaxQualityChangeStub        func(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
-	onSubscribedMaxQualityChangeMutex       sync.RWMutex
-	onSubscribedMaxQualityChangeArgsForCall []struct {
-		arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error
+	NotifySubscriberNodeMediaLossStub        func(string, uint8)
+	notifySubscriberNodeMediaLossMutex       sync.RWMutex
+	notifySubscriberNodeMediaLossArgsForCall []struct {
+		arg1 string
+		arg2 uint8
 	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
@@ -810,36 +811,37 @@ func (fake *FakeMediaTrack) NotifySubscriberNodeMaxQualityArgsForCall(i int) (st
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChange(arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	fake.onSubscribedMaxQualityChangeArgsForCall = append(fake.onSubscribedMaxQualityChangeArgsForCall, struct {
-		arg1 func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error
-	}{arg1})
-	stub := fake.OnSubscribedMaxQualityChangeStub
-	fake.recordInvocation("OnSubscribedMaxQualityChange", []interface{}{arg1})
-	fake.onSubscribedMaxQualityChangeMutex.Unlock()
+func (fake *FakeMediaTrack) NotifySubscriberNodeMediaLoss(arg1 string, arg2 uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	fake.notifySubscriberNodeMediaLossArgsForCall = append(fake.notifySubscriberNodeMediaLossArgsForCall, struct {
+		arg1 string
+		arg2 uint8
+	}{arg1, arg2})
+	stub := fake.NotifySubscriberNodeMediaLossStub
+	fake.recordInvocation("NotifySubscriberNodeMediaLoss", []interface{}{arg1, arg2})
+	fake.notifySubscriberNodeMediaLossMutex.Unlock()
 	if stub != nil {
-		fake.OnSubscribedMaxQualityChangeStub(arg1)
+		fake.NotifySubscriberNodeMediaLossStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCallCount() int {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	return len(fake.onSubscribedMaxQualityChangeArgsForCall)
+func (fake *FakeMediaTrack) NotifySubscriberNodeMediaLossCallCount() int {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	return len(fake.notifySubscriberNodeMediaLossArgsForCall)
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeCalls(stub func(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)) {
-	fake.onSubscribedMaxQualityChangeMutex.Lock()
-	defer fake.onSubscribedMaxQualityChangeMutex.Unlock()
-	fake.OnSubscribedMaxQualityChangeStub = stub
+func (fake *FakeMediaTrack) NotifySubscriberNodeMediaLossCalls(stub func(string, uint8)) {
+	fake.notifySubscriberNodeMediaLossMutex.Lock()
+	defer fake.notifySubscriberNodeMediaLossMutex.Unlock()
+	fake.NotifySubscriberNodeMediaLossStub = stub
 }
 
-func (fake *FakeMediaTrack) OnSubscribedMaxQualityChangeArgsForCall(i int) func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error {
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
-	argsForCall := fake.onSubscribedMaxQualityChangeArgsForCall[i]
-	return argsForCall.arg1
+func (fake *FakeMediaTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) (string, uint8) {
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
+	argsForCall := fake.notifySubscriberNodeMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeMediaTrack) PublisherID() livekit.ParticipantID {
@@ -1325,8 +1327,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMaxQualityMutex.RLock()
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
-	fake.onSubscribedMaxQualityChangeMutex.RLock()
-	defer fake.onSubscribedMaxQualityChangeMutex.RUnlock()
+	fake.notifySubscriberNodeMediaLossMutex.RLock()
+	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	fake.publisherIDMutex.RLock()
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
