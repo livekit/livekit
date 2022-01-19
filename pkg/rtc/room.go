@@ -835,7 +835,7 @@ func (r *Room) connectionQualityWorker() {
 		}
 
 		for _, op := range participants {
-			if !op.ProtocolVersion().SupportsConnectionQuality() {
+			if !op.ProtocolVersion().SupportsConnectionQuality() || op.State() != livekit.ParticipantInfo_ACTIVE {
 				continue
 			}
 			update := &livekit.ConnectionQualityUpdate{}
