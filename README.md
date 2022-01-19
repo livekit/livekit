@@ -81,7 +81,8 @@ Once connected, your video and audio are now published to the newly set-up LiveK
 
 ### Generating access tokens (JWT)
 
-For additional users in the room, you'll have to create a token for each participant.
+For additional users in the room, you'll have to create a token for each
+participant. [Learn more about access tokens](https://docs.livekit.io/guides/access-tokens/).
 
 `livekit-server` provides a convenient subcommand to create a development token. This token has an expiration of a
 month, which is useful for development & testing, but not appropriate for production use.
