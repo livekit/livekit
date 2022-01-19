@@ -432,7 +432,7 @@ func (d *DownTrack) Mute(val bool) {
 }
 
 func (d *DownTrack) Close() {
-	d.CloseWithFlush(false)
+	d.CloseWithFlush(true)
 }
 
 // Close track, flush used to indicate whether send blank frame to flush
