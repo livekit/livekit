@@ -83,10 +83,9 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
 	t.lock.Lock()
-	t.receiver = receiver
-	t.lock.Unlock()
+	defer t.lock.Unlock()
 
-	t.MediaTrackSubscriptions.Close()
+	t.receiver = receiver
 }
 
 func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
@@ -98,6 +97,8 @@ func (t *MediaTrackReceiver) Close() {
 	t.receiver = nil
 	onclose := t.onClose
 	t.lock.Unlock()
+
+	t.MediaTrackSubscriptions.Close()
 
 	for _, f := range onclose {
 		f()
