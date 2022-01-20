@@ -57,19 +57,13 @@ func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *
 	})
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:                 livekit.AnalyticsEventType_PARTICIPANT_JOINED,
-		Timestamp:            timestamppb.Now(),
-		RoomId:               room.Sid,
-		ParticipantId:        participant.Sid,
-		Participant:          participant,
-		Room:                 room,
-		SdkType:              clientInfo.GetSdk(),
-		ClientVersion:        clientInfo.GetVersion(),
-		ClientOs:             clientInfo.GetOs(),
-		ClientOsVersion:      clientInfo.GetOsVersion(),
-		ClientDeviceModel:    clientInfo.GetDeviceModel(),
-		ClientBrowser:        clientInfo.GetBrowser(),
-		ClientBrowserVersion: clientInfo.GetBrowserVersion(),
+		Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
+		Timestamp:     timestamppb.Now(),
+		RoomId:        room.Sid,
+		ParticipantId: participant.Sid,
+		Participant:   participant,
+		Room:          room,
+		ClientInfo:    clientInfo,
 	})
 }
 
