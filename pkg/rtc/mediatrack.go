@@ -202,7 +202,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		)
 		wr.SetRTCPCh(t.params.RTCPChan)
 		wr.OnCloseHandler(func() {
-			t.stopMaxQualityTimer()
 			t.RemoveAllSubscribers()
 			t.MediaTrackReceiver.Close()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.PublisherID(), t.ToProto(), uint32(track.SSRC()))
