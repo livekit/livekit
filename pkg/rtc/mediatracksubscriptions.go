@@ -63,6 +63,10 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 	return t
 }
 
+func (t *MediaTrackSubscriptions) Close() {
+	t.stopMaxQualityTimer()
+}
+
 func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
 	t.onNoSubscribers = f
 }
