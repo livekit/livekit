@@ -36,13 +36,14 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	require.Equal(t, participantInfo, event.Participant)
 	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, room, event.Room)
-	require.Equal(t, clientInfo.Sdk, event.SdkType)
-	require.Equal(t, clientInfo.Version, event.ClientVersion)
-	require.Equal(t, clientInfo.Os, event.ClientOs)
-	require.Equal(t, clientInfo.OsVersion, event.ClientOsVersion)
-	require.Equal(t, clientInfo.DeviceModel, event.ClientDeviceModel)
-	require.Equal(t, clientInfo.Browser, event.ClientBrowser)
-	require.Equal(t, clientInfo.BrowserVersion, event.ClientBrowserVersion)
+
+	require.Equal(t, clientInfo.Sdk, event.ClientInfo.Sdk)
+	require.Equal(t, clientInfo.Version, event.ClientInfo.Version)
+	require.Equal(t, clientInfo.Os, event.ClientInfo.Os)
+	require.Equal(t, clientInfo.OsVersion, event.ClientInfo.OsVersion)
+	require.Equal(t, clientInfo.DeviceModel, event.ClientInfo.DeviceModel)
+	require.Equal(t, clientInfo.Browser, event.ClientInfo.Browser)
+	require.Equal(t, clientInfo.BrowserVersion, event.ClientInfo.BrowserVersion)
 }
 
 func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
