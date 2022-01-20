@@ -102,7 +102,7 @@ Deployment Docs: https://docs.livekit.io/guides/deploy
 
 Use our deploy config generator to set up a single node deployment with automatic TLS termination and built-in TURN.
 
-It includes a cloud-init script that's supported by most cloud environments.
+It includes a cloud-init/setup script that's supported by most cloud environments.
 
 ```shell
 docker run --rm -it -v$PWD:/output livekit/generate
@@ -112,6 +112,11 @@ docker run --rm -it -v$PWD:/output livekit/generate
 
 We publish a [helm chart](https://github.com/livekit/livekit-helm) that helps you to set up a cluster with high
 availability. For detailed instructions, see [Kubernetes guide](https://docs.livekit.io/deploy/kubernetes)
+
+### Testing your deployment
+
+Use the [connection tester](https://livekit.io/connection-test) to ensure your installation is set-up properly for user
+traffic.
 
 ## Building from source
 
