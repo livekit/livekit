@@ -258,6 +258,16 @@ func createRoomToken() string {
 	return t
 }
 
+func adminRoomToken(name string) string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(&auth.VideoGrant{RoomAdmin: true, Room: name})
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
 func listRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomList: true})

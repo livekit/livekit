@@ -65,6 +65,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.MaxParticipants > 0 {
 		rm.MaxParticipants = req.MaxParticipants
 	}
+	if req.Metadata != "" {
+		rm.Metadata = req.Metadata
+	}
 	if err := r.roomStore.StoreRoom(ctx, rm); err != nil {
 		return nil, err
 	}

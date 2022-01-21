@@ -397,10 +397,14 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 	}
 
 	participant := room.GetParticipant(identity)
+	var sid livekit.ParticipantID
+	if participant != nil {
+		sid = participant.ID()
+	}
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName, room.ID()),
 		identity,
-		"",
+		sid,
 	)
 
 	switch rm := msg.Message.(type) {
