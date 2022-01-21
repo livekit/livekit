@@ -376,7 +376,7 @@ func (r *Room) UpdateSubscriptions(
 				return err
 			}
 		} else {
-			publisher.RemoveSubscriber(participant, trackID)
+			publisher.RemoveSubscriber(participant, trackID, false)
 		}
 	}
 	return nil
@@ -397,7 +397,7 @@ func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallo
 			continue
 		}
 
-		pub.RemoveSubscriber(sub, trackID)
+		pub.RemoveSubscriber(sub, trackID, false)
 	}
 }
 

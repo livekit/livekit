@@ -342,11 +342,12 @@ type FakeLocalParticipant struct {
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 types.SubscribedTrack
 	}
-	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID)
+	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID, bool)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
 		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
+		arg3 bool
 	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
@@ -2363,17 +2364,18 @@ func (fake *FakeLocalParticipant) RemoveSubscribedTrackArgsForCall(i int) types.
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) {
+func (fake *FakeLocalParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID, arg3 bool) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
 		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.RemoveSubscriberStub
-	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2, arg3})
 	fake.removeSubscriberMutex.Unlock()
 	if stub != nil {
-		fake.RemoveSubscriberStub(arg1, arg2)
+		fake.RemoveSubscriberStub(arg1, arg2, arg3)
 	}
 }
 
@@ -2383,17 +2385,17 @@ func (fake *FakeLocalParticipant) RemoveSubscriberCallCount() int {
 	return len(fake.removeSubscriberArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID)) {
+func (fake *FakeLocalParticipant) RemoveSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID, bool)) {
 	fake.removeSubscriberMutex.Lock()
 	defer fake.removeSubscriberMutex.Unlock()
 	fake.RemoveSubscriberStub = stub
 }
 
-func (fake *FakeLocalParticipant) RemoveSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID) {
+func (fake *FakeLocalParticipant) RemoveSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID, bool) {
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
