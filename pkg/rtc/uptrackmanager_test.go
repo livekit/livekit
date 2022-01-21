@@ -26,15 +26,15 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			AllParticipants: true,
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Nil(t, um.subscriptionPermissions)
+		require.Nil(t, um.subscriberPermissions)
 
 		// nobody is allowed to subscribe
 		permissions = &livekit.UpdateSubscriptionPermissions{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.NotNil(t, um.subscriptionPermissions)
-		require.Equal(t, 0, len(um.subscriptionPermissions))
+		require.NotNil(t, um.subscriberPermissions)
+		require.Equal(t, 0, len(um.subscriberPermissions))
 
 		// allow all tracks for participants
 		perms1 := &livekit.TrackPermission{
@@ -52,9 +52,9 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Equal(t, 2, len(um.subscriptionPermissions))
-		require.EqualValues(t, perms1, um.subscriptionPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriptionPermissions["p2"])
+		require.Equal(t, 2, len(um.subscriberPermissions))
+		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
 
 		// allow all tracks for some and restrictive for others
 		perms1 = &livekit.TrackPermission{
@@ -77,10 +77,10 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			},
 		}
 		um.UpdateSubscriptionPermissions(permissions, nil)
-		require.Equal(t, 3, len(um.subscriptionPermissions))
-		require.EqualValues(t, perms1, um.subscriptionPermissions["p1"])
-		require.EqualValues(t, perms2, um.subscriptionPermissions["p2"])
-		require.EqualValues(t, perms3, um.subscriptionPermissions["p3"])
+		require.Equal(t, 3, len(um.subscriberPermissions))
+		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
+		require.EqualValues(t, perms3, um.subscriberPermissions["p3"])
 	})
 }
 
