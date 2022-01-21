@@ -31,7 +31,7 @@ write_files:
       -----END PRIVATE KEY-----
 
 runcmd:
-  - export LIVEKIT_VERSION=v0.13 # set LiveKit version
+  - export LIVEKIT_VERSION=v0.15 # set LiveKit version
   - curl -o /etc/systemd/system/docker.livekit-server@.service -O https://raw.githubusercontent.com/livekit/master/cloud-images/deploy/docker.livekit-server%40.service
   - systemctl enable docker
   - systemctl start docker
