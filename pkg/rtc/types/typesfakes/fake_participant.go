@@ -95,11 +95,12 @@ type FakeParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID)
+	RemoveSubscriberStub        func(types.LocalParticipant, livekit.TrackID, bool)
 	removeSubscriberMutex       sync.RWMutex
 	removeSubscriberArgsForCall []struct {
 		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
+		arg3 bool
 	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
@@ -625,17 +626,18 @@ func (fake *FakeParticipant) IdentityReturnsOnCall(i int, result1 livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) {
+func (fake *FakeParticipant) RemoveSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID, arg3 bool) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
 		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.RemoveSubscriberStub
-	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemoveSubscriber", []interface{}{arg1, arg2, arg3})
 	fake.removeSubscriberMutex.Unlock()
 	if stub != nil {
-		fake.RemoveSubscriberStub(arg1, arg2)
+		fake.RemoveSubscriberStub(arg1, arg2, arg3)
 	}
 }
 
@@ -645,17 +647,17 @@ func (fake *FakeParticipant) RemoveSubscriberCallCount() int {
 	return len(fake.removeSubscriberArgsForCall)
 }
 
-func (fake *FakeParticipant) RemoveSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID)) {
+func (fake *FakeParticipant) RemoveSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID, bool)) {
 	fake.removeSubscriberMutex.Lock()
 	defer fake.removeSubscriberMutex.Unlock()
 	fake.RemoveSubscriberStub = stub
 }
 
-func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID) {
+func (fake *FakeParticipant) RemoveSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID, bool) {
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeParticipant) SetMetadata(arg1 string) {

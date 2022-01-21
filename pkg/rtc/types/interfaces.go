@@ -45,7 +45,7 @@ type Participant interface {
 	GetPublishedTracks() []MediaTrack
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID)
+	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
 
 	// permissions
 	Hidden() bool
