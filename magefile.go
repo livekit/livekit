@@ -118,7 +118,7 @@ func PublishDocker() error {
 // run unit tests, skipping integration
 func Test() error {
 	mg.Deps(generateWire, macULimit)
-	cmd := exec.Command("go", "test", "-short", "./...")
+	cmd := exec.Command("go", "test", "-short", "./...", "-count=1")
 	connectStd(cmd)
 	return cmd.Run()
 }
@@ -127,7 +127,7 @@ func Test() error {
 func TestAll() error {
 	mg.Deps(generateWire, macULimit)
 	// "-v", "-race",
-	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m")
+	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m", "-v")
 	connectStd(cmd)
 	return cmd.Run()
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
@@ -9,6 +10,11 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+)
+
+const (
+	executionTimeout = 2 * time.Second
+	checkInterval    = 50 * time.Millisecond
 )
 
 // A rooms service that supports a single node
@@ -70,6 +76,21 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// we should not return until when the room is confirmed deleted
+	err = confirmExecution(func() error {
+		_, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		if err == nil {
+			return ErrOperationFailed
+		} else if err != ErrRoomNotFound {
+			return err
+		} else {
+			return nil
+		}
 	})
 	if err != nil {
 		return nil, err
@@ -251,4 +272,21 @@ func (s *RoomService) writeRoomMessage(ctx context.Context, room livekit.RoomNam
 	}
 
 	return s.router.WriteRoomRTC(ctx, room, identity, msg)
+}
+
+func confirmExecution(f func() error) error {
+	expired := time.After(executionTimeout)
+	var err error
+	for {
+		select {
+		case <-expired:
+			return err
+		default:
+			err = f()
+			if err == nil {
+				return nil
+			}
+			time.Sleep(checkInterval)
+		}
+	}
 }

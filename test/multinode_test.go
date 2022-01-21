@@ -151,3 +151,15 @@ func TestMultiNodeRoomList(t *testing.T) {
 
 	roomServiceListRoom(t)
 }
+
+func TestMultiNodeJoinAfterClose(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
+	defer finish()
+
+	scenarioJoinClosedRoom(t)
+}

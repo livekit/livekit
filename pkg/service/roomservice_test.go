@@ -24,6 +24,7 @@ func TestDeleteRoom(t *testing.T) {
 			},
 		}
 		ctx := context.WithValue(context.Background(), grantsKey, grant)
+		svc.store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 		_, err := svc.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 			Room: "testroom",
 		})

@@ -4,13 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
@@ -139,6 +138,22 @@ func scenarioDataPublish(t *testing.T) {
 	testutils.WithTimeout(t, "waiting for c2 to receive data", func() bool {
 		return received.Get()
 	})
+}
+
+func scenarioJoinClosedRoom(t *testing.T) {
+	c1 := createRTCClient("jcr1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	// close room with room client
+	_, err := roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
+
+	// now join again
+	c2 := createRTCClient("jcr2", defaultServerPort, nil)
+	waitUntilConnected(t, c2)
+	stopClients(c2)
 }
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
