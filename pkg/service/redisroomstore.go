@@ -16,8 +16,10 @@ const (
 	RoomsKey = "rooms"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
-	// a key for each room, with expiration
 	RoomParticipantsPrefix = "room_participants:"
+
+	// RoomSubscriptionPermissionsPrefix is hash of participant_name => SubscriptionPermission
+	RoomSubscriptionPermissionsPrefix = "room_subscription_permissions:"
 
 	// RoomLockPrefix is a simple key containing a provided lock uid
 	RoomLockPrefix = "room_lock:"
@@ -212,6 +214,39 @@ func (p *RedisRoomStore) ListParticipants(_ context.Context, roomName livekit.Ro
 
 func (p *RedisRoomStore) DeleteParticipant(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
 	key := RoomParticipantsPrefix + string(roomName)
+
+	return p.rc.HDel(p.ctx, key, string(identity)).Err()
+}
+
+func (p *RedisRoomStore) StoreSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, subscriptionPermissions *livekit.SubscriptionPermission) error {
+	key := RoomSubscriptionPermissionsPrefix + string(roomName)
+
+	data, err := proto.Marshal(subscriptionPermissions)
+	if err != nil {
+		return err
+	}
+
+	return p.rc.HSet(p.ctx, key, string(identity), data).Err()
+}
+
+func (p *RedisRoomStore) LoadSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error) {
+	key := RoomSubscriptionPermissionsPrefix + string(roomName)
+	data, err := p.rc.HGet(p.ctx, key, string(identity)).Result()
+	if err == redis.Nil {
+		return nil, ErrParticipantNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	sp := livekit.SubscriptionPermission{}
+	if err := proto.Unmarshal([]byte(data), &sp); err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
+func (p *RedisRoomStore) DeleteSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
+	key := RoomSubscriptionPermissionsPrefix + string(roomName)
 
 	return p.rc.HDel(p.ctx, key, string(identity)).Err()
 }

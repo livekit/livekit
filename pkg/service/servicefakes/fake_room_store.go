@@ -36,6 +36,19 @@ type FakeRoomStore struct {
 	deleteRoomReturnsOnCall map[int]struct {
 		result1 error
 	}
+	DeleteSubscriptionPermissionStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) error
+	deleteSubscriptionPermissionMutex       sync.RWMutex
+	deleteSubscriptionPermissionArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}
+	deleteSubscriptionPermissionReturns struct {
+		result1 error
+	}
+	deleteSubscriptionPermissionReturnsOnCall map[int]struct {
+		result1 error
+	}
 	ListParticipantsStub        func(context.Context, livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 	listParticipantsMutex       sync.RWMutex
 	listParticipantsArgsForCall []struct {
@@ -93,6 +106,21 @@ type FakeRoomStore struct {
 		result1 *livekit.Room
 		result2 error
 	}
+	LoadSubscriptionPermissionStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error)
+	loadSubscriptionPermissionMutex       sync.RWMutex
+	loadSubscriptionPermissionArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}
+	loadSubscriptionPermissionReturns struct {
+		result1 *livekit.SubscriptionPermission
+		result2 error
+	}
+	loadSubscriptionPermissionReturnsOnCall map[int]struct {
+		result1 *livekit.SubscriptionPermission
+		result2 error
+	}
 	LockRoomStub        func(context.Context, livekit.RoomName, time.Duration) (string, error)
 	lockRoomMutex       sync.RWMutex
 	lockRoomArgsForCall []struct {
@@ -131,6 +159,20 @@ type FakeRoomStore struct {
 		result1 error
 	}
 	storeRoomReturnsOnCall map[int]struct {
+		result1 error
+	}
+	StoreSubscriptionPermissionStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, *livekit.SubscriptionPermission) error
+	storeSubscriptionPermissionMutex       sync.RWMutex
+	storeSubscriptionPermissionArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 *livekit.SubscriptionPermission
+	}
+	storeSubscriptionPermissionReturns struct {
+		result1 error
+	}
+	storeSubscriptionPermissionReturnsOnCall map[int]struct {
 		result1 error
 	}
 	UnlockRoomStub        func(context.Context, livekit.RoomName, string) error
@@ -271,6 +313,69 @@ func (fake *FakeRoomStore) DeleteRoomReturnsOnCall(i int, result1 error) {
 		})
 	}
 	fake.deleteRoomReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermission(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) error {
+	fake.deleteSubscriptionPermissionMutex.Lock()
+	ret, specificReturn := fake.deleteSubscriptionPermissionReturnsOnCall[len(fake.deleteSubscriptionPermissionArgsForCall)]
+	fake.deleteSubscriptionPermissionArgsForCall = append(fake.deleteSubscriptionPermissionArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}{arg1, arg2, arg3})
+	stub := fake.DeleteSubscriptionPermissionStub
+	fakeReturns := fake.deleteSubscriptionPermissionReturns
+	fake.recordInvocation("DeleteSubscriptionPermission", []interface{}{arg1, arg2, arg3})
+	fake.deleteSubscriptionPermissionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermissionCallCount() int {
+	fake.deleteSubscriptionPermissionMutex.RLock()
+	defer fake.deleteSubscriptionPermissionMutex.RUnlock()
+	return len(fake.deleteSubscriptionPermissionArgsForCall)
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermissionCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) error) {
+	fake.deleteSubscriptionPermissionMutex.Lock()
+	defer fake.deleteSubscriptionPermissionMutex.Unlock()
+	fake.DeleteSubscriptionPermissionStub = stub
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermissionArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity) {
+	fake.deleteSubscriptionPermissionMutex.RLock()
+	defer fake.deleteSubscriptionPermissionMutex.RUnlock()
+	argsForCall := fake.deleteSubscriptionPermissionArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermissionReturns(result1 error) {
+	fake.deleteSubscriptionPermissionMutex.Lock()
+	defer fake.deleteSubscriptionPermissionMutex.Unlock()
+	fake.DeleteSubscriptionPermissionStub = nil
+	fake.deleteSubscriptionPermissionReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) DeleteSubscriptionPermissionReturnsOnCall(i int, result1 error) {
+	fake.deleteSubscriptionPermissionMutex.Lock()
+	defer fake.deleteSubscriptionPermissionMutex.Unlock()
+	fake.DeleteSubscriptionPermissionStub = nil
+	if fake.deleteSubscriptionPermissionReturnsOnCall == nil {
+		fake.deleteSubscriptionPermissionReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.deleteSubscriptionPermissionReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -541,6 +646,72 @@ func (fake *FakeRoomStore) LoadRoomReturnsOnCall(i int, result1 *livekit.Room, r
 	}{result1, result2}
 }
 
+func (fake *FakeRoomStore) LoadSubscriptionPermission(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error) {
+	fake.loadSubscriptionPermissionMutex.Lock()
+	ret, specificReturn := fake.loadSubscriptionPermissionReturnsOnCall[len(fake.loadSubscriptionPermissionArgsForCall)]
+	fake.loadSubscriptionPermissionArgsForCall = append(fake.loadSubscriptionPermissionArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}{arg1, arg2, arg3})
+	stub := fake.LoadSubscriptionPermissionStub
+	fakeReturns := fake.loadSubscriptionPermissionReturns
+	fake.recordInvocation("LoadSubscriptionPermission", []interface{}{arg1, arg2, arg3})
+	fake.loadSubscriptionPermissionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeRoomStore) LoadSubscriptionPermissionCallCount() int {
+	fake.loadSubscriptionPermissionMutex.RLock()
+	defer fake.loadSubscriptionPermissionMutex.RUnlock()
+	return len(fake.loadSubscriptionPermissionArgsForCall)
+}
+
+func (fake *FakeRoomStore) LoadSubscriptionPermissionCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error)) {
+	fake.loadSubscriptionPermissionMutex.Lock()
+	defer fake.loadSubscriptionPermissionMutex.Unlock()
+	fake.LoadSubscriptionPermissionStub = stub
+}
+
+func (fake *FakeRoomStore) LoadSubscriptionPermissionArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity) {
+	fake.loadSubscriptionPermissionMutex.RLock()
+	defer fake.loadSubscriptionPermissionMutex.RUnlock()
+	argsForCall := fake.loadSubscriptionPermissionArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRoomStore) LoadSubscriptionPermissionReturns(result1 *livekit.SubscriptionPermission, result2 error) {
+	fake.loadSubscriptionPermissionMutex.Lock()
+	defer fake.loadSubscriptionPermissionMutex.Unlock()
+	fake.LoadSubscriptionPermissionStub = nil
+	fake.loadSubscriptionPermissionReturns = struct {
+		result1 *livekit.SubscriptionPermission
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRoomStore) LoadSubscriptionPermissionReturnsOnCall(i int, result1 *livekit.SubscriptionPermission, result2 error) {
+	fake.loadSubscriptionPermissionMutex.Lock()
+	defer fake.loadSubscriptionPermissionMutex.Unlock()
+	fake.LoadSubscriptionPermissionStub = nil
+	if fake.loadSubscriptionPermissionReturnsOnCall == nil {
+		fake.loadSubscriptionPermissionReturnsOnCall = make(map[int]struct {
+			result1 *livekit.SubscriptionPermission
+			result2 error
+		})
+	}
+	fake.loadSubscriptionPermissionReturnsOnCall[i] = struct {
+		result1 *livekit.SubscriptionPermission
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeRoomStore) LockRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 time.Duration) (string, error) {
 	fake.lockRoomMutex.Lock()
 	ret, specificReturn := fake.lockRoomReturnsOnCall[len(fake.lockRoomArgsForCall)]
@@ -732,6 +903,70 @@ func (fake *FakeRoomStore) StoreRoomReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeRoomStore) StoreSubscriptionPermission(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity, arg4 *livekit.SubscriptionPermission) error {
+	fake.storeSubscriptionPermissionMutex.Lock()
+	ret, specificReturn := fake.storeSubscriptionPermissionReturnsOnCall[len(fake.storeSubscriptionPermissionArgsForCall)]
+	fake.storeSubscriptionPermissionArgsForCall = append(fake.storeSubscriptionPermissionArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 *livekit.SubscriptionPermission
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.StoreSubscriptionPermissionStub
+	fakeReturns := fake.storeSubscriptionPermissionReturns
+	fake.recordInvocation("StoreSubscriptionPermission", []interface{}{arg1, arg2, arg3, arg4})
+	fake.storeSubscriptionPermissionMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) StoreSubscriptionPermissionCallCount() int {
+	fake.storeSubscriptionPermissionMutex.RLock()
+	defer fake.storeSubscriptionPermissionMutex.RUnlock()
+	return len(fake.storeSubscriptionPermissionArgsForCall)
+}
+
+func (fake *FakeRoomStore) StoreSubscriptionPermissionCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, *livekit.SubscriptionPermission) error) {
+	fake.storeSubscriptionPermissionMutex.Lock()
+	defer fake.storeSubscriptionPermissionMutex.Unlock()
+	fake.StoreSubscriptionPermissionStub = stub
+}
+
+func (fake *FakeRoomStore) StoreSubscriptionPermissionArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity, *livekit.SubscriptionPermission) {
+	fake.storeSubscriptionPermissionMutex.RLock()
+	defer fake.storeSubscriptionPermissionMutex.RUnlock()
+	argsForCall := fake.storeSubscriptionPermissionArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeRoomStore) StoreSubscriptionPermissionReturns(result1 error) {
+	fake.storeSubscriptionPermissionMutex.Lock()
+	defer fake.storeSubscriptionPermissionMutex.Unlock()
+	fake.StoreSubscriptionPermissionStub = nil
+	fake.storeSubscriptionPermissionReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) StoreSubscriptionPermissionReturnsOnCall(i int, result1 error) {
+	fake.storeSubscriptionPermissionMutex.Lock()
+	defer fake.storeSubscriptionPermissionMutex.Unlock()
+	fake.StoreSubscriptionPermissionStub = nil
+	if fake.storeSubscriptionPermissionReturnsOnCall == nil {
+		fake.storeSubscriptionPermissionReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.storeSubscriptionPermissionReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomStore) UnlockRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 string) error {
 	fake.unlockRoomMutex.Lock()
 	ret, specificReturn := fake.unlockRoomReturnsOnCall[len(fake.unlockRoomArgsForCall)]
@@ -802,6 +1037,8 @@ func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	defer fake.deleteParticipantMutex.RUnlock()
 	fake.deleteRoomMutex.RLock()
 	defer fake.deleteRoomMutex.RUnlock()
+	fake.deleteSubscriptionPermissionMutex.RLock()
+	defer fake.deleteSubscriptionPermissionMutex.RUnlock()
 	fake.listParticipantsMutex.RLock()
 	defer fake.listParticipantsMutex.RUnlock()
 	fake.listRoomsMutex.RLock()
@@ -810,12 +1047,16 @@ func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	defer fake.loadParticipantMutex.RUnlock()
 	fake.loadRoomMutex.RLock()
 	defer fake.loadRoomMutex.RUnlock()
+	fake.loadSubscriptionPermissionMutex.RLock()
+	defer fake.loadSubscriptionPermissionMutex.RUnlock()
 	fake.lockRoomMutex.RLock()
 	defer fake.lockRoomMutex.RUnlock()
 	fake.storeParticipantMutex.RLock()
 	defer fake.storeParticipantMutex.RUnlock()
 	fake.storeRoomMutex.RLock()
 	defer fake.storeRoomMutex.RUnlock()
+	fake.storeSubscriptionPermissionMutex.RLock()
+	defer fake.storeSubscriptionPermissionMutex.RUnlock()
 	fake.unlockRoomMutex.RLock()
 	defer fake.unlockRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

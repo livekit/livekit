@@ -9,8 +9,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func TestUpdateSubscriptionPermissions(t *testing.T) {
-	t.Run("updates permissions", func(t *testing.T) {
+func TestUpdateSubscriptionPermission(t *testing.T) {
+	t.Run("updates subscription permission", func(t *testing.T) {
 		um := NewUpTrackManager(UpTrackManagerParams{})
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -21,18 +21,18 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 		trv.IDReturns("video")
 		um.publishedTracks["video"] = trv
 
-		// no restrictive permissions
-		permissions := &livekit.UpdateSubscriptionPermissions{
+		// no restrictive subscription permission
+		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.Nil(t, um.subscriberPermissions)
 
 		// nobody is allowed to subscribe
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.NotNil(t, um.subscriberPermissions)
 		require.Equal(t, 0, len(um.subscriberPermissions))
 
@@ -45,13 +45,13 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			ParticipantSid: "p2",
 			AllTracks:      true,
 		}
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{
 				perms1,
 				perms2,
 			},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -69,14 +69,14 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 			ParticipantSid: "p3",
 			TrackSids:      []string{"video"},
 		}
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{
 				perms1,
 				perms2,
 				perms3,
 			},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.Equal(t, 3, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -84,8 +84,8 @@ func TestUpdateSubscriptionPermissions(t *testing.T) {
 	})
 }
 
-func TestPermissions(t *testing.T) {
-	t.Run("checks permissions", func(t *testing.T) {
+func TestSubscriptionPermission(t *testing.T) {
+	t.Run("checks subscription permission", func(t *testing.T) {
 		um := NewUpTrackManager(UpTrackManagerParams{})
 
 		tra := &typesfakes.FakeMediaTrack{}
@@ -96,24 +96,24 @@ func TestPermissions(t *testing.T) {
 		trv.IDReturns("video")
 		um.publishedTracks["video"] = trv
 
-		// no restrictive permissions
-		permissions := &livekit.UpdateSubscriptionPermissions{
+		// no restrictive permission
+		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.True(t, um.hasPermission("audio", "p1"))
 		require.True(t, um.hasPermission("audio", "p2"))
 
 		// nobody is allowed to subscribe
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.False(t, um.hasPermission("audio", "p1"))
 		require.False(t, um.hasPermission("audio", "p2"))
 
 		// allow all tracks for participants
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{
 				{
 					ParticipantSid: "p1",
@@ -125,7 +125,7 @@ func TestPermissions(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.True(t, um.hasPermission("audio", "p1"))
 		require.True(t, um.hasPermission("video", "p1"))
 		require.True(t, um.hasPermission("audio", "p2"))
@@ -144,7 +144,7 @@ func TestPermissions(t *testing.T) {
 		require.True(t, um.hasPermission("screen", "p2"))
 
 		// allow all tracks for some and restrictive for others
-		permissions = &livekit.UpdateSubscriptionPermissions{
+		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{
 				{
 					ParticipantSid: "p1",
@@ -160,7 +160,7 @@ func TestPermissions(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermissions(permissions, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil)
 		require.True(t, um.hasPermission("audio", "p1"))
 		require.True(t, um.hasPermission("video", "p1"))
 		require.True(t, um.hasPermission("screen", "p1"))

@@ -79,11 +79,11 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 	case *livekit.SignalRequest_Leave:
 		_ = participant.Close(true)
-	case *livekit.SignalRequest_SubscriptionPermissions:
-		err := room.UpdateSubscriptionPermissions(participant, msg.SubscriptionPermissions)
+	case *livekit.SignalRequest_SubscriptionPermission:
+		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
 		if err != nil {
-			pLogger.Warnw("could not update subscription permissions", err,
-				"permissions", msg.SubscriptionPermissions)
+			pLogger.Warnw("could not update subscription permission", err,
+				"permissions", msg.SubscriptionPermission)
 		}
 	case *livekit.SignalRequest_SyncState:
 		err := room.SyncState(participant, msg.SyncState)
