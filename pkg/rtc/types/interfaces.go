@@ -53,6 +53,8 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool) error
 
+	SubscriptionPermissions() *livekit.UpdateSubscriptionPermissions
+
 	// updates from remotes
 	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error

@@ -21,9 +21,10 @@ type UpTrackManager struct {
 	closed bool
 
 	// publishedTracks that participant is publishing
-	publishedTracks map[livekit.TrackID]types.MediaTrack
-	// keeps track of subscriptions that are awaiting permissions
-	subscriptionPermissions map[livekit.ParticipantID]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
+	publishedTracks         map[livekit.TrackID]types.MediaTrack
+	subscriptionPermissions *livekit.UpdateSubscriptionPermissions
+	// subscriber permission for published tracks
+	subscriberPermissions map[livekit.ParticipantID]*livekit.TrackPermission // subscriberID => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
 	pendingSubscriptions map[livekit.TrackID][]livekit.ParticipantID // trackID => []subscriberID
 
@@ -183,13 +184,27 @@ func (u *UpTrackManager) UpdateSubscriptionPermissions(
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
-	u.updateSubscriptionPermissions(permissions)
+	// store as is for use when migrating
+	u.subscriptionPermissions = permissions
+	if permissions == nil {
+		// possible to get a nil when migrating
+		return nil
+	}
+
+	u.parseSubscriptionPermissions(permissions)
 
 	u.processPendingSubscriptions(resolver)
 
 	u.maybeRevokeSubscriptions(resolver)
 
 	return nil
+}
+
+func (u *UpTrackManager) SubscriptionPermissions() *livekit.UpdateSubscriptionPermissions {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	return u.subscriptionPermissions
 }
 
 func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
@@ -267,29 +282,29 @@ func (u *UpTrackManager) getPublishedTrack(trackID livekit.TrackID) types.MediaT
 	return u.publishedTracks[trackID]
 }
 
-func (u *UpTrackManager) updateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
+func (u *UpTrackManager) parseSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions) {
 	// every update overrides the existing
 
 	// all_participants takes precedence
 	if permissions.AllParticipants {
 		// everything is allowed, nothing else to do
-		u.subscriptionPermissions = nil
+		u.subscriberPermissions = nil
 		return
 	}
 
 	// per participant permissions
-	u.subscriptionPermissions = make(map[livekit.ParticipantID]*livekit.TrackPermission)
+	u.subscriberPermissions = make(map[livekit.ParticipantID]*livekit.TrackPermission)
 	for _, trackPerms := range permissions.TrackPermissions {
-		u.subscriptionPermissions[livekit.ParticipantID(trackPerms.ParticipantSid)] = trackPerms
+		u.subscriberPermissions[livekit.ParticipantID(trackPerms.ParticipantSid)] = trackPerms
 	}
 }
 
 func (u *UpTrackManager) hasPermission(trackID livekit.TrackID, subscriberID livekit.ParticipantID) bool {
-	if u.subscriptionPermissions == nil {
+	if u.subscriberPermissions == nil {
 		return true
 	}
 
-	perms, ok := u.subscriptionPermissions[subscriberID]
+	perms, ok := u.subscriberPermissions[subscriberID]
 	if !ok {
 		return false
 	}
@@ -308,12 +323,12 @@ func (u *UpTrackManager) hasPermission(trackID livekit.TrackID, subscriberID liv
 }
 
 func (u *UpTrackManager) getAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantID {
-	if u.subscriptionPermissions == nil {
+	if u.subscriberPermissions == nil {
 		return nil
 	}
 
 	allowed := make([]livekit.ParticipantID, 0)
-	for subscriberID, perms := range u.subscriptionPermissions {
+	for subscriberID, perms := range u.subscriberPermissions {
 		if perms.AllTracks {
 			allowed = append(allowed, subscriberID)
 			continue
