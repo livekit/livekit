@@ -141,17 +141,6 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	scenarioDataPublish(t)
 }
 
-func TestMultiNodeRoomList(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
-		return
-	}
-	_, _, finish := setupMultiNodeTest("TestMultiNodeRoomList")
-	defer finish()
-
-	roomServiceListRoom(t)
-}
-
 func TestMultiNodeJoinAfterClose(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -162,27 +151,4 @@ func TestMultiNodeJoinAfterClose(t *testing.T) {
 	defer finish()
 
 	scenarioJoinClosedRoom(t)
-}
-
-func TestMultiNodeUpdateEmptyRoomMetadata(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
-		return
-	}
-
-	// update room metadata when it's empty
-	_, _, finish := setupMultiNodeTest("TestMultiNodeUpdateEmptyRoomMetadata")
-	defer finish()
-
-	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
-		Name: "emptyRoom",
-	})
-	require.NoError(t, err)
-
-	rm, err := roomClient.UpdateRoomMetadata(contextWithToken(adminRoomToken("emptyRoom")), &livekit.UpdateRoomMetadataRequest{
-		Room:     "emptyRoom",
-		Metadata: "updated metadata",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "updated metadata", rm.Metadata)
 }

@@ -556,6 +556,16 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 	}
 }
 
+func (c *RTCClient) GetPublishedTrackIDs() []string {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	var trackIDs []string
+	for key, _ := range c.localTracks {
+		trackIDs = append(trackIDs, key)
+	}
+	return trackIDs
+}
+
 func (c *RTCClient) ensurePublisherConnected() error {
 	if c.publisherConnected.Get() {
 		return nil

@@ -101,7 +101,11 @@ func waitForServerToStart(s *service.LivekitServer) {
 			panic("could not start server after timeout")
 		case <-time.After(10 * time.Millisecond):
 			if s.IsRunning() {
-				return
+				// ensure we can connect to it
+				res, err := http.Get(fmt.Sprintf("http://localhost:%d", s.HTTPPort()))
+				if err == nil && res.StatusCode == http.StatusOK {
+					return
+				}
 			}
 		}
 	}
