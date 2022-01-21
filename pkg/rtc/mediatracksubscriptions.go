@@ -263,8 +263,6 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	if subTrack != nil {
 		subTrack.DownTrack().CloseWithFlush(!resume)
 	}
-
-	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
@@ -278,8 +276,6 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	for _, subTrack := range subscribedTracks {
 		subTrack.DownTrack().Close()
 	}
-
-	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
