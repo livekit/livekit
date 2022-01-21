@@ -153,7 +153,7 @@ func scenarioJoinClosedRoom(t *testing.T) {
 	// now join again
 	c2 := createRTCClient("jcr2", defaultServerPort, nil)
 	waitUntilConnected(t, c2)
-	defer stopClients(c2)
+	stopClients(c2)
 }
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {

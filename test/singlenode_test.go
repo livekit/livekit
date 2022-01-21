@@ -360,7 +360,7 @@ func TestAutoCreate(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("join with explicit creatRoom", func(t *testing.T) {
+	t.Run("join with explicit createRoom", func(t *testing.T) {
 		s := createSingleNodeServer(disableAutoCreate)
 		go func() {
 			if err := s.Start(); err != nil {

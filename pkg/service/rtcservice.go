@@ -32,8 +32,13 @@ type RTCService struct {
 	limits        config.LimitConfig
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, store RoomStore,
-	router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(
+	conf *config.Config,
+	ra RoomAllocator,
+	store RoomStore,
+	router routing.MessageRouter,
+	currentNode routing.LocalNode,
+) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
