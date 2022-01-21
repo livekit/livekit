@@ -136,7 +136,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// when autocreate is disabled, we'll load the room
+	// when autocreate is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
