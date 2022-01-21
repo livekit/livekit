@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,18 +24,23 @@ import (
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
+	store         RoomStore
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
+	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(conf *config.Config, ra RoomAllocator, store RoomStore,
+	router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
+		store:         store,
 		upgrader:      websocket.Upgrader{},
 		currentNode:   currentNode,
+		config:        conf,
 		isDev:         conf.Development,
 		limits:        conf.Limit,
 	}
@@ -128,6 +134,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(w, code, err.Error())
 		return
+	}
+
+	// when autocreate is disabled, we'll load the room
+	if !s.config.Room.AutoCreate {
+		_, err := s.store.LoadRoom(context.Background(), roomName)
+		if err == ErrRoomNotFound {
+			handleError(w, 404, err.Error())
+		} else if err != nil {
+			handleError(w, 500, err.Error())
+		}
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room

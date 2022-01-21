@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
@@ -324,4 +326,37 @@ func TestSingleNodeCORS(t *testing.T) {
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
+}
+
+func TestSingleNodeJoinAfterClose(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestJoinAfterClose", testRoom)
+	defer finish()
+
+	scenarioJoinClosedRoom(t)
+}
+
+func TestAutoCreate(t *testing.T) {
+	t.Run("cannot join if room isn't created", func(t *testing.T) {
+		s := createSingleNodeServer(func(conf *config.Config) {
+			conf.Room.AutoCreate = false
+		})
+		go func() {
+			if err := s.Start(); err != nil {
+				logger.Errorw("server returned error", err)
+			}
+		}()
+		defer s.Stop(true)
+
+		waitForServerToStart(s)
+
+		token := joinToken(testRoom, "start-before-create")
+		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
+		require.Error(t, err)
+	})
+
 }

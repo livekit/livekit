@@ -50,7 +50,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
+	rtcService := NewRTCService(conf, roomAllocator, roomStore, router, currentNode)
 	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
 	if err != nil {
 		return nil, err

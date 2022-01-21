@@ -103,6 +103,8 @@ type RedisConfig struct {
 }
 
 type RoomConfig struct {
+	// enable rooms to be automatically created
+	AutoCreate         bool        `yaml:"auto_create"`
 	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs"`
 	MaxParticipants    uint32      `yaml:"max_participants"`
 	EmptyTimeout       uint32      `yaml:"empty_timeout"`
@@ -187,6 +189,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{
+			AutoCreate: true,
 			// by default only enable opus and VP8
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
