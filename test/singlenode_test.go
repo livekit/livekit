@@ -27,7 +27,7 @@ func TestClientCouldConnect(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	_, finish := setupSingleNodeTest("TestClientCouldConnect")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -46,7 +46,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	_, finish := setupSingleNodeTest("TestClientCouldConnect")
 	defer finish()
 
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
@@ -122,7 +122,7 @@ func TestSinglePublisher(t *testing.T) {
 		return
 	}
 
-	s, finish := setupSingleNodeTest("TestSinglePublisher", testRoom)
+	s, finish := setupSingleNodeTest("TestSinglePublisher")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -205,7 +205,7 @@ func Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks(
 		return
 	}
 
-	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks", testRoom)
+	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks")
 	defer finish()
 
 	opts := testclient.Options{AutoSubscribe: false}
@@ -230,7 +230,7 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestRenegotiationWithDifferentCodecs", testRoom)
+	_, finish := setupSingleNodeTest("TestRenegotiationWithDifferentCodecs")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -304,7 +304,7 @@ func TestSingleNodeRoomList(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	_, finish := setupSingleNodeTest("TestSingleNodeRoomList", testRoom)
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList")
 	defer finish()
 
 	roomServiceListRoom(t)
@@ -316,7 +316,7 @@ func TestSingleNodeCORS(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	s, finish := setupSingleNodeTest("TestSingleNodeCORS", testRoom)
+	s, finish := setupSingleNodeTest("TestSingleNodeCORS")
 	defer finish()
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", s.HTTPPort()), nil)
@@ -334,17 +334,18 @@ func TestSingleNodeJoinAfterClose(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestJoinAfterClose", testRoom)
+	_, finish := setupSingleNodeTest("TestJoinAfterClose")
 	defer finish()
 
 	scenarioJoinClosedRoom(t)
 }
 
 func TestAutoCreate(t *testing.T) {
+	disableAutoCreate := func(conf *config.Config) {
+		conf.Room.AutoCreate = false
+	}
 	t.Run("cannot join if room isn't created", func(t *testing.T) {
-		s := createSingleNodeServer(func(conf *config.Config) {
-			conf.Room.AutoCreate = false
-		})
+		s := createSingleNodeServer(disableAutoCreate)
 		go func() {
 			if err := s.Start(); err != nil {
 				logger.Errorw("server returned error", err)
@@ -359,4 +360,24 @@ func TestAutoCreate(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("join with explicit creatRoom", func(t *testing.T) {
+		s := createSingleNodeServer(disableAutoCreate)
+		go func() {
+			if err := s.Start(); err != nil {
+				logger.Errorw("server returned error", err)
+			}
+		}()
+		defer s.Stop(true)
+
+		waitForServerToStart(s)
+
+		// explicitly create
+		_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: testRoom})
+		require.NoError(t, err)
+
+		c1 := createRTCClient("join-after-create", defaultServerPort, nil)
+		waitUntilConnected(t, c1)
+
+		c1.Stop()
+	})
 }

@@ -127,7 +127,7 @@ func Test() error {
 func TestAll() error {
 	mg.Deps(generateWire, macULimit)
 	// "-v", "-race",
-	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m")
+	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m", "-v")
 	connectStd(cmd)
 	return cmd.Run()
 }

@@ -46,7 +46,7 @@ func init() {
 	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
 }
 
-func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, func()) {
+func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
 	s := createSingleNodeServer(nil)
 	go func() {
@@ -57,11 +57,6 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 
 	waitForServerToStart(s)
 
-	// create test room
-	//_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: roomName})
-	//if err != nil {
-	//	panic(err)
-	//}
 	return s, func() {
 		s.Stop(true)
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
