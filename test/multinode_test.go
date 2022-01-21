@@ -141,17 +141,6 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	scenarioDataPublish(t)
 }
 
-func TestMultiNodeRoomList(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
-		return
-	}
-	_, _, finish := setupMultiNodeTest("TestMultiNodeRoomList")
-	defer finish()
-
-	roomServiceListRoom(t)
-}
-
 func TestMultiNodeJoinAfterClose(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()

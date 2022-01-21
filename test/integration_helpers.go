@@ -101,7 +101,11 @@ func waitForServerToStart(s *service.LivekitServer) {
 			panic("could not start server after timeout")
 		case <-time.After(10 * time.Millisecond):
 			if s.IsRunning() {
-				return
+				// ensure we can connect to it
+				res, err := http.Get(fmt.Sprintf("http://localhost:%d", s.HTTPPort()))
+				if err == nil && res.StatusCode == http.StatusOK {
+					return
+				}
 			}
 		}
 	}
@@ -251,6 +255,16 @@ func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 func createRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomCreate: true})
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func adminRoomToken(name string) string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(&auth.VideoGrant{RoomAdmin: true, Room: name})
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)
