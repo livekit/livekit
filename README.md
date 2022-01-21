@@ -54,8 +54,8 @@ Tools:
 docker run --rm -v$PWD:/output livekit/generate --local
 ```
 
-The above command generates a `livekit.yaml` that can be used to start LiveKit. It'll contain an API key/secret pair
-that can be used with your LiveKit install.
+The above command generates a `livekit.yaml` you can use to start LiveKit. It'll contain an API key/secret pair you can
+use with your LiveKit install.
 
 ### Starting with docker
 
@@ -69,23 +69,23 @@ docker run --rm -p 7880:7880 \
     --node-ip <machine-ip>
 ```
 
-When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service is to be exposed to
-public internet, this should the machine's public IP.
+When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service will be exposed to
+the public Internet, this should the machine's public IP.
 
 ### Test with example app
 
 Head over to the [example app](https://example.livekit.io) and enter the generated token to connect to your LiveKit
 server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
 
-Once connected, your video and audio are now published to the newly set-up LiveKit instance!
+Once connected, your video and audio are now published to your new LiveKit instance!
 
 ### Generating access tokens (JWT)
 
-For additional users in the room, you'll have to create a token for each
+To add more users to a room, you'll have to create a token for each
 participant. [Learn more about access tokens](https://docs.livekit.io/guides/access-tokens/).
 
-`livekit-server` provides a convenient subcommand to create a development token. This token has an expiration of a
-month, which is useful for development & testing, but not appropriate for production use.
+`livekit-server` provides a convenient sub-command to create a development token. This token has an expiration of a
+month, which is useful for development and testing, but not appropriate for production use.
 
 ```shell
 docker run --rm -e LIVEKIT_KEYS="<api-key>: <api-secret>" \
