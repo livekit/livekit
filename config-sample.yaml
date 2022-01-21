@@ -81,6 +81,8 @@ keys:
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
 # precedence over defaults
 # room:
+#   # allow rooms to be automatically created when participants join, defaults to true
+#   # auto_create: false
 #   # number of seconds to leave a room open when it's empty
 #   empty_timeout: 300
 #   # limit number of participants that can be in a room, 0 for no limit

@@ -46,9 +46,9 @@ func init() {
 	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
 }
 
-func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, func()) {
+func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s := createSingleNodeServer()
+	s := createSingleNodeServer(nil)
 	go func() {
 		if err := s.Start(); err != nil {
 			logger.Errorw("server returned error", err)
@@ -57,11 +57,6 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 
 	waitForServerToStart(s)
 
-	// create test room
-	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: roomName})
-	if err != nil {
-		panic(err)
-	}
 	return s, func() {
 		s.Stop(true)
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
@@ -132,7 +127,7 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	}
 }
 
-func createSingleNodeServer() *service.LivekitServer {
+func createSingleNodeServer(configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", nil)
 	if err != nil {
@@ -140,6 +135,9 @@ func createSingleNodeServer() *service.LivekitServer {
 	}
 	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	if configUpdater != nil {
+		configUpdater(conf)
+	}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
