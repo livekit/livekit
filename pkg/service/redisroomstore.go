@@ -16,7 +16,6 @@ const (
 	RoomsKey = "rooms"
 
 	// RoomParticipantsPrefix is hash of participant_name => ParticipantInfo
-	// a key for each room, with expiration
 	RoomParticipantsPrefix = "room_participants:"
 
 	// RoomLockPrefix is a simple key containing a provided lock uid

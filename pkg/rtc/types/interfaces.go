@@ -53,10 +53,10 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool) error
 
-	SubscriptionPermissions() *livekit.UpdateSubscriptionPermissions
+	SubscriptionPermission() *livekit.SubscriptionPermission
 
 	// updates from remotes
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
+	UpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
 	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
@@ -143,7 +143,7 @@ type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
-	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
+	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 
