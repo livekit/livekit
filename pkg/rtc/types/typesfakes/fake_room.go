@@ -53,10 +53,10 @@ type FakeRoom struct {
 	syncStateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscriptionPermissionStub        func(types.Participant, *livekit.SubscriptionPermission) error
+	UpdateSubscriptionPermissionStub        func(types.LocalParticipant, *livekit.SubscriptionPermission) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
 	updateSubscriptionPermissionArgsForCall []struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SubscriptionPermission
 	}
 	updateSubscriptionPermissionReturns struct {
@@ -325,11 +325,11 @@ func (fake *FakeRoom) SyncStateReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRoom) UpdateSubscriptionPermission(arg1 types.Participant, arg2 *livekit.SubscriptionPermission) error {
+func (fake *FakeRoom) UpdateSubscriptionPermission(arg1 types.LocalParticipant, arg2 *livekit.SubscriptionPermission) error {
 	fake.updateSubscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.updateSubscriptionPermissionReturnsOnCall[len(fake.updateSubscriptionPermissionArgsForCall)]
 	fake.updateSubscriptionPermissionArgsForCall = append(fake.updateSubscriptionPermissionArgsForCall, struct {
-		arg1 types.Participant
+		arg1 types.LocalParticipant
 		arg2 *livekit.SubscriptionPermission
 	}{arg1, arg2})
 	stub := fake.UpdateSubscriptionPermissionStub
@@ -351,13 +351,13 @@ func (fake *FakeRoom) UpdateSubscriptionPermissionCallCount() int {
 	return len(fake.updateSubscriptionPermissionArgsForCall)
 }
 
-func (fake *FakeRoom) UpdateSubscriptionPermissionCalls(stub func(types.Participant, *livekit.SubscriptionPermission) error) {
+func (fake *FakeRoom) UpdateSubscriptionPermissionCalls(stub func(types.LocalParticipant, *livekit.SubscriptionPermission) error) {
 	fake.updateSubscriptionPermissionMutex.Lock()
 	defer fake.updateSubscriptionPermissionMutex.Unlock()
 	fake.UpdateSubscriptionPermissionStub = stub
 }
 
-func (fake *FakeRoom) UpdateSubscriptionPermissionArgsForCall(i int) (types.Participant, *livekit.SubscriptionPermission) {
+func (fake *FakeRoom) UpdateSubscriptionPermissionArgsForCall(i int) (types.LocalParticipant, *livekit.SubscriptionPermission) {
 	fake.updateSubscriptionPermissionMutex.RLock()
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
 	argsForCall := fake.updateSubscriptionPermissionArgsForCall[i]

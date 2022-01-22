@@ -200,7 +200,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	return nil
 }
 
-func (u *UpTrackManager) SubscriptionPermissions() *livekit.SubscriptionPermission {
+func (u *UpTrackManager) SubscriptionPermission() *livekit.SubscriptionPermission {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 

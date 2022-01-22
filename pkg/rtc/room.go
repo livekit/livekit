@@ -386,7 +386,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 	return nil
 }
 
-func (r *Room) UpdateSubscriptionPermission(participant types.Participant, subscriptionPermission *livekit.SubscriptionPermission) error {
+func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
 	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipantBySid)
 }
 
