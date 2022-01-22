@@ -23,8 +23,7 @@ func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
 		rooms:        make(map[livekit.RoomName]*livekit.Room),
 		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		//subscriptionPermissions: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission),
-		lock: sync.RWMutex{},
+		lock:         sync.RWMutex{},
 	}
 }
 
