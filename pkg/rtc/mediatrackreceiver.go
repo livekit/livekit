@@ -331,7 +331,7 @@ func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
 
 	t.lock.RLock()
 	if t.receiver != nil {
-		receiverInfo := t.receiver.(sfu.Receiver).DebugInfo()
+		receiverInfo := t.receiver.DebugInfo()
 		for k, v := range receiverInfo {
 			info[k] = v
 		}

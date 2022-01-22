@@ -24,41 +24,24 @@ type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 type TrackReceiver interface {
 	TrackID() livekit.TrackID
 	StreamID() string
-	GetBitrateTemporalCumulative() Bitrates
-	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	AddDownTrack(track TrackSender)
-	DeleteDownTrack(peerID livekit.ParticipantID)
-	SendPLI(layer int32)
-	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	Codec() webrtc.RTPCodecCapability
+
+	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
+	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+	GetBitrateTemporalCumulative() Bitrates
+
+	SendPLI(layer int32)
+
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
-}
 
-// Receiver defines an interface for a track receivers
-type Receiver interface {
-	TrackID() livekit.TrackID
-	StreamID() string
-	Codec() webrtc.RTPCodecCapability
-	AddUpTrack(track *webrtc.TrackRemote, buffer *buffer.Buffer)
 	AddDownTrack(track TrackSender)
-	SetUpTrackPaused(paused bool)
-	SetMaxExpectedSpatialLayer(layer int32)
-	NumAvailableSpatialLayers() int
-	GetBitrateTemporalCumulative() Bitrates
-	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	DeleteDownTrack(peerID livekit.ParticipantID)
-	OnCloseHandler(fn func())
-	SendPLI(layer int32)
-	SetRTCPCh(ch chan []rtcp.Packet)
 
-	OnAudioLevel(h AudioLevelHandle)
-
-	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
 	DebugInfo() map[string]interface{}
 }
 
-// WebRTCReceiver receives a video track
+// WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
 	peerID           livekit.ParticipantID
 	trackID          livekit.TrackID
@@ -137,7 +120,7 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 }
 
 // NewWebRTCReceiver creates a new webrtc track receivers
-func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid livekit.ParticipantID, opts ...ReceiverOpts) Receiver {
+func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid livekit.ParticipantID, opts ...ReceiverOpts) *WebRTCReceiver {
 	w := &WebRTCReceiver{
 		peerID:   pid,
 		receiver: receiver,
