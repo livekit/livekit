@@ -119,7 +119,7 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 	}
 }
 
-// NewWebRTCReceiver creates a new webrtc track receivers
+// NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid livekit.ParticipantID, opts ...ReceiverOpts) *WebRTCReceiver {
 	w := &WebRTCReceiver{
 		peerID:   pid,
