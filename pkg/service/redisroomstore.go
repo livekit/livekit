@@ -19,7 +19,7 @@ const (
 	RoomParticipantsPrefix = "room_participants:"
 
 	// RoomSubscriptionPermissionsPrefix is hash of participant_name => SubscriptionPermission
-	RoomSubscriptionPermissionsPrefix = "room_subscription_permissions:"
+	//RoomSubscriptionPermissionsPrefix = "room_subscription_permissions:"
 
 	// RoomLockPrefix is a simple key containing a provided lock uid
 	RoomLockPrefix = "room_lock:"
@@ -218,6 +218,7 @@ func (p *RedisRoomStore) DeleteParticipant(_ context.Context, roomName livekit.R
 	return p.rc.HDel(p.ctx, key, string(identity)).Err()
 }
 
+/*
 func (p *RedisRoomStore) StoreSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, subscriptionPermissions *livekit.SubscriptionPermission) error {
 	key := RoomSubscriptionPermissionsPrefix + string(roomName)
 
@@ -250,3 +251,4 @@ func (p *RedisRoomStore) DeleteSubscriptionPermission(_ context.Context, roomNam
 
 	return p.rc.HDel(p.ctx, key, string(identity)).Err()
 }
+*/

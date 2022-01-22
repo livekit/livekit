@@ -60,6 +60,7 @@ func TestParticipantPersistence(t *testing.T) {
 	require.Equal(t, err, service.ErrParticipantNotFound)
 }
 
+/*
 func TestSubscriptionPermissionPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisRoomStore(redisClient())
@@ -132,6 +133,7 @@ func TestSubscriptionPermissionPersistence(t *testing.T) {
 	_, err = rs.LoadSubscriptionPermission(ctx, roomName, "user1")
 	require.Equal(t, err, service.ErrParticipantNotFound)
 }
+*/
 
 func TestRoomLock(t *testing.T) {
 	ctx := context.Background()

@@ -14,18 +14,18 @@ type LocalRoomStore struct {
 	// map of roomName => room
 	rooms map[livekit.RoomName]*livekit.Room
 	// map of roomName => { identity: participant }
-	participants            map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
-	subscriptionPermissions map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission
-	lock                    sync.RWMutex
-	globalLock              sync.Mutex
+	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
+	//subscriptionPermissions map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission
+	lock       sync.RWMutex
+	globalLock sync.Mutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
 	return &LocalRoomStore{
-		rooms:                   make(map[livekit.RoomName]*livekit.Room),
-		participants:            make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		subscriptionPermissions: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission),
-		lock:                    sync.RWMutex{},
+		rooms:        make(map[livekit.RoomName]*livekit.Room),
+		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		//subscriptionPermissions: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission),
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -145,6 +145,7 @@ func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName livekit.R
 	return nil
 }
 
+/*
 func (p *LocalRoomStore) StoreSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, subscriptionPermission *livekit.SubscriptionPermission) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -182,3 +183,4 @@ func (p *LocalRoomStore) DeleteSubscriptionPermission(_ context.Context, roomNam
 	}
 	return nil
 }
+*/
