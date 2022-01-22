@@ -212,7 +212,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
-		t.startMaxQualityTimer()
 	}
 
 	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)

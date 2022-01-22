@@ -63,6 +63,10 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 	return t
 }
 
+func (t *MediaTrackSubscriptions) Start() {
+	t.startMaxQualityTimer()
+}
+
 func (t *MediaTrackSubscriptions) Close() {
 	t.stopMaxQualityTimer()
 }
