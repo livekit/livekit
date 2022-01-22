@@ -104,6 +104,20 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 	})
 }
 
+func (t *telemetryServiceInternal) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+	prometheus.AddPublishedTrack(track.Type.String())
+
+	roomID, roomName := t.getRoomDetails(participantID)
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:          livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE,
+		Timestamp:     timestamppb.Now(),
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
+		Track:         track,
+		Room:          &livekit.Room{Name: string(roomName)},
+	})
+}
+
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := livekit.RoomID("")
 	roomName := livekit.RoomName("")
