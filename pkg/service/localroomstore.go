@@ -15,9 +15,8 @@ type LocalRoomStore struct {
 	rooms map[livekit.RoomName]*livekit.Room
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
-	//subscriptionPermissions map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission
-	lock       sync.RWMutex
-	globalLock sync.Mutex
+	lock         sync.RWMutex
+	globalLock   sync.Mutex
 }
 
 func NewLocalRoomStore() *LocalRoomStore {
@@ -144,43 +143,3 @@ func (p *LocalRoomStore) DeleteParticipant(_ context.Context, roomName livekit.R
 	}
 	return nil
 }
-
-/*
-func (p *LocalRoomStore) StoreSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, subscriptionPermission *livekit.SubscriptionPermission) error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	roomSubscriptionPermissions := p.subscriptionPermissions[roomName]
-	if roomSubscriptionPermissions == nil {
-		roomSubscriptionPermissions = make(map[livekit.ParticipantIdentity]*livekit.SubscriptionPermission)
-		p.subscriptionPermissions[roomName] = roomSubscriptionPermissions
-	}
-	roomSubscriptionPermissions[identity] = subscriptionPermission
-	return nil
-}
-
-func (p *LocalRoomStore) LoadSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	roomSubscriptionPermissions := p.subscriptionPermissions[roomName]
-	if roomSubscriptionPermissions == nil {
-		return nil, ErrParticipantNotFound
-	}
-	subscriptionPermission := roomSubscriptionPermissions[identity]
-	if subscriptionPermission == nil {
-		return nil, ErrParticipantNotFound
-	}
-	return subscriptionPermission, nil
-}
-
-func (p *LocalRoomStore) DeleteSubscriptionPermission(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	roomSubscriptionPermissions := p.subscriptionPermissions[roomName]
-	if roomSubscriptionPermissions != nil {
-		delete(roomSubscriptionPermissions, identity)
-	}
-	return nil
-}
-*/

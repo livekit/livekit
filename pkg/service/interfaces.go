@@ -24,11 +24,6 @@ type RoomStore interface {
 
 	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
 	DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
-
-	/*
-		StoreSubscriptionPermission(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, subscriptionPermission *livekit.SubscriptionPermission) error
-		DeleteSubscriptionPermission(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
-	*/
 }
 
 //counterfeiter:generate . RORoomStore
@@ -40,10 +35,6 @@ type RORoomStore interface {
 
 	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
-
-	/*
-		LoadSubscriptionPermission(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.SubscriptionPermission, error)
-	*/
 }
 
 //counterfeiter:generate . RoomAllocator
