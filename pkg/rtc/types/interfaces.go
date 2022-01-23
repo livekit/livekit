@@ -217,12 +217,3 @@ type SubscribedTrack interface {
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
 }
-
-// interface for properties of webrtc.TrackRemote
-//counterfeiter:generate . TrackRemote
-type TrackRemote interface {
-	SSRC() webrtc.SSRC
-	StreamID() string
-	Kind() webrtc.RTPCodecType
-	Codec() webrtc.RTPCodecParameters
-}

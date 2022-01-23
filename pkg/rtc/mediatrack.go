@@ -140,7 +140,7 @@ func (t *MediaTrack) getNumUpTracks() (uint32, uint32) {
 	numPublishing := uint32(0)
 	receiver := t.Receiver()
 	if receiver != nil {
-		numPublishing = uint32(receiver.(sfu.Receiver).NumAvailableSpatialLayers())
+		numPublishing = uint32(receiver.(*sfu.WebRTCReceiver).NumAvailableSpatialLayers())
 	}
 
 	return numPublishing, numExpected
@@ -212,10 +212,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
-		t.startMaxQualityTimer()
 	}
 
-	t.Receiver().(sfu.Receiver).AddUpTrack(track, buff)
+	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
 	t.params.Telemetry.AddUpTrack(t.PublisherID(), t.ID(), buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
