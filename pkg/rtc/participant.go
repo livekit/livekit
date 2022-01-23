@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
+	"github.com/livekit/protocol/auth"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/livekit/protocol/livekit"
@@ -56,6 +57,7 @@ type ParticipantParams struct {
 	Recorder                bool
 	Logger                  logger.Logger
 	SimTracks               map[uint32]SimulcastTrackInfo
+	Grants                  *auth.ClaimGrants
 }
 
 type ParticipantImpl struct {
@@ -109,9 +111,10 @@ type ParticipantImpl struct {
 	onMetadataUpdate func(types.LocalParticipant)
 	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
 
-	migrateState atomic.Value // types.MigrateState
-	pendingOffer *webrtc.SessionDescription
-	onClose      func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+	migrateState    atomic.Value // types.MigrateState
+	pendingOffer    *webrtc.SessionDescription
+	onClose         func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+	onClaimsChanged func(participant types.LocalParticipant)
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -236,15 +239,47 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
+	p.lock.Lock()
+	changed := p.metadata != metadata
 	p.metadata = metadata
+	if changed {
+		p.params.Grants.Metadata = metadata
+	}
+	p.lock.Unlock()
+
+	if !changed {
+		return
+	}
 
 	if p.onMetadataUpdate != nil {
 		p.onMetadataUpdate(p)
 	}
+	if p.onClaimsChanged != nil {
+		p.onClaimsChanged(p)
+	}
+}
+
+func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.params.Grants
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) {
+	p.lock.Lock()
 	p.permission = permission
+
+	// update grants with this
+	if p.params.Grants != nil && p.params.Grants.Video != nil {
+		video := p.params.Grants.Video
+		video.SetCanSubscribe(permission.CanSubscribe)
+		video.SetCanPublish(permission.CanPublish)
+		video.SetCanPublishData(permission.CanPublishData)
+	}
+	p.lock.Unlock()
+	if p.onClaimsChanged != nil {
+		p.onClaimsChanged(p)
+	}
 }
 
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
@@ -299,6 +334,10 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *li
 
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
 	p.onClose = callback
+}
+
+func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant)) {
+	p.onClaimsChanged = callback
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
@@ -646,6 +685,14 @@ func (p *ParticipantImpl) SendConnectionQualityUpdate(update *livekit.Connection
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_ConnectionQuality{
 			ConnectionQuality: update,
+		},
+	})
+}
+
+func (p *ParticipantImpl) SendRefreshToken(token string) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_RefreshToken{
+			RefreshToken: token,
 		},
 	})
 }

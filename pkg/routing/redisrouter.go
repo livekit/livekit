@@ -2,9 +2,11 @@ package routing
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -146,6 +148,12 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 
 	sink := NewRTCNodeSink(r.rc, rtcNode.Id, pKey)
 
+	// serialize claims
+	claims, err := json.Marshal(pi.Grants)
+	if err != nil {
+		return
+	}
+
 	// sends a message to start session
 	err = sink.WriteMessage(&livekit.StartSession{
 		RoomName: string(roomName),
@@ -160,6 +168,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		Hidden:        pi.Hidden,
 		Recorder:      pi.Recorder,
 		Client:        pi.Client,
+		GrantsJson:    string(claims),
 	})
 	if err != nil {
 		return
@@ -238,6 +247,11 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		}
 	}
 
+	claims := &auth.ClaimGrants{}
+	if err := json.Unmarshal([]byte(ss.GrantsJson), claims); err != nil {
+		return err
+	}
+
 	pi := ParticipantInit{
 		Identity:      livekit.ParticipantIdentity(ss.Identity),
 		Metadata:      ss.Metadata,
@@ -248,6 +262,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		AutoSubscribe: ss.AutoSubscribe,
 		Hidden:        ss.Hidden,
 		Recorder:      ss.Recorder,
+		Grants:        claims,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)

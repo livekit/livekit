@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 
@@ -151,4 +152,43 @@ func TestMultiNodeJoinAfterClose(t *testing.T) {
 	defer finish()
 
 	scenarioJoinClosedRoom(t)
+}
+
+// ensure that token accurately reflects out of band updates
+func TestMultiNodeRefreshToken(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
+	defer finish()
+
+	// a participant joining with full permissions
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	// update permissions and metadata
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err := roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "c1",
+		Permission: &livekit.ParticipantPermission{
+			CanPublish:   false,
+			CanSubscribe: true,
+		},
+		Metadata: "metadata",
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, "waiting for refresh token", func() bool {
+		return c1.RefreshToken() != ""
+	})
+
+	// parse token to ensure it's correct
+	verifier, err := auth.ParseAPIToken(c1.RefreshToken())
+	require.NoError(t, err)
+
+	grants, err := verifier.Verify(testApiSecret)
+	require.NoError(t, err)
+
+	require.Equal(t, "metadata", grants.Metadata)
+	require.False(t, *grants.Video.CanPublish)
+	require.False(t, *grants.Video.CanPublishData)
+	require.True(t, *grants.Video.CanSubscribe)
 }
