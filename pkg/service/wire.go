@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -71,7 +72,10 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		defer func() {
 			_ = f.Close()
 		}()
-		return auth.NewFileBasedKeyProviderFromReader(f)
+		decoder := yaml.NewDecoder(f)
+		if err = decoder.Decode(conf.Keys); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(conf.Keys) == 0 {

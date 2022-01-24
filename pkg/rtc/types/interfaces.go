@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 
@@ -74,15 +75,14 @@ type LocalParticipant interface {
 
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
-
 	IsRecorder() bool
-
 	SubscriberAsPrimary() bool
 
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 
 	// permissions
+	ClaimGrants() *auth.ClaimGrants
 	SetPermission(permission *livekit.ParticipantPermission)
 	CanPublish() bool
 	CanSubscribe() bool
@@ -119,6 +119,7 @@ type LocalParticipant interface {
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
+	SendRefreshToken(token string) error
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
@@ -129,6 +130,7 @@ type LocalParticipant interface {
 	OnMetadataUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnClaimsChanged(_callback func(LocalParticipant))
 
 	// session migration
 	SetMigrateState(s MigrateState)

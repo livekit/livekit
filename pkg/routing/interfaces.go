@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/proto"
@@ -36,6 +37,7 @@ type ParticipantInit struct {
 	Hidden        bool
 	Recorder      bool
 	Client        *livekit.ClientInfo
+	Grants        *auth.ClaimGrants
 }
 
 type NewParticipantCallback func(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)

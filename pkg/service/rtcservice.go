@@ -117,6 +117,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Hidden:        claims.Video.Hidden,
 		Recorder:      claims.Video.Recorder,
 		Client:        ParseClientInfo(r.Form),
+		Grants:        claims,
 	}
 
 	if autoSubParam != "" {
