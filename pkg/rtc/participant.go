@@ -1006,6 +1006,9 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
 		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
+		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
+			p.SetMigrateState(types.MigrateStateComplete)
+		}
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
 	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
