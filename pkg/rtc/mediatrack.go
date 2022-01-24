@@ -90,6 +90,19 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 			t.buffer.SetLastFractionLostReport(fractionalLoss)
 		}
 	})
+	t.MediaTrackReceiver.OnVideoLayerUpdate(func(layers []*livekit.VideoLayer) {
+		for _, layer := range layers {
+			t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(),
+				&livekit.TrackInfo{
+					Sid:       string(t.ID()),
+					Type:      livekit.TrackType_VIDEO,
+					Muted:     t.IsMuted(),
+					Width:     layer.Width,
+					Height:    layer.Height,
+					Simulcast: t.IsSimulcast(),
+				})
+		}
+	})
 
 	// on close signal via closing channel to workers
 	t.AddOnClose(t.closeChan)

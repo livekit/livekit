@@ -28,6 +28,7 @@ type TelemetryService interface {
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 }
@@ -142,5 +143,11 @@ func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.Rec
 func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
 	t.jobQueue <- func() {
 		t.internalService.RecordingEnded(ctx, ri)
+	}
+}
+
+func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+	t.jobQueue <- func() {
+		t.internalService.TrackPublishedUpdate(ctx, participantID, track)
 	}
 }

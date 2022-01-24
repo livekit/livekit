@@ -33,10 +33,11 @@ type MediaTrackReceiver struct {
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 
 	// track audio fraction lost
-	downFracLostLock  sync.Mutex
-	maxDownFracLost   uint8
-	maxDownFracLostTs time.Time
-	onMediaLossUpdate func(fractionalLoss uint8)
+	downFracLostLock   sync.Mutex
+	maxDownFracLost    uint8
+	maxDownFracLostTs  time.Time
+	onMediaLossUpdate  func(fractionalLoss uint8)
+	onVideoLayerUpdate func(layers []*livekit.VideoLayer)
 
 	onClose []func()
 
@@ -91,6 +92,10 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
 
 func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
 	t.onMediaLossUpdate = f
+}
+
+func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLayer)) {
+	t.onVideoLayerUpdate = f
 }
 
 func (t *MediaTrackReceiver) Close() {
@@ -214,6 +219,9 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	}
 
 	t.MediaTrackSubscriptions.UpdateVideoLayers()
+	if t.onVideoLayerUpdate != nil {
+		t.onVideoLayerUpdate(layers)
+	}
 
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
 }

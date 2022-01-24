@@ -65,3 +65,36 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	require.Equal(t, room.Sid, event.RoomId)
 	require.Equal(t, room, event.Room)
 }
+
+func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
+	fixture := createFixture()
+
+	// prepare
+	partID := "part1"
+	trackID := "track1"
+	width := uint32(360)
+	height := uint32(720)
+	trackInfo := &livekit.TrackInfo{
+		Sid:        trackID,
+		Type:       livekit.TrackType_VIDEO,
+		Muted:      false,
+		Width:      width,
+		Height:     height,
+		Simulcast:  false,
+		DisableDtx: false,
+	}
+
+	// do
+	fixture.sut.TrackPublishedUpdate(context.Background(), livekit.ParticipantID(partID), trackInfo)
+
+	// test
+	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
+	_, event := fixture.analytics.SendEventArgsForCall(0)
+	require.Equal(t, livekit.AnalyticsEventType_TRACK_PUBLISHED_UPDATE, event.Type)
+	require.Equal(t, partID, event.ParticipantId)
+
+	require.Equal(t, trackID, event.Track.Sid)
+	require.Equal(t, width, event.Track.Width)
+	require.Equal(t, height, event.Track.Height)
+
+}
