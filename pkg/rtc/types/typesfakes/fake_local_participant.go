@@ -7,6 +7,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	webrtc "github.com/pion/webrtc/v3"
 )
@@ -83,6 +84,16 @@ type FakeLocalParticipant struct {
 	}
 	canSubscribeReturnsOnCall map[int]struct {
 		result1 bool
+	}
+	ClaimGrantsStub        func() *auth.ClaimGrants
+	claimGrantsMutex       sync.RWMutex
+	claimGrantsArgsForCall []struct {
+	}
+	claimGrantsReturns struct {
+		result1 *auth.ClaimGrants
+	}
+	claimGrantsReturnsOnCall map[int]struct {
+		result1 *auth.ClaimGrants
 	}
 	CloseStub        func(bool) error
 	closeMutex       sync.RWMutex
@@ -297,6 +308,11 @@ type FakeLocalParticipant struct {
 	negotiateMutex       sync.RWMutex
 	negotiateArgsForCall []struct {
 	}
+	OnClaimsChangedStub        func(func(types.LocalParticipant))
+	onClaimsChangedMutex       sync.RWMutex
+	onClaimsChangedArgsForCall []struct {
+		arg1 func(types.LocalParticipant)
+	}
 	OnCloseStub        func(func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
@@ -394,6 +410,17 @@ type FakeLocalParticipant struct {
 		result1 error
 	}
 	sendParticipantUpdateReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendRefreshTokenStub        func(string) error
+	sendRefreshTokenMutex       sync.RWMutex
+	sendRefreshTokenArgsForCall []struct {
+		arg1 string
+	}
+	sendRefreshTokenReturns struct {
+		result1 error
+	}
+	sendRefreshTokenReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SendRoomUpdateStub        func(*livekit.Room) error
@@ -954,6 +981,59 @@ func (fake *FakeLocalParticipant) CanSubscribeReturnsOnCall(i int, result1 bool)
 	}
 	fake.canSubscribeReturnsOnCall[i] = struct {
 		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ClaimGrants() *auth.ClaimGrants {
+	fake.claimGrantsMutex.Lock()
+	ret, specificReturn := fake.claimGrantsReturnsOnCall[len(fake.claimGrantsArgsForCall)]
+	fake.claimGrantsArgsForCall = append(fake.claimGrantsArgsForCall, struct {
+	}{})
+	stub := fake.ClaimGrantsStub
+	fakeReturns := fake.claimGrantsReturns
+	fake.recordInvocation("ClaimGrants", []interface{}{})
+	fake.claimGrantsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) ClaimGrantsCallCount() int {
+	fake.claimGrantsMutex.RLock()
+	defer fake.claimGrantsMutex.RUnlock()
+	return len(fake.claimGrantsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ClaimGrantsCalls(stub func() *auth.ClaimGrants) {
+	fake.claimGrantsMutex.Lock()
+	defer fake.claimGrantsMutex.Unlock()
+	fake.ClaimGrantsStub = stub
+}
+
+func (fake *FakeLocalParticipant) ClaimGrantsReturns(result1 *auth.ClaimGrants) {
+	fake.claimGrantsMutex.Lock()
+	defer fake.claimGrantsMutex.Unlock()
+	fake.ClaimGrantsStub = nil
+	fake.claimGrantsReturns = struct {
+		result1 *auth.ClaimGrants
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ClaimGrantsReturnsOnCall(i int, result1 *auth.ClaimGrants) {
+	fake.claimGrantsMutex.Lock()
+	defer fake.claimGrantsMutex.Unlock()
+	fake.ClaimGrantsStub = nil
+	if fake.claimGrantsReturnsOnCall == nil {
+		fake.claimGrantsReturnsOnCall = make(map[int]struct {
+			result1 *auth.ClaimGrants
+		})
+	}
+	fake.claimGrantsReturnsOnCall[i] = struct {
+		result1 *auth.ClaimGrants
 	}{result1}
 }
 
@@ -2087,6 +2167,38 @@ func (fake *FakeLocalParticipant) NegotiateCalls(stub func()) {
 	fake.NegotiateStub = stub
 }
 
+func (fake *FakeLocalParticipant) OnClaimsChanged(arg1 func(types.LocalParticipant)) {
+	fake.onClaimsChangedMutex.Lock()
+	fake.onClaimsChangedArgsForCall = append(fake.onClaimsChangedArgsForCall, struct {
+		arg1 func(types.LocalParticipant)
+	}{arg1})
+	stub := fake.OnClaimsChangedStub
+	fake.recordInvocation("OnClaimsChanged", []interface{}{arg1})
+	fake.onClaimsChangedMutex.Unlock()
+	if stub != nil {
+		fake.OnClaimsChangedStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnClaimsChangedCallCount() int {
+	fake.onClaimsChangedMutex.RLock()
+	defer fake.onClaimsChangedMutex.RUnlock()
+	return len(fake.onClaimsChangedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnClaimsChangedCalls(stub func(func(types.LocalParticipant))) {
+	fake.onClaimsChangedMutex.Lock()
+	defer fake.onClaimsChangedMutex.Unlock()
+	fake.OnClaimsChangedStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnClaimsChangedArgsForCall(i int) func(types.LocalParticipant) {
+	fake.onClaimsChangedMutex.RLock()
+	defer fake.onClaimsChangedMutex.RUnlock()
+	argsForCall := fake.onClaimsChangedArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) OnClose(arg1 func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
 	fake.onCloseMutex.Lock()
 	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
@@ -2656,6 +2768,67 @@ func (fake *FakeLocalParticipant) SendParticipantUpdateReturnsOnCall(i int, resu
 		})
 	}
 	fake.sendParticipantUpdateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendRefreshToken(arg1 string) error {
+	fake.sendRefreshTokenMutex.Lock()
+	ret, specificReturn := fake.sendRefreshTokenReturnsOnCall[len(fake.sendRefreshTokenArgsForCall)]
+	fake.sendRefreshTokenArgsForCall = append(fake.sendRefreshTokenArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.SendRefreshTokenStub
+	fakeReturns := fake.sendRefreshTokenReturns
+	fake.recordInvocation("SendRefreshToken", []interface{}{arg1})
+	fake.sendRefreshTokenMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SendRefreshTokenCallCount() int {
+	fake.sendRefreshTokenMutex.RLock()
+	defer fake.sendRefreshTokenMutex.RUnlock()
+	return len(fake.sendRefreshTokenArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SendRefreshTokenCalls(stub func(string) error) {
+	fake.sendRefreshTokenMutex.Lock()
+	defer fake.sendRefreshTokenMutex.Unlock()
+	fake.SendRefreshTokenStub = stub
+}
+
+func (fake *FakeLocalParticipant) SendRefreshTokenArgsForCall(i int) string {
+	fake.sendRefreshTokenMutex.RLock()
+	defer fake.sendRefreshTokenMutex.RUnlock()
+	argsForCall := fake.sendRefreshTokenArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SendRefreshTokenReturns(result1 error) {
+	fake.sendRefreshTokenMutex.Lock()
+	defer fake.sendRefreshTokenMutex.Unlock()
+	fake.SendRefreshTokenStub = nil
+	fake.sendRefreshTokenReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendRefreshTokenReturnsOnCall(i int, result1 error) {
+	fake.sendRefreshTokenMutex.Lock()
+	defer fake.sendRefreshTokenMutex.Unlock()
+	fake.SendRefreshTokenStub = nil
+	if fake.sendRefreshTokenReturnsOnCall == nil {
+		fake.sendRefreshTokenReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendRefreshTokenReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -3625,6 +3798,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.canPublishDataMutex.RUnlock()
 	fake.canSubscribeMutex.RLock()
 	defer fake.canSubscribeMutex.RUnlock()
+	fake.claimGrantsMutex.RLock()
+	defer fake.claimGrantsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
@@ -3667,6 +3842,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.migrateStateMutex.RUnlock()
 	fake.negotiateMutex.RLock()
 	defer fake.negotiateMutex.RUnlock()
+	fake.onClaimsChangedMutex.RLock()
+	defer fake.onClaimsChangedMutex.RUnlock()
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	fake.onDataPacketMutex.RLock()
@@ -3693,6 +3870,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendJoinResponseMutex.RUnlock()
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
+	fake.sendRefreshTokenMutex.RLock()
+	defer fake.sendRefreshTokenMutex.RUnlock()
 	fake.sendRoomUpdateMutex.RLock()
 	defer fake.sendRoomUpdateMutex.RUnlock()
 	fake.sendSpeakerUpdateMutex.RLock()

@@ -60,6 +60,7 @@ type RTCClient struct {
 	pendingTrackWriters []*TrackWriter
 	OnConnected         func()
 	OnDataReceived      func(data []byte, sid string)
+	refreshToken        string
 
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
@@ -324,6 +325,10 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
 			c.lock.Unlock()
+		case *livekit.SignalResponse_RefreshToken:
+			c.lock.Lock()
+			c.refreshToken = msg.RefreshToken
+			c.lock.Unlock()
 		}
 	}
 }
@@ -410,6 +415,12 @@ func (c *RTCClient) Stop() {
 	c.publisher.Close()
 	c.subscriber.Close()
 	c.cancel()
+}
+
+func (c *RTCClient) RefreshToken() string {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.refreshToken
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -18,7 +19,9 @@ import (
 )
 
 const (
-	roomPurgeSeconds = 24 * 60 * 60
+	roomPurgeSeconds     = 24 * 60 * 60
+	tokenRefreshInterval = 5 * time.Minute
+	tokenDefaultTTL      = 10 * time.Minute
 )
 
 // RoomManager manages rooms and its interaction with participants.
@@ -241,18 +244,18 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		ThrottleConfig:          r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,
 		EnabledCodecs:           room.Room.EnabledCodecs,
+		Grants:                  pi.Grants,
 		Hidden:                  pi.Hidden,
 		Logger:                  pLogger,
 	})
-
 	if err != nil {
 		logger.Errorw("could not create participant", err)
 		return
 	}
+
 	if pi.Metadata != "" {
 		participant.SetMetadata(pi.Metadata)
 	}
-
 	if pi.Permission != nil {
 		participant.SetPermission(pi.Permission)
 	}
@@ -291,6 +294,12 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
 
 		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
+	})
+	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
+		pLogger.Debugw("refreshing client token after claims change")
+		if err := r.refreshToken(participant); err != nil {
+			logger.Errorw("could not refresh token", err)
+		}
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)
@@ -361,12 +370,22 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		participant.Identity(), participant.ID(),
 	)
 
+	lastTokenUpdate := time.Now()
 	for {
 		select {
 		case <-time.After(time.Millisecond * 50):
 			// periodic check to ensure participant didn't become disconnected
 			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
 				return
+			}
+
+			if time.Now().Sub(lastTokenUpdate) > tokenRefreshInterval {
+				pLogger.Debugw("refreshing client token after interval")
+				// refresh token with the first API Key/secret pair
+				if err := r.refreshToken(participant); err != nil {
+					pLogger.Errorw("could not refresh token", err)
+				}
+				lastTokenUpdate = time.Now()
 			}
 		case obj := <-requestSource.ReadChan():
 			// In single node mode, the request source is directly tied to the signal message channel
@@ -501,6 +520,27 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		iceServers = append(iceServers, iceServerForStunServers(config.DefaultStunServers))
 	}
 	return iceServers
+}
+
+func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
+	for key, secret := range r.config.Keys {
+		grants := participant.ClaimGrants()
+		token := auth.NewAccessToken(key, secret)
+		token.SetName(grants.Name).
+			SetIdentity(string(participant.Identity())).
+			SetValidFor(tokenDefaultTTL).
+			SetMetadata(grants.Metadata).
+			AddGrant(grants.Video)
+		jwt, err := token.ToJWT()
+		if err == nil {
+			err = participant.SendRefreshToken(jwt)
+		}
+		if err != nil {
+			return err
+		}
+		break
+	}
+	return nil
 }
 
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
