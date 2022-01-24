@@ -296,6 +296,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
+		pLogger.Debugw("refreshing client token after claims change")
 		if err := r.refreshToken(participant); err != nil {
 			logger.Errorw("could not refresh token", err)
 		}
@@ -369,6 +370,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		participant.Identity(), participant.ID(),
 	)
 
+	lastTokenUpdate := time.Now()
 	for {
 		select {
 		case <-time.After(time.Millisecond * 50):
@@ -376,10 +378,14 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
 				return
 			}
-		case <-time.After(tokenRefreshInterval):
-			// refresh token with the first API Key/secret pair
-			if err := r.refreshToken(participant); err != nil {
-				pLogger.Errorw("could not refresh token", err)
+
+			if time.Now().Sub(lastTokenUpdate) > tokenRefreshInterval {
+				pLogger.Debugw("refreshing client token after interval")
+				// refresh token with the first API Key/secret pair
+				if err := r.refreshToken(participant); err != nil {
+					pLogger.Errorw("could not refresh token", err)
+				}
+				lastTokenUpdate = time.Now()
 			}
 		case obj := <-requestSource.ReadChan():
 			// In single node mode, the request source is directly tied to the signal message channel

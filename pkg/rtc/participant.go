@@ -242,9 +242,7 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
 	changed := p.metadata != metadata
 	p.metadata = metadata
-	if changed {
-		p.params.Grants.Metadata = metadata
-	}
+	p.params.Grants.Metadata = metadata
 	p.lock.Unlock()
 
 	if !changed {
