@@ -22,6 +22,7 @@ const (
 	roomPurgeSeconds     = 24 * 60 * 60
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+	joiningTimeout       = 10 * time.Second
 )
 
 // RoomManager manages rooms and its interaction with participants.
@@ -311,7 +312,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
 
-	if room != nil {
+	if room != nil && room.TryDelayCloseForJoin(joiningTimeout) {
 		return room, nil
 	}
 

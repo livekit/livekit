@@ -51,6 +51,7 @@ type Room struct {
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
 	onClose              func()
+	pendingJoinExpired   time.Time
 }
 
 type ParticipantOptions struct {
@@ -433,6 +434,7 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
+	r.lock.Lock()
 	timeout := r.Room.EmptyTimeout
 	var elapsed int64
 	if r.FirstJoinedAt() > 0 {
@@ -445,9 +447,22 @@ func (r *Room) CloseIfEmpty() {
 		elapsed = time.Now().Unix() - r.Room.CreationTime
 	}
 
-	if elapsed >= int64(timeout) {
+	if elapsed >= int64(timeout) && time.Now().After(r.pendingJoinExpired) {
 		r.Close()
 	}
+	r.lock.Unlock()
+}
+
+// prevent room close for joing; return false means room already closed
+func (r *Room) TryDelayCloseForJoin(duration time.Duration) bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	if r.IsClosed() {
+		return false
+	}
+
+	r.pendingJoinExpired = time.Now().Add(duration)
+	return true
 }
 
 func (r *Room) Close() {
@@ -455,7 +470,7 @@ func (r *Room) Close() {
 		close(r.closed)
 		r.Logger.Infow("closing room")
 		if r.onClose != nil {
-			r.onClose()
+			go r.onClose()
 		}
 	})
 }
