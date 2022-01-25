@@ -66,7 +66,7 @@ var (
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type PacketStats struct {
-	octets  uint32
+	octets  uint64
 	packets uint32
 }
 
@@ -638,19 +638,20 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 
 	diff := (uint64(now.Sub(ntpTime(srNTP).Time())) * uint64(d.codec.ClockRate)) / uint64(time.Second)
 	octets, packets := d.getSRStats()
+
 	return &rtcp.SenderReport{
 		SSRC:        d.ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     srRTP + uint32(diff),
 		PacketCount: packets,
-		OctetCount:  octets,
+		OctetCount:  uint32(octets),
 	}
 }
 
 func (d *DownTrack) UpdatePrimaryStats(packetLen uint32) {
 	primaryStats, _ := d.primaryStats.Load().(*PacketStats)
 
-	primaryStats.octets += packetLen
+	primaryStats.octets += uint64(packetLen)
 	primaryStats.packets += 1
 
 	d.primaryStats.Store(primaryStats)
@@ -659,7 +660,7 @@ func (d *DownTrack) UpdatePrimaryStats(packetLen uint32) {
 func (d *DownTrack) UpdateRtxStats(packetLen uint32) {
 	rtxStats, _ := d.rtxStats.Load().(*PacketStats)
 
-	rtxStats.octets += packetLen
+	rtxStats.octets += uint64(packetLen)
 	rtxStats.packets += 1
 
 	d.rtxStats.Store(rtxStats)
@@ -668,7 +669,7 @@ func (d *DownTrack) UpdateRtxStats(packetLen uint32) {
 func (d *DownTrack) UpdatePaddingStats(packetLen uint32) {
 	paddingStats, _ := d.paddingStats.Load().(*PacketStats)
 
-	paddingStats.octets += packetLen
+	paddingStats.octets += uint64(packetLen)
 	paddingStats.packets += 1
 
 	d.paddingStats.Store(paddingStats)
@@ -956,7 +957,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	}
 }
 
-func (d *DownTrack) getSRStats() (uint32, uint32) {
+func (d *DownTrack) getSRStats() (uint64, uint32) {
 	primary := d.primaryStats.Load().(*PacketStats)
 	rtx := d.rtxStats.Load().(*PacketStats)
 	padding := d.paddingStats.Load().(*PacketStats)
