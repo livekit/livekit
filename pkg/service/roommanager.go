@@ -178,12 +178,11 @@ func (r *RoomManager) Stop() {
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
 func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
 	room, err := r.getOrCreateRoom(ctx, roomName)
-	defer room.Release()
-
 	if err != nil {
 		logger.Errorw("could not create room", err, "room", roomName)
 		return
 	}
+	defer room.Release()
 
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
