@@ -4,12 +4,12 @@ import (
 	"math"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -43,6 +43,7 @@ type Room struct {
 
 	// time the first participant joined the room
 	joinedAt atomic.Value
+	holds    atomic.Int32
 	// time that the last participant left the room
 	leftAt    atomic.Value
 	closed    chan struct{}
@@ -160,14 +161,30 @@ func (r *Room) LastLeftAt() int64 {
 	return 0
 }
 
+func (r *Room) Hold() bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if r.IsClosed() {
+		return false
+	}
+
+	r.holds.Inc()
+	return true
+}
+
+func (r *Room) Release() {
+	r.holds.Dec()
+}
+
 func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	if r.IsClosed() {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "room_closed").Add(1)
 		return ErrRoomClosed
 	}
-
-	r.lock.Lock()
-	defer r.lock.Unlock()
 
 	if r.participants[participant.Identity()] != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "already_joined").Add(1)
@@ -416,21 +433,17 @@ func (r *Room) IsClosed() bool {
 
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
-	if r.IsClosed() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if r.IsClosed() || r.holds.Load() > 0 {
 		return
 	}
 
-	r.lock.RLock()
-	visibleParticipants := 0
 	for _, p := range r.participants {
 		if !p.Hidden() {
-			visibleParticipants++
+			return
 		}
-	}
-	r.lock.RUnlock()
-
-	if visibleParticipants > 0 {
-		return
 	}
 
 	timeout := r.Room.EmptyTimeout
@@ -446,17 +459,24 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	if elapsed >= int64(timeout) {
-		r.Close()
+		r.closeLocked()
 	}
 }
 
 func (r *Room) Close() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.closeLocked()
+}
+
+func (r *Room) closeLocked() {
 	r.closeOnce.Do(func() {
-		close(r.closed)
 		r.Logger.Infow("closing room")
 		if r.onClose != nil {
 			r.onClose()
 		}
+		close(r.closed)
 	})
 }
 
