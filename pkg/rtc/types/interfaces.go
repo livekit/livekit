@@ -76,7 +76,6 @@ type LocalParticipant interface {
 
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
-	IsRecorder() bool
 	SubscriberAsPrimary() bool
 
 	GetResponseSink() routing.MessageSink
