@@ -50,6 +50,7 @@ type Participant interface {
 
 	// permissions
 	Hidden() bool
+	IsRecorder() bool
 
 	Start()
 	Close(sendLeave bool) error
