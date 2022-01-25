@@ -42,10 +42,10 @@ type Room struct {
 	bufferFactory   *buffer.Factory
 
 	// time the first participant joined the room
-	joinedAt atomic.Value
+	joinedAt atomic.Int64
 	holds    atomic.Int32
 	// time that the last participant left the room
-	leftAt    atomic.Value
+	leftAt    atomic.Int64
 	closed    chan struct{}
 	closeOnce sync.Once
 
@@ -146,19 +146,11 @@ func (r *Room) GetBufferFactory() *buffer.Factory {
 }
 
 func (r *Room) FirstJoinedAt() int64 {
-	j := r.joinedAt.Load()
-	if t, ok := j.(int64); ok {
-		return t
-	}
-	return 0
+	return r.joinedAt.Load()
 }
 
 func (r *Room) LastLeftAt() int64 {
-	l := r.leftAt.Load()
-	if t, ok := l.(int64); ok {
-		return t
-	}
-	return 0
+	return r.leftAt.Load()
 }
 
 func (r *Room) Hold() bool {
