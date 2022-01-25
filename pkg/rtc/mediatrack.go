@@ -48,6 +48,8 @@ type MediaTrack struct {
 	*MediaTrackReceiver
 
 	onMediaLossUpdate func(trackID livekit.TrackID, fractionalLoss uint32)
+
+	lock sync.RWMutex
 }
 
 type MediaTrackParams struct {
@@ -204,6 +206,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
+	t.lock.Lock()
 	if t.Receiver() == nil {
 		wr := sfu.NewWebRTCReceiver(
 			receiver,
@@ -226,6 +229,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
 	}
+	t.lock.Unlock()
 
 	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
 	t.params.Telemetry.AddUpTrack(t.PublisherID(), t.ID(), buff)
