@@ -91,7 +91,11 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	ds.next.PliCount += stats.PliCount
 	ds.next.FirCount += stats.FirCount
 	// average out scores received in this interval
-	ds.next.ConnectionScore = ds.next.ConnectionScore + stats.ConnectionScore/2
+	if ds.connectionScore == 0 {
+		ds.connectionScore = stats.ConnectionScore
+	} else {
+		ds.connectionScore = (ds.connectionScore + stats.ConnectionScore) / 2
+	}
 }
 
 func (s *StatsWorker) Update() {
@@ -151,11 +155,11 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	next.TotalPackets = uint64(stats.totalPackets - stats.prevPackets)
 	next.TotalBytes = stats.totalBytes - stats.prevBytes
 	next.PacketLost = stats.totalPacketsLost - stats.prevPacketsLost
+	next.ConnectionScore = stats.connectionScore
 
 	stats.prevPackets = stats.totalPackets
 	stats.prevBytes = stats.totalBytes
 	stats.prevPacketsLost = stats.totalPacketsLost
-
 	return next
 }
 
