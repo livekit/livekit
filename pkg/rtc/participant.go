@@ -1383,7 +1383,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
 			Telemetry:           p.params.Telemetry,
-			Logger:              p.params.Logger,
+			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,
 		})
 

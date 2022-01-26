@@ -215,7 +215,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 			return
 		}
 		t.params.Logger.Debugw("removing peerconnection track",
-			"track", t.params.MediaTrack.ID(),
 			"subscriber", sub.Identity(),
 			"subscriberID", subscriberID,
 			"kind", t.params.MediaTrack.Kind(),
@@ -270,7 +269,7 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
-	t.params.Logger.Debugw("removing all subscribers", "track", t.params.MediaTrack.ID())
+	t.params.Logger.Debugw("removing all subscribers")
 
 	t.subscribedTracksMu.Lock()
 	subscribedTracks := t.subscribedTracks
