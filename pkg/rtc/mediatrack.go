@@ -165,8 +165,7 @@ func (t *MediaTrack) getNumUpTracks() (uint32, uint32) {
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
-		logger.Errorw("could not retrieve buffer pair", nil,
-			"track", t.ID())
+		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
 		return
 	}
 	buff.OnFeedback(t.handlePublisherFeedback)
