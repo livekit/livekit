@@ -453,9 +453,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 	d.closeOnce.Do(func() {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
+		d.receiver.DeleteDownTrack(d.peerID)
+
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
+
 		close(d.done)
 	})
 }
