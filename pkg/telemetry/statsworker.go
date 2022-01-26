@@ -15,6 +15,7 @@ type StatsWorker struct {
 	roomName      livekit.RoomName
 	participantID livekit.ParticipantID
 
+	drainStats       map[livekit.TrackID]bool
 	outgoingPerTrack map[livekit.TrackID]*Stats
 	incomingPerTrack map[livekit.TrackID]*Stats
 }
@@ -40,6 +41,7 @@ func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID livekit.Roo
 
 		outgoingPerTrack: make(map[livekit.TrackID]*Stats),
 		incomingPerTrack: make(map[livekit.TrackID]*Stats),
+		drainStats:       make(map[livekit.TrackID]bool),
 	}
 	return s
 }
@@ -110,6 +112,14 @@ func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []
 			stats = append(stats, analyticsStat)
 		}
 	}
+	if len(s.drainStats) > 0 {
+		for trackID := range s.drainStats {
+			delete(s.outgoingPerTrack, trackID)
+			delete(s.incomingPerTrack, trackID)
+		}
+		s.drainStats = make(map[livekit.TrackID]bool)
+	}
+
 	return stats
 }
 
@@ -151,4 +161,8 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 
 func (s *StatsWorker) Close() {
 	s.Update()
+}
+
+func (s *StatsWorker) RemoveStats(trackID livekit.TrackID) {
+	s.drainStats[trackID] = true
 }
