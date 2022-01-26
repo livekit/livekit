@@ -87,7 +87,7 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		Logger:              params.Logger,
 	})
 	t.MediaTrackReceiver.OnMediaLossUpdate(func(fractionalLoss uint8) {
-		if t.buffer != nil {
+		if t.buffer != nil && t.Kind() == livekit.TrackType_AUDIO {
 			// ok to access buffer since receivers are added before subscribers
 			t.buffer.SetLastFractionLostReport(fractionalLoss)
 		}
@@ -108,8 +108,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 
 	// on close signal via closing channel to workers
 	t.AddOnClose(t.closeChan)
-	go t.updateStats()
-
 	return t
 }
 
@@ -223,11 +221,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.PublisherID(), t.ToProto(), uint32(track.SSRC()))
 		})
 		t.params.Telemetry.TrackPublished(context.Background(), t.PublisherID(), t.ToProto())
-		if t.Kind() == livekit.TrackType_AUDIO {
-			t.buffer = buff
-		}
+
+		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
+		go t.updateStats()
 	}
 	t.lock.Unlock()
 
@@ -367,11 +365,10 @@ func (t *MediaTrack) updateStats() {
 			return
 		case <-time.After(connectionQualityUpdateInterval):
 			t.connectionStats.Lock.Lock()
-			var stats buffer.Stats
-			if t.buffer != nil {
-				stats = t.buffer.GetStats()
-				continue
-			}
+
+			//we are accessing stats after receiver has buffer assigned
+			stats := t.buffer.GetStats()
+
 			delta := t.connectionStats.UpdateStats(stats.TotalByte)
 			if t.Kind() == livekit.TrackType_AUDIO {
 				t.connectionStats.Score = connectionquality.AudioConnectionScore(delta, t.connectionStats.Jitter)
