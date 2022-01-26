@@ -6,18 +6,13 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
-	"github.com/pion/rtcp"
-
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const updateFrequency = time.Second * 10
 
 type TelemetryService interface {
 	// stats
-	AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer)
-	OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int)
-	HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet)
+	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
@@ -68,21 +63,9 @@ func (t *telemetryService) run() {
 	}
 }
 
-func (t *telemetryService) AddUpTrack(participantID livekit.ParticipantID, trackID livekit.TrackID, buff *buffer.Buffer) {
+func (t *telemetryService) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stats *livekit.AnalyticsStat) {
 	t.jobQueue <- func() {
-		t.internalService.AddUpTrack(participantID, trackID, buff)
-	}
-}
-
-func (t *telemetryService) OnDownstreamPacket(participantID livekit.ParticipantID, trackID livekit.TrackID, bytes int) {
-	t.jobQueue <- func() {
-		t.internalService.OnDownstreamPacket(participantID, trackID, bytes)
-	}
-}
-
-func (t *telemetryService) HandleRTCP(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, pkts []rtcp.Packet) {
-	t.jobQueue <- func() {
-		t.internalService.HandleRTCP(streamType, participantID, trackID, pkts)
+		t.internalService.TrackStats(streamType, participantID, trackID, stats)
 	}
 }
 
