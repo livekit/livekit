@@ -232,7 +232,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	t.lock.Unlock()
 
 	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
-	t.params.Telemetry.AddUpTrack(t.PublisherID(), t.ID(), buff)
 
 	atomic.AddUint32(&t.numUpTracks, 1)
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
@@ -276,9 +275,9 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 	var jitter uint32
 	var totalLost uint32
 	var maxSeqNum uint32
-
-	// forward to telemetry
-	t.params.Telemetry.HandleRTCP(livekit.StreamType_UPSTREAM, t.params.ParticipantID, t.ID(), packets)
+	var nackCount int32
+	var pliCount int32
+	var firCount int32
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
@@ -288,7 +287,6 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.FractionLost > maxLost {
 					maxLost = rr.FractionLost
 				}
-
 				if rr.Delay > delay {
 					delay = rr.Delay
 				}
@@ -298,11 +296,18 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 				if rr.LastSequenceNumber > maxSeqNum {
 					maxSeqNum = rr.LastSequenceNumber
 				}
-
 				totalLost = rr.TotalLost
-
-				hasReport = true
 			}
+			hasReport = true
+		case *rtcp.TransportLayerNack:
+			nackCount++
+			hasReport = true
+		case *rtcp.PictureLossIndication:
+			pliCount++
+			hasReport = true
+		case *rtcp.FullIntraRequest:
+			firCount++
+			hasReport = true
 		}
 	}
 
@@ -318,8 +323,11 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			t.maxUpFracLost = 0
 			t.maxUpFracLostTs = now
 		}
+		t.statsLock.Unlock()
+
 		// update feedback stats
-		current := t.connectionStats.Curr
+		t.connectionStats.Lock.Lock()
+		current := t.connectionStats
 		if jitter > current.Jitter {
 			current.Jitter = jitter
 		}
@@ -330,7 +338,10 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			current.LastSeqNum = maxSeqNum
 		}
 		current.PacketsLost = totalLost
-		t.statsLock.Unlock()
+		t.connectionStats.NackCount += nackCount
+		t.connectionStats.PliCount += pliCount
+		t.connectionStats.FirCount += firCount
+		t.connectionStats.Lock.Unlock()
 	}
 
 	// also look for sender reports
@@ -339,8 +350,8 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 }
 
 func (t *MediaTrack) GetConnectionScore() float64 {
-	t.statsLock.Lock()
-	defer t.statsLock.Unlock()
+	t.connectionStats.Lock.Lock()
+	defer t.connectionStats.Lock.Unlock()
 	return t.connectionStats.Score
 }
 
@@ -349,23 +360,38 @@ func (t *MediaTrack) closeChan() {
 }
 
 func (t *MediaTrack) updateStats() {
+
 	for {
 		select {
 		case <-t.done:
 			return
 		case <-time.After(connectionQualityUpdateInterval):
-			t.statsLock.Lock()
+			t.connectionStats.Lock.Lock()
+			stats := t.buffer.GetStats()
+			delta := t.connectionStats.UpdateStats(stats.TotalByte)
 			if t.Kind() == livekit.TrackType_AUDIO {
-				t.connectionStats.CalculateAudioScore()
+				t.connectionStats.Score = connectionquality.AudioConnectionScore(delta, t.connectionStats.Jitter)
 			} else {
-				t.calculateVideoScore()
+				t.connectionStats.Score = t.calculateVideoScore()
 			}
-			t.statsLock.Unlock()
+			stat := &livekit.AnalyticsStat{
+				Jitter:          float64(t.connectionStats.Jitter),
+				TotalPackets:    uint64(t.connectionStats.TotalPackets),
+				PacketLost:      uint64(t.connectionStats.PacketsLost),
+				Delay:           uint64(t.connectionStats.Delay),
+				TotalBytes:      t.connectionStats.TotalBytes,
+				NackCount:       t.connectionStats.NackCount,
+				PliCount:        t.connectionStats.PliCount,
+				FirCount:        t.connectionStats.FirCount,
+				ConnectionScore: float32(t.connectionStats.Score),
+			}
+			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
+			t.connectionStats.Lock.Unlock()
 		}
 	}
 }
 
-func (t *MediaTrack) calculateVideoScore() {
+func (t *MediaTrack) calculateVideoScore() float64 {
 	var reducedQuality bool
 	publishing, expected := t.getNumUpTracks()
 	if publishing < expected {
@@ -376,5 +402,5 @@ func (t *MediaTrack) calculateVideoScore() {
 	if expected == 0 {
 		loss = 0
 	}
-	t.connectionStats.Score = connectionquality.Loss2Score(loss, reducedQuality)
+	return connectionquality.VideoConnectionScore(loss, reducedQuality)
 }
