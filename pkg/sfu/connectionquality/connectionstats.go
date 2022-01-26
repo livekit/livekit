@@ -18,12 +18,11 @@ type ConnectionStat struct {
 type ConnectionStats struct {
 	Lock sync.Mutex
 	ConnectionStat
-	Prev  *ConnectionStat
-	Score float64
+	Prev *ConnectionStat
 }
 
 func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Prev: &ConnectionStat{}, Score: 4.0}
+	return &ConnectionStats{Prev: &ConnectionStat{}, ConnectionStat: ConnectionStat{Score: 4.0}}
 }
 
 func getTotalPackets(curSN, prevSN uint32) uint32 {

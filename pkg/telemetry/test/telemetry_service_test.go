@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/rtcp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -37,7 +36,8 @@ func Test_ParticipantAndRoomDataAreSentWithAnalytics(t *testing.T) {
 
 	// do
 	packet := 33
-	fixture.sut.OnDownstreamPacket(partSID, "", packet)
+	stat := &livekit.AnalyticsStat{TotalBytes: uint64(packet)}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "", stat)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -66,7 +66,8 @@ func Test_OnDownstreamPackets(t *testing.T) {
 	totalPackets := len(packets)
 	trackID := livekit.TrackID("trackID")
 	for i := range packets {
-		fixture.sut.OnDownstreamPacket(partSID, trackID, packets[i])
+		stat := &livekit.AnalyticsStat{TotalBytes: uint64(packets[i])}
+		fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat)
 	}
 	fixture.sut.SendAnalytics()
 
@@ -93,10 +94,13 @@ func Test_OnDownstreamPackets_SeveralTracks(t *testing.T) {
 	// do
 	packet1 := 33
 	trackID1 := livekit.TrackID("trackID1")
+	stat1 := &livekit.AnalyticsStat{TotalPackets: uint64(uint32(packet1))}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID1, stat1)
+
 	packet2 := 23
 	trackID2 := livekit.TrackID("trackID2")
-	fixture.sut.OnDownstreamPacket(partSID, trackID1, packet1)
-	fixture.sut.OnDownstreamPacket(partSID, trackID2, packet2)
+	stat2 := &livekit.AnalyticsStat{TotalPackets: uint64(uint32(packet2))}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat2)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -131,20 +135,12 @@ func Test_OnDownStreamRTCP(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	// do
-	pkts := []rtcp.Packet{
-		&rtcp.TransportLayerNack{},
-		&rtcp.PictureLossIndication{},
-		&rtcp.FullIntraRequest{},
-		&rtcp.ReceiverReport{
-			Reports: []rtcp.ReceptionReport{
-				{Jitter: 5, TotalLost: 3},
-				{Jitter: 2, TotalLost: 4},
-			},
-		},
-	}
+	stat1 := &livekit.AnalyticsStat{Jitter: 5, PacketLost: 3, TotalBytes: 1}
 	trackID := livekit.TrackID("trackID1")
-	fixture.sut.OnDownstreamPacket(partSID, trackID, 1) // there should be bytes reported so that stats are sent
-	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID, pkts)
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat1)
+	stat2 := &livekit.AnalyticsStat{Jitter: 2, PacketLost: 4}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
+
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -171,25 +167,12 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	// do
-	pkts1 := []rtcp.Packet{
-		&rtcp.ReceiverReport{
-			Reports: []rtcp.ReceptionReport{
-				{Delay: 0, Jitter: 0, TotalLost: 1},
-			},
-		},
-	}
-	pkts2 := []rtcp.Packet{
-		&rtcp.ReceiverReport{
-			Reports: []rtcp.ReceptionReport{
-				{Delay: 0, Jitter: 0, TotalLost: 4}, // diff with previous is 3, so in second call to SendAnalytics, 3 should be sent
-			},
-		},
-	}
 	trackID := livekit.TrackID("trackID1")
-	fixture.sut.OnDownstreamPacket(partSID, trackID, 1) // there should be bytes reported so that stats are sent
-	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID, pkts1)
+	stat1 := &livekit.AnalyticsStat{PacketLost: 1}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat1) // there should be bytes reported so that stats are sent
 	fixture.sut.SendAnalytics()
-	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID, pkts2)
+	stat2 := &livekit.AnalyticsStat{PacketLost: 4}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -215,18 +198,17 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	// do
-	pkts1 := []rtcp.Packet{
-		&rtcp.TransportLayerNack{},
-	}
-	pkts2 := []rtcp.Packet{
-		&rtcp.FullIntraRequest{},
-	}
+
 	trackID1 := livekit.TrackID("trackID1")
 	trackID2 := livekit.TrackID("trackID2")
-	fixture.sut.OnDownstreamPacket(partSID, trackID1, 1) // there should be bytes reported so that stats are sent
-	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID1, pkts1)
-	fixture.sut.OnDownstreamPacket(partSID, trackID2, 1) // there should be bytes reported so that stats are sent
-	fixture.sut.HandleRTCP(livekit.StreamType_DOWNSTREAM, partSID, trackID2, pkts2)
+	stat1 := &livekit.AnalyticsStat{TotalBytes: 1}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID1, stat1) // there should be bytes reported so that stats are sent
+
+	stat2 := &livekit.AnalyticsStat{NackCount: 1}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID1, stat2)
+
+	stat3 := &livekit.AnalyticsStat{FirCount: 1}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat3)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -260,26 +242,14 @@ func Test_OnUpstreamRTCP(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	// do
-	pkts := []rtcp.Packet{
-		&rtcp.TransportLayerNack{},
-		&rtcp.PictureLossIndication{},
-		&rtcp.FullIntraRequest{},
-		&rtcp.ReceiverReport{
-			Reports: []rtcp.ReceptionReport{
-				{Jitter: 5, TotalLost: 3},
-				{Jitter: 2, TotalLost: 4},
-			},
-		},
-	}
-	// there should be bytes reported so that stats are sent
-	buf := &buffer.Buffer{}
-	buf.SetStatsTestOnly(buffer.Stats{
-		PacketCount: 1,
-		TotalByte:   1,
-	})
+
+	stat1 := &livekit.AnalyticsStat{NackCount: 1, PliCount: 1, FirCount: 1, Jitter: 5, PacketLost: 3, TotalPackets: 1, TotalBytes: 1}
 	trackID := livekit.TrackID("trackID")
-	fixture.sut.AddUpTrack(partSID, trackID, buf)
-	fixture.sut.HandleRTCP(livekit.StreamType_UPSTREAM, partSID, trackID, pkts)
+
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat1)
+
+	stat2 := &livekit.AnalyticsStat{Jitter: 2, PacketLost: 4}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat2)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -306,26 +276,21 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 
 	// there should be bytes reported so that stats are sent
-	buf := &buffer.Buffer{}
 	totalBytes := 1
 	totalPackets := 1
-	buf.SetStatsTestOnly(buffer.Stats{
-		PacketCount: uint32(totalPackets),
-		TotalByte:   uint64(totalBytes),
-	})
 	trackID1 := livekit.TrackID("trackID1")
 	trackID2 := livekit.TrackID("trackID2")
-	fixture.sut.AddUpTrack(partSID, trackID1, buf)
-	fixture.sut.AddUpTrack(partSID, trackID2, buf) // using same buffer is not correct but for test it is fine
-	pkts1 := []rtcp.Packet{
-		&rtcp.TransportLayerNack{},
-	}
-	pkts2 := []rtcp.Packet{
-		&rtcp.FullIntraRequest{},
-	}
+
+	stat1 := &livekit.AnalyticsStat{TotalBytes: uint64(totalBytes), TotalPackets: uint64(totalPackets)}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID1, stat1)
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID2, stat1) // using same buffer is not correct but for test it is fine
+
 	// do
-	fixture.sut.HandleRTCP(livekit.StreamType_UPSTREAM, partSID, trackID1, pkts1)
-	fixture.sut.HandleRTCP(livekit.StreamType_UPSTREAM, partSID, trackID2, pkts2)
+	stat2 := &livekit.AnalyticsStat{NackCount: 1}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID1, stat2)
+
+	stat3 := &livekit.AnalyticsStat{FirCount: 1}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID2, stat3)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -393,14 +358,10 @@ func Test_AddUpTrack(t *testing.T) {
 	// do
 	var totalBytes uint64 = 3
 	var totalPackets uint32 = 3
-	buf := &buffer.Buffer{}
-	bufferStats := buffer.Stats{
-		PacketCount: totalPackets,
-		TotalByte:   totalBytes,
-	}
-	buf.SetStatsTestOnly(bufferStats)
+
+	stat := &livekit.AnalyticsStat{TotalPackets: uint64(totalPackets), TotalBytes: totalBytes}
 	trackID := livekit.TrackID("trackID")
-	fixture.sut.AddUpTrack(partSID, trackID, buf)
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat)
 	fixture.sut.SendAnalytics()
 
 	// test
@@ -423,24 +384,22 @@ func Test_AddUpTrack_SeveralBuffers_Simulcast(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil)
 	// do
 	trackID := livekit.TrackID("trackID")
-	// buffer 1
-	buf1 := &buffer.Buffer{}
-	buf1.SetStatsTestOnly(buffer.Stats{
-		PacketCount: 1,
-		TotalByte:   1,
-	})
-	fixture.sut.AddUpTrack(partSID, trackID, buf1)
+
+	stat1 := &livekit.AnalyticsStat{TotalBytes: 1, TotalPackets: 1}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat1)
 	// buffer 2
 	buf2 := &buffer.Buffer{}
 	buf2.SetStatsTestOnly(buffer.Stats{
 		PacketCount: 2,
 		TotalByte:   2,
 	})
-	fixture.sut.AddUpTrack(partSID, trackID, buf2)
+
+	stat2 := &livekit.AnalyticsStat{TotalPackets: 2, TotalBytes: 2}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat2)
 	fixture.sut.SendAnalytics()
 	// test
-	totalBytes := buf1.GetStats().TotalByte + buf2.GetStats().TotalByte
-	totalPackets := buf1.GetStats().PacketCount + buf2.GetStats().PacketCount
+	totalBytes := stat1.TotalBytes + stat2.TotalBytes
+	totalPackets := stat1.TotalPackets + stat2.TotalPackets
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 	_, stats := fixture.analytics.SendStatsArgsForCall(0)
 	require.Equal(t, 1, len(stats))
@@ -466,9 +425,11 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 		PacketCount: 3,
 		TotalByte:   3,
 	})
-	fixture.sut.AddUpTrack(partSID, "trackID", buf)
+	stat1 := &livekit.AnalyticsStat{TotalPackets: 3, TotalBytes: 3}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, "trackID", stat1)
 	// downstream bytes
-	fixture.sut.OnDownstreamPacket(partSID, "trackID1", 1)
+	stat2 := &livekit.AnalyticsStat{TotalPackets: 1, TotalBytes: 1}
+	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "trackID1", stat2)
 	fixture.sut.SendAnalytics()
 
 	// test
