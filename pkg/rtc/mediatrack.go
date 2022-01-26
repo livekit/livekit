@@ -367,7 +367,11 @@ func (t *MediaTrack) updateStats() {
 			return
 		case <-time.After(connectionQualityUpdateInterval):
 			t.connectionStats.Lock.Lock()
-			stats := t.buffer.GetStats()
+			var stats buffer.Stats
+			if t.buffer != nil {
+				stats = t.buffer.GetStats()
+				continue
+			}
 			delta := t.connectionStats.UpdateStats(stats.TotalByte)
 			if t.Kind() == livekit.TrackType_AUDIO {
 				t.connectionStats.Score = connectionquality.AudioConnectionScore(delta, t.connectionStats.Jitter)
