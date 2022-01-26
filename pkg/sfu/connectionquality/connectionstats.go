@@ -1,8 +1,6 @@
 package connectionquality
 
-import (
-	"github.com/livekit/protocol/livekit"
-)
+import "sync"
 
 type ConnectionStat struct {
 	PacketsLost  uint32
@@ -10,16 +8,22 @@ type ConnectionStat struct {
 	Jitter       uint32
 	TotalPackets uint32
 	LastSeqNum   uint32
+	TotalBytes   uint64
+	NackCount    int32
+	PliCount     int32
+	FirCount     int32
+	Score        float64
 }
 
 type ConnectionStats struct {
-	Curr  *ConnectionStat
+	Lock sync.Mutex
+	ConnectionStat
 	Prev  *ConnectionStat
 	Score float64
 }
 
 func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Curr: &ConnectionStat{}, Prev: &ConnectionStat{}, Score: 4.0}
+	return &ConnectionStats{Prev: &ConnectionStat{}, Score: 4.0}
 }
 
 func getTotalPackets(curSN, prevSN uint32) uint32 {
@@ -33,18 +37,28 @@ func getTotalPackets(curSN, prevSN uint32) uint32 {
 	return increment
 }
 
-func (cs *ConnectionStats) CalculateAudioScore() float64 {
+type DeltaStats struct {
+	TotalPackets uint32
+	PacketsLost  uint32
+	TotalBytes   uint64
+}
+
+func (cs *ConnectionStats) UpdateStats(totalBytes uint64) DeltaStats {
 	// update feedback stats
-	current := cs.Curr
 	previous := cs.Prev
 
 	// Update TotalPackets from SeqNum here
-	current.TotalPackets += getTotalPackets(current.LastSeqNum, previous.LastSeqNum)
-	cs.Score = ConnectionScore(current, previous, livekit.TrackType_AUDIO)
+	cs.TotalPackets += getTotalPackets(cs.LastSeqNum, previous.LastSeqNum)
+	cs.TotalBytes = totalBytes
+
+	var delta DeltaStats
+
+	delta.TotalPackets = cs.TotalPackets - previous.TotalPackets
+	delta.PacketsLost = cs.PacketsLost - previous.PacketsLost
+	delta.TotalBytes = cs.TotalBytes - previous.TotalBytes
 
 	// store previous stats
-	cs.Prev = current
-	cs.Curr = &ConnectionStat{TotalPackets: cs.Prev.TotalPackets, PacketsLost: cs.Prev.PacketsLost}
+	cs.Prev = &ConnectionStat{TotalPackets: cs.TotalPackets, PacketsLost: cs.PacketsLost, TotalBytes: cs.TotalBytes}
 
-	return cs.Score
+	return delta
 }
