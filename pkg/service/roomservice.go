@@ -130,7 +130,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 }
 
 func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (res *livekit.RemoveParticipantResponse, err error) {
-	err = s.writeRoomMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
+	err = s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_RemoveParticipant{
 			RemoveParticipant: req,
 		},
@@ -214,7 +214,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	err := s.writeRoomMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
+	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateParticipant{
 			UpdateParticipant: req,
 		},
@@ -242,7 +242,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 }
 
 func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
-	err := s.writeRoomMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
+	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateSubscriptions{
 			UpdateSubscriptions: req,
 		},
