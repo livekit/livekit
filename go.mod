@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.11.12-0.20220124192741-b94955852f2a
+	github.com/livekit/protocol v0.11.12-0.20220127201730-77f0aed23c8a
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0

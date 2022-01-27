@@ -17,7 +17,7 @@ type TelemetryService interface {
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
-	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo)
+	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta)
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
 	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
@@ -81,9 +81,10 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	}
 }
 
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo) {
+func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo,
+	clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta) {
 	t.jobQueue <- func() {
-		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo)
+		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo, clientMeta)
 	}
 }
 

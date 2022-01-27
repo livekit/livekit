@@ -23,10 +23,16 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 		Browser:        "chrome",
 		BrowserVersion: "97.0.1",
 	}
+	clientMeta := &livekit.AnalyticsClientMeta{
+		Region:            "dark-side",
+		Node:              "moon",
+		ClientAddr:        "127.0.0.1",
+		ClientConnectTime: 420,
+	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta)
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
@@ -44,6 +50,11 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 	require.Equal(t, clientInfo.DeviceModel, event.ClientInfo.DeviceModel)
 	require.Equal(t, clientInfo.Browser, event.ClientInfo.Browser)
 	require.Equal(t, clientInfo.BrowserVersion, event.ClientInfo.BrowserVersion)
+
+	require.Equal(t, clientMeta.Region, event.ClientMeta.Region)
+	require.Equal(t, clientMeta.Node, event.ClientMeta.Node)
+	require.Equal(t, clientMeta.ClientAddr, event.ClientMeta.ClientAddr)
+	require.Equal(t, clientMeta.ClientConnectTime, event.ClientMeta.ClientConnectTime)
 }
 
 func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
