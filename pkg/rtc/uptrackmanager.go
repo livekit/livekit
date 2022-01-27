@@ -148,11 +148,11 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		currentMuted := track.IsMuted()
 		track.SetMuted(muted)
 
-		if currentMuted != track.IsMuted() && u.onTrackUpdated != nil {
-			u.params.Logger.Debugw("mute status changed",
-				"track", trackID,
-				"muted", track.IsMuted())
-			u.onTrackUpdated(track, false)
+		if currentMuted != track.IsMuted() {
+			u.params.Logger.Debugw("mute status changed", "track", trackID, "muted", track.IsMuted())
+			if u.onTrackUpdated != nil {
+				u.onTrackUpdated(track, false)
+			}
 		}
 	}
 
@@ -215,6 +215,10 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	}
 
 	track.UpdateVideoLayers(updateVideoLayers.Layers)
+	if u.onTrackUpdated != nil {
+		u.onTrackUpdated(track, false)
+	}
+
 	return nil
 }
 

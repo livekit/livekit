@@ -58,17 +58,13 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 	case *livekit.SignalRequest_TrackSetting:
 		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
-			subTrack := participant.GetSubscribedTrack(sid)
-			if subTrack == nil {
-				pLogger.Warnw("unable to find SubscribedTrack", nil,
-					"track", sid)
+			err := participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
+			if err != nil {
+				pLogger.Errorw("failed to update subscribed track settings", err, "trackID", sid)
 				continue
 			}
 
-			// find quality for published track
-			pLogger.Debugw("updating track settings",
-				"settings", msg.TrackSetting)
-			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
+			pLogger.Debugw("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
 		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)

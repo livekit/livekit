@@ -93,8 +93,10 @@ type ParticipantImpl struct {
 
 	*UpTrackManager
 
-	// tracks the current participant is subscribed to, map of sid => DownTrack
+	// tracks the current participant is subscribed to, map of trackID => types.SubscribedTrack
 	subscribedTracks map[livekit.TrackID]types.SubscribedTrack
+	// track settings of tracks the current participant is subscribed to, map of trackID => types.SubscribedTrack
+	subscribedTracksSettings map[livekit.TrackID]*livekit.UpdateTrackSettings
 	// keeps track of disallowed tracks
 	disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID // trackID -> publisherID
 	// keep track of other publishers identities that we are subscribed to
@@ -121,13 +123,14 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
-		params:                  params,
-		rtcpCh:                  make(chan []rtcp.Packet, 50),
-		pliThrottle:             newPLIThrottle(params.ThrottleConfig),
-		pendingTracks:           make(map[string]*pendingTrackInfo),
-		subscribedTracks:        make(map[livekit.TrackID]types.SubscribedTrack),
-		disallowedSubscriptions: make(map[livekit.TrackID]livekit.ParticipantID),
-		connectedAt:             time.Now(),
+		params:                   params,
+		rtcpCh:                   make(chan []rtcp.Packet, 50),
+		pliThrottle:              newPLIThrottle(params.ThrottleConfig),
+		pendingTracks:            make(map[string]*pendingTrackInfo),
+		subscribedTracks:         make(map[livekit.TrackID]types.SubscribedTrack),
+		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
+		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
+		connectedAt:              time.Now(),
 	}
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
@@ -792,20 +795,20 @@ func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
 
-func (p *ParticipantImpl) GetSubscribedTrack(sid livekit.TrackID) types.SubscribedTrack {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.subscribedTracks[sid]
-}
+func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error {
+	p.lock.Lock()
+	p.subscribedTracksSettings[trackID] = settings
 
-func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	subscribed := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
-	for _, st := range p.subscribedTracks {
-		subscribed = append(subscribed, st)
+	subTrack := p.subscribedTracks[trackID]
+	if subTrack == nil {
+		p.lock.Unlock()
+		p.params.Logger.Warnw("could not find subscribed track", nil, "trackID", trackID)
+		return errors.New("could not find subscribed track")
 	}
-	return subscribed
+	p.lock.Unlock()
+
+	subTrack.UpdateSubscriberSettings(settings)
+	return nil
 }
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
@@ -816,11 +819,17 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 		"track", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
+	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
 
 	subTrack.OnBind(func() {
 		p.subscriber.AddTrack(subTrack)
 	})
+
+	if settings != nil {
+		subTrack.UpdateSubscriberSettings(settings)
+	}
+
 	p.subscribedTo.Store(subTrack.PublisherID(), struct{}{})
 }
 
@@ -842,7 +851,15 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 			numRemaining++
 		}
 	}
+
+	//
+	// NOTE
+	// subscribedTrackSettings should not deleted on removal as it is needed if corresponding publisher migrated
+	// LK-TODO: find a way to clean these up
+	//
+
 	p.lock.Unlock()
+
 	if numRemaining == 0 {
 		p.subscribedTo.Delete(subTrack.PublisherID())
 
