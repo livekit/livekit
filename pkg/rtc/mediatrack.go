@@ -336,9 +336,9 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 			current.LastSeqNum = maxSeqNum
 		}
 		current.PacketsLost = totalLost
-		t.connectionStats.NackCount += nackCount
-		t.connectionStats.PliCount += pliCount
-		t.connectionStats.FirCount += firCount
+		current.NackCount += nackCount
+		current.PliCount += pliCount
+		current.FirCount += firCount
 		t.connectionStats.Lock.Unlock()
 	}
 

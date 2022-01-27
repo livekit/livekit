@@ -882,20 +882,21 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 	if hasReport {
 		d.connectionStats.Lock.Lock()
+		current := d.connectionStats
 		// update feedback stats
-		if jitter > d.connectionStats.Jitter {
-			d.connectionStats.Jitter = jitter
+		if jitter > current.Jitter {
+			current.Jitter = jitter
 		}
-		if delay > d.connectionStats.Delay {
-			d.connectionStats.Delay = delay
+		if delay > current.Delay {
+			current.Delay = delay
 		}
-		if maxSeqNum > d.connectionStats.LastSeqNum {
-			d.connectionStats.LastSeqNum = maxSeqNum
+		if maxSeqNum > current.LastSeqNum {
+			current.LastSeqNum = maxSeqNum
 		}
-		d.connectionStats.PacketsLost = totalLost
-		d.connectionStats.NackCount += nackCount
-		d.connectionStats.PliCount += pliCount
-		d.connectionStats.FirCount += firCount
+		current.PacketsLost = totalLost
+		current.NackCount += nackCount
+		current.PliCount += pliCount
+		current.FirCount += firCount
 		d.connectionStats.Lock.Unlock()
 	}
 }

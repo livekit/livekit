@@ -22,7 +22,7 @@ func Score2Rating(score float64) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(delta DeltaStats, jitter uint32) float64 {
+func mosAudioEmodel(delta ConnectionStat, jitter uint32) float64 {
 
 	// find percentage of lost packets in this window
 	if delta.TotalPackets == 0 {
@@ -72,7 +72,7 @@ func loss2Score(loss uint32, reducedQuality bool) float64 {
 	return score
 }
 
-func AudioConnectionScore(delta DeltaStats, jitter uint32) float64 {
+func AudioConnectionScore(delta ConnectionStat, jitter uint32) float64 {
 	return mosAudioEmodel(delta, jitter)
 }
 

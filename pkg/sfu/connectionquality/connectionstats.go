@@ -4,25 +4,25 @@ import "sync"
 
 type ConnectionStat struct {
 	PacketsLost  uint32
-	Delay        uint32
-	Jitter       uint32
 	TotalPackets uint32
 	LastSeqNum   uint32
 	TotalBytes   uint64
-	NackCount    int32
-	PliCount     int32
-	FirCount     int32
-	Score        float64
 }
 
 type ConnectionStats struct {
 	Lock sync.Mutex
 	ConnectionStat
-	Prev *ConnectionStat
+	Prev      *ConnectionStat
+	Delay     uint32
+	Jitter    uint32
+	NackCount int32
+	PliCount  int32
+	FirCount  int32
+	Score     float64
 }
 
 func NewConnectionStats() *ConnectionStats {
-	return &ConnectionStats{Prev: &ConnectionStat{}, ConnectionStat: ConnectionStat{Score: 4.0}}
+	return &ConnectionStats{Prev: &ConnectionStat{}, Score: 4.0}
 }
 
 func getTotalPackets(curSN, prevSN uint32) uint32 {
@@ -36,13 +36,7 @@ func getTotalPackets(curSN, prevSN uint32) uint32 {
 	return increment
 }
 
-type DeltaStats struct {
-	TotalPackets uint32
-	PacketsLost  uint32
-	TotalBytes   uint64
-}
-
-func (cs *ConnectionStats) UpdateStats(totalBytes uint64) DeltaStats {
+func (cs *ConnectionStats) UpdateStats(totalBytes uint64) ConnectionStat {
 	// update feedback stats
 	previous := cs.Prev
 
@@ -50,14 +44,14 @@ func (cs *ConnectionStats) UpdateStats(totalBytes uint64) DeltaStats {
 	cs.TotalPackets += getTotalPackets(cs.LastSeqNum, previous.LastSeqNum)
 	cs.TotalBytes = totalBytes
 
-	var delta DeltaStats
+	var delta ConnectionStat
 
 	delta.TotalPackets = cs.TotalPackets - previous.TotalPackets
 	delta.PacketsLost = cs.PacketsLost - previous.PacketsLost
 	delta.TotalBytes = cs.TotalBytes - previous.TotalBytes
 
 	// store previous stats
-	cs.Prev = &ConnectionStat{TotalPackets: cs.TotalPackets, PacketsLost: cs.PacketsLost, TotalBytes: cs.TotalBytes}
+	cs.Prev = &ConnectionStat{TotalPackets: cs.TotalPackets, PacketsLost: cs.PacketsLost, TotalBytes: cs.TotalBytes, LastSeqNum: cs.LastSeqNum}
 
 	return delta
 }

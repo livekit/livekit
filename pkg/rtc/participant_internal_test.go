@@ -273,7 +273,7 @@ func TestConnectionQuality(t *testing.T) {
 			ConnectionStat: stat,
 			Prev:           &connectionquality.ConnectionStat{},
 		}
-		stats.Score = connectionquality.AudioConnectionScore(connectionquality.DeltaStats{
+		stats.Score = connectionquality.AudioConnectionScore(connectionquality.ConnectionStat{
 			TotalPackets: stat.TotalPackets,
 			PacketsLost:  stat.PacketsLost,
 			TotalBytes:   stat.TotalBytes,
