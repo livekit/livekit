@@ -72,7 +72,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), "", &livekit.RTCNodeMessage{
+	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
@@ -255,7 +255,12 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 }
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
-	err := s.writeRoomMessage(ctx, livekit.RoomName(req.Room), "", &livekit.RTCNodeMessage{
+	roomName := livekit.RoomName(req.Room)
+	if err := EnsureAdminPermission(ctx, roomName); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	err := s.router.WriteRoomRTC(ctx, roomName, &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
 		},
@@ -287,7 +292,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	err = s.writeRoomMessage(ctx, livekit.RoomName(req.Room), "", &livekit.RTCNodeMessage{
+	err = s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
 		},
@@ -324,21 +329,6 @@ func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.
 	}
 
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
-}
-
-func (s *RoomService) writeRoomMessage(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
-	if err := EnsureAdminPermission(ctx, room); err != nil {
-		return twirpAuthError(err)
-	}
-
-	if identity != "" {
-		_, err := s.roomStore.LoadParticipant(ctx, room, identity)
-		if err != nil {
-			return err
-		}
-	}
-
-	return s.router.WriteRoomRTC(ctx, room, identity, msg)
 }
 
 func confirmExecution(f func() error) error {

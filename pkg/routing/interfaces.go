@@ -75,7 +75,7 @@ type MessageRouter interface {
 
 	// Write a message to a participant or room
 	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
 func CreateRouter(rc *redis.Client, node LocalNode) Router {
