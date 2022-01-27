@@ -22,26 +22,20 @@ func Score2Rating(score float64) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
-
-	if cur == nil {
-		return 0.0
-	}
+func mosAudioEmodel(delta ConnectionStat, jitter uint32) float64 {
 
 	// find percentage of lost packets in this window
-	deltaTotalPackets := cur.TotalPackets - prev.TotalPackets
-	if deltaTotalPackets == 0 {
+	if delta.TotalPackets == 0 {
 		return 0.0
 	}
 
-	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
-	percentageLost := (float64(deltaTotalLostPackets) / float64(deltaTotalPackets)) * 100
+	percentageLost := (float64(delta.PacketsLost) / float64(delta.TotalPackets)) * 100
 
 	rx := 93.2 - percentageLost
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
 	// Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
-	d := float64(rtt + (cur.Jitter / 1000))
+	d := float64(rtt + (jitter / 1000))
 	h := d - 177.3
 	if h < 0 {
 		h = 0
@@ -61,7 +55,7 @@ func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
 	return score
 }
 
-func Loss2Score(loss uint32, reducedQuality bool) float64 {
+func loss2Score(loss uint32, reducedQuality bool) float64 {
 	// No Loss, excellent
 	if loss == 0 && !reducedQuality {
 		return 5
@@ -78,9 +72,10 @@ func Loss2Score(loss uint32, reducedQuality bool) float64 {
 	return score
 }
 
-func ConnectionScore(cur, prev *ConnectionStat, kind livekit.TrackType) float64 {
-	if kind == livekit.TrackType_AUDIO {
-		return mosAudioEmodel(cur, prev)
-	}
-	return 0
+func AudioConnectionScore(delta ConnectionStat, jitter uint32) float64 {
+	return mosAudioEmodel(delta, jitter)
+}
+
+func VideoConnectionScore(pctLoss uint32, reducedQuality bool) float64 {
+	return loss2Score(pctLoss, reducedQuality)
 }

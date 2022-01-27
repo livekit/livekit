@@ -124,8 +124,8 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	w := t.workers[participantID]
 	if w != nil {
 		roomID = w.roomID
-		w.RemoveBuffer(livekit.TrackID(track.GetSid()))
 		roomName = w.roomName
+		w.RemoveStats(livekit.TrackID(track.GetSid()))
 	}
 
 	prometheus.SubPublishedTrack(track.Type.String())

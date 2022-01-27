@@ -250,7 +250,7 @@ func TestConnectionQuality(t *testing.T) {
 		if numRegistered > 0 && numPublishing != numRegistered {
 			reducedQuality = true
 		}
-		return connectionquality.Loss2Score(loss, reducedQuality)
+		return connectionquality.VideoConnectionScore(loss, reducedQuality)
 	}
 
 	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
@@ -264,16 +264,20 @@ func TestConnectionQuality(t *testing.T) {
 	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
 
-		stat := &connectionquality.ConnectionStat{
+		stat := connectionquality.ConnectionStat{
 			PacketsLost:  packetsLost,
 			TotalPackets: totalPackets,
 			LastSeqNum:   0,
 		}
 		stats := &connectionquality.ConnectionStats{
-			Curr: stat,
-			Prev: &connectionquality.ConnectionStat{},
+			ConnectionStat: stat,
+			Prev:           &connectionquality.ConnectionStat{},
 		}
-		stats.CalculateAudioScore()
+		stats.Score = connectionquality.AudioConnectionScore(connectionquality.ConnectionStat{
+			TotalPackets: stat.TotalPackets,
+			PacketsLost:  stat.PacketsLost,
+			TotalBytes:   stat.TotalBytes,
+		}, 0)
 		t.Log("audio score: ", stats.Score)
 		tr.GetConnectionScoreReturns(stats.Score)
 		return tr
