@@ -285,7 +285,8 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	// update room store with new numParticipants
 	updateParticipantCount()
 
-	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client)
+	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
+	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client, clientMeta)
 	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
