@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/livekit/protocol/auth"
@@ -32,6 +33,19 @@ const (
 	MigrateStateSync
 	MigrateStateComplete
 )
+
+func (m MigrateState) String() string {
+	switch m {
+	case MigrateStateInit:
+		return "MIGRATE_STATE_INIT"
+	case MigrateStateSync:
+		return "MIGRATE_STATE_SYNC"
+	case MigrateStateComplete:
+		return "MIGRATE_STATE_COMPLETE"
+	default:
+		return fmt.Sprintf("%d", int(m))
+	}
+}
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -102,8 +116,7 @@ type LocalParticipant interface {
 	ICERestart() error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
-	GetSubscribedTrack(sid livekit.TrackID) SubscribedTrack
-	GetSubscribedTracks() []SubscribedTrack
+	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
