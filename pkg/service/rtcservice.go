@@ -116,7 +116,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
 		Recorder:      claims.Video.Recorder,
-		Client:        ParseClientInfo(r.Form),
+		Client:        ParseClientInfo(r.Form, r.RemoteAddr),
 		Grants:        claims,
 	}
 
@@ -253,7 +253,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ParseClientInfo(values url.Values) *livekit.ClientInfo {
+func ParseClientInfo(values url.Values, address string) *livekit.ClientInfo {
 	ci := &livekit.ClientInfo{}
 	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
 		ci.Protocol = int32(pv)
@@ -279,5 +279,6 @@ func ParseClientInfo(values url.Values) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
+	ci.Address = address
 	return ci
 }
