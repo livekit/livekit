@@ -417,6 +417,9 @@ func (r *Room) SetParticipantPermission(participant types.LocalParticipant, perm
 	if !hadCanSubscribe && participant.CanSubscribe() {
 		if participant.State() == livekit.ParticipantInfo_ACTIVE {
 			r.subscribeToExistingTracks(participant)
+			// start negotiating regardless of if there are other media tracks to subscribe
+			// we'll need to set the participant up to receive data
+			participant.Negotiate()
 		}
 	}
 	return nil
