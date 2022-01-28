@@ -89,7 +89,7 @@ type Options struct {
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc?protocol=3")
+	u, err := url.Parse(host + "/rtc?protocol=6")
 	if err != nil {
 		return nil, err
 	}

@@ -248,7 +248,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Grants:                  pi.Grants,
 		Hidden:                  pi.Hidden,
 		Logger:                  pLogger,
-	})
+	}, pi.Permission)
 	if err != nil {
 		logger.Errorw("could not create participant", err)
 		return
@@ -256,9 +256,6 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 
 	if pi.Metadata != "" {
 		participant.SetMetadata(pi.Metadata)
-	}
-	if pi.Permission != nil {
-		participant.SetPermission(pi.Permission)
 	}
 
 	// join room
@@ -461,7 +458,10 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}
 		if rm.UpdateParticipant.Permission != nil {
-			participant.SetPermission(rm.UpdateParticipant.Permission)
+			err := room.SetParticipantPermission(participant, rm.UpdateParticipant.Permission)
+			if err != nil {
+				pLogger.Errorw("could not update permissions", err)
+			}
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		for _, p := range room.GetParticipants() {

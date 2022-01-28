@@ -410,6 +410,22 @@ func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallo
 	}
 }
 
+func (r *Room) SetParticipantPermission(participant types.LocalParticipant, permission *livekit.ParticipantPermission) error {
+	hadCanSubscribe := participant.CanSubscribe()
+	participant.SetPermission(permission)
+	// when subscribe perms are given, trigger autosub
+	if !hadCanSubscribe && participant.CanSubscribe() {
+		if participant.State() == livekit.ParticipantInfo_ACTIVE {
+			if r.subscribeToExistingTracks(participant) == 0 {
+				// start negotiating even if there are other media tracks to subscribe
+				// we'll need to set the participant up to receive data
+				participant.Negotiate()
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
 	return participant.UpdateVideoLayers(updateVideoLayers)
 }
@@ -651,12 +667,12 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 	}
 }
 
-func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
+func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 	r.lock.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
 	r.lock.RUnlock()
 	if !shouldSubscribe {
-		return
+		return 0
 	}
 
 	tracksAdded := 0
@@ -679,6 +695,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 	if tracksAdded > 0 {
 		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
 	}
+	return tracksAdded
 }
 
 // broadcast an update about participant p

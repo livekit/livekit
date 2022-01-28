@@ -61,13 +61,14 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
-	params      ParticipantParams
-	publisher   *PCTransport
-	subscriber  *PCTransport
-	isClosed    utils.AtomicFlag
-	permission  *livekit.ParticipantPermission
-	state       atomic.Value // livekit.ParticipantInfo_State
-	updateCache *lru.Cache
+	params              ParticipantParams
+	publisher           *PCTransport
+	subscriber          *PCTransport
+	isClosed            utils.AtomicFlag
+	permission          *livekit.ParticipantPermission
+	state               atomic.Value // livekit.ParticipantInfo_State
+	updateCache         *lru.Cache
+	subscriberAsPrimary bool
 
 	// reliable and unreliable data channels
 	reliableDC    *webrtc.DataChannel
@@ -119,7 +120,7 @@ type ParticipantImpl struct {
 	onClaimsChanged func(participant types.LocalParticipant)
 }
 
-func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
+func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermission) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
@@ -134,6 +135,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
+	p.SetPermission(perms)
 
 	var err error
 	// keep last participants and when updates were sent
@@ -182,7 +184,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	})
 
 	primaryPC := p.publisher.pc
-
+	// primary connection does not change, canSubscribe can change if permission was updated
+	// after the participant has joined
+	p.subscriberAsPrimary = p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
 	if p.SubscriberAsPrimary() {
 		primaryPC = p.subscriber.pc
 		ordered := true
@@ -271,7 +275,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	p.permission = permission
 
 	// update grants with this
-	if p.params.Grants != nil && p.params.Grants.Video != nil {
+	if p.params.Grants != nil && p.params.Grants.Video != nil && permission != nil {
 		video := p.params.Grants.Video
 		video.SetCanSubscribe(permission.CanSubscribe)
 		video.SetCanPublish(permission.CanPublish)
@@ -788,7 +792,7 @@ func (p *ParticipantImpl) IsRecorder() bool {
 }
 
 func (p *ParticipantImpl) SubscriberAsPrimary() bool {
-	return p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
+	return p.subscriberAsPrimary
 }
 
 func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {

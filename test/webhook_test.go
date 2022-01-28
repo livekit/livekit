@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -184,7 +185,22 @@ func (s *webhookTestServer) Start() error {
 		return err
 	}
 	go s.server.Serve(l)
-	return nil
+
+	// wait for webhook server to start
+	ctx, cancel := context.WithTimeout(context.Background(), testutils.ConnectTimeout)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("could not start webhook server after timeout")
+		case <-time.After(10 * time.Millisecond):
+			// ensure we can connect to it
+			res, err := http.Get(fmt.Sprintf("http://localhost%s", s.server.Addr))
+			if err == nil && res.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+	}
 }
 
 func (s *webhookTestServer) Stop() {
