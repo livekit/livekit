@@ -410,6 +410,18 @@ func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallo
 	}
 }
 
+func (r *Room) SetParticipantPermission(participant types.LocalParticipant, permission *livekit.ParticipantPermission) error {
+	hadCanSubscribe := participant.CanSubscribe()
+	participant.SetPermission(permission)
+	// when subscribe perms are given, trigger autosub
+	if !hadCanSubscribe && participant.CanSubscribe() {
+		if participant.State() == livekit.ParticipantInfo_ACTIVE {
+			r.subscribeToExistingTracks(participant)
+		}
+	}
+	return nil
+}
+
 func (r *Room) UpdateVideoLayers(participant types.Participant, updateVideoLayers *livekit.UpdateVideoLayers) error {
 	return participant.UpdateVideoLayers(updateVideoLayers)
 }

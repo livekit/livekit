@@ -341,6 +341,10 @@ func TestSingleNodeJoinAfterClose(t *testing.T) {
 }
 
 func TestAutoCreate(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
 	disableAutoCreate := func(conf *config.Config) {
 		conf.Room.AutoCreate = false
 	}
@@ -379,5 +383,59 @@ func TestAutoCreate(t *testing.T) {
 		waitUntilConnected(t, c1)
 
 		c1.Stop()
+	})
+}
+
+// don't give user subscribe permissions initially, and ensure autosubscribe is triggered afterwards
+func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeUpdateSubscriptionPermissions")
+	defer finish()
+
+	pub := createRTCClient("pub", defaultServerPort, nil)
+	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
+	grant.SetCanSubscribe(false)
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(grant).
+		SetIdentity("sub")
+	token, err := at.ToJWT()
+	require.NoError(t, err)
+	sub := createRTCClientWithToken(token, defaultServerPort, nil)
+
+	waitUntilConnected(t, pub, sub)
+
+	writers := publishTracksForClients(t, pub)
+	defer stopWriters(writers...)
+
+	// wait sub receives tracks
+	testutils.WithTimeout(t, "waiting for sub to receive track metadata", func() bool {
+		pubRemote := sub.GetRemoteParticipant(pub.ID())
+		if pubRemote == nil {
+			return false
+		}
+		if len(pubRemote.Tracks) != 2 {
+			return false
+		}
+		return true
+	})
+
+	// set permissions out of band
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err = roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "sub",
+		Permission: &livekit.ParticipantPermission{
+			CanSubscribe: true,
+			CanPublish:   true,
+		},
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, "waiting to get subscriptions", func() bool {
+		tracks := sub.SubscribedTracks()[pub.ID()]
+		return len(tracks) == 2
 	})
 }

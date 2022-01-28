@@ -319,35 +319,56 @@ func TestConnectionQuality(t *testing.T) {
 
 func TestSubscriberAsPrimary(t *testing.T) {
 	t.Run("protocol 4 uses subs as primary", func(t *testing.T) {
-		p := newParticipantForTest("test")
-		p.SetPermission(&livekit.ParticipantPermission{
-			CanSubscribe: true,
-			CanPublish:   true,
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			permissions: &livekit.ParticipantPermission{
+				CanSubscribe: true,
+				CanPublish:   true,
+			},
 		})
 		require.True(t, p.SubscriberAsPrimary())
 	})
 
 	t.Run("protocol 2 uses pub as primary", func(t *testing.T) {
-		p := newParticipantForTest("test")
-		p.params.ProtocolVersion = 2
-		p.SetPermission(&livekit.ParticipantPermission{
-			CanSubscribe: true,
-			CanPublish:   true,
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			protocolVersion: 2,
+			permissions: &livekit.ParticipantPermission{
+				CanSubscribe: true,
+				CanPublish:   true,
+			},
 		})
 		require.False(t, p.SubscriberAsPrimary())
 	})
 
 	t.Run("publisher only uses pub as primary", func(t *testing.T) {
-		p := newParticipantForTest("test")
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			permissions: &livekit.ParticipantPermission{
+				CanSubscribe: false,
+				CanPublish:   true,
+			},
+		})
+		require.False(t, p.SubscriberAsPrimary())
+
+		// ensure that it doesn't change after perms
 		p.SetPermission(&livekit.ParticipantPermission{
-			CanSubscribe: false,
+			CanSubscribe: true,
 			CanPublish:   true,
 		})
 		require.False(t, p.SubscriberAsPrimary())
 	})
 }
 
-func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
+type participantOpts struct {
+	permissions     *livekit.ParticipantPermission
+	protocolVersion types.ProtocolVersion
+}
+
+func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
+	if opts == nil {
+		opts = &participantOpts{}
+	}
+	if opts.protocolVersion == 0 {
+		opts.protocolVersion = 6
+	}
 	conf, _ := config.NewConfig("", nil)
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0
@@ -360,8 +381,12 @@ func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImp
 		Identity:        identity,
 		Config:          rtcConf,
 		Sink:            &routingfakes.FakeMessageSink{},
-		ProtocolVersion: 4,
+		ProtocolVersion: opts.protocolVersion,
 		ThrottleConfig:  conf.RTC.PLIThrottle,
-	})
+	}, opts.permissions)
 	return p
+}
+
+func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
+	return newParticipantForTestWithOpts(identity, nil)
 }

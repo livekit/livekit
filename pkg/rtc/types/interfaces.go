@@ -161,7 +161,7 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-
+	SetParticipantPermission(participant LocalParticipant, permission *livekit.ParticipantPermission) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
 }
 
