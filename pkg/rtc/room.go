@@ -416,10 +416,11 @@ func (r *Room) SetParticipantPermission(participant types.LocalParticipant, perm
 	// when subscribe perms are given, trigger autosub
 	if !hadCanSubscribe && participant.CanSubscribe() {
 		if participant.State() == livekit.ParticipantInfo_ACTIVE {
-			r.subscribeToExistingTracks(participant)
-			// start negotiating regardless of if there are other media tracks to subscribe
-			// we'll need to set the participant up to receive data
-			participant.Negotiate()
+			if r.subscribeToExistingTracks(participant) == 0 {
+				// start negotiating even if there are other media tracks to subscribe
+				// we'll need to set the participant up to receive data
+				participant.Negotiate()
+			}
 		}
 	}
 	return nil
@@ -666,12 +667,12 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 	}
 }
 
-func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
+func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 	r.lock.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
 	r.lock.RUnlock()
 	if !shouldSubscribe {
-		return
+		return 0
 	}
 
 	tracksAdded := 0
@@ -694,6 +695,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 	if tracksAdded > 0 {
 		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
 	}
+	return tracksAdded
 }
 
 // broadcast an update about participant p
