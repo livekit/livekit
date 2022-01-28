@@ -100,13 +100,11 @@ type DownTrack struct {
 	closeOnce               sync.Once
 
 	// Report helpers
-	primaryStats    atomic.Value // contains *PacketStats
-	rtxStats        atomic.Value // contains *PacketStats
-	paddingStats    atomic.Value // contains *PacketStats
-	connectionStats *connectionquality.ConnectionStats
-	done            chan struct{}
+	primaryStats atomic.Value // contains *PacketStats
+	rtxStats     atomic.Value // contains *PacketStats
+	paddingStats atomic.Value // contains *PacketStats
 
-	lossFraction atomicUint8
+	connectionStats *connectionquality.ConnectionStats
 
 	// Debug info
 	lastPli     atomicInt64
@@ -114,7 +112,6 @@ type DownTrack struct {
 	pktsDropped atomicUint32
 
 	// RTCP callbacks
-	onRTCP                func([]rtcp.Packet)
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
 
@@ -150,24 +147,38 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	d := &DownTrack{
-		id:              r.TrackID(),
-		peerID:          peerID,
-		maxTrack:        mt,
-		streamID:        r.StreamID(),
-		bufferFactory:   bf,
-		receiver:        r,
-		codec:           c,
-		kind:            kind,
-		forwarder:       NewForwarder(c, kind),
-		connectionStats: connectionquality.NewConnectionStats(),
-		done:            make(chan struct{}),
+		id:            r.TrackID(),
+		peerID:        peerID,
+		maxTrack:      mt,
+		streamID:      r.StreamID(),
+		bufferFactory: bf,
+		receiver:      r,
+		codec:         c,
+		kind:          kind,
+		forwarder:     NewForwarder(c, kind),
 	}
+
+	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
+		UpdateInterval: connectionQualityUpdateInterval,
+		CodecType:      kind,
+		GetTotalBytes: func() uint64 {
+			octets, _ := d.getSRStats()
+			return octets
+		},
+		GetIsReducedQuality: func() bool {
+			return d.GetForwardingStatus() != ForwardingStatusOptimal
+		},
+	})
+	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
+		if d.onStatsUpdate != nil {
+			d.onStatsUpdate(d, stat)
+		}
+	})
+	d.connectionStats.Start()
 
 	d.primaryStats.Store(new(PacketStats))
 	d.rtxStats.Store(new(PacketStats))
 	d.paddingStats.Store(new(PacketStats))
-
-	go d.updateStats()
 
 	return d, nil
 }
@@ -423,10 +434,6 @@ func (d *DownTrack) Mute(val bool) {
 		return
 	}
 
-	if val {
-		d.lossFraction.set(0)
-	}
-
 	if d.onSubscriptionChanged != nil {
 		d.onSubscriptionChanged(d)
 	}
@@ -457,11 +464,11 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.peerID)
 
+		d.connectionStats.Close()
+
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
-
-		close(d.done)
 	})
 }
 
@@ -512,10 +519,6 @@ func (d *DownTrack) OnBind(fn func()) {
 	d.onBind = fn
 }
 
-func (d *DownTrack) OnRTCP(fn func([]rtcp.Packet)) {
-	d.onRTCP = fn
-}
-
 func (d *DownTrack) OnREMB(fn func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)) {
 	d.onREMB = fn
 }
@@ -524,13 +527,10 @@ func (d *DownTrack) OnTransportCCFeedback(fn func(dt *DownTrack, cc *rtcp.Transp
 	d.onTransportCCFeedback = fn
 }
 
-func (d *DownTrack) CurrentMaxLossFraction() uint8 {
-	return d.lossFraction.get()
-}
-
 func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.listenerLock.Lock()
 	defer d.listenerLock.Unlock()
+
 	d.receiverReportListeners = append(d.receiverReportListeners, listener)
 }
 
@@ -793,10 +793,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		return
 	}
 
-	if d.onRTCP != nil {
-		d.onRTCP(pkts)
-	}
-
 	pliOnce := true
 	sendPliOnce := func() {
 		if pliOnce {
@@ -809,30 +805,19 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	var hasReport bool
-	var delay uint32
-	var jitter uint32
-	var totalLost uint32
-	var maxSeqNum uint32
-	var nackCount int32
-	var pliCount int32
-	var firCount int32
-
-	maxRatePacketLoss := uint8(0)
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
 			sendPliOnce()
-			pliCount++
-			hasReport = true
+
 		case *rtcp.FullIntraRequest:
 			sendPliOnce()
-			firCount++
-			hasReport = true
+
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if d.onREMB != nil {
 				d.onREMB(d, p)
 			}
+
 		case *rtcp.ReceiverReport:
 			// create new receiver report w/ only valid reception reports
 			rr := &rtcp.ReceiverReport{
@@ -844,23 +829,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					continue
 				}
 				rr.Reports = append(rr.Reports, r)
-				if maxRatePacketLoss == 0 || maxRatePacketLoss < r.FractionLost {
-					maxRatePacketLoss = r.FractionLost
-				}
-				if r.Delay > delay {
-					delay = r.Delay
-				}
-				if r.Jitter > jitter {
-					jitter = r.Jitter
-				}
-				if r.LastSequenceNumber > maxSeqNum {
-					maxSeqNum = r.LastSequenceNumber
-				}
-				totalLost = r.TotalLost
-
-				hasReport = true
 			}
-			d.lossFraction.set(maxRatePacketLoss)
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
 				for _, l := range d.receiverReportListeners {
@@ -875,33 +844,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
 			}
 			go d.retransmitPackets(nackedPackets)
-			nackCount += int32(len(nackedPackets))
-			hasReport = true
+
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
 				d.onTransportCCFeedback(d, p)
 			}
 		}
 	}
-	if hasReport {
-		d.connectionStats.Lock.Lock()
-		current := d.connectionStats
-		// update feedback stats
-		if jitter > current.Jitter {
-			current.Jitter = jitter
-		}
-		if delay > current.Delay {
-			current.Delay = delay
-		}
-		if maxSeqNum > current.LastSeqNum {
-			current.LastSeqNum = maxSeqNum
-		}
-		current.PacketsLost = totalLost
-		current.NackCount += nackCount
-		current.PliCount += pliCount
-		current.FirCount += firCount
-		d.connectionStats.Lock.Unlock()
-	}
+
+	d.connectionStats.RTCPFeedback(pkts, d.ssrc)
 }
 
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
@@ -1081,49 +1032,5 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 }
 
 func (d *DownTrack) GetConnectionScore() float64 {
-	d.connectionStats.Lock.Lock()
-	defer d.connectionStats.Lock.Unlock()
-	return d.connectionStats.Score
-}
-
-func (d *DownTrack) updateStats() {
-	for {
-		select {
-		case <-d.done:
-			return
-		case <-time.After(connectionQualityUpdateInterval):
-			d.connectionStats.Lock.Lock()
-			totalBytes, _ := d.getSRStats()
-			delta := d.connectionStats.UpdateStats(totalBytes)
-			if d.Kind() == webrtc.RTPCodecTypeAudio {
-				d.connectionStats.Score = connectionquality.AudioConnectionScore(delta, d.connectionStats.Jitter)
-			} else {
-				var reducedQuality bool
-				if d.GetForwardingStatus() != ForwardingStatusOptimal {
-					reducedQuality = true
-				}
-				d.connectionStats.Score = connectionquality.VideoConnectionScore(FixedPointToPercent(d.CurrentMaxLossFraction()), reducedQuality)
-			}
-			stat := &livekit.AnalyticsStat{
-				Jitter:          float64(d.connectionStats.Jitter),
-				TotalPackets:    uint64(d.connectionStats.TotalPackets),
-				PacketLost:      uint64(d.connectionStats.PacketsLost),
-				Delay:           uint64(d.connectionStats.Delay),
-				TotalBytes:      d.connectionStats.TotalBytes,
-				NackCount:       d.connectionStats.NackCount,
-				PliCount:        d.connectionStats.PliCount,
-				FirCount:        d.connectionStats.FirCount,
-				ConnectionScore: float32(d.connectionStats.Score),
-			}
-			if d.onStatsUpdate != nil {
-				d.onStatsUpdate(d, stat)
-			}
-			d.connectionStats.Lock.Unlock()
-		}
-	}
-}
-
-// converts a fixed point number to the number part of %
-func FixedPointToPercent(frac uint8) uint32 {
-	return (uint32(frac) * 100) >> 8
+	return d.connectionStats.GetScore()
 }
