@@ -463,6 +463,21 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 	return buff.GetPacket(buf, sn)
 }
 
+func (w *WebRTCReceiver) GetTotalBytes() uint64 {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	totalBytes := uint64(0)
+	for _, buffer := range w.buffers {
+		if buffer != nil {
+			stats := buffer.GetStats()
+			totalBytes += stats.TotalBytes
+		}
+	}
+
+	return totalBytes
+}
+
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	w.upTrackMu.RLock()
 	tracker := w.trackers[layer]

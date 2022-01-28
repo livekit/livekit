@@ -101,7 +101,7 @@ type Stats struct {
 	LostRate     float32
 	PacketCount  uint32  // Number of packets received from this source.
 	Jitter       float64 // An estimate of the statistical variance of the RTP data packet inter-arrival time.
-	TotalByte    uint64
+	TotalBytes   uint64
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -313,7 +313,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		}
 	}
 
-	b.stats.TotalByte += uint64(len(pkt))
+	b.stats.TotalBytes += uint64(len(pkt))
 	b.stats.PacketCount++
 
 	ep := ExtPacket{
@@ -458,7 +458,7 @@ func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	if br < 100000 {
 		br = 100000
 	}
-	b.stats.TotalByte = 0
+	b.stats.TotalBytes = 0
 
 	return &rtcp.ReceiverEstimatedMaximumBitrate{
 		Bitrate: float32(br),
@@ -481,9 +481,9 @@ func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
 
 	lostInterval := expectedInterval - receivedInterval
 
-	b.stats.LostRate = float32(lostInterval) / float32(expectedInterval)
 	var fracLost uint8
-	if expectedInterval != 0 && lostInterval > 0 {
+	if expectedInterval != 0 {
+		b.stats.LostRate = float32(lostInterval) / float32(expectedInterval)
 		fracLost = uint8((lostInterval << 8) / expectedInterval)
 	}
 	if b.lastFractionLostToReport > fracLost {

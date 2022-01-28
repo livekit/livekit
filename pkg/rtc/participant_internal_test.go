@@ -245,7 +245,7 @@ func TestMuteSetting(t *testing.T) {
 func TestConnectionQuality(t *testing.T) {
 
 	// loss based score is currently a publisher method.
-	videoScore := func(loss, numPublishing, numRegistered uint32) float64 {
+	videoScore := func(loss float64, numPublishing, numRegistered uint32) float64 {
 		var reducedQuality bool
 		if numRegistered > 0 && numPublishing != numRegistered {
 			reducedQuality = true
@@ -253,7 +253,7 @@ func TestConnectionQuality(t *testing.T) {
 		return connectionquality.VideoConnectionScore(loss, reducedQuality)
 	}
 
-	testPublishedVideoTrack := func(loss, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
+	testPublishedVideoTrack := func(loss float64, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
 		score := videoScore(loss, numPublishing, numRegistered)
 		t.Log("video score: ", score)
@@ -264,22 +264,13 @@ func TestConnectionQuality(t *testing.T) {
 	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
 
-		stat := connectionquality.ConnectionStat{
-			PacketsLost:  packetsLost,
-			TotalPackets: totalPackets,
-			LastSeqNum:   0,
+		pctLoss := float64(0.0)
+		if totalPackets > 0 {
+			pctLoss = (float64(packetsLost) / float64(totalPackets)) * 100.0
 		}
-		stats := &connectionquality.ConnectionStats{
-			ConnectionStat: stat,
-			Prev:           &connectionquality.ConnectionStat{},
-		}
-		stats.Score = connectionquality.AudioConnectionScore(connectionquality.ConnectionStat{
-			TotalPackets: stat.TotalPackets,
-			PacketsLost:  stat.PacketsLost,
-			TotalBytes:   stat.TotalBytes,
-		}, 0)
-		t.Log("audio score: ", stats.Score)
-		tr.GetConnectionScoreReturns(stats.Score)
+		score := connectionquality.AudioConnectionScore(pctLoss, 0)
+		t.Log("audio score: ", score)
+		tr.GetConnectionScoreReturns(score)
 		return tr
 	}
 
