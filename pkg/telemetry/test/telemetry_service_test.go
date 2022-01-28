@@ -428,3 +428,43 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 	require.Equal(t, livekit.StreamType_UPSTREAM, stats[0].Kind)
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[1].Kind)
 }
+
+func Test_UpstreamAudioLevel(t *testing.T) {
+	fixture := createFixture()
+
+	// prepare
+	room := &livekit.Room{}
+	partSID := livekit.ParticipantID("part1")
+	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
+
+	// do
+	// upstream bytes + audio level
+	audioLevel := float32(0.956)
+	stat1 := &livekit.AnalyticsStat{TotalPackets: 3, TotalBytes: 3, AudioLevel: audioLevel, ActiveSpeaker: true}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, "trackID", stat1)
+	// upstream bytes only
+	stat2 := &livekit.AnalyticsStat{TotalPackets: 1, TotalBytes: 1}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, "trackID", stat2)
+	fixture.sut.SendAnalytics()
+
+	// test
+	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
+	_, stats := fixture.analytics.SendStatsArgsForCall(0)
+	require.Equal(t, 1, len(stats))
+	require.Equal(t, livekit.StreamType_UPSTREAM, stats[0].Kind)
+	require.Equal(t, audioLevel, stats[0].AudioLevel)
+	require.Equal(t, true, stats[0].ActiveSpeaker)
+
+	// new track
+	audioLevel2 := float32(0.0)
+	stat3 := &livekit.AnalyticsStat{TotalPackets: 3, TotalBytes: 3, AudioLevel: audioLevel2, ActiveSpeaker: true}
+	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, "trackID1", stat3)
+	fixture.sut.SendAnalytics()
+
+	require.Equal(t, 2, fixture.analytics.SendStatsCallCount())
+	_, stats1 := fixture.analytics.SendStatsArgsForCall(1)
+	require.Equal(t, livekit.StreamType_UPSTREAM, stats1[1].Kind)
+	require.Equal(t, audioLevel2, stats1[1].AudioLevel)
+	require.Equal(t, true, stats1[1].ActiveSpeaker)
+}

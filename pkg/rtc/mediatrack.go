@@ -363,28 +363,41 @@ func (t *MediaTrack) updateStats() {
 		case <-t.done:
 			return
 		case <-time.After(connectionQualityUpdateInterval):
-			t.connectionStats.Lock.Lock()
-
+			// get audio level, buffer stats outside connectionStats.lock to reduce time lock is held
+			var audioLevel float32
+			var activeSpeaker bool
+			if t.Kind() == livekit.TrackType_AUDIO {
+				level, active := t.GetAudioLevel()
+				if active {
+					activeSpeaker = true
+					audioLevel = ConvertAudioLevel(level)
+				}
+			}
 			//we are accessing stats after receiver has buffer assigned
 			stats := t.buffer.GetStats()
-
+			t.connectionStats.Lock.Lock()
 			delta := t.connectionStats.UpdateStats(stats.TotalByte)
+			stat := &livekit.AnalyticsStat{
+				Jitter:       float64(t.connectionStats.Jitter),
+				TotalPackets: uint64(t.connectionStats.TotalPackets),
+				PacketLost:   uint64(t.connectionStats.PacketsLost),
+				Delay:        uint64(t.connectionStats.Delay),
+				TotalBytes:   t.connectionStats.TotalBytes,
+				NackCount:    t.connectionStats.NackCount,
+				PliCount:     t.connectionStats.PliCount,
+				FirCount:     t.connectionStats.FirCount,
+			}
+
 			if t.Kind() == livekit.TrackType_AUDIO {
 				t.connectionStats.Score = connectionquality.AudioConnectionScore(delta, t.connectionStats.Jitter)
+				if activeSpeaker {
+					stat.ActiveSpeaker = true
+					stat.AudioLevel = audioLevel
+				}
 			} else {
 				t.connectionStats.Score = t.calculateVideoScore()
 			}
-			stat := &livekit.AnalyticsStat{
-				Jitter:          float64(t.connectionStats.Jitter),
-				TotalPackets:    uint64(t.connectionStats.TotalPackets),
-				PacketLost:      uint64(t.connectionStats.PacketsLost),
-				Delay:           uint64(t.connectionStats.Delay),
-				TotalBytes:      t.connectionStats.TotalBytes,
-				NackCount:       t.connectionStats.NackCount,
-				PliCount:        t.connectionStats.PliCount,
-				FirCount:        t.connectionStats.FirCount,
-				ConnectionScore: float32(t.connectionStats.Score),
-			}
+			stat.ConnectionScore = float32(t.connectionStats.Score)
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 			t.connectionStats.Lock.Unlock()
 		}

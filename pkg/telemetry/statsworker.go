@@ -29,6 +29,7 @@ type Stats struct {
 	totalPacketsLost uint64
 	prevPacketsLost  uint64
 	connectionScore  float32
+	audioLevel       float32
 }
 
 func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID) *StatsWorker {
@@ -96,6 +97,16 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	} else {
 		ds.connectionScore = (ds.connectionScore + stats.ConnectionScore) / 2
 	}
+	// average out audio level - activeSpeaker is true only for audio + UPSTREAM
+	if stats.ActiveSpeaker {
+		ds.next.ActiveSpeaker = true
+		if ds.audioLevel == 0 {
+			ds.audioLevel = stats.AudioLevel
+		} else {
+			ds.audioLevel = (ds.audioLevel + stats.AudioLevel) / 2
+		}
+
+	}
 }
 
 func (s *StatsWorker) Update() {
@@ -156,6 +167,7 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	next.TotalBytes = stats.totalBytes - stats.prevBytes
 	next.PacketLost = stats.totalPacketsLost - stats.prevPacketsLost
 	next.ConnectionScore = stats.connectionScore
+	next.AudioLevel = stats.audioLevel
 
 	stats.prevPackets = stats.totalPackets
 	stats.prevBytes = stats.totalBytes
