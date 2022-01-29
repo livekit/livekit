@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -132,13 +133,17 @@ func TestMultiNodeMutePublishedTrack(t *testing.T) {
 
 	ctx := contextWithToken(adminRoomToken(testRoom))
 	// wait for it to be published before
-	testutils.WithTimeout(t, "ensure track is published", func() bool {
+	testutils.WithTimeout(t, func() string {
 		res, err := roomClient.GetParticipant(ctx, &livekit.RoomParticipantIdentity{
 			Room:     testRoom,
 			Identity: identity,
 		})
 		require.NoError(t, err)
-		return len(res.Tracks) == 2
+		if len(res.Tracks) == 2 {
+			return ""
+		} else {
+			return fmt.Sprintf("expected two tracks to be published, actual: %d", len(res.Tracks))
+		}
 	})
 
 	res, err := roomClient.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
