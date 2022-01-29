@@ -39,19 +39,17 @@ func TestMultiNodeRouting(t *testing.T) {
 		defer t1.Stop()
 	}
 
-	testutils.WithTimeout(t, "c2 should receive one track", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2 received no tracks"
 		}
-		// should have received two tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 1 {
-			return false
+			return "c2 didn't receive track published by c1"
 		}
-
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
 		streamID, _ := rtc.UnpackStreamID(tr1.StreamID())
 		require.Equal(t, c1.ID(), streamID)
-		return true
+		return ""
 	})
 
 	remoteC1 := c2.GetRemoteParticipant(c1.ID())
@@ -176,8 +174,12 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	testutils.WithTimeout(t, "waiting for refresh token", func() bool {
-		return c1.RefreshToken() != ""
+	testutils.WithTimeout(t, func() string {
+		if c1.RefreshToken() != "" {
+			return ""
+		} else {
+			return "did not receive refresh token"
+		}
 	})
 
 	// parse token to ensure it's correct

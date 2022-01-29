@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,8 +22,12 @@ func TestStreamTracker(t *testing.T) {
 		// observe first packet
 		tracker.Observe(1)
 
-		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
-			return callbackCalled.get()
+		testutils.WithTimeout(t, func() string {
+			if callbackCalled.get() {
+				return ""
+			} else {
+				return "first packet didn't activate stream"
+			}
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
@@ -34,8 +39,12 @@ func TestStreamTracker(t *testing.T) {
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
-		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
-			return tracker.Status() == StreamStatusActive
+		testutils.WithTimeout(t, func() string {
+			if tracker.Status() == StreamStatusActive {
+				return ""
+			} else {
+				return "first packet did not activate stream"
+			}
 		})
 
 		callbackCalled := atomicBool(0)
@@ -55,8 +64,12 @@ func TestStreamTracker(t *testing.T) {
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
-		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
-			return tracker.Status() == StreamStatusActive
+		testutils.WithTimeout(t, func() string {
+			if tracker.Status() == StreamStatusActive {
+				return ""
+			} else {
+				return "first packet did not activate stream"
+			}
 		})
 
 		tracker.maybeSetStopped()
@@ -73,8 +86,12 @@ func TestStreamTracker(t *testing.T) {
 	t.Run("does not change to inactive when paused", func(t *testing.T) {
 		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Observe(1)
-		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
-			return tracker.Status() == StreamStatusActive
+		testutils.WithTimeout(t, func() string {
+			if tracker.Status() == StreamStatusActive {
+				return ""
+			} else {
+				return "first packet did not activate stream"
+			}
 		})
 
 		tracker.SetPaused(true)
@@ -93,8 +110,12 @@ func TestStreamTracker(t *testing.T) {
 		// observe first packet
 		tracker.Observe(1)
 
-		testutils.WithTimeout(t, "first packet makes stream active", func() bool {
-			return callbackCalled.get() == 1
+		testutils.WithTimeout(t, func() string {
+			if callbackCalled.get() == 1 {
+				return ""
+			} else {
+				return fmt.Sprintf("expected onStatusChanged to be called once, actual: %d", callbackCalled.get())
+			}
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
@@ -117,8 +138,12 @@ func TestStreamTracker(t *testing.T) {
 		// first packet after reset
 		tracker.Observe(1)
 
-		testutils.WithTimeout(t, "first packet after reset makes stream active", func() bool {
-			return callbackCalled.get() == 2
+		testutils.WithTimeout(t, func() string {
+			if callbackCalled.get() == 2 {
+				return ""
+			} else {
+				return fmt.Sprintf("expected onStatusChanged to be called twice, actual %d", callbackCalled.get())
+			}
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
