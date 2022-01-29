@@ -76,12 +76,8 @@ func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
-	// mute all subscribed tracks
-	for _, st := range subscribedTracks {
+	// update mute of all subscribed tracks
+	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
 	}
 
@@ -267,7 +263,7 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.params.Logger.Debugw("removing all subscribers")
 
 	t.subscribedTracksMu.Lock()
-	subscribedTracks := t.subscribedTracks
+	subscribedTracks := t.getAllSubscribedTracksLocked()
 	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
 	t.subscribedTracksMu.Unlock()
 
@@ -279,15 +275,11 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
 	var revokedSubscriberIDs []livekit.ParticipantID
 
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
 	// LK-TODO: large number of subscribers needs to be solved for this loop
-	for subID, subTrack := range subscribedTracks {
+	for _, subTrack := range t.getAllSubscribedTracks() {
 		found := false
 		for _, allowedID := range allowedSubscriberIDs {
-			if subID == allowedID {
+			if subTrack.SubscriberID() == allowedID {
 				found = true
 				break
 			}
@@ -295,7 +287,7 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 
 		if !found {
 			go subTrack.DownTrack().Close()
-			revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
+			revokedSubscriberIDs = append(revokedSubscriberIDs, subTrack.SubscriberID())
 		}
 	}
 
@@ -303,11 +295,7 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 }
 
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
-	for _, st := range subscribedTracks {
+	for _, st := range t.getAllSubscribedTracks() {
 		st.UpdateVideoLayer()
 	}
 }
@@ -317,6 +305,21 @@ func (t *MediaTrackSubscriptions) getSubscribedTrack(subscriberID livekit.Partic
 	defer t.subscribedTracksMu.RUnlock()
 
 	return t.subscribedTracks[subscriberID]
+}
+
+func (t *MediaTrackSubscriptions) getAllSubscribedTracks() []types.SubscribedTrack {
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	return t.getAllSubscribedTracksLocked()
+}
+
+func (t *MediaTrackSubscriptions) getAllSubscribedTracksLocked() []types.SubscribedTrack {
+	subTracks := make([]types.SubscribedTrack, 0, len(t.subscribedTracks))
+	for _, subTrack := range t.subscribedTracks {
+		subTracks = append(subTracks, subTrack)
+	}
+	return subTracks
 }
 
 // TODO: send for all down tracks from the source participant
@@ -358,12 +361,8 @@ func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalPar
 }
 
 func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
-	for _, val := range subscribedTracks {
+	for _, val := range t.getAllSubscribedTracks() {
 		if st, ok := val.(*SubscribedTrack); ok {
 			dt := st.DownTrack().DebugInfo()
 			dt["PubMuted"] = st.pubMuted.Get()
@@ -530,14 +529,4 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	if empty {
 		t.onNoSubscribers()
 	}
-}
-
-func (t *MediaTrackSubscriptions) GetAllSubscriberIDs() []livekit.ParticipantID {
-	t.subscribedTracksMu.RLock()
-	defer t.subscribedTracksMu.RUnlock()
-	ids := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
-	for id := range t.subscribedTracks {
-		ids = append(ids, id)
-	}
-	return ids
 }
