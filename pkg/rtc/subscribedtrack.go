@@ -64,6 +64,10 @@ func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.PublisherIdentity
 }
 
+func (t *SubscribedTrack) SubscriberID() livekit.ParticipantID {
+	return t.params.SubscriberID
+}
+
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.params.DownTrack
 }

@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	upLostUpdateDelta               = time.Second
 	connectionQualityUpdateInterval = 5 * time.Second
 )
 
@@ -37,17 +36,11 @@ type MediaTrack struct {
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
 
-	statsLock         sync.Mutex
-	currentUpFracLost uint32
-	maxUpFracLost     uint8
-	maxUpFracLostTs   time.Time
-	connectionStats   *connectionquality.ConnectionStats
+	connectionStats *connectionquality.ConnectionStats
 
 	done chan struct{}
 
 	*MediaTrackReceiver
-
-	onMediaLossUpdate func(trackID livekit.TrackID, fractionalLoss uint32)
 
 	lock sync.RWMutex
 }
@@ -70,9 +63,7 @@ type MediaTrackParams struct {
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
-		params:          params,
-		connectionStats: connectionquality.NewConnectionStats(),
-		done:            make(chan struct{}),
+		params: params,
 	}
 
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
@@ -106,13 +97,30 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		}
 	})
 
-	// on close signal via closing channel to workers
-	t.AddOnClose(t.closeChan)
-	return t
-}
+	t.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
+		UpdateInterval: connectionQualityUpdateInterval,
+		CodecType:      track.Kind(),
+		GetTotalBytes: func() uint64 {
+			receiver := t.Receiver()
+			if receiver != nil {
+				return receiver.(*sfu.WebRTCReceiver).GetTotalBytes()
+			}
 
-func (t *MediaTrack) OnMediaLossUpdate(f func(trackID livekit.TrackID, fractionalLoss uint32)) {
-	t.onMediaLossUpdate = f
+			return 0
+		},
+		GetIsReducedQuality: func() bool {
+			publishing, expected := t.getNumUpTracks()
+			return publishing < expected
+		},
+	})
+	t.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
+		t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
+	})
+
+	t.AddOnClose(func() {
+		t.connectionStats.Close()
+	})
+	return t
 }
 
 func (t *MediaTrack) SignalCid() string {
@@ -136,10 +144,6 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info.Layers = layers
 
 	return info
-}
-
-func (t *MediaTrack) publishLossPercentage() uint32 {
-	return FixedPointToPercent(uint8(atomic.LoadUint32(&t.currentUpFracLost)))
 }
 
 func (t *MediaTrack) getNumUpTracks() (uint32, uint32) {
@@ -224,7 +228,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
-		go t.updateStats()
+
+		t.connectionStats.Start()
 	}
 	t.lock.Unlock()
 
@@ -266,80 +271,7 @@ func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
 }
 
 func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
-	var maxLost uint8
-	var hasReport bool
-	var delay uint32
-	var jitter uint32
-	var totalLost uint32
-	var maxSeqNum uint32
-	var nackCount int32
-	var pliCount int32
-	var firCount int32
-
-	for _, p := range packets {
-		switch pkt := p.(type) {
-		// sfu.Buffer generates ReceiverReports for the publisher
-		case *rtcp.ReceiverReport:
-			for _, rr := range pkt.Reports {
-				if rr.FractionLost > maxLost {
-					maxLost = rr.FractionLost
-				}
-				if rr.Delay > delay {
-					delay = rr.Delay
-				}
-				if rr.Jitter > jitter {
-					jitter = rr.Jitter
-				}
-				if rr.LastSequenceNumber > maxSeqNum {
-					maxSeqNum = rr.LastSequenceNumber
-				}
-				totalLost = rr.TotalLost
-			}
-			hasReport = true
-		case *rtcp.TransportLayerNack:
-			nackCount++
-			hasReport = true
-		case *rtcp.PictureLossIndication:
-			pliCount++
-			hasReport = true
-		case *rtcp.FullIntraRequest:
-			firCount++
-			hasReport = true
-		}
-	}
-
-	if hasReport {
-		t.statsLock.Lock()
-		if maxLost > t.maxUpFracLost {
-			t.maxUpFracLost = maxLost
-		}
-
-		now := time.Now()
-		if now.Sub(t.maxUpFracLostTs) > upLostUpdateDelta {
-			atomic.StoreUint32(&t.currentUpFracLost, uint32(t.maxUpFracLost))
-			t.maxUpFracLost = 0
-			t.maxUpFracLostTs = now
-		}
-		t.statsLock.Unlock()
-
-		// update feedback stats
-		t.connectionStats.Lock.Lock()
-		current := t.connectionStats
-		if jitter > current.Jitter {
-			current.Jitter = jitter
-		}
-		if delay > current.Delay {
-			current.Delay = delay
-		}
-		if maxSeqNum > current.LastSeqNum {
-			current.LastSeqNum = maxSeqNum
-		}
-		current.PacketsLost = totalLost
-		current.NackCount += nackCount
-		current.PliCount += pliCount
-		current.FirCount += firCount
-		t.connectionStats.Lock.Unlock()
-	}
+	t.connectionStats.RTCPFeedback(packets, 0)
 
 	// also look for sender reports
 	// feedback for the source RTCP
@@ -347,60 +279,5 @@ func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
 }
 
 func (t *MediaTrack) GetConnectionScore() float64 {
-	t.connectionStats.Lock.Lock()
-	defer t.connectionStats.Lock.Unlock()
-	return t.connectionStats.Score
-}
-
-func (t *MediaTrack) closeChan() {
-	close(t.done)
-}
-
-func (t *MediaTrack) updateStats() {
-
-	for {
-		select {
-		case <-t.done:
-			return
-		case <-time.After(connectionQualityUpdateInterval):
-			t.connectionStats.Lock.Lock()
-
-			//we are accessing stats after receiver has buffer assigned
-			stats := t.buffer.GetStats()
-
-			delta := t.connectionStats.UpdateStats(stats.TotalByte)
-			if t.Kind() == livekit.TrackType_AUDIO {
-				t.connectionStats.Score = connectionquality.AudioConnectionScore(delta, t.connectionStats.Jitter)
-			} else {
-				t.connectionStats.Score = t.calculateVideoScore()
-			}
-			stat := &livekit.AnalyticsStat{
-				Jitter:          float64(t.connectionStats.Jitter),
-				TotalPackets:    uint64(t.connectionStats.TotalPackets),
-				PacketLost:      uint64(t.connectionStats.PacketsLost),
-				Delay:           uint64(t.connectionStats.Delay),
-				TotalBytes:      t.connectionStats.TotalBytes,
-				NackCount:       t.connectionStats.NackCount,
-				PliCount:        t.connectionStats.PliCount,
-				FirCount:        t.connectionStats.FirCount,
-				ConnectionScore: float32(t.connectionStats.Score),
-			}
-			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
-			t.connectionStats.Lock.Unlock()
-		}
-	}
-}
-
-func (t *MediaTrack) calculateVideoScore() float64 {
-	var reducedQuality bool
-	publishing, expected := t.getNumUpTracks()
-	if publishing < expected {
-		reducedQuality = true
-	}
-
-	loss := t.publishLossPercentage()
-	if expected == 0 {
-		loss = 0
-	}
-	return connectionquality.VideoConnectionScore(loss, reducedQuality)
+	return t.connectionStats.GetScore()
 }

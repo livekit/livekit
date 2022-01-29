@@ -37,9 +37,15 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
 
 	// ensure we are connected the first time
-	testutils.WithTimeout(t, "initial ICE connectivity", func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	testutils.WithTimeout(t, func() string {
+		if transportA.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportA did not become connected"
+		}
+
+		if transportB.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportB did not become connected"
+		}
+		return ""
 	})
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
@@ -57,9 +63,14 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		ICERestart: true,
 	}))
 
-	testutils.WithTimeout(t, "restarted ICE connectivity", func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	testutils.WithTimeout(t, func() string {
+		if transportA.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportA did not reconnect after ICE restart"
+		}
+		if transportB.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportB did not reconnect after ICE restart"
+		}
+		return ""
 	})
 }
 

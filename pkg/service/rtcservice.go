@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -30,6 +30,7 @@ type RTCService struct {
 	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
+	parser        *uaparser.Parser
 }
 
 func NewRTCService(
@@ -48,6 +49,7 @@ func NewRTCService(
 		config:        conf,
 		isDev:         conf.Development,
 		limits:        conf.Limit,
+		parser:        uaparser.NewFromSaved(),
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -116,7 +118,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Metadata:      claims.Metadata,
 		Hidden:        claims.Video.Hidden,
 		Recorder:      claims.Video.Recorder,
-		Client:        ParseClientInfo(r.Form, r.RemoteAddr),
+		Client:        s.ParseClientInfo(r),
 		Grants:        claims,
 	}
 
@@ -253,7 +255,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ParseClientInfo(values url.Values, address string) *livekit.ClientInfo {
+func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
+	values := r.Form
 	ci := &livekit.ClientInfo{}
 	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
 		ci.Protocol = int32(pv)
@@ -273,12 +276,37 @@ func ParseClientInfo(values url.Values, address string) *livekit.ClientInfo {
 	case "unity":
 		ci.Sdk = livekit.ClientInfo_UNITY
 	}
+
 	ci.Version = values.Get("version")
 	ci.Os = values.Get("os")
 	ci.OsVersion = values.Get("os_version")
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
-	ci.Address = address
+	ci.Address = r.RemoteAddr
+
+	// attempt to parse types for SDKs that support browser as a platform
+	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_FLUTTER ||
+		ci.Sdk == livekit.ClientInfo_UNITY {
+		client := s.parser.Parse(r.UserAgent())
+		if ci.Browser == "" {
+			ci.Browser = client.UserAgent.Family
+			ci.BrowserVersion = client.UserAgent.ToVersionString()
+		}
+		if ci.Os == "" {
+			ci.Os = client.Os.Family
+			ci.OsVersion = client.Os.ToVersionString()
+		}
+		if ci.DeviceModel == "" {
+			model := client.Device.Family
+			if model != "" && client.Device.Model != "" && model != client.Device.Model {
+				model += " " + client.Device.Model
+			}
+
+			ci.DeviceModel = model
+		}
+	}
+
 	return ci
 }

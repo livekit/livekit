@@ -31,14 +31,14 @@ func TestWebhooks(t *testing.T) {
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	waitUntilConnected(t, c1)
-	testutils.WithTimeout(t, "webhook events room_started and participant_joined", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventRoomStarted) == nil {
-			return false
+			return "did not receive RoomStarted"
 		}
 		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return false
+			return "did not receive ParticipantJoined"
 		}
-		return true
+		return ""
 	})
 
 	// first participant join should have started the room
@@ -55,11 +55,11 @@ func TestWebhooks(t *testing.T) {
 	c2 := createRTCClient("c2", defaultServerPort, nil)
 	waitUntilConnected(t, c2)
 	defer c2.Stop()
-	testutils.WithTimeout(t, "webhook events participant_joined", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return false
+			return "did not receive ParticipantJoined"
 		}
-		return true
+		return ""
 	})
 	joined = ts.GetEvent(webhook.EventParticipantJoined)
 	require.Equal(t, "c2", joined.Participant.Identity)
@@ -67,11 +67,11 @@ func TestWebhooks(t *testing.T) {
 
 	// first participant leaves
 	c1.Stop()
-	testutils.WithTimeout(t, "webhook events participant_left", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventParticipantLeft) == nil {
-			return false
+			return "did not receive ParticipantLeft"
 		}
-		return true
+		return ""
 	})
 	left := ts.GetEvent(webhook.EventParticipantLeft)
 	require.Equal(t, "c1", left.Participant.Identity)
@@ -80,11 +80,11 @@ func TestWebhooks(t *testing.T) {
 	// room closed
 	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
 	rm.Close()
-	testutils.WithTimeout(t, "webhook events room_finished", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventRoomFinished) == nil {
-			return false
+			return "did not receive RoomFinished"
 		}
-		return true
+		return ""
 	})
 	require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
 }

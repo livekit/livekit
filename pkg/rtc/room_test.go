@@ -323,24 +323,27 @@ func TestActiveSpeakers(t *testing.T) {
 		require.NotEmpty(t, speakers)
 		require.Equal(t, string(p.ID()), speakers[0].Sid)
 
-		testutils.WithTimeout(t, "ensure everyone has gotten an audio update", func() bool {
+		testutils.WithTimeout(t, func() string {
 			for _, op := range participants {
 				op := op.(*typesfakes.FakeLocalParticipant)
 				updates := getActiveSpeakerUpdates(op)
 				if len(updates) == 0 {
-					return false
+					return fmt.Sprintf("%s did not get any audio updates", op.Identity())
 				}
 			}
-			return true
+			return ""
 		})
 
 		// no longer speaking, send update with empty items
 		p.GetAudioLevelReturns(127, false)
 
-		testutils.WithTimeout(t, "ensure no one is speaking", func() bool {
+		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(p)
 			lastUpdate := updates[len(updates)-1]
-			return len(lastUpdate.Speakers) == 0
+			if len(lastUpdate.Speakers) != 0 {
+				return fmt.Sprintf("expected no speakers, but found %d", len(lastUpdate.Speakers))
+			}
+			return ""
 		})
 	})
 
@@ -353,48 +356,48 @@ func TestActiveSpeakers(t *testing.T) {
 		p.GetAudioLevelReturns(30, true)
 		convertedLevel := rtc.ConvertAudioLevel(30)
 
-		testutils.WithTimeout(t, "checking first update is received", func() bool {
+		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
 			if len(updates) == 0 {
-				return false
+				return "no speaker updates received"
 			}
 			lastSpeakers := updates[len(updates)-1].Speakers
 			if len(lastSpeakers) == 0 {
-				return false
+				return "no speakers in the update"
 			}
 			if lastSpeakers[0].Level > convertedLevel {
-				return true
+				return ""
 			}
-			return false
+			return "level mismatch"
 		})
 
-		testutils.WithTimeout(t, "eventually reaches actual levels", func() bool {
+		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
 			if len(updates) == 0 {
-				return false
+				return "no updates received"
 			}
 			lastSpeakers := updates[len(updates)-1].Speakers
 			if len(lastSpeakers) == 0 {
-				return false
+				return "no speakers found"
 			}
 			if lastSpeakers[0].Level > convertedLevel {
-				return true
+				return ""
 			}
-			return false
+			return "did not match expected levels"
 		})
 
 		p.GetAudioLevelReturns(127, false)
 
-		testutils.WithTimeout(t, "eventually goes back to 0", func() bool {
+		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
 			if len(updates) == 0 {
-				return false
+				return "no speaker updates received"
 			}
 			lastSpeakers := updates[len(updates)-1].Speakers
 			if len(lastSpeakers) == 0 {
-				return true
+				return ""
 			}
-			return false
+			return "speakers didn't go back to zero"
 		})
 	})
 }

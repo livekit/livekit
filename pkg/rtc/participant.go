@@ -734,21 +734,21 @@ func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
 	// avg loss across all tracks, weigh published the same as subscribed
-	scores, numTracks := p.getPublisherConnectionQuality()
+	totalScore, numTracks := p.getPublisherConnectionQuality()
 
 	p.lock.RLock()
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
-		scores += subTrack.DownTrack().GetConnectionScore()
+		totalScore += subTrack.DownTrack().GetConnectionScore()
 		numTracks++
 	}
 	p.lock.RUnlock()
 
 	avgScore := 5.0
 	if numTracks > 0 {
-		avgScore = scores / float64(numTracks)
+		avgScore = totalScore / float64(numTracks)
 	}
 
 	rating := connectionquality.Score2Rating(avgScore)
@@ -1332,12 +1332,12 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	}
 }
 
-func (p *ParticipantImpl) getPublisherConnectionQuality() (scores float64, numTracks int) {
+func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float64, numTracks int) {
 	for _, pt := range p.GetPublishedTracks() {
 		if pt.IsMuted() {
 			continue
 		}
-		scores += pt.(types.LocalMediaTrack).GetConnectionScore()
+		totalScore += pt.(types.LocalMediaTrack).GetConnectionScore()
 		numTracks++
 	}
 
