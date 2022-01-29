@@ -76,12 +76,8 @@ func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
-	// mute all subscribed tracks
-	for _, st := range subscribedTracks {
+	// update mute of all subscribed tracks
+	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
 	}
 
@@ -134,6 +130,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		SubscriberID:      subscriberID,
 		MediaTrack:        t.params.MediaTrack,
 		DownTrack:         downTrack,
+		Logger:            t.params.Logger,
 	})
 
 	var transceiver *webrtc.RTPTransceiver
@@ -267,7 +264,7 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.params.Logger.Debugw("removing all subscribers")
 
 	t.subscribedTracksMu.Lock()
-	subscribedTracks := t.subscribedTracks
+	subscribedTracks := t.getAllSubscribedTracksLocked()
 	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
 	t.subscribedTracksMu.Unlock()
 
@@ -317,6 +314,21 @@ func (t *MediaTrackSubscriptions) getSubscribedTrack(subscriberID livekit.Partic
 	defer t.subscribedTracksMu.RUnlock()
 
 	return t.subscribedTracks[subscriberID]
+}
+
+func (t *MediaTrackSubscriptions) getAllSubscribedTracks() []types.SubscribedTrack {
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	return t.getAllSubscribedTracksLocked()
+}
+
+func (t *MediaTrackSubscriptions) getAllSubscribedTracksLocked() []types.SubscribedTrack {
+	subTracks := make([]types.SubscribedTrack, 0, len(t.subscribedTracks))
+	for _, subTrack := range t.subscribedTracks {
+		subTracks = append(subTracks, subTrack)
+	}
+	return subTracks
 }
 
 // TODO: send for all down tracks from the source participant
@@ -530,14 +542,4 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	if empty {
 		t.onNoSubscribers()
 	}
-}
-
-func (t *MediaTrackSubscriptions) GetAllSubscriberIDs() []livekit.ParticipantID {
-	t.subscribedTracksMu.RLock()
-	defer t.subscribedTracksMu.RUnlock()
-	ids := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
-	for id := range t.subscribedTracks {
-		ids = append(ids, id)
-	}
-	return ids
 }
