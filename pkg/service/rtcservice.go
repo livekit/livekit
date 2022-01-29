@@ -283,6 +283,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
+	ci.Address = r.RemoteAddr
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
