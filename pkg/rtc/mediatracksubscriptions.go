@@ -130,7 +130,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		SubscriberID:      subscriberID,
 		MediaTrack:        t.params.MediaTrack,
 		DownTrack:         downTrack,
-		Logger:            t.params.Logger,
 	})
 
 	var transceiver *webrtc.RTPTransceiver
@@ -276,15 +275,11 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
 	var revokedSubscriberIDs []livekit.ParticipantID
 
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
 	// LK-TODO: large number of subscribers needs to be solved for this loop
-	for subID, subTrack := range subscribedTracks {
+	for _, subTrack := range t.getAllSubscribedTracks() {
 		found := false
 		for _, allowedID := range allowedSubscriberIDs {
-			if subID == allowedID {
+			if subTrack.SubscriberID() == allowedID {
 				found = true
 				break
 			}
@@ -292,7 +287,7 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 
 		if !found {
 			go subTrack.DownTrack().Close()
-			revokedSubscriberIDs = append(revokedSubscriberIDs, subID)
+			revokedSubscriberIDs = append(revokedSubscriberIDs, subTrack.SubscriberID())
 		}
 	}
 

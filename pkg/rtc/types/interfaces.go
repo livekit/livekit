@@ -223,6 +223,7 @@ type SubscribedTrack interface {
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	SubscriberID() livekit.ParticipantID
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool
