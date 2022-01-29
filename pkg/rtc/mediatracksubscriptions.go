@@ -295,11 +295,7 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 }
 
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
-	for _, st := range subscribedTracks {
+	for _, st := range t.getAllSubscribedTracks() {
 		st.UpdateVideoLayer()
 	}
 }
@@ -365,12 +361,8 @@ func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalPar
 }
 
 func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
-	t.subscribedTracksMu.RLock()
-	subscribedTracks := t.subscribedTracks
-	t.subscribedTracksMu.RUnlock()
-
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
-	for _, val := range subscribedTracks {
+	for _, val := range t.getAllSubscribedTracks() {
 		if st, ok := val.(*SubscribedTrack); ok {
 			dt := st.DownTrack().DebugInfo()
 			dt["PubMuted"] = st.pubMuted.Get()
