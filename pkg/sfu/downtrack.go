@@ -517,8 +517,10 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayers.SpatialGreaterThanOrEqual(currentLayers) {
 		//
 		// Notify when new max is
-		//   1. Greater than current -> client may need to start higher layer before forwarder can lock
-		//   2. Equal to current -> already locked to the new max
+		//   1. Equal to current -> already locked to the new max
+		//   2. Greater than current -> two scenarios
+		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
+		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
 		d.onMaxLayerChanged(d, maxLayers.spatial)
 	}
