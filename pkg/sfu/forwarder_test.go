@@ -24,13 +24,16 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
-	require.False(t, f.Muted())
-	require.False(t, f.Mute(false)) // no change in mute state
-	require.False(t, f.Muted())
-	require.True(t, f.Mute(true))
-	require.True(t, f.Muted())
-	require.True(t, f.Mute(false))
-	require.False(t, f.Muted())
+	require.False(t, f.IsMuted())
+	muted, _ := f.Mute(false)
+	require.False(t, muted) // no change in mute state
+	require.False(t, f.IsMuted())
+	muted, _ = f.Mute(true)
+	require.True(t, muted)
+	require.True(t, f.IsMuted())
+	muted, _ = f.Mute(false)
+	require.True(t, muted)
+	require.False(t, f.IsMuted())
 }
 
 func TestForwarderLayersAudio(t *testing.T) {
@@ -41,13 +44,17 @@ func TestForwarderLayersAudio(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, InvalidLayers, f.TargetLayers())
 
-	changed, layers := f.SetMaxSpatialLayer(1)
+	changed, maxLayers, prevMaxLayers, currentLayers := f.SetMaxSpatialLayer(1)
 	require.False(t, changed)
-	require.Equal(t, InvalidLayers, layers)
+	require.Equal(t, InvalidLayers, maxLayers)
+	require.Equal(t, InvalidLayers, prevMaxLayers)
+	require.Equal(t, InvalidLayers, currentLayers)
 
-	changed, layers = f.SetMaxTemporalLayer(1)
+	changed, maxLayers, prevMaxLayers, currentLayers = f.SetMaxTemporalLayer(1)
 	require.False(t, changed)
-	require.Equal(t, InvalidLayers, layers)
+	require.Equal(t, InvalidLayers, maxLayers)
+	require.Equal(t, InvalidLayers, prevMaxLayers)
+	require.Equal(t, InvalidLayers, currentLayers)
 
 	require.Equal(t, InvalidLayers, f.MaxLayers())
 }
@@ -65,31 +72,63 @@ func TestForwarderLayersVideo(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, InvalidLayers, f.TargetLayers())
 
-	changed, layers := f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	changed, maxLayers, prevMaxLayers, currentLayers := f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
 	require.False(t, changed)
-	require.Equal(t, InvalidLayers, layers)
+	require.Equal(t, expectedLayers, maxLayers)
+	require.Equal(t, expectedLayers, prevMaxLayers)
+	require.Equal(t, InvalidLayers, currentLayers)
 
-	changed, layers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
+	changed, maxLayers, prevMaxLayers, currentLayers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
 	require.True(t, changed)
 	expectedLayers = VideoLayers{
 		spatial:  DefaultMaxLayerSpatial - 1,
 		temporal: DefaultMaxLayerTemporal,
 	}
-	require.Equal(t, expectedLayers, layers)
+	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
+	expectedPrevLayers := VideoLayers{
+		spatial:  DefaultMaxLayerSpatial,
+		temporal: DefaultMaxLayerTemporal,
+	}
+	require.Equal(t, expectedPrevLayers, prevMaxLayers)
+	require.Equal(t, InvalidLayers, currentLayers)
 
-	changed, layers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	f.currentLayers = VideoLayers{spatial: 0, temporal: 1}
+	changed, maxLayers, prevMaxLayers, currentLayers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
 	require.False(t, changed)
-	require.Equal(t, InvalidLayers, layers)
+	expectedLayers = VideoLayers{
+		spatial:  DefaultMaxLayerSpatial - 1,
+		temporal: DefaultMaxLayerTemporal,
+	}
+	require.Equal(t, expectedLayers, maxLayers)
+	require.Equal(t, expectedLayers, f.MaxLayers())
+	expectedPrevLayers = VideoLayers{
+		spatial:  DefaultMaxLayerSpatial - 1,
+		temporal: DefaultMaxLayerTemporal,
+	}
+	require.Equal(t, expectedPrevLayers, prevMaxLayers)
+	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
 
-	changed, layers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal - 1)
+	changed, maxLayers, prevMaxLayers, currentLayers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	require.False(t, changed)
+	require.Equal(t, expectedLayers, maxLayers)
+	require.Equal(t, expectedPrevLayers, prevMaxLayers)
+	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
+
+	changed, maxLayers, prevMaxLayers, currentLayers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal - 1)
 	require.True(t, changed)
 	expectedLayers = VideoLayers{
 		spatial:  DefaultMaxLayerSpatial - 1,
 		temporal: DefaultMaxLayerTemporal - 1,
 	}
-	require.Equal(t, expectedLayers, layers)
+	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
+	expectedPrevLayers = VideoLayers{
+		spatial:  DefaultMaxLayerSpatial - 1,
+		temporal: DefaultMaxLayerTemporal,
+	}
+	require.Equal(t, expectedPrevLayers, prevMaxLayers)
+	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
 }
 
 func TestForwarderGetForwardingStatus(t *testing.T) {

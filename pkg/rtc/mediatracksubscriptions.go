@@ -131,6 +131,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	if err != nil {
 		return nil, err
 	}
+
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
 		PublisherID:       t.params.MediaTrack.PublisherID(),
 		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
@@ -182,15 +183,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
 
 	downTrack.SetTransceiver(transceiver)
+
 	// when outtrack is bound, start loop to send reports
 	downTrack.OnBind(func() {
 		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
 	})
-	trackID := t.params.MediaTrack.ID()
 
+	trackID := t.params.MediaTrack.ID()
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
 		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
+	})
+
+	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
+		t.notifySubscriberMaxQuality(subscriberID, QualityForSpatialLayer(layer))
 	})
 
 	downTrack.OnCloseHandler(func() {
@@ -233,7 +239,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 			}
 		}
 
-		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_OFF)
 		sub.RemoveSubscribedTrack(subTrack)
 		sub.Negotiate()
 	})
@@ -243,7 +248,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
-		t.NotifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH) // start with HIGH, let subscription change it later
 		sub.AddSubscribedTrack(subTrack)
 		sub.Negotiate()
 	}()
@@ -393,7 +397,7 @@ func (t *MediaTrackSubscriptions) OnSubscribedMaxQualityChange(f func(subscribed
 	t.onSubscribedMaxQualityChange = f
 }
 
-func (t *MediaTrackSubscriptions) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
+func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}

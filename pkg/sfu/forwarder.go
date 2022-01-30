@@ -117,11 +117,12 @@ const (
 )
 
 type TranslationParams struct {
-	shouldDrop         bool
-	isDroppingRelevant bool
-	shouldSendPLI      bool
-	rtp                *TranslationParamsRTP
-	vp8                *TranslationParamsVP8
+	shouldDrop            bool
+	isDroppingRelevant    bool
+	shouldSendPLI         bool
+	isSwitchingToMaxLayer bool
+	rtp                   *TranslationParamsRTP
+	vp8                   *TranslationParamsVP8
 }
 
 type VideoLayers struct {
@@ -135,6 +136,14 @@ func (v VideoLayers) String() string {
 
 func (v VideoLayers) GreaterThan(v2 VideoLayers) bool {
 	return v.spatial > v2.spatial || (v.spatial == v2.spatial && v.temporal > v2.temporal)
+}
+
+func (v VideoLayers) SpatialGreaterThan(v2 VideoLayers) bool {
+	return v.spatial > v2.spatial
+}
+
+func (v VideoLayers) SpatialEqual(v2 VideoLayers) bool {
+	return v.spatial == v2.spatial
 }
 
 const (
@@ -211,49 +220,51 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	return f
 }
 
-func (f *Forwarder) Mute(val bool) bool {
+func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.muted == val {
-		return false
+		return false, f.maxLayers
 	}
 
 	f.muted = val
-	return true
+	return true, f.maxLayers
 }
 
-func (f *Forwarder) Muted() bool {
+func (f *Forwarder) IsMuted() bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	return f.muted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers) {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || spatialLayer == f.maxLayers.spatial {
-		return false, InvalidLayers
+		return false, f.maxLayers, f.maxLayers, f.currentLayers
 	}
 
+	prevMaxLayers := f.maxLayers
 	f.maxLayers.spatial = spatialLayer
 
-	return true, f.maxLayers
+	return true, f.maxLayers, prevMaxLayers, f.currentLayers
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers) {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers, VideoLayers, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || temporalLayer == f.maxLayers.temporal {
-		return false, InvalidLayers
+		return false, f.maxLayers, f.maxLayers, f.currentLayers
 	}
 
+	prevMaxLayers := f.maxLayers
 	f.maxLayers.temporal = temporalLayer
 
-	return true, f.maxLayers
+	return true, f.maxLayers, prevMaxLayers, f.currentLayers
 }
 
 func (f *Forwarder) MaxLayers() VideoLayers {
@@ -1117,7 +1128,11 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
+				f.logger.Debugw("RAJA switching", "max", f.maxLayers.spatial, "current", f.currentLayers.spatial, "target", f.targetLayers.spatial) // REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
+				if f.currentLayers.spatial == f.maxLayers.spatial {
+					tp.isSwitchingToMaxLayer = true
+				}
 			} else {
 				tp.shouldSendPLI = true
 			}

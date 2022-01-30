@@ -134,6 +134,9 @@ type DownTrack struct {
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
+
+	// when max subscribed layer changes
+	onMaxLayerChanged func(dt *DownTrack, layer int32)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -336,6 +339,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			f(d, pktSize)
 		}
 
+		if tp.isSwitchingToMaxLayer && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+			d.onMaxLayerChanged(d, layer)
+		}
+
 		d.UpdatePrimaryStats(uint32(pktSize))
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
@@ -369,7 +376,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	// can be sent only on frame boundaries, writing on disabled tracks
 	// will give more options.
 	// LK-TODO-END
-	if d.forwarder.Muted() {
+	if d.forwarder.IsMuted() {
 		return 0
 	}
 
@@ -440,14 +447,27 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 }
 
 // Mute enables or disables media forwarding
-func (d *DownTrack) Mute(val bool) {
-	changed := d.forwarder.Mute(val)
+func (d *DownTrack) Mute(muted bool) {
+	changed, maxLayers := d.forwarder.Mute(muted)
 	if !changed {
 		return
 	}
 
 	if d.onSubscriptionChanged != nil {
 		d.onSubscriptionChanged(d)
+	}
+
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		if muted {
+			d.onMaxLayerChanged(d, InvalidLayerSpatial)
+		} else {
+			//
+			// When unmuting, don't wait for layer lock as
+			// client might need to be notified to start layers
+			// before locking can happen in the forwarder.
+			//
+			d.onMaxLayerChanged(d, maxLayers.spatial)
+		}
 	}
 }
 
@@ -478,6 +498,10 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		d.connectionStats.Close()
 
+		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+			d.onMaxLayerChanged(d, InvalidLayerSpatial)
+		}
+
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
@@ -485,7 +509,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayers, prevMaxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
@@ -493,10 +517,21 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 	if d.onSubscribedLayersChanged != nil {
 		d.onSubscribedLayersChanged(d, maxLayers)
 	}
+
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		if maxLayers.SpatialGreaterThan(prevMaxLayers) || maxLayers.SpatialEqual(currentLayers) {
+			//
+			// When max layer is increasing, don't wait for layer lock as
+			// client might need to be notified to start layers
+			// before locking can happen in the forwarder.
+			//
+			d.onMaxLayerChanged(d, maxLayers.spatial)
+		}
+	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayers := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayers, _, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
@@ -568,6 +603,15 @@ func (d *DownTrack) OnPaddingSent(fn func(dt *DownTrack, size int)) {
 
 func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
 	d.onStatsUpdate = fn
+}
+
+func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
+	d.onMaxLayerChanged = fn
+
+	// have to send this immediately to set initial values
+	if fn != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		go fn(d, d.forwarder.MaxLayers().spatial)
+	}
 }
 
 func (d *DownTrack) IsDeficient() bool {
@@ -1041,7 +1085,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"SSRC":                d.ssrc,
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.get(),
-		"Muted":               d.forwarder.Muted(),
+		"Muted":               d.forwarder.IsMuted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
 		"Stats":               stats,
 	}
