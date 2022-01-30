@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 //
@@ -39,13 +40,18 @@ type RTPMungerParams struct {
 }
 
 type RTPMunger struct {
+	logger logger.Logger
+
 	RTPMungerParams
 }
 
-func NewRTPMunger() *RTPMunger {
-	return &RTPMunger{RTPMungerParams: RTPMungerParams{
-		missingSNs: make(map[uint16]uint16, 10),
-	}}
+func NewRTPMunger(logger logger.Logger) *RTPMunger {
+	return &RTPMunger{
+		logger: logger,
+		RTPMungerParams: RTPMungerParams{
+			missingSNs: make(map[uint16]uint16, 10),
+		},
+	}
 }
 
 func (r *RTPMunger) GetParams() RTPMungerParams {

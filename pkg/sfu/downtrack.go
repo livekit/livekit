@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
@@ -74,6 +75,7 @@ type PacketStats struct {
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 type DownTrack struct {
+	logger        logger.Logger
 	id            livekit.TrackID
 	peerID        livekit.ParticipantID
 	bound         atomicBool
@@ -135,7 +137,14 @@ type DownTrack struct {
 }
 
 // NewDownTrack returns a DownTrack.
-func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Factory, peerID livekit.ParticipantID, mt int) (*DownTrack, error) {
+func NewDownTrack(
+	c webrtc.RTPCodecCapability,
+	r TrackReceiver,
+	bf *buffer.Factory,
+	peerID livekit.ParticipantID,
+	mt int,
+	logger logger.Logger,
+) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
 	case strings.HasPrefix(c.MimeType, "audio/"):
@@ -147,6 +156,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 	}
 
 	d := &DownTrack{
+		logger:        logger,
 		id:            r.TrackID(),
 		peerID:        peerID,
 		maxTrack:      mt,
@@ -155,7 +165,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		receiver:      r,
 		codec:         c,
 		kind:          kind,
-		forwarder:     NewForwarder(c, kind),
+		forwarder:     NewForwarder(c, kind, logger),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -168,6 +178,7 @@ func NewDownTrack(c webrtc.RTPCodecCapability, r TrackReceiver, bf *buffer.Facto
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
+		Logger: d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -327,6 +338,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 		d.UpdatePrimaryStats(uint32(pktSize))
 	} else {
+		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
 	}
 
@@ -461,7 +473,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	d.closeOnce.Do(func() {
-		Logger.V(1).Info("Closing sender", "peer_id", d.peerID, "kind", d.kind)
+		d.logger.Infow("closing sender", "peerID", d.peerID, "trackID", d.id, "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.peerID)
 
 		d.connectionStats.Close()
@@ -604,6 +616,10 @@ func (d *DownTrack) AllocateNextHigher() (VideoAllocation, bool) {
 
 func (d *DownTrack) Pause() VideoAllocation {
 	return d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) Resync() {
+	d.forwarder.Resync()
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
@@ -789,7 +805,7 @@ func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
-		Logger.Error(err, "Unmarshal rtcp receiver packets err")
+		d.logger.Errorw("unmarshal rtcp receiver packets err", err)
 		return
 	}
 
@@ -894,7 +910,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 		if d.mime == "video/vp8" && len(pkt.Payload) > 0 {
 			var incomingVP8 buffer.VP8
 			if err = incomingVP8.Unmarshal(pkt.Payload); err != nil {
-				Logger.Error(err, "unmarshalling VP8 packet err")
+				d.logger.Errorw("unmarshalling VP8 packet err", err)
 				continue
 			}
 
@@ -906,19 +922,19 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 			}
 			payload, err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, outbuf)
 			if err != nil {
-				Logger.Error(err, "translating VP8 packet err")
+				d.logger.Errorw("translating VP8 packet err", err)
 				continue
 			}
 		}
 
 		err = d.writeRTPHeaderExtensions(&pkt.Header)
 		if err != nil {
-			Logger.Error(err, "writing rtp header extensions err")
+			d.logger.Errorw("writing rtp header extensions err", err)
 			continue
 		}
 
 		if _, err = d.writeStream.WriteRTP(&pkt.Header, payload); err != nil {
-			Logger.Error(err, "Writing rtx packet err")
+			d.logger.Errorw("writing rtx packet err", err)
 		} else {
 			pktSize := pkt.Header.MarshalSize() + len(payload)
 			for _, f := range d.onPacketSent {

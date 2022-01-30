@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -21,6 +22,7 @@ type ConnectionStatsParams struct {
 	CodecType           webrtc.RTPCodecType
 	GetTotalBytes       func() uint64
 	GetIsReducedQuality func() bool
+	Logger              logger.Logger
 }
 
 type ConnectionStats struct {
