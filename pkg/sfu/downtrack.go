@@ -525,6 +525,8 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
+			// Also notify when the current layer is already locked to the max layer.
+			//
 			d.onMaxLayerChanged(d, maxLayers.spatial)
 		}
 	}
