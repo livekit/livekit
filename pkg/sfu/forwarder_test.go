@@ -9,6 +9,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/protocol/logger"
 )
 
 func disable(f *Forwarder) {
@@ -16,8 +17,13 @@ func disable(f *Forwarder) {
 	f.targetLayers = InvalidLayers
 }
 
+func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+	return NewForwarder(codec, kind, logger.Logger(logger.GetLogger()))
+
+}
+
 func TestForwarderMute(t *testing.T) {
-	f := NewForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.Muted())
 	require.False(t, f.Mute(false)) // no change in mute state
 	require.False(t, f.Muted())
@@ -28,7 +34,7 @@ func TestForwarderMute(t *testing.T) {
 }
 
 func TestForwarderLayersAudio(t *testing.T) {
-	f := NewForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
 	require.Equal(t, InvalidLayers, f.MaxLayers())
 
@@ -47,7 +53,7 @@ func TestForwarderLayersAudio(t *testing.T) {
 }
 
 func TestForwarderLayersVideo(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	maxLayers := f.MaxLayers()
 	expectedLayers := VideoLayers{
@@ -87,7 +93,7 @@ func TestForwarderLayersVideo(t *testing.T) {
 }
 
 func TestForwarderGetForwardingStatus(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	// no available layers, should be optimal
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
@@ -117,7 +123,7 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 }
 
 func TestForwarderUpTrackLayersChange(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	require.Nil(t, f.availableLayers)
 
@@ -135,7 +141,7 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 }
 
 func TestForwarderAllocate(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	emptyBitrates := Bitrates{}
 	bitrates := Bitrates{
@@ -323,7 +329,7 @@ func TestForwarderAllocate(t *testing.T) {
 }
 
 func TestForwarderProvisionalAllocate(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -391,7 +397,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 }
 
 func TestForwarderProvisionalAllocateMute(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -426,7 +432,7 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 }
 
 func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -519,7 +525,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 }
 
 func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -541,7 +547,7 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 }
 
 func TestForwarderFinalizeAllocate(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -655,7 +661,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 }
 
 func TestForwarderAllocateNextHigher(t *testing.T) {
-	f := NewForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
 	emptyBitrates := Bitrates{}
 	bitrates := Bitrates{
@@ -668,7 +674,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.Equal(t, VideoAllocationDefault, result) // no layer for audio
 	require.False(t, boosted)
 
-	f = NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f = newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	// when not in deficient state, does not boost
 	f.lastAllocation.state = VideoAllocationStateNone
@@ -844,7 +850,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 }
 
 func TestForwarderPause(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -874,7 +880,7 @@ func TestForwarderPause(t *testing.T) {
 }
 
 func TestForwarderPauseMute(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -905,7 +911,7 @@ func TestForwarderPauseMute(t *testing.T) {
 }
 
 func TestForwarderGetTranslationParamsMuted(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 	f.Mute(true)
 
 	params := &testutils.TestExtPacketParams{
@@ -926,7 +932,7 @@ func TestForwarderGetTranslationParamsMuted(t *testing.T) {
 }
 
 func TestForwarderGetTranslationParamsAudio(t *testing.T) {
-	f := NewForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -1078,7 +1084,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 }
 
 func TestForwarderGetTranslationParamsVideo(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -1433,7 +1439,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 }
 
 func TestForwardGetSnTsForPadding(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -1501,7 +1507,7 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 }
 
 func TestForwardGetSnTsForBlankFrames(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -1572,7 +1578,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 }
 
 func TestForwardGetPaddingVP8(t *testing.T) {
-	f := NewForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,

@@ -7,10 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/protocol/logger"
 )
 
+func newRTPMunger() *RTPMunger {
+	return NewRTPMunger(logger.Logger(logger.GetLogger()))
+}
+
 func TestSetLastSnTs(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -46,7 +51,7 @@ func TestSetLastSnTs(t *testing.T) {
 }
 
 func TestUpdateSnTsOffsets(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -71,7 +76,7 @@ func TestUpdateSnTsOffsets(t *testing.T) {
 }
 
 func TestPacketDropped(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -113,7 +118,7 @@ func TestPacketDropped(t *testing.T) {
 }
 
 func TestOutOfOrderSequenceNumber(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -155,7 +160,7 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 }
 
 func TestDuplicateSequenceNumber(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -181,7 +186,7 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 }
 
 func TestPaddingOnlyPacket(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -229,7 +234,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 }
 
 func TestGapInSequenceNumber(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -292,7 +297,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 }
 
 func TestUpdateAndGetPaddingSnTs(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -338,7 +343,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 }
 
 func TestIsOnFrameBoundary(t *testing.T) {
-	r := NewRTPMunger()
+	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,

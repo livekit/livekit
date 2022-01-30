@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/protocol/logger"
 )
 
 func compare(expected *VP8Munger, actual *VP8Munger) bool {
@@ -24,8 +25,12 @@ func compare(expected *VP8Munger, actual *VP8Munger) bool {
 		expected.keyIdxUsed == actual.keyIdxUsed
 }
 
+func newVP8Munger() *VP8Munger {
+	return NewVP8Munger(logger.Logger(logger.GetLogger()))
+}
+
 func TestSetLast(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -78,7 +83,7 @@ func TestSetLast(t *testing.T) {
 }
 
 func TestUpdateOffsets(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -151,7 +156,7 @@ func TestUpdateOffsets(t *testing.T) {
 }
 
 func TestOutOfOrderPictureId(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -253,7 +258,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
@@ -312,7 +317,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 }
 
 func TestGapInSequenceNumberSamePicture(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
@@ -388,7 +393,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 }
 
 func TestUpdateAndGetPadding(t *testing.T) {
-	v := NewVP8Munger()
+	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
 		IsHead:         true,
