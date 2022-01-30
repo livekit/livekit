@@ -114,13 +114,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	case livekit.TrackType_VIDEO:
 		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
 	}
-	downTrack, err := sfu.NewDownTrack(webrtc.RTPCodecCapability{
-		MimeType:     codec.MimeType,
-		ClockRate:    codec.ClockRate,
-		Channels:     codec.Channels,
-		SDPFmtpLine:  codec.SDPFmtpLine,
-		RTCPFeedback: rtcpFeedback,
-	}, wr, t.params.BufferFactory, subscriberID, t.params.ReceiverConfig.PacketBufferSize)
+	downTrack, err := sfu.NewDownTrack(
+		webrtc.RTPCodecCapability{
+			MimeType:     codec.MimeType,
+			ClockRate:    codec.ClockRate,
+			Channels:     codec.Channels,
+			SDPFmtpLine:  codec.SDPFmtpLine,
+			RTCPFeedback: rtcpFeedback,
+		},
+		wr,
+		t.params.BufferFactory,
+		subscriberID,
+		t.params.ReceiverConfig.PacketBufferSize,
+		LoggerWithParticipant(t.params.Logger, sub.Identity(), sub.ID()),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +276,14 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 
 	for _, subTrack := range subscribedTracks {
 		subTrack.DownTrack().Close()
+	}
+}
+
+func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
+	t.params.Logger.Debugw("resyncing all subscribers")
+
+	for _, subTrack := range t.getAllSubscribedTracks() {
+		subTrack.DownTrack().Resync()
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 //
@@ -157,9 +158,10 @@ var (
 )
 
 type Forwarder struct {
-	lock  sync.RWMutex
-	codec webrtc.RTPCodecCapability
-	kind  webrtc.RTPCodecType
+	lock   sync.RWMutex
+	codec  webrtc.RTPCodecCapability
+	kind   webrtc.RTPCodecType
+	logger logger.Logger
 
 	muted bool
 
@@ -181,10 +183,11 @@ type Forwarder struct {
 	vp8Munger *VP8Munger
 }
 
-func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
+func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
 	f := &Forwarder{
-		codec: codec,
-		kind:  kind,
+		codec:  codec,
+		kind:   kind,
+		logger: logger,
 
 		// start off with nothing, let streamallocator set things
 		currentLayers: InvalidLayers,
@@ -192,11 +195,11 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 
 		lastAllocation: VideoAllocationDefault,
 
-		rtpMunger: NewRTPMunger(),
+		rtpMunger: NewRTPMunger(logger),
 	}
 
 	if strings.ToLower(codec.MimeType) == "video/vp8" {
-		f.vp8Munger = NewVP8Munger()
+		f.vp8Munger = NewVP8Munger(logger)
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -1029,6 +1032,14 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	}
 
 	return f.lastAllocation
+}
+
+func (f *Forwarder) Resync() {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.currentLayers = InvalidLayers
+	f.lastSSRC = 0
 }
 
 func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {

@@ -4,6 +4,7 @@ import (
 	"github.com/elliotchance/orderedmap"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 //
@@ -31,14 +32,19 @@ type VP8MungerParams struct {
 }
 
 type VP8Munger struct {
+	logger logger.Logger
+
 	VP8MungerParams
 }
 
-func NewVP8Munger() *VP8Munger {
-	return &VP8Munger{VP8MungerParams: VP8MungerParams{
-		missingPictureIds:    orderedmap.NewOrderedMap(),
-		lastDroppedPictureId: -1,
-	}}
+func NewVP8Munger(logger logger.Logger) *VP8Munger {
+	return &VP8Munger{
+		logger: logger,
+		VP8MungerParams: VP8MungerParams{
+			missingPictureIds:    orderedmap.NewOrderedMap(),
+			lastDroppedPictureId: -1,
+		},
+	}
 }
 
 func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {

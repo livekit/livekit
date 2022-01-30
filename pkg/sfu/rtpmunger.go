@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 //
@@ -39,13 +40,18 @@ type RTPMungerParams struct {
 }
 
 type RTPMunger struct {
+	logger logger.Logger
+
 	RTPMungerParams
 }
 
-func NewRTPMunger() *RTPMunger {
-	return &RTPMunger{RTPMungerParams: RTPMungerParams{
-		missingSNs: make(map[uint16]uint16, 10),
-	}}
+func NewRTPMunger(logger logger.Logger) *RTPMunger {
+	return &RTPMunger{
+		logger: logger,
+		RTPMungerParams: RTPMungerParams{
+			missingSNs: make(map[uint16]uint16, 10),
+		},
+	}
 }
 
 func (r *RTPMunger) GetParams() RTPMungerParams {
@@ -143,6 +149,9 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	mungedTS := extPkt.Packet.Timestamp - r.tsOffset
 
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
+	if (mungedSN - r.lastSN) > 1 {
+		r.logger.Debugw("gap in sent media", "prev", r.lastSN, "curr", mungedSN) // REMOVE
+	}
 	r.lastSN = mungedSN
 	r.lastTS = mungedTS
 	r.lastMarker = extPkt.Packet.Marker
