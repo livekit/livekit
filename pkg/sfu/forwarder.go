@@ -138,12 +138,8 @@ func (v VideoLayers) GreaterThan(v2 VideoLayers) bool {
 	return v.spatial > v2.spatial || (v.spatial == v2.spatial && v.temporal > v2.temporal)
 }
 
-func (v VideoLayers) SpatialGreaterThan(v2 VideoLayers) bool {
-	return v.spatial > v2.spatial
-}
-
-func (v VideoLayers) SpatialEqual(v2 VideoLayers) bool {
-	return v.spatial == v2.spatial
+func (v VideoLayers) SpatialGreaterThanOrEqual(v2 VideoLayers) bool {
+	return v.spatial >= v2.spatial
 }
 
 const (
@@ -239,32 +235,30 @@ func (f *Forwarder) IsMuted() bool {
 	return f.muted
 }
 
-func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers, VideoLayers) {
+func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || spatialLayer == f.maxLayers.spatial {
-		return false, f.maxLayers, f.maxLayers, f.currentLayers
+		return false, f.maxLayers, f.currentLayers
 	}
 
-	prevMaxLayers := f.maxLayers
 	f.maxLayers.spatial = spatialLayer
 
-	return true, f.maxLayers, prevMaxLayers, f.currentLayers
+	return true, f.maxLayers, f.currentLayers
 }
 
-func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers, VideoLayers, VideoLayers) {
+func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio || temporalLayer == f.maxLayers.temporal {
-		return false, f.maxLayers, f.maxLayers, f.currentLayers
+		return false, f.maxLayers, f.currentLayers
 	}
 
-	prevMaxLayers := f.maxLayers
 	f.maxLayers.temporal = temporalLayer
 
-	return true, f.maxLayers, prevMaxLayers, f.currentLayers
+	return true, f.maxLayers, f.currentLayers
 }
 
 func (f *Forwarder) MaxLayers() VideoLayers {

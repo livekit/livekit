@@ -453,10 +453,6 @@ func (d *DownTrack) Mute(muted bool) {
 		return
 	}
 
-	if d.onSubscriptionChanged != nil {
-		d.onSubscriptionChanged(d)
-	}
-
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		if muted {
 			d.onMaxLayerChanged(d, InvalidLayerSpatial)
@@ -468,6 +464,10 @@ func (d *DownTrack) Mute(muted bool) {
 			//
 			d.onMaxLayerChanged(d, maxLayers.spatial)
 		}
+	}
+
+	if d.onSubscriptionChanged != nil {
+		d.onSubscriptionChanged(d)
 	}
 }
 
@@ -509,31 +509,27 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
-	changed, maxLayers, prevMaxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
+	changed, maxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
+	}
+
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayers.SpatialGreaterThanOrEqual(currentLayers) {
+		//
+		// Notify when new max is
+		//   1. Greater than current -> client may need to start higher layer before forwarder can lock
+		//   2. Equal to current -> already locked to the new max
+		//
+		d.onMaxLayerChanged(d, maxLayers.spatial)
 	}
 
 	if d.onSubscribedLayersChanged != nil {
 		d.onSubscribedLayersChanged(d, maxLayers)
 	}
-
-	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		if maxLayers.SpatialGreaterThan(prevMaxLayers) || maxLayers.SpatialEqual(currentLayers) {
-			//
-			// When max layer is increasing, don't wait for layer lock as
-			// client might need to be notified to start layers
-			// before locking can happen in the forwarder.
-			//
-			// Also notify when the current layer is already locked to the max layer.
-			//
-			d.onMaxLayerChanged(d, maxLayers.spatial)
-		}
-	}
 }
 
 func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
-	changed, maxLayers, _, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
+	changed, maxLayers, _ := d.forwarder.SetMaxTemporalLayer(temporalLayer)
 	if !changed {
 		return
 	}
