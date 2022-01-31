@@ -196,6 +196,8 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		return
 	}
 
+	buff.SetLogger(w.logger)
+
 	layer := RidToLayer(track.RID())
 
 	w.upTrackMu.Lock()
