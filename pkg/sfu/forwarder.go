@@ -83,7 +83,7 @@ type VideoAllocation struct {
 	change             VideoStreamingChange
 	bandwidthRequested int64
 	bandwidthDelta     int64
-	availableLayers    []uint16
+	availableLayers    []int32
 	bitrates           Bitrates
 	targetLayers       VideoLayers
 	distanceToDesired  int32
@@ -182,7 +182,7 @@ type Forwarder struct {
 
 	lastAllocation VideoAllocation
 
-	availableLayers []uint16
+	availableLayers []int32
 
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
@@ -301,7 +301,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	return ForwardingStatusOptimal
 }
 
-func (f *Forwarder) UpTrackLayersChange(availableLayers []uint16) {
+func (f *Forwarder) UpTrackLayersChange(availableLayers []int32) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

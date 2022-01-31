@@ -119,7 +119,7 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
 
 	// with available layers, should be off
-	availableLayers := []uint16{0, 1, 2}
+	availableLayers := []int32{0, 1, 2}
 	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOff, f.GetForwardingStatus())
 
@@ -137,7 +137,7 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 	require.Equal(t, ForwardingStatusPartial, f.GetForwardingStatus())
 
 	// when available layers are lower than max subscribed, optimal as long as target is at max available
-	availableLayers = []uint16{0, 1}
+	availableLayers = []int32{0, 1}
 	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
 }
@@ -147,15 +147,15 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 
 	require.Nil(t, f.availableLayers)
 
-	availableLayers := []uint16{0, 1, 2}
+	availableLayers := []int32{0, 1, 2}
 	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 
-	availableLayers = []uint16{0, 2}
+	availableLayers = []int32{0, 2}
 	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 
-	availableLayers = []uint16{}
+	availableLayers = []int32{}
 	f.UpTrackLayersChange(availableLayers)
 	require.Equal(t, availableLayers, f.availableLayers)
 }
@@ -208,7 +208,7 @@ func TestForwarderAllocate(t *testing.T) {
 	// awaiting measurement, i.e. bitrates are not available, but layers available
 	f.lastAllocation.state = VideoAllocationStateNone
 	disable(f)
-	f.UpTrackLayersChange([]uint16{0})
+	f.UpTrackLayersChange([]int32{0})
 	expectedTargetLayers := VideoLayers{
 		spatial:  0,
 		temporal: DefaultMaxLayerTemporal,
@@ -218,7 +218,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           emptyBitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
@@ -235,7 +235,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangePausing,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           emptyBitrates,
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
@@ -256,7 +256,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           emptyBitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
@@ -277,7 +277,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangeNone,
 		bandwidthRequested: bitrates[2][1],
 		bandwidthDelta:     bitrates[2][1],
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           bitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
@@ -298,7 +298,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangeNone,
 		bandwidthRequested: bitrates[1][3],
 		bandwidthDelta:     bitrates[1][3] - bitrates[2][1],
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           bitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  1,
@@ -315,7 +315,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangePausing,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - bitrates[1][3],
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           bitrates,
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  5,
@@ -336,7 +336,7 @@ func TestForwarderAllocate(t *testing.T) {
 		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: bitrates[0][0],
 		bandwidthDelta:     bitrates[0][0],
-		availableLayers:    []uint16{0},
+		availableLayers:    []int32{0},
 		bitrates:           bitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  4,
@@ -637,7 +637,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 	// layers available, but still awaiting measurement
 	f.lastAllocation.state = VideoAllocationStateAwaitingMeasurement
 	disable(f)
-	f.UpTrackLayersChange([]uint16{0, 1})
+	f.UpTrackLayersChange([]int32{0, 1})
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateAwaitingMeasurement,
 		change:             VideoStreamingChangeNone,
@@ -668,7 +668,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		change:             VideoStreamingChangeResuming,
 		bandwidthRequested: bitrates[1][3],
 		bandwidthDelta:     bitrates[1][3],
-		availableLayers:    []uint16{0, 1},
+		availableLayers:    []int32{0, 1},
 		bitrates:           bitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
