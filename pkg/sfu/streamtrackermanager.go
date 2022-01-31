@@ -28,7 +28,6 @@ func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers [
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) {
-	s.lock.Lock()
 	samplesRequired := uint32(5)
 	cyclesRequired := uint64(60) // 30s of continuous stream
 	if layer == 0 {
@@ -36,7 +35,6 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 		samplesRequired = 1
 		cyclesRequired = 4 // 2s of continuous stream
 	}
-
 	tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
@@ -46,6 +44,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 		}
 	})
 
+	s.lock.Lock()
 	s.trackers[layer] = tracker
 	s.lock.Unlock()
 
@@ -84,7 +83,6 @@ func (s *StreamTrackerManager) SetPaused(paused bool) {
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
 	s.lock.Lock()
-
 	if layer <= s.maxExpectedLayer {
 		// some higher layer(s) expected to stop, nothing else to do
 		s.maxExpectedLayer = layer
@@ -103,18 +101,20 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
 	// But, those conditions should be rare. In those cases, the restart will
 	// take longer.
 	//
-	var tracker *StreamTracker
+	var trackersToReset []*StreamTracker
 	for l := s.maxExpectedLayer + 1; l <= layer; l++ {
 		if s.hasSpatialLayerLocked(l) {
 			continue
 		}
 
-		tracker = s.trackers[l]
+		if s.trackers[l] != nil {
+			trackersToReset = append(trackersToReset, s.trackers[l])
+		}
 	}
 	s.maxExpectedLayer = layer
 	s.lock.Unlock()
 
-	if tracker != nil {
+	for _, tracker := range trackersToReset {
 		tracker.Reset()
 	}
 }
@@ -177,11 +177,10 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
 	s.availableLayers = newLayers
-	layers := s.availableLayers
 	s.lock.Unlock()
 
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {
-		s.onAvailableLayersChanged(layers)
+		s.onAvailableLayersChanged(newLayers)
 	}
 }
