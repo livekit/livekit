@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -91,13 +92,15 @@ type sequencer struct {
 	step      int
 	headSN    uint16
 	startTime int64
+	logger    logger.Logger
 }
 
-func newSequencer(maxTrack int) *sequencer {
+func newSequencer(maxTrack int, logger logger.Logger) *sequencer {
 	return &sequencer{
 		startTime: time.Now().UnixNano() / 1e6,
 		max:       maxTrack,
 		seq:       make([]packetMeta, maxTrack),
+		logger:    logger,
 	}
 }
 
@@ -124,7 +127,7 @@ func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer uint8, head b
 		step = n.step - int(n.headSN-offSn)
 		if step < 0 {
 			if step*-1 >= n.max {
-				Logger.V(0).Info("Old packet received, can not be sequenced", "head", sn, "received", offSn)
+				n.logger.Infow("old packet received, can not be sequenced", "head", sn, "received", offSn)
 				return nil
 			}
 			step = n.max + step

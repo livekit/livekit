@@ -171,6 +171,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
 		return
 	}
+	buff.SetLogger(t.params.Logger)
 	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
@@ -214,6 +215,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			receiver,
 			track,
 			t.PublisherID(),
+			t.params.Logger,
 			sfu.WithPliThrottle(0),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
