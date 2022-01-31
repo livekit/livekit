@@ -102,10 +102,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if t.DownTrack().Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
-	if t.subMuted.Get() {
-		t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, livekit.VideoQuality_OFF)
-		return
-	}
+
 	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
 	if !ok {
 		return
@@ -116,8 +113,6 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
 	t.DownTrack().SetMaxSpatialLayer(SpatialLayerForQuality(quality))
-
-	t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, quality)
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {

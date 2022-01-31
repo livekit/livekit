@@ -121,12 +121,6 @@ type FakeLocalMediaTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
-	NotifySubscriberMaxQualityStub        func(livekit.ParticipantID, livekit.VideoQuality)
-	notifySubscriberMaxQualityMutex       sync.RWMutex
-	notifySubscriberMaxQualityArgsForCall []struct {
-		arg1 livekit.ParticipantID
-		arg2 livekit.VideoQuality
-	}
 	NotifySubscriberNodeMaxQualityStub        func(string, livekit.VideoQuality)
 	notifySubscriberNodeMaxQualityMutex       sync.RWMutex
 	notifySubscriberNodeMaxQualityArgsForCall []struct {
@@ -834,39 +828,6 @@ func (fake *FakeLocalMediaTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberMaxQuality(arg1 livekit.ParticipantID, arg2 livekit.VideoQuality) {
-	fake.notifySubscriberMaxQualityMutex.Lock()
-	fake.notifySubscriberMaxQualityArgsForCall = append(fake.notifySubscriberMaxQualityArgsForCall, struct {
-		arg1 livekit.ParticipantID
-		arg2 livekit.VideoQuality
-	}{arg1, arg2})
-	stub := fake.NotifySubscriberMaxQualityStub
-	fake.recordInvocation("NotifySubscriberMaxQuality", []interface{}{arg1, arg2})
-	fake.notifySubscriberMaxQualityMutex.Unlock()
-	if stub != nil {
-		fake.NotifySubscriberMaxQualityStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeLocalMediaTrack) NotifySubscriberMaxQualityCallCount() int {
-	fake.notifySubscriberMaxQualityMutex.RLock()
-	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
-	return len(fake.notifySubscriberMaxQualityArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) NotifySubscriberMaxQualityCalls(stub func(livekit.ParticipantID, livekit.VideoQuality)) {
-	fake.notifySubscriberMaxQualityMutex.Lock()
-	defer fake.notifySubscriberMaxQualityMutex.Unlock()
-	fake.NotifySubscriberMaxQualityStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) NotifySubscriberMaxQualityArgsForCall(i int) (livekit.ParticipantID, livekit.VideoQuality) {
-	fake.notifySubscriberMaxQualityMutex.RLock()
-	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
-	argsForCall := fake.notifySubscriberMaxQualityArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
 func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQuality(arg1 string, arg2 livekit.VideoQuality) {
 	fake.notifySubscriberNodeMaxQualityMutex.Lock()
 	fake.notifySubscriberNodeMaxQualityArgsForCall = append(fake.notifySubscriberNodeMaxQualityArgsForCall, struct {
@@ -1521,8 +1482,6 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.kindMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
-	fake.notifySubscriberMaxQualityMutex.RLock()
-	defer fake.notifySubscriberMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMaxQualityMutex.RLock()
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
 	fake.notifySubscriberNodeMediaLossMutex.RLock()

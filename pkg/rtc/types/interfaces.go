@@ -199,9 +199,7 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
 	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
-
 	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
