@@ -19,11 +19,12 @@ func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node
 
 	nodesLowLoad := make([]*livekit.Node, 0)
 	for _, node := range nodes {
-		numCpus := node.Stats.NumCpus
+		stats := node.Stats
+		numCpus := stats.NumCpus
 		if numCpus == 0 {
 			numCpus = 1
 		}
-		if node.Stats.LoadAvgLast1Min/float32(numCpus) < s.SysloadLimit {
+		if stats.LoadAvgLast1Min/float32(numCpus) < s.SysloadLimit {
 			nodesLowLoad = append(nodesLowLoad, node)
 		}
 	}
