@@ -63,9 +63,8 @@ type WebRTCReceiver struct {
 	lastPli     atomicInt64
 	pliThrottle int64
 
-	bufferMu     sync.RWMutex
-	buffers      [DefaultMaxLayerSpatial + 1]*buffer.Buffer
-	onAudioLevel AudioLevelHandle
+	bufferMu sync.RWMutex
+	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
 
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -175,10 +174,6 @@ func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
-}
-
-func (w *WebRTCReceiver) OnAudioLevel(fn AudioLevelHandle) {
-	w.onAudioLevel = fn
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
