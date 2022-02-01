@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
@@ -43,6 +44,8 @@ type TrackReceiver interface {
 
 // WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
+	logger logger.Logger
+
 	peerID           livekit.ParticipantID
 	trackID          livekit.TrackID
 	streamID         string
@@ -120,8 +123,15 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 }
 
 // NewWebRTCReceiver creates a new webrtc track receiver
-func NewWebRTCReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, pid livekit.ParticipantID, opts ...ReceiverOpts) *WebRTCReceiver {
+func NewWebRTCReceiver(
+	receiver *webrtc.RTPReceiver,
+	track *webrtc.TrackRemote,
+	pid livekit.ParticipantID,
+	logger logger.Logger,
+	opts ...ReceiverOpts,
+) *WebRTCReceiver {
 	w := &WebRTCReceiver{
+		logger:   logger,
 		peerID:   pid,
 		receiver: receiver,
 		trackID:  livekit.TrackID(track.ID()),
@@ -185,6 +195,8 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	if w.closed.get() {
 		return
 	}
+
+	buff.SetLogger(w.logger)
 
 	layer := RidToLayer(track.RID())
 

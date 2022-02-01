@@ -37,10 +37,9 @@ func TestNack(t *testing.T) {
 			return &b
 		},
 	}
-	logger := Logger
 
 	t.Run("nack normal", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool, logger)
+		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		assert.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -82,7 +81,7 @@ func TestNack(t *testing.T) {
 	})
 
 	t.Run("nack with seq wrap", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool, logger)
+		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		assert.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -187,8 +186,7 @@ func TestNewBuffer(t *testing.T) {
 					return &b
 				},
 			}
-			logger := Logger
-			buff := NewBuffer(123, pool, pool, logger)
+			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			assert.NotNil(t, buff)
 			assert.NotNil(t, TestPackets)
@@ -217,7 +215,7 @@ func TestFractionLostReport(t *testing.T) {
 			return &b
 		},
 	}
-	buff := NewBuffer(123, pool, pool, Logger)
+	buff := NewBuffer(123, pool, pool)
 	buff.codecType = webrtc.RTPCodecTypeVideo
 	assert.NotNil(t, buff)
 	var wg sync.WaitGroup
