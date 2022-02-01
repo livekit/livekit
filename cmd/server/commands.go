@@ -160,25 +160,27 @@ func listNodes(c *cli.Context) error {
 		"Started At", "Updated At",
 	})
 	for _, node := range nodes {
+		stats := node.Stats
+
 		// System stats
-		cpus := strconv.Itoa(int(node.Stats.NumCpus))
-		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", node.Stats.LoadAvgLast1Min, node.Stats.LoadAvgLast5Min, node.Stats.LoadAvgLast15Min)
+		cpus := strconv.Itoa(int(stats.NumCpus))
+		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
 
 		// Room stats
-		clients := strconv.Itoa(int(node.Stats.NumClients))
-		rooms := strconv.Itoa(int(node.Stats.NumRooms))
-		tracks := fmt.Sprintf("%d / %d", node.Stats.NumTracksIn, node.Stats.NumTracksOut)
+		clients := strconv.Itoa(int(stats.NumClients))
+		rooms := strconv.Itoa(int(stats.NumRooms))
+		tracks := fmt.Sprintf("%d / %d", stats.NumTracksIn, stats.NumTracksOut)
 
 		// Packet stats
-		bytes := fmt.Sprintf("%d / %d", node.Stats.BytesIn, node.Stats.BytesOut)
-		packets := fmt.Sprintf("%d / %d", node.Stats.PacketsIn, node.Stats.PacketsOut)
-		nack := strconv.Itoa(int(node.Stats.NackTotal))
-		bps := fmt.Sprintf("%.2f / %.2f", node.Stats.BytesInPerSec, node.Stats.BytesOutPerSec)
-		packetsPerSec := fmt.Sprintf("%.2f / %.2f", node.Stats.PacketsInPerSec, node.Stats.PacketsOutPerSec)
-		nackPerSec := fmt.Sprintf("%f", node.Stats.NackPerSec)
+		bytes := fmt.Sprintf("%d / %d", stats.BytesIn, stats.BytesOut)
+		packets := fmt.Sprintf("%d / %d", stats.PacketsIn, stats.PacketsOut)
+		nack := strconv.Itoa(int(stats.NackTotal))
+		bps := fmt.Sprintf("%.2f / %.2f", stats.BytesInPerSec, stats.BytesOutPerSec)
+		packetsPerSec := fmt.Sprintf("%.2f / %.2f", stats.PacketsInPerSec, stats.PacketsOutPerSec)
+		nackPerSec := fmt.Sprintf("%f", stats.NackPerSec)
 
-		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
-		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
+		startedAt := time.Unix(stats.StartedAt, 0).String()
+		updatedAt := time.Unix(stats.UpdatedAt, 0).String()
 
 		table.Append([]string{
 			node.Id, node.Ip, node.Region,

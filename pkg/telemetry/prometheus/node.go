@@ -45,47 +45,43 @@ func init() {
 	initRoomStats(nodeID)
 }
 
-func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) error {
-	updatedAtPrevious := nodeStats.UpdatedAt
-	nodeStats.UpdatedAt = time.Now().Unix()
-	secondsSinceLastUpdate := nodeStats.UpdatedAt - updatedAtPrevious
-
-	err := updateCurrentNodeSystemStats(nodeStats)
-	updateCurrentNodeRoomStats(nodeStats)
-	updateCurrentNodePacketStats(nodeStats, secondsSinceLastUpdate)
-
-	return err
-}
-
-func updateCurrentNodeRoomStats(nodeStats *livekit.NodeStats) {
-	nodeStats.NumClients = atomic.LoadInt32(&atomicParticipantTotal)
-	nodeStats.NumRooms = atomic.LoadInt32(&atomicRoomTotal)
-	nodeStats.NumTracksIn = atomic.LoadInt32(&atomicTrackPublishedTotal)
-	nodeStats.NumTracksOut = atomic.LoadInt32(&atomicTrackSubscribedTotal)
-}
-
-func updateCurrentNodePacketStats(nodeStats *livekit.NodeStats, secondsSinceLastUpdate int64) {
-	if secondsSinceLastUpdate == 0 {
-		return
+func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
+	numCPUs, avg1Min, avg5Min, avg15Min, err := getSystemStats()
+	if err != nil {
+		return nil, err
 	}
 
-	bytesInPrevious := nodeStats.BytesIn
-	bytesOutPrevious := nodeStats.BytesOut
-	packetsInPrevious := nodeStats.PacketsIn
-	packetsOutPrevious := nodeStats.PacketsOut
-	nackTotalPrevious := nodeStats.NackTotal
+	updatedAt := time.Now().Unix()
+	elapsed := updatedAt - prev.UpdatedAt
 
-	nodeStats.BytesIn = atomic.LoadUint64(&atomicBytesIn)
-	nodeStats.BytesOut = atomic.LoadUint64(&atomicBytesOut)
-	nodeStats.PacketsIn = atomic.LoadUint64(&atomicPacketsIn)
-	nodeStats.PacketsOut = atomic.LoadUint64(&atomicPacketsOut)
-	nodeStats.NackTotal = atomic.LoadUint64(&atomicNackTotal)
+	bytesIn := atomic.LoadUint64(&atomicBytesIn)
+	bytesOut := atomic.LoadUint64(&atomicBytesOut)
+	packetsIn := atomic.LoadUint64(&atomicPacketsIn)
+	packetsOut := atomic.LoadUint64(&atomicPacketsOut)
+	nackTotal := atomic.LoadUint64(&atomicNackTotal)
 
-	nodeStats.BytesInPerSec = perSec(bytesInPrevious, nodeStats.BytesIn, secondsSinceLastUpdate)
-	nodeStats.BytesOutPerSec = perSec(bytesOutPrevious, nodeStats.BytesOut, secondsSinceLastUpdate)
-	nodeStats.PacketsInPerSec = perSec(packetsInPrevious, nodeStats.PacketsIn, secondsSinceLastUpdate)
-	nodeStats.PacketsOutPerSec = perSec(packetsOutPrevious, nodeStats.PacketsOut, secondsSinceLastUpdate)
-	nodeStats.NackPerSec = perSec(nackTotalPrevious, nodeStats.NackTotal, secondsSinceLastUpdate)
+	return &livekit.NodeStats{
+		StartedAt:        prev.StartedAt,
+		UpdatedAt:        updatedAt,
+		NumRooms:         atomic.LoadInt32(&atomicRoomTotal),
+		NumClients:       atomic.LoadInt32(&atomicParticipantTotal),
+		NumTracksIn:      atomic.LoadInt32(&atomicTrackPublishedTotal),
+		NumTracksOut:     atomic.LoadInt32(&atomicTrackSubscribedTotal),
+		BytesIn:          bytesIn,
+		BytesOut:         bytesOut,
+		PacketsIn:        packetsIn,
+		PacketsOut:       packetsOut,
+		NackTotal:        nackTotal,
+		BytesInPerSec:    perSec(prev.BytesIn, bytesIn, elapsed),
+		BytesOutPerSec:   perSec(prev.BytesOut, bytesOut, elapsed),
+		PacketsInPerSec:  perSec(prev.PacketsIn, packetsIn, elapsed),
+		PacketsOutPerSec: perSec(prev.PacketsOut, packetsOut, elapsed),
+		NackPerSec:       perSec(prev.NackTotal, nackTotal, elapsed),
+		NumCpus:          numCPUs,
+		LoadAvgLast1Min:  avg1Min,
+		LoadAvgLast5Min:  avg5Min,
+		LoadAvgLast15Min: avg15Min,
+	}, nil
 }
 
 func perSec(prev, curr uint64, secs int64) float32 {
