@@ -3,8 +3,6 @@
 
 package prometheus
 
-import "github.com/livekit/protocol/livekit"
-
-func updateCurrentNodeSystemStats(_ *livekit.NodeStats) error {
-	return nil
+func getSystemStats() (numCPUs uint32, avg1Min, avg5Min, avg15Min float32, err error) {
+	return
 }

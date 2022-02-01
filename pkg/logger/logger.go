@@ -3,14 +3,12 @@ package serverlogger
 import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 var (
@@ -42,8 +40,6 @@ func (f *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
 // Note: only pass in logr.Logger with default depth
 func SetLogger(l logr.Logger) {
 	logger.SetLogger(l, "livekit")
-	sfu.Logger = l.WithName("sfu")
-	buffer.Logger = sfu.Logger
 }
 
 func InitFromConfig(config config.LoggingConfig) {

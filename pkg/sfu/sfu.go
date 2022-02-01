@@ -2,12 +2,7 @@ package sfu
 
 import (
 	"sync"
-
-	"github.com/go-logr/logr"
 )
-
-// Logger is an implementation of logr.Logger. If is not provided - will be turned off.
-var Logger = logr.Discard()
 
 var (
 	PacketFactory *sync.Pool

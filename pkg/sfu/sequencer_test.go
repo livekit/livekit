@@ -8,10 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
 )
 
 func Test_sequencer(t *testing.T) {
-	seq := newSequencer(500)
+	seq := newSequencer(500, logger.Logger(logger.GetLogger()))
 	off := uint16(15)
 
 	for i := uint16(1); i < 520; i++ {
@@ -74,7 +75,7 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := newSequencer(500)
+			n := newSequencer(500, logger.Logger(logger.GetLogger()))
 
 			for _, i := range tt.fields.input {
 				n.push(i, i+tt.fields.offset, 123, 3, true)

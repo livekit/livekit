@@ -462,9 +462,13 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			break
 		}
 
-		if err := prometheus.UpdateCurrentNodeStats(r.currentNode.Stats); err != nil {
+		updated, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats)
+		if err != nil {
 			logger.Errorw("could not update node stats", err)
+		} else {
+			r.currentNode.Stats = updated
 		}
+
 		// TODO: check stats against config.Limit values
 		if err := r.RegisterNode(); err != nil {
 			logger.Errorw("could not update node", err)

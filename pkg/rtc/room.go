@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
@@ -67,7 +66,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		telemetry:       telemetry,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
-		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize, logr.Logger{}),
+		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize),
 		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
