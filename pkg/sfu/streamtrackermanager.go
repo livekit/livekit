@@ -62,6 +62,21 @@ func (s *StreamTrackerManager) RemoveTracker(layer int32) {
 	}
 }
 
+func (s *StreamTrackerManager) RemoveAllTrackers() {
+	s.lock.Lock()
+	trackers := s.trackers
+	for layer := range s.trackers {
+		s.trackers[layer] = nil
+	}
+	s.lock.Unlock()
+
+	for _, tracker := range trackers {
+		if tracker != nil {
+			tracker.Stop()
+		}
+	}
+}
+
 func (s *StreamTrackerManager) GetTracker(layer int32) *StreamTracker {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
