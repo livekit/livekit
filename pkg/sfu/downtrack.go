@@ -28,7 +28,7 @@ const (
 
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
-	UpTrackLayersChange(availableLayers []uint16)
+	UpTrackLayersChange(availableLayers []int32)
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	// ID is the globally unique identifier for this Track.
@@ -549,7 +549,7 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }
 
-func (d *DownTrack) UpTrackLayersChange(availableLayers []uint16) {
+func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	d.forwarder.UpTrackLayersChange(availableLayers)
 
 	if d.onAvailableLayersChanged != nil {
