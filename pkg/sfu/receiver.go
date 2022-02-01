@@ -202,7 +202,9 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	w.buffers[layer] = buff
 	w.bufferMu.Unlock()
 
-	w.streamTrackerManager.AddTracker(layer)
+	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
+		w.streamTrackerManager.AddTracker(layer)
+	}
 	go w.forwardRTP(layer)
 }
 
