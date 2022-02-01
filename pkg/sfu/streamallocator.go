@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -143,7 +144,9 @@ type StreamAllocator struct {
 
 	state State
 
+	eventChMu sync.RWMutex
 	eventCh   chan Event
+
 	isStopped utils.AtomicFlag
 }
 
@@ -175,7 +178,9 @@ func (s *StreamAllocator) Stop() {
 		return
 	}
 
+	s.eventChMu.Lock()
 	close(s.eventCh)
+	s.eventChMu.Unlock()
 }
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
@@ -304,7 +309,9 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
+	s.eventChMu.Lock()
 	s.eventCh <- event
+	s.eventChMu.Unlock()
 }
 
 func (s *StreamAllocator) processEvents() {
