@@ -309,9 +309,9 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
-	s.eventChMu.Lock()
+	s.eventChMu.RLock()
 	s.eventCh <- event
-	s.eventChMu.Unlock()
+	s.eventChMu.RUnlock()
 }
 
 func (s *StreamAllocator) processEvents() {
