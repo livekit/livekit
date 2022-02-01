@@ -174,11 +174,12 @@ func (s *StreamAllocator) Start() {
 }
 
 func (s *StreamAllocator) Stop() {
+	s.eventChMu.Lock()
 	if !s.isStopped.TrySet(true) {
+		s.eventChMu.Unlock()
 		return
 	}
 
-	s.eventChMu.Lock()
 	close(s.eventCh)
 	s.eventChMu.Unlock()
 }
@@ -305,11 +306,12 @@ func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
+	s.eventChMu.RLock()
 	if s.isStopped.Get() {
+		s.eventChMu.RUnlock()
 		return
 	}
 
-	s.eventChMu.RLock()
 	s.eventCh <- event
 	s.eventChMu.RUnlock()
 }
