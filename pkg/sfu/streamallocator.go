@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
@@ -143,9 +143,8 @@ type StreamAllocator struct {
 
 	state State
 
-	chMu      sync.RWMutex
 	eventCh   chan Event
-	runningCh chan struct{}
+	isStopped utils.AtomicFlag
 }
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
@@ -156,8 +155,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		eventCh:   make(chan Event, 20),
-		runningCh: make(chan struct{}),
+		eventCh: make(chan Event, 20),
 	}
 
 	s.initializeEstimate()
@@ -173,10 +171,10 @@ func (s *StreamAllocator) Start() {
 }
 
 func (s *StreamAllocator) Stop() {
-	s.chMu.Lock()
-	defer s.chMu.Unlock()
+	if !s.isStopped.TrySet(true) {
+		return
+	}
 
-	close(s.runningCh)
 	close(s.eventCh)
 }
 
@@ -302,10 +300,7 @@ func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
-	s.chMu.RLock()
-	defer s.chMu.RUnlock()
-
-	if !s.isRunning() {
+	if s.isStopped.Get() {
 		return
 	}
 
@@ -318,21 +313,12 @@ func (s *StreamAllocator) processEvents() {
 	}
 }
 
-func (s *StreamAllocator) isRunning() bool {
-	select {
-	case <-s.runningCh:
-		return false
-	default:
-		return true
-	}
-}
-
 func (s *StreamAllocator) ping() {
 	ticker := time.NewTicker(time.Second)
 
-	for s.isRunning() {
+	for {
 		<-ticker.C
-		if !s.isRunning() {
+		if s.isStopped.Get() {
 			return
 		}
 
