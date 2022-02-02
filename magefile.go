@@ -125,6 +125,7 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
+	exec.Command("ulimit", "-n", "65535").Run()
 	mg.Deps(generateWire, macULimit)
 	// "-v", "-race",
 	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m", "-v")
