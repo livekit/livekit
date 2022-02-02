@@ -88,6 +88,26 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+	//
+	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
+	// Needed due to lack of RTX stream support in Pion.
+	//
+	// When clients probe for bandwidth, there are sveral possible approaches
+	//   1. Use padding packet (Chrome uses this)
+	//   2. Use an older packet (Forefox uses this)
+	// Typically, these are sent over the RTX stream and hence SRTP replay protection will not
+	// trigger. As Pion does not support RTX, when firefox uses older packet for probing, they
+	// trigger the replay protection.
+	//
+	// That results in two issues
+	//   - Firefox bandwidth probing is not successful
+	//   - Pion runs out of read buffer capacity - this potentially looks like a Pion issue
+	//
+	// NOTE: It is not required to disable RTCP replay protection, but doing it to be symmetric.
+	//
+	se.DisableSRTPReplayProtection(true)
+	se.DisableSRTCPReplayProtection(true)
+
 	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
 	if lf != nil {
 		se.LoggerFactory = lf
