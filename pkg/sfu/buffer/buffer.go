@@ -67,7 +67,6 @@ type Buffer struct {
 	lastSRNTPTime      uint64
 	lastSRRTPTime      uint32
 	lastSRRecv         int64 // Represents wall clock of the most recent sender report arrival
-	baseSN             uint16
 	highestSN          uint16
 	cycle              uint16
 	lastRtcpPacketTime int64 // Time the last RTCP packet was received.
