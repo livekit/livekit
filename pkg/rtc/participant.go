@@ -106,6 +106,7 @@ type ParticipantImpl struct {
 	lock       sync.RWMutex
 	once       sync.Once
 	updateLock sync.Mutex
+	version    uint32
 
 	// callbacks & handlers
 	onTrackPublished func(types.LocalParticipant, types.MediaTrack)
@@ -299,6 +300,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
 		Recorder: p.IsRecorder(),
+		Version:  atomic.AddUint32(&p.version, 1),
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 
@@ -595,26 +597,35 @@ func (p *ParticipantImpl) SendJoinResponse(
 	})
 }
 
-func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo, updatedAt time.Time) error {
-	if len(participantsToUpdate) == 1 {
-		p.updateLock.Lock()
-		defer p.updateLock.Unlock()
-		pi := participantsToUpdate[0]
+func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	p.updateLock.Lock()
+	validUpdates := make([]*livekit.ParticipantInfo, 0, len(participantsToUpdate))
+	for _, pi := range participantsToUpdate {
+		isValid := true
 		if val, ok := p.updateCache.Get(pi.Sid); ok {
-			if lastUpdatedAt, ok := val.(time.Time); ok {
+			if lastVersion, ok := val.(uint32); ok {
 				// this is a message delivered out of order, a more recent version of the message had already been
 				// sent.
-				if lastUpdatedAt.After(updatedAt) {
-					return nil
+				if pi.Version < lastVersion {
+					isValid = false
 				}
 			}
 		}
-		p.updateCache.Add(pi.Sid, updatedAt)
+		if isValid {
+			p.updateCache.Add(pi.Sid, pi.Version)
+			validUpdates = append(validUpdates, pi)
+		}
 	}
+	p.updateLock.Unlock()
+
+	if len(validUpdates) == 0 {
+		return nil
+	}
+
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
-				Participants: participantsToUpdate,
+				Participants: validUpdates,
 			},
 		},
 	})

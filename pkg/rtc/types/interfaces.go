@@ -126,7 +126,7 @@ type LocalParticipant interface {
 
 	// server sent messages
 	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
+	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
