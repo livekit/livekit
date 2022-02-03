@@ -58,6 +58,7 @@ type ParticipantParams struct {
 	Logger                  logger.Logger
 	SimTracks               map[uint32]SimulcastTrackInfo
 	Grants                  *auth.ClaimGrants
+	InitialVersion          uint32
 }
 
 type ParticipantImpl struct {
@@ -133,6 +134,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
 		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:              time.Now(),
+		version:                  params.InitialVersion,
 	}
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
