@@ -83,12 +83,12 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, 
 	return nodes[idx], nil
 }
 
-// haversin(θ) function
+// haversine(θ) function
 func hsin(theta float64) float64 {
 	return math.Pow(math.Sin(theta/2), 2)
 }
 
-// Haversin Distance Formula
+// Haversine Distance Formula
 // http://en.wikipedia.org/wiki/Haversine_formula
 // from https://gist.github.com/cdipaolo/d3f8db3848278b49db68
 func distanceBetween(lat1, lon1, lat2, lon2 float64) float64 {

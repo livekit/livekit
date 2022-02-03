@@ -4,8 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (
@@ -127,7 +128,7 @@ func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer uint8, head b
 		step = n.step - int(n.headSN-offSn)
 		if step < 0 {
 			if step*-1 >= n.max {
-				n.logger.Infow("old packet received, can not be sequenced", "head", sn, "received", offSn)
+				n.logger.Debugw("old packet received, can not be sequenced", "head", sn, "received", offSn)
 				return nil
 			}
 			step = n.max + step

@@ -93,9 +93,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
 	//
-	// When clients probe for bandwidth, there are sveral possible approaches
+	// When clients probe for bandwidth, there are several possible approaches
 	//   1. Use padding packet (Chrome uses this)
-	//   2. Use an older packet (Forefox uses this)
+	//   2. Use an older packet (Firefox uses this)
 	// Typically, these are sent over the RTX stream and hence SRTP replay protection will not
 	// trigger. As Pion does not support RTX, when firefox uses older packet for probing, they
 	// trigger the replay protection.
@@ -113,7 +113,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 	//
 	// This introduces a half-RTT extra latency in connection setup,
-	// i. e. if SFU is acting as DTLSRoleClient, it can send the client-hello as soon
+	// i.e. if SFU is acting as DTLSRoleClient, it can send the client-hello as soon
 	// as it is ready. With this change, signalling has to be sent back to the client
 	// and client has to do client-hello which adds half RTT.
 	//

@@ -1,8 +1,9 @@
 package sfu
 
 import (
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 //

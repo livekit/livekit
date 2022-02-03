@@ -348,9 +348,9 @@ func (w *WebRTCReceiver) GetTotalBytes() uint64 {
 	defer w.bufferMu.RUnlock()
 
 	totalBytes := uint64(0)
-	for _, buffer := range w.buffers {
-		if buffer != nil {
-			stats := buffer.GetStats()
+	for _, buff := range w.buffers {
+		if buff != nil {
+			stats := buff.GetStats()
 			totalBytes += stats.TotalBytes
 		}
 	}

@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-	"github.com/livekit/protocol/logger"
 )
 
 func disable(f *Forwarder) {

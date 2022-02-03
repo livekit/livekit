@@ -151,13 +151,13 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		for _, fb := range codec.RTCPFeedback {
 			switch fb.Type {
 			case webrtc.TypeRTCPFBGoogREMB:
-				b.logger.Infow("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
+				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
 				b.remb = true
 			case webrtc.TypeRTCPFBTransportCC:
-				b.logger.Infow("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
+				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
 				b.twcc = true
 			case webrtc.TypeRTCPFBNACK:
-				b.logger.Infow("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
+				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
 				b.nack = true
 			}
@@ -177,7 +177,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.pPackets = nil
 	b.bound = true
 
-	b.logger.Infow("NewBuffer", "MaxBitRate", o.MaxBitRate)
+	b.logger.Debugw("NewBuffer", "MaxBitRate", o.MaxBitRate)
 }
 
 // Write adds an RTP Packet, out of order, new packet may be arrived later

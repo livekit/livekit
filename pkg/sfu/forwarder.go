@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/protocol/logger"
 )
 
 //

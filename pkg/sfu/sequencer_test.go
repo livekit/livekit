@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/protocol/logger"
 )
 
 func Test_sequencer(t *testing.T) {
