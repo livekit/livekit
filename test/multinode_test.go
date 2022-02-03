@@ -175,22 +175,28 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 	require.NoError(t, err)
 
 	testutils.WithTimeout(t, func() string {
-		if c1.RefreshToken() != "" {
-			return ""
-		} else {
+		if c1.RefreshToken() == "" {
 			return "did not receive refresh token"
 		}
+		// parse token to ensure it's correct
+		verifier, err := auth.ParseAPIToken(c1.RefreshToken())
+		require.NoError(t, err)
+
+		grants, err := verifier.Verify(testApiSecret)
+		require.NoError(t, err)
+
+		if "metadata" != grants.Metadata {
+			return "metadata did not match"
+		}
+		if *grants.Video.CanPublish {
+			return "canPublish should be false"
+		}
+		if *grants.Video.CanPublishData {
+			return "canPublishData should be false"
+		}
+		if !*grants.Video.CanSubscribe {
+			return "canSubscribe should be true"
+		}
+		return ""
 	})
-
-	// parse token to ensure it's correct
-	verifier, err := auth.ParseAPIToken(c1.RefreshToken())
-	require.NoError(t, err)
-
-	grants, err := verifier.Verify(testApiSecret)
-	require.NoError(t, err)
-
-	require.Equal(t, "metadata", grants.Metadata)
-	require.False(t, *grants.Video.CanPublish)
-	require.False(t, *grants.Video.CanPublishData)
-	require.True(t, *grants.Video.CanSubscribe)
 }
