@@ -63,18 +63,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	s := webrtc.SettingEngine{
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
-	s.SetLite(true)
-	//
-	// This introduces a half-RTT extra latency in connection setup,
-	// i. e. if SFU is acting as DTLSRoleClient, it can send the client-hello as soon
-	// as it is ready. With this change, signalling has to be sent back to the client
-	// and client has to do client-hello which adds half RTT.
-	//
-	// Doing this to address https://github.com/pion/webrtc/issues/2089. This may be
-	// a Chrome browser issue and can potentially be removed once we understand the source
-	// of the issue better.
-	//
-	s.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 
 	if externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)

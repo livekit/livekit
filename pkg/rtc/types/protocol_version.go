@@ -39,3 +39,7 @@ func (v ProtocolVersion) SupportsConnectionQuality() bool {
 func (v ProtocolVersion) SupportsSessionMigrate() bool {
 	return v > 5
 }
+
+func (v ProtocolVersion) SupportsICELite() bool {
+	return v > 5
+}
