@@ -204,7 +204,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c.publisher.OnOffer(c.onOffer)
 
 	c.subscriber.PeerConnection().OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		logger.Infow("subscriber ICE state has changed", "state", connectionState.String(),
+		logger.Debugw("subscriber ICE state has changed", "state", connectionState.String(),
 			"participant", c.localParticipant.Identity)
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			// flush peers
@@ -571,7 +571,7 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	var trackIDs []string
-	for key, _ := range c.localTracks {
+	for key := range c.localTracks {
 		trackIDs = append(trackIDs, key)
 	}
 	return trackIDs

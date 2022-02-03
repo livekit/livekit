@@ -493,7 +493,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	d.closeOnce.Do(func() {
-		d.logger.Infow("closing sender", "peerID", d.peerID, "trackID", d.id, "kind", d.kind)
+		d.logger.Debugw("closing sender", "peerID", d.peerID, "trackID", d.id, "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.peerID)
 
 		d.connectionStats.Close()

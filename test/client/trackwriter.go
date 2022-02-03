@@ -53,7 +53,7 @@ func (w *TrackWriter) Start() error {
 		return err
 	}
 
-	logger.Infow("starting track writer",
+	logger.Debugw("starting track writer",
 		"track", w.track.ID(),
 		"mime", w.mime)
 	switch w.mime {
@@ -110,7 +110,7 @@ func (w *TrackWriter) writeOgg() {
 		}
 		pageData, pageHeader, err := w.ogg.ParseNextPage()
 		if err == io.EOF {
-			logger.Infow("all audio samples parsed and sent")
+			logger.Debugw("all audio samples parsed and sent")
 			w.onWriteComplete()
 			return
 		}
@@ -144,7 +144,7 @@ func (w *TrackWriter) writeVP8() {
 		}
 		frame, _, err := w.ivf.ParseNextFrame()
 		if err == io.EOF {
-			logger.Infow("all video frames parsed and sent")
+			logger.Debugw("all video frames parsed and sent")
 			w.onWriteComplete()
 			return
 		}

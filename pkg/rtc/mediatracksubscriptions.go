@@ -184,7 +184,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 
 	downTrack.SetTransceiver(transceiver)
 
-	// when outtrack is bound, start loop to send reports
+	// when out track is bound, start loop to send reports
 	downTrack.OnBind(func() {
 		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
