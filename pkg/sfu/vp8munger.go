@@ -2,9 +2,9 @@ package sfu
 
 import (
 	"github.com/elliotchance/orderedmap"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/protocol/logger"
 )
 
 //

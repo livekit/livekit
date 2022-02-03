@@ -630,7 +630,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 
 func (s *StreamAllocator) setState(state State) {
 	if s.state != state {
-		s.params.Logger.Infow("state change", "from", s.state, "to", state)
+		s.params.Logger.Debugw("state change", "from", s.state, "to", state)
 	}
 
 	s.state = state

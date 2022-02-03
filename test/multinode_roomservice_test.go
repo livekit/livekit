@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 func TestMultiNodeRoomList(t *testing.T) {

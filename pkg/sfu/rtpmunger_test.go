@@ -4,10 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
-	"github.com/livekit/protocol/logger"
 )
 
 func newRTPMunger() *RTPMunger {
