@@ -145,6 +145,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	p.publisher, err = NewPCTransport(TransportParams{
 		ParticipantID:           p.params.SID,
 		ParticipantIdentity:     p.params.Identity,
+		ProtocolVersion:         p.ProtocolVersion(),
 		Target:                  livekit.SignalTarget_PUBLISHER,
 		Config:                  params.Config,
 		CongestionControlConfig: params.CongestionControlConfig,
@@ -159,6 +160,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	p.subscriber, err = NewPCTransport(TransportParams{
 		ParticipantID:           p.params.SID,
 		ParticipantIdentity:     p.params.Identity,
+		ProtocolVersion:         p.ProtocolVersion(),
 		Target:                  livekit.SignalTarget_SUBSCRIBER,
 		Config:                  params.Config,
 		CongestionControlConfig: params.CongestionControlConfig,
