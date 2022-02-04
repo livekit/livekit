@@ -295,7 +295,6 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Sid:      string(p.params.SID),
 		Identity: string(p.params.Identity),
 		Name:     string(p.params.Name),
-		Metadata: p.params.Grants.Metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
@@ -303,6 +302,9 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Version:  atomic.AddUint32(&p.version, 1),
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
+	if p.params.Grants != nil {
+		info.Metadata = p.params.Grants.Metadata
+	}
 
 	return info
 }
