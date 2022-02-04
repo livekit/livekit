@@ -510,7 +510,7 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 
 	receivedInInterval := b.stats.PacketCount - b.rrSnapshot.packetsReceived
 	lostInInterval := expectedInInterval - receivedInInterval
-	if int(lostInInterval) < 0 {
+	if int32(lostInInterval) < 0 {
 		// could happen if retransmitted packets arrive and make received greater than expected
 		lostInInterval = 0
 	}
