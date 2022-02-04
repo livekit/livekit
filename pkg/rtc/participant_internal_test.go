@@ -172,18 +172,17 @@ func TestOutOfOrderUpdates(t *testing.T) {
 		Sid:      "PA_test2",
 		Identity: "test2",
 		Metadata: "123",
+		Version:  2,
 	}
-	earlierTs := time.Now()
-	time.Sleep(time.Millisecond)
-	laterTs := time.Now()
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, laterTs))
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}))
 
 	pi = &livekit.ParticipantInfo{
 		Sid:      "PA_test2",
 		Identity: "test2",
 		Metadata: "456",
+		Version:  1,
 	}
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}, earlierTs))
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}))
 
 	// only sent once, and it's the earlier message
 	require.Equal(t, 1, sink.WriteMessageCallCount())

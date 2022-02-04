@@ -379,11 +379,10 @@ type FakeLocalParticipant struct {
 	sendJoinResponseReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendParticipantUpdateStub        func([]*livekit.ParticipantInfo, time.Time) error
+	SendParticipantUpdateStub        func([]*livekit.ParticipantInfo) error
 	sendParticipantUpdateMutex       sync.RWMutex
 	sendParticipantUpdateArgsForCall []struct {
 		arg1 []*livekit.ParticipantInfo
-		arg2 time.Time
 	}
 	sendParticipantUpdateReturns struct {
 		result1 error
@@ -2582,7 +2581,7 @@ func (fake *FakeLocalParticipant) SendJoinResponseReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendParticipantUpdate(arg1 []*livekit.ParticipantInfo, arg2 time.Time) error {
+func (fake *FakeLocalParticipant) SendParticipantUpdate(arg1 []*livekit.ParticipantInfo) error {
 	var arg1Copy []*livekit.ParticipantInfo
 	if arg1 != nil {
 		arg1Copy = make([]*livekit.ParticipantInfo, len(arg1))
@@ -2592,14 +2591,13 @@ func (fake *FakeLocalParticipant) SendParticipantUpdate(arg1 []*livekit.Particip
 	ret, specificReturn := fake.sendParticipantUpdateReturnsOnCall[len(fake.sendParticipantUpdateArgsForCall)]
 	fake.sendParticipantUpdateArgsForCall = append(fake.sendParticipantUpdateArgsForCall, struct {
 		arg1 []*livekit.ParticipantInfo
-		arg2 time.Time
-	}{arg1Copy, arg2})
+	}{arg1Copy})
 	stub := fake.SendParticipantUpdateStub
 	fakeReturns := fake.sendParticipantUpdateReturns
-	fake.recordInvocation("SendParticipantUpdate", []interface{}{arg1Copy, arg2})
+	fake.recordInvocation("SendParticipantUpdate", []interface{}{arg1Copy})
 	fake.sendParticipantUpdateMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -2613,17 +2611,17 @@ func (fake *FakeLocalParticipant) SendParticipantUpdateCallCount() int {
 	return len(fake.sendParticipantUpdateArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendParticipantUpdateCalls(stub func([]*livekit.ParticipantInfo, time.Time) error) {
+func (fake *FakeLocalParticipant) SendParticipantUpdateCalls(stub func([]*livekit.ParticipantInfo) error) {
 	fake.sendParticipantUpdateMutex.Lock()
 	defer fake.sendParticipantUpdateMutex.Unlock()
 	fake.SendParticipantUpdateStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendParticipantUpdateArgsForCall(i int) ([]*livekit.ParticipantInfo, time.Time) {
+func (fake *FakeLocalParticipant) SendParticipantUpdateArgsForCall(i int) []*livekit.ParticipantInfo {
 	fake.sendParticipantUpdateMutex.RLock()
 	defer fake.sendParticipantUpdateMutex.RUnlock()
 	argsForCall := fake.sendParticipantUpdateArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) SendParticipantUpdateReturns(result1 error) {

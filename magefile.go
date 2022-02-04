@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/magefile/mage/mg"
 
@@ -125,7 +126,6 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
-	exec.Command("ulimit", "-n", "65535").Run()
 	mg.Deps(generateWire, macULimit)
 	// "-v", "-race",
 	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m", "-v")
@@ -237,14 +237,19 @@ func connectStd(cmd *exec.Cmd) {
 	cmd.Stderr = os.Stderr
 }
 
-func macULimit() {
-	// raise ulimit if on mac
+func macULimit() error {
+	// raise ulimit if on Mac
 	if runtime.GOOS != "darwin" {
-		return
+		return nil
 	}
-	cmd := exec.Command("ulimit", "-n", "10000")
-	connectStd(cmd)
-	cmd.Run()
+	var rLimit syscall.Rlimit
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		return err
+	}
+	rLimit.Max = 10000
+	rLimit.Cur = 10000
+	return syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 }
 
 // A helper checksum library that generates a fast, non-portable checksum over a directory of files

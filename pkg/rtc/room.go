@@ -281,7 +281,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 	p.SetResponseSink(responseSink)
 
 	updates := ToProtoParticipants(r.GetParticipants())
-	if err := p.SendParticipantUpdate(updates, time.Now()); err != nil {
+	if err := p.SendParticipantUpdate(updates); err != nil {
 		return err
 	}
 
@@ -699,19 +699,12 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, skipSource bool) {
-	//
-	// This is a critical section to ensure that participant update time and
-	// the corresponding data are paired properly.
-	//
-	r.lock.Lock()
-	updatedAt := time.Now()
 	updates := ToProtoParticipants([]types.LocalParticipant{p})
-	r.lock.Unlock()
 
 	if p.Hidden() {
 		if !skipSource {
 			// send update only to hidden participant
-			err := p.SendParticipantUpdate(updates, updatedAt)
+			err := p.SendParticipantUpdate(updates)
 			if err != nil {
 				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
@@ -727,7 +720,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, skipSource bo
 			continue
 		}
 
-		err := op.SendParticipantUpdate(updates, updatedAt)
+		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			r.Logger.Errorw("could not send update to participant", err,
 				"participant", p.Identity(), "pID", p.ID())

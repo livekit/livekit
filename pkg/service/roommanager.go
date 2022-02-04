@@ -254,10 +254,6 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		return
 	}
 
-	if pi.Metadata != "" {
-		participant.SetMetadata(pi.Metadata)
-	}
-
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
