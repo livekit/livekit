@@ -251,8 +251,7 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
-	changed := p.metadata != metadata
-	p.metadata = metadata
+	changed := p.params.Grants.Metadata != metadata
 	p.params.Grants.Metadata = metadata
 	p.lock.Unlock()
 
@@ -296,7 +295,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Sid:      string(p.params.SID),
 		Identity: string(p.params.Identity),
 		Name:     string(p.params.Name),
-		Metadata: p.metadata,
+		Metadata: p.params.Grants.Metadata,
 		State:    p.State(),
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
@@ -608,6 +607,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				// this is a message delivered out of order, a more recent version of the message had already been
 				// sent.
 				if pi.Version < lastVersion {
+					p.params.Logger.Debugw("skipping outdated participant update", "version", pi.Version, "lastVersion", lastVersion)
 					isValid = false
 				}
 			}
