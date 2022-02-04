@@ -318,7 +318,7 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 		}
 	}
 
-	diff := p.Header.SequenceNumber - b.highestSN
+	diff := sn - b.highestSN
 	if diff > (1 << 15) {
 		// out-of-order, remove it from nack queue
 		if b.nacker != nil {
