@@ -28,7 +28,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.0
 	github.com/pion/turn/v2 v2.0.6
-	github.com/pion/webrtc/v3 v3.1.20
+	github.com/pion/webrtc/v3 v3.1.21
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/cors v1.8.2
@@ -73,10 +73,10 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/crypto v0.0.0-20220131195533-30dcbda58838 // indirect
 	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/sys v0.0.0-20220128215802-99c3d69c2c27 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

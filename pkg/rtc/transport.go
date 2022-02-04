@@ -392,7 +392,20 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	}
 	t.pc.SetLocalDescription(offer)
 
-	pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	//
+	// Simulcate client side peer connection and set DTLS role from previous answer.
+	// Role needs to be set properly (one side needs to be server and the other side
+	// eeds to be the client) for DTLS connection to form properly. As this is
+	// trying to replicate previous setup, read from previous answer and use that role.
+	//
+	se := webrtc.SettingEngine{}
+	se.SetAnsweringDTLSRole(extractDTLSRole(parsed))
+	api := webrtc.NewAPI(
+		webrtc.WithSettingEngine(se),
+	)
+	pc2, err := api.NewPeerConnection(webrtc.Configuration{
+		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
+	})
 	if err != nil {
 		return err
 	}
@@ -432,12 +445,12 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousAnswer(previousOffer webrtc.SessionDescription) error {
-	if err := t.preparePC(previousOffer); err != nil {
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
+	if err := t.preparePC(previousAnswer); err != nil {
 		return err
 	}
 
-	parsed, err := previousOffer.Unmarshal()
+	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
 		return err
 	}
@@ -492,11 +505,11 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) SetPreviousAnswer(offer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = offer
+		t.previousAnswer = answer
 		t.initPCWithPreviousAnswer(*t.previousAnswer)
 	}
 }
@@ -538,4 +551,38 @@ func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
 		return "", "", webrtc.ErrSessionDescriptionInvalidFingerprint
 	}
 	return parts[1], parts[0], nil
+}
+
+func extractDTLSRole(desc *sdp.SessionDescription) webrtc.DTLSRole {
+	for _, md := range desc.MediaDescriptions {
+		setup, ok := md.Attribute(sdp.AttrKeyConnectionSetup)
+		if !ok {
+			continue
+		}
+
+		if setup == sdp.ConnectionRoleActive.String() {
+			return webrtc.DTLSRoleClient
+		}
+
+		if setup == sdp.ConnectionRolePassive.String() {
+			return webrtc.DTLSRoleServer
+		}
+	}
+
+	//
+	// If 'setup' attribute is not available, use client role
+	// as that is the default behaviour of answerers
+	//
+	// There seems to be some differences in how role is decided.
+	// libwebrtc (Chrome) code - (https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/pc/jsep_transport.cc;l=592;drc=369fb686729e7eb20d2bd09717cec14269a399d7)
+	// does not mention anything about ICE role when determining
+	// DTLS Role.
+	//
+	// But, ORTC has this - https://github.com/w3c/ortc/issues/167#issuecomment-69409953
+	// and pion/webrtc follows that (https://github.com/pion/webrtc/blob/e071a4eded1efd5d9b401bcfc4efacb3a2a5a53c/dtlstransport.go#L269)
+	//
+	// So if remote is ice-lite, pion will use DTLSRoleServer when answering
+	// while browsers pick DTLSRoleClient.
+	//
+	return webrtc.DTLSRoleClient
 }
