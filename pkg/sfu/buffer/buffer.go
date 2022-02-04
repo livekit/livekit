@@ -164,6 +164,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
+				b.nacker.SetRTT(70) // LK-TODO: sane default till we get better data
 				b.nack = true
 			}
 		}
