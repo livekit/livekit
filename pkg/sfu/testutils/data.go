@@ -48,7 +48,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	ep := &buffer.ExtPacket{
 		Head:      params.IsHead,
 		Arrival:   params.ArrivalTime,
-		Packet:    packet,
+		Packet:    &packet,
 		KeyFrame:  params.IsKeyFrame,
 		RawPacket: raw,
 	}

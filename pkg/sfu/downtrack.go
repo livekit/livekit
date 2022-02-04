@@ -312,7 +312,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			pool = PacketFactory.Get().(*[]byte)
 			outbuf = pool
 		}
-		payload, err = d.translateVP8PacketTo(&extPkt.Packet, &incomingVP8, tp.vp8.header, outbuf)
+		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.header, outbuf)
 		if err != nil {
 			d.pktsDropped.add(1)
 			return err

@@ -26,15 +26,17 @@ func NewBucket(buf *[]byte) *Bucket {
 	}
 }
 
-func (b *Bucket) AddPacket(pkt []byte, sn uint16, latest bool) ([]byte, error) {
+func (b *Bucket) AddPacket(pkt []byte) ([]byte, error) {
+	sn := binary.BigEndian.Uint16(pkt[2:4])
 	if !b.init {
 		b.headSN = sn - 1
 		b.init = true
 	}
-	if !latest {
+	diff := sn - b.headSN
+	if diff > (1 << 15) {
+		// out-of-order
 		return b.set(sn, pkt)
 	}
-	diff := sn - b.headSN
 	b.headSN = sn
 	for i := uint16(1); i < diff; i++ {
 		b.step++
