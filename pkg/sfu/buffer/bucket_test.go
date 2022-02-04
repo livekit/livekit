@@ -49,7 +49,7 @@ func Test_queue(t *testing.T) {
 		buf, err := p.Marshal()
 		assert.NoError(t, err)
 		assert.NotPanics(t, func() {
-			_, _ = q.AddPacket(buf, p.SequenceNumber)
+			_, _ = q.AddPacket(buf)
 		})
 	}
 	var expectedSN uint16
@@ -70,14 +70,14 @@ func Test_queue(t *testing.T) {
 	buf, err := np2.Marshal()
 	assert.NoError(t, err)
 	expectedSN = 8
-	_, _ = q.AddPacket(buf, 8)
+	_, _ = q.AddPacket(buf)
 	i, err = q.GetPacket(buff, expectedSN)
 	assert.NoError(t, err)
 	err = np.Unmarshal(buff[:i])
 	assert.NoError(t, err)
 	assert.Equal(t, expectedSN, np.SequenceNumber)
 
-	_, err = q.AddPacket(buf, 8)
+	_, err = q.AddPacket(buf)
 	assert.ErrorIs(t, err, ErrRTXPacket)
 }
 
@@ -109,7 +109,7 @@ func Test_queue_edges(t *testing.T) {
 			buf, err := p.Marshal()
 			assert.NoError(t, err)
 			assert.NotPanics(t, func() {
-				_, _ = q.AddPacket(buf, p.SequenceNumber)
+				_, _ = q.AddPacket(buf)
 			})
 		})
 	}
@@ -130,7 +130,7 @@ func Test_queue_edges(t *testing.T) {
 	}
 	buf, err := np2.Marshal()
 	assert.NoError(t, err)
-	_, _ = q.AddPacket(buf, np2.SequenceNumber)
+	_, _ = q.AddPacket(buf)
 	i, err = q.GetPacket(buff, expectedSN+1)
 	assert.NoError(t, err)
 	err = np.Unmarshal(buff[:i])

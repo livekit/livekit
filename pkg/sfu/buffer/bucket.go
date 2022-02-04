@@ -26,7 +26,8 @@ func NewBucket(buf *[]byte) *Bucket {
 	}
 }
 
-func (b *Bucket) AddPacket(pkt []byte, sn uint16) ([]byte, error) {
+func (b *Bucket) AddPacket(pkt []byte) ([]byte, error) {
+	sn := binary.BigEndian.Uint16(pkt[2:4])
 	if !b.init {
 		b.headSN = sn - 1
 		b.init = true
