@@ -59,6 +59,7 @@ func TestNack(t *testing.T) {
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
 		}, vp8Codec.RTPCodecCapability, Options{})
+		buff.nacker.SetRTT(0)
 		for i := 0; i < 15; i++ {
 			if i == 1 {
 				continue
@@ -104,10 +105,6 @@ func TestNack(t *testing.T) {
 							})
 						}
 					}
-				case *rtcp.PictureLossIndication:
-					if p.MediaSSRC == 123 {
-						// wg.Done()
-					}
 				}
 			}
 		})
@@ -115,6 +112,7 @@ func TestNack(t *testing.T) {
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
 		}, vp8Codec.RTPCodecCapability, Options{})
+		buff.nacker.SetRTT(0)
 		for i := 0; i < 15; i++ {
 			if i > 0 && i < 5 {
 				continue
