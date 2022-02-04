@@ -26,6 +26,7 @@ func init() {
 }
 
 func main() {
+	serverlogger.Initialize("livekit")
 	app := &cli.App{
 		Name:        "livekit-server",
 		Usage:       "distributed audio/video rooms over WebRTC",
@@ -154,15 +155,19 @@ func startServer(c *cli.Context) error {
 
 	cpuProfile := c.String("cpuprofile")
 	memProfile := c.String("memprofile")
+	serverlogger.Debugf("cpuProfile : %s,  memProfile : %s", cpuProfile, memProfile)
 
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
 	}
+	serverlogger.Debugf("config %v", conf)
 
 	if conf.Development {
+		serverlogger.Debugf("log level development set")
 		serverlogger.InitDevelopment(conf.LogLevel)
 	} else {
+		serverlogger.Debugf("log level production set")
 		serverlogger.InitProduction(conf.LogLevel)
 	}
 
@@ -192,6 +197,7 @@ func startServer(c *cli.Context) error {
 	}
 
 	currentNode, err := routing.NewLocalNode(conf)
+	serverlogger.Debugf("NewLocalNode : %v, err : %v", currentNode, err)
 	if err != nil {
 		return err
 	}

@@ -24,5 +24,7 @@ func updateCurrentNodeSystemStats(nodeStats *livekit.NodeStats) error {
 	nodeStats.LoadAvgLast5Min = float32(loadAvg.Last5Min)
 	nodeStats.LoadAvgLast15Min = float32(loadAvg.Last15Min)
 
+	// logger.Infow("cpuinfo", cpuInfo)
+	// logger.Infow("loadAvg", loadAvg)
 	return nil
 }

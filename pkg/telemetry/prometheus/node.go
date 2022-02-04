@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -43,6 +44,8 @@ func init() {
 
 	initPacketStats(nodeID)
 	initRoomStats(nodeID)
+
+	logger.Infow("prometheus nodeID : ", nodeID)
 }
 
 func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) error {

@@ -45,6 +45,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		MaxPort:      turnMaxPort,
 		MaxRetries:   allocateRetries,
 	}
+	logging.Debugf("relayAddrGen %v", relayAddrGen)
 	var logValues []interface{}
 
 	if turnConf.TLSPort > 0 {

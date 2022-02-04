@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -59,6 +60,13 @@ func initRoomStats(nodeID string) {
 	prometheus.MustRegister(promParticipantTotal)
 	prometheus.MustRegister(promTrackPublishedTotal)
 	prometheus.MustRegister(promTrackSubscribedTotal)
+
+	logger.Infow("prometheus promRoomTotal : ", promRoomTotal)
+	logger.Infow("prometheus promRoomDuration : ", promRoomDuration)
+	logger.Infow("prometheus promParticipantTotal : ", promParticipantTotal)
+	logger.Infow("prometheus promTrackPublishedTotal : ", promTrackPublishedTotal)
+	logger.Infow("prometheus promTrackSubscribedTotal : ", promTrackSubscribedTotal)
+
 }
 
 func RoomStarted() {

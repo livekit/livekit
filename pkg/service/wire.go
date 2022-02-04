@@ -99,7 +99,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		return nil, nil
 	}
 
-	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
+	logger.Infow("using multi-node-xxxxxxxx routing via redis", "addr", conf.Redis.Address)
 	rc := redis.NewClient(&redis.Options{
 		Addr:     conf.Redis.Address,
 		Username: conf.Redis.Username,

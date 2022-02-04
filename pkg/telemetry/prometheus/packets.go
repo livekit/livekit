@@ -3,6 +3,7 @@ package prometheus
 import (
 	"sync/atomic"
 
+	"github.com/livekit/protocol/logger"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -66,6 +67,12 @@ func initPacketStats(nodeID string) {
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
+
+	logger.Infow("promPacketTotal : ", promPacketTotal)
+	logger.Infow("promPacketBytes : ", promPacketBytes)
+	logger.Infow("promNackTotal : ", promNackTotal)
+	logger.Infow("promPliTotal : ", promPliTotal)
+	logger.Infow("promFirTotal : ", promFirTotal)
 }
 
 func IncrementPackets(direction Direction, count uint64) {

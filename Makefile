@@ -1,3 +1,7 @@
+start:
+	./bootstrap.sh
+	mage
+	LIVEKIT_KEYS="APIitaWnFwavjgJ: rCJT3vtX80n0a1x4GXmWkAw3J3mAcKXlGAIMjeGjocA" ./bin/livekit-server --dev
 dockerbuild: 
 	docker build -t 012634413971.dkr.ecr.ap-northeast-2.amazonaws.com/lms/livekit --build-arg servicename="livekit" . --progress=plain --no-cache
 dockerpush:

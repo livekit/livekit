@@ -92,6 +92,7 @@ func NewLivekitServer(conf *config.Config,
 			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
 			Handler: promhttp.Handler(),
 		}
+		logger.Infow("promethues server connect info : ", s.promServer)
 	}
 
 	// clean up old rooms on startup
@@ -173,7 +174,7 @@ func (s *LivekitServer) Start() error {
 		if s.config.Region != "" {
 			values = append(values, "region", s.config.Region)
 		}
-		logger.Infow("starting LiveKit server", values...)
+		logger.Infow("starting LiveKit server xxxxx", values...)
 		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)
 			s.Stop(true)

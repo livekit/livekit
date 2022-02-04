@@ -82,6 +82,6 @@ func CreateRouter(rc *redis.Client, node LocalNode) Router {
 	}
 
 	// local routing and store
-	logger.Infow("using single-node routing")
+	logger.Infow("using single-node routing xxxxx")
 	return NewLocalRouter(node)
 }
