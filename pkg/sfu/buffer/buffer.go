@@ -274,7 +274,9 @@ func (b *Buffer) OnClose(fn func()) {
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	pb, err := b.bucket.AddPacket(pkt)
 	if err != nil {
-		b.logger.Warnw("could not add RTP packet to bucket", err)
+		if err != ErrRTXPacket {
+			b.logger.Warnw("could not add RTP packet to bucket", err)
+		}
 		return
 	}
 
