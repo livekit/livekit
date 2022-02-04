@@ -1,7 +1,7 @@
 package buffer
 
 import (
-	"sort"
+	"time"
 
 	"github.com/pion/rtcp"
 )
@@ -10,97 +10,99 @@ const maxNackTimes = 3   // Max number of times a packet will be NACKed
 const maxNackCache = 100 // Max NACK sn the sfu will keep reference
 
 type nack struct {
-	sn     uint32
-	nacked uint8
+	seqNum       uint16
+	nacked       uint8
+	lastNackTime time.Time
 }
 
 type NackQueue struct {
-	nacks []nack
-	kfSN  uint32
+	nacks []*nack
+	rtt   time.Duration
 }
 
 func NewNACKQueue() *NackQueue {
 	return &NackQueue{
-		nacks: make([]nack, 0, maxNackCache+1),
+		nacks: make([]*nack, 0, maxNackCache),
 	}
 }
 
-func (n *NackQueue) Remove(extSN uint32) {
-	i := sort.Search(len(n.nacks), func(i int) bool { return n.nacks[i].sn >= extSN })
-	if i >= len(n.nacks) || n.nacks[i].sn != extSN {
-		return
-	}
-	copy(n.nacks[i:], n.nacks[i+1:])
-	n.nacks = n.nacks[:len(n.nacks)-1]
+func (n *NackQueue) SetRTT(rtt int) {
+	n.rtt = time.Duration(rtt) * time.Millisecond
 }
 
-func (n *NackQueue) Push(extSN uint32) {
-	i := sort.Search(len(n.nacks), func(i int) bool { return n.nacks[i].sn >= extSN })
-	if i < len(n.nacks) && n.nacks[i].sn == extSN {
-		return
-	}
+func (n *NackQueue) Remove(sn uint16) {
+	for idx, nack := range n.nacks {
+		if nack.seqNum != sn {
+			continue
+		}
 
-	nck := nack{
-		sn:     extSN,
-		nacked: 0,
-	}
-	if i == len(n.nacks) {
-		n.nacks = append(n.nacks, nck)
-	} else {
-		n.nacks = append(n.nacks[:i+1], n.nacks[i:]...)
-		n.nacks[i] = nck
-	}
-
-	if len(n.nacks) >= maxNackCache {
-		copy(n.nacks, n.nacks[1:])
+		copy(n.nacks[idx:], n.nacks[idx+1:])
+		n.nacks = n.nacks[:len(n.nacks)-1]
+		break
 	}
 }
 
-func (n *NackQueue) Pairs(headSN uint32) ([]rtcp.NackPair, bool) {
+func (n *NackQueue) Push(sn uint16) {
+	// if at capacity, pop the first one
+	if len(n.nacks) == cap(n.nacks) {
+		copy(n.nacks[0:], n.nacks[1:])
+		n.nacks = n.nacks[:len(n.nacks)-1]
+	}
+
+	n.nacks = append(n.nacks, &nack{seqNum: sn, nacked: 0, lastNackTime: time.Now()})
+}
+
+func (n *NackQueue) Pairs() []rtcp.NackPair {
 	if len(n.nacks) == 0 {
-		return nil, false
+		return nil
 	}
-	i := 0
-	askKF := false
+
+	now := time.Now()
+
+	// set it far back to get the first pair
+	baseSN := n.nacks[0].seqNum - 17
+
+	snsToPurge := []uint16{}
+
+	isPairActive := false
 	var np rtcp.NackPair
 	var nps []rtcp.NackPair
-	lostIdx := -1
-	for _, nck := range n.nacks {
-		if nck.nacked >= maxNackTimes {
-			if nck.sn > n.kfSN {
-				n.kfSN = nck.sn
-				askKF = true
+	for _, nack := range n.nacks {
+		if nack.nacked >= maxNackTimes || now.Sub(nack.lastNackTime) < n.rtt {
+			if nack.nacked >= maxNackTimes {
+				snsToPurge = append(snsToPurge, nack.seqNum)
 			}
 			continue
 		}
-		if nck.sn >= headSN-2 {
-			n.nacks[i] = nck
-			i++
-			continue
-		}
-		n.nacks[i] = nack{
-			sn:     nck.sn,
-			nacked: nck.nacked + 1,
-		}
-		i++
 
-		// first nackpair or need a new nackpair
-		if lostIdx < 0 || nck.sn > n.nacks[lostIdx].sn+16 {
-			if lostIdx >= 0 {
+		nack.nacked++
+		nack.lastNackTime = now
+
+		if (nack.seqNum - baseSN) > 16 {
+			// need a new nack pair
+			if isPairActive {
 				nps = append(nps, np)
+				isPairActive = false
 			}
-			np.PacketID = uint16(nck.sn)
+
+			baseSN = nack.seqNum
+
+			np.PacketID = nack.seqNum
 			np.LostPackets = 0
-			lostIdx = i - 1
-			continue
+			isPairActive = true
+		} else {
+			np.LostPackets |= 1 << (nack.seqNum - baseSN - 1)
 		}
-		np.LostPackets |= 1 << ((nck.sn) - n.nacks[lostIdx].sn - 1)
 	}
 
-	// append last nackpair
-	if lostIdx != -1 {
+	// add any left over
+	if isPairActive {
 		nps = append(nps, np)
 	}
-	n.nacks = n.nacks[:i]
-	return nps, askKF
+
+	for _, sn := range snsToPurge {
+		n.Remove(sn)
+	}
+
+	return nps
 }

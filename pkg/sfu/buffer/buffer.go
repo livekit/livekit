@@ -20,7 +20,7 @@ const (
 	ReportDelta = 1e9
 )
 
-type pendingPackets struct {
+type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
 }
@@ -43,7 +43,7 @@ type Buffer struct {
 	audioPool  *sync.Pool
 	codecType  webrtc.RTPCodecType
 	extPackets deque.Deque
-	pPackets   []pendingPackets
+	pPackets   []pendingPacket
 	closeOnce  sync.Once
 	mediaSSRC  uint32
 	clockRate  uint32
@@ -61,20 +61,20 @@ type Buffer struct {
 	twcc       bool
 	audioLevel bool
 
-	minPacketProbe     int
 	lastPacketRead     int
 	bitrate            atomic.Value
 	bitrateHelper      [4]int64
 	lastSRNTPTime      uint64
 	lastSRRTPTime      uint32
 	lastSRRecv         int64 // Represents wall clock of the most recent sender report arrival
-	baseSN             uint16
+	highestSN          uint16
+	cycle              uint16
 	lastRtcpPacketTime int64 // Time the last RTCP packet was received.
 	lastRtcpSrTime     int64 // Time the last RTCP SR was received. Required for DLSR computation.
 	lastTransit        uint32
-	seqHdlr            SeqWrapHandler
 
-	stats Stats
+	stats      Stats
+	rrSnapshot *receiverReportSnapshot
 
 	latestTimestamp          uint32 // latest received RTP timestamp on packet
 	latestTimestampTime      int64  // Time of the latest timestamp (in nanos since unix epoch)
@@ -91,12 +91,15 @@ type Buffer struct {
 }
 
 type Stats struct {
-	LastExpected uint32
-	LastReceived uint32
-	LostRate     float32
-	PacketCount  uint32  // Number of packets received from this source.
-	Jitter       float64 // An estimate of the statistical variance of the RTP data packet inter-arrival time.
-	TotalBytes   uint64
+	PacketCount uint32 // Number of packets received from this source.
+	TotalBytes  uint64
+	Jitter      float64 // An estimate of the statistical variance of the RTP data packet inter-arrival time.
+}
+
+type receiverReportSnapshot struct {
+	extSeqNum       uint32
+	packetsReceived uint32
+	packetsLost     uint32
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -193,7 +196,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	if !b.bound {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
-		b.pPackets = append(b.pPackets, pendingPackets{
+		b.pPackets = append(b.pPackets, pendingPacket{
 			packet:      packet,
 			arrivalTime: time.Now().UnixNano(),
 		})
@@ -201,7 +204,6 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	b.calc(pkt, time.Now().UnixNano())
-
 	return
 }
 
@@ -269,29 +271,38 @@ func (b *Buffer) OnClose(fn func()) {
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	sn := binary.BigEndian.Uint16(pkt[2:4])
 
-	var headPkt bool
 	if b.stats.PacketCount == 0 {
-		b.baseSN = sn
+		b.highestSN = sn - 1
 		b.lastReport = arrivalTime
-		b.seqHdlr.UpdateMaxSeq(uint32(sn))
-		headPkt = true
-	} else {
-		extSN, isNewer := b.seqHdlr.Unwrap(sn)
-		if b.nack {
-			if isNewer {
-				for i := b.seqHdlr.MaxSeqNo() + 1; i < extSN; i++ {
-					b.nacker.Push(i)
-				}
-			} else {
-				b.nacker.Remove(extSN)
-			}
+
+		b.rrSnapshot = &receiverReportSnapshot{
+			extSeqNum:       uint32(sn) - 1,
+			packetsReceived: 0,
+			packetsLost:     0,
 		}
-		if isNewer {
-			b.seqHdlr.UpdateMaxSeq(extSN)
-		}
-		headPkt = isNewer
 	}
 
+	diff := sn - b.highestSN
+	if diff > (1 << 15) {
+		// out-of-order, remove it from nack queue
+		if b.nacker != nil {
+			b.nacker.Remove(sn)
+		}
+	} else {
+		if b.nacker != nil && diff > 1 {
+			for lost := b.highestSN + 1; lost != sn; lost++ {
+				b.nacker.Push(lost)
+			}
+		}
+
+		if sn < b.highestSN && b.stats.PacketCount > 0 {
+			b.cycle++
+		}
+
+		b.highestSN = sn
+	}
+
+	headPkt := sn == b.highestSN
 	var p rtp.Packet
 	pb, err := b.bucket.AddPacket(pkt, sn, headPkt)
 	if err != nil {
@@ -342,22 +353,6 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		ep.KeyFrame = IsH264Keyframe(p.Payload)
 	}
 
-	if b.minPacketProbe < 25 {
-		// LK-TODO-START
-		// This should check for proper wrap around.
-		// Probably remove this probe section of code as
-		// the only place this baseSN is used at is where
-		// RTCP receiver reports are generated. If there
-		// are some out-of-order packets right at the start
-		// the stat is going to be off by a bit. Not a big deal.
-		// LK-TODO-END
-		if sn < b.baseSN {
-			b.baseSN = sn
-		}
-
-		b.minPacketProbe++
-	}
-
 	b.extPackets.PushBack(&ep)
 
 	// if first time update or the timestamp is later (factoring timestamp wrap around)
@@ -399,8 +394,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 
 	b.bitrateHelper[temporalLayer] += int64(len(pkt))
 
-	diff := arrivalTime - b.lastReport
-	if diff >= ReportDelta {
+	timeDiff := arrivalTime - b.lastReport
+	if timeDiff >= ReportDelta {
 		//
 		// As this happens in the data path, if there are no packets received
 		// in an interval, the bitrate will be stuck with the old value.
@@ -412,7 +407,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			bitrates = make([]int64, len(b.bitrateHelper))
 		}
 		for i := 0; i < len(b.bitrateHelper); i++ {
-			br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / diff
+			br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / timeDiff
 			bitrates[i] = br
 			b.bitrateHelper[i] = 0
 		}
@@ -423,7 +418,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 }
 
 func (b *Buffer) buildNACKPacket() []rtcp.Packet {
-	if nacks, askKeyframe := b.nacker.Pairs(b.seqHdlr.MaxSeqNo()); len(nacks) > 0 || askKeyframe {
+	if nacks := b.nacker.Pairs(); len(nacks) > 0 {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
@@ -432,11 +427,6 @@ func (b *Buffer) buildNACKPacket() []rtcp.Packet {
 			}}
 		}
 
-		if askKeyframe {
-			pkts = append(pkts, &rtcp.PictureLossIndication{
-				MediaSSRC: b.mediaSSRC,
-			})
-		}
 		return pkts
 	}
 	return nil
@@ -444,11 +434,25 @@ func (b *Buffer) buildNACKPacket() []rtcp.Packet {
 
 func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	br := b.Bitrate()
-	if b.stats.LostRate < 0.02 {
+
+	extMaxSeq := (uint32(b.cycle) << 16) | uint32(b.highestSN)
+	expectedInInterval := extMaxSeq - b.rrSnapshot.extSeqNum
+	receivedInInterval := b.stats.PacketCount - b.rrSnapshot.packetsReceived
+	lostInInterval := expectedInInterval - receivedInInterval
+	if int(lostInInterval) < 0 {
+		// could happen if retransmitted packets arrive and make received greater than expected
+		lostInInterval = 0
+	}
+	lostRate := float32(0)
+	if expectedInInterval != 0 {
+		lostRate = float32(lostInInterval) / float32(expectedInInterval)
+	}
+
+	if lostRate < 0.02 {
 		br = int64(float64(br)*1.09) + 2000
 	}
-	if b.stats.LostRate > .1 {
-		br = int64(float64(br) * float64(1-0.5*b.stats.LostRate))
+	if lostRate > .1 {
+		br = int64(float64(br) * float64(1-0.5*lostRate))
 	}
 	if br > b.maxBitrate {
 		br = b.maxBitrate
@@ -464,30 +468,31 @@ func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	}
 }
 
-func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
-	extMaxSeq := b.seqHdlr.MaxSeqNo()
-	expected := extMaxSeq - uint32(b.baseSN) + 1
-	lost := uint32(0)
-	if b.stats.PacketCount < expected && b.stats.PacketCount != 0 {
-		lost = expected - b.stats.PacketCount
+func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
+	if b.rrSnapshot == nil {
+		return nil
 	}
-	expectedInterval := expected - b.stats.LastExpected
-	b.stats.LastExpected = expected
 
-	receivedInterval := b.stats.PacketCount - b.stats.LastReceived
-	b.stats.LastReceived = b.stats.PacketCount
-
-	lostInterval := expectedInterval - receivedInterval
-
-	var fracLost uint8
-	if expectedInterval != 0 {
-		b.stats.LostRate = float32(lostInterval) / float32(expectedInterval)
-		fracLost = uint8((lostInterval << 8) / expectedInterval)
+	extMaxSeq := (uint32(b.cycle) << 16) | uint32(b.highestSN)
+	expectedInInterval := extMaxSeq - b.rrSnapshot.extSeqNum
+	if expectedInInterval == 0 {
+		return nil
 	}
+
+	receivedInInterval := b.stats.PacketCount - b.rrSnapshot.packetsReceived
+	lostInInterval := expectedInInterval - receivedInInterval
+	if int(lostInInterval) < 0 {
+		// could happen if retransmitted packets arrive and make received greater than expected
+		lostInInterval = 0
+	}
+
+	fracLost := uint8((float32(lostInInterval) / float32(expectedInInterval)) * 256.0)
 	if b.lastFractionLostToReport > fracLost {
-		// If fraction lost from subscriber is bigger than sfu received, use it.
+		// max of fraction lost from all subscribers is bigger than sfu received, use it.
 		fracLost = b.lastFractionLostToReport
 	}
+
+	totalLost := b.rrSnapshot.packetsLost + lostInInterval
 
 	var dlsr uint32
 	if b.lastSRRecv != 0 {
@@ -496,16 +501,21 @@ func (b *Buffer) buildReceptionReport() rtcp.ReceptionReport {
 		dlsr |= (delayMS % 1e3) * 65536 / 1000
 	}
 
-	rr := rtcp.ReceptionReport{
+	b.rrSnapshot = &receiverReportSnapshot{
+		extSeqNum:       extMaxSeq,
+		packetsReceived: b.stats.PacketCount,
+		packetsLost:     totalLost,
+	}
+
+	return &rtcp.ReceptionReport{
 		SSRC:               b.mediaSSRC,
 		FractionLost:       fracLost,
-		TotalLost:          lost,
+		TotalLost:          totalLost,
 		LastSequenceNumber: extMaxSeq,
 		Jitter:             uint32(b.stats.Jitter),
 		LastSenderReport:   uint32(b.lastSRNTPTime >> 16),
 		Delay:              dlsr,
 	}
-	return rr
 }
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
@@ -523,9 +533,12 @@ func (b *Buffer) SetLastFractionLostReport(lost uint8) {
 func (b *Buffer) getRTCP() []rtcp.Packet {
 	var pkts []rtcp.Packet
 
-	pkts = append(pkts, &rtcp.ReceiverReport{
-		Reports: []rtcp.ReceptionReport{b.buildReceptionReport()},
-	})
+	rr := b.buildReceptionReport()
+	if rr != nil {
+		pkts = append(pkts, &rtcp.ReceiverReport{
+			Reports: []rtcp.ReceptionReport{*rr},
+		})
+	}
 
 	if b.remb && !b.twcc {
 		pkts = append(pkts, b.buildREMBPacket())
@@ -623,77 +636,7 @@ func (b *Buffer) SetStatsTestOnly(stats Stats) {
 	b.Unlock()
 }
 
-// GetLatestTimestamp returns the latest RTP timestamp factoring in potential RTP timestamp wrap-around
-func (b *Buffer) GetLatestTimestamp() (latestTimestamp uint32, latestTimestampTimeInNanosSinceEpoch int64) {
-	latestTimestamp = atomic.LoadUint32(&b.latestTimestamp)
-	latestTimestampTimeInNanosSinceEpoch = atomic.LoadInt64(&b.latestTimestampTime)
-
-	return latestTimestamp, latestTimestampTimeInNanosSinceEpoch
-}
-
-// IsTimestampWrapAround returns true if wrap around happens from timestamp1 to timestamp2
-func IsTimestampWrapAround(timestamp1 uint32, timestamp2 uint32) bool {
-	return timestamp2 < timestamp1 && timestamp1 > 0xf0000000 && timestamp2 < 0x0fffffff
-}
-
 // IsLaterTimestamp returns true if timestamp1 is later in time than timestamp2 factoring in timestamp wrap-around
 func IsLaterTimestamp(timestamp1 uint32, timestamp2 uint32) bool {
-	if timestamp1 > timestamp2 {
-		if IsTimestampWrapAround(timestamp1, timestamp2) {
-			return false
-		}
-		return true
-	}
-	if IsTimestampWrapAround(timestamp2, timestamp1) {
-		return true
-	}
-	return false
-}
-
-func IsNewerUint16(val1, val2 uint16) bool {
-	return val1 != val2 && val1-val2 < 0x8000
-}
-
-type SeqWrapHandler struct {
-	maxSeqNo uint32
-}
-
-func (s *SeqWrapHandler) Cycles() uint32 {
-	return s.maxSeqNo & 0xffff0000
-}
-
-func (s *SeqWrapHandler) MaxSeqNo() uint32 {
-	return s.maxSeqNo
-}
-
-// unwrap seq and update the maxSeqNo. return unwrapped value, and whether seq is newer
-func (s *SeqWrapHandler) Unwrap(seq uint16) (uint32, bool) {
-
-	maxSeqNo := uint16(s.maxSeqNo)
-	delta := int32(seq) - int32(maxSeqNo)
-
-	newer := IsNewerUint16(seq, maxSeqNo)
-
-	if newer {
-		if delta < 0 {
-			// seq is newer, but less than maxSeqNo, wrap around
-			delta += 0x10000
-		}
-	} else {
-		// older value
-		if delta > 0 && (int32(s.maxSeqNo)+delta-0x10000) >= 0 {
-			// wrap backwards, should not less than 0 in this case:
-			//   at start time, received seq 1, set s.maxSeqNo =1 ,
-			//   then an out of order seq 65534 coming, we can't unwrap
-			//   the seq to -2
-			delta -= 0x10000
-		}
-	}
-
-	unwrapped := uint32(int32(s.maxSeqNo) + delta)
-	return unwrapped, newer
-}
-
-func (s *SeqWrapHandler) UpdateMaxSeq(extSeq uint32) {
-	s.maxSeqNo = extSeq
+	return (timestamp1 - timestamp2) < (1 << 31)
 }

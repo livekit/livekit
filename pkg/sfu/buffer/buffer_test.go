@@ -8,7 +8,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var vp8Codec = webrtc.RTPCodecParameters{
@@ -41,19 +41,15 @@ func TestNack(t *testing.T) {
 	t.Run("nack normal", func(t *testing.T) {
 		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
-		assert.NotNil(t, buff)
+		require.NotNil(t, buff)
 		var wg sync.WaitGroup
-		// 3 nacks 1 Pli
-		wg.Add(4)
+		// 3 nacks
+		wg.Add(3)
 		buff.OnFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
 					if p.Nacks[0].PacketList()[0] == 1 && p.MediaSSRC == 123 {
-						wg.Done()
-					}
-				case *rtcp.PictureLossIndication:
-					if p.MediaSSRC == 123 {
 						wg.Done()
 					}
 				}
@@ -72,9 +68,9 @@ func TestNack(t *testing.T) {
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			_, err = buff.Write(b)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 		wg.Wait()
 
@@ -83,7 +79,7 @@ func TestNack(t *testing.T) {
 	t.Run("nack with seq wrap", func(t *testing.T) {
 		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
-		assert.NotNil(t, buff)
+		require.NotNil(t, buff)
 		var wg sync.WaitGroup
 		expects := map[uint16]int{
 			65534: 0,
@@ -102,7 +98,7 @@ func TestNack(t *testing.T) {
 								if _, ok := expects[seq]; ok {
 									wg.Done()
 								} else {
-									assert.Fail(t, "unexpected nack seq ", seq)
+									require.Fail(t, "unexpected nack seq ", seq)
 								}
 								return true
 							})
@@ -128,9 +124,9 @@ func TestNack(t *testing.T) {
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			_, err = buff.Write(b)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 		wg.Wait()
 
@@ -188,8 +184,8 @@ func TestNewBuffer(t *testing.T) {
 			}
 			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
-			assert.NotNil(t, buff)
-			assert.NotNil(t, TestPackets)
+			require.NotNil(t, buff)
+			require.NotNil(t, TestPackets)
 			buff.OnFeedback(func(_ []rtcp.Packet) {
 			})
 			buff.Bind(webrtc.RTPParameters{
@@ -201,9 +197,8 @@ func TestNewBuffer(t *testing.T) {
 				buf, _ := p.Marshal()
 				_, _ = buff.Write(buf)
 			}
-			// assert.Equal(t, 6, buff.PacketQueue.size)
-			assert.Equal(t, uint32(1<<16), buff.seqHdlr.Cycles())
-			assert.Equal(t, uint16(2), uint16(buff.seqHdlr.MaxSeqNo()))
+			require.Equal(t, uint16(1), buff.cycle)
+			require.Equal(t, uint16(2), buff.highestSN)
 		})
 	}
 }
@@ -216,8 +211,8 @@ func TestFractionLostReport(t *testing.T) {
 		},
 	}
 	buff := NewBuffer(123, pool, pool)
+	require.NotNil(t, buff)
 	buff.codecType = webrtc.RTPCodecTypeVideo
-	assert.NotNil(t, buff)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	buff.SetLastFractionLostReport(55)
@@ -226,7 +221,7 @@ func TestFractionLostReport(t *testing.T) {
 			switch p := pkt.(type) {
 			case *rtcp.ReceiverReport:
 				for _, v := range p.Reports {
-					assert.EqualValues(t, 55, v.FractionLost)
+					require.EqualValues(t, 55, v.FractionLost)
 				}
 				wg.Done()
 			}
@@ -242,20 +237,21 @@ func TestFractionLostReport(t *testing.T) {
 			Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 		}
 		b, err := pkt.Marshal()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		if i == 1 {
 			time.Sleep(1 * time.Second)
 		}
 		_, err = buff.Write(b)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	wg.Wait()
 }
 
+/*
 func TestSeqWrapHandler(t *testing.T) {
 	s := SeqWrapHandler{}
 	s.UpdateMaxSeq(1)
-	assert.Equal(t, uint32(1), s.MaxSeqNo())
+	require.Equal(t, uint32(1), s.MaxSeqNo())
 
 	type caseInfo struct {
 		seqs  []uint32 // {seq1, seq2, unwrap of seq2}
@@ -277,8 +273,8 @@ func TestSeqWrapHandler(t *testing.T) {
 			s := SeqWrapHandler{}
 			s.UpdateMaxSeq(v.seqs[0])
 			extsn, newer := s.Unwrap(uint16(v.seqs[1]))
-			assert.Equal(t, v.newer, newer)
-			assert.Equal(t, v.seqs[2], extsn)
+			require.Equal(t, v.newer, newer)
+			require.Equal(t, v.seqs[2], extsn)
 		})
 	}
 
@@ -301,7 +297,8 @@ func TestIsTimestampWrap(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assert.Equal(t, c.later, IsLaterTimestamp(c.ts1, c.ts2))
+			require.Equal(t, c.later, IsLaterTimestamp(c.ts1, c.ts2))
 		})
 	}
 }
+*/
