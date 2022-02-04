@@ -392,7 +392,14 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	}
 	t.pc.SetLocalDescription(offer)
 
-	pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	se := webrtc.SettingEngine{}
+	se.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
+	api := webrtc.NewAPI(
+		webrtc.WithSettingEngine(se),
+	)
+	pc2, err := api.NewPeerConnection(webrtc.Configuration{
+		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
+	})
 	if err != nil {
 		return err
 	}
@@ -432,12 +439,12 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousAnswer(previousOffer webrtc.SessionDescription) error {
-	if err := t.preparePC(previousOffer); err != nil {
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
+	if err := t.preparePC(previousAnswer); err != nil {
 		return err
 	}
 
-	parsed, err := previousOffer.Unmarshal()
+	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
 		return err
 	}
@@ -492,11 +499,11 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) SetPreviousAnswer(offer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = offer
+		t.previousAnswer = answer
 		t.initPCWithPreviousAnswer(*t.previousAnswer)
 	}
 }
