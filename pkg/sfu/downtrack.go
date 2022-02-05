@@ -101,10 +101,12 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	closeOnce               sync.Once
 
+	// RAJA-TODO - make these structures and use locks, look at AnalyticsStream and design this
 	// Report helpers
 	primaryStats atomic.Value // contains *PacketStats
 	rtxStats     atomic.Value // contains *PacketStats
 	paddingStats atomic.Value // contains *PacketStats
+	frames       uint32
 
 	connectionStats *connectionquality.ConnectionStats
 
@@ -344,6 +346,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		d.UpdatePrimaryStats(uint32(pktSize))
+		if hdr.Marker {
+			d.frames++
+		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)

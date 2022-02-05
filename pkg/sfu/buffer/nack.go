@@ -52,9 +52,9 @@ func (n *NackQueue) Push(sn uint16) {
 	n.nacks = append(n.nacks, &nack{seqNum: sn, nacked: 0, lastNackTime: time.Now()})
 }
 
-func (n *NackQueue) Pairs() []rtcp.NackPair {
+func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
 	if len(n.nacks) == 0 {
-		return nil
+		return nil, 0
 	}
 
 	now := time.Now()
@@ -64,6 +64,7 @@ func (n *NackQueue) Pairs() []rtcp.NackPair {
 
 	snsToPurge := []uint16{}
 
+	numSeqNumsNacked := 0
 	isPairActive := false
 	var np rtcp.NackPair
 	var nps []rtcp.NackPair
@@ -77,6 +78,7 @@ func (n *NackQueue) Pairs() []rtcp.NackPair {
 
 		nack.nacked++
 		nack.lastNackTime = now
+		numSeqNumsNacked++
 
 		if (nack.seqNum - baseSN) > 16 {
 			// need a new nack pair
@@ -104,5 +106,5 @@ func (n *NackQueue) Pairs() []rtcp.NackPair {
 		n.Remove(sn)
 	}
 
-	return nps
+	return nps, numSeqNumsNacked
 }
