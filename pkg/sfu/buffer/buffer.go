@@ -272,23 +272,43 @@ func (b *Buffer) OnClose(fn func()) {
 }
 
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
+	isRTX := false
+
 	pb, err := b.bucket.AddPacket(pkt)
 	if err != nil {
 		if err != ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
+			return
+		} else {
+			isRTX = true
 		}
-		return
 	}
 
 	var p rtp.Packet
-	if err := p.Unmarshal(pb); err != nil {
+	if isRTX {
+		err = p.Unmarshal(pkt)
+	} else {
+		err = p.Unmarshal(pb)
+	}
+	if err != nil {
 		b.logger.Warnw("error unmarshaling RTP packet", err)
 		return
 	}
 
-	b.updateStreamState(&p, len(pkt), arrivalTime)
+	b.updateStreamState(&p, len(pkt), arrivalTime, isRTX)
 
 	b.processHeaderExtensions(&p, arrivalTime)
+
+	if isRTX {
+		//
+		// Run RTX packets through
+		//  1. state update - to update stats
+		//  2. TWCC just in case remote side is retransmitting an old packet for probing
+		//
+		// But, do not forward those packets
+		//
+		return
+	}
 
 	ep, temporalLayer := b.getExtPacket(pb, &p, arrivalTime)
 	if ep == nil {
@@ -305,7 +325,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.doReports(arrivalTime)
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64) {
+func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64, isRTX bool) {
 	sn := p.SequenceNumber
 
 	if b.stats.PacketCount == 0 {
@@ -344,17 +364,19 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 	b.stats.PacketCount++
 	b.stats.TotalBytes += uint64(pktSize)
 
-	// jitter
-	arrival := uint32(arrivalTime / 1e6 * int64(b.clockRate/1e3))
-	transit := arrival - p.Timestamp
-	if b.lastTransit != 0 {
-		d := int32(transit - b.lastTransit)
-		if d < 0 {
-			d = -d
+	if !isRTX {
+		// jitter
+		arrival := uint32(arrivalTime / 1e6 * int64(b.clockRate/1e3))
+		transit := arrival - p.Timestamp
+		if b.lastTransit != 0 {
+			d := int32(transit - b.lastTransit)
+			if d < 0 {
+				d = -d
+			}
+			b.stats.Jitter += (float64(d) - b.stats.Jitter) / 16
 		}
-		b.stats.Jitter += (float64(d) - b.stats.Jitter) / 16
+		b.lastTransit = transit
 	}
-	b.lastTransit = transit
 }
 
 func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
