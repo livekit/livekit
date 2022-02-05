@@ -33,8 +33,8 @@ func (b *Bucket) AddPacket(pkt []byte) ([]byte, error) {
 		b.init = true
 	}
 	diff := sn - b.headSN
-	if diff > (1 << 15) {
-		// out-of-order
+	if diff == 0 || diff > (1<<15) {
+		// duplicate of lsat packet or out-of-order
 		return b.set(sn, pkt)
 	}
 	b.headSN = sn
