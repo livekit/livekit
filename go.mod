@@ -28,7 +28,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.0
 	github.com/pion/turn/v2 v2.0.6
-	github.com/pion/webrtc/v3 v3.1.21
+	github.com/pion/webrtc/v3 v3.1.22
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/cors v1.8.2
@@ -61,7 +61,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
-	github.com/pion/dtls/v2 v2.1.1 // indirect
+	github.com/pion/dtls/v2 v2.1.2 // indirect
 	github.com/pion/mdns v0.0.5 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/sctp v1.8.2 // indirect
@@ -76,7 +76,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220131195533-30dcbda58838 // indirect
 	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
-	golang.org/x/sys v0.0.0-20220128215802-99c3d69c2c27 // indirect
+	golang.org/x/sys v0.0.0-20220204135822-1c1b9b1eba6a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
