@@ -362,17 +362,11 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 
 	switch {
 	case isRTX:
-		b.stats.TotalRetransmitPackets++
-		b.stats.TotalRetransmitBytes += uint64(pktSize)
+		b.stats.UpdateRtx(pktSize)
 	case len(p.Payload) == 0:
-		b.stats.TotalPaddingPackets++
-		b.stats.TotalPaddingBytes += uint64(pktSize)
+		b.stats.UpdatePadding(pktSize)
 	default:
-		b.stats.TotalPrimaryPackets++
-		b.stats.TotalPrimaryBytes += uint64(pktSize)
-	}
-	if !isRTX && p.Marker {
-		b.stats.TotalFrames++
+		b.stats.UpdatePrimary(pktSize, p.Marker)
 	}
 
 	if !isRTX {

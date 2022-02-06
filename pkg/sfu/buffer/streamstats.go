@@ -15,3 +15,21 @@ type StreamStats struct {
 	TotalPLIs  uint32
 	TotalFIRs  uint32
 }
+
+func (ss *StreamStats) UpdatePrimary(packetLen int, marker bool) {
+	ss.TotalPrimaryPackets++
+	ss.TotalPrimaryBytes += uint64(packetLen)
+	if marker {
+		ss.TotalFrames++
+	}
+}
+
+func (ss *StreamStats) UpdateRtx(packetLen int) {
+	ss.TotalRetransmitPackets++
+	ss.TotalRetransmitBytes += uint64(packetLen)
+}
+
+func (ss *StreamStats) UpdatePadding(packetLen int) {
+	ss.TotalPaddingPackets++
+	ss.TotalPaddingBytes += uint64(packetLen)
+}

@@ -331,7 +331,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.onMaxLayerChanged(d, layer)
 		}
 
-		d.updatePrimaryStats(uint32(pktSize), hdr.Marker)
+		d.updatePrimaryStats(pktSize, hdr.Marker)
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
@@ -418,7 +418,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		}
 
 		size := hdr.MarshalSize() + len(payload)
-		d.updatePaddingStats(uint32(size))
+		d.updatePaddingStats(size)
 		for _, f := range d.onPaddingSent {
 			f(d, size)
 		}
@@ -707,31 +707,25 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 }
 
-func (d *DownTrack) updatePrimaryStats(packetLen uint32, marker bool) {
+func (d *DownTrack) updatePrimaryStats(packetLen int, marker bool) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.TotalPrimaryPackets++
-	d.stats.TotalPrimaryBytes += uint64(packetLen)
-	if marker {
-		d.stats.TotalFrames++
-	}
+	d.stats.UpdatePrimary(packetLen, marker)
 }
 
-func (d *DownTrack) updateRtxStats(packetLen uint32) {
+func (d *DownTrack) updateRtxStats(packetLen int) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.TotalRetransmitPackets++
-	d.stats.TotalRetransmitBytes += uint64(packetLen)
+	d.stats.UpdateRtx(packetLen)
 }
 
-func (d *DownTrack) updatePaddingStats(packetLen uint32) {
+func (d *DownTrack) updatePaddingStats(packetLen int) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.TotalPaddingPackets++
-	d.stats.TotalPaddingBytes += uint64(packetLen)
+	d.stats.UpdatePadding(packetLen)
 }
 
 func (d *DownTrack) writeBlankFrameRTP() error {
@@ -790,7 +784,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			f(d, pktSize)
 		}
 
-		d.updatePrimaryStats(uint32(pktSize), hdr.Marker)
+		d.updatePrimaryStats(pktSize, hdr.Marker)
 
 		// only the first frame will need frameEndNeeded to close out the
 		// previous picture, rest are small key frames
@@ -977,7 +971,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 				f(d, pktSize)
 			}
 
-			d.updateRtxStats(uint32(pktSize))
+			d.updateRtxStats(pktSize)
 		}
 	}
 }
