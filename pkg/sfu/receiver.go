@@ -348,12 +348,14 @@ func (w *WebRTCReceiver) GetTotalBytes() uint64 {
 	defer w.bufferMu.RUnlock()
 
 	totalBytes := uint64(0)
+	/* RAJA-TODO
 	for _, buff := range w.buffers {
 		if buff != nil {
 			stats := buff.GetStats()
 			totalBytes += stats.TotalBytes
 		}
 	}
+	RAJA-TODO */
 
 	return totalBytes
 }

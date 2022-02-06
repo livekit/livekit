@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -66,9 +65,20 @@ var (
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
-type PacketStats struct {
-	octets  uint64
-	packets uint32
+type Stats struct {
+	TotalPrimaryPackets    uint32
+	TotalPrimaryBytes      uint64
+	TotalRetransmitPackets uint32
+	TotalRetransmitBytes   uint64
+	TotalPaddingPackets    uint32
+	TotalPaddingBytes      uint64
+	TotalPacketsLost       uint32
+	TotalFrames            uint32
+	// RAJA-TODO RTT
+	Jitter     float64
+	TotalNACKs uint32
+	TotalPLIs  uint32
+	TotalFIRs  uint32
 }
 
 // DownTrack  implements TrackLocal, is the track used to write packets
@@ -101,12 +111,8 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	closeOnce               sync.Once
 
-	// RAJA-TODO - make these structures and use locks, look at AnalyticsStream and design this
-	// Report helpers
-	primaryStats atomic.Value // contains *PacketStats
-	rtxStats     atomic.Value // contains *PacketStats
-	paddingStats atomic.Value // contains *PacketStats
-	frames       uint32
+	statsLock sync.RWMutex
+	stats     Stats
 
 	connectionStats *connectionquality.ConnectionStats
 
@@ -191,10 +197,6 @@ func NewDownTrack(
 		}
 	})
 	d.connectionStats.Start()
-
-	d.primaryStats.Store(new(PacketStats))
-	d.rtxStats.Store(new(PacketStats))
-	d.paddingStats.Store(new(PacketStats))
 
 	return d, nil
 }
@@ -345,10 +347,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.onMaxLayerChanged(d, layer)
 		}
 
-		d.UpdatePrimaryStats(uint32(pktSize))
-		if hdr.Marker {
-			d.frames++
-		}
+		d.updatePrimaryStats(uint32(pktSize), hdr.Marker)
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
@@ -360,10 +359,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
 func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
-	primaryStats := d.primaryStats.Load().(*PacketStats)
-	if primaryStats.packets == 0 {
+	d.statsLock.RLock()
+	if d.stats.TotalPrimaryPackets == 0 {
+		d.statsLock.RUnlock()
 		return 0
 	}
+	d.statsLock.RUnlock()
 
 	// LK-TODO-START
 	// Ideally should look at header extensions negotiated for
@@ -433,7 +434,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		}
 
 		size := hdr.MarshalSize() + len(payload)
-		d.UpdatePaddingStats(uint32(size))
+		d.updatePaddingStats(uint32(size))
 		for _, f := range d.onPaddingSent {
 			f(d, size)
 		}
@@ -722,39 +723,41 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 }
 
-func (d *DownTrack) UpdatePrimaryStats(packetLen uint32) {
-	primaryStats, _ := d.primaryStats.Load().(*PacketStats)
+func (d *DownTrack) updatePrimaryStats(packetLen uint32, marker bool) {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
 
-	primaryStats.octets += uint64(packetLen)
-	primaryStats.packets += 1
-
-	d.primaryStats.Store(primaryStats)
+	d.stats.TotalPrimaryPackets++
+	d.stats.TotalPrimaryBytes += uint64(packetLen)
+	if marker {
+		d.stats.TotalFrames++
+	}
 }
 
-func (d *DownTrack) UpdateRtxStats(packetLen uint32) {
-	rtxStats, _ := d.rtxStats.Load().(*PacketStats)
+func (d *DownTrack) updateRtxStats(packetLen uint32) {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
 
-	rtxStats.octets += uint64(packetLen)
-	rtxStats.packets += 1
-
-	d.rtxStats.Store(rtxStats)
+	d.stats.TotalRetransmitPackets++
+	d.stats.TotalRetransmitBytes += uint64(packetLen)
 }
 
-func (d *DownTrack) UpdatePaddingStats(packetLen uint32) {
-	paddingStats, _ := d.paddingStats.Load().(*PacketStats)
+func (d *DownTrack) updatePaddingStats(packetLen uint32) {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
 
-	paddingStats.octets += uint64(packetLen)
-	paddingStats.packets += 1
-
-	d.paddingStats.Store(paddingStats)
+	d.stats.TotalPaddingPackets++
+	d.stats.TotalPaddingBytes += uint64(packetLen)
 }
 
 func (d *DownTrack) writeBlankFrameRTP() error {
 	// don't send if nothing has been sent
-	primaryStats := d.primaryStats.Load().(*PacketStats)
-	if primaryStats.packets == 0 {
+	d.statsLock.RLock()
+	if d.stats.TotalPrimaryPackets == 0 {
+		d.statsLock.RUnlock()
 		return nil
 	}
+	d.statsLock.RUnlock()
 
 	// LK-TODO: Support other video codecs
 	if d.kind == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
@@ -803,7 +806,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			f(d, pktSize)
 		}
 
-		d.UpdatePrimaryStats(uint32(pktSize))
+		d.updatePrimaryStats(uint32(pktSize), hdr.Marker)
 
 		// only the first frame will need frameEndNeeded to close out the
 		// previous picture, rest are small key frames
@@ -990,17 +993,19 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 				f(d, pktSize)
 			}
 
-			d.UpdateRtxStats(uint32(pktSize))
+			d.updateRtxStats(uint32(pktSize))
 		}
 	}
 }
 
 func (d *DownTrack) getSRStats() (uint64, uint32) {
-	primary := d.primaryStats.Load().(*PacketStats)
-	rtx := d.rtxStats.Load().(*PacketStats)
-	padding := d.paddingStats.Load().(*PacketStats)
+	d.statsLock.RLock()
+	defer d.statsLock.RUnlock()
 
-	return primary.octets + rtx.octets + padding.octets, primary.packets + rtx.packets + padding.packets
+	packets := d.stats.TotalPrimaryPackets + d.stats.TotalRetransmitPackets + d.stats.TotalPaddingPackets
+	octets := d.stats.TotalPrimaryBytes + d.stats.TotalRetransmitBytes + d.stats.TotalPaddingBytes
+
+	return octets, packets
 }
 
 // writes RTP header extensions of track

@@ -63,21 +63,20 @@ type Buffer struct {
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	lastPacketRead     int
-	bitrate            atomic.Value
-	bitrateHelper      [4]int64
-	lastSRNTPTime      uint64
-	lastSRRTPTime      uint32
-	lastSRRecv         int64 // Represents wall clock of the most recent sender report arrival
-	cycle              uint16
-	lastRtcpPacketTime int64 // Time the last RTCP packet was received.
-	lastRtcpSrTime     int64 // Time the last RTCP SR was received. Required for DLSR computation.
-	lastTransit        uint32
+	lastPacketRead int
+	bitrate        atomic.Value
+	bitrateHelper  [4]int64
+	lastSRNTPTime  uint64
+	lastSRRTPTime  uint32
+	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
+	lastTransit    uint32
 
+	started    bool
 	stats      Stats
 	rrSnapshot *receiverReportSnapshot
 
 	highestSN uint16
+	cycle     uint16
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -92,14 +91,19 @@ type Buffer struct {
 }
 
 type Stats struct {
-	PacketCount uint32 // Number of packets received from this source.
-	TotalBytes  uint64
-	LostCount   uint32
-	FrameCount  uint32
-	Jitter      float64 // An estimate of the statistical variance of the RTP data packet inter-arrival time.
-	NackCount   uint32
-	PliCount    uint32
-	FirCount    uint32
+	TotalPrimaryPackets    uint32
+	TotalPrimaryBytes      uint64
+	TotalRetransmitPackets uint32
+	TotalRetransmitBytes   uint64
+	TotalPaddingPackets    uint32
+	TotalPaddingBytes      uint64
+	TotalPacketsLost       uint32
+	TotalFrames            uint32
+	// RAJA-TODO RTT
+	Jitter     float64
+	TotalNACKs uint32
+	TotalPLIs  uint32
+	TotalFIRs  uint32
 }
 
 type receiverReportSnapshot struct {
@@ -332,7 +336,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64, isRTX bool) {
 	sn := p.SequenceNumber
 
-	if b.stats.PacketCount == 0 {
+	if !b.started {
+		b.started = true
 		b.highestSN = sn - 1
 
 		b.lastReport = arrivalTime
@@ -346,8 +351,8 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 
 	diff := sn - b.highestSN
 	if diff > (1 << 15) {
-		if !isRTX && b.stats.LostCount != 0 {
-			b.stats.LostCount--
+		if !isRTX && b.stats.TotalPacketsLost != 0 {
+			b.stats.TotalPacketsLost--
 		}
 
 		// out-of-order, remove it from nack queue
@@ -355,25 +360,36 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 			b.nacker.Remove(sn)
 		}
 	} else {
-		b.stats.LostCount += (uint32(diff) - 1)
+		b.stats.TotalPacketsLost += (uint32(diff) - 1)
 		if b.nacker != nil && diff > 1 {
 			for lost := b.highestSN + 1; lost != sn; lost++ {
 				b.nacker.Push(lost)
 			}
 		}
 
+		/* RAJA-TODO
 		if sn < b.highestSN && b.stats.PacketCount > 0 {
 			b.cycle++
 		}
+		RAJA-TODO */
 
 		b.highestSN = sn
 	}
 
-	b.stats.PacketCount++
-	if !isRTX && p.Marker {
-		b.stats.FrameCount++
+	switch {
+	case isRTX:
+		b.stats.TotalRetransmitPackets++
+		b.stats.TotalRetransmitBytes += uint64(pktSize)
+	case len(p.Payload) == 0:
+		b.stats.TotalPaddingPackets++
+		b.stats.TotalPaddingBytes += uint64(pktSize)
+	default:
+		b.stats.TotalPrimaryPackets++
+		b.stats.TotalPrimaryBytes += uint64(pktSize)
 	}
-	b.stats.TotalBytes += uint64(pktSize)
+	if !isRTX && p.Marker {
+		b.stats.TotalFrames++
+	}
 
 	if !isRTX {
 		// jitter
@@ -458,7 +474,7 @@ func (b *Buffer) doNACKs() {
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
 		b.feedbackCB(r)
-		b.stats.NackCount += uint32(numSeqNumsNacked)
+		b.stats.TotalNACKs += uint32(numSeqNumsNacked)
 	}
 }
 
@@ -526,7 +542,6 @@ func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	if br < 100000 {
 		br = 100000
 	}
-	b.stats.TotalBytes = 0
 
 	return &rtcp.ReceiverEstimatedMaximumBitrate{
 		Bitrate: float32(br),
@@ -545,7 +560,8 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		return nil
 	}
 
-	receivedInInterval := b.stats.PacketCount - b.rrSnapshot.packetsReceived
+	totalPackets := b.stats.TotalPrimaryPackets + b.stats.TotalPaddingPackets
+	receivedInInterval := totalPackets - b.rrSnapshot.packetsReceived
 	lostInInterval := expectedInInterval - receivedInInterval
 	if int32(lostInInterval) < 0 {
 		// could happen if retransmitted packets arrive and make received greater than expected
@@ -568,14 +584,14 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 
 	b.rrSnapshot = &receiverReportSnapshot{
 		extSeqNum:       extMaxSeq,
-		packetsReceived: b.stats.PacketCount,
+		packetsReceived: totalPackets,
 		lastLossRate:    lossRate,
 	}
 
 	return &rtcp.ReceptionReport{
 		SSRC:               b.mediaSSRC,
 		FractionLost:       fracLost,
-		TotalLost:          b.stats.LostCount,
+		TotalLost:          b.stats.TotalPacketsLost,
 		LastSequenceNumber: extMaxSeq,
 		Jitter:             uint32(b.stats.Jitter),
 		LastSenderReport:   uint32(b.lastSRNTPTime >> 16),
