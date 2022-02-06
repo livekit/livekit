@@ -711,21 +711,27 @@ func (d *DownTrack) updatePrimaryStats(packetLen int, marker bool) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.UpdatePrimary(packetLen, marker)
+	d.stats.TotalPrimaryPackets++
+	d.stats.TotalPrimaryBytes += uint64(packetLen)
+	if marker {
+		d.stats.TotalFrames++
+	}
 }
 
 func (d *DownTrack) updateRtxStats(packetLen int) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.UpdateRtx(packetLen)
+	d.stats.TotalRetransmitPackets++
+	d.stats.TotalRetransmitBytes += uint64(packetLen)
 }
 
 func (d *DownTrack) updatePaddingStats(packetLen int) {
 	d.statsLock.Lock()
 	defer d.statsLock.Unlock()
 
-	d.stats.UpdatePadding(packetLen)
+	d.stats.TotalPaddingPackets++
+	d.stats.TotalPaddingBytes += uint64(packetLen)
 }
 
 func (d *DownTrack) writeBlankFrameRTP() error {

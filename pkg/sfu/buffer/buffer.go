@@ -322,51 +322,55 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 
 	if !b.started {
 		b.started = true
-		b.highestSN = sn - 1
+		b.highestSN = sn
 
 		b.lastReport = arrivalTime
 
 		b.rrSnapshot = &receiverReportSnapshot{
-			extSeqNum:       uint32(sn) - 1,
+			extSeqNum:       uint32(sn),
 			packetsReceived: 0,
 			lastLossRate:    0.0,
 		}
-	}
-
-	diff := sn - b.highestSN
-	if diff > (1 << 15) {
-		if !isRTX && b.stats.TotalPacketsLost != 0 {
-			b.stats.TotalPacketsLost--
-		}
-
-		// out-of-order, remove it from nack queue
-		if b.nacker != nil {
-			b.nacker.Remove(sn)
-		}
 	} else {
-		b.stats.TotalPacketsLost += (uint32(diff) - 1)
-		if b.nacker != nil && diff > 1 {
-			for lost := b.highestSN + 1; lost != sn; lost++ {
-				b.nacker.Push(lost)
+		diff := sn - b.highestSN
+		if diff > (1 << 15) {
+			if !isRTX && b.stats.TotalPacketsLost != 0 {
+				b.stats.TotalPacketsLost--
 			}
-		}
 
-		/* RAJA-TODO
-		if sn < b.highestSN && b.stats.PacketCount > 0 {
-			b.cycle++
-		}
-		RAJA-TODO */
+			// out-of-order, remove it from nack queue
+			if b.nacker != nil {
+				b.nacker.Remove(sn)
+			}
+		} else {
+			b.stats.TotalPacketsLost += (uint32(diff) - 1)
+			if b.nacker != nil && diff > 1 {
+				for lost := b.highestSN + 1; lost != sn; lost++ {
+					b.nacker.Push(lost)
+				}
+			}
 
-		b.highestSN = sn
+			if sn < b.highestSN {
+				b.cycle++
+			}
+
+			b.highestSN = sn
+		}
 	}
 
 	switch {
 	case isRTX:
-		b.stats.UpdateRtx(pktSize)
+		b.stats.TotalRetransmitPackets++
+		b.stats.TotalRetransmitBytes += uint64(pktSize)
 	case len(p.Payload) == 0:
-		b.stats.UpdatePadding(pktSize)
+		b.stats.TotalPaddingPackets++
+		b.stats.TotalPaddingBytes += uint64(pktSize)
 	default:
-		b.stats.UpdatePrimary(pktSize, p.Marker)
+		b.stats.TotalPrimaryPackets++
+		b.stats.TotalPrimaryBytes += uint64(pktSize)
+		if p.Marker {
+			b.stats.TotalFrames++
+		}
 	}
 
 	if !isRTX {
