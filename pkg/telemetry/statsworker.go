@@ -77,6 +77,7 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	} else {
 		ds = s.getOrCreateIncomingStatsIfEmpty(trackID)
 	}
+	/* RAJA_TODO
 	ds.totalPacketsLost = stats.PacketLost
 	ds.totalPackets = uint32(stats.TotalPackets)
 	ds.totalBytes = stats.TotalBytes
@@ -90,11 +91,12 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	ds.next.NackCount += stats.NackCount
 	ds.next.PliCount += stats.PliCount
 	ds.next.FirCount += stats.FirCount
+	*/
 	// average out scores received in this interval
 	if ds.connectionScore == 0 {
-		ds.connectionScore = stats.ConnectionScore
+		ds.connectionScore = stats.Score
 	} else {
-		ds.connectionScore = (ds.connectionScore + stats.ConnectionScore) / 2
+		ds.connectionScore = (ds.connectionScore + stats.Score) / 2
 	}
 }
 
@@ -152,10 +154,12 @@ func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.A
 	}
 
 	next.TimeStamp = ts
+	/* RAJA-TODO
 	next.TotalPackets = uint64(stats.totalPackets - stats.prevPackets)
 	next.TotalBytes = stats.totalBytes - stats.prevBytes
 	next.PacketLost = stats.totalPacketsLost - stats.prevPacketsLost
-	next.ConnectionScore = stats.connectionScore
+	RAJA-TODO */
+	next.Score = stats.connectionScore
 
 	stats.prevPackets = stats.totalPackets
 	stats.prevBytes = stats.totalBytes

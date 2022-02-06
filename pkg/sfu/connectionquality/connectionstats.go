@@ -181,12 +181,15 @@ func (cs *ConnectionStats) updateStats() {
 				cs.score = VideoConnectionScore(pctLoss, isReducedQuality)
 			}
 
+			/* RAJA-TODO
 			totalPacketsReceived := uint32(0)
 			if cs.baseSeqNumInitialized {
 				totalPacketsReceived = cs.highestSeqNum - cs.baseSeqNum
 			}
+			*/
 
 			stat := &livekit.AnalyticsStat{
+				/* RAJA-TODO
 				TotalPackets:    uint64(totalPacketsReceived),
 				PacketLost:      uint64(cs.totalPacketsLost),
 				TotalBytes:      cs.totalBytes,
@@ -196,6 +199,7 @@ func (cs *ConnectionStats) updateStats() {
 				PliCount:        cs.pliCount,
 				FirCount:        cs.firCount,
 				ConnectionScore: float32(cs.score),
+				*/
 			}
 			cs.lock.Unlock()
 

@@ -273,11 +273,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}()
 
-	d.lastRTP.set(time.Now().UnixNano())
-
 	if !d.bound.get() {
 		return nil
 	}
+
+	d.lastRTP.set(time.Now().UnixNano())
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
@@ -857,12 +857,17 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
+	var numNACKs uint32
+	var numPLIs uint32
+	var numFIRs uint32
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
+			numPLIs++
 			sendPliOnce()
 
 		case *rtcp.FullIntraRequest:
+			numFIRs++
 			sendPliOnce()
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
@@ -880,6 +885,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if r.SSRC != d.ssrc {
 					continue
 				}
+				// RAJA-TODO: do maxJitter, maxRTT and total lost
 				rr.Reports = append(rr.Reports, r)
 			}
 			if len(rr.Reports) > 0 {
@@ -896,6 +902,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
 			}
 			go d.retransmitPackets(nackedPackets)
+			numNACKs += uint32(len(nackedPackets))
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -904,7 +911,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	d.connectionStats.RTCPFeedback(pkts, d.ssrc)
+	d.connectionStats.RTCPFeedback(pkts, d.ssrc) // RAJA-REMOVE
+	d.statsLock.Lock()
+	d.stats.TotalNACKs += numNACKs
+	d.stats.TotalPLIs += numPLIs
+	d.stats.TotalFIRs += numFIRs
+	d.statsLock.Unlock()
 }
 
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
@@ -1087,4 +1099,30 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 
 func (d *DownTrack) GetConnectionScore() float64 {
 	return d.connectionStats.GetScore()
+}
+
+func (d *DownTrack) GetAnalytics() []*livekit.AnalyticsStream {
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
+
+	analytics := &livekit.AnalyticsStream{
+		Ssrc:                   d.ssrc,
+		TotalPrimaryPackets:    d.stats.TotalPrimaryPackets,
+		TotalPrimaryBytes:      d.stats.TotalPrimaryBytes,
+		TotalRetransmitPackets: d.stats.TotalRetransmitPackets,
+		TotalRetransmitBytes:   d.stats.TotalRetransmitBytes,
+		TotalPaddingPackets:    d.stats.TotalPaddingPackets,
+		TotalPaddingBytes:      d.stats.TotalPaddingBytes,
+		TotalPacketsLost:       d.stats.TotalPacketsLost,
+		TotalFrames:            d.stats.TotalFrames,
+		Rtt:                    0,   // RAJA-TODO
+		Jitter:                 0.0, // RAJA-TODO
+		TotalNacks:             d.stats.TotalNACKs,
+		TotalPlis:              d.stats.TotalPLIs,
+		TotalFirs:              d.stats.TotalFIRs,
+	}
+
+	// RAJA-TODO: clear maxJitter and maxRTT
+
+	return []*livekit.AnalyticsStream{analytics}
 }

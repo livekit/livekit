@@ -6,8 +6,6 @@ import (
 	"github.com/gammazero/workerpool"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
-
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type TelemetryServiceInternal interface {
@@ -40,12 +38,14 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 
 func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
 
+	/* RAJA-TODO
 	direction := prometheus.Incoming
 	if streamType == livekit.StreamType_DOWNSTREAM {
 		direction = prometheus.Outgoing
 	}
 
 	prometheus.IncrementRTCP(direction, stat.NackCount, stat.PliCount, stat.FirCount)
+	*/
 
 	w := t.workers[participantID]
 	if w != nil {
@@ -54,6 +54,7 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 }
 
 func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.AnalyticsStat) {
+	/* RAJA-TODO
 	for _, stat := range stats {
 		direction := prometheus.Incoming
 		if stat.Kind == livekit.StreamType_DOWNSTREAM {
@@ -63,6 +64,7 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 		prometheus.IncrementPackets(direction, stat.TotalPackets)
 		prometheus.IncrementBytes(direction, stat.TotalBytes)
 	}
+	RAJA-TODO */
 
 	t.analytics.SendStats(ctx, stats)
 }
