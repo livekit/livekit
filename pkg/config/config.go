@@ -52,9 +52,10 @@ type RTCConfig struct {
 	ICEPortRangeEnd   uint32 `yaml:"port_range_end,omitempty"`
 	NodeIP            string `yaml:"node_ip,omitempty"`
 	// for testing, disable UDP
-	ForceTCP      bool     `yaml:"force_tcp,omitempty"`
-	StunServers   []string `yaml:"stun_servers,omitempty"`
-	UseExternalIP bool     `yaml:"use_external_ip"`
+	ForceTCP      bool         `yaml:"force_tcp,omitempty"`
+	StunServers   []string     `yaml:"stun_servers,omitempty"`
+	TURNServers   []TURNServer `yaml:"turn_servers,omitempty"`
+	UseExternalIP bool         `yaml:"use_external_ip"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -69,6 +70,14 @@ type RTCConfig struct {
 	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
+}
+
+type TURNServer struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Protocol string `yaml:"protocol"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
 }
 
 type PLIThrottleConfig struct {
