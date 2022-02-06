@@ -515,9 +515,9 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		}
 	}
 
-	if len(r.config.RTC.StunServers) > 0 {
+	if len(r.config.RTC.STUNServers) > 0 {
 		hasSTUN = true
-		iceServers = append(iceServers, iceServerForStunServers(r.config.RTC.StunServers))
+		iceServers = append(iceServers, iceServerForStunServers(r.config.RTC.STUNServers))
 	}
 
 	if !hasSTUN {
