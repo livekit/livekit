@@ -12,7 +12,7 @@ import (
 
 func (conf *Config) determineIP() (string, error) {
 	if conf.RTC.UseExternalIP {
-		stunServers := conf.RTC.StunServers
+		stunServers := conf.RTC.STUNServers
 		if len(stunServers) == 0 {
 			stunServers = DefaultStunServers
 		}
