@@ -108,8 +108,8 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	if params.ProtocolVersion.SupportsICELite() {
-		se.SetLite(true)
+	if !params.ProtocolVersion.SupportsICELite() {
+		se.SetLite(false)
 	}
 
 	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
