@@ -54,6 +54,7 @@ type RTCConfig struct {
 	STUNServers       []string     `yaml:"stun_servers,omitempty"`
 	TURNServers       []TURNServer `yaml:"turn_servers,omitempty"`
 	UseExternalIP     bool         `yaml:"use_external_ip"`
+	UseICELite        bool         `yaml:"use_ice_lite,omitempty"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
