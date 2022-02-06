@@ -46,14 +46,16 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	UDPPort           uint32   `yaml:"udp_port,omitempty"`
-	TCPPort           uint32   `yaml:"tcp_port,omitempty"`
-	ICEPortRangeStart uint32   `yaml:"port_range_start,omitempty"`
-	ICEPortRangeEnd   uint32   `yaml:"port_range_end,omitempty"`
-	NodeIP            string   `yaml:"node_ip,omitempty"`
-	STUNServers       []string `yaml:"stun_servers,omitempty"`
-	UseExternalIP     bool     `yaml:"use_external_ip"`
-	UseICELite        bool     `yaml:"use_ice_lite,omitempty"`
+	UDPPort           uint32       `yaml:"udp_port,omitempty"`
+	TCPPort           uint32       `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart uint32       `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd   uint32       `yaml:"port_range_end,omitempty"`
+	NodeIP            string       `yaml:"node_ip,omitempty"`
+	STUNServers       []string     `yaml:"stun_servers,omitempty"`
+	TURNServers       []TURNServer `yaml:"turn_servers,omitempty"`
+	UseExternalIP     bool         `yaml:"use_external_ip"`
+	UseICELite        bool         `yaml:"use_ice_lite,omitempty"`
+
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
 
@@ -69,6 +71,14 @@ type RTCConfig struct {
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
+}
+
+type TURNServer struct {
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Protocol   string `yaml:"protocol"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
 }
 
 type PLIThrottleConfig struct {

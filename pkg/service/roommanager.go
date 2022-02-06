@@ -494,6 +494,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 
 func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
+	rtcConf := r.config.RTC
 
 	hasSTUN := false
 	if r.config.TURN.Enabled {
@@ -515,7 +516,28 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 		}
 	}
 
-	if len(r.config.RTC.STUNServers) > 0 {
+	if len(rtcConf.TURNServers) > 0 {
+		hasSTUN = true
+		for _, s := range r.config.RTC.TURNServers {
+			scheme := "turn"
+			transport := "tcp"
+			if s.Protocol == "tls" {
+				scheme = "turns"
+			} else if s.Protocol == "udp" {
+				transport = "udp"
+			}
+			is := &livekit.ICEServer{
+				Urls: []string{
+					fmt.Sprintf("%s:%s:%d?transport=%s", scheme, s.Host, s.Port, transport),
+				},
+				Username:   s.Username,
+				Credential: s.Credential,
+			}
+			iceServers = append(iceServers, is)
+		}
+	}
+
+	if len(rtcConf.STUNServers) > 0 {
 		hasSTUN = true
 		iceServers = append(iceServers, iceServerForStunServers(r.config.RTC.STUNServers))
 	}
