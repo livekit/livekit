@@ -72,7 +72,7 @@ type Buffer struct {
 	lastTransit    uint32
 
 	started    bool
-	stats      Stats
+	stats      StreamStats
 	rrSnapshot *receiverReportSnapshot
 
 	highestSN uint16
@@ -88,22 +88,6 @@ type Buffer struct {
 
 	// logger
 	logger logger.Logger
-}
-
-type Stats struct {
-	TotalPrimaryPackets    uint32
-	TotalPrimaryBytes      uint64
-	TotalRetransmitPackets uint32
-	TotalRetransmitBytes   uint64
-	TotalPaddingPackets    uint32
-	TotalPaddingBytes      uint64
-	TotalPacketsLost       uint32
-	TotalFrames            uint32
-	// RAJA-TODO RTT
-	Jitter     float64
-	TotalNACKs uint32
-	TotalPLIs  uint32
-	TotalFIRs  uint32
 }
 
 type receiverReportSnapshot struct {
@@ -702,6 +686,7 @@ func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastRece
 	return rtpTime, ntpTime, lastReceivedTimeInNanosSinceEpoch
 }
 
+/* RAJA-TODO
 // GetStats returns the raw statistics about a particular buffer state
 func (b *Buffer) GetStats() (stats Stats) {
 	b.Lock()
@@ -709,3 +694,4 @@ func (b *Buffer) GetStats() (stats Stats) {
 	b.Unlock()
 	return
 }
+RAJA-TODO */

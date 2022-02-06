@@ -65,23 +65,7 @@ var (
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
-type Stats struct {
-	TotalPrimaryPackets    uint32
-	TotalPrimaryBytes      uint64
-	TotalRetransmitPackets uint32
-	TotalRetransmitBytes   uint64
-	TotalPaddingPackets    uint32
-	TotalPaddingBytes      uint64
-	TotalPacketsLost       uint32
-	TotalFrames            uint32
-	// RAJA-TODO RTT
-	Jitter     float64
-	TotalNACKs uint32
-	TotalPLIs  uint32
-	TotalFIRs  uint32
-}
-
-// DownTrack  implements TrackLocal, is the track used to write packets
+// DownTrack implements TrackLocal, is the track used to write packets
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 type DownTrack struct {
@@ -112,7 +96,7 @@ type DownTrack struct {
 	closeOnce               sync.Once
 
 	statsLock sync.RWMutex
-	stats     Stats
+	stats     buffer.StreamStats
 
 	connectionStats *connectionquality.ConnectionStats
 
