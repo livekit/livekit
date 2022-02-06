@@ -73,11 +73,11 @@ type RTCConfig struct {
 }
 
 type TURNServer struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Protocol string `yaml:"protocol"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Protocol   string `yaml:"protocol"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
 }
 
 type PLIThrottleConfig struct {

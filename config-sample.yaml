@@ -46,7 +46,7 @@ rtc:
   #     # tls, tcp, or udp
   #     protocol: tls
   #     username: ""
-  #     password: ""
+  #     credential: ""
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:

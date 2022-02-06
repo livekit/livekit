@@ -531,7 +531,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 					fmt.Sprintf("%s:%s:%d?transport=%s", scheme, s.Host, s.Port, transport),
 				},
 				Username:   s.Username,
-				Credential: s.Password,
+				Credential: s.Credential,
 			}
 			iceServers = append(iceServers, is)
 		}
