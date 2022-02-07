@@ -224,7 +224,7 @@ func (cs *ConnectionStats) updateStats() {
 }
 
 func ToAnalyticsStream(ssrc uint32, streamStats *buffer.StreamStats, maxRTT uint32, maxJitter uint32, clockRate uint32) *livekit.AnalyticsStream {
-	// conver jitter (from number of media samples to microseconds
+	// convert jitter (from number of media samples to microseconds
 	jitter := uint32((float32(maxJitter) * 1e6) / float32(clockRate))
 	return &livekit.AnalyticsStream{
 		Ssrc:                   ssrc,
