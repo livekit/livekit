@@ -187,8 +187,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
-
-		// RJAA_TODO t.connectionStats.Start()
 	}
 	t.lock.Unlock()
 
