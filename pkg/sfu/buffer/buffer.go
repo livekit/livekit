@@ -280,6 +280,8 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	b.Lock()
 	defer b.Unlock()
 
+	b.stats.RTT = rtt
+
 	if b.nacker != nil {
 		b.nacker.SetRTT(rtt)
 	}
