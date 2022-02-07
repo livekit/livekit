@@ -21,10 +21,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 )
 
-const (
-	connectionQualityUpdateInterval = 5 * time.Second
-)
-
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
 	UpTrackLayersChange(availableLayers []int32)
@@ -164,12 +160,9 @@ func NewDownTrack(
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		UpdateInterval: connectionQualityUpdateInterval,
-		CodecType:      kind,
-		GetTotalBytes: func() uint64 {
-			octets, _ := d.getSRStats()
-			return octets
-		},
+		CodecType:     kind,
+		ClockRate:     c.ClockRate,
+		GetTrackStats: d.getTrackStats,
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
@@ -885,8 +878,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if r.SSRC != d.ssrc {
 					continue
 				}
-				// RAJA-TODO: do maxJitter, maxRTT and total lost
 				rr.Reports = append(rr.Reports, r)
+
+				d.statsLock.Lock()
+				d.stats.TotalPacketsLost = r.TotalLost
+				// RAJA-TODO - calculate RTT and update
+				d.stats.Jitter = float64(r.Jitter)
+
+				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, 0, r.Jitter)
+				d.statsLock.Unlock()
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -911,7 +911,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	d.connectionStats.RTCPFeedback(pkts, d.ssrc) // RAJA-REMOVE
 	d.statsLock.Lock()
 	d.stats.TotalNACKs += numNACKs
 	d.stats.TotalPLIs += numPLIs
@@ -1097,32 +1096,27 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 }
 
-func (d *DownTrack) GetConnectionScore() float64 {
+func (d *DownTrack) GetConnectionScore() float32 {
 	return d.connectionStats.GetScore()
 }
 
-func (d *DownTrack) GetAnalytics() []*livekit.AnalyticsStream {
-	d.statsLock.Lock()
-	defer d.statsLock.Unlock()
+func (d *DownTrack) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
+	d.statsLock.RLock()
+	defer d.statsLock.RUnlock()
 
-	analytics := &livekit.AnalyticsStream{
-		Ssrc:                   d.ssrc,
-		TotalPrimaryPackets:    d.stats.TotalPrimaryPackets,
-		TotalPrimaryBytes:      d.stats.TotalPrimaryBytes,
-		TotalRetransmitPackets: d.stats.TotalRetransmitPackets,
-		TotalRetransmitBytes:   d.stats.TotalRetransmitBytes,
-		TotalPaddingPackets:    d.stats.TotalPaddingPackets,
-		TotalPaddingBytes:      d.stats.TotalPaddingBytes,
-		TotalPacketsLost:       d.stats.TotalPacketsLost,
-		TotalFrames:            d.stats.TotalFrames,
-		Rtt:                    0,   // RAJA-TODO
-		Jitter:                 0.0, // RAJA-TODO
-		TotalNacks:             d.stats.TotalNACKs,
-		TotalPlis:              d.stats.TotalPLIs,
-		TotalFirs:              d.stats.TotalFIRs,
+	stats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
+
+	layers := make(map[int]buffer.LayerStats)
+	layers[0] = buffer.LayerStats{
+		TotalPackets: d.stats.TotalPrimaryPackets + d.stats.TotalRetransmitPackets + d.stats.TotalPaddingPackets,
+		TotalBytes:   d.stats.TotalPrimaryBytes + d.stats.TotalRetransmitBytes + d.stats.TotalPaddingBytes,
+		TotalFrames:  d.stats.TotalFrames,
 	}
 
-	// RAJA-TODO: clear maxJitter and maxRTT
+	stats[d.ssrc] = &buffer.StreamStatsWithLayers{
+		StreamStats: d.stats,
+		Layers:      layers,
+	}
 
-	return []*livekit.AnalyticsStream{analytics}
+	return stats
 }

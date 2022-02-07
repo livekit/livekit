@@ -291,7 +291,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	return quality
 }
 
-// handles max loss for audio packets
+// handles max loss for audio streams
 func (t *MediaTrackReceiver) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
 	t.downFracLostLock.Lock()
 	for _, rr := range report.Reports {

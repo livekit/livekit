@@ -26,7 +26,7 @@ func NewNACKQueue() *NackQueue {
 	}
 }
 
-func (n *NackQueue) SetRTT(rtt int) {
+func (n *NackQueue) SetRTT(rtt uint32) {
 	n.rtt = time.Duration(rtt) * time.Millisecond
 }
 

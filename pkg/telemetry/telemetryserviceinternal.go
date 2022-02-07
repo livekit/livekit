@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gammazero/workerpool"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
 )
@@ -38,14 +39,20 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 
 func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
 
-	/* RAJA-TODO
 	direction := prometheus.Incoming
 	if streamType == livekit.StreamType_DOWNSTREAM {
 		direction = prometheus.Outgoing
 	}
 
-	prometheus.IncrementRTCP(direction, stat.NackCount, stat.PliCount, stat.FirCount)
-	*/
+	totalNACKs := uint32(0)
+	totalPLIs := uint32(0)
+	totalFIRs := uint32(0)
+	for _, stream := range stat.Streams {
+		totalNACKs += stream.TotalNacks
+		totalPLIs += stream.TotalPlis
+		totalFIRs += stream.TotalFirs
+	}
+	prometheus.IncrementRTCP(direction, totalNACKs, totalPLIs, totalFIRs)
 
 	w := t.workers[participantID]
 	if w != nil {
@@ -54,17 +61,25 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 }
 
 func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.AnalyticsStat) {
-	/* RAJA-TODO
 	for _, stat := range stats {
+		if len(stat.Streams) == 0 {
+			continue
+		}
+
 		direction := prometheus.Incoming
 		if stat.Kind == livekit.StreamType_DOWNSTREAM {
 			direction = prometheus.Outgoing
 		}
 
-		prometheus.IncrementPackets(direction, stat.TotalPackets)
-		prometheus.IncrementBytes(direction, stat.TotalBytes)
+		totalPackets := uint32(0)
+		totalBytes := uint64(0)
+		for _, stream := range stat.Streams {
+			totalPackets += (stream.TotalPrimaryPackets + stream.TotalRetransmitPackets + stream.TotalPaddingPackets)
+			totalBytes += (stream.TotalPrimaryBytes + stream.TotalRetransmitBytes + stream.TotalPaddingBytes)
+		}
+		prometheus.IncrementPackets(direction, uint64(totalPackets))
+		prometheus.IncrementBytes(direction, totalBytes)
 	}
-	RAJA-TODO */
 
 	t.analytics.SendStats(ctx, stats)
 }

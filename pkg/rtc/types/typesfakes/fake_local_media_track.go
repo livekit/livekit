@@ -38,15 +38,15 @@ type FakeLocalMediaTrack struct {
 		result1 uint8
 		result2 bool
 	}
-	GetConnectionScoreStub        func() float64
+	GetConnectionScoreStub        func() float32
 	getConnectionScoreMutex       sync.RWMutex
 	getConnectionScoreArgsForCall []struct {
 	}
 	getConnectionScoreReturns struct {
-		result1 float64
+		result1 float32
 	}
 	getConnectionScoreReturnsOnCall map[int]struct {
-		result1 float64
+		result1 float32
 	}
 	GetQualityForDimensionStub        func(uint32, uint32) livekit.VideoQuality
 	getQualityForDimensionMutex       sync.RWMutex
@@ -387,7 +387,7 @@ func (fake *FakeLocalMediaTrack) GetAudioLevelReturnsOnCall(i int, result1 uint8
 	}{result1, result2}
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScore() float64 {
+func (fake *FakeLocalMediaTrack) GetConnectionScore() float32 {
 	fake.getConnectionScoreMutex.Lock()
 	ret, specificReturn := fake.getConnectionScoreReturnsOnCall[len(fake.getConnectionScoreArgsForCall)]
 	fake.getConnectionScoreArgsForCall = append(fake.getConnectionScoreArgsForCall, struct {
@@ -411,32 +411,32 @@ func (fake *FakeLocalMediaTrack) GetConnectionScoreCallCount() int {
 	return len(fake.getConnectionScoreArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreCalls(stub func() float64) {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreCalls(stub func() float32) {
 	fake.getConnectionScoreMutex.Lock()
 	defer fake.getConnectionScoreMutex.Unlock()
 	fake.GetConnectionScoreStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreReturns(result1 float64) {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreReturns(result1 float32) {
 	fake.getConnectionScoreMutex.Lock()
 	defer fake.getConnectionScoreMutex.Unlock()
 	fake.GetConnectionScoreStub = nil
 	fake.getConnectionScoreReturns = struct {
-		result1 float64
+		result1 float32
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) GetConnectionScoreReturnsOnCall(i int, result1 float64) {
+func (fake *FakeLocalMediaTrack) GetConnectionScoreReturnsOnCall(i int, result1 float32) {
 	fake.getConnectionScoreMutex.Lock()
 	defer fake.getConnectionScoreMutex.Unlock()
 	fake.GetConnectionScoreStub = nil
 	if fake.getConnectionScoreReturnsOnCall == nil {
 		fake.getConnectionScoreReturnsOnCall = make(map[int]struct {
-			result1 float64
+			result1 float32
 		})
 	}
 	fake.getConnectionScoreReturnsOnCall[i] = struct {
-		result1 float64
+		result1 float32
 	}{result1}
 }
 

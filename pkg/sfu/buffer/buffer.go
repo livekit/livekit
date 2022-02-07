@@ -3,6 +3,7 @@ package buffer
 import (
 	"encoding/binary"
 	"io"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,7 @@ type ExtPacket struct {
 
 // Buffer contains all packets
 type Buffer struct {
-	sync.Mutex
+	sync.RWMutex
 	bucket     *Bucket
 	nacker     *NackQueue
 	videoPool  *sync.Pool
@@ -91,9 +92,9 @@ type Buffer struct {
 }
 
 type receiverReportSnapshot struct {
-	extSeqNum       uint32
-	packetsReceived uint32
-	lastLossRate    float32
+	extHighestSeqNum uint32
+	packetsLost      uint32
+	lastLossRate     float32
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -156,7 +157,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
-				b.nacker.SetRTT(70) // LK-TODO: sane default till we get better data
+				b.nacker.SetRTT(70) // default till it is updated
 				b.nack = true
 			}
 		}
@@ -263,6 +264,27 @@ func (b *Buffer) OnClose(fn func()) {
 	b.onClose = fn
 }
 
+func (b *Buffer) SendPLI() {
+	b.Lock()
+	b.stats.TotalPLIs++
+	b.Unlock()
+
+	pli := []rtcp.Packet{
+		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
+	}
+
+	b.feedbackCB(pli)
+}
+
+func (b *Buffer) SetRTT(rtt uint32) {
+	b.Lock()
+	defer b.Unlock()
+
+	if b.nacker != nil {
+		b.nacker.SetRTT(rtt)
+	}
+}
+
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	isRTX := false
 
@@ -327,9 +349,9 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 		b.lastReport = arrivalTime
 
 		b.rrSnapshot = &receiverReportSnapshot{
-			extSeqNum:       uint32(sn),
-			packetsReceived: 0,
-			lastLossRate:    0.0,
+			extHighestSeqNum: uint32(sn) - 1,
+			packetsLost:      0,
+			lastLossRate:     0.0,
 		}
 	} else {
 		diff := sn - b.highestSN
@@ -455,7 +477,7 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		b.feedbackCB(r)
+		go b.feedbackCB(r)
 		b.stats.TotalNACKs += uint32(numSeqNumsNacked)
 	}
 }
@@ -486,7 +508,7 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	b.bitrate.Store(bitrates)
 
 	// RTCP reports
-	b.feedbackCB(b.getRTCP())
+	go b.feedbackCB(b.getRTCP())
 }
 
 func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
@@ -536,15 +558,13 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		return nil
 	}
 
-	extMaxSeq := (uint32(b.cycle) << 16) | uint32(b.highestSN)
-	expectedInInterval := extMaxSeq - b.rrSnapshot.extSeqNum
+	extHighestSeqNum := (uint32(b.cycle) << 16) | uint32(b.highestSN)
+	expectedInInterval := extHighestSeqNum - b.rrSnapshot.extHighestSeqNum
 	if expectedInInterval == 0 {
 		return nil
 	}
 
-	totalPackets := b.stats.TotalPrimaryPackets + b.stats.TotalPaddingPackets
-	receivedInInterval := totalPackets - b.rrSnapshot.packetsReceived
-	lostInInterval := expectedInInterval - receivedInInterval
+	lostInInterval := b.stats.TotalPacketsLost - b.rrSnapshot.packetsLost
 	if int32(lostInInterval) < 0 {
 		// could happen if retransmitted packets arrive and make received greater than expected
 		lostInInterval = 0
@@ -565,16 +585,16 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	}
 
 	b.rrSnapshot = &receiverReportSnapshot{
-		extSeqNum:       extMaxSeq,
-		packetsReceived: totalPackets,
-		lastLossRate:    lossRate,
+		extHighestSeqNum: extHighestSeqNum,
+		packetsLost:      b.stats.TotalPacketsLost,
+		lastLossRate:     lossRate,
 	}
 
 	return &rtcp.ReceptionReport{
 		SSRC:               b.mediaSSRC,
 		FractionLost:       fracLost,
 		TotalLost:          b.stats.TotalPacketsLost,
-		LastSequenceNumber: extMaxSeq,
+		LastSequenceNumber: extHighestSeqNum,
 		Jitter:             uint32(b.stats.Jitter),
 		LastSenderReport:   uint32(b.lastSRNTPTime >> 16),
 		Delay:              dlsr,
@@ -684,12 +704,19 @@ func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastRece
 	return rtpTime, ntpTime, lastReceivedTimeInNanosSinceEpoch
 }
 
-/* RAJA-TODO
-// GetStats returns the raw statistics about a particular buffer state
-func (b *Buffer) GetStats() (stats Stats) {
-	b.Lock()
-	stats = b.stats
-	b.Unlock()
-	return
+func (b *Buffer) GetStats() *StreamStatsWithLayers {
+	b.RLock()
+	defer b.RUnlock()
+
+	layers := make(map[int]LayerStats)
+	layers[0] = LayerStats{
+		TotalPackets: b.stats.TotalPrimaryPackets + b.stats.TotalRetransmitPackets + b.stats.TotalPaddingPackets,
+		TotalBytes:   b.stats.TotalPrimaryBytes + b.stats.TotalRetransmitBytes + b.stats.TotalPaddingBytes,
+		TotalFrames:  b.stats.TotalFrames,
+	}
+
+	return &StreamStatsWithLayers{
+		StreamStats: b.stats,
+		Layers:      layers,
+	}
 }
-RAJA-TODO */

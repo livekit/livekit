@@ -211,7 +211,7 @@ type LocalMediaTrack interface {
 	SdpCid() string
 
 	GetAudioLevel() (level uint8, active bool)
-	GetConnectionScore() float64
+	GetConnectionScore() float32
 }
 
 // MediaTrack is the main interface representing a track published to the room

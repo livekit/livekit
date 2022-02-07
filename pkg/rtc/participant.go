@@ -762,9 +762,9 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 	p.lock.RUnlock()
 
-	avgScore := 5.0
+	avgScore := float32(5.0)
 	if numTracks > 0 {
-		avgScore = totalScore / float64(numTracks)
+		avgScore = totalScore / float32(numTracks)
 	}
 
 	rating := connectionquality.Score2Rating(avgScore)
@@ -1348,7 +1348,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	}
 }
 
-func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float64, numTracks int) {
+func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float32, numTracks int) {
 	for _, pt := range p.GetPublishedTracks() {
 		if pt.IsMuted() {
 			continue
