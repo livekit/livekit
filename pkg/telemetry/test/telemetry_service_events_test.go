@@ -154,5 +154,5 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 	require.Equal(t, room.Sid, eventActive.RoomId)
 	require.Equal(t, room, event.Room)
 
-	require.Equal(t, clientMeta.ClientConnectTime, event.ClientMeta.ClientConnectTime)
+	require.Equal(t, clientMetaConnect.ClientConnectTime, eventActive.ClientMeta.ClientConnectTime)
 }
