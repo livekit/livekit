@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/livekit/protocol/livekit"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -164,23 +165,9 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 
 	streams := make([]*livekit.AnalyticsStream, 0, len(analyticsStreams))
 	for ssrc, analyticsStream := range analyticsStreams {
-		stream := &livekit.AnalyticsStream{
-			Ssrc:                   ssrc,
-			TotalPrimaryPackets:    analyticsStream.TotalPrimaryPackets,
-			TotalPrimaryBytes:      analyticsStream.TotalPrimaryBytes,
-			TotalRetransmitPackets: analyticsStream.TotalRetransmitPackets,
-			TotalRetransmitBytes:   analyticsStream.TotalRetransmitBytes,
-			TotalPaddingPackets:    analyticsStream.TotalPaddingPackets,
-			TotalPaddingBytes:      analyticsStream.TotalPaddingBytes,
-			TotalPacketsLost:       analyticsStream.TotalPacketsLost,
-			TotalFrames:            analyticsStream.TotalFrames,
-			Rtt:                    maxRTT[ssrc],
-			Jitter:                 maxJitter[ssrc],
-			TotalNacks:             analyticsStream.TotalNacks,
-			TotalPlis:              analyticsStream.TotalPlis,
-			TotalFirs:              analyticsStream.TotalFirs,
-			VideoLayers:            analyticsStream.VideoLayers,
-		}
+		stream := proto.Clone(analyticsStream).(*livekit.AnalyticsStream)
+		stream.Rtt = maxRTT[ssrc]
+		stream.Jitter = maxJitter[ssrc]
 
 		streams = append(streams, stream)
 	}
