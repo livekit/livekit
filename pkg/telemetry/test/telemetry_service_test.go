@@ -157,6 +157,8 @@ func Test_OnDownStreamStat(t *testing.T) {
 				TotalPrimaryBytes:   2,
 				TotalPrimaryPackets: 2,
 				TotalPacketsLost:    4,
+				TotalNacks:          1,
+				TotalPlis:           1,
 				TotalFirs:           1,
 				Jitter:              5,
 			},
@@ -224,7 +226,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	_, stats = fixture.analytics.SendStatsArgsForCall(1)
 	require.Equal(t, 1, len(stats))
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
-	require.Equal(t, 3, int(stats[0].Streams[0].TotalPacketsLost)) // see diff of TotalLost between pkts2 and pkts1
+	require.Equal(t, 4, int(stats[0].Streams[0].TotalPacketsLost)) // see diff of TotalLost between pkts2 and pkts1
 }
 
 func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
@@ -327,6 +329,9 @@ func Test_OnUpstreamStat(t *testing.T) {
 				TotalPrimaryBytes:   2,
 				TotalPrimaryPackets: 2,
 				TotalPacketsLost:    4,
+				TotalNacks:          1,
+				TotalPlis:           1,
+				TotalFirs:           1,
 				Jitter:              2,
 			},
 		},
@@ -387,6 +392,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID1, stat2)
+
 	stat3 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
 			{
@@ -422,18 +428,10 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	require.True(t, found1)
 	require.True(t, found2)
 
-	// remove 1 track
+	// remove 1 track - track stats were flushed above, so no more calls to SendStats
 	fixture.sut.TrackUnpublished(context.Background(), partSID, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
 	fixture.sut.SendAnalytics()
-	require.Equal(t, 2, fixture.analytics.SendStatsCallCount())
-	_, stats = fixture.analytics.SendStatsArgsForCall(1)
-	require.Equal(t, 2, len(stats)) // still 2 tracks, next call won't contain 1 track
-
-	// now only 1 track stats remaining
-	fixture.sut.SendAnalytics()
-	require.Equal(t, 3, fixture.analytics.SendStatsCallCount())
-	_, stats = fixture.analytics.SendStatsArgsForCall(2)
-	require.Equal(t, 1, len(stats)) // now only 1 track remaining
+	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 }
 
 func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
@@ -448,8 +446,8 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	// do
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
 
-	// test
-	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
+	// should not be called if there are not track stats
+	require.Equal(t, 0, fixture.analytics.SendStatsCallCount())
 }
 
 func Test_AddUpTrack(t *testing.T) {
