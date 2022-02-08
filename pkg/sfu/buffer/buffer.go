@@ -381,10 +381,12 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 				b.nacker.Remove(sn)
 			}
 		} else {
-			b.stats.TotalPacketsLost += (uint32(diff) - 1)
-			if b.nacker != nil && diff > 1 {
-				for lost := b.highestSN + 1; lost != sn; lost++ {
-					b.nacker.Push(lost)
+			if diff > 1 {
+				b.stats.TotalPacketsLost += (uint32(diff) - 1)
+				if b.nacker != nil {
+					for lost := b.highestSN + 1; lost != sn; lost++ {
+						b.nacker.Push(lost)
+					}
 				}
 			}
 
