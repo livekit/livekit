@@ -8,44 +8,61 @@ import (
 )
 
 func Test_nackQueue_pairs(t *testing.T) {
+	type PairsResult struct {
+		pairs            []rtcp.NackPair
+		numSeqNumsNacked int
+	}
+
 	tests := []struct {
 		name string
 		args []uint16
-		want []rtcp.NackPair
+		want PairsResult
 	}{
 		{
 			name: "Must return correct single pairs pair",
 			args: []uint16{1, 2, 4, 5},
-			want: []rtcp.NackPair{{
-				PacketID:    1,
-				LostPackets: 13,
-			}},
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    1,
+						LostPackets: 13,
+					},
+				},
+				numSeqNumsNacked: 4,
+			},
 		},
 		{
 			name: "Must return correct pair wrap",
 			args: []uint16{65533, 2, 4, 5, 30, 32},
-			want: []rtcp.NackPair{
-				{
-					PacketID:    65533,
-					LostPackets: 1<<7 + 1<<6 + 1<<4,
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    65533,
+						LostPackets: 1<<7 + 1<<6 + 1<<4,
+					},
+					{
+						PacketID:    30,
+						LostPackets: 1 << 1,
+					},
 				},
-				{
-					PacketID:    30,
-					LostPackets: 1 << 1,
-				}},
+				numSeqNumsNacked: 6,
+			},
 		},
 		{
 			name: "Must return 2 pairs pair",
 			args: []uint16{1, 2, 4, 5, 20, 22, 24, 27},
-			want: []rtcp.NackPair{
-				{
-					PacketID:    1,
-					LostPackets: 13,
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    1,
+						LostPackets: 13,
+					},
+					{
+						PacketID:    20,
+						LostPackets: 74,
+					},
 				},
-				{
-					PacketID:    20,
-					LostPackets: 74,
-				},
+				numSeqNumsNacked: 8,
 			},
 		},
 	}
@@ -56,8 +73,9 @@ func Test_nackQueue_pairs(t *testing.T) {
 			for _, sn := range tt.args {
 				n.Push(sn)
 			}
-			got := n.Pairs()
-			require.EqualValues(t, tt.want, got)
+			got, numSeqNumsNacked := n.Pairs()
+			require.EqualValues(t, tt.want.pairs, got)
+			require.Equal(t, tt.want.numSeqNumsNacked, numSeqNumsNacked)
 		})
 	}
 }

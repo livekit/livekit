@@ -134,6 +134,13 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
 	}
 }
 
+func (s *StreamTrackerManager) IsReducedQuality() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return int32(len(s.availableLayers)) < (s.maxExpectedLayer + 1)
+}
+
 func (s *StreamTrackerManager) GetAvailableLayers() []int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
