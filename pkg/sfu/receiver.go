@@ -64,7 +64,6 @@ type WebRTCReceiver struct {
 
 	bufferMu sync.RWMutex
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
-	lastPli  [DefaultMaxLayerSpatial + 1]int64
 
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -538,7 +537,6 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"Simulcast": w.isSimulcast,
-		"LastPli":   w.lastPli,
 	}
 
 	w.upTrackMu.RLock()
