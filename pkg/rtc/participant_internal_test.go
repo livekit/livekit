@@ -372,7 +372,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Config:          rtcConf,
 		Sink:            &routingfakes.FakeMessageSink{},
 		ProtocolVersion: opts.protocolVersion,
-		ThrottleConfig:  conf.RTC.PLIThrottle,
+		PLIThrottle:     conf.RTC.PLIThrottle,
 	}, opts.permissions)
 	return p
 }

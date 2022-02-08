@@ -242,7 +242,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		AudioConfig:             r.config.Audio,
 		ProtocolVersion:         pv,
 		Telemetry:               r.telemetry,
-		ThrottleConfig:          r.config.RTC.PLIThrottle,
+		PLIThrottle:             r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,
 		EnabledCodecs:           room.Room.EnabledCodecs,
 		Grants:                  pi.Grants,

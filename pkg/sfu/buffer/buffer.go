@@ -283,6 +283,7 @@ func (b *Buffer) SendPLI() {
 	b.stats.TotalPLIs++
 	b.Unlock()
 
+	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC)
 	pli := []rtcp.Packet{
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}

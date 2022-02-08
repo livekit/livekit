@@ -52,6 +52,7 @@ type MediaTrackParams struct {
 	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
+	PLIThrottle      time.Duration
 	AudioConfig      config.AudioConfig
 	Telemetry        telemetry.TelemetryService
 	Logger           logger.Logger
@@ -169,7 +170,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			track,
 			t.PublisherID(),
 			t.params.Logger,
-			sfu.WithPliThrottle(0),
+			sfu.WithPliThrottle(t.params.PLIThrottle.Milliseconds()),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 		)

@@ -63,7 +63,7 @@ type RTCConfig struct {
 	MaxBitrate uint64 `yaml:"max_bitrate,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
-	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
+	PLIThrottle time.Duration `yaml:"pli_throttle,omitempty"`
 
 	// Which side runs bandwidth estimation
 	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
@@ -79,12 +79,6 @@ type TURNServer struct {
 	Protocol   string `yaml:"protocol"`
 	Username   string `yaml:"username,omitempty"`
 	Credential string `yaml:"credential,omitempty"`
-}
-
-type PLIThrottleConfig struct {
-	LowQuality  time.Duration `yaml:"low_quality,omitempty"`
-	MidQuality  time.Duration `yaml:"mid_quality,omitempty"`
-	HighQuality time.Duration `yaml:"high_quality,omitempty"`
 }
 
 type CongestionControlConfig struct {
@@ -181,11 +175,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			STUNServers:       []string{},
 			MaxBitrate:        10 * 1024 * 1024, // 10 mbps
 			PacketBufferSize:  500,
-			PLIThrottle: PLIThrottleConfig{
-				LowQuality:  500 * time.Millisecond,
-				MidQuality:  time.Second,
-				HighQuality: time.Second,
-			},
+			PLIThrottle:       500 * time.Millisecond,
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
 				AllowPause: true,
