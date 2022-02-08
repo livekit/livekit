@@ -307,7 +307,9 @@ func (b *Buffer) SendPLI() {
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}
 
-	b.feedbackCB(pli)
+	b.callbackOps <- func() {
+		b.feedbackCB(pli)
+	}
 }
 
 func (b *Buffer) SetRTT(rtt uint32) {
@@ -521,7 +523,9 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		go b.feedbackCB(r)
+		b.callbackOps <- func() {
+			b.feedbackCB(r)
+		}
 		b.stats.TotalNACKs += uint32(numSeqNumsNacked)
 	}
 }
