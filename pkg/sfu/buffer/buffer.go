@@ -530,14 +530,10 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	b.bitrate.Store(bitrates)
 
 	// RTCP reports
-<<<<<<< HEAD
 	pkts := b.getRTCP()
 	b.callbackOps <- func() {
 		b.feedbackCB(pkts)
 	}
-=======
-	go b.feedbackCB(b.getRTCP())
->>>>>>> origin/master
 }
 
 func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
