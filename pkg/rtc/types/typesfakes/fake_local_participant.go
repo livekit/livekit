@@ -550,6 +550,11 @@ type FakeLocalParticipant struct {
 	updateMediaLossReturnsOnCall map[int]struct {
 		result1 error
 	}
+	UpdateRTTStub        func(uint32)
+	updateRTTMutex       sync.RWMutex
+	updateRTTArgsForCall []struct {
+		arg1 uint32
+	}
 	UpdateSubscribedQualityStub        func(string, livekit.TrackID, livekit.VideoQuality) error
 	updateSubscribedQualityMutex       sync.RWMutex
 	updateSubscribedQualityArgsForCall []struct {
@@ -3532,6 +3537,38 @@ func (fake *FakeLocalParticipant) UpdateMediaLossReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) UpdateRTT(arg1 uint32) {
+	fake.updateRTTMutex.Lock()
+	fake.updateRTTArgsForCall = append(fake.updateRTTArgsForCall, struct {
+		arg1 uint32
+	}{arg1})
+	stub := fake.UpdateRTTStub
+	fake.recordInvocation("UpdateRTT", []interface{}{arg1})
+	fake.updateRTTMutex.Unlock()
+	if stub != nil {
+		fake.UpdateRTTStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) UpdateRTTCallCount() int {
+	fake.updateRTTMutex.RLock()
+	defer fake.updateRTTMutex.RUnlock()
+	return len(fake.updateRTTArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateRTTCalls(stub func(uint32)) {
+	fake.updateRTTMutex.Lock()
+	defer fake.updateRTTMutex.Unlock()
+	fake.UpdateRTTStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateRTTArgsForCall(i int) uint32 {
+	fake.updateRTTMutex.RLock()
+	defer fake.updateRTTMutex.RUnlock()
+	argsForCall := fake.updateRTTArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) UpdateSubscribedQuality(arg1 string, arg2 livekit.TrackID, arg3 livekit.VideoQuality) error {
 	fake.updateSubscribedQualityMutex.Lock()
 	ret, specificReturn := fake.updateSubscribedQualityReturnsOnCall[len(fake.updateSubscribedQualityArgsForCall)]
@@ -3905,6 +3942,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.toProtoMutex.RUnlock()
 	fake.updateMediaLossMutex.RLock()
 	defer fake.updateMediaLossMutex.RUnlock()
+	fake.updateRTTMutex.RLock()
+	defer fake.updateRTTMutex.RUnlock()
 	fake.updateSubscribedQualityMutex.RLock()
 	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscribedTrackSettingsMutex.RLock()

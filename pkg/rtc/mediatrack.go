@@ -236,3 +236,12 @@ func (t *MediaTrack) GetConnectionScore() float32 {
 
 	return receiver.(*sfu.WebRTCReceiver).GetConnectionScore()
 }
+
+func (t *MediaTrack) SetRTT(rtt uint32) {
+	receiver := t.Receiver()
+	if receiver == nil {
+		return
+	}
+
+	receiver.(*sfu.WebRTCReceiver).SetRTT(rtt)
+}

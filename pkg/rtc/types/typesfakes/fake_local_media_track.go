@@ -199,6 +199,11 @@ type FakeLocalMediaTrack struct {
 	setMutedArgsForCall []struct {
 		arg1 bool
 	}
+	SetRTTStub        func(uint32)
+	setRTTMutex       sync.RWMutex
+	setRTTArgsForCall []struct {
+		arg1 uint32
+	}
 	SignalCidStub        func() string
 	signalCidMutex       sync.RWMutex
 	signalCidArgsForCall []struct {
@@ -1261,6 +1266,38 @@ func (fake *FakeLocalMediaTrack) SetMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalMediaTrack) SetRTT(arg1 uint32) {
+	fake.setRTTMutex.Lock()
+	fake.setRTTArgsForCall = append(fake.setRTTArgsForCall, struct {
+		arg1 uint32
+	}{arg1})
+	stub := fake.SetRTTStub
+	fake.recordInvocation("SetRTT", []interface{}{arg1})
+	fake.setRTTMutex.Unlock()
+	if stub != nil {
+		fake.SetRTTStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) SetRTTCallCount() int {
+	fake.setRTTMutex.RLock()
+	defer fake.setRTTMutex.RUnlock()
+	return len(fake.setRTTArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) SetRTTCalls(stub func(uint32)) {
+	fake.setRTTMutex.Lock()
+	defer fake.setRTTMutex.Unlock()
+	fake.SetRTTStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) SetRTTArgsForCall(i int) uint32 {
+	fake.setRTTMutex.RLock()
+	defer fake.setRTTMutex.RUnlock()
+	argsForCall := fake.setRTTArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalMediaTrack) SignalCid() string {
 	fake.signalCidMutex.Lock()
 	ret, specificReturn := fake.signalCidReturnsOnCall[len(fake.signalCidArgsForCall)]
@@ -1502,6 +1539,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.sdpCidMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
+	fake.setRTTMutex.RLock()
+	defer fake.setRTTMutex.RUnlock()
 	fake.signalCidMutex.RLock()
 	defer fake.signalCidMutex.RUnlock()
 	fake.sourceMutex.RLock()

@@ -199,6 +199,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		t.notifySubscriberMaxQuality(subscriberID, QualityForSpatialLayer(layer))
 	})
 
+	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
+		go sub.UpdateRTT(rtt)
+	})
+
 	downTrack.OnCloseHandler(func() {
 		t.subscribedTracksMu.Lock()
 		delete(t.subscribedTracks, subscriberID)

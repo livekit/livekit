@@ -1,9 +1,11 @@
 package sfu
 
 import (
+	"math"
 	"strings"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -63,4 +65,17 @@ func toNtpTime(t time.Time) ntpTime {
 		frac++
 	}
 	return ntpTime(sec<<32 | frac)
+}
+
+func getRttMs(report *rtcp.ReceptionReport) uint32 {
+	if report.LastSenderReport == 0 {
+		return 0
+	}
+
+	// RTT calculation reference: https://datatracker.ietf.org/doc/html/rfc3550#section-6.4.1
+
+	// middle 32-bits of current NTP time
+	now := uint32(toNtpTime(time.Now()) >> 16)
+	ntpDiff := now - report.LastSenderReport - report.Delay
+	return uint32(math.Ceil(float64(ntpDiff) * 1000.0 / 65536.0))
 }

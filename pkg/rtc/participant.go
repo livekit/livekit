@@ -33,6 +33,7 @@ const (
 	lossyDataChannel    = "_lossy"
 	reliableDataChannel = "_reliable"
 	sdBatchSize         = 20
+	rttUpdateInterval   = 5 * time.Second
 )
 
 type pendingTrackInfo struct {
@@ -102,6 +103,9 @@ type ParticipantImpl struct {
 	// keep track of other publishers identities that we are subscribed to
 	subscribedTo sync.Map // livekit.ParticipantID => struct{}
 
+	rttUpdatedAt time.Time
+	lastRTT      uint32
+
 	lock       sync.RWMutex
 	once       sync.Once
 	updateLock sync.Mutex
@@ -131,6 +135,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
 		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:              time.Now(),
+		rttUpdatedAt:             time.Now(),
 		version:                  params.InitialVersion,
 	}
 	p.migrateState.Store(types.MigrateStateInit)
@@ -929,6 +934,22 @@ func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.Parti
 	})
 	if err != nil {
 		p.params.Logger.Errorw("could not send subscription permission update", err)
+	}
+}
+
+func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
+	now := time.Now()
+	p.lock.Lock()
+	if now.Sub(p.rttUpdatedAt) < rttUpdateInterval || p.lastRTT == rtt {
+		p.lock.Unlock()
+		return
+	}
+	p.rttUpdatedAt = now
+	p.lastRTT = rtt
+	p.lock.Unlock()
+
+	for _, pt := range p.GetPublishedTracks() {
+		pt.(types.LocalMediaTrack).SetRTT(rtt)
 	}
 }
 

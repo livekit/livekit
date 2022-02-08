@@ -125,6 +125,9 @@ type DownTrack struct {
 
 	// when max subscribed layer changes
 	onMaxLayerChanged func(dt *DownTrack, layer int32)
+
+	// update rtt
+	onRttUpdate func(dt *DownTrack, rtt uint32)
 }
 
 // NewDownTrack returns a DownTrack.
@@ -588,6 +591,10 @@ func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.Analytics
 	d.onStatsUpdate = fn
 }
 
+func (d *DownTrack) OnRttUpdate(fn func(dt *DownTrack, rtt uint32)) {
+	d.onRttUpdate = fn
+}
+
 func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
 	d.onMaxLayerChanged = fn
 
@@ -850,6 +857,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
+	//rttToReport := uint32(0)
+
 	var numNACKs uint32
 	var numPLIs uint32
 	var numFIRs uint32
@@ -882,10 +891,18 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 				d.statsLock.Lock()
 				d.stats.TotalPacketsLost = r.TotalLost
-				// RAJA-TODO - calculate RTT and update
+
+				rtt := getRttMs(&r)
+				/*
+					if rtt != d.stats.RTT {
+						rttToReport = rtt
+					}
+				*/
+				d.stats.RTT = rtt
+
 				d.stats.Jitter = float64(r.Jitter)
 
-				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, 0, r.Jitter)
+				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
 				d.statsLock.Unlock()
 			}
 			if len(rr.Reports) > 0 {
