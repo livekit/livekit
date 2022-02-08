@@ -86,7 +86,7 @@ func IncrementBytes(direction Direction, count uint64) {
 	}
 }
 
-func IncrementRTCP(direction Direction, nack, pli, fir int32) {
+func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	if nack > 0 {
 		promNackTotal.WithLabelValues(string(direction)).Add(float64(nack))
 		atomic.AddUint64(&atomicNackTotal, uint64(nack))

@@ -10,6 +10,7 @@ import (
 
 const updateFrequency = time.Second * 10
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
 	// stats
 	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
@@ -26,6 +27,7 @@ type TelemetryService interface {
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
+	ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta)
 }
 
 type doWorkFunc func()
@@ -133,5 +135,11 @@ func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.Recor
 func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.jobQueue <- func() {
 		t.internalService.TrackPublishedUpdate(ctx, participantID, track)
+	}
+}
+
+func (t *telemetryService) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
+	t.jobQueue <- func() {
+		t.internalService.ParticipantActive(ctx, participantID, clientMeta)
 	}
 }

@@ -126,7 +126,6 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	if w != nil {
 		roomID = w.roomID
 		roomName = w.roomName
-		w.RemoveStats(livekit.TrackID(track.GetSid()))
 	}
 
 	prometheus.SubPublishedTrack(track.Type.String())
@@ -217,5 +216,18 @@ func (t *telemetryServiceInternal) notifyEvent(ctx context.Context, event *livek
 		if err := t.notifier.Notify(ctx, event); err != nil {
 			logger.Warnw("failed to notify webhook", err, "event", event.Event)
 		}
+	})
+}
+
+func (t *telemetryServiceInternal) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
+	roomID, roomName := t.getRoomDetails(participantID)
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,
+		Timestamp:     timestamppb.Now(),
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
+		Room:          &livekit.Room{Name: string(roomName)},
+		ClientMeta:    clientMeta,
 	})
 }

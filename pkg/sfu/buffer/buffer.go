@@ -3,6 +3,7 @@ package buffer
 import (
 	"encoding/binary"
 	"io"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,7 @@ type ExtPacket struct {
 
 // Buffer contains all packets
 type Buffer struct {
-	sync.Mutex
+	sync.RWMutex
 	bucket     *Bucket
 	nacker     *NackQueue
 	videoPool  *sync.Pool
@@ -63,21 +64,20 @@ type Buffer struct {
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	lastPacketRead     int
-	bitrate            atomic.Value
-	bitrateHelper      [4]int64
-	lastSRNTPTime      uint64
-	lastSRRTPTime      uint32
-	lastSRRecv         int64 // Represents wall clock of the most recent sender report arrival
-	cycle              uint16
-	lastRtcpPacketTime int64 // Time the last RTCP packet was received.
-	lastRtcpSrTime     int64 // Time the last RTCP SR was received. Required for DLSR computation.
-	lastTransit        uint32
+	lastPacketRead int
+	bitrate        atomic.Value
+	bitrateHelper  [4]int64
+	lastSRNTPTime  uint64
+	lastSRRTPTime  uint32
+	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
+	lastTransit    uint32
 
-	stats      Stats
+	started    bool
+	stats      StreamStats
 	rrSnapshot *receiverReportSnapshot
 
 	highestSN uint16
+	cycle     uint16
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -92,17 +92,10 @@ type Buffer struct {
 	logger logger.Logger
 }
 
-type Stats struct {
-	PacketCount uint32 // Number of packets received from this source.
-	TotalBytes  uint64
-	Jitter      float64 // An estimate of the statistical variance of the RTP data packet inter-arrival time.
-}
-
 type receiverReportSnapshot struct {
-	extSeqNum       uint32
-	packetsReceived uint32
-	packetsLost     uint32
-	lastLossRate    float32
+	extHighestSeqNum uint32
+	packetsLost      uint32
+	lastLossRate     float32
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -171,7 +164,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
-				b.nacker.SetRTT(70) // LK-TODO: sane default till we get better data
+				b.nacker.SetRTT(70) // default till it is updated
 				b.nack = true
 			}
 		}
@@ -285,6 +278,29 @@ func (b *Buffer) OnClose(fn func()) {
 	b.onClose = fn
 }
 
+func (b *Buffer) SendPLI() {
+	b.Lock()
+	b.stats.TotalPLIs++
+	b.Unlock()
+
+	pli := []rtcp.Packet{
+		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
+	}
+
+	b.feedbackCB(pli)
+}
+
+func (b *Buffer) SetRTT(rtt uint32) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.stats.RTT = rtt
+
+	if b.nacker != nil {
+		b.nacker.SetRTT(rtt)
+	}
+}
+
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	isRTX := false
 
@@ -342,41 +358,58 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64, isRTX bool) {
 	sn := p.SequenceNumber
 
-	if b.stats.PacketCount == 0 {
-		b.highestSN = sn - 1
+	if !b.started {
+		b.started = true
+		b.highestSN = sn
 
 		b.lastReport = arrivalTime
 
 		b.rrSnapshot = &receiverReportSnapshot{
-			extSeqNum:       uint32(sn) - 1,
-			packetsReceived: 0,
-			packetsLost:     0,
-			lastLossRate:    0.0,
-		}
-	}
-
-	diff := sn - b.highestSN
-	if diff > (1 << 15) {
-		// out-of-order, remove it from nack queue
-		if b.nacker != nil {
-			b.nacker.Remove(sn)
+			extHighestSeqNum: uint32(sn) - 1,
+			packetsLost:      0,
+			lastLossRate:     0.0,
 		}
 	} else {
-		if b.nacker != nil && diff > 1 {
-			for lost := b.highestSN + 1; lost != sn; lost++ {
-				b.nacker.Push(lost)
+		diff := sn - b.highestSN
+		if diff > (1 << 15) {
+			if !isRTX && b.stats.TotalPacketsLost != 0 {
+				b.stats.TotalPacketsLost--
 			}
-		}
 
-		if sn < b.highestSN && b.stats.PacketCount > 0 {
-			b.cycle++
-		}
+			// out-of-order, remove it from nack queue
+			if b.nacker != nil {
+				b.nacker.Remove(sn)
+			}
+		} else {
+			b.stats.TotalPacketsLost += (uint32(diff) - 1)
+			if b.nacker != nil && diff > 1 {
+				for lost := b.highestSN + 1; lost != sn; lost++ {
+					b.nacker.Push(lost)
+				}
+			}
 
-		b.highestSN = sn
+			if sn < b.highestSN {
+				b.cycle++
+			}
+
+			b.highestSN = sn
+		}
 	}
 
-	b.stats.PacketCount++
-	b.stats.TotalBytes += uint64(pktSize)
+	switch {
+	case isRTX:
+		b.stats.TotalRetransmitPackets++
+		b.stats.TotalRetransmitBytes += uint64(pktSize)
+	case len(p.Payload) == 0:
+		b.stats.TotalPaddingPackets++
+		b.stats.TotalPaddingBytes += uint64(pktSize)
+	default:
+		b.stats.TotalPrimaryPackets++
+		b.stats.TotalPrimaryBytes += uint64(pktSize)
+		if p.Marker {
+			b.stats.TotalFrames++
+		}
+	}
 
 	if !isRTX {
 		// jitter
@@ -465,8 +498,9 @@ func (b *Buffer) doNACKs() {
 		return
 	}
 
-	if r := b.buildNACKPacket(); r != nil {
-		b.feedbackCB(r)
+	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
+		go b.feedbackCB(r)
+		b.stats.TotalNACKs += uint32(numSeqNumsNacked)
 	}
 }
 
@@ -496,14 +530,18 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	b.bitrate.Store(bitrates)
 
 	// RTCP reports
+<<<<<<< HEAD
 	pkts := b.getRTCP()
 	b.callbackOps <- func() {
 		b.feedbackCB(pkts)
 	}
+=======
+	go b.feedbackCB(b.getRTCP())
+>>>>>>> origin/master
 }
 
-func (b *Buffer) buildNACKPacket() []rtcp.Packet {
-	if nacks := b.nacker.Pairs(); len(nacks) > 0 {
+func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
+	if nacks, numSeqNumsNacked := b.nacker.Pairs(); len(nacks) > 0 {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
@@ -512,9 +550,9 @@ func (b *Buffer) buildNACKPacket() []rtcp.Packet {
 			}}
 		}
 
-		return pkts
+		return pkts, numSeqNumsNacked
 	}
-	return nil
+	return nil, 0
 }
 
 func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
@@ -537,7 +575,6 @@ func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 	if br < 100000 {
 		br = 100000
 	}
-	b.stats.TotalBytes = 0
 
 	return &rtcp.ReceiverEstimatedMaximumBitrate{
 		Bitrate: float32(br),
@@ -550,14 +587,13 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		return nil
 	}
 
-	extMaxSeq := (uint32(b.cycle) << 16) | uint32(b.highestSN)
-	expectedInInterval := extMaxSeq - b.rrSnapshot.extSeqNum
+	extHighestSeqNum := (uint32(b.cycle) << 16) | uint32(b.highestSN)
+	expectedInInterval := extHighestSeqNum - b.rrSnapshot.extHighestSeqNum
 	if expectedInInterval == 0 {
 		return nil
 	}
 
-	receivedInInterval := b.stats.PacketCount - b.rrSnapshot.packetsReceived
-	lostInInterval := expectedInInterval - receivedInInterval
+	lostInInterval := b.stats.TotalPacketsLost - b.rrSnapshot.packetsLost
 	if int32(lostInInterval) < 0 {
 		// could happen if retransmitted packets arrive and make received greater than expected
 		lostInInterval = 0
@@ -570,8 +606,6 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		fracLost = b.lastFractionLostToReport
 	}
 
-	totalLost := b.rrSnapshot.packetsLost + lostInInterval
-
 	var dlsr uint32
 	if b.lastSRRecv != 0 {
 		delayMS := uint32((time.Now().UnixNano() - b.lastSRRecv) / 1e6)
@@ -580,17 +614,16 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 	}
 
 	b.rrSnapshot = &receiverReportSnapshot{
-		extSeqNum:       extMaxSeq,
-		packetsReceived: b.stats.PacketCount,
-		packetsLost:     totalLost,
-		lastLossRate:    lossRate,
+		extHighestSeqNum: extHighestSeqNum,
+		packetsLost:      b.stats.TotalPacketsLost,
+		lastLossRate:     lossRate,
 	}
 
 	return &rtcp.ReceptionReport{
 		SSRC:               b.mediaSSRC,
 		FractionLost:       fracLost,
-		TotalLost:          totalLost,
-		LastSequenceNumber: extMaxSeq,
+		TotalLost:          b.stats.TotalPacketsLost,
+		LastSequenceNumber: extHighestSeqNum,
 		Jitter:             uint32(b.stats.Jitter),
 		LastSenderReport:   uint32(b.lastSRNTPTime >> 16),
 		Delay:              dlsr,
@@ -700,22 +733,19 @@ func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastRece
 	return rtpTime, ntpTime, lastReceivedTimeInNanosSinceEpoch
 }
 
-// GetStats returns the raw statistics about a particular buffer state
-func (b *Buffer) GetStats() (stats Stats) {
-	b.Lock()
-	stats = b.stats
-	b.Unlock()
-	return
-}
+func (b *Buffer) GetStats() *StreamStatsWithLayers {
+	b.RLock()
+	defer b.RUnlock()
 
-// Used only in tests
-func (b *Buffer) SetStatsTestOnly(stats Stats) {
-	b.Lock()
-	b.stats = stats
-	b.Unlock()
-}
+	layers := make(map[int]LayerStats)
+	layers[0] = LayerStats{
+		TotalPackets: b.stats.TotalPrimaryPackets + b.stats.TotalRetransmitPackets + b.stats.TotalPaddingPackets,
+		TotalBytes:   b.stats.TotalPrimaryBytes + b.stats.TotalRetransmitBytes + b.stats.TotalPaddingBytes,
+		TotalFrames:  b.stats.TotalFrames,
+	}
 
-// IsLaterTimestamp returns true if timestamp1 is later in time than timestamp2 factoring in timestamp wrap-around
-func IsLaterTimestamp(timestamp1 uint32, timestamp2 uint32) bool {
-	return (timestamp1 - timestamp2) < (1 << 31)
+	return &StreamStatsWithLayers{
+		StreamStats: b.stats,
+		Layers:      layers,
+	}
 }

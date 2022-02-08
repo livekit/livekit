@@ -8,10 +8,10 @@ import (
 // available @ https://github.com/oanguenot/webrtc-stats
 
 const (
-	rtt = 70
+	defaultRtt = uint32(70)
 )
 
-func Score2Rating(score float64) livekit.ConnectionQuality {
+func Score2Rating(score float32) livekit.ConnectionQuality {
 	if score > 3.9 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
@@ -22,12 +22,15 @@ func Score2Rating(score float64) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(pctLoss float64, jitter uint32) float64 {
+func mosAudioEmodel(pctLoss float32, rtt uint32, jitter float32) float32 {
 	rx := 93.2 - pctLoss
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
-	// Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
-	d := float64(rtt + (jitter / 1000))
+	if rtt == 0 {
+		rtt = defaultRtt
+	}
+	// Jitter is in Milliseconds
+	d := float32(rtt) + jitter
 	h := d - 177.3
 	if h < 0 {
 		h = 0
@@ -47,13 +50,13 @@ func mosAudioEmodel(pctLoss float64, jitter uint32) float64 {
 	return score
 }
 
-func loss2Score(pctLoss float64, reducedQuality bool) float64 {
+func loss2Score(pctLoss float32, reducedQuality bool) float32 {
 	// No Loss, excellent
 	if pctLoss == 0.0 && !reducedQuality {
-		return 5
+		return 5.0
 	}
 	// default when loss is minimal, but reducedQuality
-	score := 3.5
+	score := float32(3.5)
 	// loss is bad
 	if pctLoss >= 4.0 {
 		score = 2.0
@@ -64,10 +67,10 @@ func loss2Score(pctLoss float64, reducedQuality bool) float64 {
 	return score
 }
 
-func AudioConnectionScore(pctLoss float64, jitter uint32) float64 {
-	return mosAudioEmodel(pctLoss, jitter)
+func AudioConnectionScore(pctLoss float32, rtt uint32, jitter float32) float32 {
+	return mosAudioEmodel(pctLoss, rtt, jitter)
 }
 
-func VideoConnectionScore(pctLoss float64, reducedQuality bool) float64 {
+func VideoConnectionScore(pctLoss float32, reducedQuality bool) float32 {
 	return loss2Score(pctLoss, reducedQuality)
 }

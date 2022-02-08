@@ -6,8 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
@@ -35,8 +33,6 @@ type MediaTrack struct {
 
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
-
-	connectionStats *connectionquality.ConnectionStats
 
 	done chan struct{}
 
@@ -97,30 +93,6 @@ func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTra
 		}
 	})
 
-	t.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		UpdateInterval: connectionQualityUpdateInterval,
-		CodecType:      track.Kind(),
-		GetTotalBytes: func() uint64 {
-			receiver := t.Receiver()
-			if receiver != nil {
-				return receiver.(*sfu.WebRTCReceiver).GetTotalBytes()
-			}
-
-			return 0
-		},
-		GetIsReducedQuality: func() bool {
-			publishing, expected := t.getNumUpTracks()
-			return publishing < expected
-		},
-		Logger: t.params.Logger,
-	})
-	t.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
-		t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
-	})
-
-	t.AddOnClose(func() {
-		t.connectionStats.Close()
-	})
 	return t
 }
 
@@ -147,23 +119,6 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return info
 }
 
-func (t *MediaTrack) getNumUpTracks() (uint32, uint32) {
-	numExpected := atomic.LoadUint32(&t.numUpTracks)
-
-	numSubscribedLayers := t.numSubscribedLayers()
-	if numSubscribedLayers < numExpected {
-		numExpected = numSubscribedLayers
-	}
-
-	numPublishing := uint32(0)
-	receiver := t.Receiver()
-	if receiver != nil {
-		numPublishing = uint32(receiver.(*sfu.WebRTCReceiver).NumAvailableSpatialLayers())
-	}
-
-	return numPublishing, numExpected
-}
-
 // AddReceiver adds a new RTP receiver to the track
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
@@ -171,7 +126,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
 		return
 	}
-	buff.OnFeedback(t.handlePublisherFeedback)
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		t.audioLevelMu.Lock()
@@ -225,13 +179,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.MediaTrackReceiver.Close()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.PublisherID(), t.ToProto(), uint32(track.SSRC()))
 		})
+		wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
+		})
 		t.params.Telemetry.TrackPublished(context.Background(), t.PublisherID(), t.ToProto())
 
 		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(wr)
-
-		t.connectionStats.Start()
 	}
 	t.lock.Unlock()
 
@@ -272,14 +227,11 @@ func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
 	return t.audioLevel.GetLevel()
 }
 
-func (t *MediaTrack) handlePublisherFeedback(packets []rtcp.Packet) {
-	t.connectionStats.RTCPFeedback(packets, 0)
+func (t *MediaTrack) GetConnectionScore() float32 {
+	receiver := t.Receiver()
+	if receiver == nil {
+		return 0.0
+	}
 
-	// also look for sender reports
-	// feedback for the source RTCP
-	t.params.RTCPChan <- packets
-}
-
-func (t *MediaTrack) GetConnectionScore() float64 {
-	return t.connectionStats.GetScore()
+	return receiver.(*sfu.WebRTCReceiver).GetConnectionScore()
 }
