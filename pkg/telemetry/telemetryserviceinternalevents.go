@@ -218,3 +218,16 @@ func (t *telemetryServiceInternal) notifyEvent(ctx context.Context, event *livek
 		}
 	})
 }
+
+func (t *telemetryServiceInternal) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
+	roomID, roomName := t.getRoomDetails(participantID)
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,
+		Timestamp:     timestamppb.Now(),
+		RoomId:        string(roomID),
+		ParticipantId: string(participantID),
+		Room:          &livekit.Room{Name: string(roomName)},
+		ClientMeta:    clientMeta,
+	})
+}

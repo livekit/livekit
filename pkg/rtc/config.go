@@ -176,6 +176,10 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
 	}
 
+	if rtcConf.UseICELite {
+		s.SetLite(true)
+	}
+
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,

@@ -46,15 +46,15 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	UDPPort           uint32 `yaml:"udp_port,omitempty"`
-	TCPPort           uint32 `yaml:"tcp_port,omitempty"`
-	ICEPortRangeStart uint32 `yaml:"port_range_start,omitempty"`
-	ICEPortRangeEnd   uint32 `yaml:"port_range_end,omitempty"`
-	NodeIP            string `yaml:"node_ip,omitempty"`
-	// for testing, disable UDP
-	ForceTCP      bool     `yaml:"force_tcp,omitempty"`
-	StunServers   []string `yaml:"stun_servers,omitempty"`
-	UseExternalIP bool     `yaml:"use_external_ip"`
+	UDPPort           uint32       `yaml:"udp_port,omitempty"`
+	TCPPort           uint32       `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart uint32       `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd   uint32       `yaml:"port_range_end,omitempty"`
+	NodeIP            string       `yaml:"node_ip,omitempty"`
+	STUNServers       []string     `yaml:"stun_servers,omitempty"`
+	TURNServers       []TURNServer `yaml:"turn_servers,omitempty"`
+	UseExternalIP     bool         `yaml:"use_external_ip"`
+	UseICELite        bool         `yaml:"use_ice_lite,omitempty"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -69,6 +69,16 @@ type RTCConfig struct {
 	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
+	// for testing, disable UDP
+	ForceTCP bool `yaml:"force_tcp,omitempty"`
+}
+
+type TURNServer struct {
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Protocol   string `yaml:"protocol"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
 }
 
 type PLIThrottleConfig struct {
@@ -168,8 +178,8 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
-			StunServers:       []string{},
-			MaxBitrate:        3 * 1024 * 1024, // 3 mbps
+			STUNServers:       []string{},
+			MaxBitrate:        10 * 1024 * 1024, // 10 mbps
 			PacketBufferSize:  500,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
