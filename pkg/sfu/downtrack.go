@@ -857,7 +857,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	//rttToReport := uint32(0)
+	rttToReport := uint32(0)
 
 	var numNACKs uint32
 	var numPLIs uint32
@@ -893,11 +893,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				d.stats.TotalPacketsLost = r.TotalLost
 
 				rtt := getRttMs(&r)
-				/*
-					if rtt != d.stats.RTT {
-						rttToReport = rtt
-					}
-				*/
+				if rtt != d.stats.RTT {
+					rttToReport = rtt
+				}
 				d.stats.RTT = rtt
 
 				d.stats.Jitter = float64(r.Jitter)
@@ -933,6 +931,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	d.stats.TotalPLIs += numPLIs
 	d.stats.TotalFIRs += numFIRs
 	d.statsLock.Unlock()
+
+	if rttToReport != 0 && d.onRttUpdate != nil {
+		d.onRttUpdate(d, rttToReport)
+	}
 }
 
 func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
