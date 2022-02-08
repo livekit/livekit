@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -83,6 +84,8 @@ type Participant interface {
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
+
+	GetLogger() logger.Logger
 
 	ProtocolVersion() ProtocolVersion
 

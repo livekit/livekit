@@ -97,6 +97,7 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, codec webrtc.RTPCodecCapability, wr WrappedReceiver) (*sfu.DownTrack, error) {
+	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
 
 	t.subscribedTracksMu.Lock()
@@ -126,7 +127,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		t.params.BufferFactory,
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
-		LoggerWithParticipant(t.params.Logger, sub.Identity(), sub.ID()),
+		LoggerWithTrack(sub.GetLogger(), trackID),
 	)
 	if err != nil {
 		return nil, err
@@ -190,7 +191,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		go t.sendDownTrackBindingReports(sub)
 	})
 
-	trackID := t.params.MediaTrack.ID()
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
 		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
 	})

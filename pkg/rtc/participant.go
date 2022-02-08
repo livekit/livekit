@@ -223,6 +223,10 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	return p, nil
 }
 
+func (p *ParticipantImpl) GetLogger() logger.Logger {
+	return p.params.Logger
+}
+
 func (p *ParticipantImpl) ID() livekit.ParticipantID {
 	return p.params.SID
 }
