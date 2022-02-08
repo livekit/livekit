@@ -48,14 +48,14 @@ type MediaTrackParams struct {
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	// channel to send RTCP packets to the source
-	RTCPChan         chan []rtcp.Packet
-	BufferFactory    *buffer.Factory
-	ReceiverConfig   ReceiverConfig
-	SubscriberConfig DirectionConfig
-	PLIThrottle      time.Duration
-	AudioConfig      config.AudioConfig
-	Telemetry        telemetry.TelemetryService
-	Logger           logger.Logger
+	RTCPChan          chan []rtcp.Packet
+	BufferFactory     *buffer.Factory
+	ReceiverConfig    ReceiverConfig
+	SubscriberConfig  DirectionConfig
+	PLIThrottleConfig config.PLIThrottleConfig
+	AudioConfig       config.AudioConfig
+	Telemetry         telemetry.TelemetryService
+	Logger            logger.Logger
 }
 
 func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
@@ -170,7 +170,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			track,
 			t.PublisherID(),
 			t.params.Logger,
-			sfu.WithPliThrottle(t.params.PLIThrottle.Milliseconds()),
+			sfu.WithPliThrottle(t.params.PLIThrottleConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 		)

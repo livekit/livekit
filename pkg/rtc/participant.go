@@ -49,7 +49,7 @@ type ParticipantParams struct {
 	AudioConfig             config.AudioConfig
 	ProtocolVersion         types.ProtocolVersion
 	Telemetry               telemetry.TelemetryService
-	PLIThrottle             time.Duration
+	PLIThrottleConfig       config.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	EnabledCodecs           []*livekit.Codec
 	Hidden                  bool
@@ -1424,7 +1424,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			Telemetry:           p.params.Telemetry,
 			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,
-			PLIThrottle:         p.params.PLIThrottle,
+			PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		})
 
 		for ssrc, info := range p.params.SimTracks {

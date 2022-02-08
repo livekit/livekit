@@ -72,6 +72,9 @@ type Buffer struct {
 	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
 	lastTransit    uint32
 
+	pliThrottle int64
+	lastPli     int64
+
 	started    bool
 	stats      StreamStats
 	rrSnapshot *receiverReportSnapshot
@@ -109,6 +112,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
 		audioPool:   ap,
+		pliThrottle: 500e6,
 		logger:      logger.Logger(logger.GetLogger()), // will be reset with correct context via SetLogger
 		callbackOps: make(chan func(), 50),
 	}
@@ -278,8 +282,23 @@ func (b *Buffer) OnClose(fn func()) {
 	b.onClose = fn
 }
 
-func (b *Buffer) SendPLI() {
+func (b *Buffer) SetPLIThrottle(duration int64) {
 	b.Lock()
+	defer b.Unlock()
+
+	b.pliThrottle = duration
+}
+
+func (b *Buffer) SendPLI() {
+	now := time.Now().UnixNano()
+
+	b.Lock()
+	throttled := now-b.lastPli < b.pliThrottle
+	if throttled {
+		b.Unlock()
+		return
+	}
+	b.lastPli = now
 	b.stats.TotalPLIs++
 	b.Unlock()
 
