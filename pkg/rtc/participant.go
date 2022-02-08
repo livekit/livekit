@@ -49,7 +49,7 @@ type ParticipantParams struct {
 	AudioConfig             config.AudioConfig
 	ProtocolVersion         types.ProtocolVersion
 	Telemetry               telemetry.TelemetryService
-	ThrottleConfig          config.PLIThrottleConfig
+	PLIThrottleConfig       config.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	EnabledCodecs           []*livekit.Codec
 	Hidden                  bool
@@ -82,8 +82,7 @@ type ParticipantImpl struct {
 	// JSON encoded metadata to pass to clients
 	metadata string
 
-	rtcpCh      chan []rtcp.Packet
-	pliThrottle *pliThrottle
+	rtcpCh chan []rtcp.Packet
 
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
@@ -127,7 +126,6 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	p := &ParticipantImpl{
 		params:                   params,
 		rtcpCh:                   make(chan []rtcp.Packet, 50),
-		pliThrottle:              newPLIThrottle(params.ThrottleConfig),
 		pendingTracks:            make(map[string]*pendingTrackInfo),
 		subscribedTracks:         make(map[livekit.TrackID]types.SubscribedTrack),
 		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
@@ -1426,6 +1424,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			Telemetry:           p.params.Telemetry,
 			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,
+			PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		})
 
 		for ssrc, info := range p.params.SimTracks {
@@ -1444,7 +1443,6 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 
 	ssrc := uint32(track.SSRC())
-	p.pliThrottle.addTrack(ssrc, track.RID())
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
@@ -1548,30 +1546,8 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 			return
 		}
 
-		fwdPkts := make([]rtcp.Packet, 0, len(pkts))
-		for _, pkt := range pkts {
-			switch packet := pkt.(type) {
-			case *rtcp.PictureLossIndication:
-				mediaSSRC := packet.MediaSSRC
-				if p.pliThrottle.canSend(mediaSSRC) {
-					p.params.Logger.Debugw("send pli", "ssrc", mediaSSRC)
-					fwdPkts = append(fwdPkts, pkt)
-				}
-			case *rtcp.FullIntraRequest:
-				mediaSSRC := packet.MediaSSRC
-				if p.pliThrottle.canSend(mediaSSRC) {
-					p.params.Logger.Debugw("send fir", "ssrc", mediaSSRC)
-					fwdPkts = append(fwdPkts, pkt)
-				}
-			default:
-				fwdPkts = append(fwdPkts, pkt)
-			}
-		}
-
-		if len(fwdPkts) > 0 {
-			if err := p.publisher.pc.WriteRTCP(fwdPkts); err != nil {
-				p.params.Logger.Errorw("could not write RTCP to participant", err)
-			}
+		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
+			p.params.Logger.Errorw("could not write RTCP to participant", err)
 		}
 	}
 }

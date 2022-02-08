@@ -368,11 +368,11 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		panic(err)
 	}
 	p, _ := NewParticipant(ParticipantParams{
-		Identity:        identity,
-		Config:          rtcConf,
-		Sink:            &routingfakes.FakeMessageSink{},
-		ProtocolVersion: opts.protocolVersion,
-		ThrottleConfig:  conf.RTC.PLIThrottle,
+		Identity:          identity,
+		Config:            rtcConf,
+		Sink:              &routingfakes.FakeMessageSink{},
+		ProtocolVersion:   opts.protocolVersion,
+		PLIThrottleConfig: conf.RTC.PLIThrottle,
 	}, opts.permissions)
 	return p
 }

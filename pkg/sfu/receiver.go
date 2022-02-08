@@ -13,6 +13,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 )
@@ -45,6 +46,8 @@ type TrackReceiver interface {
 type WebRTCReceiver struct {
 	logger logger.Logger
 
+	pliThrottleConfig config.PLIThrottleConfig
+
 	peerID         livekit.ParticipantID
 	trackID        livekit.TrackID
 	streamID       string
@@ -57,10 +60,7 @@ type WebRTCReceiver struct {
 	closed         atomicBool
 	useTrackers    bool
 
-	rtcpMu      sync.Mutex
-	rtcpCh      chan []rtcp.Packet
-	lastPli     atomicInt64
-	pliThrottle int64
+	rtcpCh chan []rtcp.Packet
 
 	bufferMu sync.RWMutex
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
@@ -98,9 +98,9 @@ func RidToLayer(rid string) int32 {
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottle indicates minimum time(ms) between sending PLIs
-func WithPliThrottle(period int64) ReceiverOpts {
+func WithPliThrottle(pliThrottleConfig config.PLIThrottleConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
-		w.pliThrottle = period * 1e6
+		w.pliThrottleConfig = pliThrottleConfig
 		return w
 	}
 }
@@ -143,7 +143,6 @@ func NewWebRTCReceiver(
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast:          len(track.RID()) > 0,
-		pliThrottle:          500e6,
 		downTracks:           make([]TrackSender, 0),
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
@@ -236,8 +235,22 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	buff.SetLogger(w.logger)
 	buff.OnFeedback(w.sendRTCP)
 
-	layer := RidToLayer(track.RID())
+	var duration time.Duration
+	switch track.RID() {
+	case FullResolution:
+		duration = w.pliThrottleConfig.HighQuality
+	case HalfResolution:
+		duration = w.pliThrottleConfig.MidQuality
+	case QuarterResolution:
+		duration = w.pliThrottleConfig.LowQuality
+	default:
+		duration = w.pliThrottleConfig.MidQuality
+	}
+	if duration != 0 {
+		buff.SetPLIThrottle(duration.Nanoseconds())
+	}
 
+	layer := RidToLayer(track.RID())
 	w.upTrackMu.Lock()
 	w.upTracks[layer] = track
 	w.upTrackMu.Unlock()
@@ -361,12 +374,6 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 	if buff == nil {
 		return
 	}
-
-	throttled := time.Now().UnixNano()-w.lastPli.get() < w.pliThrottle
-	if throttled {
-		return
-	}
-	w.lastPli.set(time.Now().UnixNano())
 
 	buff.SendPLI()
 }
@@ -530,7 +537,6 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"Simulcast": w.isSimulcast,
-		"LastPli":   w.lastPli,
 	}
 
 	w.upTrackMu.RLock()
