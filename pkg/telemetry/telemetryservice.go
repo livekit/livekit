@@ -10,6 +10,7 @@ import (
 
 const updateFrequency = time.Second * 10
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
 	// stats
 	TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat)
