@@ -112,7 +112,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		mediaSSRC:   ssrc,
 		videoPool:   vp,
 		audioPool:   ap,
-		pliThrottle: 500e6,
+		pliThrottle: int64(500 * time.Millisecond),
 		logger:      logger.Logger(logger.GetLogger()), // will be reset with correct context via SetLogger
 		callbackOps: make(chan func(), 50),
 	}
