@@ -111,7 +111,10 @@ func (cs *ConnectionStats) UpdateWindow(ssrc uint32, extHighestSeqNum uint32, pa
 	}
 }
 
-func (cs *ConnectionStats) updateScore() {
+func (cs *ConnectionStats) updateScore() float32 {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
 	expectedPacketsInInterval := uint32(0)
 	lostPacketsInInterval := uint32(0)
 	maxRTT := uint32(0)
@@ -150,12 +153,11 @@ func (cs *ConnectionStats) updateScore() {
 		}
 		cs.score = VideoConnectionScore(pctLoss, isReducedQuality)
 	}
+
+	return cs.score
 }
 
 func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
 	if cs.params.GetTrackStats == nil {
 		return nil
 	}
@@ -191,10 +193,10 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	cs.updateScore()
+	score := cs.updateScore()
 
 	return &livekit.AnalyticsStat{
-		Score:   float32(cs.score),
+		Score:   score,
 		Streams: analyticsStreams,
 	}
 }
