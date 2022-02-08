@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	negotiationFrequency = 150 * time.Millisecond
+	negotiationFrequency       = 150 * time.Millisecond
+	dtlsRetransmissionInterval = 100 * time.Millisecond
 )
 
 const (
@@ -111,6 +112,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	if !params.ProtocolVersion.SupportsICELite() {
 		se.SetLite(false)
 	}
+	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 
 	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
 	if lf != nil {
