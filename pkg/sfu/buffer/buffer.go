@@ -318,7 +318,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 
 	b.stats.RTT = rtt
 
-	if b.nacker != nil {
+	if b.nacker != nil && rtt != 0 {
 		b.nacker.SetRTT(rtt)
 	}
 }

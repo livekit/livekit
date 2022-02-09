@@ -64,6 +64,7 @@ type WebRTCReceiver struct {
 
 	bufferMu sync.RWMutex
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	rtt      uint32
 
 	upTrackMu sync.RWMutex
 	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
@@ -77,7 +78,6 @@ type WebRTCReceiver struct {
 
 	streamTrackerManager *StreamTrackerManager
 
-	rtt             uint32
 	connectionStats *connectionquality.ConnectionStats
 
 	// update stats
@@ -187,17 +187,23 @@ func (w *WebRTCReceiver) GetConnectionScore() float32 {
 }
 
 func (w *WebRTCReceiver) SetRTT(rtt uint32) {
-	w.rtt = rtt
+	w.bufferMu.Lock()
+	if w.rtt == rtt {
+		w.bufferMu.Unlock()
+		return
+	}
 
-	w.bufferMu.RLock()
-	for _, buffer := range w.buffers {
+	w.rtt = rtt
+	buffers := w.buffers
+	w.bufferMu.Unlock()
+
+	for _, buffer := range buffers {
 		if buffer == nil {
 			continue
 		}
 
 		buffer.SetRTT(rtt)
 	}
-	w.bufferMu.RUnlock()
 }
 
 func (w *WebRTCReceiver) SetTrackMeta(trackID livekit.TrackID, streamID string) {
@@ -261,7 +267,9 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 
 	w.bufferMu.Lock()
 	w.buffers[layer] = buff
+	rtt := w.rtt
 	w.bufferMu.Unlock()
+	buff.SetRTT(rtt)
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
 		w.streamTrackerManager.AddTracker(layer)
