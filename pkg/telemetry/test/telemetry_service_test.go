@@ -226,7 +226,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	_, stats = fixture.analytics.SendStatsArgsForCall(1)
 	require.Equal(t, 1, len(stats))
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
-	require.Equal(t, 4, int(stats[0].Streams[0].TotalPacketsLost)) // see diff of TotalLost between pkts2 and pkts1
+	require.Equal(t, 3, int(stats[0].Streams[0].TotalPacketsLost)) // see diff of TotalLost between pkts2 and pkts1
 }
 
 func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {

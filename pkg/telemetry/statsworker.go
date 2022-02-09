@@ -123,7 +123,7 @@ func (s *StatsWorker) Update() {
 
 func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
 	for trackID, analyticsStats := range s.outgoingPerTrack {
-		analyticsStat := s.computeDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_DOWNSTREAM)
+		analyticsStat := s.getDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_DOWNSTREAM)
 		if analyticsStat != nil {
 			stats = append(stats, analyticsStat)
 		}
@@ -136,7 +136,7 @@ func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []
 
 func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
 	for trackID, analyticsStats := range s.incomingPerTrack {
-		analyticsStat := s.computeDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_UPSTREAM)
+		analyticsStat := s.getDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_UPSTREAM)
 		if analyticsStat != nil {
 			stats = append(stats, analyticsStat)
 		}
@@ -146,7 +146,7 @@ func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*l
 	}
 	return stats
 }
-func (s *StatsWorker) computeDeltaStats(stats *Stats, ts *timestamppb.Timestamp, trackID livekit.TrackID, kind livekit.StreamType) *livekit.AnalyticsStat {
+func (s *StatsWorker) getDeltaStats(stats *Stats, ts *timestamppb.Timestamp, trackID livekit.TrackID, kind livekit.StreamType) *livekit.AnalyticsStat {
 	// merge all streams stats of track
 	stats.coalesce()
 	// create deltaStats to send
