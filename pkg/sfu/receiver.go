@@ -191,6 +191,10 @@ func (w *WebRTCReceiver) SetRTT(rtt uint32) {
 
 	w.bufferMu.RLock()
 	for _, buffer := range w.buffers {
+		if buffer == nil {
+			continue
+		}
+
 		buffer.SetRTT(rtt)
 	}
 	w.bufferMu.RUnlock()

@@ -153,6 +153,8 @@ type LocalParticipant interface {
 	MigrateState() MigrateState
 	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
+
+	UpdateRTT(rtt uint32)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -215,6 +217,8 @@ type LocalMediaTrack interface {
 
 	GetAudioLevel() (level uint8, active bool)
 	GetConnectionScore() float32
+
+	SetRTT(rtt uint32)
 }
 
 // MediaTrack is the main interface representing a track published to the room
