@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -43,8 +44,8 @@ func TestNack(t *testing.T) {
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		require.NotNil(t, buff)
 		var wg sync.WaitGroup
-		// 3 nacks
-		wg.Add(3)
+		// 5 tries
+		wg.Add(5)
 		buff.OnFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
@@ -59,10 +60,16 @@ func TestNack(t *testing.T) {
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
 		}, vp8Codec.RTPCodecCapability, Options{})
-		buff.nacker.SetRTT(0)
+		rtt := uint32(20)
+		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
 			if i == 1 {
 				continue
+			}
+			if i < 14 {
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+			} else {
+				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
 				Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
@@ -88,7 +95,7 @@ func TestNack(t *testing.T) {
 			0:     0,
 			1:     0,
 		}
-		wg.Add(3 * len(expects)) // retry 3 times
+		wg.Add(5 * len(expects)) // retry 5 times
 		buff.OnFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
@@ -112,10 +119,16 @@ func TestNack(t *testing.T) {
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
 		}, vp8Codec.RTPCodecCapability, Options{})
-		buff.nacker.SetRTT(0)
+		rtt := uint32(30)
+		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
 			if i > 0 && i < 5 {
 				continue
+			}
+			if i < 14 {
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+			} else {
+				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
 				Header:  rtp.Header{SequenceNumber: uint16(i + 65533), Timestamp: uint32(i)},

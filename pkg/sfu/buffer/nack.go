@@ -1,33 +1,35 @@
 package buffer
 
 import (
+	"math"
 	"time"
 
 	"github.com/pion/rtcp"
 )
 
-const maxNackTimes = 3   // Max number of times a packet will be NACKed
-const maxNackCache = 100 // Max NACK sn the sfu will keep reference
-
-type nack struct {
-	seqNum       uint16
-	nacked       uint8
-	lastNackTime time.Time
-}
+const (
+	maxTries      = 5                      // Max number of times a packet will be NACKed
+	cacheSize     = 100                    // Max NACK sn the sfu will keep reference
+	maxWait       = 2 * time.Second        // how long to process a NACK before it is declared unrecoverable and purged
+	minInterval   = 20 * time.Millisecond  // minimum interval between NACK tries for the same sequence number
+	maxInterval   = 400 * time.Millisecond // maximum interval between NACK tries for the same sequence number
+	initialDelay  = 10 * time.Millisecond  // delay before NACKing a sequence number to allow for out-of-order packets
+	backoffFactor = float64(1.25)
+)
 
 type NackQueue struct {
 	nacks []*nack
-	rtt   time.Duration
+	rtt   uint32
 }
 
 func NewNACKQueue() *NackQueue {
 	return &NackQueue{
-		nacks: make([]*nack, 0, maxNackCache),
+		nacks: make([]*nack, 0, cacheSize),
 	}
 }
 
 func (n *NackQueue) SetRTT(rtt uint32) {
-	n.rtt = time.Duration(rtt) * time.Millisecond
+	n.rtt = rtt
 }
 
 func (n *NackQueue) Remove(sn uint16) {
@@ -49,7 +51,7 @@ func (n *NackQueue) Push(sn uint16) {
 		n.nacks = n.nacks[:len(n.nacks)-1]
 	}
 
-	n.nacks = append(n.nacks, &nack{seqNum: sn, nacked: 0, lastNackTime: time.Now()})
+	n.nacks = append(n.nacks, newNack(sn))
 }
 
 func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
@@ -69,31 +71,31 @@ func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
 	var np rtcp.NackPair
 	var nps []rtcp.NackPair
 	for _, nack := range n.nacks {
-		if nack.nacked >= maxNackTimes || now.Sub(nack.lastNackTime) < n.rtt {
-			if nack.nacked >= maxNackTimes {
-				snsToPurge = append(snsToPurge, nack.seqNum)
-			}
+		shouldSend, shouldRemove, sn := nack.getNack(now, n.rtt)
+		if shouldRemove {
+			snsToPurge = append(snsToPurge, sn)
+			continue
+		}
+		if !shouldSend {
 			continue
 		}
 
-		nack.nacked++
-		nack.lastNackTime = now
 		numSeqNumsNacked++
-
-		if (nack.seqNum - baseSN) > 16 {
+		if (sn - baseSN) > 16 {
 			// need a new nack pair
 			if isPairActive {
 				nps = append(nps, np)
 				isPairActive = false
 			}
 
-			baseSN = nack.seqNum
+			baseSN = sn
 
-			np.PacketID = nack.seqNum
+			np.PacketID = sn
 			np.LostPackets = 0
+
 			isPairActive = true
 		} else {
-			np.LostPackets |= 1 << (nack.seqNum - baseSN - 1)
+			np.LostPackets |= 1 << (sn - baseSN - 1)
 		}
 	}
 
@@ -107,4 +109,59 @@ func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
 	}
 
 	return nps, numSeqNumsNacked
+}
+
+// -----------------------------------------------------------------
+
+type nack struct {
+	seqNum       uint16
+	tries        uint8
+	addedAt      time.Time
+	lastNackedAt time.Time
+}
+
+func newNack(sn uint16) *nack {
+	return &nack{
+		seqNum:  sn,
+		tries:   0,
+		addedAt: time.Now(),
+	}
+}
+
+func (n *nack) getNack(now time.Time, rtt uint32) (shouldSend bool, shouldRemove bool, sn uint16) {
+	sn = n.seqNum
+	if n.tries >= maxTries || now.Sub(n.addedAt) > maxWait {
+		shouldRemove = true
+		return
+	}
+
+	// wait for some time for out-of-order packets before NACKing
+	if now.Sub(n.addedAt) < initialDelay {
+		return
+	}
+
+	if n.tries > 0 {
+		sinceLastNack := now.Sub(n.lastNackedAt)
+
+		// enforce minimum spacing between retries
+		if sinceLastNack < minInterval {
+			return
+		}
+
+		// exponentially backoff retries, but cap maximum spacing between retries
+		requiredInterval := maxInterval
+		backoffInterval := time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(n.tries))) * time.Millisecond
+		if backoffInterval < requiredInterval {
+			requiredInterval = backoffInterval
+		}
+
+		if sinceLastNack < requiredInterval {
+			return
+		}
+	}
+
+	n.tries++
+	n.lastNackedAt = now
+	shouldSend = true
+	return
 }
