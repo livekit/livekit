@@ -10,7 +10,6 @@ import (
 const (
 	maxTries      = 5                      // Max number of times a packet will be NACKed
 	cacheSize     = 100                    // Max NACK sn the sfu will keep reference
-	maxWait       = 2 * time.Second        // how long to process a NACK before it is declared unrecoverable and purged
 	minInterval   = 20 * time.Millisecond  // minimum interval between NACK tries for the same sequence number
 	maxInterval   = 400 * time.Millisecond // maximum interval between NACK tries for the same sequence number
 	initialDelay  = 10 * time.Millisecond  // delay before NACKing a sequence number to allow for out-of-order packets
@@ -116,48 +115,43 @@ func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
 type nack struct {
 	seqNum       uint16
 	tries        uint8
-	addedAt      time.Time
 	lastNackedAt time.Time
 }
 
 func newNack(sn uint16) *nack {
 	return &nack{
-		seqNum:  sn,
-		tries:   0,
-		addedAt: time.Now(),
+		seqNum:       sn,
+		tries:        0,
+		lastNackedAt: time.Now(),
 	}
 }
 
 func (n *nack) getNack(now time.Time, rtt uint32) (shouldSend bool, shouldRemove bool, sn uint16) {
 	sn = n.seqNum
-	if n.tries >= maxTries || now.Sub(n.addedAt) > maxWait {
+	if n.tries >= maxTries {
 		shouldRemove = true
 		return
 	}
 
-	// wait for some time for out-of-order packets before NACKing
-	if now.Sub(n.addedAt) < initialDelay {
-		return
-	}
-
+	var requiredInterval time.Duration
 	if n.tries > 0 {
-		sinceLastNack := now.Sub(n.lastNackedAt)
-
-		// enforce minimum spacing between retries
-		if sinceLastNack < minInterval {
-			return
-		}
-
 		// exponentially backoff retries, but cap maximum spacing between retries
 		requiredInterval := maxInterval
-		backoffInterval := time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(n.tries))) * time.Millisecond
+		backoffInterval := time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(n.tries-1))) * time.Millisecond
 		if backoffInterval < requiredInterval {
 			requiredInterval = backoffInterval
 		}
+	}
+	if requiredInterval < minInterval {
+		//
+		// Wait for some time for out-of-order packets before NACKing even if before NACKing first time.
+		// For subsequent tries, maintain minimum spacing.
+		//
+		requiredInterval = minInterval
+	}
 
-		if sinceLastNack < requiredInterval {
-			return
-		}
+	if now.Sub(n.lastNackedAt) < requiredInterval {
+		return
 	}
 
 	n.tries++
