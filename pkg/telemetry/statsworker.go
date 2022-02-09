@@ -44,7 +44,9 @@ func (stat *Stat) ToAnalyticsStats(layers *livekit.AnalyticsVideoLayer) *livekit
 		TotalNacks:             stat.TotalNacks,
 		TotalPlis:              stat.TotalPlis,
 		TotalFirs:              stat.TotalFirs,
-		VideoLayers:            []*livekit.AnalyticsVideoLayer{layers},
+	}
+	if layers != nil {
+		stream.VideoLayers = []*livekit.AnalyticsVideoLayer{layers}
 	}
 	return &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{stream}, Score: stat.Score}
 }
@@ -320,8 +322,9 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	deltaStats.TotalPaddingBytes = cur.TotalPaddingBytes - prev.TotalPaddingBytes
 	deltaStats.TotalRetransmitBytes = cur.TotalRetransmitBytes - prev.TotalRetransmitBytes
 
-	videoLayer := &livekit.AnalyticsVideoLayer{}
+	var videoLayer *livekit.AnalyticsVideoLayer
 	if len(cur.VideoLayers) > 0 {
+		videoLayer = new(livekit.AnalyticsVideoLayer)
 		// find the prev max layer to calculate frame deltas only
 		if prevMaxLayer, ok := prev.VideoLayers[maxLayer]; ok {
 			videoLayer.Layer = maxLayer
