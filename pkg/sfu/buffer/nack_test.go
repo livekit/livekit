@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/stretchr/testify/require"
@@ -73,6 +74,7 @@ func Test_nackQueue_pairs(t *testing.T) {
 			for _, sn := range tt.args {
 				n.Push(sn)
 			}
+			time.Sleep(100 * time.Millisecond)
 			got, numSeqNumsNacked := n.Pairs()
 			require.EqualValues(t, tt.want.pairs, got)
 			require.Equal(t, tt.want.numSeqNumsNacked, numSeqNumsNacked)
