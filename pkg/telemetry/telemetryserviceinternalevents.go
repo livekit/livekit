@@ -150,7 +150,7 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 		Timestamp:     timestamppb.Now(),
 		RoomId:        string(roomID),
 		ParticipantId: string(participantID),
-		TrackId:       track.Sid,
+		Track:         track,
 		Room:          &livekit.Room{Name: string(roomName)},
 	})
 }
