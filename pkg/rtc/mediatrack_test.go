@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +20,7 @@ func TestTrackInfo(t *testing.T) {
 		Muted:     true,
 	}
 
-	mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{
+	mt := NewMediaTrack(MediaTrackParams{
 		TrackInfo: &ti,
 	})
 	outInfo := mt.ToProto()
@@ -43,7 +42,7 @@ func TestTrackInfo(t *testing.T) {
 
 func TestGetQualityForDimension(t *testing.T) {
 	t.Run("landscape source", func(t *testing.T) {
-		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -57,7 +56,7 @@ func TestGetQualityForDimension(t *testing.T) {
 	})
 
 	t.Run("portrait source", func(t *testing.T) {
-		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  540,
 			Height: 960,
@@ -70,7 +69,7 @@ func TestGetQualityForDimension(t *testing.T) {
 	})
 
 	t.Run("layers provided", func(t *testing.T) {
-		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -102,7 +101,7 @@ func TestGetQualityForDimension(t *testing.T) {
 
 func TestSubscribedMaxQuality(t *testing.T) {
 	t.Run("subscribers muted", func(t *testing.T) {
-		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Sid:    "v1",
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
@@ -149,7 +148,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
-		mt := NewMediaTrack(&webrtc.TrackRemote{}, MediaTrackParams{TrackInfo: &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
 			Sid:    "v1",
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,

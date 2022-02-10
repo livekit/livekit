@@ -8,8 +8,8 @@ LiveKit is written in Go, using the awesome [Pion WebRTC](https://github.com/pio
 ## Features
 
 - Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
-- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, React, iOS, Android, and
-  Flutter
+- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, React, iOS, Android,
+  Flutter, and Mac
 - Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
 - Robust networking & connectivity. UDP/TCP/TURN
 - Easy to deploy - single binary, docker & kubernetes
@@ -30,7 +30,7 @@ Client SDKs:
 
 - [Javascript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
 - [React](https://github.com/livekit/livekit-react)
-- [iOS - Swift](https://github.com/livekit/client-sdk-ios) ([docs](https://docs.livekit.io/client-sdk-ios/))
+- [iOS & MacOS - Swift](https://github.com/livekit/client-sdk-swift) ([docs](https://docs.livekit.io/client-sdk-swift/))
 - [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
 - [Flutter](https://github.com/livekit/client-sdk-flutter) ([docs](https://docs.livekit.io/client-sdk-flutter/))
 
