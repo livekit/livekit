@@ -7,7 +7,6 @@ import (
 
 const (
 	// duration of audio frames for observe window
-	observeDuration  = 500 // ms
 	SilentAudioLevel = 127
 )
 
@@ -20,17 +19,19 @@ type AudioLevel struct {
 
 	// for Observe goroutine use
 	// keeps track of current activity
-	observeLevel     uint8
-	activeDuration   uint32 // ms
-	observedDuration uint32 // ms
+	observeLevel      uint8
+	activeDuration    uint32 // ms
+	observedDuration  uint32 // ms
+	durationToObserve uint32 // ms
 }
 
-func NewAudioLevel(activeLevel uint8, minPercentile uint8) *AudioLevel {
+func NewAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint32) *AudioLevel {
 	l := &AudioLevel{
 		levelThreshold:    activeLevel,
 		minActiveDuration: uint32(minPercentile) * observeDuration / 100,
 		currentLevel:      SilentAudioLevel,
 		observeLevel:      SilentAudioLevel,
+		durationToObserve: observeDuration,
 	}
 	return l
 }
@@ -46,10 +47,10 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 		}
 	}
 
-	if l.observedDuration >= observeDuration {
+	if l.observedDuration >= l.durationToObserve {
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
-			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(observeDuration)))
+			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(l.durationToObserve)))
 			atomic.StoreUint32(&l.currentLevel, level)
 		} else {
 			atomic.StoreUint32(&l.currentLevel, SilentAudioLevel)
