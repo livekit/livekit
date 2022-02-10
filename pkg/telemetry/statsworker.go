@@ -27,6 +27,7 @@ type Stat struct {
 	VideoLayers            map[int32]*livekit.AnalyticsVideoLayer
 	TotalBytes             uint64
 	TotalPackets           uint32
+	MaxLayer               int32
 }
 
 func (stat *Stat) ToAnalyticsStats(layers *livekit.AnalyticsVideoLayer) *livekit.AnalyticsStat {
@@ -323,15 +324,17 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	deltaStats.TotalRetransmitBytes = cur.TotalRetransmitBytes - prev.TotalRetransmitBytes
 
 	var videoLayer *livekit.AnalyticsVideoLayer
-	if len(cur.VideoLayers) > 0 {
+	if len(cur.VideoLayers) > 0 && len(prev.VideoLayers) > 0 {
 		videoLayer = new(livekit.AnalyticsVideoLayer)
-		// find the prev max layer to calculate frame deltas only
-		if prevMaxLayer, ok := prev.VideoLayers[maxLayer]; ok {
-			videoLayer.Layer = maxLayer
-			videoLayer.TotalFrames = curLayers[maxLayer].TotalFrames - prevMaxLayer.TotalFrames
+		// find the current layer for the same layer id as previous, compute current round of delta with it
+		if curLayer, ok := curLayers[prev.MaxLayer]; ok {
+			videoLayer.Layer = prev.MaxLayer
+			videoLayer.TotalFrames = curLayer.TotalFrames - prev.VideoLayers[prev.MaxLayer].TotalFrames
 		} else {
 			videoLayer = curLayers[maxLayer]
 		}
+		// store new max layer for next round
+		cur.MaxLayer = maxLayer
 		// we accumulate bytes/packets across layers
 		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
 		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
