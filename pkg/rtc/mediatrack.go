@@ -130,7 +130,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	if t.Kind() == livekit.TrackType_AUDIO {
 		t.audioLevelMu.Lock()
-		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile)
+		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile, t.params.AudioConfig.UpdateInterval)
 		buff.OnAudioLevel(func(level uint8, duration uint32) {
 			t.audioLevelMu.RLock()
 			defer t.audioLevelMu.RUnlock()
