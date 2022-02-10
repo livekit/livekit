@@ -16,7 +16,7 @@ import (
 // Forwarder
 //
 const (
-	FlagPauseOnDowngrade = false
+	FlagPauseOnDowngrade = true
 )
 
 type ForwardingStatus int
@@ -1122,6 +1122,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
+				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
@@ -1137,7 +1138,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if FlagPauseOnDowngrade && f.targetLayers.spatial < f.currentLayers.spatial && f.targetLayers.spatial < f.maxLayers.spatial {
+	if FlagPauseOnDowngrade &&
+		f.targetLayers.spatial < f.currentLayers.spatial &&
+		f.targetLayers.spatial < f.maxLayers.spatial &&
+		f.lastAllocation.state == VideoAllocationStateDeficient {
 		//
 		// If target layer is lower than both the current and
 		// maximum subscribed layer, it is due to bandwidth
@@ -1151,11 +1155,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		//
 		// Note that in the case of client subscription layer restriction
 		// coinciding with server restriction due to bandwidth limitation,
-		// this will take client subscription as the winning vote and
-		// continue to stream current spatial layer till switch point.
-		// That could lead to congesting the channel.
-		// LK-TODO: Improve the above case, i.e. distinguish server
-		// applied restriction from client requested restriction.
+		// In the case of subscription change, higher should continue streaming
+		// to ensure smooth transition.
+		//
+		// To differentiate, drop only when in DEFICIENT state.
 		//
 		tp.shouldDrop = true
 		tp.isDroppingRelevant = true

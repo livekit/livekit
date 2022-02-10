@@ -65,10 +65,8 @@ type RTCConfig struct {
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
-	// Which side runs bandwidth estimation
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
-
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
+
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
 }
@@ -90,6 +88,7 @@ type PLIThrottleConfig struct {
 type CongestionControlConfig struct {
 	Enabled    bool `yaml:"enabled"`
 	AllowPause bool `yaml:"allow_pause"`
+	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
 }
 
 type AudioConfig struct {
