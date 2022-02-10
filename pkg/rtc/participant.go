@@ -1432,7 +1432,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		}
 		ti.Mid = mid
 
-		mt = NewMediaTrack(track, MediaTrackParams{
+		mt = NewMediaTrack(MediaTrackParams{
 			TrackInfo:           ti,
 			SignalCid:           signalCid,
 			SdpCid:              track.ID(),

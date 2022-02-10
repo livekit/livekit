@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -16,10 +15,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-)
-
-const (
-	connectionQualityUpdateInterval = 5 * time.Second
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -58,7 +53,7 @@ type MediaTrackParams struct {
 	Logger            logger.Logger
 }
 
-func NewMediaTrack(track *webrtc.TrackRemote, params MediaTrackParams) *MediaTrack {
+func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params: params,
 	}
