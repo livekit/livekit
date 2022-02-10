@@ -13,7 +13,7 @@ const (
 	defaultActiveLevel = 30
 	// requires two noisy samples to count
 	defaultPercentile      = 10
-	defaultObserveDuration = 400 // ms
+	defaultObserveDuration = 500 // ms
 )
 
 func TestAudioLevel(t *testing.T) {
