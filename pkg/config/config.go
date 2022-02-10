@@ -192,7 +192,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			},
 		},
 		Audio: AudioConfig{
-			ActiveLevel:     35, // -30dBov = 0.03
+			ActiveLevel:     35, // -35dBov
 			MinPercentile:   40,
 			UpdateInterval:  400,
 			SmoothIntervals: 2,
