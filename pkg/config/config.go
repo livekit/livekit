@@ -86,8 +86,8 @@ type PLIThrottleConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled    bool `yaml:"enabled"`
-	AllowPause bool `yaml:"allow_pause"`
+	Enabled        bool `yaml:"enabled"`
+	AllowPause     bool `yaml:"allow_pause"`
 	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
 }
 

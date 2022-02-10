@@ -1122,7 +1122,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
+				//f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true

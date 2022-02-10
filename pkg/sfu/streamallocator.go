@@ -498,12 +498,14 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
+	/*
 		if s.prevReceivedEstimate != s.receivedEstimate {
 			s.params.Logger.Debugw("received new estimate",
 				"old(bps)", s.prevReceivedEstimate,
 				"new(bps)", s.receivedEstimate,
 			)
 		}
+	*/
 
 	if s.maybeCommitEstimate() {
 		s.allocateAllTracks()
@@ -514,12 +516,14 @@ func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(receivedEstimate)
+	/*
 		if s.prevReceivedEstimate != s.receivedEstimate {
 			s.params.Logger.Debugw("received new send side estimate",
 				"old(bps)", s.prevReceivedEstimate,
 				"new(bps)", s.receivedEstimate,
 			)
 		}
+	*/
 
 	if s.maybeCommitEstimate() {
 		s.allocateAllTracks()
@@ -1069,7 +1073,7 @@ func (s *StreamStateUpdate) Empty() bool {
 type Track struct {
 	downTrack *DownTrack
 	isManaged bool
-	logger logger.Logger
+	logger    logger.Logger
 
 	highestSN       uint32
 	packetsLost     uint32
@@ -1083,7 +1087,7 @@ func newTrack(downTrack *DownTrack, isManaged bool, logger logger.Logger) *Track
 	t := &Track{
 		downTrack: downTrack,
 		isManaged: isManaged,
-		logger: logger,
+		logger:    logger,
 	}
 	t.UpdateMaxLayers(downTrack.MaxLayers())
 
@@ -1135,7 +1139,7 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 
 func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
 	allocation := t.downTrack.Allocate(availableChannelCapacity, allowPause)
-	t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
+	//t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
 	return allocation
 }
 
@@ -1157,13 +1161,13 @@ func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
 
 func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := t.downTrack.ProvisionalAllocateCommit()
-	t.logger.Debugw("SA_DEBUG Provisional commit", "alloc", allocation)	// REMOVE
+	//t.logger.Debugw("SA_DEBUG Provisional commit", "alloc", allocation) // REMOVE
 	return allocation
 }
 
 func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
 	allocation, boosted := t.downTrack.AllocateNextHigher()
-	t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted)	// REMOVE
+	//t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted) // REMOVE
 	return allocation, boosted
 }
 
