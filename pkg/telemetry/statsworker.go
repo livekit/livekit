@@ -71,6 +71,9 @@ type StatsWorker struct {
 
 	outgoingPerTrack map[livekit.TrackID]Stats
 	incomingPerTrack map[livekit.TrackID]Stats
+
+	// clean up stats for unpublished tracks
+	closedTracks map[livekit.TrackID]bool
 }
 
 func newStatsWorker(
@@ -89,6 +92,7 @@ func newStatsWorker(
 
 		outgoingPerTrack: make(map[livekit.TrackID]Stats),
 		incomingPerTrack: make(map[livekit.TrackID]Stats),
+		closedTracks:     make(map[livekit.TrackID]bool),
 	}
 	return s
 }
@@ -113,6 +117,16 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	}
 }
 
+func (s *StatsWorker) CleanUpTrackStats() {
+	if len(s.closedTracks) > 0 {
+		for trackID := range s.closedTracks {
+			delete(s.outgoingPerTrack, trackID)
+			delete(s.incomingPerTrack, trackID)
+		}
+		s.closedTracks = make(map[livekit.TrackID]bool)
+	}
+}
+
 func (s *StatsWorker) Update() {
 	ts := timestamppb.Now()
 
@@ -122,6 +136,7 @@ func (s *StatsWorker) Update() {
 	if len(stats) > 0 {
 		s.t.Report(s.ctx, stats)
 	}
+	s.CleanUpTrackStats()
 }
 
 func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
@@ -315,6 +330,10 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	deltaStats.TotalNacks = cur.TotalNacks - prev.TotalNacks
 	deltaStats.TotalFirs = cur.TotalFirs - prev.TotalFirs
 	deltaStats.TotalPacketsLost = cur.TotalPacketsLost - prev.TotalPacketsLost
+	// https://datatracker.ietf.org/doc/html/rfc3550#page-83
+	if int32(deltaStats.TotalPacketsLost) < 0 {
+		deltaStats.TotalPacketsLost = 0
+	}
 	deltaStats.TotalPrimaryPackets = cur.TotalPrimaryPackets - prev.TotalPrimaryPackets
 	deltaStats.TotalRetransmitPackets = cur.TotalRetransmitPackets - prev.TotalRetransmitPackets
 	deltaStats.TotalPaddingPackets = cur.TotalPaddingPackets - prev.TotalPaddingPackets
@@ -344,4 +363,8 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 		return nil
 	}
 	return deltaStats.ToAnalyticsStats(videoLayer)
+}
+
+func (s *StatsWorker) RemoveStats(trackID livekit.TrackID) {
+	s.closedTracks[trackID] = true
 }
