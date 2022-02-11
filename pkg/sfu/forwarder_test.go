@@ -362,8 +362,14 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	usedBitrate := f.ProvisionalAllocate(bitrates[2][3], VideoLayers{spatial: 0, temporal: 0}, true)
 	require.Equal(t, bitrates[0][0], usedBitrate)
 
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{spatial: 2, temporal: 3}, true)
+	require.Equal(t, bitrates[2][3]-bitrates[0][0], usedBitrate)
+
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{spatial: 0, temporal: 3}, true)
+	require.Equal(t, bitrates[0][3]-bitrates[2][3], usedBitrate)
+
 	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{spatial: 1, temporal: 2}, true)
-	require.Equal(t, bitrates[1][2], usedBitrate)
+	require.Equal(t, bitrates[1][2]-bitrates[0][3], usedBitrate)
 
 	// available not enough to reach (2, 2), allocating at (2, 2) should not succeed
 	usedBitrate = f.ProvisionalAllocate(bitrates[2][2]-bitrates[1][2]-1, VideoLayers{spatial: 2, temporal: 2}, true)

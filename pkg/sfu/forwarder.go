@@ -550,13 +550,13 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 
 	if requiredBitrate <= (availableChannelCapacity + alreadyAllocatedBitrate) {
 		f.provisional.layers = layers
-		return requiredBitrate
+		return requiredBitrate - alreadyAllocatedBitrate
 	}
 
 	// when pause is disallowed, pick the layer if none allocated already or something lower is available
 	if !allowPause && (f.provisional.layers == InvalidLayers || !layers.GreaterThan(f.provisional.layers)) {
 		f.provisional.layers = layers
-		return requiredBitrate
+		return requiredBitrate - alreadyAllocatedBitrate
 	}
 
 	return 0
