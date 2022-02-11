@@ -485,6 +485,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
 		Source:      subTrack.MediaTrack().Source(),
 		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+		PublisherID: subTrack.MediaTrack().PublisherID(),
 	})
 }
 

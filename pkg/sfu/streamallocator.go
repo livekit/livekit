@@ -198,6 +198,7 @@ func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 type AddTrackParams struct {
 	Source      livekit.TrackSource
 	IsSimulcast bool
+	PublisherID livekit.ParticipantID
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) {
@@ -365,7 +366,7 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
 	params, _ := event.Data.(AddTrackParams)
 	isManaged := (params.Source != livekit.TrackSource_SCREEN_SHARE && params.Source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || params.IsSimulcast
-	track := newTrack(event.DownTrack, isManaged, s.params.Logger)
+	track := newTrack(event.DownTrack, isManaged, params.PublisherID, s.params.Logger)
 
 	trackID := livekit.TrackID(event.DownTrack.ID())
 	switch event.DownTrack.Kind() {
@@ -1051,13 +1052,13 @@ func (s *StreamStateUpdate) HandleStreamingChange(change VideoStreamingChange, t
 	switch change {
 	case VideoStreamingChangePausing:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantID: track.PeerID(),
+			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
 			State:         StreamStatePaused,
 		})
 	case VideoStreamingChangeResuming:
 		s.StreamStates = append(s.StreamStates, &StreamStateInfo{
-			ParticipantID: track.PeerID(),
+			ParticipantID: track.PublisherID(),
 			TrackID:       track.ID(),
 			State:         StreamStateActive,
 		})
@@ -1071,9 +1072,10 @@ func (s *StreamStateUpdate) Empty() bool {
 // ------------------------------------------------
 
 type Track struct {
-	downTrack *DownTrack
-	isManaged bool
-	logger    logger.Logger
+	downTrack   *DownTrack
+	isManaged   bool
+	publisherID livekit.ParticipantID
+	logger      logger.Logger
 
 	highestSN       uint32
 	packetsLost     uint32
@@ -1083,11 +1085,12 @@ type Track struct {
 	maxLayers VideoLayers
 }
 
-func newTrack(downTrack *DownTrack, isManaged bool, logger logger.Logger) *Track {
+func newTrack(downTrack *DownTrack, isManaged bool, publisherID livekit.ParticipantID, logger logger.Logger) *Track {
 	t := &Track{
-		downTrack: downTrack,
-		isManaged: isManaged,
-		logger:    logger,
+		downTrack:   downTrack,
+		isManaged:   isManaged,
+		publisherID: publisherID,
+		logger:      logger,
 	}
 	t.UpdateMaxLayers(downTrack.MaxLayers())
 
@@ -1106,8 +1109,8 @@ func (t *Track) ID() livekit.TrackID {
 	return livekit.TrackID(t.downTrack.ID())
 }
 
-func (t *Track) PeerID() livekit.ParticipantID {
-	return t.downTrack.PeerID()
+func (t *Track) PublisherID() livekit.ParticipantID {
+	return t.publisherID
 }
 
 // LK-TODO this should probably be maintained in downTrack and this module can query what it needs
