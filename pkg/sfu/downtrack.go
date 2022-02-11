@@ -277,6 +277,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
+		//d.logger.Debugw("SA_DEBUG Forwarder SendPLI", "layer", layer) // REMOVE
 		d.lastPli.set(time.Now().UnixNano())
 		d.receiver.SendPLI(layer)
 	}
@@ -851,6 +852,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
+				//d.logger.Debugw("SA_DEBUG Subscriber RTCP SendPLI", "layer", targetLayers.spatial) // REMOVE
 				d.receiver.SendPLI(targetLayers.spatial)
 				pliOnce = false
 			}
