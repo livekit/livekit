@@ -36,11 +36,11 @@ const (
 	// These constants will definitely require more tweaking.
 	// In fact, simple time threshold rules most probably will not be enough.
 	// LK-TODO-END
-	EstimateCommit          = 2 * 1000 * time.Millisecond // 2 seconds
-	ProbeWait               = 8 * 1000 * time.Millisecond // 8 seconds
-	BoostWait               = 5 * 1000 * time.Millisecond // 5 seconds
-	GratuitousProbeWait     = 8 * 1000 * time.Millisecond // 8 seconds
-	GratuitousProbeMoreWait = 5 * 1000 * time.Millisecond // 5 seconds
+	EstimateCommit          = 2 * time.Second
+	ProbeWait               = 8 * time.Second
+	BoostWait               = 5 * time.Second
+	GratuitousProbeWait     = 8 * time.Second
+	GratuitousProbeMoreWait = 5 * time.Second
 )
 
 type State int
@@ -499,16 +499,15 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(remb.Bitrate)
-	/*
 		if s.prevReceivedEstimate != s.receivedEstimate {
 			s.params.Logger.Debugw("received new estimate",
 				"old(bps)", s.prevReceivedEstimate,
 				"new(bps)", s.receivedEstimate,
 			)
 		}
-	*/
 
-	if s.maybeCommitEstimate() {
+	isDecreasing := s.maybeCommitEstimate()
+	if isDecreasing {
 		s.allocateAllTracks()
 	}
 }
@@ -517,16 +516,15 @@ func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = int64(receivedEstimate)
-	/*
 		if s.prevReceivedEstimate != s.receivedEstimate {
 			s.params.Logger.Debugw("received new send side estimate",
 				"old(bps)", s.prevReceivedEstimate,
 				"new(bps)", s.receivedEstimate,
 			)
 		}
-	*/
 
-	if s.maybeCommitEstimate() {
+	isDecreasing := s.maybeCommitEstimate()
+	if isDecreasing {
 		s.allocateAllTracks()
 	}
 }
@@ -596,7 +594,8 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
-	if s.maybeCommitEstimate() {
+	isDecreasing := s.maybeCommitEstimate()
+	if isDecreasing {
 		s.allocateAllTracks()
 	}
 
@@ -655,6 +654,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
 		// too large a change, wait for estimate to settle.
 		// Unless estimate has been oscillating for too long.
+		s.params.Logger.Debugw("SA_DEBUG, commit check 1", "timeSinceLast", time.Since(s.lastCommitTime), "threshold", EstimateCommit)	// REMOVE
 		if time.Since(s.lastCommitTime) < EstimateCommit {
 			return
 		}
@@ -662,6 +662,7 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 
 	// don't commit too often even if the change is small.
 	// Small changes will also get picked up during periodic check.
+	s.params.Logger.Debugw("SA_DEBUG, commit check 2", "timeSinceLast", time.Since(s.lastCommitTime), "threshold", EstimateCommit)	// REMOVE
 	if time.Since(s.lastCommitTime) < EstimateCommit {
 		return
 	}
@@ -684,6 +685,8 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 
 	if s.committedChannelCapacity > s.receivedEstimate {
 		s.params.Logger.Debugw("committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
+	} else {
+		s.params.Logger.Debugw("SA_DEBUG committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
 	}
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
@@ -937,33 +940,77 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 
-	s.maybeBoostLayer()
-	s.adjustState()
+	switch s.params.Config.ProbeMode {
+	case config.CongestionControlProbeModeMedia:
+		s.maybeBoostLayer()
+		s.adjustState()
+	case config.CongestionControlProbeModePadding:
+		s.maybeProbeWithPadding()
+	}
 }
 
 func (s *StreamAllocator) maybeBoostLayer() {
+	s.params.Logger.Debugw("SA_DEBUG, probing", "mode", s.params.Config.ProbeMode)	// REMOVE
 	var maxDistanceSorted MaxDistanceSorter
 	for _, track := range s.managedVideoTracksSorted {
 		maxDistanceSorted = append(maxDistanceSorted, track)
 	}
 	sort.Sort(maxDistanceSorted)
 
-	// boost first deficient track in priority order
+	// boost deficient track farthest from desired layers
 	for _, track := range maxDistanceSorted {
 		if !track.IsDeficient() {
 			continue
 		}
 
 		allocation, boosted := track.AllocateNextHigher()
-		if boosted {
-			s.lastBoostTime = time.Now()
-
-			update := NewStreamStateUpdate()
-			update.HandleStreamingChange(allocation.change, track)
-			s.maybeSendUpdate(update)
-
-			break
+		if !boosted {
+			continue
 		}
+
+		s.lastBoostTime = time.Now()
+
+		update := NewStreamStateUpdate()
+		update.HandleStreamingChange(allocation.change, track)
+		s.maybeSendUpdate(update)
+		break
+	}
+}
+
+func (s *StreamAllocator) maybeProbeWithPadding() {
+	var maxDistanceSorted MaxDistanceSorter
+	for _, track := range s.managedVideoTracksSorted {
+		maxDistanceSorted = append(maxDistanceSorted, track)
+	}
+	sort.Sort(maxDistanceSorted)
+
+	// use deficient track farthest from desired layers to find how much to probe
+	for _, track := range maxDistanceSorted {
+		if !track.IsDeficient() {
+			continue
+		}
+
+		transition, available := track.GetNextHigherTransition()
+		if !available || transition.bandwidthDelta < 0 {
+			continue
+		}
+
+		s.lastBoostTime = time.Now()
+
+		probeRateBps := (transition.bandwidthDelta * 110) / 100
+		if probeRateBps < GratuitousProbeMinBps {
+			probeRateBps = GratuitousProbeMinBps
+		}
+		s.params.Logger.Debugw("SA_DEBUG, probing with padding", "needed", transition.bandwidthDelta, "asking", probeRateBps)	// REMOVE
+
+		s.prober.AddCluster(
+			int(s.receivedEstimate+probeRateBps),
+			int(s.getExpectedBandwidthUsage()),
+			GratuitousProbeMinDuration,
+			GratuitousProbeMaxDuration,
+		)
+
+		break
 	}
 }
 
@@ -1142,7 +1189,7 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 
 func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
 	allocation := t.downTrack.Allocate(availableChannelCapacity, allowPause)
-	//t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
+	t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
 	return allocation
 }
 
@@ -1164,14 +1211,20 @@ func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
 
 func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := t.downTrack.ProvisionalAllocateCommit()
-	//t.logger.Debugw("SA_DEBUG Provisional commit", "alloc", allocation) // REMOVE
+	t.logger.Debugw("SA_DEBUG Provisional commit", "alloc", allocation) // REMOVE
 	return allocation
 }
 
 func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
 	allocation, boosted := t.downTrack.AllocateNextHigher()
-	//t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted) // REMOVE
+	t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted) // REMOVE
 	return allocation, boosted
+}
+
+func (t *Track) GetNextHigherTransition() (VideoTransition, bool) {
+	transition, available := t.downTrack.GetNextHigherTransition()
+	t.logger.Debugw("SA_DEBUG Get next higher layer", "transition", transition, "available", available)	// REMOVE
+	return transition, available
 }
 
 func (t *Track) FinalizeAllocate() {

@@ -548,6 +548,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		alreadyAllocatedBitrate = f.provisional.bitrates[f.provisional.layers.spatial][f.provisional.layers.temporal]
 	}
 
+	f.logger.Debugw("SA_DEBUG provisional allocation", "available", availableChannelCapacity, "already", alreadyAllocatedBitrate, "required", requiredBitrate)	// REMOVE
 	if requiredBitrate <= (availableChannelCapacity + alreadyAllocatedBitrate) {
 		f.provisional.layers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
@@ -673,12 +674,12 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	// This is called when a track needs a change (could be mute/unmute, subscribed layers changed, published layers changed)
 	// when channel is congested.
 	//
-	// The goal is to keep all tracks streaming as much as possible. So, the track that needs a change needs bits to be unpaused.
+	// The goal is to keep all tracks streaming as much as possible. So, the track that needs a change needs bandwidth to be unpaused.
 	//
 	// This tries to figure out how much this track can contribute back to the pool to enable the track that needs to be unpaused.
-	//   1. Track muted OR feed dry - can contribute everything back in case it was using bits.
+	//   1. Track muted OR feed dry - can contribute everything back in case it was using bandwidth.
 	//   2. Look at all possible down transitions from current target and find the best offer.
-	//      Best offer is calculated as bits saved moving to a down layer divided by cost.
+	//      Best offer is calculated as bandwidth saved moving to a down layer divided by cost.
 	//      Cost has two components
 	//        a. Transition cost: Spatial layer switch is expensive due to key frame requirement, but temporal layer switch is free.
 	//        b. Quality cost: The farther away from desired layers, the higher the quality cost.
@@ -989,6 +990,69 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 	return f.lastAllocation, false
 }
 
+func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.kind == webrtc.RTPCodecTypeAudio {
+		return VideoTransition{}, false
+	}
+
+	// if not deficient, nothing to do
+	if f.lastAllocation.state != VideoAllocationStateDeficient {
+		return VideoTransition{}, false
+	}
+
+	// if targets are still pending, don't increase
+	if f.targetLayers != InvalidLayers && f.targetLayers != f.currentLayers {
+		return VideoTransition{}, false
+	}
+
+	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	if optimalBandwidthNeeded == 0 {
+		// either feed is dry or awaiting measurement, don't hunt for higher
+		return VideoTransition{}, false
+	}
+
+	// try moving temporal layer up in currently streaming spatial layer
+	if f.targetLayers != InvalidLayers {
+		for t := f.targetLayers.temporal + 1; t <= f.maxLayers.temporal; t++ {
+			bandwidthRequested := brs[f.targetLayers.spatial][t]
+			if bandwidthRequested == 0 {
+				continue
+			}
+
+			transition := VideoTransition{
+				from: f.targetLayers,
+				to: VideoLayers{spatial: f.targetLayers.spatial, temporal: t},
+				bandwidthDelta: bandwidthRequested - f.lastAllocation.bandwidthRequested,
+			}
+
+			return transition, true
+		}
+	}
+
+	// try moving spatial layer up if temporal layer move up is not available
+	for s := f.targetLayers.spatial + 1; s <= f.maxLayers.spatial; s++ {
+		for t := int32(0); t <= f.maxLayers.temporal; t++ {
+			bandwidthRequested := brs[s][t]
+			if bandwidthRequested == 0 {
+				continue
+			}
+
+			transition := VideoTransition{
+				from: f.targetLayers,
+				to: VideoLayers{spatial: s, temporal: t},
+				bandwidthDelta: bandwidthRequested - f.lastAllocation.bandwidthRequested,
+			}
+
+			return transition, true
+		}
+	}
+
+	return VideoTransition{}, false
+}
+
 func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -1122,7 +1186,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				//f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
+				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
