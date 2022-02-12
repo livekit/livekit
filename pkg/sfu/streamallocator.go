@@ -129,6 +129,7 @@ type StreamAllocator struct {
 	lastCommitTime           time.Time
 	prevReceivedEstimate     int64
 	receivedEstimate         int64
+	directionChangeTime time.Time
 	lastEstimateDecreaseTime time.Time
 
 	lastBoostTime time.Time
@@ -230,6 +231,7 @@ func (s *StreamAllocator) initializeEstimate() {
 	s.committedChannelCapacity = ChannelCapacityInfinity
 	s.lastCommitTime = time.Now().Add(-EstimateCommit)
 	s.receivedEstimate = ChannelCapacityInfinity
+	s.directionChangeTime = time.Now()
 	s.lastEstimateDecreaseTime = time.Now()
 
 	s.state = StateStable
@@ -497,36 +499,12 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 		return
 	}
 
-	s.prevReceivedEstimate = s.receivedEstimate
-	s.receivedEstimate = int64(remb.Bitrate)
-		if s.prevReceivedEstimate != s.receivedEstimate {
-			s.params.Logger.Debugw("received new estimate",
-				"old(bps)", s.prevReceivedEstimate,
-				"new(bps)", s.receivedEstimate,
-			)
-		}
-
-	isDecreasing := s.maybeCommitEstimate()
-	if isDecreasing {
-		s.allocateAllTracks()
-	}
+	s.updateEstimateState(int64(remb.Bitrate))
 }
 
 func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
-	s.prevReceivedEstimate = s.receivedEstimate
-	s.receivedEstimate = int64(receivedEstimate)
-		if s.prevReceivedEstimate != s.receivedEstimate {
-			s.params.Logger.Debugw("received new send side estimate",
-				"old(bps)", s.prevReceivedEstimate,
-				"new(bps)", s.receivedEstimate,
-			)
-		}
-
-	isDecreasing := s.maybeCommitEstimate()
-	if isDecreasing {
-		s.allocateAllTracks()
-	}
+	s.updateEstimateState(int64(receivedEstimate))
 }
 
 // LK-TODO-START
@@ -647,23 +625,42 @@ func (s *StreamAllocator) adjustState() {
 	s.setState(StateStable)
 }
 
-func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
-	// commit channel capacity estimate under following rules
-	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
-	//   2. time.Since(lastCommitTime) > EstimateCommitMs => to catch long oscillating estimate
-	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
-		// too large a change, wait for estimate to settle.
-		// Unless estimate has been oscillating for too long.
-		s.params.Logger.Debugw("SA_DEBUG, commit check 1", "timeSinceLast", time.Since(s.lastCommitTime), "threshold", EstimateCommit)	// REMOVE
-		if time.Since(s.lastCommitTime) < EstimateCommit {
-			return
-		}
+func (s *StreamAllocator) updateEstimateState(receivedEstimate int64) {
+	s.params.Logger.Debugw("SA_DEBUG direction", "prev", s.prevReceivedEstimate, "curr", s.receivedEstimate, "new", receivedEstimate)	// REMOVE
+	isDirectionChanging :=
+		(s.prevReceivedEstimate >= s.receivedEstimate && receivedEstimate > s.receivedEstimate) ||
+		(s.prevReceivedEstimate <= s.receivedEstimate && receivedEstimate < s.receivedEstimate)
+	if isDirectionChanging {
+		s.directionChangeTime = time.Now()
+		s.params.Logger.Debugw("SA_DEBUG direction changing", "time", s.directionChangeTime)	// REMOVE
+	}
+	s.prevReceivedEstimate = s.receivedEstimate
+	s.receivedEstimate = receivedEstimate
+	if s.prevReceivedEstimate != s.receivedEstimate {
+		s.params.Logger.Debugw("received new estimate",
+			"old(bps)", s.prevReceivedEstimate,
+			"new(bps)", s.receivedEstimate,
+		)
 	}
 
-	// don't commit too often even if the change is small.
-	// Small changes will also get picked up during periodic check.
-	s.params.Logger.Debugw("SA_DEBUG, commit check 2", "timeSinceLast", time.Since(s.lastCommitTime), "threshold", EstimateCommit)	// REMOVE
-	if time.Since(s.lastCommitTime) < EstimateCommit {
+	isDecreasing := s.maybeCommitEstimate()
+	if isDecreasing {
+		s.allocateAllTracks()
+	}
+}
+
+func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
+	//
+	// Commit channel capacity estimate under following rules
+	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
+	//   2. time.Since(newest(directionChangeTime, lastCommitTime)) > EstimateCommitMs => to catch long oscillating estimate
+	//
+	newest := s.lastCommitTime
+	if s.lastCommitTime.Before(s.directionChangeTime) {
+		newest = s.directionChangeTime
+	}
+	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon && time.Since(newest) < EstimateCommit {
+		// too large a change, wait for estimate to settle.
 		return
 	}
 
@@ -673,12 +670,14 @@ func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
 	}
 
 	if s.committedChannelCapacity > s.receivedEstimate && s.committedChannelCapacity != ChannelCapacityInfinity {
-		// this prevents declaring a decrease when coming out of init state.
+		//
+		// This prevents declaring a decrease when coming out of init state.
 		// But, this bypasses the case where streaming starts on a bunch of
 		// tracks simultaneously (imagine a participant joining a large room
 		// with a lot of video tracks). In that case, it is possible that the
 		// channel is hitting congestion. It will be caught on the next estimate
 		// decrease.
+		//
 		s.lastEstimateDecreaseTime = time.Now()
 		isDecreasing = true
 	}
@@ -1003,9 +1002,11 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 		}
 		s.params.Logger.Debugw("SA_DEBUG, probing with padding", "needed", transition.bandwidthDelta, "asking", probeRateBps)	// REMOVE
 
+		expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+		expectedBandwidthUsageWithProbing := expectedBandwidthUsage + probeRateBps
 		s.prober.AddCluster(
-			int(s.receivedEstimate+probeRateBps),
-			int(s.getExpectedBandwidthUsage()),
+			int(expectedBandwidthUsageWithProbing),
+			int(expectedBandwidthUsage),
 			GratuitousProbeMinDuration,
 			GratuitousProbeMaxDuration,
 		)

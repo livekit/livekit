@@ -357,11 +357,11 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.lastAllocation.state == VideoAllocationStateDeficient
 }
 
-func (f *Forwarder) BandwidthRequested() int64 {
+func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.lastAllocation.bandwidthRequested
+	return brs[f.targetLayers.spatial][b.trargetLayers.temporal]
 }
 
 func (f *Forwarder) DistanceToDesired() int32 {
@@ -1025,7 +1025,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			transition := VideoTransition{
 				from: f.targetLayers,
 				to: VideoLayers{spatial: f.targetLayers.spatial, temporal: t},
-				bandwidthDelta: bandwidthRequested - f.lastAllocation.bandwidthRequested,
+				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
 			}
 
 			return transition, true
@@ -1043,7 +1043,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			transition := VideoTransition{
 				from: f.targetLayers,
 				to: VideoLayers{spatial: s, temporal: t},
-				bandwidthDelta: bandwidthRequested - f.lastAllocation.bandwidthRequested,
+				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
 			}
 
 			return transition, true

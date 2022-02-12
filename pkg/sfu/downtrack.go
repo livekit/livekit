@@ -610,7 +610,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	return d.forwarder.BandwidthRequested()
+	return d.forwarder.BandwidthRequested(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
