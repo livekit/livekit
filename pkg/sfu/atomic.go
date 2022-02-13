@@ -45,6 +45,10 @@ func (a *atomicInt64) set(value int64) {
 	atomic.StoreInt64((*int64)(a), value)
 }
 
+func (a *atomicInt64) add(value int64) {
+	atomic.AddInt64((*int64)(a), value)
+}
+
 func (a *atomicInt64) get() int64 {
 	return atomic.LoadInt64((*int64)(a))
 }
