@@ -20,7 +20,16 @@ import (
 const (
 	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
 
-	EstimateEpsilon = 2000 // 2 kbps
+	EstimateEpsilon         = 2000 // 2 kbps
+	EstimateSettleWait      = 2 * time.Second
+	EstimateOscillationWait = 5 * time.Second
+
+	BaseProbeWait = 5 * time.Second
+
+	ProbePct         = 110
+	ProbeMinBps      = 100 * 1000 // 100 kbps
+	ProbeMinDuration = 500 * time.Millisecond
+	ProbeMaxDuration = 600 * time.Millisecond
 
 	GratuitousProbeHeadroomBps = 1 * 1000 * 1000 // if headroom > 1 Mbps, don't probe
 	GratuitousProbePct         = 10
@@ -31,16 +40,6 @@ const (
 
 	AudioLossWeight = 0.75
 	VideoLossWeight = 0.25
-
-	// LK-TODO-START
-	// These constants will definitely require more tweaking.
-	// In fact, simple time threshold rules most probably will not be enough.
-	// LK-TODO-END
-	EstimateCommit          = 2 * time.Second
-	ProbeWait               = 8 * time.Second
-	BoostWait               = 5 * time.Second
-	GratuitousProbeWait     = 8 * time.Second
-	GratuitousProbeMoreWait = 5 * time.Second
 )
 
 type State int
@@ -125,16 +124,15 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
+	prevReceivedEstimate    int64
+	receivedEstimate        int64
+	lastDirectionChangeTime time.Time
+
 	committedChannelCapacity int64
 	lastCommitTime           time.Time
-	prevReceivedEstimate     int64
-	receivedEstimate         int64
-	directionChangeTime time.Time
-	lastEstimateDecreaseTime time.Time
 
-	lastBoostTime time.Time
-
-	lastGratuitousProbeTime time.Time
+	lastProbeTime time.Time
+	probeInterval time.Duration
 
 	audioTracks              map[livekit.TrackID]*Track
 	videoTracks              map[livekit.TrackID]*Track
@@ -162,7 +160,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		eventCh: make(chan Event, 20),
 	}
 
-	s.initializeEstimate()
+	s.resetState()
 
 	s.prober.OnSendProbe(s.onSendProbe)
 
@@ -227,12 +225,14 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 	})
 }
 
-func (s *StreamAllocator) initializeEstimate() {
-	s.committedChannelCapacity = ChannelCapacityInfinity
-	s.lastCommitTime = time.Now().Add(-EstimateCommit)
+func (s *StreamAllocator) resetState() {
+	s.prevReceivedEstimate = ChannelCapacityInfinity
 	s.receivedEstimate = ChannelCapacityInfinity
-	s.directionChangeTime = time.Now()
-	s.lastEstimateDecreaseTime = time.Now()
+
+	s.committedChannelCapacity = ChannelCapacityInfinity
+	s.lastCommitTime = time.Now()
+
+	s.resetProbe()
 
 	s.state = StateStable
 }
@@ -430,7 +430,7 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 
 		// re-initialize estimate if all managed tracks are removed, let it get a fresh start
 		if len(s.managedVideoTracksSorted) == 0 {
-			s.initializeEstimate()
+			s.resetState()
 			return
 		}
 
@@ -499,12 +499,12 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 		return
 	}
 
-	s.updateEstimateState(int64(remb.Bitrate))
+	s.handleNewEstimate(int64(remb.Bitrate))
 }
 
 func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
-	s.updateEstimateState(int64(receivedEstimate))
+	s.handleNewEstimate(int64(receivedEstimate))
 }
 
 // LK-TODO-START
@@ -572,6 +572,12 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
+	// RAJA-TODO
+	// 1. Differentiate between probing state and non-probing state
+	// 2. When in probing, take the highest in the window
+	// 3. If the estimate decreases (within the window) or goes down compared to previous non-probe estimate, stop probing immediately
+	// 4. When probing queuing flushes, take the maximum of probing and non-probe as the new estimate
+	// 5. Reset probe interval if probing is a success
 	isDecreasing := s.maybeCommitEstimate()
 	if isDecreasing {
 		s.allocateAllTracks()
@@ -607,11 +613,15 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 }
 
 func (s *StreamAllocator) setState(state State) {
-	if s.state != state {
-		s.params.Logger.Debugw("state change", "from", s.state, "to", state)
+	if s.state == state {
+		return
 	}
 
+	s.params.Logger.Debugw("state change", "from", s.state, "to", state)
 	s.state = state
+
+	// reset probe to enforce a delay after state change before probing
+	s.lastProbeTime = time.Now()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -625,15 +635,14 @@ func (s *StreamAllocator) adjustState() {
 	s.setState(StateStable)
 }
 
-func (s *StreamAllocator) updateEstimateState(receivedEstimate int64) {
-	s.params.Logger.Debugw("SA_DEBUG direction", "prev", s.prevReceivedEstimate, "curr", s.receivedEstimate, "new", receivedEstimate)	// REMOVE
+func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 	isDirectionChanging :=
 		(s.prevReceivedEstimate >= s.receivedEstimate && receivedEstimate > s.receivedEstimate) ||
-		(s.prevReceivedEstimate <= s.receivedEstimate && receivedEstimate < s.receivedEstimate)
+			(s.prevReceivedEstimate <= s.receivedEstimate && receivedEstimate < s.receivedEstimate)
 	if isDirectionChanging {
-		s.directionChangeTime = time.Now()
-		s.params.Logger.Debugw("SA_DEBUG direction changing", "time", s.directionChangeTime)	// REMOVE
+		s.lastDirectionChangeTime = time.Now()
 	}
+
 	s.prevReceivedEstimate = s.receivedEstimate
 	s.receivedEstimate = receivedEstimate
 	if s.prevReceivedEstimate != s.receivedEstimate {
@@ -649,48 +658,43 @@ func (s *StreamAllocator) updateEstimateState(receivedEstimate int64) {
 	}
 }
 
-func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
+func (s *StreamAllocator) maybeCommitEstimate() bool {
 	//
 	// Commit channel capacity estimate under following rules
 	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
-	//   2. time.Since(newest(directionChangeTime, lastCommitTime)) > EstimateCommitMs => to catch long oscillating estimate
+	//   2. time.Since(lastDirectionChangeTime) > EstimateSettleWait => wait for estimate to settl
+	//   3. time.Since(lastCommitTime) > EstimateOscillationWait => to catch long oscillating estimates
 	//
-	newest := s.lastCommitTime
-	if s.lastCommitTime.Before(s.directionChangeTime) {
-		newest = s.directionChangeTime
-	}
-	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon && time.Since(newest) < EstimateCommit {
+	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon &&
+		time.Since(s.lastDirectionChangeTime) < EstimateSettleWait &&
+		time.Since(s.lastCommitTime) < EstimateOscillationWait {
 		// too large a change, wait for estimate to settle.
-		return
+		return false
 	}
 
 	if s.receivedEstimate == s.committedChannelCapacity {
 		// no change in estimate, no need to commit
-		return
+		return false
 	}
 
-	if s.committedChannelCapacity > s.receivedEstimate && s.committedChannelCapacity != ChannelCapacityInfinity {
-		//
-		// This prevents declaring a decrease when coming out of init state.
-		// But, this bypasses the case where streaming starts on a bunch of
-		// tracks simultaneously (imagine a participant joining a large room
-		// with a lot of video tracks). In that case, it is possible that the
-		// channel is hitting congestion. It will be caught on the next estimate
-		// decrease.
-		//
-		s.lastEstimateDecreaseTime = time.Now()
-		isDecreasing = true
-	}
-
+	//
+	// This prevents declaring a decrease when coming out of init state.
+	// But, this bypasses the case where streaming starts on a bunch of
+	// tracks simultaneously (imagine a participant joining a large room
+	// with a lot of video tracks). In that case, it is possible that the
+	// channel is hitting congestion. It will be caught on the next estimate
+	// decrease.
+	//
+	isDecreasing := s.committedChannelCapacity > s.receivedEstimate && s.committedChannelCapacity != ChannelCapacityInfinity
 	if s.committedChannelCapacity > s.receivedEstimate {
 		s.params.Logger.Debugw("committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
 	} else {
-		s.params.Logger.Debugw("SA_DEBUG committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
+		s.params.Logger.Debugw("SA_DEBUG committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate) // REMOVE
 	}
 	s.committedChannelCapacity = s.receivedEstimate
 	s.lastCommitTime = time.Now()
 
-	return
+	return isDecreasing
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
@@ -788,13 +792,51 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
+func (s *StreamAllocator) allocateDeficientTracks() {
+	availableChannelCapacity := s.committedChannelCapacity - s.getExpectedBandwidthUsage()
+	if availableChannelCapacity <= 0 {
+		return
+	}
+
+	var maxDistanceSorted MaxDistanceSorter
+	for _, track := range s.managedVideoTracksSorted {
+		maxDistanceSorted = append(maxDistanceSorted, track)
+	}
+	sort.Sort(maxDistanceSorted)
+
+	update := NewStreamStateUpdate()
+
+	for _, track := range maxDistanceSorted {
+		if !track.IsDeficient() {
+			continue
+		}
+
+		allocation, boosted := track.AllocateNextHigher(availableChannelCapacity)
+		if !boosted {
+			continue
+		}
+
+		update.HandleStreamingChange(allocation.change, track)
+
+		availableChannelCapacity -= allocation.bandwidthDelta
+		if availableChannelCapacity <= 0 {
+			break
+		}
+	}
+
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
 func (s *StreamAllocator) allocateAllTracks() {
 	if !s.params.Config.Enabled {
 		// nothing else to do when disabled
 		return
 	}
 
-	s.resetBoost()
+	// RAJA-TODO - maybe remove this
+	s.resetProbe()
 
 	//
 	// Goals:
@@ -935,21 +977,30 @@ func (s *StreamAllocator) calculateLoss() float32 {
 }
 
 func (s *StreamAllocator) maybeProbe() {
-	if !s.isTimeToBoost() {
+	if time.Since(s.lastProbeTime) < s.probeInterval {
 		return
 	}
 
 	switch s.params.Config.ProbeMode {
 	case config.CongestionControlProbeModeMedia:
-		s.maybeBoostLayer()
+		s.maybeProbeWithMedia()
 		s.adjustState()
 	case config.CongestionControlProbeModePadding:
 		s.maybeProbeWithPadding()
 	}
 }
 
-func (s *StreamAllocator) maybeBoostLayer() {
-	s.params.Logger.Debugw("SA_DEBUG, probing", "mode", s.params.Config.ProbeMode)	// REMOVE
+func (s *StreamAllocator) stopProbing() {
+	s.prober.Reset()
+}
+
+// RAJA-TODO: combine with gratuitous probe reset
+func (s *StreamAllocator) resetProbe() {
+	s.lastProbeTime = time.Now()
+	s.probeInterval = BaseProbeWait
+}
+
+func (s *StreamAllocator) maybeProbeWithMedia() {
 	var maxDistanceSorted MaxDistanceSorter
 	for _, track := range s.managedVideoTracksSorted {
 		maxDistanceSorted = append(maxDistanceSorted, track)
@@ -962,16 +1013,16 @@ func (s *StreamAllocator) maybeBoostLayer() {
 			continue
 		}
 
-		allocation, boosted := track.AllocateNextHigher()
+		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity)
 		if !boosted {
 			continue
 		}
 
-		s.lastBoostTime = time.Now()
-
 		update := NewStreamStateUpdate()
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
+
+		s.lastProbeTime = time.Now()
 		break
 	}
 }
@@ -994,13 +1045,11 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			continue
 		}
 
-		s.lastBoostTime = time.Now()
-
-		probeRateBps := (transition.bandwidthDelta * 110) / 100
-		if probeRateBps < GratuitousProbeMinBps {
-			probeRateBps = GratuitousProbeMinBps
+		probeRateBps := (transition.bandwidthDelta * ProbePct) / 100
+		if probeRateBps < ProbeMinBps {
+			probeRateBps = ProbeMinBps
 		}
-		s.params.Logger.Debugw("SA_DEBUG, probing with padding", "needed", transition.bandwidthDelta, "asking", probeRateBps)	// REMOVE
+		s.params.Logger.Debugw("SA_DEBUG, probing with padding", "needed", transition.bandwidthDelta, "asking", probeRateBps) // REMOVE
 
 		expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 		expectedBandwidthUsageWithProbing := expectedBandwidthUsage + probeRateBps
@@ -1011,33 +1060,14 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			GratuitousProbeMaxDuration,
 		)
 
+		s.lastProbeTime = time.Now()
 		break
 	}
 }
 
-func (s *StreamAllocator) isTimeToBoost() bool {
-	// if enough time has passed since last estimate drop or last estimate boost,
-	// artificially boost estimate before allocating.
-	// Checking against last estimate boost prevents multiple artificial boosts
-	// in situations where multiple tracks become available in a short span.
-	if !s.lastBoostTime.IsZero() {
-		return time.Since(s.lastBoostTime) > BoostWait
-	} else {
-		return time.Since(s.lastEstimateDecreaseTime) > ProbeWait
-	}
-}
-
-func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.Time{}
-}
-
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
-	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWait || len(s.managedVideoTracksSorted) == 0 {
-		return false
-	}
-
 	// don't gratuitously probe too often
-	if time.Since(s.lastGratuitousProbeTime) < GratuitousProbeMoreWait {
+	if time.Since(s.lastProbeTime) < s.probeInterval || len(s.managedVideoTracksSorted) == 0 {
 		return false
 	}
 
@@ -1064,13 +1094,14 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 		GratuitousProbeMaxDuration,
 	)
 
-	s.lastGratuitousProbeTime = time.Now()
+	s.lastProbeTime = time.Now()
 	return true
 }
 
+// RAJA-TODO: combine this function into other resets
 func (s *StreamAllocator) resetGratuitousProbe() {
 	s.prober.Reset()
-	s.lastGratuitousProbeTime = time.Now()
+	s.lastProbeTime = time.Now()
 }
 
 // ------------------------------------------------
@@ -1190,7 +1221,7 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 
 func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
 	allocation := t.downTrack.Allocate(availableChannelCapacity, allowPause)
-	t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
+	t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation) // REMOVE
 	return allocation
 }
 
@@ -1216,15 +1247,15 @@ func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
 	return allocation
 }
 
-func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
-	allocation, boosted := t.downTrack.AllocateNextHigher()
+func (t *Track) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
+	allocation, boosted := t.downTrack.AllocateNextHigher(availableChannelCapacity)
 	t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted) // REMOVE
 	return allocation, boosted
 }
 
 func (t *Track) GetNextHigherTransition() (VideoTransition, bool) {
 	transition, available := t.downTrack.GetNextHigherTransition()
-	t.logger.Debugw("SA_DEBUG Get next higher layer", "transition", transition, "available", available)	// REMOVE
+	t.logger.Debugw("SA_DEBUG Get next higher layer", "transition", transition, "available", available) // REMOVE
 	return transition, available
 }
 

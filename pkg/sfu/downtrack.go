@@ -645,8 +645,8 @@ func (d *DownTrack) FinalizeAllocate() VideoAllocation {
 	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) AllocateNextHigher() (VideoAllocation, bool) {
-	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
+	return d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {

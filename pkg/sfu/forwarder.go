@@ -361,7 +361,11 @@ func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return brs[f.targetLayers.spatial][b.trargetLayers.temporal]
+	if f.targetLayers == InvalidLayers {
+		return 0
+	}
+
+	return brs[f.targetLayers.spatial][f.targetLayers.temporal]
 }
 
 func (f *Forwarder) DistanceToDesired() int32 {
@@ -548,7 +552,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		alreadyAllocatedBitrate = f.provisional.bitrates[f.provisional.layers.spatial][f.provisional.layers.temporal]
 	}
 
-	f.logger.Debugw("SA_DEBUG provisional allocation", "available", availableChannelCapacity, "already", alreadyAllocatedBitrate, "required", requiredBitrate)	// REMOVE
+	f.logger.Debugw("SA_DEBUG provisional allocation", "available", availableChannelCapacity, "already", alreadyAllocatedBitrate, "required", requiredBitrate) // REMOVE
 	if requiredBitrate <= (availableChannelCapacity + alreadyAllocatedBitrate) {
 		f.provisional.layers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
@@ -895,7 +899,7 @@ func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
 	return f.lastAllocation
 }
 
-func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
+func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitrates) (VideoAllocation, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -923,12 +927,23 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 		return f.lastAllocation, false
 	}
 
+	alreadyAllocated := int64(0)
+	if f.targetLayers != InvalidLayers {
+		alreadyAllocated = brs[f.targetLayers.spatial][f.targetLayers.temporal]
+	}
+
 	// try moving temporal layer up in currently streaming spatial layer
 	if f.targetLayers != InvalidLayers {
 		for t := f.targetLayers.temporal + 1; t <= f.maxLayers.temporal; t++ {
 			bandwidthRequested := brs[f.targetLayers.spatial][t]
 			if bandwidthRequested == 0 {
 				continue
+			}
+
+			if bandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				// next higher available layer does not fit, return
+				f.lastAllocation.change = VideoStreamingChangeNone
+				return f.lastAllocation, false
 			}
 
 			state := VideoAllocationStateOptimal
@@ -941,7 +956,7 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 				state:              state,
 				change:             VideoStreamingChangeNone,
 				bandwidthRequested: bandwidthRequested,
-				bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
+				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
 				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
@@ -960,6 +975,12 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 				continue
 			}
 
+			if bandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				// next higher available layer does not fit, return
+				f.lastAllocation.change = VideoStreamingChangeNone
+				return f.lastAllocation, false
+			}
+
 			state := VideoAllocationStateOptimal
 			if bandwidthRequested != optimalBandwidthNeeded {
 				state = VideoAllocationStateDeficient
@@ -975,7 +996,7 @@ func (f *Forwarder) AllocateNextHigher(brs Bitrates) (VideoAllocation, bool) {
 				state:              state,
 				change:             change,
 				bandwidthRequested: bandwidthRequested,
-				bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
+				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
 				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
@@ -1023,8 +1044,8 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			}
 
 			transition := VideoTransition{
-				from: f.targetLayers,
-				to: VideoLayers{spatial: f.targetLayers.spatial, temporal: t},
+				from:           f.targetLayers,
+				to:             VideoLayers{spatial: f.targetLayers.spatial, temporal: t},
 				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
 			}
 
@@ -1041,8 +1062,8 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			}
 
 			transition := VideoTransition{
-				from: f.targetLayers,
-				to: VideoLayers{spatial: s, temporal: t},
+				from:           f.targetLayers,
+				to:             VideoLayers{spatial: s, temporal: t},
 				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
 			}
 
@@ -1186,7 +1207,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers)	// REMOVE
+				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers) // REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
