@@ -137,7 +137,7 @@ type StreamAllocator struct {
 	lastCommitTime           time.Time
 
 	probeInterval          int
-	lastProbeTime          time.Time
+	lastProbeStartTime          time.Time
 	probeGoalBps int64
 	highestEstimateInProbe int64
 	lowestEstimateInProbe int64
@@ -249,7 +249,7 @@ func (s *StreamAllocator) resetState() {
 	s.lastCommitTime = time.Now()
 
 	s.probeInterval = BaseProbeWait
-	s.lastProbeTime = time.Now()
+	s.lastProbeStartTime = time.Now()
 	s.highestEstimateInProbe = int64(0)
 	s.lowestEstimateInProbe = int64(0)
 	s.probeClusterId = ProbeClusterIdInvalid
@@ -682,8 +682,8 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 		queueTime = 0.0
 	}
 	queueWait := time.Duration(queueTime + float64(ProbeSettleWait)) * time.Millisecond
-	s.probeEndTime = s.lastProbeTime.Add(queueWait)
-	s.params.Logger.Debugw("SA_DEBUG, probe end time", "lowestEstimate", lowestEstimate, "expectedDuration", expectedDuration, "actualDuration", float64(info.Duration.Milliseconds()), "queue", queueTime, "wait", queueWait, "end", s.probeEndTime, "start", s.lastProbeTime, "now", time.Now())	// REMOVE
+	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
+	s.params.Logger.Debugw("SA_DEBUG, probe end time", "lowestEstimate", lowestEstimate, "expectedDuration", expectedDuration, "actualDuration", float64(info.Duration.Milliseconds()), "queue", queueTime, "wait", queueWait, "end", s.probeEndTime, "start", s.lastProbeStartTime, "now", time.Now())	// REMOVE
 }
 
 func (s *StreamAllocator) setState(state State) {
@@ -695,7 +695,7 @@ func (s *StreamAllocator) setState(state State) {
 	s.state = state
 
 	// reset probe to enforce a delay after state change before probing
-	s.lastProbeTime = time.Now()
+	s.lastProbeStartTime = time.Now()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -1113,7 +1113,7 @@ func (s *StreamAllocator) isInProbe() bool {
 }
 
 func (s *StreamAllocator) maybeProbe() {
-	if time.Since(s.lastProbeTime) < (time.Duration(s.probeInterval)*time.Millisecond) || s.probeClusterId != ProbeClusterIdInvalid {
+	if time.Since(s.lastProbeStartTime) < (time.Duration(s.probeInterval)*time.Millisecond) || s.probeClusterId != ProbeClusterIdInvalid {
 		return
 	}
 
@@ -1157,7 +1157,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 
-		s.lastProbeTime = time.Now()
+		s.lastProbeStartTime = time.Now()
 		break
 	}
 }
@@ -1199,7 +1199,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 		)
 
 		if s.probeClusterId != ProbeClusterIdInvalid {
-			s.lastProbeTime = time.Now()
+			s.lastProbeStartTime = time.Now()
 		}
 		break
 	}
@@ -1207,7 +1207,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
 	// don't gratuitously probe too often
-	if time.Since(s.lastProbeTime) < (time.Duration(s.probeInterval)*time.Millisecond) || len(s.managedVideoTracksSorted) == 0 || s.probeClusterId != ProbeClusterIdInvalid {
+	if time.Since(s.lastProbeStartTime) < (time.Duration(s.probeInterval)*time.Millisecond) || len(s.managedVideoTracksSorted) == 0 || s.probeClusterId != ProbeClusterIdInvalid {
 		return false
 	}
 
@@ -1240,7 +1240,7 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 	)
 
 	if s.probeClusterId != ProbeClusterIdInvalid {
-		s.lastProbeTime = time.Now()
+		s.lastProbeStartTime = time.Now()
 		return true
 	}
 
