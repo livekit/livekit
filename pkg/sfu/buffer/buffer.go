@@ -67,6 +67,8 @@ type Buffer struct {
 	lastPacketRead int
 	bitrate        atomic.Value
 	bitrateHelper  [4]int64
+	paddingBitrate        int64
+	paddingBitrateHelper  int64
 	lastSRNTPTime  uint64
 	lastSRRTPTime  uint32
 	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
@@ -425,8 +427,10 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, pktSize int, arrivalTime int64
 		b.stats.TotalRetransmitPackets++
 		b.stats.TotalRetransmitBytes += uint64(pktSize)
 	case len(p.Payload) == 0:
+		//b.logger.Debugw("SA_DEBUG padding packet", "size", pktSize, "marker", p.Marker)	// REMOVE
 		b.stats.TotalPaddingPackets++
 		b.stats.TotalPaddingBytes += uint64(pktSize)
+		b.paddingBitrateHelper += int64(pktSize)
 	default:
 		b.stats.TotalPrimaryPackets++
 		b.stats.TotalPrimaryBytes += uint64(pktSize)
@@ -557,6 +561,10 @@ func (b *Buffer) doReports(arrivalTime int64) {
 		b.bitrateHelper[i] = 0
 	}
 	b.bitrate.Store(bitrates)
+
+	b.paddingBitrate = (8 * b.paddingBitrateHelper * int64(ReportDelta)) / timeDiff
+	b.paddingBitrateHelper = int64(0)
+	//b.logger.Debugw("SA_DEBUG, padding bitrate", "bitrate", b.paddingBitrate)	// REMOVE
 
 	// RTCP reports
 	pkts := b.getRTCP()

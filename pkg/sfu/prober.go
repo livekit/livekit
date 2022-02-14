@@ -439,7 +439,8 @@ func (c *Cluster) String() string {
 		activeTimeMs = time.Since(c.startTime).Milliseconds()
 	}
 
-	return fmt.Sprintf("bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+	return fmt.Sprintf("id: %d, bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+		c.id,
 		c.desiredBytes,
 		c.bytesSentProbe,
 		c.bytesSentNonProbe,

@@ -329,6 +329,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		d.updatePrimaryStats(pktSize, hdr.Marker)
+		/* RAJA-REMOVE
+		if tp.vp8 != nil {
+			d.logger.Debugw("SA_DEBUG, forwarding", "layer", layer, "seq", hdr.SequenceNumber, "marker", hdr.Marker)	// REMOVE
+		}
+		RAJA-REMOVE */
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
@@ -378,6 +383,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	if err != nil {
 		return 0
 	}
+	//d.logger.Debugw("SA_DEBUG, seq", "snts", snts)	// REMOVE
 
 	// LK-TODO Look at load balancing a la sfu.Receiver to spread across available CPUs
 	bytesSent := 0
@@ -413,6 +419,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		if err != nil {
 			return bytesSent
 		}
+		//d.logger.Debugw("SA_DEBUG, padding",  "seq", hdr.SequenceNumber, "marker", hdr.Marker)	// REMOVE
 
 		size := hdr.MarshalSize() + len(payload)
 		d.updatePaddingStats(size)

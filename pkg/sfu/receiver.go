@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
@@ -242,7 +243,8 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		return
 	}
 
-	buff.SetLogger(w.logger)
+	layer := RidToLayer(track.RID())
+	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
 	buff.OnFeedback(w.sendRTCP)
 
 	var duration time.Duration
@@ -260,7 +262,6 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		buff.SetPLIThrottle(duration.Nanoseconds())
 	}
 
-	layer := RidToLayer(track.RID())
 	w.upTrackMu.Lock()
 	w.upTracks[layer] = track
 	w.upTrackMu.Unlock()

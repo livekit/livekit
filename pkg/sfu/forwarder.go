@@ -1035,6 +1035,11 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 		return VideoTransition{}, false
 	}
 
+	alreadyAllocated := int64(0)
+	if f.targetLayers != InvalidLayers {
+		alreadyAllocated = brs[f.targetLayers.spatial][f.targetLayers.temporal]
+	}
+
 	// try moving temporal layer up in currently streaming spatial layer
 	if f.targetLayers != InvalidLayers {
 		for t := f.targetLayers.temporal + 1; t <= f.maxLayers.temporal; t++ {
@@ -1046,7 +1051,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			transition := VideoTransition{
 				from:           f.targetLayers,
 				to:             VideoLayers{spatial: f.targetLayers.spatial, temporal: t},
-				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
+				bandwidthDelta: bandwidthRequested - alreadyAllocated,
 			}
 
 			return transition, true
@@ -1064,7 +1069,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 			transition := VideoTransition{
 				from:           f.targetLayers,
 				to:             VideoLayers{spatial: s, temporal: t},
-				bandwidthDelta: bandwidthRequested - brs[f.targetLayers.spatial][f.targetLayers.temporal],
+				bandwidthDelta: bandwidthRequested - alreadyAllocated,
 			}
 
 			return transition, true
