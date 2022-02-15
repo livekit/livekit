@@ -1520,7 +1520,6 @@ func (e *Estimator) updateTrend() EstimateTrend {
 
 	for i := 0; i < len(e.estimates)-1; i++ {
 		for j := i + 1; j < len(e.estimates); j++ {
-			// treating equal values as concordant as the need here is to detect downward trend reliably
 			if e.estimates[i] < e.estimates[j] {
 				concordantPairs++
 			} else if e.estimates[i] > e.estimates[j] {
