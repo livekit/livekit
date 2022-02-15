@@ -612,13 +612,16 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
+	// transit rate update
 	if !s.lastMeasurementTime.IsZero() {
 		diff := time.Since(s.lastMeasurementTime).Milliseconds()
-		s.meteredBitrate = int64(atomic.SwapInt64(&s.meteredBytes, 0) * 8 * 1000) / diff
-		s.params.Logger.Debugw("SA_DEBUG, metered bitrate", "bitrate", s.meteredBitrate)	// REMOVE
+		meteredBytes := atomic.SwapInt64(&s.meteredBytes, 0)
+		s.meteredBitrate = int64(meteredBytes * 8 * 1000) / diff
+		s.params.Logger.Debugw("SA_DEBUG, METERED BITRATE", "bitrate", s.meteredBitrate, "meteredBytes", meteredBytes, "diff", diff)	// REMOVE
 	}
 	s.lastMeasurementTime = time.Now()
 
+	// probe/estimate catch up
 	if s.isInProbe() {
 		if !s.probeEndTime.IsZero() && time.Now().After(s.probeEndTime) {
 			s.finalizeProbe()
@@ -721,6 +724,8 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 			(s.prevReceivedEstimate <= s.receivedEstimate && receivedEstimate < s.receivedEstimate)
 	if isDirectionChanging {
 		// reset commit time on direction change so that estimate is not committed till it settles
+		// RAJA-WRONG: this is resetting last commit time unnecessarily
+		s.params.Logger.Debugw("SA_DEBUG, direction change time", "time", time.Now())	// REMOVE
 		s.lastCommitTime = time.Now()
 	}
 
@@ -751,8 +756,8 @@ func (s *StreamAllocator) handleNewEstimateInProbe(receivedEstimate int64) {
 	if s.abortedProbeClusterId == ProbeClusterIdInvalid {
 		if receivedEstimate < s.committedChannelCapacity {
 			// stop immediately if estimate falls below the previously committed estimate, the probe is congesting channel more
-			s.params.Logger.Debugw("SA_DEBUG, aborting probe", "received", receivedEstimate, "committed", s.committedChannelCapacity) // REMOVE
-			s.abortProbe()
+			// RAJA-RESTORE s.params.Logger.Debugw("SA_DEBUG, aborting probe", "received", receivedEstimate, "committed", s.committedChannelCapacity) // REMOVE
+			// RAJA-RESTORE s.abortProbe()
 		} else if s.highestEstimateInProbe > s.probeGoalBps {
 			// reached goal, stop probing
 			s.params.Logger.Debugw("SA_DEBUG, probe goal reached, stopped", "received", receivedEstimate, "committed", s.committedChannelCapacity) // REMOVE

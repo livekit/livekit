@@ -963,6 +963,10 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	defer PacketFactory.Put(src)
 
 	for _, meta := range nackedPackets {
+		if !d.forwarder.IsRtxAllowed(int32(meta.layer)) {
+			continue
+		}
+
 		if pool != nil {
 			PacketFactory.Put(pool)
 			pool = nil
@@ -1021,6 +1025,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 			}
 
 			d.updateRtxStats(pktSize)
+			d.logger.Debugw("SA_DEBUG rtx", "sn", pkt.Header.SequenceNumber, "size", pktSize)	// REMOVE
 		}
 	}
 }

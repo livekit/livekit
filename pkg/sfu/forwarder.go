@@ -1137,6 +1137,21 @@ func (f *Forwarder) Resync() {
 	f.lastSSRC = 0
 }
 
+func (f *Forwarder) IsRtxAllowed(layer int32) bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if layer != f.currentLayers.spatial {
+		return false
+	}
+
+	if FlagPauseOnDowngrade && f.targetLayers.spatial < f.currentLayers.spatial && f.lastAllocation.state == VideoAllocationStateDeficient {
+		return false
+	}
+
+	return true
+}
+
 func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -1228,10 +1243,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if FlagPauseOnDowngrade &&
-		f.targetLayers.spatial < f.currentLayers.spatial &&
-		f.targetLayers.spatial < f.maxLayers.spatial &&
-		f.lastAllocation.state == VideoAllocationStateDeficient {
+	if FlagPauseOnDowngrade && f.targetLayers.spatial < f.currentLayers.spatial && f.lastAllocation.state == VideoAllocationStateDeficient {
 		//
 		// If target layer is lower than both the current and
 		// maximum subscribed layer, it is due to bandwidth
