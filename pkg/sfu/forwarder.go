@@ -1141,11 +1141,17 @@ func (f *Forwarder) IsRtxAllowed(layer int32) bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	if layer != f.currentLayers.spatial {
-		return false
-	}
-
-	if FlagPauseOnDowngrade && f.targetLayers.spatial < f.currentLayers.spatial && f.lastAllocation.state == VideoAllocationStateDeficient {
+	//
+	// Curb RTX when deficient for two cases
+	//   1. Target layer is lower than current layer. When current hits target, a key frame should flush the decoder.
+	//   2. Requested layer is higher than current. Current layer's key frame should have flushed encoder.
+	//      Remote might ask for older layer because of its jitter buffer, but let it starve as channel is already congested.
+	//
+	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
+	//
+	if FlagPauseOnDowngrade &&
+		f.lastAllocation.state == VideoAllocationStateDeficient &&
+		(f.targetLayers.spatial < f.currentLayers.spatial || layer > f.currentLayers.spatial) {
 		return false
 	}
 
