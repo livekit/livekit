@@ -101,7 +101,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		//r.logger.Debugw("SA_DEBUG, ooo munger", "incoming", extPkt.Packet.SequenceNumber, "offset", snOffset, "mungedSN", extPkt.Packet.SequenceNumber - snOffset)	// REMOVE
 		delete(r.missingSNs, extPkt.Packet.SequenceNumber)
 		return &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
@@ -153,7 +152,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.lastSN = mungedSN
-	//r.logger.Debugw("SA_DEBUG, regular munger", "incoming", extPkt.Packet.SequenceNumber, "offset", r.snOffset, "mungedSN", mungedSN)	// REMOVE
 	r.lastTS = mungedTS
 	r.lastMarker = extPkt.Packet.Marker
 
@@ -185,10 +183,8 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 		}
 	}
 
-	//r.logger.Debugw("SA_DEBUG, padding before", "lastSN", r.lastSN, "offset", r.snOffset)	// REMOVE
 	r.lastSN = vals[num-1].sequenceNumber
 	r.snOffset -= uint16(num)
-	//r.logger.Debugw("SA_DEBUG, padding after", "lastSN", r.lastSN, "offset", r.snOffset)	// REMOVE
 
 	if forceMarker {
 		r.lastMarker = true

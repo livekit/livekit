@@ -552,7 +552,6 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		alreadyAllocatedBitrate = f.provisional.bitrates[f.provisional.layers.spatial][f.provisional.layers.temporal]
 	}
 
-	f.logger.Debugw("SA_DEBUG provisional allocation", "available", availableChannelCapacity, "already", alreadyAllocatedBitrate, "required", requiredBitrate) // REMOVE
 	if requiredBitrate <= (availableChannelCapacity + alreadyAllocatedBitrate) {
 		f.provisional.layers = layers
 		return requiredBitrate - alreadyAllocatedBitrate
@@ -1233,7 +1232,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
 				// lock to target layer
-				f.logger.Debugw("SA_DEBUG locking to target", "current", f.currentLayers, "target", f.targetLayers) // REMOVE
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true

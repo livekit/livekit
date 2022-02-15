@@ -388,7 +388,6 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 		return
 	}
 
-	w.logger.Debugw("SA_DEBUG, PLI request", "layer", layer) // REMOVE
 	buff.SendPLI()
 }
 

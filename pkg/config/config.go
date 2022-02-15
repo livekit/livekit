@@ -28,7 +28,7 @@ type CongestionControlProbeMode string
 
 const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
-	CongestionControlProbeModeMedia = "media"
+	CongestionControlProbeModeMedia                              = "media"
 )
 
 type Config struct {
@@ -93,10 +93,10 @@ type PLIThrottleConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled        bool `yaml:"enabled"`
-	AllowPause     bool `yaml:"allow_pause"`
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
+	Enabled        bool                       `yaml:"enabled"`
+	AllowPause     bool                       `yaml:"allow_pause"`
+	UseSendSideBWE bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode      CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
 }
 
 type AudioConfig struct {
@@ -196,7 +196,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
 				AllowPause: true,
-				ProbeMode: CongestionControlProbeModePadding,
+				ProbeMode:  CongestionControlProbeModePadding,
 			},
 		},
 		Audio: AudioConfig{
