@@ -85,9 +85,9 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
-	require.True(t, r.highestIncomingSN == 23332)
-	require.True(t, r.lastSN == 23333)
-	require.True(t, r.lastTS == 0xabcdef)
+	require.Equal(t, r.highestIncomingSN, uint16(23332))
+	require.Equal(t, r.lastSN, uint16(23333))
+	require.Equal(t, r.lastTS, uint32(0xabcdef))
 	require.EqualValues(t, 0, r.snOffset)
 	require.EqualValues(t, 0, r.tsOffset)
 
@@ -99,8 +99,8 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
-	require.True(t, r.highestIncomingSN == 23332)
-	require.True(t, r.lastSN == 23333)
+	require.Equal(t, r.highestIncomingSN, uint16(23332))
+	require.Equal(t, r.lastSN, uint16(23333))
 	require.EqualValues(t, 0, r.snOffset)
 
 	// drop a head packet and check offset increases
@@ -112,8 +112,8 @@ func TestPacketDropped(t *testing.T) {
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 	r.PacketDropped(extPkt)
-	require.True(t, r.highestIncomingSN == 44444)
-	require.True(t, r.lastSN == 23333)
+	require.Equal(t, r.highestIncomingSN, uint16(44444))
+	require.Equal(t, r.lastSN, uint16(44443))
 	require.EqualValues(t, 1, r.snOffset)
 }
 
