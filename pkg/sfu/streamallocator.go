@@ -132,6 +132,7 @@ type StreamAllocator struct {
 
 	prevReceivedEstimate    int64
 	receivedEstimate        int64
+	estimator *Estimator
 
 	committedChannelCapacity int64
 	lastCommitTime           time.Time
@@ -167,6 +168,7 @@ type StreamAllocator struct {
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
 		params:      params,
+		estimator: NewEstimator(params.Logger),
 		audioTracks: make(map[livekit.TrackID]*Track),
 		videoTracks: make(map[livekit.TrackID]*Track),
 		prober: NewProber(ProberParams{
@@ -713,6 +715,7 @@ func (s *StreamAllocator) adjustState() {
 }
 
 func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
+	s.estimator.AddEstimate(receivedEstimate)	// REMOVE
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
 		s.handleNewEstimateInProbe(receivedEstimate)
@@ -1477,6 +1480,104 @@ func (m MinDistanceSorter) Swap(i, j int) {
 
 func (m MinDistanceSorter) Less(i, j int) bool {
 	return m[i].DistanceToDesired() < m[j].DistanceToDesired()
+}
+
+// ------------------------------------------------
+
+const (
+	NumRequiredEstimates = 8
+)
+
+type EstimateTrend int
+
+const (
+	EstimateTrendNeutral EstimateTrend = iota
+	EstimateTrendUpward
+	EstimateTrendDownward
+)
+
+func (e EstimateTrend) String() string {
+	switch e {
+	case EstimateTrendNeutral:
+		return "NEUTRAL"
+	case EstimateTrendUpward:
+		return "UPWARD"
+	case EstimateTrendDownward:
+		return "DOWNWARD"
+	default:
+		return fmt.Sprintf("%d", int(e))
+	}
+}
+
+type Estimator struct {
+	logger logger.Logger
+
+	estimates []int64
+	trend EstimateTrend
+}
+
+func NewEstimator(logger logger.Logger) *Estimator {
+	return &Estimator{
+		logger: logger,
+		trend: EstimateTrendNeutral,
+	}
+}
+
+func (e *Estimator) Reset() {
+	e.estimates = nil
+}
+
+func (e *Estimator) AddEstimate(estimate int64) {
+	/* RAJA-REMOVE
+	if len(e.estimates) != 0 && estimate == e.estimates[len(e.estimates) - 1] {
+		// filter out unchanging values
+		return
+	}
+	*/
+
+	if len(e.estimates) == NumRequiredEstimates {
+		e.estimates = e.estimates[1:]
+	}
+	e.estimates = append(e.estimates, estimate)
+
+	e.updateTrend()
+}
+
+func (e *Estimator) updateTrend() {
+	if len(e.estimates) < NumRequiredEstimates {
+		return
+	}
+
+	// using Kendall's Tau to find trend
+	concordantPairs := 0
+	discordantPairs := 0
+
+	for i := 0; i < len(e.estimates) - 1; i++ {
+		for j := i + 1; j < len(e.estimates); j++ {
+			// treating equal values as concordant as the need here is to detect downward trend reliably
+			if e.estimates[i] > e.estimates[j] {
+				discordantPairs++
+			} else {
+				concordantPairs++
+			}
+		}
+	}
+
+	e.logger.Debugw("SA_DEBUG, kt", "num", len(e.estimates), "c", concordantPairs, "d", discordantPairs)	// REMOVE
+	if (concordantPairs + discordantPairs) == 0 {
+		return
+	}
+
+	kt := (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
+	switch {
+	case kt == 0:
+		e.trend = EstimateTrendNeutral
+	case kt > 0:
+		e.trend = EstimateTrendUpward
+	case kt < 0:
+		e.trend = EstimateTrendDownward
+	}
+	e.logger.Debugw("SA_DEBUG, trend", "kt", kt, "trend", e.trend.String())	// REMOVE
 }
 
 // ------------------------------------------------
