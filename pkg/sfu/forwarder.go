@@ -186,6 +186,8 @@ type Forwarder struct {
 
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
+
+	receivedFirstKeyFrame atomicBool
 }
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
@@ -1067,6 +1069,10 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 	return nil, ErrUnknownKind
 }
 
+func (f *Forwarder) ReceivedFirstKeyFrame() bool {
+	return f.receivedFirstKeyFrame.get()
+}
+
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
@@ -1127,6 +1133,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
+				f.receivedFirstKeyFrame.set(true)
 			} else {
 				tp.shouldSendPLI = true
 			}
