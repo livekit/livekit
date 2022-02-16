@@ -368,6 +368,10 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
+	if w.closed.get() {
+		return
+	}
+
 	w.rtcpCh <- packets
 
 	for _, p := range packets {

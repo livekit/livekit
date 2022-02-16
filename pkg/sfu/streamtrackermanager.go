@@ -28,14 +28,16 @@ func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers [
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) {
+	cycleDuration := 500 * time.Millisecond
 	samplesRequired := uint32(5)
 	cyclesRequired := uint64(60) // 30s of continuous stream
 	if layer == 0 {
-		// be very forgiving for base layer
+		// be very forgiving for base layer to account for cases like static screen share where there could be only one packet per second
 		samplesRequired = 1
-		cyclesRequired = 4 // 2s of continuous stream
+		cyclesRequired = 1 // 1 packet in 2 seconds
+		cycleDuration = 2 * time.Second
 	}
-	tracker := NewStreamTracker(samplesRequired, cyclesRequired, 500*time.Millisecond)
+	tracker := NewStreamTracker(samplesRequired, cyclesRequired, cycleDuration)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
 			s.removeAvailableLayer(layer)
