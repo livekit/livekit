@@ -617,7 +617,9 @@ func (d *DownTrack) DistanceToDesired() int32 {
 }
 
 func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	return d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: allocation", "channel", availableChannelCapacity, "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
@@ -629,15 +631,21 @@ func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers V
 }
 
 func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
-	return d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+	transition := d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+	d.logger.Debugw("stream: cooperative transition", "transition", transition)
+	return transition
 }
 
 func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
-	return d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+	transition := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+	d.logger.Debugw("stream: best weighted transition", "transition", transition)
+	return transition
 }
 
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
-	return d.forwarder.ProvisionalAllocateCommit()
+	allocation := d.forwarder.ProvisionalAllocateCommit()
+	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
@@ -645,15 +653,21 @@ func (d *DownTrack) FinalizeAllocate() VideoAllocation {
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
-	return d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
+	return allocation, available
 }
 
 func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
-	return d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
+	return transition, available
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	return d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: pause", "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) Resync() {
@@ -918,10 +932,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		case *rtcp.TransportLayerNack:
 			var nackedPackets []packetMeta
 			for _, pair := range p.Nacks {
-				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
+				packetList := pair.PacketList()
+				numNACKs += uint32(len(packetList))
+				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(packetList)...)
 			}
 			go d.retransmitPackets(nackedPackets)
-			numNACKs += uint32(len(nackedPackets))
+			d.logger.Debugw("SA_DEBUG, NACKs", "num", numNACKs)	// REMOVE
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -1016,6 +1032,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 			}
 
 			d.updateRtxStats(pktSize)
+			d.logger.Debugw("SA_DEBUG, rtx", "sn", pkt.Header.SequenceNumber, "size", pktSize)	// REMOVE
 		}
 	}
 }
