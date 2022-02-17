@@ -322,7 +322,7 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 
 	// we have prevStats, find delta between cur and prev
 	prev := stats.prevStats
-	deltaStats := Stat{}
+	deltaStats := Stat{Score: cur.Score}
 	deltaStats.Rtt = cur.Rtt
 	deltaStats.Jitter = cur.Jitter
 	deltaStats.TotalPlis = cur.TotalPlis - prev.TotalPlis
