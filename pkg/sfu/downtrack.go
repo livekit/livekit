@@ -307,7 +307,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
 		d.lastPli.set(time.Now().UnixNano())
-		d.logger.Debugw("SA_DEBUG SFU PLI")	// REMOVE
 		d.receiver.SendPLI(layer)
 	}
 	if tp.shouldDrop {
@@ -360,7 +359,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.updatePrimaryStats(pktSize, hdr.Marker)
 		if extPkt.KeyFrame {
 			d.isNACKThrottled.set(false)
-			d.logger.Debugw("SA_DEBUG forwarding key frame")	// REMOVE
 		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
@@ -904,7 +902,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
-				d.logger.Debugw("SA_DEBUG Subscriber PLI")	// REMOVE
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.set(true)
 				pliOnce = false
@@ -969,12 +966,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		case *rtcp.TransportLayerNack:
 			var nacks []uint16
 			for _, pair := range p.Nacks {
-				packetList := pair.PacketList()
-				numNACKs += uint32(len(packetList))
-				nacks = append(nacks, packetList...)
+				nacks = append(nacks, pair.PacketList()...)
 			}
 			go d.retransmitPackets(nacks)
-			d.logger.Debugw("SA_DEBUG, NACKs", "num", numNACKs)	// REMOVE
+			numNACKs += uint32(len(nacks))
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -996,7 +991,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
-		d.logger.Debugw("NACKs throttled awaiting key frame for subscriber PLI")	// REMOVE
 		return
 	}
 
@@ -1085,7 +1079,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			}
 
 			d.updateRtxStats(pktSize)
-			d.logger.Debugw("SA_DEBUG, rtx", "sn", pkt.Header.SequenceNumber, "size", pktSize)	// REMOVE
 		}
 	}
 }
@@ -1216,11 +1209,4 @@ func (d *DownTrack) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	}
 
 	return stats
-}
-
-func (d *DownTrack) GetStats() buffer.StreamStats {
-	d.statsLock.RLock()
-	defer d.statsLock.RUnlock()
-
-	return d.stats
 }

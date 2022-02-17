@@ -510,9 +510,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		temporalLayer = int32(vp8Packet.TID)
-		if ep.KeyFrame {
-			b.logger.Debugw("SA_DEBUG, key frame", "ssrc", b.mediaSSRC)	// REMOVE
-		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	}
@@ -557,7 +554,6 @@ func (b *Buffer) doReports(arrivalTime int64) {
 		b.bitrateHelper[i] = 0
 	}
 	b.bitrate.Store(bitrates)
-	b.logger.Debugw("SA_DEBUG bitrates", "ssrc", b.mediaSSRC, "bitrates", bitrates)	// REMOVE
 
 	// RTCP reports
 	pkts := b.getRTCP()

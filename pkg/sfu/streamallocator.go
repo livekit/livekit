@@ -677,14 +677,10 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
-		s.params.Logger.Debugw("SA_DEBUG, estimate in probe", "estimate", receivedEstimate)	// REMOVE
 		s.handleNewEstimateInProbe()
 	} else {
-		s.params.Logger.Debugw("SA_DEBUG, estimate in non-probe", "estimate", receivedEstimate)	// REMOVE
 		s.handleNewEstimateInNonProbe()
 	}
-
-	s.getStats()	// RAJA-REMOVE
 }
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
@@ -1020,12 +1016,6 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	}
 
 	return expected
-}
-
-func (s *StreamAllocator) getStats() {
-	for _, track := range s.videoTracks {
-		track.GetStats()
-	}
 }
 
 // LK-TODO: unused till loss based estimation is done, but just a sample impl of weighting audio higher
@@ -1392,11 +1382,6 @@ func (t *Track) BandwidthRequested() int64 {
 
 func (t *Track) DistanceToDesired() int32 {
 	return t.downTrack.DistanceToDesired()
-}
-
-func (t *Track) GetStats() {
-	stats := t.downTrack.GetStats()
-	t.logger.Debugw("SA_DEBUG, stats", "track", t.ID(), "stats", stats)	// REMOVE
 }
 
 // ------------------------------------------------
