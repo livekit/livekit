@@ -17,7 +17,7 @@ import (
 //
 const (
 	FlagPauseOnDowngrade = true
-	FlagFilterRTX = true
+	FlagFilterRTX        = true
 )
 
 type ForwardingStatus int
@@ -1158,7 +1158,7 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
-	for layer := int32(0); layer < DefaultMaxLayerSpatial + 1; layer++ {
+	for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
 		if f.lastAllocation.state == VideoAllocationStateDeficient &&
 			(f.targetLayers.spatial < f.currentLayers.spatial || layer > f.currentLayers.spatial) {
 			disallowedLayers[layer] = true

@@ -43,7 +43,7 @@ type RTPMungerParams struct {
 
 	missingSNs map[uint16]uint16
 
-	rtxGateSn uint16
+	rtxGateSn         uint16
 	isInRtxGateRegion bool
 }
 
@@ -167,7 +167,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 		r.isInRtxGateRegion = true
 	}
 
-	if r.isInRtxGateRegion && (mungedSN - r.rtxGateSn) > RtxGateWindow {
+	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) > RtxGateWindow {
 		r.isInRtxGateRegion = false
 	}
 
