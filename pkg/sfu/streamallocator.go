@@ -1307,7 +1307,7 @@ type Track struct {
 
 	maxLayers VideoLayers
 
-	lastTotalNACKs uint32
+	totalRepeatedNACKs uint32
 }
 
 func newTrack(downTrack *DownTrack, isManaged bool, publisherID livekit.ParticipantID, logger logger.Logger) *Track {
@@ -1418,11 +1418,11 @@ func (t *Track) DistanceToDesired() int32 {
 }
 
 func (t *Track) GetNackDelta() uint32 {
-	stats := t.downTrack.GetStats()
-	t.logger.Debugw("SA_DEBUG, stats", "track", t.ID(), "stats", stats) // REMOVE
+	totalPackets, totalRepeatedNACKs := t.downTrack.GetNackStats()
+	t.logger.Debugw("SA_DEBUG, nack stats", "track", t.ID(), "packets", totalPackets, "repeatedNACKs", totalRepeatedNACKs) // REMOVE
 
-	delta := stats.TotalNACKs - t.lastTotalNACKs
-	t.lastTotalNACKs = stats.TotalNACKs
+	delta := totalRepeatedNACKs - t.totalRepeatedNACKs
+	t.totalRepeatedNACKs = totalRepeatedNACKs
 
 	return delta
 }

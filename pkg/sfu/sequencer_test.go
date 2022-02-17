@@ -16,33 +16,41 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint16(1); i < 520; i++ {
-		seq.push(i, i+off, 123, 2, true)
+		seq.push(i, i+off, 123, 2)
 	}
 
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
-	res := seq.getSeqNoPairs(req)
+	res, repeats := seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
+	require.Equal(t, 0, repeats)
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
-		require.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.layer, int8(2))
 	}
-	res = seq.getSeqNoPairs(req)
+	res, repeats = seq.getPacketsMeta(req)
 	require.Equal(t, 0, len(res))
+	require.Equal(t, len(req), repeats)
 	time.Sleep(150 * time.Millisecond)
-	res = seq.getSeqNoPairs(req)
+	res, repeats = seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
+	require.Equal(t, len(req), repeats)
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
-		require.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.layer, int8(2))
 	}
 
-	s := seq.push(521, 521+off, 123, 1, true)
-	s.sourceSeqNo = 12
-	m := seq.getSeqNoPairs([]uint16{521 + off})
+	seq.push(521, 521+off, 123, 1)
+	m, repeats := seq.getPacketsMeta([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
+	require.Equal(t, 0, repeats)
+
+	seq.push(505, 505+off, 123, 1)
+	m, repeats = seq.getPacketsMeta([]uint16{505 + off})
+	require.Equal(t, 1, len(m))
+	require.Equal(t, 0, repeats)
 }
 
 func Test_sequencer_getNACKSeqNo(t *testing.T) {
@@ -53,12 +61,16 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		input  []uint16
 		offset uint16
 	}
+	type want struct {
+		seqNo   []uint16
+		repeats int
+	}
 
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   []uint16
+		want   want
 	}{
 		{
 			name: "Should get correct seq numbers",
@@ -69,7 +81,10 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			args: args{
 				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5},
 			},
-			want: []uint16{4, 8},
+			want: want{
+				seqNo:   []uint16{4, 8},
+				repeats: 0,
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -78,17 +93,18 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 			n := newSequencer(500, logger.Logger(logger.GetLogger()))
 
 			for _, i := range tt.fields.input {
-				n.push(i, i+tt.fields.offset, 123, 3, true)
+				n.push(i, i+tt.fields.offset, 123, 3)
 			}
 
-			g := n.getSeqNoPairs(tt.args.seqNo)
+			g, repeats := n.getPacketsMeta(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
 				got = append(got, sn.sourceSeqNo)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getSeqNoPairs() = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(got, tt.want.seqNo) {
+				t.Errorf("getPacketsMeta() = %v, want %v", got, tt.want.seqNo)
 			}
+			require.Equal(t, 0, repeats)
 		})
 	}
 }
