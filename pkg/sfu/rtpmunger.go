@@ -44,7 +44,7 @@ type RTPMungerParams struct {
 	missingSNs map[uint16]uint16
 
 	rtxGateSn uint16
-	rtxGateRegion bool
+	isInRtxGateRegion bool
 }
 
 type RTPMunger struct {
@@ -164,12 +164,12 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	if extPkt.KeyFrame {
 		r.rtxGateSn = mungedSN
-		r.rtxGateRegion = true
+		r.isInRtxGateRegion = true
 		r.logger.Debugw("SA_DEBUG RTX gate start", "sn", mungedSN)	// REMOVE
 	}
 
-	if r.rtxGateRegion && (mungedSN - r.rtxGateSn) > RtxGateWindow {
-		r.rtxGateRegion = false
+	if r.isInRtxGateRegion && (mungedSN - r.rtxGateSn) > RtxGateWindow {
+		r.isInRtxGateRegion = false
 		r.logger.Debugw("SA_DEBUG RTX gate end", "start", r.rtxGateSn, "end", mungedSN)	// REMOVE
 	}
 
@@ -181,7 +181,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 }
 
 func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
-	if !r.rtxGateRegion {
+	if !r.isInRtxGateRegion {
 		return nacks
 	}
 
