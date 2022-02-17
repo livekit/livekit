@@ -36,6 +36,8 @@ const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMax             = 6
+
+	firstKeyFramePLIInterval = 500 * time.Millisecond
 )
 
 var (
@@ -47,6 +49,7 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
+	ErrTrackAlreadyBind                  = errors.New("already bind")
 )
 
 var (
@@ -128,6 +131,8 @@ type DownTrack struct {
 
 	// update rtt
 	onRttUpdate func(dt *DownTrack, rtt uint32)
+
+	closed chan struct{}
 }
 
 // NewDownTrack returns a DownTrack.
@@ -160,6 +165,7 @@ func NewDownTrack(
 		codec:         c,
 		kind:          kind,
 		forwarder:     NewForwarder(c, kind, logger),
+		closed:        make(chan struct{}),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -185,6 +191,9 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
+	if d.bound.get() {
+		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
+	}
 	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
 	if codec, err := codecParametersFuzzySearch(parameters, t.CodecParameters()); err == nil {
 		d.ssrc = uint32(t.SSRC())
@@ -203,6 +212,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.onBind()
 		}
 		d.bound.set(true)
+		go d.requestFirstKeyframe()
 		return codec, nil
 	}
 	return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
@@ -257,6 +267,21 @@ func (d *DownTrack) Stop() error {
 
 func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
+}
+
+func (d *DownTrack) requestFirstKeyframe() {
+	ticker := time.NewTicker(firstKeyFramePLIInterval)
+	for !d.forwarder.ReceivedFirstKeyFrame() {
+		select {
+		case <-d.closed:
+			return
+
+		case <-ticker.C:
+			if l := d.forwarder.TargetLayers(); l != InvalidLayers {
+				d.receiver.SendPLI(l.spatial)
+			}
+		}
+	}
 }
 
 // WriteRTP writes an RTP Packet to the DownTrack
@@ -491,6 +516,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		if d.onCloseHandler != nil {
 			d.onCloseHandler()
 		}
+		close(d.closed)
 	})
 }
 
