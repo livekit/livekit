@@ -38,6 +38,8 @@ const (
 	RTPBlankFramesMax             = 6
 
 	firstKeyFramePLIInterval = 500 * time.Millisecond
+
+	FlagStopRTXOnPLI = true
 )
 
 var (
@@ -103,6 +105,8 @@ type DownTrack struct {
 	lastPli     atomicInt64
 	lastRTP     atomicInt64
 	pktsDropped atomicUint32
+
+	isNACKThrottled atomicBool
 
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -303,6 +307,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
 		d.lastPli.set(time.Now().UnixNano())
+		d.logger.Debugw("SA_DEBUG SFU PLI")	// REMOVE
 		d.receiver.SendPLI(layer)
 	}
 	if tp.shouldDrop {
@@ -353,6 +358,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		d.updatePrimaryStats(pktSize, hdr.Marker)
+		if extPkt.KeyFrame {
+			d.isNACKThrottled.set(false)
+			d.logger.Debugw("SA_DEBUG forwarding key frame")	// REMOVE
+		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
@@ -895,7 +904,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
+				d.logger.Debugw("SA_DEBUG Subscriber PLI")	// REMOVE
 				d.receiver.SendPLI(targetLayers.spatial)
+				d.isNACKThrottled.set(true)
 				pliOnce = false
 			}
 		}
@@ -956,13 +967,13 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerNack:
-			var nackedPackets []packetMeta
+			var nacks []uint16
 			for _, pair := range p.Nacks {
 				packetList := pair.PacketList()
 				numNACKs += uint32(len(packetList))
-				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(packetList)...)
+				nacks = append(nacks, packetList...)
 			}
-			go d.retransmitPackets(nackedPackets)
+			go d.retransmitPackets(nacks)
 			d.logger.Debugw("SA_DEBUG, NACKs", "num", numNACKs)	// REMOVE
 
 		case *rtcp.TransportLayerCC:
@@ -983,7 +994,23 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 }
 
-func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
+func (d *DownTrack) retransmitPackets(nacks []uint16) {
+	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
+		d.logger.Debugw("NACKs throttled awaiting key frame for subscriber PLI")	// REMOVE
+		return
+	}
+
+	filtered, disallowedLayers := d.forwarder.FilterRTX(nacks)
+	if len(filtered) == 0 {
+		return
+	}
+
+	if d.sequencer == nil {
+		return
+	}
+
+	nackedPackets := d.sequencer.getSeqNoPairs(filtered)
+
 	var pool *[]byte
 	defer func() {
 		if pool != nil {
@@ -996,7 +1023,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	defer PacketFactory.Put(src)
 
 	for _, meta := range nackedPackets {
-		if !d.forwarder.IsRtxAllowed(int32(meta.layer)) {
+		if disallowedLayers[meta.layer] {
 			continue
 		}
 
@@ -1189,4 +1216,11 @@ func (d *DownTrack) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	}
 
 	return stats
+}
+
+func (d *DownTrack) GetStats() buffer.StreamStats {
+	d.statsLock.RLock()
+	defer d.statsLock.RUnlock()
+
+	return d.stats
 }
