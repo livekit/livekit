@@ -728,6 +728,9 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	// reset to get new set of samples for next trend
 	s.estimator.Reset()
 
+	// reset probe to ensure it does not start too soon after a downward trend
+	s.resetProbe()
+
 	s.allocateAllTracks()
 }
 
