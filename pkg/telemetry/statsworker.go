@@ -265,7 +265,6 @@ func (stats *Stats) coalesce() {
 			curStats.Jitter = jitter
 		}
 
-		curStats.TotalFrames += analyticsStream.TotalFrames
 		curStats.TotalPrimaryPackets += analyticsStream.TotalPrimaryPackets
 		curStats.TotalPrimaryBytes += analyticsStream.TotalPrimaryBytes
 		curStats.TotalRetransmitPackets += analyticsStream.TotalRetransmitPackets
@@ -301,27 +300,39 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 
 	// Stats in both queue/prev contain consolidated single deltaStats
 	cur := stats.curStats
+	prev := stats.prevStats
 
 	var maxLayer int32
-	var maxTotalBytes uint64
+	var maxDeltaBytes uint64
 	//create a map of VideoLayers - to pick max/best layer wrt current and prev
 	curLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
-	for _, layer := range cur.VideoLayers {
-		curLayers[layer.Layer] = layer
-		// identify layer which sent max data - as VideoLayers can change in current interval
-		if layer.TotalBytes > maxTotalBytes {
-			maxTotalBytes = layer.TotalBytes
-			maxLayer = layer.Layer
+	// if we have prev, find max delta total bytes for each layer
+	if prev != nil {
+		// find max delta bytes
+		for _, layer := range cur.VideoLayers {
+			curLayers[layer.Layer] = layer
+			if prevLayer, ok := prev.VideoLayers[layer.Layer]; ok {
+				delta := layer.TotalBytes - prevLayer.TotalBytes
+				if delta > maxDeltaBytes {
+					maxDeltaBytes = delta
+					maxLayer = layer.Layer
+				}
+			}
 		}
-	}
-
-	// no previous stats, prepare stat
-	if stats.prevStats == nil {
+	} else {
+		// if we don't have prev layer, find max layer in current - based on totalBytes for a layer
+		for _, layer := range cur.VideoLayers {
+			curLayers[layer.Layer] = layer
+			// identify layer which sent max data
+			if layer.TotalBytes > maxDeltaBytes {
+				maxDeltaBytes = layer.TotalBytes
+				maxLayer = layer.Layer
+			}
+		}
 		return cur.ToAnalyticsStats(curLayers[maxLayer])
 	}
 
 	// we have prevStats, find delta between cur and prev
-	prev := stats.prevStats
 	deltaStats := Stat{Score: cur.Score}
 	deltaStats.Rtt = cur.Rtt
 	deltaStats.Jitter = cur.Jitter
