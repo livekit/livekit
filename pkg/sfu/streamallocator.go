@@ -20,7 +20,19 @@ import (
 const (
 	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
 
-	EstimateEpsilon = 2000 // 2 kbps
+	NumRequiredEstimatesNonProbe = 8
+	NumRequiredEstimatesProbe    = 3
+
+	ProbeWaitBase      = 5 * time.Second
+	ProbeBackoffFactor = 1.5
+	ProbeWaitMax       = 30 * time.Second
+	ProbeSettleWait    = 250
+	ProbeTrendWait     = 2 * time.Second
+
+	ProbePct         = 120
+	ProbeMinBps      = 200 * 1000 // 200 kbps
+	ProbeMinDuration = 20 * time.Second
+	ProbeMaxDuration = 21 * time.Second
 
 	GratuitousProbeHeadroomBps = 1 * 1000 * 1000 // if headroom > 1 Mbps, don't probe
 	GratuitousProbePct         = 10
@@ -31,16 +43,6 @@ const (
 
 	AudioLossWeight = 0.75
 	VideoLossWeight = 0.25
-
-	// LK-TODO-START
-	// These constants will definitely require more tweaking.
-	// In fact, simple time threshold rules most probably will not be enough.
-	// LK-TODO-END
-	EstimateCommit          = 2 * 1000 * time.Millisecond // 2 seconds
-	ProbeWait               = 8 * 1000 * time.Millisecond // 8 seconds
-	BoostWait               = 5 * 1000 * time.Millisecond // 5 seconds
-	GratuitousProbeWait     = 8 * 1000 * time.Millisecond // 8 seconds
-	GratuitousProbeMoreWait = 5 * 1000 * time.Millisecond // 5 seconds
 )
 
 type State int
@@ -74,6 +76,7 @@ const (
 	SignalSubscribedLayersChange
 	SignalPeriodicPing
 	SignalSendProbe
+	SignalProbeClusterDone
 )
 
 func (s Signal) String() string {
@@ -96,6 +99,8 @@ func (s Signal) String() string {
 		return "PERIODIC_PING"
 	case SignalSendProbe:
 		return "SEND_PROBE"
+	case SignalProbeClusterDone:
+		return "PROBE_CLUSTER_DONE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -125,22 +130,26 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
+	lastReceivedEstimate int64
+	estimator            *Estimator
+
 	committedChannelCapacity int64
-	lastCommitTime           time.Time
-	prevReceivedEstimate     int64
-	receivedEstimate         int64
-	lastEstimateDecreaseTime time.Time
 
-	lastBoostTime time.Time
+	probeInterval         time.Duration
+	lastProbeStartTime    time.Time
+	probeGoalBps          int64
+	probeClusterId        ProbeClusterId
+	abortedProbeClusterId ProbeClusterId
+	probeTrendObserved    bool
+	probeEndTime          time.Time
+	probeEstimator        *Estimator
 
-	lastGratuitousProbeTime time.Time
+	prober *Prober
 
 	audioTracks              map[livekit.TrackID]*Track
 	videoTracks              map[livekit.TrackID]*Track
 	exemptVideoTracksSorted  TrackSorter
 	managedVideoTracksSorted TrackSorter
-
-	prober *Prober
 
 	state State
 
@@ -153,6 +162,7 @@ type StreamAllocator struct {
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
 		params:      params,
+		estimator:   NewEstimator("non-probe", params.Logger, NumRequiredEstimatesNonProbe),
 		audioTracks: make(map[livekit.TrackID]*Track),
 		videoTracks: make(map[livekit.TrackID]*Track),
 		prober: NewProber(ProberParams{
@@ -161,9 +171,10 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		eventCh: make(chan Event, 20),
 	}
 
-	s.initializeEstimate()
+	s.resetState()
 
 	s.prober.OnSendProbe(s.onSendProbe)
+	s.prober.OnProbeClusterDone(s.onProbeClusterDone)
 
 	return s
 }
@@ -226,11 +237,8 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 	})
 }
 
-func (s *StreamAllocator) initializeEstimate() {
-	s.committedChannelCapacity = ChannelCapacityInfinity
-	s.lastCommitTime = time.Now().Add(-EstimateCommit)
-	s.receivedEstimate = ChannelCapacityInfinity
-	s.lastEstimateDecreaseTime = time.Now()
+func (s *StreamAllocator) resetState() {
+	s.resetProbe()
 
 	s.state = StateStable
 }
@@ -306,6 +314,14 @@ func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 	})
 }
 
+// called when prober wants to send packet(s)
+func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
+	s.postEvent(Event{
+		Signal: SignalProbeClusterDone,
+		Data:   info,
+	})
+}
+
 func (s *StreamAllocator) postEvent(event Event) {
 	s.eventChMu.RLock()
 	if s.isStopped.Get() {
@@ -360,6 +376,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalPeriodicPing(event)
 	case SignalSendProbe:
 		s.handleSignalSendProbe(event)
+	case SignalProbeClusterDone:
+		s.handleSignalProbeClusterDone(event)
 	}
 }
 
@@ -428,7 +446,7 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 
 		// re-initialize estimate if all managed tracks are removed, let it get a fresh start
 		if len(s.managedVideoTracksSorted) == 0 {
-			s.initializeEstimate()
+			s.resetState()
 			return
 		}
 
@@ -438,7 +456,8 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
-	// the channel capacity is estimated at a peer connection level. All down tracks
+	//
+	// Channel capacity is estimated at a peer connection level. All down tracks
 	// in the peer connection will end up calling this for a REMB report with
 	// the same estimated channel capacity. Use a tracking SSRC to lock onto to
 	// one report. As SSRCs can be dropped over time, update tracking SSRC as needed
@@ -458,6 +477,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
 	// should prevent racing
 	// LK-TODO-END
+	//
 
 	// if there are no video tracks, ignore any straggler REMB
 	if len(s.managedVideoTracksSorted) == 0 {
@@ -497,38 +517,12 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 		return
 	}
 
-	s.prevReceivedEstimate = s.receivedEstimate
-	s.receivedEstimate = int64(remb.Bitrate)
-	/*
-		if s.prevReceivedEstimate != s.receivedEstimate {
-			s.params.Logger.Debugw("received new estimate",
-				"old(bps)", s.prevReceivedEstimate,
-				"new(bps)", s.receivedEstimate,
-			)
-		}
-	*/
-
-	if s.maybeCommitEstimate() {
-		s.allocateAllTracks()
-	}
+	s.handleNewEstimate(int64(remb.Bitrate))
 }
 
 func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
-	s.prevReceivedEstimate = s.receivedEstimate
-	s.receivedEstimate = int64(receivedEstimate)
-	/*
-		if s.prevReceivedEstimate != s.receivedEstimate {
-			s.params.Logger.Debugw("received new send side estimate",
-				"old(bps)", s.prevReceivedEstimate,
-				"new(bps)", s.receivedEstimate,
-			)
-		}
-	*/
-
-	if s.maybeCommitEstimate() {
-		s.allocateAllTracks()
-	}
+	s.handleNewEstimate(int64(receivedEstimate))
 }
 
 // LK-TODO-START
@@ -596,13 +590,15 @@ func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
-	if s.maybeCommitEstimate() {
-		s.allocateAllTracks()
+	// finalize probe if necessary
+	if s.isInProbe() && !s.probeEndTime.IsZero() && time.Now().After(s.probeEndTime) {
+		s.finalizeProbe()
 	}
 
 	// catch up on all optimistically streamed tracks
 	s.finalizeTracks()
 
+	// probe if necessary and timing is right
 	if s.state == StateDeficient {
 		s.maybeProbe()
 	}
@@ -629,12 +625,40 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 	}
 }
 
-func (s *StreamAllocator) setState(state State) {
-	if s.state != state {
-		s.params.Logger.Debugw("state change", "from", s.state, "to", state)
+func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
+	info, _ := event.Data.(ProbeClusterInfo)
+	if s.probeClusterId != info.Id {
+		return
 	}
 
+	if s.abortedProbeClusterId == ProbeClusterIdInvalid {
+		// successful probe, finalize
+		s.finalizeProbe()
+		return
+	}
+
+	// ensure probe queue is flushed
+	// LK-TODO: ProbeSettleWait should actually be a certain number of RTTs.
+	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.probeEstimator.GetLowest())))
+	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
+	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
+	if queueTime < 0.0 {
+		queueTime = 0.0
+	}
+	queueWait := time.Duration(queueTime+float64(ProbeSettleWait)) * time.Millisecond
+	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
+}
+
+func (s *StreamAllocator) setState(state State) {
+	if s.state == state {
+		return
+	}
+
+	s.params.Logger.Debugw("state change", "from", s.state, "to", state)
 	s.state = state
+
+	// reset probe to enforce a delay after state change before probing
+	s.lastProbeStartTime = time.Now()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -648,50 +672,67 @@ func (s *StreamAllocator) adjustState() {
 	s.setState(StateStable)
 }
 
-func (s *StreamAllocator) maybeCommitEstimate() (isDecreasing bool) {
-	// commit channel capacity estimate under following rules
-	//   1. Abs(receivedEstimate - prevReceivedEstimate) < EstimateEpsilon => estimate stable
-	//   2. time.Since(lastCommitTime) > EstimateCommitMs => to catch long oscillating estimate
-	if math.Abs(float64(s.receivedEstimate)-float64(s.prevReceivedEstimate)) > EstimateEpsilon {
-		// too large a change, wait for estimate to settle.
-		// Unless estimate has been oscillating for too long.
-		if time.Since(s.lastCommitTime) < EstimateCommit {
-			return
-		}
-	}
+func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
+	s.lastReceivedEstimate = receivedEstimate
 
-	// don't commit too often even if the change is small.
-	// Small changes will also get picked up during periodic check.
-	if time.Since(s.lastCommitTime) < EstimateCommit {
+	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
+	if s.isInProbe() {
+		s.handleNewEstimateInProbe()
+	} else {
+		s.handleNewEstimateInNonProbe()
+	}
+}
+
+func (s *StreamAllocator) handleNewEstimateInProbe() {
+	trend := s.probeEstimator.AddEstimate(s.lastReceivedEstimate)
+	if trend != EstimateTrendNeutral {
+		s.probeTrendObserved = true
+	}
+	switch {
+	case s.abortedProbeClusterId != ProbeClusterIdInvalid:
+		return
+	case !s.probeTrendObserved && time.Since(s.lastProbeStartTime) > ProbeTrendWait:
+		//
+		// More of a safety net.
+		// In rare cases, the estimate gets stuck. Prevent from probe running amok
+		// LK-TODO: Need more testing this here and ensure that probe does not cause a lot of damage
+		//
+		s.abortProbe()
+	case trend == EstimateTrendDownward:
+		// stop immediately if estimate falls below the previously committed estimate, the probe is congesting channel more
+		s.abortProbe()
+	case s.probeEstimator.GetHighest() > s.probeGoalBps:
+		// reached goal, stop probing
+		s.stopProbe()
+	}
+}
+
+func (s *StreamAllocator) handleNewEstimateInNonProbe() {
+	trend := s.estimator.AddEstimate(s.lastReceivedEstimate)
+	if trend != EstimateTrendDownward {
 		return
 	}
 
-	if s.receivedEstimate == s.committedChannelCapacity {
-		// no change in estimate, no need to commit
-		return
-	}
+	s.params.Logger.Infow(
+		"estimate trending down, updating channel capacity",
+		"old(bps)", s.committedChannelCapacity,
+		"new(bps)", s.lastReceivedEstimate,
+	)
+	s.committedChannelCapacity = s.lastReceivedEstimate
 
-	if s.committedChannelCapacity > s.receivedEstimate && s.committedChannelCapacity != ChannelCapacityInfinity {
-		// this prevents declaring a decrease when coming out of init state.
-		// But, this bypasses the case where streaming starts on a bunch of
-		// tracks simultaneously (imagine a participant joining a large room
-		// with a lot of video tracks). In that case, it is possible that the
-		// channel is hitting congestion. It will be caught on the next estimate
-		// decrease.
-		s.lastEstimateDecreaseTime = time.Now()
-		isDecreasing = true
-	}
+	// reset to get new set of samples for next trend
+	s.estimator.Reset()
 
-	if s.committedChannelCapacity > s.receivedEstimate {
-		s.params.Logger.Debugw("committing channel capacity(bps)", "from", s.committedChannelCapacity, "to", s.receivedEstimate)
-	}
-	s.committedChannelCapacity = s.receivedEstimate
-	s.lastCommitTime = time.Now()
+	// reset probe to ensure it does not start too soon after a downward trend
+	s.resetProbe()
 
-	return
+	s.allocateAllTracks()
 }
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
+	// abort any probe that may be running when a track specific change needs allocation
+	s.abortProbe()
+
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
@@ -786,13 +827,88 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
+func (s *StreamAllocator) finalizeProbe() {
+	aborted := s.probeClusterId == s.abortedProbeClusterId
+	highestEstimateInProbe := s.probeEstimator.GetHighest()
+
+	s.clearProbe()
+
+	//
+	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
+	// With a failed probe, the latest estimate would be lower than committed estimate.
+	// As bandwidth estimator (remote in REMB case, local in TWCC case) holds state,
+	// subsequent estimates could start from the lower point. That should not trigger a
+	// downward trend and get latched to committed estimate as that would trigger a re-allocation.
+	// With fresh readings, as long as the trend is not going downward, it will not get latched.
+	//
+	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
+	// the send side is in full control of bandwidth estimation.
+	//
+	s.estimator.Reset()
+
+	if aborted {
+		// failed probe, backoff
+		s.backoffProbeInterval()
+		return
+	}
+
+	// reset probe interval on a successful probe
+	s.resetProbeInterval()
+
+	if s.committedChannelCapacity == highestEstimateInProbe {
+		// no increase for whatever reason, don't backoff though
+		return
+	}
+
+	// probe estimate is higher, commit it and try allocate deficient tracks
+	s.params.Logger.Infow(
+		"successful probe, updating channel capacity",
+		"old(bps)", s.committedChannelCapacity,
+		"new(bps)", highestEstimateInProbe,
+	)
+	s.committedChannelCapacity = highestEstimateInProbe
+
+	availableChannelCapacity := s.committedChannelCapacity - s.getExpectedBandwidthUsage()
+	if availableChannelCapacity <= 0 {
+		return
+	}
+
+	var maxDistanceSorted MaxDistanceSorter
+	for _, track := range s.managedVideoTracksSorted {
+		maxDistanceSorted = append(maxDistanceSorted, track)
+	}
+	sort.Sort(maxDistanceSorted)
+
+	update := NewStreamStateUpdate()
+
+	for _, track := range maxDistanceSorted {
+		if !track.IsDeficient() {
+			continue
+		}
+
+		allocation, boosted := track.AllocateNextHigher(availableChannelCapacity)
+		if !boosted {
+			continue
+		}
+
+		update.HandleStreamingChange(allocation.change, track)
+
+		availableChannelCapacity -= allocation.bandwidthDelta
+		if availableChannelCapacity <= 0 {
+			break
+		}
+	}
+
+	s.maybeSendUpdate(update)
+
+	s.adjustState()
+}
+
 func (s *StreamAllocator) allocateAllTracks() {
 	if !s.params.Config.Enabled {
 		// nothing else to do when disabled
 		return
 	}
-
-	s.resetBoost()
 
 	//
 	// Goals:
@@ -932,76 +1048,154 @@ func (s *StreamAllocator) calculateLoss() float32 {
 	return AudioLossWeight*audioLossPct + VideoLossWeight*videoLossPct
 }
 
+func (s *StreamAllocator) initProbe(goalBps int64) {
+	s.lastProbeStartTime = time.Now()
+
+	s.probeGoalBps = goalBps
+
+	s.abortedProbeClusterId = ProbeClusterIdInvalid
+
+	s.probeTrendObserved = false
+
+	s.probeEndTime = time.Time{}
+
+	s.probeEstimator = NewEstimator("probe", s.params.Logger, NumRequiredEstimatesProbe)
+	s.probeEstimator.Seed(s.lastReceivedEstimate)
+}
+
+func (s *StreamAllocator) resetProbe() {
+	s.lastProbeStartTime = time.Now()
+
+	s.resetProbeInterval()
+
+	s.clearProbe()
+}
+
+func (s *StreamAllocator) clearProbe() {
+	s.probeClusterId = ProbeClusterIdInvalid
+	s.abortedProbeClusterId = ProbeClusterIdInvalid
+
+	s.probeTrendObserved = false
+
+	s.probeEndTime = time.Time{}
+
+	s.probeEstimator = nil
+}
+
+func (s *StreamAllocator) backoffProbeInterval() {
+	s.probeInterval = time.Duration(s.probeInterval.Seconds()*ProbeBackoffFactor) * time.Second
+	if s.probeInterval > ProbeWaitMax {
+		s.probeInterval = ProbeWaitMax
+	}
+}
+
+func (s *StreamAllocator) resetProbeInterval() {
+	s.probeInterval = ProbeWaitBase
+}
+
+func (s *StreamAllocator) stopProbe() {
+	s.prober.Reset()
+}
+
+func (s *StreamAllocator) abortProbe() {
+	s.abortedProbeClusterId = s.probeClusterId
+	s.stopProbe()
+}
+
+func (s *StreamAllocator) isInProbe() bool {
+	return s.probeClusterId != ProbeClusterIdInvalid
+}
+
 func (s *StreamAllocator) maybeProbe() {
-	if !s.isTimeToBoost() {
+	if time.Since(s.lastProbeStartTime) < s.probeInterval || s.probeClusterId != ProbeClusterIdInvalid {
 		return
 	}
 
-	s.maybeBoostLayer()
-	s.adjustState()
+	switch s.params.Config.ProbeMode {
+	case config.CongestionControlProbeModeMedia:
+		s.maybeProbeWithMedia()
+		s.adjustState()
+	case config.CongestionControlProbeModePadding:
+		s.maybeProbeWithPadding()
+	}
 }
 
-func (s *StreamAllocator) maybeBoostLayer() {
+func (s *StreamAllocator) maybeProbeWithMedia() {
 	var maxDistanceSorted MaxDistanceSorter
 	for _, track := range s.managedVideoTracksSorted {
 		maxDistanceSorted = append(maxDistanceSorted, track)
 	}
 	sort.Sort(maxDistanceSorted)
 
-	// boost first deficient track in priority order
+	// boost deficient track farthest from desired layers
 	for _, track := range maxDistanceSorted {
 		if !track.IsDeficient() {
 			continue
 		}
 
-		allocation, boosted := track.AllocateNextHigher()
-		if boosted {
-			s.lastBoostTime = time.Now()
-
-			update := NewStreamStateUpdate()
-			update.HandleStreamingChange(allocation.change, track)
-			s.maybeSendUpdate(update)
-
-			break
+		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity)
+		if !boosted {
+			continue
 		}
+
+		update := NewStreamStateUpdate()
+		update.HandleStreamingChange(allocation.change, track)
+		s.maybeSendUpdate(update)
+
+		s.lastProbeStartTime = time.Now()
+		break
 	}
 }
 
-func (s *StreamAllocator) isTimeToBoost() bool {
-	// if enough time has passed since last estimate drop or last estimate boost,
-	// artificially boost estimate before allocating.
-	// Checking against last estimate boost prevents multiple artificial boosts
-	// in situations where multiple tracks become available in a short span.
-	if !s.lastBoostTime.IsZero() {
-		return time.Since(s.lastBoostTime) > BoostWait
-	} else {
-		return time.Since(s.lastEstimateDecreaseTime) > ProbeWait
+func (s *StreamAllocator) maybeProbeWithPadding() {
+	var maxDistanceSorted MaxDistanceSorter
+	for _, track := range s.managedVideoTracksSorted {
+		maxDistanceSorted = append(maxDistanceSorted, track)
 	}
-}
+	sort.Sort(maxDistanceSorted)
 
-func (s *StreamAllocator) resetBoost() {
-	s.lastBoostTime = time.Time{}
+	// use deficient track farthest from desired layers to find how much to probe
+	for _, track := range maxDistanceSorted {
+		if !track.IsDeficient() {
+			continue
+		}
+
+		transition, available := track.GetNextHigherTransition()
+		if !available || transition.bandwidthDelta < 0 {
+			continue
+		}
+
+		probeRateBps := (transition.bandwidthDelta * ProbePct) / 100
+		if probeRateBps < ProbeMinBps {
+			probeRateBps = ProbeMinBps
+		}
+
+		s.initProbe(s.getExpectedBandwidthUsage() + probeRateBps)
+		s.probeClusterId = s.prober.AddCluster(
+			int(s.committedChannelCapacity+probeRateBps),
+			int(s.getExpectedBandwidthUsage()),
+			ProbeMinDuration,
+			ProbeMaxDuration,
+		)
+		break
+	}
 }
 
 func (s *StreamAllocator) maybeGratuitousProbe() bool {
-	if time.Since(s.lastEstimateDecreaseTime) < GratuitousProbeWait || len(s.managedVideoTracksSorted) == 0 {
-		return false
-	}
-
 	// don't gratuitously probe too often
-	if time.Since(s.lastGratuitousProbeTime) < GratuitousProbeMoreWait {
+	if time.Since(s.lastProbeStartTime) < s.probeInterval || len(s.managedVideoTracksSorted) == 0 || s.probeClusterId != ProbeClusterIdInvalid {
 		return false
 	}
 
 	// use last received estimate for gratuitous probing base as
 	// more updates may have been received since the last commit
 	expectedRateBps := s.getExpectedBandwidthUsage()
-	headroomBps := s.receivedEstimate - expectedRateBps
+	headroomBps := s.lastReceivedEstimate - expectedRateBps
 	if headroomBps > GratuitousProbeHeadroomBps {
 		return false
 	}
 
-	probeRateBps := (s.receivedEstimate * GratuitousProbePct) / 100
+	probeRateBps := (s.lastReceivedEstimate * GratuitousProbePct) / 100
 	if probeRateBps < GratuitousProbeMinBps {
 		probeRateBps = GratuitousProbeMinBps
 	}
@@ -1009,20 +1203,15 @@ func (s *StreamAllocator) maybeGratuitousProbe() bool {
 		probeRateBps = GratuitousProbeMaxBps
 	}
 
-	s.prober.AddCluster(
-		int(s.receivedEstimate+probeRateBps),
+	s.initProbe(expectedRateBps + probeRateBps)
+	s.probeClusterId = s.prober.AddCluster(
+		int(s.lastReceivedEstimate+probeRateBps),
 		int(expectedRateBps),
 		GratuitousProbeMinDuration,
 		GratuitousProbeMaxDuration,
 	)
 
-	s.lastGratuitousProbeTime = time.Now()
 	return true
-}
-
-func (s *StreamAllocator) resetGratuitousProbe() {
-	s.prober.Reset()
-	s.lastGratuitousProbeTime = time.Now()
 }
 
 // ------------------------------------------------
@@ -1141,9 +1330,7 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 }
 
 func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	allocation := t.downTrack.Allocate(availableChannelCapacity, allowPause)
-	//t.logger.Debugw("SA_DEBUG Capacity allocation", "available", availableChannelCapacity, "alloc", allocation)	// REMOVE
-	return allocation
+	return t.downTrack.Allocate(availableChannelCapacity, allowPause)
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {
@@ -1163,15 +1350,15 @@ func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
 }
 
 func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
-	allocation := t.downTrack.ProvisionalAllocateCommit()
-	//t.logger.Debugw("SA_DEBUG Provisional commit", "alloc", allocation) // REMOVE
-	return allocation
+	return t.downTrack.ProvisionalAllocateCommit()
 }
 
-func (t *Track) AllocateNextHigher() (VideoAllocation, bool) {
-	allocation, boosted := t.downTrack.AllocateNextHigher()
-	//t.logger.Debugw("SA_DEBUG Probe next higher layer", "alloc", allocation, "boosted", boosted) // REMOVE
-	return allocation, boosted
+func (t *Track) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
+	return t.downTrack.AllocateNextHigher(availableChannelCapacity)
+}
+
+func (t *Track) GetNextHigherTransition() (VideoTransition, bool) {
+	return t.downTrack.GetNextHigherTransition()
 }
 
 func (t *Track) FinalizeAllocate() {
@@ -1244,6 +1431,120 @@ func (m MinDistanceSorter) Swap(i, j int) {
 
 func (m MinDistanceSorter) Less(i, j int) bool {
 	return m[i].DistanceToDesired() < m[j].DistanceToDesired()
+}
+
+// ------------------------------------------------
+
+type EstimateTrend int
+
+const (
+	EstimateTrendNeutral EstimateTrend = iota
+	EstimateTrendUpward
+	EstimateTrendDownward
+)
+
+func (e EstimateTrend) String() string {
+	switch e {
+	case EstimateTrendNeutral:
+		return "NEUTRAL"
+	case EstimateTrendUpward:
+		return "UPWARD"
+	case EstimateTrendDownward:
+		return "DOWNWARD"
+	default:
+		return fmt.Sprintf("%d", int(e))
+	}
+}
+
+type Estimator struct {
+	name            string
+	logger          logger.Logger
+	requiredSamples int
+
+	estimates       []int64
+	lowestEstimate  int64
+	highestEstimate int64
+}
+
+func NewEstimator(name string, logger logger.Logger, requiredSamples int) *Estimator {
+	return &Estimator{
+		name:            name,
+		logger:          logger,
+		requiredSamples: requiredSamples,
+	}
+}
+
+func (e *Estimator) Reset() {
+	e.estimates = nil
+	e.lowestEstimate = int64(0)
+	e.highestEstimate = int64(0)
+}
+
+func (e *Estimator) Seed(estimate int64) {
+	if len(e.estimates) != 0 {
+		return
+	}
+
+	e.estimates = append(e.estimates, estimate)
+}
+
+func (e *Estimator) AddEstimate(estimate int64) EstimateTrend {
+	if e.lowestEstimate == 0 || estimate < e.lowestEstimate {
+		e.lowestEstimate = estimate
+	}
+	if estimate > e.highestEstimate {
+		e.highestEstimate = estimate
+	}
+
+	if len(e.estimates) == e.requiredSamples {
+		e.estimates = e.estimates[1:]
+	}
+	e.estimates = append(e.estimates, estimate)
+
+	return e.updateTrend()
+}
+
+func (e *Estimator) GetLowest() int64 {
+	return e.lowestEstimate
+}
+
+func (e *Estimator) GetHighest() int64 {
+	return e.highestEstimate
+}
+
+func (e *Estimator) updateTrend() EstimateTrend {
+	if len(e.estimates) < e.requiredSamples {
+		return EstimateTrendNeutral
+	}
+
+	// using Kendall's Tau to find trend
+	concordantPairs := 0
+	discordantPairs := 0
+
+	for i := 0; i < len(e.estimates)-1; i++ {
+		for j := i + 1; j < len(e.estimates); j++ {
+			if e.estimates[i] < e.estimates[j] {
+				concordantPairs++
+			} else if e.estimates[i] > e.estimates[j] {
+				discordantPairs++
+			}
+		}
+	}
+
+	if (concordantPairs + discordantPairs) == 0 {
+		return EstimateTrendNeutral
+	}
+
+	trend := EstimateTrendNeutral
+	kt := (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
+	switch {
+	case kt > 0:
+		trend = EstimateTrendUpward
+	case kt < 0:
+		trend = EstimateTrendDownward
+	}
+
+	return trend
 }
 
 // ------------------------------------------------

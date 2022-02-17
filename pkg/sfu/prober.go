@@ -109,6 +109,7 @@ package sfu
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/deque"
@@ -122,11 +123,14 @@ type ProberParams struct {
 type Prober struct {
 	logger logger.Logger
 
+	clusterId uint32
+
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque
 	activeCluster *Cluster
 
-	onSendProbe func(bytesToSend int)
+	onSendProbe        func(bytesToSend int)
+	onProbeClusterDone func(info ProbeClusterInfo)
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -145,30 +149,43 @@ func (p *Prober) IsRunning() bool {
 }
 
 func (p *Prober) Reset() {
-	p.clustersMu.Lock()
-	defer p.clustersMu.Unlock()
+	var info ProbeClusterInfo
 
+	p.clustersMu.Lock()
 	if p.activeCluster != nil {
 		p.logger.Debugw("resetting active cluster", "cluster", p.activeCluster.String())
+		info = p.activeCluster.GetInfo()
 	}
 
 	p.clusters.Clear()
 	p.activeCluster = nil
+	p.clustersMu.Unlock()
+
+	if p.onProbeClusterDone != nil && info.BytesSent != 0 {
+		p.onProbeClusterDone(info)
+	}
 }
 
 func (p *Prober) OnSendProbe(f func(bytesToSend int)) {
 	p.onSendProbe = f
 }
 
-func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) {
+func (p *Prober) OnProbeClusterDone(f func(info ProbeClusterInfo)) {
+	p.onProbeClusterDone = f
+}
+
+func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
 	if desiredRateBps <= 0 {
-		return
+		return ProbeClusterIdInvalid
 	}
 
-	cluster := NewCluster(desiredRateBps, expectedRateBps, minDuration, maxDuration)
+	clusterId := ProbeClusterId(atomic.AddUint32(&p.clusterId, 1))
+	cluster := NewCluster(clusterId, desiredRateBps, expectedRateBps, minDuration, maxDuration)
 	p.logger.Debugw("cluster added", "cluster", cluster.String())
 
 	p.pushBackClusterAndMaybeStart(cluster)
+
+	return clusterId
 }
 
 func (p *Prober) PacketSent(size int) {
@@ -251,10 +268,15 @@ func (p *Prober) run() {
 			return
 		}
 
-		cluster.Process(p)
+		cluster.Process(p.onSendProbe)
 
 		if cluster.IsFinished() {
 			p.logger.Debugw("cluster finished", "cluster", cluster.String())
+
+			if p.onProbeClusterDone != nil {
+				p.onProbeClusterDone(cluster.GetInfo())
+			}
+
 			p.popFrontCluster(cluster)
 			continue
 		}
@@ -262,6 +284,18 @@ func (p *Prober) run() {
 }
 
 // ---------------------------------
+
+type ProbeClusterId uint32
+
+const (
+	ProbeClusterIdInvalid ProbeClusterId = 0
+)
+
+type ProbeClusterInfo struct {
+	Id        ProbeClusterId
+	BytesSent int
+	Duration  time.Duration
+}
 
 type Cluster struct {
 	// LK-TODO-START
@@ -272,6 +306,7 @@ type Cluster struct {
 	// LK-TODO-END
 	lock sync.RWMutex
 
+	id           ProbeClusterId
 	desiredBytes int
 	minDuration  time.Duration
 	maxDuration  time.Duration
@@ -283,7 +318,7 @@ type Cluster struct {
 	startTime         time.Time
 }
 
-func NewCluster(desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) *Cluster {
+func NewCluster(id ProbeClusterId, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) *Cluster {
 	minDurationMs := minDuration.Milliseconds()
 	desiredBytes := int((int64(desiredRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
 	expectedBytes := int((int64(expectedRateBps)*minDurationMs/time.Second.Milliseconds() + 7) / 8)
@@ -292,6 +327,7 @@ func NewCluster(desiredRateBps int, expectedRateBps int, minDuration time.Durati
 	numProbes := (desiredBytes - expectedBytes + 999) / 1000
 	sleepDurationMicroSeconds := int(float64(minDurationMs*1000)/float64(numProbes) + 0.5)
 	c := &Cluster{
+		id:            id,
 		desiredBytes:  desiredBytes,
 		minDuration:   minDuration,
 		maxDuration:   maxDuration,
@@ -349,7 +385,18 @@ func (c *Cluster) IsFinished() bool {
 	return false
 }
 
-func (c *Cluster) Process(p *Prober) {
+func (c *Cluster) GetInfo() ProbeClusterInfo {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return ProbeClusterInfo{
+		Id:        c.id,
+		BytesSent: c.bytesSentProbe + c.bytesSentNonProbe,
+		Duration:  time.Since(c.startTime),
+	}
+}
+
+func (c *Cluster) Process(onSendProbe func(bytesToSend int)) {
 	c.lock.RLock()
 
 	timeElapsed := time.Since(c.startTime)
@@ -379,8 +426,8 @@ func (c *Cluster) Process(p *Prober) {
 	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
 	c.lock.RUnlock()
 
-	if bytesShortFall > 0 && p.onSendProbe != nil {
-		p.onSendProbe(bytesShortFall)
+	if bytesShortFall > 0 && onSendProbe != nil {
+		onSendProbe(bytesShortFall)
 	}
 
 	// LK-TODO look at adapting sleep time based on how many bytes and how much time is left
@@ -392,7 +439,8 @@ func (c *Cluster) String() string {
 		activeTimeMs = time.Since(c.startTime).Milliseconds()
 	}
 
-	return fmt.Sprintf("bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+	return fmt.Sprintf("id: %d, bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
+		c.id,
 		c.desiredBytes,
 		c.bytesSentProbe,
 		c.bytesSentNonProbe,

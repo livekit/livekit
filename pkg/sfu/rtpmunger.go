@@ -88,6 +88,7 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.snOffset += 1
+	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {

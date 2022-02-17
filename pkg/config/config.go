@@ -24,6 +24,13 @@ var DefaultStunServers = []string{
 	"stun1.l.google.com:19302",
 }
 
+type CongestionControlProbeMode string
+
+const (
+	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
+	CongestionControlProbeModeMedia                              = "media"
+)
+
 type Config struct {
 	Port           uint32             `yaml:"port"`
 	PrometheusPort uint32             `yaml:"prometheus_port,omitempty"`
@@ -86,9 +93,10 @@ type PLIThrottleConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled        bool `yaml:"enabled"`
-	AllowPause     bool `yaml:"allow_pause"`
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation,omitempty"`
+	Enabled        bool                       `yaml:"enabled"`
+	AllowPause     bool                       `yaml:"allow_pause"`
+	UseSendSideBWE bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode      CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
 }
 
 type AudioConfig struct {
@@ -188,6 +196,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
 				AllowPause: true,
+				ProbeMode:  CongestionControlProbeModePadding,
 			},
 		},
 		Audio: AudioConfig{

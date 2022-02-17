@@ -302,7 +302,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
-		//d.logger.Debugw("SA_DEBUG Forwarder SendPLI", "layer", layer) // REMOVE
 		d.lastPli.set(time.Now().UnixNano())
 		d.receiver.SendPLI(layer)
 	}
@@ -636,7 +635,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	return d.forwarder.BandwidthRequested()
+	return d.forwarder.BandwidthRequested(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
@@ -671,8 +670,12 @@ func (d *DownTrack) FinalizeAllocate() VideoAllocation {
 	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) AllocateNextHigher() (VideoAllocation, bool) {
-	return d.forwarder.AllocateNextHigher(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
+	return d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+}
+
+func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
+	return d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
@@ -878,7 +881,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
-				//d.logger.Debugw("SA_DEBUG Subscriber RTCP SendPLI", "layer", targetLayers.spatial) // REMOVE
 				d.receiver.SendPLI(targetLayers.spatial)
 				pliOnce = false
 			}
@@ -978,6 +980,10 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	defer PacketFactory.Put(src)
 
 	for _, meta := range nackedPackets {
+		if !d.forwarder.IsRtxAllowed(int32(meta.layer)) {
+			continue
+		}
+
 		if pool != nil {
 			PacketFactory.Put(pool)
 			pool = nil
