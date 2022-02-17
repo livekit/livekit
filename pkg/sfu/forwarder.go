@@ -17,6 +17,7 @@ import (
 //
 const (
 	FlagPauseOnDowngrade = true
+	FlagFilterRTX        = true
 )
 
 type ForwardingStatus int
@@ -1138,9 +1139,16 @@ func (f *Forwarder) Resync() {
 	f.lastSSRC = 0
 }
 
-func (f *Forwarder) IsRtxAllowed(layer int32) bool {
+func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [DefaultMaxLayerSpatial + 1]bool) {
+	if !FlagFilterRTX {
+		filtered = nacks
+		return
+	}
+
 	f.lock.RLock()
 	defer f.lock.RUnlock()
+
+	filtered = f.rtpMunger.FilterRTX(nacks)
 
 	//
 	// Curb RTX when deficient for two cases
@@ -1150,13 +1158,14 @@ func (f *Forwarder) IsRtxAllowed(layer int32) bool {
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
-	if FlagPauseOnDowngrade &&
-		f.lastAllocation.state == VideoAllocationStateDeficient &&
-		(f.targetLayers.spatial < f.currentLayers.spatial || layer > f.currentLayers.spatial) {
-		return false
+	for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
+		if f.lastAllocation.state == VideoAllocationStateDeficient &&
+			(f.targetLayers.spatial < f.currentLayers.spatial || layer > f.currentLayers.spatial) {
+			disallowedLayers[layer] = true
+		}
 	}
 
-	return true
+	return
 }
 
 func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) (*TranslationParams, error) {

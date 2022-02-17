@@ -18,6 +18,10 @@ const (
 	SequenceNumberOrderingDuplicate
 )
 
+const (
+	RtxGateWindow = 2000
+)
+
 type TranslationParamsRTP struct {
 	snOrdering     SequenceNumberOrdering
 	sequenceNumber uint16
@@ -38,6 +42,9 @@ type RTPMungerParams struct {
 	lastMarker        bool
 
 	missingSNs map[uint16]uint16
+
+	rtxGateSn         uint16
+	isInRtxGateRegion bool
 }
 
 type RTPMunger struct {
@@ -155,11 +162,35 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 	r.lastTS = mungedTS
 	r.lastMarker = extPkt.Packet.Marker
 
+	if extPkt.KeyFrame {
+		r.rtxGateSn = mungedSN
+		r.isInRtxGateRegion = true
+	}
+
+	if r.isInRtxGateRegion && (mungedSN-r.rtxGateSn) > RtxGateWindow {
+		r.isInRtxGateRegion = false
+	}
+
 	return &TranslationParamsRTP{
 		snOrdering:     ordering,
 		sequenceNumber: mungedSN,
 		timestamp:      mungedTS,
 	}, nil
+}
+
+func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
+	if !r.isInRtxGateRegion {
+		return nacks
+	}
+
+	filtered := make([]uint16, 0, len(nacks))
+	for _, sn := range nacks {
+		if (sn - r.rtxGateSn) < (1 << 15) {
+			filtered = append(filtered, sn)
+		}
+	}
+
+	return filtered
 }
 
 func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool) ([]SnTs, error) {

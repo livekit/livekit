@@ -697,12 +697,15 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
 		// LK-TODO: Need more testing this here and ensure that probe does not cause a lot of damage
 		//
+		s.params.Logger.Debugw("probe: aborting, no trend")
 		s.abortProbe()
 	case trend == EstimateTrendDownward:
 		// stop immediately if estimate falls below the previously committed estimate, the probe is congesting channel more
+		s.params.Logger.Debugw("probe: aborting, estimate is trending downward")
 		s.abortProbe()
 	case s.probeEstimator.GetHighest() > s.probeGoalBps:
 		// reached goal, stop probing
+		s.params.Logger.Debugw("probe: stopping, goal reached")
 		s.stopProbe()
 	}
 }

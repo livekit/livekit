@@ -38,6 +38,8 @@ const (
 	RTPBlankFramesMax             = 6
 
 	firstKeyFramePLIInterval = 500 * time.Millisecond
+
+	FlagStopRTXOnPLI = true
 )
 
 var (
@@ -103,6 +105,8 @@ type DownTrack struct {
 	lastPli     atomicInt64
 	lastRTP     atomicInt64
 	pktsDropped atomicUint32
+
+	isNACKThrottled atomicBool
 
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -353,6 +357,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		d.updatePrimaryStats(pktSize, hdr.Marker)
+		if extPkt.KeyFrame {
+			d.isNACKThrottled.set(false)
+		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.add(1)
@@ -643,7 +650,9 @@ func (d *DownTrack) DistanceToDesired() int32 {
 }
 
 func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	return d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: allocation", "channel", availableChannelCapacity, "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
@@ -655,15 +664,21 @@ func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers V
 }
 
 func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
-	return d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+	transition := d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+	d.logger.Debugw("stream: cooperative transition", "transition", transition)
+	return transition
 }
 
 func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
-	return d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+	transition := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+	d.logger.Debugw("stream: best weighted transition", "transition", transition)
+	return transition
 }
 
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
-	return d.forwarder.ProvisionalAllocateCommit()
+	allocation := d.forwarder.ProvisionalAllocateCommit()
+	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
@@ -671,15 +686,21 @@ func (d *DownTrack) FinalizeAllocate() VideoAllocation {
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
-	return d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
+	return allocation, available
 }
 
 func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
-	return d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
+	return transition, available
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	return d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: pause", "allocation", allocation)
+	return allocation
 }
 
 func (d *DownTrack) Resync() {
@@ -882,6 +903,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
 				d.receiver.SendPLI(targetLayers.spatial)
+				d.isNACKThrottled.set(true)
 				pliOnce = false
 			}
 		}
@@ -942,12 +964,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerNack:
-			var nackedPackets []packetMeta
+			var nacks []uint16
 			for _, pair := range p.Nacks {
-				nackedPackets = append(nackedPackets, d.sequencer.getSeqNoPairs(pair.PacketList())...)
+				nacks = append(nacks, pair.PacketList()...)
 			}
-			go d.retransmitPackets(nackedPackets)
-			numNACKs += uint32(len(nackedPackets))
+			go d.retransmitPackets(nacks)
+			numNACKs += uint32(len(nacks))
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -967,7 +989,22 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 }
 
-func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
+func (d *DownTrack) retransmitPackets(nacks []uint16) {
+	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
+		return
+	}
+
+	filtered, disallowedLayers := d.forwarder.FilterRTX(nacks)
+	if len(filtered) == 0 {
+		return
+	}
+
+	if d.sequencer == nil {
+		return
+	}
+
+	nackedPackets := d.sequencer.getSeqNoPairs(filtered)
+
 	var pool *[]byte
 	defer func() {
 		if pool != nil {
@@ -980,7 +1017,7 @@ func (d *DownTrack) retransmitPackets(nackedPackets []packetMeta) {
 	defer PacketFactory.Put(src)
 
 	for _, meta := range nackedPackets {
-		if !d.forwarder.IsRtxAllowed(int32(meta.layer)) {
+		if disallowedLayers[meta.layer] {
 			continue
 		}
 
