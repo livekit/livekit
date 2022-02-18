@@ -15,9 +15,12 @@ func Test_sequencer(t *testing.T) {
 	seq := newSequencer(500, logger.Logger(logger.GetLogger()))
 	off := uint16(15)
 
-	for i := uint16(1); i < 520; i++ {
+	for i := uint16(1); i < 518; i++ {
 		seq.push(i, i+off, 123, 2)
 	}
+	// send the last two out-of-order
+	seq.push(519, 519+off, 123, 2)
+	seq.push(518, 518+off, 123, 2)
 
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
