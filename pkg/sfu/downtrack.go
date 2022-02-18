@@ -308,7 +308,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
 		d.lastPli.set(time.Now().UnixNano())
-		d.logger.Debugw("SA_DEBUG SFU PLI") // REMOVE
 		d.receiver.SendPLI(layer)
 	}
 	if tp.shouldDrop {
@@ -361,10 +360,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.updatePrimaryStats(pktSize, hdr.Marker)
 		if extPkt.KeyFrame {
 			d.isNACKThrottled.set(false)
-			d.logger.Debugw("SA_DEBUG forwarding key frame") // REMOVE
-		}
-		if tp.vp8 != nil {
-			//d.logger.Debugw("SA_DEBUG, regular", "sn", hdr.SequenceNumber, "size", pktSize, "marker", hdr.Marker)	// REMOVE
 		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
@@ -456,7 +451,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		for _, f := range d.onPaddingSent {
 			f(d, size)
 		}
-		//d.logger.Debugw("SA_DEBUG, padding", "sn", hdr.SequenceNumber, "size", size)	// REMOVE
 
 		//
 		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
@@ -911,7 +905,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.lastPli.set(time.Now().UnixNano())
-				d.logger.Debugw("SA_DEBUG Subscriber PLI") // REMOVE
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.set(true)
 				pliOnce = false
@@ -981,7 +974,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				nacks = append(nacks, packetList...)
 			}
 			go d.retransmitPackets(nacks)
-			d.logger.Debugw("SA_DEBUG, NACKs", "num", numNACKs, "nacks", nacks) // REMOVE
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -1013,7 +1005,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	}
 
 	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
-		d.logger.Debugw("NACKs throttled awaiting key frame for subscriber PLI") // REMOVE
 		return
 	}
 
@@ -1037,7 +1028,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == int8(InvalidLayerSpatial) {
 			if meta.nacked > 1 {
-				d.logger.Debugw("SA_DEBUG, repeat padding NACK", "sn", meta.targetSeqNo)	// REMOVE
 				numRepeatedNACKs++
 			}
 
@@ -1050,7 +1040,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		if meta.nacked > 1 {
-			d.logger.Debugw("SA_DEBUG, repeat NACK", "sn", meta.targetSeqNo)	// REMOVE
 			numRepeatedNACKs++
 		}
 
@@ -1112,15 +1101,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			}
 
 			d.updateRtxStats(pktSize)
-			d.logger.Debugw("SA_DEBUG, rtx", "sn", pkt.Header.SequenceNumber, "size", pktSize) // REMOVE
 		}
 	}
 
 	d.statsLock.Lock()
 	d.totalRepeatedNACKs += numRepeatedNACKs
-	if numRepeatedNACKs != 0 {
-		d.logger.Debugw("SA_DEBUG, repeated nacks non zero", "count", numRepeatedNACKs, "total", d.totalRepeatedNACKs)	// REMOVE
-	}
 	d.statsLock.Unlock()
 }
 

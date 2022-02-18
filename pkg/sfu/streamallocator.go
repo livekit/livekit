@@ -24,7 +24,7 @@ const (
 	NumRequiredEstimatesProbe    = 3
 
 	NackRatioThresholdNonProbe = 0.06
-	NackRatioThresholdProbe = 0.05
+	NackRatioThresholdProbe    = 0.05
 
 	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
 
@@ -682,10 +682,8 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {
-		s.params.Logger.Debugw("SA_DEBUG, estimate in probe", "estimate", receivedEstimate) // REMOVE
 		s.handleNewEstimateInProbe()
 	} else {
-		s.params.Logger.Debugw("SA_DEBUG, estimate in non-probe", "estimate", receivedEstimate) // REMOVE
 		s.handleNewEstimateInNonProbe()
 	}
 }
@@ -736,7 +734,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	nackRatio := s.channelObserver.GetNackRatio()
 	lossAdjustedEstimate := s.lastReceivedEstimate
 	if nackRatio > NackRatioThresholdNonProbe {
-		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator * nackRatio))
+		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator*nackRatio))
 	}
 	if s.committedChannelCapacity == lossAdjustedEstimate {
 		return
@@ -1316,7 +1314,7 @@ type Track struct {
 
 	maxLayers VideoLayers
 
-	totalPackets uint32
+	totalPackets       uint32
 	totalRepeatedNacks uint32
 }
 
@@ -1429,7 +1427,6 @@ func (t *Track) DistanceToDesired() int32 {
 
 func (t *Track) GetNackDelta() (uint32, uint32) {
 	totalPackets, totalRepeatedNacks := t.downTrack.GetNackStats()
-	t.logger.Debugw("SA_DEBUG, nack stats", "track", t.ID(), "packets", totalPackets, "repeatedNacks", totalRepeatedNacks) // REMOVE
 
 	packetDelta := totalPackets - t.totalPackets
 	t.totalPackets = totalPackets
@@ -1522,8 +1519,8 @@ type ChannelObserver struct {
 	estimateTrend *TrendDetector
 
 	nackRatioThreshold float64
-	packets uint32
-	repeatedNacks uint32
+	packets            uint32
+	repeatedNacks      uint32
 }
 
 func NewChannelObserver(
@@ -1533,9 +1530,9 @@ func NewChannelObserver(
 	nackRatioThreshold float64,
 ) *ChannelObserver {
 	return &ChannelObserver{
-		name:          name,
-		logger:        logger,
-		estimateTrend: NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples),
+		name:               name,
+		logger:             logger,
+		estimateTrend:      NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples),
 		nackRatioThreshold: nackRatioThreshold,
 	}
 }
@@ -1563,13 +1560,6 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
 	c.packets += packets
 	c.repeatedNacks += repeatedNacks
-	// RAJA-REMOVE START
-	ratio := float64(0.0)
-	if c.packets != 0 {
-		ratio = float64(c.repeatedNacks) / float64(c.packets)
-	}
-	c.logger.Debugw("SA_DEBUG, channel observer NACK update", "packets", c.packets, "nacks", c.repeatedNacks, "dp", packets, "dn", repeatedNacks, "ratio", ratio)	// REMOVE
-	// RAJA-REMOVE END
 }
 
 func (c *ChannelObserver) GetLowestEstimate() int64 {
