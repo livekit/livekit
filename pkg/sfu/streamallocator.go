@@ -38,6 +38,11 @@ const (
 	ProbeMinBps      = 200 * 1000 // 200 kbps
 	ProbeMinDuration = 20 * time.Second
 	ProbeMaxDuration = 21 * time.Second
+
+	PriorityMin                = uint8(1)
+	PriorityMax                = uint8(255)
+	PriorityDefaultScreenshare = PriorityMax
+	PriorityDefaultVideo       = PriorityMin
 )
 
 type State int
@@ -63,6 +68,7 @@ type Signal int
 const (
 	SignalAddTrack Signal = iota
 	SignalRemoveTrack
+	SignalSetTrackPriority
 	SignalEstimate
 	SignalTargetBitrate
 	SignalAvailableLayersChange
@@ -79,6 +85,8 @@ func (s Signal) String() string {
 		return "ADD_TRACK"
 	case SignalRemoveTrack:
 		return "REMOVE_TRACK"
+	case SignalSetTrackPriority:
+		return "SET_TRACK_PRIORITY"
 	case SignalEstimate:
 		return "ESTIMATE"
 	case SignalTargetBitrate:
@@ -198,6 +206,7 @@ func (s *StreamAllocator) SetBandwidthEstimator(bwe cc.BandwidthEstimator) {
 
 type AddTrackParams struct {
 	Source      livekit.TrackSource
+	Priority    uint8
 	IsSimulcast bool
 	PublisherID livekit.ParticipantID
 }
@@ -223,6 +232,14 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 	s.postEvent(Event{
 		Signal:    SignalRemoveTrack,
 		DownTrack: downTrack,
+	})
+}
+
+func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8) {
+	s.postEvent(Event{
+		Signal:    SignalSetTrackPriority,
+		DownTrack: downTrack,
+		Data:      priority,
 	})
 }
 
@@ -340,6 +357,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalAddTrack(event)
 	case SignalRemoveTrack:
 		s.handleSignalRemoveTrack(event)
+	case SignalSetTrackPriority:
+		s.handleSignalSetTrackPriority(event)
 	case SignalEstimate:
 		s.handleSignalEstimate(event)
 	case SignalTargetBitrate:
@@ -365,13 +384,13 @@ func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
 	}
 
 	params, _ := event.Data.(AddTrackParams)
-	isManaged := (params.Source != livekit.TrackSource_SCREEN_SHARE && params.Source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || params.IsSimulcast
-	track := newTrack(event.DownTrack, isManaged, params.PublisherID, s.params.Logger)
+	track := newTrack(event.DownTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
+	track.SetPriority(params.Priority)
 
 	trackID := livekit.TrackID(event.DownTrack.ID())
 	s.videoTracks[trackID] = track
 
-	if isManaged {
+	if track.IsManaged() {
 		s.managedVideoTracksSorted = append(s.managedVideoTracksSorted, track)
 		sort.Sort(s.managedVideoTracksSorted)
 	} else {
@@ -425,6 +444,18 @@ func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
 
 	// LK-TODO: use any saved bandwidth to re-distribute
 	s.adjustState()
+}
+
+func (s *StreamAllocator) handleSignalSetTrackPriority(event *Event) {
+	trackID := livekit.TrackID(event.DownTrack.ID())
+	track, ok := s.videoTracks[trackID]
+	if !ok {
+		return
+	}
+
+	priority, _ := event.Data.(uint8)
+	track.SetPriority(priority)
+	// RAJA-TODO: need to do any sorting
 }
 
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
@@ -1175,7 +1206,9 @@ func (s *StreamStateUpdate) Empty() bool {
 
 type Track struct {
 	downTrack   *DownTrack
-	isManaged   bool
+	source      livekit.TrackSource
+	isSimulcast bool
+	priority    uint8
 	publisherID livekit.ParticipantID
 	logger      logger.Logger
 
@@ -1185,16 +1218,43 @@ type Track struct {
 	totalRepeatedNacks uint32
 }
 
-func newTrack(downTrack *DownTrack, isManaged bool, publisherID livekit.ParticipantID, logger logger.Logger) *Track {
+func newTrack(
+	downTrack *DownTrack,
+	source livekit.TrackSource,
+	isSimulcast bool,
+	publisherID livekit.ParticipantID,
+	logger logger.Logger,
+) *Track {
 	t := &Track{
 		downTrack:   downTrack,
-		isManaged:   isManaged,
+		source:      source,
+		isSimulcast: isSimulcast,
 		publisherID: publisherID,
 		logger:      logger,
 	}
+	t.SetPriority(0)
 	t.UpdateMaxLayers(downTrack.MaxLayers())
 
 	return t
+}
+
+func (t *Track) SetPriority(priority uint8) {
+	if priority == 0 {
+		switch t.source {
+		case livekit.TrackSource_SCREEN_SHARE:
+			priority = PriorityDefaultScreenshare
+		case livekit.TrackSource_SCREEN_SHARE_AUDIO:
+			priority = PriorityDefaultScreenshare
+		default:
+			priority = PriorityDefaultVideo
+		}
+	}
+
+	t.priority = priority
+}
+
+func (t *Track) Priority() uint8 {
+	return t.priority
 }
 
 func (t *Track) DownTrack() *DownTrack {
@@ -1202,7 +1262,7 @@ func (t *Track) DownTrack() *DownTrack {
 }
 
 func (t *Track) IsManaged() bool {
-	return t.isManaged
+	return (t.source != livekit.TrackSource_SCREEN_SHARE && t.source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || t.isSimulcast
 }
 
 func (t *Track) ID() livekit.TrackID {
