@@ -445,7 +445,7 @@ func (s *StreamAllocator) handleSignalEstimate(event *Event) {
 	//
 
 	// if there are no video tracks, ignore any straggler REMB
-	if len(s.getSorted()) == 0 {
+	if len(s.videoTracks) == 0 {
 		return
 	}
 
