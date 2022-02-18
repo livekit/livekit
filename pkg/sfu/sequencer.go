@@ -164,17 +164,16 @@ func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 	return &n.seq[step]
 }
 
-func (n *sequencer) getPacketsMeta(seqNo []uint16) ([]packetMeta, int) {
+func (n *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	n.Lock()
 	defer n.Unlock()
-
-	numRepeatNacks := 0
 
 	meta := make([]packetMeta, 0, len(seqNo))
 	refTime := uint32(time.Now().UnixNano()/1e6 - n.startTime)
 	for _, sn := range seqNo {
 		diff := n.headSN - sn
 		if diff > (1<<15) || int(diff) >= n.max {
+			// out-of-order from head (should not happen) or too old
 			continue
 		}
 
@@ -188,16 +187,12 @@ func (n *sequencer) getPacketsMeta(seqNo []uint16) ([]packetMeta, int) {
 			continue
 		}
 
-		if seq.nacked != 0 {
-			numRepeatNacks++
-		}
-
-		seq.nacked++
 		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*n.rtt))) {
+			seq.nacked++
 			seq.lastNack = refTime
 			meta = append(meta, *seq)
 		}
 	}
 
-	return meta, numRepeatNacks
+	return meta
 }

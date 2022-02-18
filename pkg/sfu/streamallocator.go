@@ -23,8 +23,10 @@ const (
 	NumRequiredEstimatesNonProbe = 8
 	NumRequiredEstimatesProbe    = 3
 
-	NumRequiredNacksNonProbe = 10
-	NumRequiredNacksProbe    = 5
+	NackRatioThresholdNonProbe = 0.06
+	NackRatioThresholdProbe = 0.05
+
+	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
 
 	ProbeWaitBase      = 5 * time.Second
 	ProbeBackoffFactor = 1.5
@@ -149,8 +151,6 @@ type StreamAllocator struct {
 
 	channelObserver *ChannelObserver
 
-	lastNackTime time.Time
-
 	audioTracks              map[livekit.TrackID]*Track
 	videoTracks              map[livekit.TrackID]*Track
 	exemptVideoTracksSorted  TrackSorter
@@ -170,7 +170,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		channelObserver: NewChannelObserver("non-probe", params.Logger, NumRequiredEstimatesNonProbe, NumRequiredNacksNonProbe),
+		channelObserver: NewChannelObserver("non-probe", params.Logger, NumRequiredEstimatesNonProbe, NackRatioThresholdNonProbe),
 		audioTracks:     make(map[livekit.TrackID]*Track),
 		videoTracks:     make(map[livekit.TrackID]*Track),
 		eventCh:         make(chan Event, 20),
@@ -692,9 +692,12 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
 	s.probeChannelObserver.AddEstimate(s.lastReceivedEstimate)
-	s.probeChannelObserver.AddNack(s.getNackRate())
+
+	packetDelta, repeatedNackDelta := s.getNackDelta()
+	s.probeChannelObserver.AddNack(packetDelta, repeatedNackDelta)
+
 	trend := s.probeChannelObserver.GetTrend()
-	if trend != ChannelObserverTrendNeutral {
+	if trend != ChannelTrendNeutral {
 		s.probeTrendObserved = true
 	}
 	switch {
@@ -704,13 +707,13 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		//
 		// More of a safety net.
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
-		// LK-TODO: Need more testing this here and ensure that probe does not cause a lot of damage
+		// LK-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
 		s.params.Logger.Debugw("probe: aborting, no trend")
 		s.abortProbe()
-	case trend == ChannelObserverTrendDownward:
-		// stop immediately if estimate falls below the previously committed estimate, the probe is congesting channel more
-		s.params.Logger.Debugw("probe: aborting, estimate is trending downward")
+	case trend == ChannelTrendCongesting:
+		// stop immediately if the probe is congesting channel more
+		s.params.Logger.Debugw("probe: aborting, channel is congesting")
 		s.abortProbe()
 	case s.probeChannelObserver.GetHighestEstimate() > s.probeGoalBps:
 		// reached goal, stop probing
@@ -721,18 +724,32 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 
 func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	s.channelObserver.AddEstimate(s.lastReceivedEstimate)
-	s.channelObserver.AddNack(s.getNackRate())
+
+	packetDelta, repeatedNackDelta := s.getNackDelta()
+	s.channelObserver.AddNack(packetDelta, repeatedNackDelta)
+
 	trend := s.channelObserver.GetTrend()
-	if trend != ChannelObserverTrendDownward {
+	if trend != ChannelTrendCongesting {
+		return
+	}
+
+	nackRatio := s.channelObserver.GetNackRatio()
+	lossAdjustedEstimate := s.lastReceivedEstimate
+	if nackRatio > NackRatioThresholdNonProbe {
+		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator * nackRatio))
+	}
+	if s.committedChannelCapacity == lossAdjustedEstimate {
 		return
 	}
 
 	s.params.Logger.Infow(
-		"estimate trending down, updating channel capacity",
+		"channel congestion detected, updating channel capacity",
 		"old(bps)", s.committedChannelCapacity,
-		"new(bps)", s.lastReceivedEstimate,
+		"new(bps)", lossAdjustedEstimate,
+		"lastReceived(bps)", s.lastReceivedEstimate,
+		"nackRatio", nackRatio,
 	)
-	s.committedChannelCapacity = s.lastReceivedEstimate
+	s.committedChannelCapacity = lossAdjustedEstimate
 
 	// reset to get new set of samples for next trend
 	s.channelObserver.Reset()
@@ -1029,24 +1046,16 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	return expected
 }
 
-func (s *StreamAllocator) getNackRate() int64 {
-	nacks := uint32(0)
+func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
+	aggPacketDelta := uint32(0)
+	aggRepeatedNackDelta := uint32(0)
 	for _, track := range s.videoTracks {
-		nacks += track.GetNackDelta()
+		packetDelta, nackDelta := track.GetNackDelta()
+		aggPacketDelta += packetDelta
+		aggRepeatedNackDelta += nackDelta
 	}
 
-	now := time.Now()
-	var elapsed time.Duration
-	if !s.lastNackTime.IsZero() {
-		elapsed = now.Sub(s.lastNackTime)
-	}
-	s.lastNackTime = now
-
-	if elapsed == 0 {
-		return 0
-	}
-
-	return int64(nacks) * 1000 / elapsed.Milliseconds()
+	return aggPacketDelta, aggRepeatedNackDelta
 }
 
 // LK-TODO: unused till loss based estimation is done, but just a sample impl of weighting audio higher
@@ -1093,7 +1102,7 @@ func (s *StreamAllocator) initProbe(goalBps int64) {
 
 	s.probeEndTime = time.Time{}
 
-	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NumRequiredNacksProbe)
+	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NackRatioThresholdProbe)
 	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
 }
 
@@ -1307,7 +1316,8 @@ type Track struct {
 
 	maxLayers VideoLayers
 
-	totalRepeatedNACKs uint32
+	totalPackets uint32
+	totalRepeatedNacks uint32
 }
 
 func newTrack(downTrack *DownTrack, isManaged bool, publisherID livekit.ParticipantID, logger logger.Logger) *Track {
@@ -1417,14 +1427,17 @@ func (t *Track) DistanceToDesired() int32 {
 	return t.downTrack.DistanceToDesired()
 }
 
-func (t *Track) GetNackDelta() uint32 {
-	totalPackets, totalRepeatedNACKs := t.downTrack.GetNackStats()
-	t.logger.Debugw("SA_DEBUG, nack stats", "track", t.ID(), "packets", totalPackets, "repeatedNACKs", totalRepeatedNACKs) // REMOVE
+func (t *Track) GetNackDelta() (uint32, uint32) {
+	totalPackets, totalRepeatedNacks := t.downTrack.GetNackStats()
+	t.logger.Debugw("SA_DEBUG, nack stats", "track", t.ID(), "packets", totalPackets, "repeatedNacks", totalRepeatedNacks) // REMOVE
 
-	delta := totalRepeatedNACKs - t.totalRepeatedNACKs
-	t.totalRepeatedNACKs = totalRepeatedNACKs
+	packetDelta := totalPackets - t.totalPackets
+	t.totalPackets = totalPackets
 
-	return delta
+	nackDelta := totalRepeatedNacks - t.totalRepeatedNacks
+	t.totalRepeatedNacks = totalRepeatedNacks
+
+	return packetDelta, nackDelta
 }
 
 // ------------------------------------------------
@@ -1481,22 +1494,22 @@ func (m MinDistanceSorter) Less(i, j int) bool {
 
 // ------------------------------------------------
 
-type ChannelObserverTrend int
+type ChannelTrend int
 
 const (
-	ChannelObserverTrendNeutral ChannelObserverTrend = iota
-	ChannelObserverTrendUpward
-	ChannelObserverTrendDownward
+	ChannelTrendNeutral ChannelTrend = iota
+	ChannelTrendClearing
+	ChannelTrendCongesting
 )
 
-func (c ChannelObserverTrend) String() string {
+func (c ChannelTrend) String() string {
 	switch c {
-	case ChannelObserverTrendNeutral:
+	case ChannelTrendNeutral:
 		return "NEUTRAL"
-	case ChannelObserverTrendUpward:
-		return "UPWARD"
-	case ChannelObserverTrendDownward:
-		return "DOWNWARD"
+	case ChannelTrendClearing:
+		return "CLEARING"
+	case ChannelTrendCongesting:
+		return "CONGESTING"
 	default:
 		return fmt.Sprintf("%d", int(c))
 	}
@@ -1507,42 +1520,56 @@ type ChannelObserver struct {
 	logger logger.Logger
 
 	estimateTrend *TrendDetector
-	nackTrend     *TrendDetector
+
+	nackRatioThreshold float64
+	packets uint32
+	repeatedNacks uint32
 }
 
 func NewChannelObserver(
 	name string,
 	logger logger.Logger,
 	estimateRequiredSamples int,
-	nackRequiredSamples int,
+	nackRatioThreshold float64,
 ) *ChannelObserver {
 	return &ChannelObserver{
 		name:          name,
 		logger:        logger,
 		estimateTrend: NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples),
-		nackTrend:     NewTrendDetector(name+"-nack", logger, nackRequiredSamples),
+		nackRatioThreshold: nackRatioThreshold,
 	}
 }
 
 func (c *ChannelObserver) Reset() {
 	c.estimateTrend.Reset()
-	c.nackTrend.Reset()
+
+	c.packets = 0
+	c.repeatedNacks = 0
 }
 
 func (c *ChannelObserver) SeedEstimate(estimate int64) {
 	c.estimateTrend.Seed(estimate)
 }
 
-func (c *ChannelObserver) SeeNack(nack int64) {
-	c.nackTrend.Seed(nack)
+func (c *ChannelObserver) SeedNack(packets uint32, repeatedNacks uint32) {
+	c.packets = packets
+	c.repeatedNacks = repeatedNacks
 }
 
 func (c *ChannelObserver) AddEstimate(estimate int64) {
 	c.estimateTrend.AddValue(estimate)
 }
 
-func (c *ChannelObserver) AddNack(nack int64) {
-	c.nackTrend.AddValue(nack)
+func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
+	c.packets += packets
+	c.repeatedNacks += repeatedNacks
+	// RAJA-REMOVE START
+	ratio := float64(0.0)
+	if c.packets != 0 {
+		ratio = float64(c.repeatedNacks) / float64(c.packets)
+	}
+	c.logger.Debugw("SA_DEBUG, channel observer NACK update", "packets", c.packets, "nacks", c.repeatedNacks, "dp", packets, "dn", repeatedNacks, "ratio", ratio)	// REMOVE
+	// RAJA-REMOVE END
 }
 
 func (c *ChannelObserver) GetLowestEstimate() int64 {
@@ -1553,32 +1580,34 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 	return c.estimateTrend.GetHighest()
 }
 
-func (c *ChannelObserver) GetLowestNack() int64 {
-	return c.nackTrend.GetLowest()
-}
-
-func (c *ChannelObserver) GetHighestNack() int64 {
-	return c.nackTrend.GetHighest()
-}
-
-func (c *ChannelObserver) GetTrend() ChannelObserverTrend {
-	estimateDirection := c.estimateTrend.GetDirection()
-	nackDirection := c.nackTrend.GetDirection()
-
-	switch {
-	case estimateDirection == TrendDirectionDownward || nackDirection == TrendDirectionUpward:
-		if estimateDirection == TrendDirectionDownward {
-			c.logger.Debugw("channel observer: estimate is trending downward")
+func (c *ChannelObserver) GetNackRatio() float64 {
+	ratio := float64(0.0)
+	if c.packets != 0 {
+		ratio = float64(c.repeatedNacks) / float64(c.packets)
+		if ratio > 1.0 {
+			ratio = 1.0
 		}
-		if nackDirection == TrendDirectionUpward {
-			c.logger.Debugw("channel observer: nack is trending upward")
-		}
-		return ChannelObserverTrendDownward
-	case estimateDirection == TrendDirectionUpward:
-		return ChannelObserverTrendUpward
 	}
 
-	return ChannelObserverTrendNeutral
+	return ratio
+}
+
+func (c *ChannelObserver) GetTrend() ChannelTrend {
+	estimateDirection := c.estimateTrend.GetDirection()
+	nackRatio := c.GetNackRatio()
+
+	switch {
+	case estimateDirection == TrendDirectionDownward:
+		c.logger.Debugw("channel observer: estimate is trending downward")
+		return ChannelTrendCongesting
+	case nackRatio > c.nackRatioThreshold:
+		c.logger.Debugw("channel observer: high rate of repeated NACKs", "ratio", nackRatio)
+		return ChannelTrendCongesting
+	case estimateDirection == TrendDirectionUpward:
+		return ChannelTrendClearing
+	}
+
+	return ChannelTrendNeutral
 }
 
 // ------------------------------------------------
