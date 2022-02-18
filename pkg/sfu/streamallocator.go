@@ -24,7 +24,7 @@ const (
 	NumRequiredEstimatesProbe    = 3
 
 	NackRatioThresholdNonProbe = 0.06
-	NackRatioThresholdProbe    = 0.05
+	NackRatioThresholdProbe    = 0.04
 
 	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
 
