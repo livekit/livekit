@@ -256,6 +256,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		sub.Negotiate()
 	}()
 
+	t.maxQualityLock.Lock()
+	// initialize to default layer
+	t.maxSubscriberQuality[sub.ID()] = livekit.VideoQuality_HIGH
+	t.maxQualityLock.Unlock()
 	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 	return downTrack, nil
 }
@@ -527,17 +531,6 @@ func (t *MediaTrackSubscriptions) stopMaxQualityTimer() {
 		t.maxQualityTimer.Stop()
 		t.maxQualityTimer = nil
 	}
-}
-
-func (t *MediaTrackSubscriptions) numSubscribedLayers() uint32 {
-	t.maxQualityLock.RLock()
-	numSubscribedLayers := uint32(0)
-	if t.maxSubscribedQuality != livekit.VideoQuality_OFF {
-		numSubscribedLayers = uint32(SpatialLayerForQuality(t.maxSubscribedQuality) + 1)
-	}
-	t.maxQualityLock.RUnlock()
-
-	return numSubscribedLayers
 }
 
 func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
