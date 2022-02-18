@@ -516,7 +516,7 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, br
 	}
 	f.targetLayers = f.lastAllocation.targetLayers
 	if f.targetLayers == InvalidLayers {
-		f.currentLayers = InvalidLayers
+		f.resyncLocked()
 	}
 
 	return f.lastAllocation
@@ -825,7 +825,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	}
 	f.targetLayers = f.lastAllocation.targetLayers
 	if f.targetLayers == InvalidLayers {
-		f.currentLayers = InvalidLayers
+		f.resyncLocked()
 	}
 
 	return f.lastAllocation
@@ -856,7 +856,7 @@ func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
 			}
 			f.targetLayers = f.lastAllocation.targetLayers
 			if f.targetLayers == InvalidLayers {
-				f.currentLayers = InvalidLayers
+				f.resyncLocked()
 			}
 		}
 
@@ -1125,7 +1125,7 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	}
 	f.targetLayers = f.lastAllocation.targetLayers
 	if f.targetLayers == InvalidLayers {
-		f.currentLayers = InvalidLayers
+		f.resyncLocked()
 	}
 
 	return f.lastAllocation
@@ -1135,6 +1135,10 @@ func (f *Forwarder) Resync() {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	f.resyncLocked()
+}
+
+func (f *Forwarder) resyncLocked() {
 	f.currentLayers = InvalidLayers
 	f.lastSSRC = 0
 }
