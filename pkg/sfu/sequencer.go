@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 )
 
 const (
+	maxPadding           = 2000
+	defaultRtt           = 70
 	ignoreRetransmission = 100 // Ignore packet retransmission after ignoreRetransmission milliseconds
 )
 
@@ -44,8 +47,10 @@ type packetMeta struct {
 	// the same packet.
 	// The resolution is 1 ms counting after the sequencer start time.
 	lastNack uint32
+	// number of NACKs this packet has received
+	nacked uint8
 	// Spatial layer of packet
-	layer uint8
+	layer int8
 	// Information that differs depending on the codec
 	misc uint64
 }
@@ -93,81 +98,101 @@ type sequencer struct {
 	step      int
 	headSN    uint16
 	startTime int64
+	rtt       uint32
 	logger    logger.Logger
 }
 
 func newSequencer(maxTrack int, logger logger.Logger) *sequencer {
 	return &sequencer{
 		startTime: time.Now().UnixNano() / 1e6,
-		max:       maxTrack,
-		seq:       make([]packetMeta, maxTrack),
+		max:       maxTrack + maxPadding,
+		seq:       make([]packetMeta, maxTrack+maxPadding),
+		rtt:       defaultRtt,
 		logger:    logger,
 	}
 }
 
-func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer uint8, head bool) *packetMeta {
+func (n *sequencer) setRTT(rtt uint32) {
 	n.Lock()
 	defer n.Unlock()
-	if !n.init {
+
+	if rtt == 0 {
+		n.rtt = defaultRtt
+	} else {
+		n.rtt = rtt
+	}
+}
+
+func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packetMeta {
+	n.Lock()
+	defer n.Unlock()
+
+	inc := offSn - n.headSN
+	step := 0
+	switch {
+	case !n.init:
 		n.headSN = offSn
 		n.init = true
-	}
-
-	step := 0
-	if head {
-		inc := offSn - n.headSN
-		for i := uint16(1); i < inc; i++ {
-			n.step++
-			if n.step >= n.max {
-				n.step = 0
-			}
+	case inc == 0:
+		// duplicate
+		return nil
+	case inc < (1 << 15): // in-order packet
+		n.step += int(inc)
+		if n.step >= n.max {
+			n.step -= n.max
 		}
 		step = n.step
 		n.headSN = offSn
-	} else {
-		step = n.step - int(n.headSN-offSn)
+	default: // out-of-order packet
+		back := int(n.headSN - offSn)
+		if back >= n.max {
+			n.logger.Debugw("old packet, can not be sequenced", "head", sn, "received", offSn)
+			return nil
+		}
+		step = n.step - back
 		if step < 0 {
-			if step*-1 >= n.max {
-				n.logger.Debugw("old packet received, can not be sequenced", "head", sn, "received", offSn)
-				return nil
-			}
-			step = n.max + step
+			step += n.max
 		}
 	}
-	n.seq[n.step] = packetMeta{
+
+	n.seq[step] = packetMeta{
 		sourceSeqNo: sn,
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
 		layer:       layer,
 	}
-	pm := &n.seq[n.step]
-	n.step++
-	if n.step >= n.max {
-		n.step = 0
-	}
-	return pm
+	return &n.seq[step]
 }
 
-func (n *sequencer) getSeqNoPairs(seqNo []uint16) []packetMeta {
+func (n *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	n.Lock()
-	meta := make([]packetMeta, 0, 17)
+	defer n.Unlock()
+
+	meta := make([]packetMeta, 0, len(seqNo))
 	refTime := uint32(time.Now().UnixNano()/1e6 - n.startTime)
 	for _, sn := range seqNo {
-		step := n.step - int(n.headSN-sn) - 1
-		if step < 0 {
-			if step*-1 >= n.max {
-				continue
-			}
-			step = n.max + step
+		diff := n.headSN - sn
+		if diff > (1<<15) || int(diff) >= n.max {
+			// out-of-order from head (should not happen) or too old
+			continue
 		}
+
+		step := n.step - int(diff)
+		if step < 0 {
+			step += n.max
+		}
+
 		seq := &n.seq[step]
-		if seq.targetSeqNo == sn {
-			if seq.lastNack == 0 || refTime-seq.lastNack > ignoreRetransmission {
-				seq.lastNack = refTime
-				meta = append(meta, *seq)
-			}
+		if seq.targetSeqNo != sn {
+			continue
+		}
+
+		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*n.rtt))) {
+			seq.nacked++
+			seq.lastNack = refTime
+			meta = append(meta, *seq)
 		}
 	}
-	n.Unlock()
+
 	return meta
 }

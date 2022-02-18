@@ -23,6 +23,11 @@ const (
 	NumRequiredEstimatesNonProbe = 8
 	NumRequiredEstimatesProbe    = 3
 
+	NackRatioThresholdNonProbe = 0.06
+	NackRatioThresholdProbe    = 0.04
+
+	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
+
 	ProbeWaitBase      = 5 * time.Second
 	ProbeBackoffFactor = 1.5
 	ProbeWaitMax       = 30 * time.Second
@@ -130,9 +135,7 @@ type StreamAllocator struct {
 
 	bwe cc.BandwidthEstimator
 
-	lastReceivedEstimate int64
-	estimator            *Estimator
-
+	lastReceivedEstimate     int64
 	committedChannelCapacity int64
 
 	probeInterval         time.Duration
@@ -142,9 +145,11 @@ type StreamAllocator struct {
 	abortedProbeClusterId ProbeClusterId
 	probeTrendObserved    bool
 	probeEndTime          time.Time
-	probeEstimator        *Estimator
+	probeChannelObserver  *ChannelObserver
 
 	prober *Prober
+
+	channelObserver *ChannelObserver
 
 	audioTracks              map[livekit.TrackID]*Track
 	videoTracks              map[livekit.TrackID]*Track
@@ -161,14 +166,14 @@ type StreamAllocator struct {
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 	s := &StreamAllocator{
-		params:      params,
-		estimator:   NewEstimator("non-probe", params.Logger, NumRequiredEstimatesNonProbe),
-		audioTracks: make(map[livekit.TrackID]*Track),
-		videoTracks: make(map[livekit.TrackID]*Track),
+		params: params,
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		eventCh: make(chan Event, 20),
+		channelObserver: NewChannelObserver("non-probe", params.Logger, NumRequiredEstimatesNonProbe, NackRatioThresholdNonProbe),
+		audioTracks:     make(map[livekit.TrackID]*Track),
+		videoTracks:     make(map[livekit.TrackID]*Track),
+		eventCh:         make(chan Event, 20),
 	}
 
 	s.resetState()
@@ -639,7 +644,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 
 	// ensure probe queue is flushed
 	// LK-TODO: ProbeSettleWait should actually be a certain number of RTTs.
-	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.probeEstimator.GetLowest())))
+	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.probeChannelObserver.GetLowestEstimate())))
 	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
 	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
 	if queueTime < 0.0 {
@@ -684,8 +689,13 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 }
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
-	trend := s.probeEstimator.AddEstimate(s.lastReceivedEstimate)
-	if trend != EstimateTrendNeutral {
+	s.probeChannelObserver.AddEstimate(s.lastReceivedEstimate)
+
+	packetDelta, repeatedNackDelta := s.getNackDelta()
+	s.probeChannelObserver.AddNack(packetDelta, repeatedNackDelta)
+
+	trend := s.probeChannelObserver.GetTrend()
+	if trend != ChannelTrendNeutral {
 		s.probeTrendObserved = true
 	}
 	switch {
@@ -695,15 +705,15 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		//
 		// More of a safety net.
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
-		// LK-TODO: Need more testing this here and ensure that probe does not cause a lot of damage
+		// LK-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
 		s.params.Logger.Debugw("probe: aborting, no trend")
 		s.abortProbe()
-	case trend == EstimateTrendDownward:
-		// stop immediately if estimate falls below the previously committed estimate, the probe is congesting channel more
-		s.params.Logger.Debugw("probe: aborting, estimate is trending downward")
+	case trend == ChannelTrendCongesting:
+		// stop immediately if the probe is congesting channel more
+		s.params.Logger.Debugw("probe: aborting, channel is congesting")
 		s.abortProbe()
-	case s.probeEstimator.GetHighest() > s.probeGoalBps:
+	case s.probeChannelObserver.GetHighestEstimate() > s.probeGoalBps:
 		// reached goal, stop probing
 		s.params.Logger.Debugw("probe: stopping, goal reached")
 		s.stopProbe()
@@ -711,20 +721,36 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 }
 
 func (s *StreamAllocator) handleNewEstimateInNonProbe() {
-	trend := s.estimator.AddEstimate(s.lastReceivedEstimate)
-	if trend != EstimateTrendDownward {
+	s.channelObserver.AddEstimate(s.lastReceivedEstimate)
+
+	packetDelta, repeatedNackDelta := s.getNackDelta()
+	s.channelObserver.AddNack(packetDelta, repeatedNackDelta)
+
+	trend := s.channelObserver.GetTrend()
+	if trend != ChannelTrendCongesting {
+		return
+	}
+
+	nackRatio := s.channelObserver.GetNackRatio()
+	lossAdjustedEstimate := s.lastReceivedEstimate
+	if nackRatio > NackRatioThresholdNonProbe {
+		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator*nackRatio))
+	}
+	if s.committedChannelCapacity == lossAdjustedEstimate {
 		return
 	}
 
 	s.params.Logger.Infow(
-		"estimate trending down, updating channel capacity",
+		"channel congestion detected, updating channel capacity",
 		"old(bps)", s.committedChannelCapacity,
-		"new(bps)", s.lastReceivedEstimate,
+		"new(bps)", lossAdjustedEstimate,
+		"lastReceived(bps)", s.lastReceivedEstimate,
+		"nackRatio", nackRatio,
 	)
-	s.committedChannelCapacity = s.lastReceivedEstimate
+	s.committedChannelCapacity = lossAdjustedEstimate
 
 	// reset to get new set of samples for next trend
-	s.estimator.Reset()
+	s.channelObserver.Reset()
 
 	// reset probe to ensure it does not start too soon after a downward trend
 	s.resetProbe()
@@ -832,7 +858,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 func (s *StreamAllocator) finalizeProbe() {
 	aborted := s.probeClusterId == s.abortedProbeClusterId
-	highestEstimateInProbe := s.probeEstimator.GetHighest()
+	highestEstimateInProbe := s.probeChannelObserver.GetHighestEstimate()
 
 	s.clearProbe()
 
@@ -847,7 +873,7 @@ func (s *StreamAllocator) finalizeProbe() {
 	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
 	// the send side is in full control of bandwidth estimation.
 	//
-	s.estimator.Reset()
+	s.channelObserver.Reset()
 
 	if aborted {
 		// failed probe, backoff
@@ -1018,6 +1044,18 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	return expected
 }
 
+func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
+	aggPacketDelta := uint32(0)
+	aggRepeatedNackDelta := uint32(0)
+	for _, track := range s.videoTracks {
+		packetDelta, nackDelta := track.GetNackDelta()
+		aggPacketDelta += packetDelta
+		aggRepeatedNackDelta += nackDelta
+	}
+
+	return aggPacketDelta, aggRepeatedNackDelta
+}
+
 // LK-TODO: unused till loss based estimation is done, but just a sample impl of weighting audio higher
 func (s *StreamAllocator) calculateLoss() float32 {
 	packetsAudio := uint32(0)
@@ -1062,8 +1100,8 @@ func (s *StreamAllocator) initProbe(goalBps int64) {
 
 	s.probeEndTime = time.Time{}
 
-	s.probeEstimator = NewEstimator("probe", s.params.Logger, NumRequiredEstimatesProbe)
-	s.probeEstimator.Seed(s.lastReceivedEstimate)
+	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NackRatioThresholdProbe)
+	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
 }
 
 func (s *StreamAllocator) resetProbe() {
@@ -1082,7 +1120,7 @@ func (s *StreamAllocator) clearProbe() {
 
 	s.probeEndTime = time.Time{}
 
-	s.probeEstimator = nil
+	s.probeChannelObserver = nil
 }
 
 func (s *StreamAllocator) backoffProbeInterval() {
@@ -1275,6 +1313,9 @@ type Track struct {
 	lastPacketsLost uint32
 
 	maxLayers VideoLayers
+
+	totalPackets       uint32
+	totalRepeatedNacks uint32
 }
 
 func newTrack(downTrack *DownTrack, isManaged bool, publisherID livekit.ParticipantID, logger logger.Logger) *Track {
@@ -1384,6 +1425,18 @@ func (t *Track) DistanceToDesired() int32 {
 	return t.downTrack.DistanceToDesired()
 }
 
+func (t *Track) GetNackDelta() (uint32, uint32) {
+	totalPackets, totalRepeatedNacks := t.downTrack.GetNackStats()
+
+	packetDelta := totalPackets - t.totalPackets
+	t.totalPackets = totalPackets
+
+	nackDelta := totalRepeatedNacks - t.totalRepeatedNacks
+	t.totalRepeatedNacks = totalRepeatedNacks
+
+	return packetDelta, nackDelta
+}
+
 // ------------------------------------------------
 
 type TrackSorter []*Track
@@ -1438,116 +1491,234 @@ func (m MinDistanceSorter) Less(i, j int) bool {
 
 // ------------------------------------------------
 
-type EstimateTrend int
+type ChannelTrend int
 
 const (
-	EstimateTrendNeutral EstimateTrend = iota
-	EstimateTrendUpward
-	EstimateTrendDownward
+	ChannelTrendNeutral ChannelTrend = iota
+	ChannelTrendClearing
+	ChannelTrendCongesting
 )
 
-func (e EstimateTrend) String() string {
-	switch e {
-	case EstimateTrendNeutral:
+func (c ChannelTrend) String() string {
+	switch c {
+	case ChannelTrendNeutral:
 		return "NEUTRAL"
-	case EstimateTrendUpward:
-		return "UPWARD"
-	case EstimateTrendDownward:
-		return "DOWNWARD"
+	case ChannelTrendClearing:
+		return "CLEARING"
+	case ChannelTrendCongesting:
+		return "CONGESTING"
 	default:
-		return fmt.Sprintf("%d", int(e))
+		return fmt.Sprintf("%d", int(c))
 	}
 }
 
-type Estimator struct {
+type ChannelObserver struct {
+	name   string
+	logger logger.Logger
+
+	estimateTrend *TrendDetector
+
+	nackRatioThreshold float64
+	packets            uint32
+	repeatedNacks      uint32
+}
+
+func NewChannelObserver(
+	name string,
+	logger logger.Logger,
+	estimateRequiredSamples int,
+	nackRatioThreshold float64,
+) *ChannelObserver {
+	return &ChannelObserver{
+		name:               name,
+		logger:             logger,
+		estimateTrend:      NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples),
+		nackRatioThreshold: nackRatioThreshold,
+	}
+}
+
+func (c *ChannelObserver) Reset() {
+	c.estimateTrend.Reset()
+
+	c.packets = 0
+	c.repeatedNacks = 0
+}
+
+func (c *ChannelObserver) SeedEstimate(estimate int64) {
+	c.estimateTrend.Seed(estimate)
+}
+
+func (c *ChannelObserver) SeedNack(packets uint32, repeatedNacks uint32) {
+	c.packets = packets
+	c.repeatedNacks = repeatedNacks
+}
+
+func (c *ChannelObserver) AddEstimate(estimate int64) {
+	c.estimateTrend.AddValue(estimate)
+}
+
+func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
+	c.packets += packets
+	c.repeatedNacks += repeatedNacks
+}
+
+func (c *ChannelObserver) GetLowestEstimate() int64 {
+	return c.estimateTrend.GetLowest()
+}
+
+func (c *ChannelObserver) GetHighestEstimate() int64 {
+	return c.estimateTrend.GetHighest()
+}
+
+func (c *ChannelObserver) GetNackRatio() float64 {
+	ratio := float64(0.0)
+	if c.packets != 0 {
+		ratio = float64(c.repeatedNacks) / float64(c.packets)
+		if ratio > 1.0 {
+			ratio = 1.0
+		}
+	}
+
+	return ratio
+}
+
+func (c *ChannelObserver) GetTrend() ChannelTrend {
+	estimateDirection := c.estimateTrend.GetDirection()
+	nackRatio := c.GetNackRatio()
+
+	switch {
+	case estimateDirection == TrendDirectionDownward:
+		c.logger.Debugw("channel observer: estimate is trending downward")
+		return ChannelTrendCongesting
+	case nackRatio > c.nackRatioThreshold:
+		c.logger.Debugw("channel observer: high rate of repeated NACKs", "ratio", nackRatio)
+		return ChannelTrendCongesting
+	case estimateDirection == TrendDirectionUpward:
+		return ChannelTrendClearing
+	}
+
+	return ChannelTrendNeutral
+}
+
+// ------------------------------------------------
+
+type TrendDirection int
+
+const (
+	TrendDirectionNeutral TrendDirection = iota
+	TrendDirectionUpward
+	TrendDirectionDownward
+)
+
+func (t TrendDirection) String() string {
+	switch t {
+	case TrendDirectionNeutral:
+		return "NEUTRAL"
+	case TrendDirectionUpward:
+		return "UPWARD"
+	case TrendDirectionDownward:
+		return "DOWNWARD"
+	default:
+		return fmt.Sprintf("%d", int(t))
+	}
+}
+
+type TrendDetector struct {
 	name            string
 	logger          logger.Logger
 	requiredSamples int
 
-	estimates       []int64
-	lowestEstimate  int64
-	highestEstimate int64
+	values       []int64
+	lowestvalue  int64
+	highestvalue int64
+
+	direction TrendDirection
 }
 
-func NewEstimator(name string, logger logger.Logger, requiredSamples int) *Estimator {
-	return &Estimator{
+func NewTrendDetector(name string, logger logger.Logger, requiredSamples int) *TrendDetector {
+	return &TrendDetector{
 		name:            name,
 		logger:          logger,
 		requiredSamples: requiredSamples,
+		direction:       TrendDirectionNeutral,
 	}
 }
 
-func (e *Estimator) Reset() {
-	e.estimates = nil
-	e.lowestEstimate = int64(0)
-	e.highestEstimate = int64(0)
+func (t *TrendDetector) Reset() {
+	t.values = nil
+	t.lowestvalue = int64(0)
+	t.highestvalue = int64(0)
 }
 
-func (e *Estimator) Seed(estimate int64) {
-	if len(e.estimates) != 0 {
+func (t *TrendDetector) Seed(value int64) {
+	if len(t.values) != 0 {
 		return
 	}
 
-	e.estimates = append(e.estimates, estimate)
+	t.values = append(t.values, value)
 }
 
-func (e *Estimator) AddEstimate(estimate int64) EstimateTrend {
-	if e.lowestEstimate == 0 || estimate < e.lowestEstimate {
-		e.lowestEstimate = estimate
+func (t *TrendDetector) AddValue(value int64) {
+	if t.lowestvalue == 0 || value < t.lowestvalue {
+		t.lowestvalue = value
 	}
-	if estimate > e.highestEstimate {
-		e.highestEstimate = estimate
+	if value > t.highestvalue {
+		t.highestvalue = value
 	}
 
-	if len(e.estimates) == e.requiredSamples {
-		e.estimates = e.estimates[1:]
+	if len(t.values) == t.requiredSamples {
+		t.values = t.values[1:]
 	}
-	e.estimates = append(e.estimates, estimate)
+	t.values = append(t.values, value)
 
-	return e.updateTrend()
+	t.updateDirection()
 }
 
-func (e *Estimator) GetLowest() int64 {
-	return e.lowestEstimate
+func (t *TrendDetector) GetLowest() int64 {
+	return t.lowestvalue
 }
 
-func (e *Estimator) GetHighest() int64 {
-	return e.highestEstimate
+func (t *TrendDetector) GetHighest() int64 {
+	return t.highestvalue
 }
 
-func (e *Estimator) updateTrend() EstimateTrend {
-	if len(e.estimates) < e.requiredSamples {
-		return EstimateTrendNeutral
+func (t *TrendDetector) GetDirection() TrendDirection {
+	return t.direction
+}
+
+func (t *TrendDetector) updateDirection() {
+	if len(t.values) < t.requiredSamples {
+		t.direction = TrendDirectionNeutral
+		return
 	}
 
 	// using Kendall's Tau to find trend
 	concordantPairs := 0
 	discordantPairs := 0
 
-	for i := 0; i < len(e.estimates)-1; i++ {
-		for j := i + 1; j < len(e.estimates); j++ {
-			if e.estimates[i] < e.estimates[j] {
+	for i := 0; i < len(t.values)-1; i++ {
+		for j := i + 1; j < len(t.values); j++ {
+			if t.values[i] < t.values[j] {
 				concordantPairs++
-			} else if e.estimates[i] > e.estimates[j] {
+			} else if t.values[i] > t.values[j] {
 				discordantPairs++
 			}
 		}
 	}
 
 	if (concordantPairs + discordantPairs) == 0 {
-		return EstimateTrendNeutral
+		t.direction = TrendDirectionNeutral
+		return
 	}
 
-	trend := EstimateTrendNeutral
+	t.direction = TrendDirectionNeutral
 	kt := (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
 	switch {
 	case kt > 0:
-		trend = EstimateTrendUpward
+		t.direction = TrendDirectionUpward
 	case kt < 0:
-		trend = EstimateTrendDownward
+		t.direction = TrendDirectionDownward
 	}
-
-	return trend
 }
 
 // ------------------------------------------------

@@ -96,8 +96,9 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	closeOnce               sync.Once
 
-	statsLock sync.RWMutex
-	stats     buffer.StreamStats
+	statsLock          sync.RWMutex
+	stats              buffer.StreamStats
+	totalRepeatedNACKs uint32
 
 	connectionStats *connectionquality.ConnectionStats
 
@@ -333,7 +334,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	if d.sequencer != nil {
-		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, uint8(layer), extPkt.Head)
+		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
 		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.header)
 		}
@@ -451,12 +452,14 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			f(d, size)
 		}
 
-		// LK-TODO-START
-		// NACK buffer for these probe packets.
-		// Probably okay to absorb the NACKs for these and ignore them.
+		//
+		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
 		// Retransmission is probably a sign of network congestion/badness.
 		// So, retransmitting padding packets is only going to make matters worse.
-		// LK-TODO-END
+		//
+		if d.sequencer != nil {
+			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(InvalidLayerSpatial))
+		}
 
 		bytesSent += size
 	}
@@ -951,9 +954,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				d.stats.RTT = rtt
 
 				d.stats.Jitter = float64(r.Jitter)
+				d.statsLock.Unlock()
 
 				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
-				d.statsLock.Unlock()
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -966,10 +969,11 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		case *rtcp.TransportLayerNack:
 			var nacks []uint16
 			for _, pair := range p.Nacks {
-				nacks = append(nacks, pair.PacketList()...)
+				packetList := pair.PacketList()
+				numNACKs += uint32(len(packetList))
+				nacks = append(nacks, packetList...)
 			}
 			go d.retransmitPackets(nacks)
-			numNACKs += uint32(len(nacks))
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
@@ -984,12 +988,22 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	d.stats.TotalFIRs += numFIRs
 	d.statsLock.Unlock()
 
-	if rttToReport != 0 && d.onRttUpdate != nil {
-		d.onRttUpdate(d, rttToReport)
+	if rttToReport != 0 {
+		if d.sequencer != nil {
+			d.sequencer.setRTT(rttToReport)
+		}
+
+		if d.onRttUpdate != nil {
+			d.onRttUpdate(d, rttToReport)
+		}
 	}
 }
 
 func (d *DownTrack) retransmitPackets(nacks []uint16) {
+	if d.sequencer == nil {
+		return
+	}
+
 	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
 		return
 	}
@@ -998,12 +1012,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if len(filtered) == 0 {
 		return
 	}
-
-	if d.sequencer == nil {
-		return
-	}
-
-	nackedPackets := d.sequencer.getSeqNoPairs(filtered)
 
 	var pool *[]byte
 	defer func() {
@@ -1016,9 +1024,23 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
 
-	for _, meta := range nackedPackets {
+	numRepeatedNACKs := uint32(0)
+	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
+		if meta.layer == int8(InvalidLayerSpatial) {
+			if meta.nacked > 1 {
+				numRepeatedNACKs++
+			}
+
+			// padding packet, no RTX for those
+			continue
+		}
+
 		if disallowedLayers[meta.layer] {
 			continue
+		}
+
+		if meta.nacked > 1 {
+			numRepeatedNACKs++
 		}
 
 		if pool != nil {
@@ -1027,7 +1049,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 
 		pktBuff := *src
-		n, err := d.receiver.ReadRTP(pktBuff, meta.layer, meta.sourceSeqNo)
+		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -1081,6 +1103,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.updateRtxStats(pktSize)
 		}
 	}
+
+	d.statsLock.Lock()
+	d.totalRepeatedNACKs += numRepeatedNACKs
+	d.statsLock.Unlock()
 }
 
 func (d *DownTrack) getSRStats() (uint64, uint32) {
@@ -1209,4 +1235,13 @@ func (d *DownTrack) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	}
 
 	return stats
+}
+
+func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
+	d.statsLock.RLock()
+	defer d.statsLock.RUnlock()
+
+	totalPackets = d.stats.TotalPrimaryPackets + d.stats.TotalPaddingPackets
+	totalRepeatedNACKs = d.totalRepeatedNACKs
+	return
 }
