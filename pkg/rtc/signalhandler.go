@@ -74,6 +74,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			return nil
 		}
 	case *livekit.SignalRequest_Leave:
+		pLogger.Infow("participant leaving")
 		_ = participant.Close(true)
 	case *livekit.SignalRequest_SubscriptionPermission:
 		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
