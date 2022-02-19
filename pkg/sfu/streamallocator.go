@@ -417,7 +417,17 @@ func (s *StreamAllocator) handleSignalSetTrackPriority(event *Event) {
 	}
 
 	priority, _ := event.Data.(uint8)
-	track.SetPriority(priority)
+	changed := track.SetPriority(priority)
+	if changed && s.state == StateDeficient {
+		// do a full allocation on a track priority to keep it simple
+		// LK-TODO-START
+		// When in a large room, subscriber could be adjusting priority of
+		// a lot of tracks in quick succession. That could trigger allocation burst.
+		// Find ways to avoid it.
+		// LK-TODO-END
+		s.allocateAllTracks()
+	}
+
 }
 
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
@@ -1208,7 +1218,7 @@ func newTrack(
 	return t
 }
 
-func (t *Track) SetPriority(priority uint8) {
+func (t *Track) SetPriority(priority uint8) bool {
 	if priority == 0 {
 		switch t.source {
 		case livekit.TrackSource_SCREEN_SHARE:
@@ -1220,7 +1230,12 @@ func (t *Track) SetPriority(priority uint8) {
 		}
 	}
 
+	if t.priority == priority {
+		return false
+	}
+
 	t.priority = priority
+	return true
 }
 
 func (t *Track) Priority() uint8 {
