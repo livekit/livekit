@@ -485,8 +485,6 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		return nil
 	}
 
-	p.params.Logger.Errorw("closing participant", nil)
-
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{
@@ -995,6 +993,9 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 	p.state.Store(state)
+	if state == livekit.ParticipantInfo_DISCONNECTED {
+		p.params.Logger.Errorw("setting state to disconnected", nil)
+	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.lock.RLock()
 	onStateChange := p.onStateChange
