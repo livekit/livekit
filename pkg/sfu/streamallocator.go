@@ -419,7 +419,7 @@ func (s *StreamAllocator) handleSignalSetTrackPriority(event *Event) {
 	priority, _ := event.Data.(uint8)
 	changed := track.SetPriority(priority)
 	if changed && s.state == StateDeficient {
-		// do a full allocation on a track priority to keep it simple
+		// do a full allocation on a track priority change to keep it simple
 		// LK-TODO-START
 		// When in a large room, subscriber could be adjusting priority of
 		// a lot of tracks in quick succession. That could trigger allocation burst.
