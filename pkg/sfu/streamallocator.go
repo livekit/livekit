@@ -242,6 +242,7 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8)
 }
 
 func (s *StreamAllocator) resetState() {
+	s.channelObserver.Reset()
 	s.resetProbe()
 
 	s.state = StateStable
