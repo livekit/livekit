@@ -384,7 +384,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	t.pc.SetLocalDescription(offer)
 
 	//
-	// Simulcate client side peer connection and set DTLS role from previous answer.
+	// Simulate client side peer connection and set DTLS role from previous answer.
 	// Role needs to be set properly (one side needs to be server and the other side
 	// eeds to be the client) for DTLS connection to form properly. As this is
 	// trying to replicate previous setup, read from previous answer and use that role.
