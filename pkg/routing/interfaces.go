@@ -55,7 +55,7 @@ type Router interface {
 	ListNodes() ([]*livekit.Node, error)
 
 	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
-	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId string) error
+	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
 	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
 
 	Start() error
@@ -71,7 +71,7 @@ type Router interface {
 
 type MessageRouter interface {
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionId string, reqSink MessageSink, resSource MessageSource, err error)
+	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
 
 	// Write a message to a participant or room
 	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error

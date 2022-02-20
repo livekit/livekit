@@ -304,7 +304,7 @@ func (t *MediaTrackReceiver) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtc
 	t.maybeUpdateLoss()
 }
 
-func (t *MediaTrackReceiver) NotifySubscriberNodeMediaLoss(_nodeID string, fractionalLoss uint8) {
+func (t *MediaTrackReceiver) NotifySubscriberNodeMediaLoss(_nodeID livekit.NodeID, fractionalLoss uint8) {
 	t.downFracLostLock.Lock()
 	if t.maxDownFracLost < fractionalLoss {
 		t.maxDownFracLost = fractionalLoss

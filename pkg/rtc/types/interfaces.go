@@ -75,8 +75,8 @@ type Participant interface {
 	// updates from remotes
 	UpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
-	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -204,8 +204,8 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality)
+	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
 //counterfeiter:generate . LocalMediaTrack

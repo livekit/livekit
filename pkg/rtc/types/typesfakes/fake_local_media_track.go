@@ -121,16 +121,16 @@ type FakeLocalMediaTrack struct {
 	nameReturnsOnCall map[int]struct {
 		result1 string
 	}
-	NotifySubscriberNodeMaxQualityStub        func(string, livekit.VideoQuality)
+	NotifySubscriberNodeMaxQualityStub        func(livekit.NodeID, livekit.VideoQuality)
 	notifySubscriberNodeMaxQualityMutex       sync.RWMutex
 	notifySubscriberNodeMaxQualityArgsForCall []struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.VideoQuality
 	}
-	NotifySubscriberNodeMediaLossStub        func(string, uint8)
+	NotifySubscriberNodeMediaLossStub        func(livekit.NodeID, uint8)
 	notifySubscriberNodeMediaLossMutex       sync.RWMutex
 	notifySubscriberNodeMediaLossArgsForCall []struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 uint8
 	}
 	PublisherIDStub        func() livekit.ParticipantID
@@ -833,10 +833,10 @@ func (fake *FakeLocalMediaTrack) NameReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQuality(arg1 string, arg2 livekit.VideoQuality) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQuality(arg1 livekit.NodeID, arg2 livekit.VideoQuality) {
 	fake.notifySubscriberNodeMaxQualityMutex.Lock()
 	fake.notifySubscriberNodeMaxQualityArgsForCall = append(fake.notifySubscriberNodeMaxQualityArgsForCall, struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.VideoQuality
 	}{arg1, arg2})
 	stub := fake.NotifySubscriberNodeMaxQualityStub
@@ -853,23 +853,23 @@ func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQualityCallCount() int {
 	return len(fake.notifySubscriberNodeMaxQualityArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQualityCalls(stub func(string, livekit.VideoQuality)) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQualityCalls(stub func(livekit.NodeID, livekit.VideoQuality)) {
 	fake.notifySubscriberNodeMaxQualityMutex.Lock()
 	defer fake.notifySubscriberNodeMaxQualityMutex.Unlock()
 	fake.NotifySubscriberNodeMaxQualityStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQualityArgsForCall(i int) (string, livekit.VideoQuality) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMaxQualityArgsForCall(i int) (livekit.NodeID, livekit.VideoQuality) {
 	fake.notifySubscriberNodeMaxQualityMutex.RLock()
 	defer fake.notifySubscriberNodeMaxQualityMutex.RUnlock()
 	argsForCall := fake.notifySubscriberNodeMaxQualityArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLoss(arg1 string, arg2 uint8) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLoss(arg1 livekit.NodeID, arg2 uint8) {
 	fake.notifySubscriberNodeMediaLossMutex.Lock()
 	fake.notifySubscriberNodeMediaLossArgsForCall = append(fake.notifySubscriberNodeMediaLossArgsForCall, struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 uint8
 	}{arg1, arg2})
 	stub := fake.NotifySubscriberNodeMediaLossStub
@@ -886,13 +886,13 @@ func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossCallCount() int {
 	return len(fake.notifySubscriberNodeMediaLossArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossCalls(stub func(string, uint8)) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossCalls(stub func(livekit.NodeID, uint8)) {
 	fake.notifySubscriberNodeMediaLossMutex.Lock()
 	defer fake.notifySubscriberNodeMediaLossMutex.Unlock()
 	fake.NotifySubscriberNodeMediaLossStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) (string, uint8) {
+func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossArgsForCall(i int) (livekit.NodeID, uint8) {
 	fake.notifySubscriberNodeMediaLossMutex.RLock()
 	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	argsForCall := fake.notifySubscriberNodeMediaLossArgsForCall[i]

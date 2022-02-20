@@ -34,7 +34,7 @@ type MediaTrackSubscriptions struct {
 	// quality level enable/disable
 	maxQualityLock               sync.RWMutex
 	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
-	maxSubscriberNodeQuality     map[string]livekit.VideoQuality // nodeID => livekit.VideoQuality
+	maxSubscriberNodeQuality     map[livekit.NodeID]livekit.VideoQuality
 	maxSubscribedQuality         livekit.VideoQuality
 	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality)
 	maxQualityTimer              *time.Timer
@@ -57,7 +57,7 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 		params:                   params,
 		subscribedTracks:         make(map[livekit.ParticipantID]types.SubscribedTrack),
 		maxSubscriberQuality:     make(map[livekit.ParticipantID]livekit.VideoQuality),
-		maxSubscriberNodeQuality: make(map[string]livekit.VideoQuality),
+		maxSubscriberNodeQuality: make(map[livekit.NodeID]livekit.VideoQuality),
 	}
 
 	return t
@@ -433,7 +433,7 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 	t.UpdateQualityChange(false)
 }
 
-func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality) {
+func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality) {
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
