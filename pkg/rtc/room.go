@@ -480,10 +480,11 @@ func (r *Room) Close() {
 func (r *Room) closeLocked() {
 	r.closeOnce.Do(func() {
 		r.Logger.Infow("closing room")
-		if r.onClose != nil {
-			r.onClose()
-		}
 		close(r.closed)
+		if r.onClose != nil {
+			// trigger RoomManager's cleanup handler async to avoid deadlock
+			go r.onClose()
+		}
 	})
 }
 
