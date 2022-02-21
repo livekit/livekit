@@ -56,12 +56,13 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		config:      conf,
-		rtcConfig:   rtcConf,
-		currentNode: currentNode,
-		router:      router,
-		roomStore:   roomStore,
-		telemetry:   telemetry,
+		config:            conf,
+		rtcConfig:         rtcConf,
+		currentNode:       currentNode,
+		router:            router,
+		roomStore:         roomStore,
+		telemetry:         telemetry,
+		clientConfManager: clientConfManager,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 	}
