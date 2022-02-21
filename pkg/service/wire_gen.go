@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -52,7 +53,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, roomStore, router, currentNode)
-	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
+	clientConfigurationManager := createClientConfiguration()
+	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService, clientConfigurationManager)
 	if err != nil {
 		return nil, err
 	}
@@ -151,4 +153,8 @@ func createStore(rc *redis.Client) RoomStore {
 		return NewRedisRoomStore(rc)
 	}
 	return NewLocalRoomStore()
+}
+
+func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
+	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }

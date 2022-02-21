@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -29,12 +30,13 @@ const (
 type RoomManager struct {
 	lock sync.RWMutex
 
-	config      *config.Config
-	rtcConfig   *rtc.WebRTCConfig
-	currentNode routing.LocalNode
-	router      routing.Router
-	roomStore   RoomStore
-	telemetry   telemetry.TelemetryService
+	config            *config.Config
+	rtcConfig         *rtc.WebRTCConfig
+	currentNode       routing.LocalNode
+	router            routing.Router
+	roomStore         RoomStore
+	telemetry         telemetry.TelemetryService
+	clientConfManager clientconfiguration.ClientConfigurationManager
 
 	rooms map[livekit.RoomName]*rtc.Room
 }
@@ -45,6 +47,7 @@ func NewLocalRoomManager(
 	currentNode routing.LocalNode,
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
+	clientConfManager clientconfiguration.ClientConfigurationManager,
 ) (*RoomManager, error) {
 
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
@@ -228,6 +231,8 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		"protocol", pi.Client.Protocol,
 	)
 
+	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
+
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
@@ -248,6 +253,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Grants:                  pi.Grants,
 		Hidden:                  pi.Hidden,
 		Logger:                  pLogger,
+		ClientConf:              clientConf,
 	}, pi.Permission)
 	if err != nil {
 		logger.Errorw("could not create participant", err)
