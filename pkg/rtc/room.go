@@ -44,9 +44,8 @@ type Room struct {
 	joinedAt atomic.Int64
 	holds    atomic.Int32
 	// time that the last participant left the room
-	leftAt    atomic.Int64
-	closed    chan struct{}
-	closeOnce sync.Once
+	leftAt atomic.Int64
+	closed chan struct{}
 
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
@@ -441,14 +440,15 @@ func (r *Room) IsClosed() bool {
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
 	r.lock.Lock()
-	defer r.lock.Unlock()
 
 	if r.IsClosed() || r.holds.Load() > 0 {
+		r.lock.Unlock()
 		return
 	}
 
 	for _, p := range r.participants {
 		if !p.Hidden() {
+			r.lock.Unlock()
 			return
 		}
 	}
@@ -464,27 +464,28 @@ func (r *Room) CloseIfEmpty() {
 	} else {
 		elapsed = time.Now().Unix() - r.Room.CreationTime
 	}
+	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.closeLocked()
+		r.Close()
 	}
 }
 
 func (r *Room) Close() {
 	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.closeLocked()
-}
-
-func (r *Room) closeLocked() {
-	r.closeOnce.Do(func() {
-		r.Logger.Infow("closing room")
-		if r.onClose != nil {
-			r.onClose()
-		}
-		close(r.closed)
-	})
+	select {
+	case <-r.closed:
+		r.lock.Unlock()
+		return
+	default:
+		// fall through
+	}
+	close(r.closed)
+	r.lock.Unlock()
+	r.Logger.Infow("closing room")
+	if r.onClose != nil {
+		r.onClose()
+	}
 }
 
 func (r *Room) OnClose(f func()) {
