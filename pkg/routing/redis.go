@@ -20,26 +20,26 @@ const (
 var redisCtx = context.Background()
 
 // location of the participant's RTC connection, hash
-func participantRTCKey(participantKey string) string {
-	return "participant_rtc:" + participantKey
+func participantRTCKey(participantKey livekit.ParticipantKey) string {
+	return "participant_rtc:" + string(participantKey)
 }
 
 // location of the participant's Signal connection, hash
-func participantSignalKey(connectionId string) string {
-	return "participant_signal:" + connectionId
+func participantSignalKey(connectionID livekit.ConnectionID) string {
+	return "participant_signal:" + string(connectionID)
 }
 
-func rtcNodeChannel(nodeId string) string {
-	return "rtc_channel:" + nodeId
+func rtcNodeChannel(nodeID livekit.NodeID) string {
+	return "rtc_channel:" + string(nodeID)
 }
 
-func signalNodeChannel(nodeId string) string {
-	return "signal_channel:" + nodeId
+func signalNodeChannel(nodeID livekit.NodeID) string {
+	return "signal_channel:" + string(nodeID)
 }
 
-func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, msg proto.Message) error {
+func publishRTCMessage(rc *redis.Client, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, msg proto.Message) error {
 	rm := &livekit.RTCNodeMessage{
-		ParticipantKey: participantKey,
+		ParticipantKey: string(participantKey),
 	}
 	switch o := msg.(type) {
 	case *livekit.StartSession:
@@ -52,7 +52,7 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 		}
 	case *livekit.RTCNodeMessage:
 		rm = o
-		rm.ParticipantKey = participantKey
+		rm.ParticipantKey = string(participantKey)
 	default:
 		return ErrInvalidRouterMessage
 	}
@@ -61,14 +61,14 @@ func publishRTCMessage(rc *redis.Client, nodeId string, participantKey string, m
 		return err
 	}
 
-	// logger.Debugw("publishing to rtc", "rtcChannel", rtcNodeChannel(nodeId),
+	// logger.Debugw("publishing to rtc", "rtcChannel", rtcNodeChannel(nodeID),
 	//	"message", rm.Message)
-	return rc.Publish(redisCtx, rtcNodeChannel(nodeId), data).Err()
+	return rc.Publish(redisCtx, rtcNodeChannel(nodeID), data).Err()
 }
 
-func publishSignalMessage(rc *redis.Client, nodeId string, connectionId string, msg proto.Message) error {
+func publishSignalMessage(rc *redis.Client, nodeID livekit.NodeID, connectionID livekit.ConnectionID, msg proto.Message) error {
 	rm := &livekit.SignalNodeMessage{
-		ConnectionId: connectionId,
+		ConnectionId: string(connectionID),
 	}
 	switch o := msg.(type) {
 	case *livekit.SignalResponse:
@@ -87,23 +87,23 @@ func publishSignalMessage(rc *redis.Client, nodeId string, connectionId string, 
 		return err
 	}
 
-	// logger.Debugw("publishing to signal", "signalChannel", signalNodeChannel(nodeId),
+	// logger.Debugw("publishing to signal", "signalChannel", signalNodeChannel(nodeID),
 	//	"message", rm.Message)
-	return rc.Publish(redisCtx, signalNodeChannel(nodeId), data).Err()
+	return rc.Publish(redisCtx, signalNodeChannel(nodeID), data).Err()
 }
 
 type RTCNodeSink struct {
 	rc             *redis.Client
-	nodeId         string
-	participantKey string
+	nodeID         livekit.NodeID
+	participantKey livekit.ParticipantKey
 	isClosed       utils.AtomicFlag
 	onClose        func()
 }
 
-func NewRTCNodeSink(rc *redis.Client, nodeId, participantKey string) *RTCNodeSink {
+func NewRTCNodeSink(rc *redis.Client, nodeID livekit.NodeID, participantKey livekit.ParticipantKey) *RTCNodeSink {
 	return &RTCNodeSink{
 		rc:             rc,
-		nodeId:         nodeId,
+		nodeID:         nodeID,
 		participantKey: participantKey,
 	}
 }
@@ -112,7 +112,7 @@ func (s *RTCNodeSink) WriteMessage(msg proto.Message) error {
 	if s.isClosed.Get() {
 		return ErrChannelClosed
 	}
-	return publishRTCMessage(s.rc, s.nodeId, s.participantKey, msg)
+	return publishRTCMessage(s.rc, s.nodeID, s.participantKey, msg)
 }
 
 func (s *RTCNodeSink) Close() {
@@ -130,17 +130,17 @@ func (s *RTCNodeSink) OnClose(f func()) {
 
 type SignalNodeSink struct {
 	rc           *redis.Client
-	nodeId       string
-	connectionId string
+	nodeID       livekit.NodeID
+	connectionID livekit.ConnectionID
 	isClosed     utils.AtomicFlag
 	onClose      func()
 }
 
-func NewSignalNodeSink(rc *redis.Client, nodeId, connectionId string) *SignalNodeSink {
+func NewSignalNodeSink(rc *redis.Client, nodeID livekit.NodeID, connectionID livekit.ConnectionID) *SignalNodeSink {
 	return &SignalNodeSink{
 		rc:           rc,
-		nodeId:       nodeId,
-		connectionId: connectionId,
+		nodeID:       nodeID,
+		connectionID: connectionID,
 	}
 }
 
@@ -148,14 +148,14 @@ func (s *SignalNodeSink) WriteMessage(msg proto.Message) error {
 	if s.isClosed.Get() {
 		return ErrChannelClosed
 	}
-	return publishSignalMessage(s.rc, s.nodeId, s.connectionId, msg)
+	return publishSignalMessage(s.rc, s.nodeID, s.connectionID, msg)
 }
 
 func (s *SignalNodeSink) Close() {
 	if !s.isClosed.TrySet(true) {
 		return
 	}
-	_ = publishSignalMessage(s.rc, s.nodeId, s.connectionId, &livekit.EndSession{})
+	_ = publishSignalMessage(s.rc, s.nodeID, s.connectionID, &livekit.EndSession{})
 	if s.onClose != nil {
 		s.onClose()
 	}

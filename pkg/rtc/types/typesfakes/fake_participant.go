@@ -141,10 +141,10 @@ type FakeParticipant struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
 	}
-	UpdateMediaLossStub        func(string, livekit.TrackID, uint32) error
+	UpdateMediaLossStub        func(livekit.NodeID, livekit.TrackID, uint32) error
 	updateMediaLossMutex       sync.RWMutex
 	updateMediaLossArgsForCall []struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.TrackID
 		arg3 uint32
 	}
@@ -154,10 +154,10 @@ type FakeParticipant struct {
 	updateMediaLossReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscribedQualityStub        func(string, livekit.TrackID, livekit.VideoQuality) error
+	UpdateSubscribedQualityStub        func(livekit.NodeID, livekit.TrackID, livekit.VideoQuality) error
 	updateSubscribedQualityMutex       sync.RWMutex
 	updateSubscribedQualityArgsForCall []struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.TrackID
 		arg3 livekit.VideoQuality
 	}
@@ -895,11 +895,11 @@ func (fake *FakeParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.Partic
 	}{result1}
 }
 
-func (fake *FakeParticipant) UpdateMediaLoss(arg1 string, arg2 livekit.TrackID, arg3 uint32) error {
+func (fake *FakeParticipant) UpdateMediaLoss(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 uint32) error {
 	fake.updateMediaLossMutex.Lock()
 	ret, specificReturn := fake.updateMediaLossReturnsOnCall[len(fake.updateMediaLossArgsForCall)]
 	fake.updateMediaLossArgsForCall = append(fake.updateMediaLossArgsForCall, struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.TrackID
 		arg3 uint32
 	}{arg1, arg2, arg3})
@@ -922,13 +922,13 @@ func (fake *FakeParticipant) UpdateMediaLossCallCount() int {
 	return len(fake.updateMediaLossArgsForCall)
 }
 
-func (fake *FakeParticipant) UpdateMediaLossCalls(stub func(string, livekit.TrackID, uint32) error) {
+func (fake *FakeParticipant) UpdateMediaLossCalls(stub func(livekit.NodeID, livekit.TrackID, uint32) error) {
 	fake.updateMediaLossMutex.Lock()
 	defer fake.updateMediaLossMutex.Unlock()
 	fake.UpdateMediaLossStub = stub
 }
 
-func (fake *FakeParticipant) UpdateMediaLossArgsForCall(i int) (string, livekit.TrackID, uint32) {
+func (fake *FakeParticipant) UpdateMediaLossArgsForCall(i int) (livekit.NodeID, livekit.TrackID, uint32) {
 	fake.updateMediaLossMutex.RLock()
 	defer fake.updateMediaLossMutex.RUnlock()
 	argsForCall := fake.updateMediaLossArgsForCall[i]
@@ -958,11 +958,11 @@ func (fake *FakeParticipant) UpdateMediaLossReturnsOnCall(i int, result1 error) 
 	}{result1}
 }
 
-func (fake *FakeParticipant) UpdateSubscribedQuality(arg1 string, arg2 livekit.TrackID, arg3 livekit.VideoQuality) error {
+func (fake *FakeParticipant) UpdateSubscribedQuality(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 livekit.VideoQuality) error {
 	fake.updateSubscribedQualityMutex.Lock()
 	ret, specificReturn := fake.updateSubscribedQualityReturnsOnCall[len(fake.updateSubscribedQualityArgsForCall)]
 	fake.updateSubscribedQualityArgsForCall = append(fake.updateSubscribedQualityArgsForCall, struct {
-		arg1 string
+		arg1 livekit.NodeID
 		arg2 livekit.TrackID
 		arg3 livekit.VideoQuality
 	}{arg1, arg2, arg3})
@@ -985,13 +985,13 @@ func (fake *FakeParticipant) UpdateSubscribedQualityCallCount() int {
 	return len(fake.updateSubscribedQualityArgsForCall)
 }
 
-func (fake *FakeParticipant) UpdateSubscribedQualityCalls(stub func(string, livekit.TrackID, livekit.VideoQuality) error) {
+func (fake *FakeParticipant) UpdateSubscribedQualityCalls(stub func(livekit.NodeID, livekit.TrackID, livekit.VideoQuality) error) {
 	fake.updateSubscribedQualityMutex.Lock()
 	defer fake.updateSubscribedQualityMutex.Unlock()
 	fake.UpdateSubscribedQualityStub = stub
 }
 
-func (fake *FakeParticipant) UpdateSubscribedQualityArgsForCall(i int) (string, livekit.TrackID, livekit.VideoQuality) {
+func (fake *FakeParticipant) UpdateSubscribedQualityArgsForCall(i int) (livekit.NodeID, livekit.TrackID, livekit.VideoQuality) {
 	fake.updateSubscribedQualityMutex.RLock()
 	defer fake.updateSubscribedQualityMutex.RUnlock()
 	argsForCall := fake.updateSubscribedQualityArgsForCall[i]

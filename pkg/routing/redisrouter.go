@@ -85,11 +85,11 @@ func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomNam
 		return nil, errors.Wrap(err, "could not get node for room")
 	}
 
-	return r.GetNode(nodeID)
+	return r.GetNode(livekit.NodeID(nodeID))
 }
 
-func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomName, nodeID string) error {
-	return r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), nodeID).Err()
+func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
+	return r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), string(nodeID)).Err()
 }
 
 func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) error {
@@ -99,8 +99,8 @@ func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomNam
 	return nil
 }
 
-func (r *RedisRouter) GetNode(nodeID string) (*livekit.Node, error) {
-	data, err := r.rc.HGet(r.ctx, NodesKey, nodeID).Result()
+func (r *RedisRouter) GetNode(nodeID livekit.NodeID) (*livekit.Node, error) {
+	data, err := r.rc.HGet(r.ctx, NodesKey, string(nodeID)).Result()
 	if err == redis.Nil {
 		return nil, ErrNotFound
 	} else if err != nil {
@@ -130,7 +130,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 }
 
 // StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
-func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID string, reqSink MessageSink, resSource MessageSource, err error) {
+func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
 	if err != nil {
@@ -138,7 +138,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	}
 
 	// create a new connection id
-	connectionID = utils.NewGuid("CO_")
+	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	pKey := participantKey(roomName, pi.Identity)
 
 	// map signal & rtc nodes
@@ -146,7 +146,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	sink := NewRTCNodeSink(r.rc, rtcNode.Id, pKey)
+	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), pKey)
 
 	// serialize claims
 	claims, err := json.Marshal(pi.Grants)
@@ -161,7 +161,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		Metadata: pi.Metadata,
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:  connectionID,
+		ConnectionId:  string(connectionID),
 		Reconnect:     pi.Reconnect,
 		Permission:    pi.Permission,
 		AutoSubscribe: pi.AutoSubscribe,
@@ -174,8 +174,8 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
-	// index by connectionId, since there may be multiple connections for the participant
-	resChan := r.getOrCreateMessageChannel(r.responseChannels, connectionID)
+	// index by connectionID, since there may be multiple connections for the participant
+	resChan := r.getOrCreateMessageChannel(r.responseChannels, string(connectionID))
 	return connectionID, sink, resChan, nil
 }
 
@@ -186,8 +186,8 @@ func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 		return err
 	}
 
-	rtcSink := NewRTCNodeSink(r.rc, rtcNode, pkey)
-	msg.ParticipantKey = participantKey(roomName, identity)
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode), pkey)
+	msg.ParticipantKey = string(participantKey(roomName, identity))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
@@ -196,16 +196,16 @@ func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 	if err != nil {
 		return err
 	}
-	msg.ParticipantKey = participantKey(roomName, "")
+	msg.ParticipantKey = string(participantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, node.Id, msg)
 }
 
 func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *livekit.RTCNodeMessage) error {
-	rtcSink := NewRTCNodeSink(r.rc, rtcNodeID, msg.ParticipantKey)
+	rtcSink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNodeID), livekit.ParticipantKey(msg.ParticipantKey))
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
-func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey string) error {
+func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey livekit.ParticipantKey) error {
 	// find the node where the room is hosted at
 	rtcNode, err := r.GetNodeForRoom(r.ctx, livekit.RoomName(ss.RoomName))
 	if err != nil {
@@ -225,7 +225,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	// find signal node to send responses back
-	signalNode, err := r.getParticipantSignalNode(ss.ConnectionId)
+	signalNode, err := r.getParticipantSignalNode(livekit.ConnectionID(ss.ConnectionId))
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		// the previous rtc worker thread is still consuming off of it.
 		// we'll want to sever the connection and switch to the new one
 		r.lock.RLock()
-		requestChan, ok := r.requestChannels[participantKey]
+		requestChan, ok := r.requestChannels[string(participantKey)]
 		r.lock.RUnlock()
 		if ok {
 			requestChan.Close()
@@ -265,8 +265,8 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		Grants:        claims,
 	}
 
-	reqChan := r.getOrCreateMessageChannel(r.requestChannels, participantKey)
-	resSink := NewSignalNodeSink(r.rc, signalNode, ss.ConnectionId)
+	reqChan := r.getOrCreateMessageChannel(r.requestChannels, string(participantKey))
+	resSink := NewSignalNodeSink(r.rc, livekit.NodeID(signalNode), livekit.ConnectionID(ss.ConnectionId))
 	r.onNewParticipant(
 		r.ctx,
 		livekit.RoomName(ss.RoomName),
@@ -312,22 +312,22 @@ func (r *RedisRouter) Stop() {
 	r.cancel()
 }
 
-func (r *RedisRouter) setParticipantRTCNode(participantKey, nodeId string) error {
-	err := r.rc.Set(r.ctx, participantRTCKey(participantKey), nodeId, participantMappingTTL).Err()
+func (r *RedisRouter) setParticipantRTCNode(participantKey livekit.ParticipantKey, nodeID string) error {
+	err := r.rc.Set(r.ctx, participantRTCKey(participantKey), nodeID, participantMappingTTL).Err()
 	if err != nil {
 		err = errors.Wrap(err, "could not set rtc node")
 	}
 	return err
 }
 
-func (r *RedisRouter) setParticipantSignalNode(connectionId, nodeId string) error {
-	if err := r.rc.Set(r.ctx, participantSignalKey(connectionId), nodeId, participantMappingTTL).Err(); err != nil {
+func (r *RedisRouter) setParticipantSignalNode(connectionID livekit.ConnectionID, nodeID string) error {
+	if err := r.rc.Set(r.ctx, participantSignalKey(connectionID), nodeID, participantMappingTTL).Err(); err != nil {
 		return errors.Wrap(err, "could not set signal node")
 	}
 	return nil
 }
 
-func (r *RedisRouter) getParticipantRTCNode(participantKey string) (string, error) {
+func (r *RedisRouter) getParticipantRTCNode(participantKey livekit.ParticipantKey) (string, error) {
 	val, err := r.rc.Get(r.ctx, participantRTCKey(participantKey)).Result()
 	if err == redis.Nil {
 		err = ErrNodeNotFound
@@ -335,8 +335,8 @@ func (r *RedisRouter) getParticipantRTCNode(participantKey string) (string, erro
 	return val, err
 }
 
-func (r *RedisRouter) getParticipantSignalNode(connectionId string) (nodeId string, err error) {
-	val, err := r.rc.Get(r.ctx, participantSignalKey(connectionId)).Result()
+func (r *RedisRouter) getParticipantSignalNode(connectionID livekit.ConnectionID) (nodeID string, err error) {
+	val, err := r.rc.Get(r.ctx, participantSignalKey(connectionID)).Result()
 	if err == redis.Nil {
 		err = ErrNodeNotFound
 	}
@@ -366,8 +366,8 @@ func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 	}()
 	logger.Debugw("starting redisWorker", "nodeID", r.currentNode.Id)
 
-	sigChannel := signalNodeChannel(r.currentNode.Id)
-	rtcChannel := rtcNodeChannel(r.currentNode.Id)
+	sigChannel := signalNodeChannel(livekit.NodeID(r.currentNode.Id))
+	rtcChannel := rtcNodeChannel(livekit.NodeID(r.currentNode.Id))
 	r.pubsub = r.rc.Subscribe(r.ctx, sigChannel, rtcChannel)
 
 	close(startedChan)
@@ -407,10 +407,10 @@ func (r *RedisRouter) redisWorker(startedChan chan struct{}) {
 }
 
 func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
-	connectionId := sm.ConnectionId
+	connectionID := sm.ConnectionId
 
 	r.lock.RLock()
-	resSink := r.responseChannels[connectionId]
+	resSink := r.responseChannels[connectionID]
 	r.lock.RUnlock()
 
 	// if a client closed the channel, then sent more messages after that,
@@ -421,7 +421,7 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 	switch rmb := sm.Message.(type) {
 	case *livekit.SignalNodeMessage_Response:
 		// logger.Debugw("forwarding signal message",
-		//	"connID", connectionId,
+		//	"connID", connectionID,
 		//	"type", fmt.Sprintf("%T", rmb.Response.Message))
 		if err := resSink.WriteMessage(rmb.Response); err != nil {
 			return err
@@ -429,14 +429,14 @@ func (r *RedisRouter) handleSignalMessage(sm *livekit.SignalNodeMessage) error {
 
 	case *livekit.SignalNodeMessage_EndSession:
 		// logger.Debugw("received EndSession, closing signal connection",
-		//	"connID", connectionId)
+		//	"connID", connectionID)
 		resSink.Close()
 	}
 	return nil
 }
 
 func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
-	pKey := rm.ParticipantKey
+	pKey := livekit.ParticipantKey(rm.ParticipantKey)
 
 	switch rmb := rm.Message.(type) {
 	case *livekit.RTCNodeMessage_StartSession:
@@ -447,7 +447,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 
 	case *livekit.RTCNodeMessage_Request:
 		r.lock.RLock()
-		requestChan := r.requestChannels[pKey]
+		requestChan := r.requestChannels[string(pKey)]
 		r.lock.RUnlock()
 		if requestChan == nil {
 			return ErrChannelClosed

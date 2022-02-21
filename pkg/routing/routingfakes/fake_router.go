@@ -82,12 +82,12 @@ type FakeRouter struct {
 	removeDeadNodesReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SetNodeForRoomStub        func(context.Context, livekit.RoomName, string) error
+	SetNodeForRoomStub        func(context.Context, livekit.RoomName, livekit.NodeID) error
 	setNodeForRoomMutex       sync.RWMutex
 	setNodeForRoomArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 string
+		arg3 livekit.NodeID
 	}
 	setNodeForRoomReturns struct {
 		result1 error
@@ -105,7 +105,7 @@ type FakeRouter struct {
 	startReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit) (string, routing.MessageSink, routing.MessageSource, error)
+	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)
 	startParticipantSignalMutex       sync.RWMutex
 	startParticipantSignalArgsForCall []struct {
 		arg1 context.Context
@@ -113,13 +113,13 @@ type FakeRouter struct {
 		arg3 routing.ParticipantInit
 	}
 	startParticipantSignalReturns struct {
-		result1 string
+		result1 livekit.ConnectionID
 		result2 routing.MessageSink
 		result3 routing.MessageSource
 		result4 error
 	}
 	startParticipantSignalReturnsOnCall map[int]struct {
-		result1 string
+		result1 livekit.ConnectionID
 		result2 routing.MessageSink
 		result3 routing.MessageSource
 		result4 error
@@ -546,13 +546,13 @@ func (fake *FakeRouter) RemoveDeadNodesReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) SetNodeForRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 string) error {
+func (fake *FakeRouter) SetNodeForRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.NodeID) error {
 	fake.setNodeForRoomMutex.Lock()
 	ret, specificReturn := fake.setNodeForRoomReturnsOnCall[len(fake.setNodeForRoomArgsForCall)]
 	fake.setNodeForRoomArgsForCall = append(fake.setNodeForRoomArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 string
+		arg3 livekit.NodeID
 	}{arg1, arg2, arg3})
 	stub := fake.SetNodeForRoomStub
 	fakeReturns := fake.setNodeForRoomReturns
@@ -573,13 +573,13 @@ func (fake *FakeRouter) SetNodeForRoomCallCount() int {
 	return len(fake.setNodeForRoomArgsForCall)
 }
 
-func (fake *FakeRouter) SetNodeForRoomCalls(stub func(context.Context, livekit.RoomName, string) error) {
+func (fake *FakeRouter) SetNodeForRoomCalls(stub func(context.Context, livekit.RoomName, livekit.NodeID) error) {
 	fake.setNodeForRoomMutex.Lock()
 	defer fake.setNodeForRoomMutex.Unlock()
 	fake.SetNodeForRoomStub = stub
 }
 
-func (fake *FakeRouter) SetNodeForRoomArgsForCall(i int) (context.Context, livekit.RoomName, string) {
+func (fake *FakeRouter) SetNodeForRoomArgsForCall(i int) (context.Context, livekit.RoomName, livekit.NodeID) {
 	fake.setNodeForRoomMutex.RLock()
 	defer fake.setNodeForRoomMutex.RUnlock()
 	argsForCall := fake.setNodeForRoomArgsForCall[i]
@@ -662,7 +662,7 @@ func (fake *FakeRouter) StartReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit) (string, routing.MessageSink, routing.MessageSource, error) {
+func (fake *FakeRouter) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error) {
 	fake.startParticipantSignalMutex.Lock()
 	ret, specificReturn := fake.startParticipantSignalReturnsOnCall[len(fake.startParticipantSignalArgsForCall)]
 	fake.startParticipantSignalArgsForCall = append(fake.startParticipantSignalArgsForCall, struct {
@@ -689,7 +689,7 @@ func (fake *FakeRouter) StartParticipantSignalCallCount() int {
 	return len(fake.startParticipantSignalArgsForCall)
 }
 
-func (fake *FakeRouter) StartParticipantSignalCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit) (string, routing.MessageSink, routing.MessageSource, error)) {
+func (fake *FakeRouter) StartParticipantSignalCalls(stub func(context.Context, livekit.RoomName, routing.ParticipantInit) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = stub
@@ -702,32 +702,32 @@ func (fake *FakeRouter) StartParticipantSignalArgsForCall(i int) (context.Contex
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturns(result1 string, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
+func (fake *FakeRouter) StartParticipantSignalReturns(result1 livekit.ConnectionID, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	fake.startParticipantSignalReturns = struct {
-		result1 string
+		result1 livekit.ConnectionID
 		result2 routing.MessageSink
 		result3 routing.MessageSource
 		result4 error
 	}{result1, result2, result3, result4}
 }
 
-func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 string, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
+func (fake *FakeRouter) StartParticipantSignalReturnsOnCall(i int, result1 livekit.ConnectionID, result2 routing.MessageSink, result3 routing.MessageSource, result4 error) {
 	fake.startParticipantSignalMutex.Lock()
 	defer fake.startParticipantSignalMutex.Unlock()
 	fake.StartParticipantSignalStub = nil
 	if fake.startParticipantSignalReturnsOnCall == nil {
 		fake.startParticipantSignalReturnsOnCall = make(map[int]struct {
-			result1 string
+			result1 livekit.ConnectionID
 			result2 routing.MessageSink
 			result3 routing.MessageSource
 			result4 error
 		})
 	}
 	fake.startParticipantSignalReturnsOnCall[i] = struct {
-		result1 string
+		result1 livekit.ConnectionID
 		result2 routing.MessageSink
 		result3 routing.MessageSource
 		result4 error
