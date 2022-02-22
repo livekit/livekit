@@ -633,11 +633,6 @@ func (d *DownTrack) OnRttUpdate(fn func(dt *DownTrack, rtt uint32)) {
 
 func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
 	d.onMaxLayerChanged = fn
-
-	// have to send this immediately to set initial values
-	if fn != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		go fn(d, d.forwarder.MaxLayers().spatial)
-	}
 }
 
 func (d *DownTrack) IsDeficient() bool {

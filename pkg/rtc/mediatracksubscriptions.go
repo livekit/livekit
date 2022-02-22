@@ -257,10 +257,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		sub.Negotiate()
 	}()
 
-	t.maxQualityLock.Lock()
 	// initialize to default layer
-	t.maxSubscriberQuality[sub.ID()] = livekit.VideoQuality_HIGH
-	t.maxQualityLock.Unlock()
+	t.notifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH)
 
 	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 	return downTrack, nil
@@ -422,6 +420,12 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 
 		delete(t.maxSubscriberQuality, subscriberID)
 	} else {
+		maxQuality, ok := t.maxSubscriberQuality[subscriberID]
+		if ok && maxQuality == quality {
+			t.maxQualityLock.Unlock()
+			return
+		}
+
 		t.maxSubscriberQuality[subscriberID] = quality
 	}
 	t.maxQualityLock.Unlock()
@@ -444,6 +448,12 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.
 
 		delete(t.maxSubscriberNodeQuality, nodeID)
 	} else {
+		maxQuality, ok := t.maxSubscriberNodeQuality[nodeID]
+		if ok && maxQuality == quality {
+			t.maxQualityLock.Unlock()
+			return
+		}
+
 		t.maxSubscriberNodeQuality[nodeID] = quality
 	}
 	t.maxQualityLock.Unlock()
