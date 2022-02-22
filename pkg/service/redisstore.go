@@ -298,25 +298,11 @@ func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*li
 	return infos, nil
 }
 
-func (s *RedisStore) DeleteEgress(_ context.Context, egressID string) error {
-	data, err := s.rc.HGet(s.ctx, EgressKey, egressID).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil
-		}
-		return err
-	}
-
-	info := &livekit.EgressInfo{}
-	err = proto.Unmarshal([]byte(data), info)
+func (s *RedisStore) DeleteEgress(_ context.Context, info *livekit.EgressInfo) error {
+	err := s.rc.SRem(s.ctx, RoomEgressPrefix+info.RoomId, info.EgressId).Err()
 	if err != nil {
 		return err
 	}
 
-	err = s.rc.SRem(s.ctx, RoomEgressPrefix+info.RoomId, egressID).Err()
-	if err != nil {
-		return err
-	}
-
-	return s.rc.HDel(s.ctx, EgressKey, egressID).Err()
+	return s.rc.HDel(s.ctx, EgressKey, info.EgressId).Err()
 }

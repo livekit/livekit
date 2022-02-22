@@ -43,9 +43,9 @@ type EgressStore interface {
 	LoadRoom(ctx context.Context, name livekit.RoomName) (*livekit.Room, error)
 
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error
-	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
 	ListEgress(ctx context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error)
-	DeleteEgress(ctx context.Context, egressID string) error
+	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
+	DeleteEgress(ctx context.Context, info *livekit.EgressInfo) error
 }
 
 //counterfeiter:generate . RoomAllocator

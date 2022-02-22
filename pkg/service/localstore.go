@@ -144,22 +144,22 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	return nil
 }
 
-func (s *LocalStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) error {
+func (s *LocalStore) StoreEgress(_ context.Context, _ *livekit.EgressInfo) error {
 	// redis is required for egress
 	return nil
 }
 
-func (s *LocalStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) error {
+func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
 	// redis is required for egress
 	return nil
 }
 
-func (s *LocalStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error) {
+func (s *LocalStore) ListEgress(_ context.Context, _ livekit.RoomID) ([]*livekit.EgressInfo, error) {
 	// redis is required for egress
 	return nil, nil
 }
 
-func (s *LocalStore) DeleteEgress(_ context.Context, egressID string) error {
+func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {
 	// redis is required for egress
 	return nil
 }

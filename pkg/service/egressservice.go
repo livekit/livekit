@@ -189,7 +189,7 @@ func (s *EgressService) resultsWorker() {
 				continue
 			}
 
-			err = s.store.DeleteEgress(context.Background(), res.EgressId)
+			err = s.store.DeleteEgress(context.Background(), res)
 			if err != nil {
 				logger.Errorw("could not delete egress from store", err)
 			}
