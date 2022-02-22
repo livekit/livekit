@@ -58,6 +58,7 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 		subscribedTracks:         make(map[livekit.ParticipantID]types.SubscribedTrack),
 		maxSubscriberQuality:     make(map[livekit.ParticipantID]livekit.VideoQuality),
 		maxSubscriberNodeQuality: make(map[livekit.NodeID]livekit.VideoQuality),
+		maxSubscribedQuality:     livekit.VideoQuality_LOW,
 	}
 
 	return t
@@ -256,10 +257,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		sub.Negotiate()
 	}()
 
-	t.maxQualityLock.Lock()
 	// initialize to default layer
-	t.maxSubscriberQuality[sub.ID()] = livekit.VideoQuality_HIGH
-	t.maxQualityLock.Unlock()
+	t.notifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH)
+
 	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 	return downTrack, nil
 }
