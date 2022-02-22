@@ -10,11 +10,11 @@ import (
 )
 
 type FakeEgressStore struct {
-	DeleteEgressStub        func(context.Context, string) error
+	DeleteEgressStub        func(context.Context, *livekit.EgressInfo) error
 	deleteEgressMutex       sync.RWMutex
 	deleteEgressArgsForCall []struct {
 		arg1 context.Context
-		arg2 string
+		arg2 *livekit.EgressInfo
 	}
 	deleteEgressReturns struct {
 		result1 error
@@ -78,12 +78,12 @@ type FakeEgressStore struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeEgressStore) DeleteEgress(arg1 context.Context, arg2 string) error {
+func (fake *FakeEgressStore) DeleteEgress(arg1 context.Context, arg2 *livekit.EgressInfo) error {
 	fake.deleteEgressMutex.Lock()
 	ret, specificReturn := fake.deleteEgressReturnsOnCall[len(fake.deleteEgressArgsForCall)]
 	fake.deleteEgressArgsForCall = append(fake.deleteEgressArgsForCall, struct {
 		arg1 context.Context
-		arg2 string
+		arg2 *livekit.EgressInfo
 	}{arg1, arg2})
 	stub := fake.DeleteEgressStub
 	fakeReturns := fake.deleteEgressReturns
@@ -104,13 +104,13 @@ func (fake *FakeEgressStore) DeleteEgressCallCount() int {
 	return len(fake.deleteEgressArgsForCall)
 }
 
-func (fake *FakeEgressStore) DeleteEgressCalls(stub func(context.Context, string) error) {
+func (fake *FakeEgressStore) DeleteEgressCalls(stub func(context.Context, *livekit.EgressInfo) error) {
 	fake.deleteEgressMutex.Lock()
 	defer fake.deleteEgressMutex.Unlock()
 	fake.DeleteEgressStub = stub
 }
 
-func (fake *FakeEgressStore) DeleteEgressArgsForCall(i int) (context.Context, string) {
+func (fake *FakeEgressStore) DeleteEgressArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
 	fake.deleteEgressMutex.RLock()
 	defer fake.deleteEgressMutex.RUnlock()
 	argsForCall := fake.deleteEgressArgsForCall[i]
