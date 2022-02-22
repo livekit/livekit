@@ -41,7 +41,7 @@ func (s *EgressService) Stop() {
 }
 
 func (s *EgressService) StartWebCompositeEgress(ctx context.Context, req *livekit.WebCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	return s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_WebComposite{
 			WebComposite: req,
 		},
@@ -49,7 +49,7 @@ func (s *EgressService) StartWebCompositeEgress(ctx context.Context, req *liveki
 }
 
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	return s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_TrackComposite{
 			TrackComposite: req,
 		},
@@ -57,14 +57,14 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 }
 
 func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.TrackEgressRequest) (*livekit.EgressInfo, error) {
-	return s.startEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_Track{
 			Track: req,
 		},
 	})
 }
 
-func (s *EgressService) startEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
