@@ -260,6 +260,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
 		pLogger.Errorw("could not join room", err)
+		_ = participant.Close(true)
 		return
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
