@@ -11,6 +11,18 @@ import (
 )
 
 type FakeRoomStore struct {
+	DeleteEgressStub        func(context.Context, string) error
+	deleteEgressMutex       sync.RWMutex
+	deleteEgressArgsForCall []struct {
+		arg1 context.Context
+		arg2 string
+	}
+	deleteEgressReturns struct {
+		result1 error
+	}
+	deleteEgressReturnsOnCall map[int]struct {
+		result1 error
+	}
 	DeleteParticipantStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) error
 	deleteParticipantMutex       sync.RWMutex
 	deleteParticipantArgsForCall []struct {
@@ -35,6 +47,20 @@ type FakeRoomStore struct {
 	}
 	deleteRoomReturnsOnCall map[int]struct {
 		result1 error
+	}
+	ListEgressStub        func(context.Context, livekit.RoomID) ([]*livekit.EgressInfo, error)
+	listEgressMutex       sync.RWMutex
+	listEgressArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+	}
+	listEgressReturns struct {
+		result1 []*livekit.EgressInfo
+		result2 error
+	}
+	listEgressReturnsOnCall map[int]struct {
+		result1 []*livekit.EgressInfo
+		result2 error
 	}
 	ListParticipantsStub        func(context.Context, livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 	listParticipantsMutex       sync.RWMutex
@@ -108,6 +134,18 @@ type FakeRoomStore struct {
 		result1 string
 		result2 error
 	}
+	StoreEgressStub        func(context.Context, *livekit.EgressInfo) error
+	storeEgressMutex       sync.RWMutex
+	storeEgressArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}
+	storeEgressReturns struct {
+		result1 error
+	}
+	storeEgressReturnsOnCall map[int]struct {
+		result1 error
+	}
 	StoreParticipantStub        func(context.Context, livekit.RoomName, *livekit.ParticipantInfo) error
 	storeParticipantMutex       sync.RWMutex
 	storeParticipantArgsForCall []struct {
@@ -146,8 +184,82 @@ type FakeRoomStore struct {
 	unlockRoomReturnsOnCall map[int]struct {
 		result1 error
 	}
+	UpdateEgressStub        func(context.Context, *livekit.EgressInfo) error
+	updateEgressMutex       sync.RWMutex
+	updateEgressArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}
+	updateEgressReturns struct {
+		result1 error
+	}
+	updateEgressReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeRoomStore) DeleteEgress(arg1 context.Context, arg2 string) error {
+	fake.deleteEgressMutex.Lock()
+	ret, specificReturn := fake.deleteEgressReturnsOnCall[len(fake.deleteEgressArgsForCall)]
+	fake.deleteEgressArgsForCall = append(fake.deleteEgressArgsForCall, struct {
+		arg1 context.Context
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.DeleteEgressStub
+	fakeReturns := fake.deleteEgressReturns
+	fake.recordInvocation("DeleteEgress", []interface{}{arg1, arg2})
+	fake.deleteEgressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) DeleteEgressCallCount() int {
+	fake.deleteEgressMutex.RLock()
+	defer fake.deleteEgressMutex.RUnlock()
+	return len(fake.deleteEgressArgsForCall)
+}
+
+func (fake *FakeRoomStore) DeleteEgressCalls(stub func(context.Context, string) error) {
+	fake.deleteEgressMutex.Lock()
+	defer fake.deleteEgressMutex.Unlock()
+	fake.DeleteEgressStub = stub
+}
+
+func (fake *FakeRoomStore) DeleteEgressArgsForCall(i int) (context.Context, string) {
+	fake.deleteEgressMutex.RLock()
+	defer fake.deleteEgressMutex.RUnlock()
+	argsForCall := fake.deleteEgressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) DeleteEgressReturns(result1 error) {
+	fake.deleteEgressMutex.Lock()
+	defer fake.deleteEgressMutex.Unlock()
+	fake.DeleteEgressStub = nil
+	fake.deleteEgressReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) DeleteEgressReturnsOnCall(i int, result1 error) {
+	fake.deleteEgressMutex.Lock()
+	defer fake.deleteEgressMutex.Unlock()
+	fake.DeleteEgressStub = nil
+	if fake.deleteEgressReturnsOnCall == nil {
+		fake.deleteEgressReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.deleteEgressReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeRoomStore) DeleteParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) error {
@@ -273,6 +385,71 @@ func (fake *FakeRoomStore) DeleteRoomReturnsOnCall(i int, result1 error) {
 	fake.deleteRoomReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeRoomStore) ListEgress(arg1 context.Context, arg2 livekit.RoomID) ([]*livekit.EgressInfo, error) {
+	fake.listEgressMutex.Lock()
+	ret, specificReturn := fake.listEgressReturnsOnCall[len(fake.listEgressArgsForCall)]
+	fake.listEgressArgsForCall = append(fake.listEgressArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+	}{arg1, arg2})
+	stub := fake.ListEgressStub
+	fakeReturns := fake.listEgressReturns
+	fake.recordInvocation("ListEgress", []interface{}{arg1, arg2})
+	fake.listEgressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeRoomStore) ListEgressCallCount() int {
+	fake.listEgressMutex.RLock()
+	defer fake.listEgressMutex.RUnlock()
+	return len(fake.listEgressArgsForCall)
+}
+
+func (fake *FakeRoomStore) ListEgressCalls(stub func(context.Context, livekit.RoomID) ([]*livekit.EgressInfo, error)) {
+	fake.listEgressMutex.Lock()
+	defer fake.listEgressMutex.Unlock()
+	fake.ListEgressStub = stub
+}
+
+func (fake *FakeRoomStore) ListEgressArgsForCall(i int) (context.Context, livekit.RoomID) {
+	fake.listEgressMutex.RLock()
+	defer fake.listEgressMutex.RUnlock()
+	argsForCall := fake.listEgressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) ListEgressReturns(result1 []*livekit.EgressInfo, result2 error) {
+	fake.listEgressMutex.Lock()
+	defer fake.listEgressMutex.Unlock()
+	fake.ListEgressStub = nil
+	fake.listEgressReturns = struct {
+		result1 []*livekit.EgressInfo
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeRoomStore) ListEgressReturnsOnCall(i int, result1 []*livekit.EgressInfo, result2 error) {
+	fake.listEgressMutex.Lock()
+	defer fake.listEgressMutex.Unlock()
+	fake.ListEgressStub = nil
+	if fake.listEgressReturnsOnCall == nil {
+		fake.listEgressReturnsOnCall = make(map[int]struct {
+			result1 []*livekit.EgressInfo
+			result2 error
+		})
+	}
+	fake.listEgressReturnsOnCall[i] = struct {
+		result1 []*livekit.EgressInfo
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeRoomStore) ListParticipants(arg1 context.Context, arg2 livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
@@ -607,6 +784,68 @@ func (fake *FakeRoomStore) LockRoomReturnsOnCall(i int, result1 string, result2 
 	}{result1, result2}
 }
 
+func (fake *FakeRoomStore) StoreEgress(arg1 context.Context, arg2 *livekit.EgressInfo) error {
+	fake.storeEgressMutex.Lock()
+	ret, specificReturn := fake.storeEgressReturnsOnCall[len(fake.storeEgressArgsForCall)]
+	fake.storeEgressArgsForCall = append(fake.storeEgressArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}{arg1, arg2})
+	stub := fake.StoreEgressStub
+	fakeReturns := fake.storeEgressReturns
+	fake.recordInvocation("StoreEgress", []interface{}{arg1, arg2})
+	fake.storeEgressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) StoreEgressCallCount() int {
+	fake.storeEgressMutex.RLock()
+	defer fake.storeEgressMutex.RUnlock()
+	return len(fake.storeEgressArgsForCall)
+}
+
+func (fake *FakeRoomStore) StoreEgressCalls(stub func(context.Context, *livekit.EgressInfo) error) {
+	fake.storeEgressMutex.Lock()
+	defer fake.storeEgressMutex.Unlock()
+	fake.StoreEgressStub = stub
+}
+
+func (fake *FakeRoomStore) StoreEgressArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
+	fake.storeEgressMutex.RLock()
+	defer fake.storeEgressMutex.RUnlock()
+	argsForCall := fake.storeEgressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) StoreEgressReturns(result1 error) {
+	fake.storeEgressMutex.Lock()
+	defer fake.storeEgressMutex.Unlock()
+	fake.StoreEgressStub = nil
+	fake.storeEgressReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) StoreEgressReturnsOnCall(i int, result1 error) {
+	fake.storeEgressMutex.Lock()
+	defer fake.storeEgressMutex.Unlock()
+	fake.StoreEgressStub = nil
+	if fake.storeEgressReturnsOnCall == nil {
+		fake.storeEgressReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.storeEgressReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomStore) StoreParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 *livekit.ParticipantInfo) error {
 	fake.storeParticipantMutex.Lock()
 	ret, specificReturn := fake.storeParticipantReturnsOnCall[len(fake.storeParticipantArgsForCall)]
@@ -795,13 +1034,79 @@ func (fake *FakeRoomStore) UnlockRoomReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeRoomStore) UpdateEgress(arg1 context.Context, arg2 *livekit.EgressInfo) error {
+	fake.updateEgressMutex.Lock()
+	ret, specificReturn := fake.updateEgressReturnsOnCall[len(fake.updateEgressArgsForCall)]
+	fake.updateEgressArgsForCall = append(fake.updateEgressArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}{arg1, arg2})
+	stub := fake.UpdateEgressStub
+	fakeReturns := fake.updateEgressReturns
+	fake.recordInvocation("UpdateEgress", []interface{}{arg1, arg2})
+	fake.updateEgressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoomStore) UpdateEgressCallCount() int {
+	fake.updateEgressMutex.RLock()
+	defer fake.updateEgressMutex.RUnlock()
+	return len(fake.updateEgressArgsForCall)
+}
+
+func (fake *FakeRoomStore) UpdateEgressCalls(stub func(context.Context, *livekit.EgressInfo) error) {
+	fake.updateEgressMutex.Lock()
+	defer fake.updateEgressMutex.Unlock()
+	fake.UpdateEgressStub = stub
+}
+
+func (fake *FakeRoomStore) UpdateEgressArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
+	fake.updateEgressMutex.RLock()
+	defer fake.updateEgressMutex.RUnlock()
+	argsForCall := fake.updateEgressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoomStore) UpdateEgressReturns(result1 error) {
+	fake.updateEgressMutex.Lock()
+	defer fake.updateEgressMutex.Unlock()
+	fake.UpdateEgressStub = nil
+	fake.updateEgressReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeRoomStore) UpdateEgressReturnsOnCall(i int, result1 error) {
+	fake.updateEgressMutex.Lock()
+	defer fake.updateEgressMutex.Unlock()
+	fake.UpdateEgressStub = nil
+	if fake.updateEgressReturnsOnCall == nil {
+		fake.updateEgressReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateEgressReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.deleteEgressMutex.RLock()
+	defer fake.deleteEgressMutex.RUnlock()
 	fake.deleteParticipantMutex.RLock()
 	defer fake.deleteParticipantMutex.RUnlock()
 	fake.deleteRoomMutex.RLock()
 	defer fake.deleteRoomMutex.RUnlock()
+	fake.listEgressMutex.RLock()
+	defer fake.listEgressMutex.RUnlock()
 	fake.listParticipantsMutex.RLock()
 	defer fake.listParticipantsMutex.RUnlock()
 	fake.listRoomsMutex.RLock()
@@ -812,12 +1117,16 @@ func (fake *FakeRoomStore) Invocations() map[string][][]interface{} {
 	defer fake.loadRoomMutex.RUnlock()
 	fake.lockRoomMutex.RLock()
 	defer fake.lockRoomMutex.RUnlock()
+	fake.storeEgressMutex.RLock()
+	defer fake.storeEgressMutex.RUnlock()
 	fake.storeParticipantMutex.RLock()
 	defer fake.storeParticipantMutex.RUnlock()
 	fake.storeRoomMutex.RLock()
 	defer fake.storeRoomMutex.RUnlock()
 	fake.unlockRoomMutex.RLock()
 	defer fake.unlockRoomMutex.RUnlock()
+	fake.updateEgressMutex.RLock()
+	defer fake.updateEgressMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

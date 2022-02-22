@@ -232,3 +232,31 @@ func (t *telemetryServiceInternal) ParticipantActive(ctx context.Context, partic
 		ClientMeta:    clientMeta,
 	})
 }
+
+func (t *telemetryServiceInternal) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
+		Event:      webhook.EventEgressStarted,
+		EgressInfo: info,
+	})
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:      livekit.AnalyticsEventType_EGRESS_STARTED,
+		Timestamp: timestamppb.Now(),
+		EgressId:  info.EgressId,
+		RoomId:    info.RoomId,
+	})
+}
+
+func (t *telemetryServiceInternal) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
+		Event:      webhook.EventEgressEnded,
+		EgressInfo: info,
+	})
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:      livekit.AnalyticsEventType_EGRESS_ENDED,
+		Timestamp: timestamppb.Now(),
+		EgressId:  info.EgressId,
+		RoomId:    info.RoomId,
+	})
+}

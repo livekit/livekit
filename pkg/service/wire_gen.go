@@ -50,6 +50,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
+	egressService := NewEgressService(messageBus, roomStore, telemetryService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, roomStore, router, currentNode)
 	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
@@ -61,7 +62,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,7 @@ func createMessageBus(rc *redis.Client) utils.MessageBus {
 
 func createStore(rc *redis.Client) RoomStore {
 	if rc != nil {
-		return NewRedisRoomStore(rc)
+		return NewRedisStore(rc)
 	}
-	return NewLocalRoomStore()
+	return NewLocalStore()
 }

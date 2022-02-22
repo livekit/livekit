@@ -38,6 +38,7 @@ func (s *RecordingService) Stop() {
 	s.shutdown <- struct{}{}
 }
 
+// RecordingService is deprecated, use EgressService instead
 func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.StartRecordingRequest) (*livekit.StartRecordingResponse, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -78,6 +79,7 @@ func (s *RecordingService) StartRecording(ctx context.Context, req *livekit.Star
 	return &livekit.StartRecordingResponse{RecordingId: recordingID}, nil
 }
 
+// RecordingService is deprecated, use EgressService instead
 func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutputRequest) (*emptypb.Empty, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -98,6 +100,7 @@ func (s *RecordingService) AddOutput(ctx context.Context, req *livekit.AddOutput
 	return &emptypb.Empty{}, nil
 }
 
+// RecordingService is deprecated, use EgressService instead
 func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.RemoveOutputRequest) (*emptypb.Empty, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -118,6 +121,7 @@ func (s *RecordingService) RemoveOutput(ctx context.Context, req *livekit.Remove
 	return &emptypb.Empty{}, nil
 }
 
+// RecordingService is deprecated, use EgressService instead
 func (s *RecordingService) EndRecording(ctx context.Context, req *livekit.EndRecordingRequest) (*emptypb.Empty, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)

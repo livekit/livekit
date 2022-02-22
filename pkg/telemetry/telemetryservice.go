@@ -28,6 +28,8 @@ type TelemetryService interface {
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 	ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta)
+	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
+	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
 }
 
 type doWorkFunc func()
@@ -141,5 +143,17 @@ func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participant
 func (t *telemetryService) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
 	t.jobQueue <- func() {
 		t.internalService.ParticipantActive(ctx, participantID, clientMeta)
+	}
+}
+
+func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
+	t.jobQueue <- func() {
+		t.internalService.EgressStarted(ctx, info)
+	}
+}
+
+func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
+	t.jobQueue <- func() {
+		t.internalService.EgressEnded(ctx, info)
 	}
 }
