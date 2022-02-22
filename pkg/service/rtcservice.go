@@ -151,8 +151,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
 			handleError(w, 404, err.Error())
+			return
 		} else if err != nil {
 			handleError(w, 500, err.Error())
+			return
 		}
 	}
 
