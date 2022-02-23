@@ -95,7 +95,7 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 }
 
 type LayoutMetadata struct {
-	Layout string
+	Layout string `json:"layout"`
 }
 
 func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLayoutRequest) (*livekit.EgressInfo, error) {
