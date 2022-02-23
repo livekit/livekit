@@ -47,7 +47,7 @@ func TestDeleteRoom(t *testing.T) {
 func newTestRoomService() *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
-	store := &servicefakes.FakeRORoomStore{}
+	store := &servicefakes.FakeServiceStore{}
 	svc, err := service.NewRoomService(allocator, store, router)
 	if err != nil {
 		panic(err)
@@ -64,5 +64,5 @@ type TestRoomService struct {
 	service.RoomService
 	router    *routingfakes.FakeRouter
 	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeRORoomStore
+	store     *servicefakes.FakeServiceStore
 }
