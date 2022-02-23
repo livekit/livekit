@@ -28,8 +28,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createRedisClient,
 		createMessageBus,
 		createStore,
-		wire.Bind(new(RORoomStore), new(RoomStore)),
-		wire.Bind(new(EgressStore), new(RoomStore)),
+		wire.Bind(new(ServiceStore), new(ObjectStore)),
+		wire.Bind(new(EgressStore), new(ObjectStore)),
 		createKeyProvider,
 		createWebhookNotifier,
 		routing.CreateRouter,
@@ -127,7 +127,7 @@ func createMessageBus(rc *redis.Client) utils.MessageBus {
 	return utils.NewRedisMessageBus(rc)
 }
 
-func createStore(rc *redis.Client) RoomStore {
+func createStore(rc *redis.Client) ObjectStore {
 	if rc != nil {
 		return NewRedisStore(rc)
 	}

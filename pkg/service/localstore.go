@@ -149,14 +149,19 @@ func (s *LocalStore) StoreEgress(_ context.Context, _ *livekit.EgressInfo) error
 	return nil
 }
 
-func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
+func (s *LocalStore) LoadEgress(_ context.Context, _ string) (*livekit.EgressInfo, error) {
 	// redis is required for egress
-	return nil
+	return nil, ErrEgressNotFound
 }
 
 func (s *LocalStore) ListEgress(_ context.Context, _ livekit.RoomID) ([]*livekit.EgressInfo, error) {
 	// redis is required for egress
 	return nil, nil
+}
+
+func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
+	// redis is required for egress
+	return nil
 }
 
 func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {

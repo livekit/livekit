@@ -36,6 +36,20 @@ type FakeEgressStore struct {
 		result1 []*livekit.EgressInfo
 		result2 error
 	}
+	LoadEgressStub        func(context.Context, string) (*livekit.EgressInfo, error)
+	loadEgressMutex       sync.RWMutex
+	loadEgressArgsForCall []struct {
+		arg1 context.Context
+		arg2 string
+	}
+	loadEgressReturns struct {
+		result1 *livekit.EgressInfo
+		result2 error
+	}
+	loadEgressReturnsOnCall map[int]struct {
+		result1 *livekit.EgressInfo
+		result2 error
+	}
 	LoadRoomStub        func(context.Context, livekit.RoomName) (*livekit.Room, error)
 	loadRoomMutex       sync.RWMutex
 	loadRoomArgsForCall []struct {
@@ -201,6 +215,71 @@ func (fake *FakeEgressStore) ListEgressReturnsOnCall(i int, result1 []*livekit.E
 	}
 	fake.listEgressReturnsOnCall[i] = struct {
 		result1 []*livekit.EgressInfo
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEgressStore) LoadEgress(arg1 context.Context, arg2 string) (*livekit.EgressInfo, error) {
+	fake.loadEgressMutex.Lock()
+	ret, specificReturn := fake.loadEgressReturnsOnCall[len(fake.loadEgressArgsForCall)]
+	fake.loadEgressArgsForCall = append(fake.loadEgressArgsForCall, struct {
+		arg1 context.Context
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.LoadEgressStub
+	fakeReturns := fake.loadEgressReturns
+	fake.recordInvocation("LoadEgress", []interface{}{arg1, arg2})
+	fake.loadEgressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeEgressStore) LoadEgressCallCount() int {
+	fake.loadEgressMutex.RLock()
+	defer fake.loadEgressMutex.RUnlock()
+	return len(fake.loadEgressArgsForCall)
+}
+
+func (fake *FakeEgressStore) LoadEgressCalls(stub func(context.Context, string) (*livekit.EgressInfo, error)) {
+	fake.loadEgressMutex.Lock()
+	defer fake.loadEgressMutex.Unlock()
+	fake.LoadEgressStub = stub
+}
+
+func (fake *FakeEgressStore) LoadEgressArgsForCall(i int) (context.Context, string) {
+	fake.loadEgressMutex.RLock()
+	defer fake.loadEgressMutex.RUnlock()
+	argsForCall := fake.loadEgressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeEgressStore) LoadEgressReturns(result1 *livekit.EgressInfo, result2 error) {
+	fake.loadEgressMutex.Lock()
+	defer fake.loadEgressMutex.Unlock()
+	fake.LoadEgressStub = nil
+	fake.loadEgressReturns = struct {
+		result1 *livekit.EgressInfo
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEgressStore) LoadEgressReturnsOnCall(i int, result1 *livekit.EgressInfo, result2 error) {
+	fake.loadEgressMutex.Lock()
+	defer fake.loadEgressMutex.Unlock()
+	fake.LoadEgressStub = nil
+	if fake.loadEgressReturnsOnCall == nil {
+		fake.loadEgressReturnsOnCall = make(map[int]struct {
+			result1 *livekit.EgressInfo
+			result2 error
+		})
+	}
+	fake.loadEgressReturnsOnCall[i] = struct {
+		result1 *livekit.EgressInfo
 		result2 error
 	}{result1, result2}
 }
@@ -401,6 +480,8 @@ func (fake *FakeEgressStore) Invocations() map[string][][]interface{} {
 	defer fake.deleteEgressMutex.RUnlock()
 	fake.listEgressMutex.RLock()
 	defer fake.listEgressMutex.RUnlock()
+	fake.loadEgressMutex.RLock()
+	defer fake.loadEgressMutex.RUnlock()
 	fake.loadRoomMutex.RLock()
 	defer fake.loadRoomMutex.RUnlock()
 	fake.storeEgressMutex.RLock()

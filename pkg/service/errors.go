@@ -3,6 +3,7 @@ package service
 import "errors"
 
 var (
+	ErrEgressNotFound       = errors.New("egress does not exist")
 	ErrRoomNotFound         = errors.New("requested room does not exist")
 	ErrRoomLockFailed       = errors.New("could not lock room")
 	ErrRoomUnlockFailed     = errors.New("could not unlock room, lock token does not match")

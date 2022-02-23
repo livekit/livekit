@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/livekit/protocol/egress"
@@ -15,18 +16,20 @@ import (
 )
 
 type EgressService struct {
-	bus       utils.MessageBus
-	store     EgressStore
-	telemetry telemetry.TelemetryService
-	shutdown  chan struct{}
+	bus         utils.MessageBus
+	store       EgressStore
+	roomService livekit.RoomService
+	telemetry   telemetry.TelemetryService
+	shutdown    chan struct{}
 }
 
-func NewEgressService(mb utils.MessageBus, es EgressStore, telemetry telemetry.TelemetryService) *EgressService {
+func NewEgressService(bus utils.MessageBus, es EgressStore, rs livekit.RoomService, ts telemetry.TelemetryService) *EgressService {
 	return &EgressService{
-		bus:       mb,
-		store:     es,
-		telemetry: telemetry,
-		shutdown:  make(chan struct{}),
+		bus:         bus,
+		store:       es,
+		roomService: rs,
+		telemetry:   ts,
+		shutdown:    make(chan struct{}),
 	}
 }
 
@@ -86,6 +89,52 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 				logger.Errorw("could not write egress info", err)
 			}
 		}()
+	}
+
+	return info, nil
+}
+
+type LayoutMetadata struct {
+	Layout string
+}
+
+func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLayoutRequest) (*livekit.EgressInfo, error) {
+	if err := EnsureRecordPermission(ctx); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if s.bus == nil {
+		return nil, errors.New("egress not connected (redis required)")
+	}
+
+	info, err := s.store.LoadEgress(ctx, req.EgressId)
+	if err != nil {
+		return nil, err
+	}
+
+	var roomName string
+	switch r := info.Request.(type) {
+	case *livekit.EgressInfo_WebComposite:
+		roomName = r.WebComposite.RoomName
+	case *livekit.EgressInfo_TrackComposite:
+		roomName = r.TrackComposite.RoomName
+	case *livekit.EgressInfo_Track:
+		roomName = r.Track.RoomName
+	default:
+		return nil, ErrRoomNotFound
+	}
+
+	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     roomName,
+		Identity: info.EgressId,
+		Metadata: string(metadata),
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return info, nil

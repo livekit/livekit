@@ -236,20 +236,21 @@ func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) er
 	return nil
 }
 
-func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) error {
-	data, err := proto.Marshal(info)
+func (s *RedisStore) LoadEgress(_ context.Context, egressID string) (*livekit.EgressInfo, error) {
+	data, err := s.rc.HGet(s.ctx, EgressKey, egressID).Result()
 	if err != nil {
-		return err
+		if err == redis.Nil {
+			return nil, ErrEgressNotFound
+		}
+		return nil, err
 	}
 
-	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
-
-	if _, err = pp.Exec(s.ctx); err != nil {
-		return errors.Wrap(err, "could not store egress info")
+	info := &livekit.EgressInfo{}
+	err = proto.Unmarshal([]byte(data), info)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil
+	return info, nil
 }
 
 func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error) {
@@ -296,6 +297,22 @@ func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*li
 	}
 
 	return infos, nil
+}
+
+func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) error {
+	data, err := proto.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+
+	if _, err = pp.Exec(s.ctx); err != nil {
+		return errors.Wrap(err, "could not store egress info")
+	}
+
+	return nil
 }
 
 func (s *RedisStore) DeleteEgress(_ context.Context, info *livekit.EgressInfo) error {

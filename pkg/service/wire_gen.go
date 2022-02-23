@@ -30,12 +30,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(client, currentNode)
-	roomStore := createStore(client)
-	roomAllocator, err := NewRoomAllocator(conf, router, roomStore)
+	objectStore := createStore(client)
+	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomAllocator, roomStore, router)
+	roomService, err := NewRoomService(roomAllocator, objectStore, router)
 	if err != nil {
 		return nil, err
 	}
@@ -50,14 +50,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	egressService := NewEgressService(messageBus, roomStore, telemetryService)
+	egressService := NewEgressService(messageBus, objectStore, roomService, telemetryService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, roomStore, router, currentNode)
-	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService)
 	if err != nil {
 		return nil, err
 	}
-	authHandler := newTurnAuthHandler(roomStore)
+	authHandler := newTurnAuthHandler(objectStore)
 	server, err := NewTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func createMessageBus(rc *redis.Client) utils.MessageBus {
 	return utils.NewRedisMessageBus(rc)
 }
 
-func createStore(rc *redis.Client) RoomStore {
+func createStore(rc *redis.Client) ObjectStore {
 	if rc != nil {
 		return NewRedisStore(rc)
 	}

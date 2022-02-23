@@ -26,7 +26,7 @@ import (
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	store         RORoomStore
+	store         ServiceStore
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
 	config        *config.Config
@@ -38,7 +38,7 @@ type RTCService struct {
 func NewRTCService(
 	conf *config.Config,
 	ra RoomAllocator,
-	store RORoomStore,
+	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
 ) *RTCService {
