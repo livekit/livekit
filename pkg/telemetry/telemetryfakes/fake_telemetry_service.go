@@ -57,6 +57,14 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.Room
 	}
+	TrackMaxSubscribedVideoQualityStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, livekit.VideoQuality)
+	trackMaxSubscribedVideoQualityMutex       sync.RWMutex
+	trackMaxSubscribedVideoQualityArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.ParticipantID
+		arg3 *livekit.TrackInfo
+		arg4 livekit.VideoQuality
+	}
 	TrackPublishedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo)
 	trackPublishedMutex       sync.RWMutex
 	trackPublishedArgsForCall []struct {
@@ -341,6 +349,41 @@ func (fake *FakeTelemetryService) RoomStartedArgsForCall(i int) (context.Context
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQuality(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 livekit.VideoQuality) {
+	fake.trackMaxSubscribedVideoQualityMutex.Lock()
+	fake.trackMaxSubscribedVideoQualityArgsForCall = append(fake.trackMaxSubscribedVideoQualityArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.ParticipantID
+		arg3 *livekit.TrackInfo
+		arg4 livekit.VideoQuality
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.TrackMaxSubscribedVideoQualityStub
+	fake.recordInvocation("TrackMaxSubscribedVideoQuality", []interface{}{arg1, arg2, arg3, arg4})
+	fake.trackMaxSubscribedVideoQualityMutex.Unlock()
+	if stub != nil {
+		fake.TrackMaxSubscribedVideoQualityStub(arg1, arg2, arg3, arg4)
+	}
+}
+
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityCallCount() int {
+	fake.trackMaxSubscribedVideoQualityMutex.RLock()
+	defer fake.trackMaxSubscribedVideoQualityMutex.RUnlock()
+	return len(fake.trackMaxSubscribedVideoQualityArgsForCall)
+}
+
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityCalls(stub func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, livekit.VideoQuality)) {
+	fake.trackMaxSubscribedVideoQualityMutex.Lock()
+	defer fake.trackMaxSubscribedVideoQualityMutex.Unlock()
+	fake.TrackMaxSubscribedVideoQualityStub = stub
+}
+
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityArgsForCall(i int) (context.Context, livekit.ParticipantID, *livekit.TrackInfo, livekit.VideoQuality) {
+	fake.trackMaxSubscribedVideoQualityMutex.RLock()
+	defer fake.trackMaxSubscribedVideoQualityMutex.RUnlock()
+	argsForCall := fake.trackMaxSubscribedVideoQualityArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
 func (fake *FakeTelemetryService) TrackPublished(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo) {
 	fake.trackPublishedMutex.Lock()
 	fake.trackPublishedArgsForCall = append(fake.trackPublishedArgsForCall, struct {
@@ -564,6 +607,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.roomEndedMutex.RUnlock()
 	fake.roomStartedMutex.RLock()
 	defer fake.roomStartedMutex.RUnlock()
+	fake.trackMaxSubscribedVideoQualityMutex.RLock()
+	defer fake.trackMaxSubscribedVideoQualityMutex.RUnlock()
 	fake.trackPublishedMutex.RLock()
 	defer fake.trackPublishedMutex.RUnlock()
 	fake.trackPublishedUpdateMutex.RLock()

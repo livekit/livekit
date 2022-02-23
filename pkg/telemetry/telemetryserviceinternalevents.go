@@ -119,6 +119,21 @@ func (t *telemetryServiceInternal) TrackPublishedUpdate(ctx context.Context, par
 	})
 }
 
+func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
+	maxQuality livekit.VideoQuality) {
+
+	roomID, roomName := t.getRoomDetails(participantID)
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:                      livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY,
+		Timestamp:                 timestamppb.Now(),
+		RoomId:                    string(roomID),
+		ParticipantId:             string(participantID),
+		Track:                     track,
+		Room:                      &livekit.Room{Name: string(roomName)},
+		MaxSubscribedVideoQuality: maxQuality,
+	})
+}
+
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := livekit.RoomID("")
 	roomName := livekit.RoomName("")
