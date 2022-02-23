@@ -181,7 +181,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		return ErrAlreadyJoined
 	}
 
-	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
+	if r.Room.MaxParticipants > 0 && len(r.participants) >= int(r.Room.MaxParticipants) {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}

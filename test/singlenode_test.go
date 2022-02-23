@@ -361,6 +361,11 @@ func TestAutoCreate(t *testing.T) {
 		token := joinToken(testRoom, "start-before-create")
 		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
+
+		// second join should also fail
+		token = joinToken(testRoom, "start-before-create-2")
+		_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
+		require.Error(t, err)
 	})
 
 	t.Run("join with explicit createRoom", func(t *testing.T) {
