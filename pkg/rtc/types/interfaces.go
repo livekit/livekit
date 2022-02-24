@@ -144,9 +144,10 @@ type LocalParticipant interface {
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
 	OnMetadataUpdate(callback func(LocalParticipant))
-	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	// OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(_callback func(LocalParticipant))
+	OnDataTrackPublished(callback func(LocalParticipant, DataTrack))
 
 	// session migration
 	SetMigrateState(s MigrateState)
@@ -155,6 +156,7 @@ type LocalParticipant interface {
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 
 	UpdateRTT(rtt uint32)
+	GetDataTrack() DataTrack
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -236,4 +238,14 @@ type SubscribedTrack interface {
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
+}
+
+// DataTrack is the interface representing a data track published to the room
+//counterfeiter:generate . DataTrack
+type DataTrack interface {
+	TrackID() livekit.TrackID
+	Receiver() sfu.TrackReceiver
+	AddOnClose(func())
+	OnDataPacket(callback func(*livekit.DataPacket))
+	Kind() livekit.TrackType
 }

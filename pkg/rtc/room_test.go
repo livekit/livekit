@@ -420,7 +420,10 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
+		// p.OnDataPacketArgsForCall(0)(p, &packet)
 
 		// ensure everyone has received the packet
 		for _, op := range participants {
@@ -451,7 +454,10 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
+		//p.OnDataPacketArgsForCall(0)(p, &packet)
 
 		// only p1 should receive the data
 		for _, op := range participants {
@@ -479,7 +485,10 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
+		// p.OnDataPacketArgsForCall(0)(p, &packet)
 
 		// no one should've been sent packet
 		for _, op := range participants {
