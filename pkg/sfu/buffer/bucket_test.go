@@ -237,7 +237,7 @@ func Test_queue_wrap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedSN, np.SequenceNumber)
 
-	// add a packet with a large gap in sequence number which invalidate all the slots
+	// add a packet with a large gap in sequence number which will invalidate all the slots
 	np3 := &rtp.Packet{
 		Header: rtp.Header{
 			SequenceNumber: 56,
