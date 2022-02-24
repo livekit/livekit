@@ -17,10 +17,10 @@ type StandardRoomAllocator struct {
 	config    *config.Config
 	router    routing.Router
 	selector  selector.NodeSelector
-	roomStore RoomStore
+	roomStore ObjectStore
 }
 
-func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) (RoomAllocator, error) {
+func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore) (RoomAllocator, error) {
 	ns, err := selector.CreateNodeSelector(conf)
 	if err != nil {
 		return nil, err

@@ -25,22 +25,24 @@ import (
 )
 
 type LivekitServer struct {
-	config      *config.Config
-	recService  *RecordingService
-	rtcService  *RTCService
-	httpServer  *http.Server
-	promServer  *http.Server
-	router      routing.Router
-	roomManager *RoomManager
-	turnServer  *turn.Server
-	currentNode routing.LocalNode
-	running     utils.AtomicFlag
-	doneChan    chan struct{}
-	closedChan  chan struct{}
+	config        *config.Config
+	egressService *EgressService
+	recService    *RecordingService
+	rtcService    *RTCService
+	httpServer    *http.Server
+	promServer    *http.Server
+	router        routing.Router
+	roomManager   *RoomManager
+	turnServer    *turn.Server
+	currentNode   routing.LocalNode
+	running       utils.AtomicFlag
+	doneChan      chan struct{}
+	closedChan    chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
+	egressService *EgressService,
 	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
@@ -50,11 +52,12 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:      conf,
-		recService:  recService,
-		rtcService:  rtcService,
-		router:      router,
-		roomManager: roomManager,
+		config:        conf,
+		egressService: egressService,
+		recService:    recService,
+		rtcService:    rtcService,
+		router:        router,
+		roomManager:   roomManager,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -77,10 +80,12 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	roomServer := livekit.NewRoomServiceServer(roomService)
+	egressServer := livekit.NewEgressServer(egressService)
 	recServer := livekit.NewRecordingServiceServer(recService)
 
 	mux := http.NewServeMux()
 	mux.Handle(roomServer.PathPrefix(), roomServer)
+	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
@@ -144,6 +149,7 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
+	s.egressService.Start()
 	s.recService.Start()
 
 	// ensure we could listen
@@ -211,6 +217,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
+	s.egressService.Stop()
 	s.recService.Stop()
 
 	close(s.closedChan)

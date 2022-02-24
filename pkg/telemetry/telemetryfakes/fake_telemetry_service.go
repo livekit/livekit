@@ -10,6 +10,18 @@ import (
 )
 
 type FakeTelemetryService struct {
+	EgressEndedStub        func(context.Context, *livekit.EgressInfo)
+	egressEndedMutex       sync.RWMutex
+	egressEndedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}
+	EgressStartedStub        func(context.Context, *livekit.EgressInfo)
+	egressStartedMutex       sync.RWMutex
+	egressStartedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}
 	ParticipantActiveStub        func(context.Context, livekit.ParticipantID, *livekit.AnalyticsClientMeta)
 	participantActiveMutex       sync.RWMutex
 	participantActiveArgsForCall []struct {
@@ -111,6 +123,72 @@ type FakeTelemetryService struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeTelemetryService) EgressEnded(arg1 context.Context, arg2 *livekit.EgressInfo) {
+	fake.egressEndedMutex.Lock()
+	fake.egressEndedArgsForCall = append(fake.egressEndedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}{arg1, arg2})
+	stub := fake.EgressEndedStub
+	fake.recordInvocation("EgressEnded", []interface{}{arg1, arg2})
+	fake.egressEndedMutex.Unlock()
+	if stub != nil {
+		fake.EgressEndedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) EgressEndedCallCount() int {
+	fake.egressEndedMutex.RLock()
+	defer fake.egressEndedMutex.RUnlock()
+	return len(fake.egressEndedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) EgressEndedCalls(stub func(context.Context, *livekit.EgressInfo)) {
+	fake.egressEndedMutex.Lock()
+	defer fake.egressEndedMutex.Unlock()
+	fake.EgressEndedStub = stub
+}
+
+func (fake *FakeTelemetryService) EgressEndedArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
+	fake.egressEndedMutex.RLock()
+	defer fake.egressEndedMutex.RUnlock()
+	argsForCall := fake.egressEndedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) EgressStarted(arg1 context.Context, arg2 *livekit.EgressInfo) {
+	fake.egressStartedMutex.Lock()
+	fake.egressStartedArgsForCall = append(fake.egressStartedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.EgressInfo
+	}{arg1, arg2})
+	stub := fake.EgressStartedStub
+	fake.recordInvocation("EgressStarted", []interface{}{arg1, arg2})
+	fake.egressStartedMutex.Unlock()
+	if stub != nil {
+		fake.EgressStartedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) EgressStartedCallCount() int {
+	fake.egressStartedMutex.RLock()
+	defer fake.egressStartedMutex.RUnlock()
+	return len(fake.egressStartedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) EgressStartedCalls(stub func(context.Context, *livekit.EgressInfo)) {
+	fake.egressStartedMutex.Lock()
+	defer fake.egressStartedMutex.Unlock()
+	fake.EgressStartedStub = stub
+}
+
+func (fake *FakeTelemetryService) EgressStartedArgsForCall(i int) (context.Context, *livekit.EgressInfo) {
+	fake.egressStartedMutex.RLock()
+	defer fake.egressStartedMutex.RUnlock()
+	argsForCall := fake.egressStartedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeTelemetryService) ParticipantActive(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.AnalyticsClientMeta) {
@@ -593,6 +671,10 @@ func (fake *FakeTelemetryService) TrackUnsubscribedArgsForCall(i int) (context.C
 func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.egressEndedMutex.RLock()
+	defer fake.egressEndedMutex.RUnlock()
+	fake.egressStartedMutex.RLock()
+	defer fake.egressStartedMutex.RUnlock()
 	fake.participantActiveMutex.RLock()
 	defer fake.participantActiveMutex.RUnlock()
 	fake.participantJoinedMutex.RLock()
