@@ -8,6 +8,7 @@ import (
 
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
@@ -188,7 +189,7 @@ type Forwarder struct {
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
 
-	receivedFirstKeyFrame atomicBool
+	receivedFirstKeyFrame atomic.Bool
 }
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
@@ -1193,7 +1194,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 func (f *Forwarder) ReceivedFirstKeyFrame() bool {
-	return f.receivedFirstKeyFrame.get()
+	return f.receivedFirstKeyFrame.Load()
 }
 
 // should be called with lock held
@@ -1255,7 +1256,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
-				f.receivedFirstKeyFrame.set(true)
+				f.receivedFirstKeyFrame.Store(true)
 			} else {
 				tp.shouldSendPLI = true
 			}

@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/deque"
@@ -16,6 +15,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 )
 
 const (
@@ -54,7 +54,7 @@ type Buffer struct {
 	twccExt    uint8
 	audioExt   uint8
 	bound      bool
-	closed     atomicBool
+	closed     atomic.Bool
 	mime       string
 
 	// supported feedbacks
@@ -197,7 +197,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
 
-	if b.closed.get() {
+	if b.closed.Load() {
 		err = io.EOF
 		return
 	}
@@ -218,7 +218,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
 	for {
-		if b.closed.get() {
+		if b.closed.Load() {
 			err = io.EOF
 			return
 		}
@@ -242,7 +242,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 
 func (b *Buffer) ReadExtended() (*ExtPacket, error) {
 	for {
-		if b.closed.get() {
+		if b.closed.Load() {
 			return nil, io.EOF
 		}
 		b.Lock()
@@ -267,7 +267,7 @@ func (b *Buffer) Close() error {
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeAudio {
 			b.audioPool.Put(b.bucket.src)
 		}
-		b.closed.set(true)
+		b.closed.Store(true)
 		b.onClose()
 		b.callbacksQueue.Stop()
 	})
@@ -680,7 +680,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	b.Lock()
 	defer b.Unlock()
-	if b.closed.get() {
+	if b.closed.Load() {
 		return 0, io.EOF
 	}
 	return b.bucket.GetPacket(buff, sn)
@@ -744,11 +744,10 @@ func (b *Buffer) GetClockRate() uint32 {
 
 // GetSenderReportData returns the rtp, ntp and nanos of the last sender report
 func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastReceivedTimeInNanosSinceEpoch int64) {
-	rtpTime = atomic.LoadUint32(&b.lastSRRTPTime)
-	ntpTime = atomic.LoadUint64(&b.lastSRNTPTime)
-	lastReceivedTimeInNanosSinceEpoch = atomic.LoadInt64(&b.lastSRRecv)
+	b.RLock()
+	defer b.RUnlock()
 
-	return rtpTime, ntpTime, lastReceivedTimeInNanosSinceEpoch
+	return b.lastSRRTPTime, b.lastSRNTPTime, b.lastSRRecv
 }
 
 func (b *Buffer) GetStats() *StreamStatsWithLayers {

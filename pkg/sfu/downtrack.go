@@ -16,6 +16,7 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/transport/packetio"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -73,7 +74,7 @@ type DownTrack struct {
 	logger        logger.Logger
 	id            livekit.TrackID
 	peerID        livekit.ParticipantID
-	bound         atomicBool
+	bound         atomic.Bool
 	kind          webrtc.RTPCodecType
 	mime          string
 	ssrc          uint32
@@ -103,11 +104,11 @@ type DownTrack struct {
 	connectionStats *connectionquality.ConnectionStats
 
 	// Debug info
-	lastPli     atomicInt64
-	lastRTP     atomicInt64
-	pktsDropped atomicUint32
+	lastPli     atomic.Time
+	lastRTP     atomic.Time
+	pktsDropped atomic.Uint32
 
-	isNACKThrottled atomicBool
+	isNACKThrottled atomic.Bool
 
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -196,7 +197,7 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
-	if d.bound.get() {
+	if d.bound.Load() {
 		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
 	}
 	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
@@ -216,7 +217,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if d.onBind != nil {
 			d.onBind()
 		}
-		d.bound.set(true)
+		d.bound.Store(true)
 		go d.requestFirstKeyframe()
 		return codec, nil
 	}
@@ -226,7 +227,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // Unbind implements the teardown logic when the track is no longer needed. This happens
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
-	d.bound.set(false)
+	d.bound.Store(false)
 	d.receiver.DeleteDownTrack(d.peerID)
 	return nil
 }
@@ -299,20 +300,20 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}()
 
-	if !d.bound.get() {
+	if !d.bound.Load() {
 		return nil
 	}
 
-	d.lastRTP.set(time.Now().UnixNano())
+	d.lastRTP.Store(time.Now())
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
-		d.lastPli.set(time.Now().UnixNano())
+		d.lastPli.Store(time.Now())
 		d.receiver.SendPLI(layer)
 	}
 	if tp.shouldDrop {
 		if tp.isDroppingRelevant {
-			d.pktsDropped.add(1)
+			d.pktsDropped.Inc()
 		}
 		return err
 	}
@@ -328,7 +329,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.header, outbuf)
 		if err != nil {
-			d.pktsDropped.add(1)
+			d.pktsDropped.Inc()
 			return err
 		}
 	}
@@ -342,7 +343,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp.rtp)
 	if err != nil {
-		d.pktsDropped.add(1)
+		d.pktsDropped.Inc()
 		return err
 	}
 
@@ -359,11 +360,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 		d.updatePrimaryStats(pktSize, hdr.Marker)
 		if extPkt.KeyFrame {
-			d.isNACKThrottled.set(false)
+			d.isNACKThrottled.Store(false)
 		}
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
-		d.pktsDropped.add(1)
+		d.pktsDropped.Inc()
 	}
 
 	return err
@@ -706,7 +707,7 @@ func (d *DownTrack) Resync() {
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
-	if !d.bound.get() {
+	if !d.bound.Load() {
 		return nil
 	}
 	return []rtcp.SourceDescriptionChunk{
@@ -727,7 +728,7 @@ func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChun
 }
 
 func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
-	if !d.bound.get() {
+	if !d.bound.Load() {
 		return nil
 	}
 
@@ -899,9 +900,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
-				d.lastPli.set(time.Now().UnixNano())
+				d.lastPli.Store(time.Now())
 				d.receiver.SendPLI(targetLayers.spatial)
-				d.isNACKThrottled.set(true)
+				d.isNACKThrottled.Store(true)
 				pliOnce = false
 			}
 		}
@@ -999,7 +1000,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		return
 	}
 
-	if FlagStopRTXOnPLI && d.isNACKThrottled.get() {
+	if FlagStopRTXOnPLI && d.isNACKThrottled.Load() {
 		return
 	}
 
@@ -1182,9 +1183,9 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"LastTS":            rtpMungerParams.lastTS,
 		"TSOffset":          rtpMungerParams.tsOffset,
 		"LastMarker":        rtpMungerParams.lastMarker,
-		"LastRTP":           d.lastRTP.get(),
-		"LastPli":           d.lastPli.get(),
-		"PacketsDropped":    d.pktsDropped.get(),
+		"LastRTP":           d.lastRTP.Load(),
+		"LastPli":           d.lastPli.Load(),
+		"PacketsDropped":    d.pktsDropped.Load(),
 	}
 
 	senderReport := d.CreateSenderReport()
@@ -1200,7 +1201,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"StreamID":            d.streamID,
 		"SSRC":                d.ssrc,
 		"MimeType":            d.codec.MimeType,
-		"Bound":               d.bound.get(),
+		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
 		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
 		"Stats":               stats,
