@@ -2,8 +2,6 @@ package utils
 
 import (
 	"sync"
-
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -13,7 +11,7 @@ const (
 type OpsQueue struct {
 	lock      sync.RWMutex
 	ops       chan func()
-	isStopped utils.AtomicFlag
+	isStopped bool
 }
 
 func NewOpsQueue() *OpsQueue {
@@ -28,18 +26,19 @@ func (oq *OpsQueue) Start() {
 
 func (oq *OpsQueue) Stop() {
 	oq.lock.Lock()
-	if !oq.isStopped.TrySet(true) {
+	if oq.isStopped {
 		oq.lock.Unlock()
 		return
 	}
 
+	oq.isStopped = true
 	close(oq.ops)
 	oq.lock.Unlock()
 }
 
 func (oq *OpsQueue) Enqueue(op func()) {
 	oq.lock.RLock()
-	if oq.isStopped.Get() {
+	if oq.isStopped {
 		oq.lock.RUnlock()
 		return
 	}
