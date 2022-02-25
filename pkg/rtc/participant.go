@@ -116,10 +116,11 @@ type ParticipantImpl struct {
 	onMetadataUpdate func(types.LocalParticipant)
 	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
 
-	migrateState    atomic.Value // types.MigrateState
-	pendingOffer    *webrtc.SessionDescription
-	onClose         func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
-	onClaimsChanged func(participant types.LocalParticipant)
+	migrateState        atomic.Value // types.MigrateState
+	pendingOffer        *webrtc.SessionDescription
+	pendingDataChannels []*livekit.DataChannelInfo
+	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
+	onClaimsChanged     func(participant types.LocalParticipant)
 }
 
 func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermission) (*ParticipantImpl, error) {
@@ -436,11 +437,14 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	})
 }
 
-func (p *ParticipantImpl) AddMigratedTrack(cid string, ti *livekit.TrackInfo) {
+func (p *ParticipantImpl) SetMigrateInfo(mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo) {
 	p.pendingTracksLock.Lock()
 	defer p.pendingTracksLock.Unlock()
 
-	p.pendingTracks[cid] = &pendingTrackInfo{ti, true}
+	for _, t := range mediaTracks {
+		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{t.GetTrack(), true}
+	}
+	p.pendingDataChannels = dataChannels
 }
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
@@ -560,6 +564,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.pendingOffer = nil
 	}
 	p.lock.Unlock()
+	if s == types.MigrateStateComplete {
+		p.handlePendingDataChannels()
+	}
 	if pendingOffer != nil {
 		p.HandleOffer(*pendingOffer)
 	}
@@ -1604,4 +1611,47 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info["SubscribedTracks"] = subscribedTrackInfo
 
 	return info
+}
+
+func (p *ParticipantImpl) handlePendingDataChannels() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	ordered := true
+	negotiated := true
+	for _, ci := range p.pendingDataChannels {
+		if ci.Label == lossyDataChannel && p.lossyDC == nil {
+			retransmits := uint16(0)
+			id := uint16(ci.GetId())
+			dc, err := p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+				Ordered:        &ordered,
+				MaxRetransmits: &retransmits,
+				Negotiated:     &negotiated,
+				ID:             &id,
+			})
+			if err != nil {
+				p.params.Logger.Errorw("create migrated data channel failed", err, "label", lossyDataChannel)
+			} else {
+				p.lossyDC = dc
+				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+					p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
+				})
+			}
+		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
+			id := uint16(ci.GetId())
+			dc, err := p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+				Ordered:    &ordered,
+				Negotiated: &negotiated,
+				ID:         &id,
+			})
+			if err != nil {
+				p.params.Logger.Errorw("create migrated data channel failed", err, "label", reliableDataChannel)
+			} else {
+				p.reliableDC = dc
+				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+					p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
+				})
+			}
+		}
+	}
+	p.pendingDataChannels = nil
 }
