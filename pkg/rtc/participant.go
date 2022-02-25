@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -17,6 +16,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -66,7 +66,7 @@ type ParticipantImpl struct {
 	params              ParticipantParams
 	publisher           *PCTransport
 	subscriber          *PCTransport
-	isClosed            utils.AtomicFlag
+	isClosed            atomic.Bool
 	permission          *livekit.ParticipantPermission
 	state               atomic.Value // livekit.ParticipantInfo_State
 	updateCache         *lru.Cache
@@ -304,7 +304,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
 		Recorder: p.IsRecorder(),
-		Version:  atomic.AddUint32(&p.version, 1),
+		Version:  atomic.NewUint32(p.version).Inc(),
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 	if p.params.Grants != nil {
@@ -478,7 +478,7 @@ func (p *ParticipantImpl) Start() {
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool) error {
-	if !p.isClosed.TrySet(true) {
+	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}

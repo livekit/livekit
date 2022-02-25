@@ -14,11 +14,11 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/thoas/go-funk"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -40,8 +40,8 @@ type RTCClient struct {
 	wsLock             sync.Mutex
 	ctx                context.Context
 	cancel             context.CancelFunc
-	connected          utils.AtomicFlag
-	iceConnected       utils.AtomicFlag
+	connected          atomic.Bool
+	iceConnected       atomic.Bool
 	me                 *webrtc.MediaEngine // optional, populated only when receiving tracks
 	subscribedTracks   map[livekit.ParticipantID][]*webrtc.TrackRemote
 	localParticipant   *livekit.ParticipantInfo
@@ -51,8 +51,8 @@ type RTCClient struct {
 	reliableDCSub       *webrtc.DataChannel
 	lossyDC             *webrtc.DataChannel
 	lossyDCSub          *webrtc.DataChannel
-	publisherConnected  utils.AtomicFlag
-	publisherNegotiated utils.AtomicFlag
+	publisherConnected  atomic.Bool
+	publisherNegotiated atomic.Bool
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -216,9 +216,9 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 				}
 			}
 
-			initialConnect := !c.iceConnected.Get()
+			initialConnect := !c.iceConnected.Load()
 			c.pendingTrackWriters = nil
-			c.iceConnected.TrySet(true)
+			c.iceConnected.Store(true)
 
 			if initialConnect && c.OnConnected != nil {
 				go c.OnConnected()
@@ -231,13 +231,13 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 			"participant", c.localParticipant.Identity)
 
 		if state == webrtc.ICEConnectionStateConnected {
-			c.publisherConnected.TrySet(true)
+			c.publisherConnected.Store(true)
 			// check if publisher triggered negotiate (!subscriberPrimary)
-			if c.publisherNegotiated.Get() {
-				c.iceConnected.TrySet(true)
+			if c.publisherNegotiated.Load() {
+				c.iceConnected.Store(true)
 			}
 		} else {
-			c.publisherConnected.TrySet(false)
+			c.publisherConnected.Store(false)
 		}
 	})
 
@@ -277,7 +277,7 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 			// if publish only, negotiate
 			if !msg.Join.SubscriberPrimary {
-				c.publisherNegotiated.TrySet(true)
+				c.publisherNegotiated.Store(true)
 				c.publisher.Negotiate()
 			}
 
@@ -345,7 +345,7 @@ func (c *RTCClient) WaitUntilConnected() error {
 			}
 			return fmt.Errorf("%s could not connect after timeout", id)
 		case <-time.After(10 * time.Millisecond):
-			if c.iceConnected.Get() {
+			if c.iceConnected.Load() {
 				return nil
 			}
 		}
@@ -409,8 +409,8 @@ func (c *RTCClient) Stop() {
 			Leave: &livekit.LeaveRequest{},
 		},
 	})
-	c.connected.TrySet(false)
-	c.iceConnected.TrySet(false)
+	c.connected.Store(false)
+	c.iceConnected.Store(false)
 	_ = c.conn.Close()
 	c.publisher.Close()
 	c.subscriber.Close()
@@ -486,7 +486,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	writer = NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
-	if c.iceConnected.Get() {
+	if c.iceConnected.Load() {
 		err = writer.Start()
 	} else {
 		c.pendingTrackWriters = append(c.pendingTrackWriters, writer)
@@ -578,7 +578,7 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 }
 
 func (c *RTCClient) ensurePublisherConnected() error {
-	if c.publisherConnected.Get() {
+	if c.publisherConnected.Load() {
 		return nil
 	}
 
@@ -587,12 +587,12 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		c.publisher.Negotiate()
 	}
 
-	dcOpen := utils.AtomicFlag{}
+	dcOpen := atomic.NewBool(false)
 	c.reliableDC.OnOpen(func() {
-		dcOpen.TrySet(true)
+		dcOpen.Store(true)
 	})
 	if c.reliableDC.ReadyState() == webrtc.DataChannelStateOpen {
-		dcOpen.TrySet(true)
+		dcOpen.Store(true)
 	}
 
 	// wait until connected, increase wait time since it takes more than 10s sometimes on GH
@@ -603,7 +603,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		case <-ctx.Done():
 			return fmt.Errorf("could not connect publisher after timeout")
 		case <-time.After(10 * time.Millisecond):
-			if c.publisherConnected.Get() && dcOpen.Get() {
+			if c.publisherConnected.Load() && dcOpen.Load() {
 				return nil
 			}
 		}
@@ -660,7 +660,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 		return err
 	}
 
-	if !c.connected.TrySet(true) {
+	if c.connected.Swap(true) {
 		// already connected
 		return nil
 	}

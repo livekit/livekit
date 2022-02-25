@@ -7,8 +7,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 )
 
 const (
@@ -43,7 +43,7 @@ type ConnectionStats struct {
 	qualityWindows map[uint32]*qualityWindow
 
 	done     chan struct{}
-	isClosed utils.AtomicFlag
+	isClosed atomic.Bool
 }
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
@@ -60,7 +60,7 @@ func (cs *ConnectionStats) Start() {
 }
 
 func (cs *ConnectionStats) Close() {
-	if !cs.isClosed.TrySet(true) {
+	if cs.isClosed.Swap(true) {
 		return
 	}
 
@@ -79,7 +79,7 @@ func (cs *ConnectionStats) GetScore() float32 {
 }
 
 func (cs *ConnectionStats) UpdateWindow(ssrc uint32, extHighestSeqNum uint32, packetsLost uint32, rtt uint32, jitter uint32) {
-	if cs.isClosed.Get() {
+	if cs.isClosed.Load() {
 		return
 	}
 

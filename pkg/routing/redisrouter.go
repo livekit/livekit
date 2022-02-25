@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -31,7 +32,7 @@ type RedisRouter struct {
 
 	rc        *redis.Client
 	ctx       context.Context
-	isStarted utils.AtomicFlag
+	isStarted atomic.Bool
 
 	pubsub *redis.PubSub
 	cancel func()
@@ -278,7 +279,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 }
 
 func (r *RedisRouter) Start() error {
-	if !r.isStarted.TrySet(true) {
+	if r.isStarted.Swap(true) {
 		return nil
 	}
 
@@ -303,7 +304,7 @@ func (r *RedisRouter) Drain() {
 }
 
 func (r *RedisRouter) Stop() {
-	if !r.isStarted.TrySet(false) {
+	if !r.isStarted.Swap(false) {
 		return
 	}
 	logger.Debugw("stopping RedisRouter")
