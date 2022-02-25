@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"go.uber.org/atomic"
 )
 
@@ -52,6 +53,8 @@ type StreamTracker struct {
 	// only access by the same goroutine as Observe
 	lastSN uint16
 
+	callbacksQueue *utils.OpsQueue
+
 	isStopped atomic.Bool
 }
 
@@ -61,6 +64,7 @@ func NewStreamTracker(samplesRequired uint32, cyclesRequired uint64, cycleDurati
 		cyclesRequired:  cyclesRequired,
 		cycleDuration:   cycleDuration,
 		status:          StreamStatusStopped,
+		callbacksQueue:  utils.NewOpsQueue(),
 	}
 	return s
 }
@@ -86,7 +90,9 @@ func (s *StreamTracker) maybeSetStatus(status StreamStatus) {
 	s.statusMu.Unlock()
 
 	if changed && s.onStatusChanged != nil {
-		s.onStatusChanged(status)
+		s.callbacksQueue.Enqueue(func() {
+			s.onStatusChanged(status)
+		})
 	}
 }
 
@@ -105,12 +111,15 @@ func (s *StreamTracker) init() {
 }
 
 func (s *StreamTracker) Start() {
+	s.callbacksQueue.Start()
 }
 
 func (s *StreamTracker) Stop() {
 	if s.isStopped.Swap(true) {
 		return
 	}
+
+	s.callbacksQueue.Stop()
 
 	// bump generation to trigger exit of worker
 	s.generation.Inc()
