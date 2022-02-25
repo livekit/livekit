@@ -120,7 +120,7 @@ func (cs *ConnectionStats) updateScore() float32 {
 	maxRTT := uint32(0)
 	maxJitter := uint32(0)
 	for _, qw := range cs.qualityWindows {
-		expectedPacketsInInterval += qw.endSeqNum - qw.endSeqNum + 1
+		expectedPacketsInInterval += qw.endSeqNum - qw.startSeqNum + 1
 		lostPacketsInInterval += qw.endPacketsLost - qw.startPacketsLost
 		if qw.maxRTT > maxRTT {
 			maxRTT = qw.maxRTT

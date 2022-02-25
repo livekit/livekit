@@ -136,7 +136,7 @@ func (n *nack) getNack(now time.Time, rtt uint32) (shouldSend bool, shouldRemove
 	var requiredInterval time.Duration
 	if n.tries > 0 {
 		// exponentially backoff retries, but cap maximum spacing between retries
-		requiredInterval := maxInterval
+		requiredInterval = maxInterval
 		backoffInterval := time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(n.tries-1))) * time.Millisecond
 		if backoffInterval < requiredInterval {
 			requiredInterval = backoffInterval

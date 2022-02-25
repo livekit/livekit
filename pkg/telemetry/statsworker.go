@@ -287,8 +287,6 @@ func (stats *Stats) coalesce() {
 
 	// update currentStats
 	stats.curStats = &curStats
-
-	return
 }
 
 // find delta between  curStats and prevStats and prepare proto payload

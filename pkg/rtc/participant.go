@@ -81,9 +81,6 @@ type ParticipantImpl struct {
 	// when first connected
 	connectedAt time.Time
 
-	// JSON encoded metadata to pass to clients
-	metadata string
-
 	rtcpCh chan []rtcp.Packet
 
 	// hold reference for MediaTrack

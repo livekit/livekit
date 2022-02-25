@@ -457,7 +457,7 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 
 	case *livekit.RTCNodeMessage_KeepAlive:
-		if time.Now().Sub(time.Unix(rm.SenderTime, 0)) > statsUpdateInterval {
+		if time.Since(time.Unix(rm.SenderTime, 0)) > statsUpdateInterval {
 			logger.Infow("keep alive too old, skipping", "senderTime", rm.SenderTime)
 			break
 		}
