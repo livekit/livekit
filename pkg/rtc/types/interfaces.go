@@ -152,7 +152,7 @@ type LocalParticipant interface {
 	// session migration
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
+	SetMigrateInfo(mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 
 	UpdateRTT(rtt uint32)

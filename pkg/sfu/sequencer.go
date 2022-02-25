@@ -112,82 +112,79 @@ func newSequencer(maxTrack int, logger logger.Logger) *sequencer {
 	}
 }
 
-func (n *sequencer) setRTT(rtt uint32) {
-	n.Lock()
-	defer n.Unlock()
+func (s *sequencer) setRTT(rtt uint32) {
+	s.Lock()
+	defer s.Unlock()
 
 	if rtt == 0 {
-		n.rtt = defaultRtt
+		s.rtt = defaultRtt
 	} else {
-		n.rtt = rtt
+		s.rtt = rtt
 	}
 }
 
-func (n *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packetMeta {
-	n.Lock()
-	defer n.Unlock()
+func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packetMeta {
+	s.Lock()
+	defer s.Unlock()
 
-	inc := offSn - n.headSN
-	step := 0
-	switch {
-	case !n.init:
-		n.headSN = offSn
-		n.init = true
-	case inc == 0:
-		// duplicate
-		return nil
-	case inc < (1 << 15): // in-order packet
-		n.step += int(inc)
-		if n.step >= n.max {
-			n.step -= n.max
-		}
-		step = n.step
-		n.headSN = offSn
-	default: // out-of-order packet
-		back := int(n.headSN - offSn)
-		if back >= n.max {
-			n.logger.Debugw("old packet, can not be sequenced", "head", sn, "received", offSn)
-			return nil
-		}
-		step = n.step - back
-		if step < 0 {
-			step += n.max
-		}
+	if !s.init {
+		s.headSN = offSn - 1
+		s.init = true
 	}
 
-	n.seq[step] = packetMeta{
+	diff := offSn - s.headSN
+	if diff == 0 {
+		// duplicate
+		return nil
+	}
+
+	slot := 0
+	if diff > (1 << 15) {
+		// out-of-order
+		back := int(s.headSN - offSn)
+		if back >= s.max {
+			s.logger.Debugw("old packet, can not be sequenced", "head", sn, "received", offSn)
+			return nil
+		}
+		slot = s.step - back - 1
+	} else {
+		slot = s.step + int(diff) - 1
+
+		s.headSN = offSn
+		// for next packet
+		s.step = s.wrap(s.step + int(diff))
+	}
+
+	slot = s.wrap(slot)
+	s.seq[slot] = packetMeta{
 		sourceSeqNo: sn,
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
 		layer:       layer,
 	}
-	return &n.seq[step]
+	return &s.seq[slot]
 }
 
-func (n *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
-	n.Lock()
-	defer n.Unlock()
+func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
+	s.Lock()
+	defer s.Unlock()
 
 	meta := make([]packetMeta, 0, len(seqNo))
-	refTime := uint32(time.Now().UnixNano()/1e6 - n.startTime)
+	refTime := uint32(time.Now().UnixNano()/1e6 - s.startTime)
 	for _, sn := range seqNo {
-		diff := n.headSN - sn
-		if diff > (1<<15) || int(diff) >= n.max {
+		diff := s.headSN - sn
+		if diff > (1<<15) || int(diff) >= s.max {
 			// out-of-order from head (should not happen) or too old
 			continue
 		}
 
-		step := n.step - int(diff)
-		if step < 0 {
-			step += n.max
-		}
-
-		seq := &n.seq[step]
+		slot := s.wrap(s.step - int(diff) - 1)
+		seq := &s.seq[slot]
 		if seq.targetSeqNo != sn {
 			continue
 		}
 
-		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*n.rtt))) {
+		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
 			seq.nacked++
 			seq.lastNack = refTime
 			meta = append(meta, *seq)
@@ -195,4 +192,16 @@ func (n *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 	}
 
 	return meta
+}
+
+func (s *sequencer) wrap(slot int) int {
+	for slot < 0 {
+		slot += s.max
+	}
+
+	for slot >= s.max {
+		slot -= s.max
+	}
+
+	return slot
 }

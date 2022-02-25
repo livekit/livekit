@@ -2,10 +2,9 @@ package sfu
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/livekit/protocol/utils"
+	"go.uber.org/atomic"
 )
 
 type StreamStatus int32
@@ -37,9 +36,9 @@ type StreamTracker struct {
 
 	onStatusChanged func(status StreamStatus)
 
-	paused         atomicBool
-	countSinceLast uint32 // number of packets received since last check
-	generation     atomicUint32
+	paused         atomic.Bool
+	countSinceLast atomic.Uint32 // number of packets received since last check
+	generation     atomic.Uint32
 
 	initMu      sync.Mutex
 	initialized bool
@@ -53,7 +52,7 @@ type StreamTracker struct {
 	// only access by the same goroutine as Observe
 	lastSN uint16
 
-	isStopped utils.AtomicFlag
+	isStopped atomic.Bool
 }
 
 func NewStreamTracker(samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
@@ -102,30 +101,30 @@ func (s *StreamTracker) maybeSetStopped() {
 func (s *StreamTracker) init() {
 	s.maybeSetActive()
 
-	go s.detectWorker(s.generation.get())
+	go s.detectWorker(s.generation.Load())
 }
 
 func (s *StreamTracker) Start() {
 }
 
 func (s *StreamTracker) Stop() {
-	if !s.isStopped.TrySet(true) {
+	if s.isStopped.Swap(true) {
 		return
 	}
 
 	// bump generation to trigger exit of worker
-	s.generation.add(1)
+	s.generation.Inc()
 }
 
 func (s *StreamTracker) Reset() {
-	if s.isStopped.Get() {
+	if s.isStopped.Load() {
 		return
 	}
 
 	// bump generation to trigger exit of current worker
-	s.generation.add(1)
+	s.generation.Inc()
 
-	atomic.StoreUint32(&s.countSinceLast, 0)
+	s.countSinceLast.Store(0)
 	s.cycleCount = 0
 
 	s.initMu.Lock()
@@ -138,12 +137,12 @@ func (s *StreamTracker) Reset() {
 }
 
 func (s *StreamTracker) SetPaused(paused bool) {
-	s.paused.set(paused)
+	s.paused.Store(paused)
 }
 
 // Observe a packet that's received
 func (s *StreamTracker) Observe(sn uint16) {
-	if s.paused.get() {
+	if s.paused.Load() {
 		return
 	}
 
@@ -154,7 +153,7 @@ func (s *StreamTracker) Observe(sn uint16) {
 		s.initMu.Unlock()
 
 		s.lastSN = sn
-		atomic.AddUint32(&s.countSinceLast, 1)
+		s.countSinceLast.Inc()
 
 		// declare stream active and start the detection worker
 		go s.init()
@@ -168,7 +167,7 @@ func (s *StreamTracker) Observe(sn uint16) {
 		return
 	}
 	s.lastSN = sn
-	atomic.AddUint32(&s.countSinceLast, 1)
+	s.countSinceLast.Inc()
 }
 
 func (s *StreamTracker) detectWorker(generation uint32) {
@@ -176,7 +175,7 @@ func (s *StreamTracker) detectWorker(generation uint32) {
 
 	for {
 		<-ticker.C
-		if generation != s.generation.get() {
+		if generation != s.generation.Load() {
 			return
 		}
 
@@ -185,11 +184,11 @@ func (s *StreamTracker) detectWorker(generation uint32) {
 }
 
 func (s *StreamTracker) detectChanges() {
-	if s.paused.get() {
+	if s.paused.Load() {
 		return
 	}
 
-	if atomic.LoadUint32(&s.countSinceLast) >= s.samplesRequired {
+	if s.countSinceLast.Load() >= s.samplesRequired {
 		s.cycleCount += 1
 	} else {
 		s.cycleCount = 0
@@ -203,5 +202,5 @@ func (s *StreamTracker) detectChanges() {
 		s.maybeSetActive()
 	}
 
-	atomic.StoreUint32(&s.countSinceLast, 0)
+	s.countSinceLast.Store(0)
 }

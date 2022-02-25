@@ -3,7 +3,6 @@ package buffer
 import (
 	"encoding/binary"
 	"errors"
-	"sync/atomic"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -13,20 +12,6 @@ var (
 	errNilPacket     = errors.New("invalid nil packet")
 	errInvalidPacket = errors.New("invalid packet")
 )
-
-type atomicBool int32
-
-func (a *atomicBool) set(value bool) {
-	var i int32
-	if value {
-		i = 1
-	}
-	atomic.StoreInt32((*int32)(a), i)
-}
-
-func (a *atomicBool) get() bool {
-	return atomic.LoadInt32((*int32)(a)) != 0
-}
 
 // VP8 is a helper to get temporal data from VP8 packet header
 /*

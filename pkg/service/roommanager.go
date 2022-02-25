@@ -33,7 +33,7 @@ type RoomManager struct {
 	rtcConfig   *rtc.WebRTCConfig
 	currentNode routing.LocalNode
 	router      routing.Router
-	roomStore   RoomStore
+	roomStore   ObjectStore
 	telemetry   telemetry.TelemetryService
 
 	rooms map[livekit.RoomName]*rtc.Room
@@ -41,7 +41,7 @@ type RoomManager struct {
 
 func NewLocalRoomManager(
 	conf *config.Config,
-	roomStore RoomStore,
+	roomStore ObjectStore,
 	currentNode routing.LocalNode,
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
@@ -381,7 +381,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			if time.Now().Sub(lastTokenUpdate) > tokenRefreshInterval {
+			if time.Since(lastTokenUpdate) > tokenRefreshInterval {
 				pLogger.Debugw("refreshing client token after interval")
 				// refresh token with the first API Key/secret pair
 				if err := r.refreshToken(participant); err != nil {

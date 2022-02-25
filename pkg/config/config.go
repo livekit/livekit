@@ -28,7 +28,7 @@ type CongestionControlProbeMode string
 
 const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
-	CongestionControlProbeModeMedia                              = "media"
+	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
 )
 
 type Config struct {

@@ -7,8 +7,8 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -127,17 +127,17 @@ func scenarioDataPublish(t *testing.T) {
 
 	payload := "test bytes"
 
-	received := utils.AtomicFlag{}
+	received := atomic.NewBool(false)
 	c2.OnDataReceived = func(data []byte, sid string) {
 		if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
-			received.TrySet(true)
+			received.Store(true)
 		}
 	}
 
 	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
 
 	testutils.WithTimeout(t, func() string {
-		if received.Get() {
+		if received.Load() {
 			return ""
 		} else {
 			return "c2 did not receive published data"

@@ -147,7 +147,6 @@ func TestNack(t *testing.T) {
 func TestNewBuffer(t *testing.T) {
 	type args struct {
 		options Options
-		ssrc    uint32
 	}
 	tests := []struct {
 		name string

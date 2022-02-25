@@ -13,8 +13,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
 
-const grantsKey = "grants"
-
 func TestDeleteRoom(t *testing.T) {
 	t.Run("normal deletion", func(t *testing.T) {
 		svc := newTestRoomService()
@@ -23,7 +21,7 @@ func TestDeleteRoom(t *testing.T) {
 				RoomCreate: true,
 			},
 		}
-		ctx := context.WithValue(context.Background(), grantsKey, grant)
+		ctx := service.WithGrants(context.Background(), grant)
 		svc.store.LoadRoomReturns(nil, service.ErrRoomNotFound)
 		_, err := svc.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 			Room: "testroom",
@@ -36,7 +34,7 @@ func TestDeleteRoom(t *testing.T) {
 		grant := &auth.ClaimGrants{
 			Video: &auth.VideoGrant{},
 		}
-		ctx := context.WithValue(context.Background(), grantsKey, grant)
+		ctx := service.WithGrants(context.Background(), grant)
 		_, err := svc.DeleteRoom(ctx, &livekit.DeleteRoomRequest{
 			Room: "testroom",
 		})
@@ -47,7 +45,7 @@ func TestDeleteRoom(t *testing.T) {
 func newTestRoomService() *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
-	store := &servicefakes.FakeRORoomStore{}
+	store := &servicefakes.FakeServiceStore{}
 	svc, err := service.NewRoomService(allocator, store, router)
 	if err != nil {
 		panic(err)
@@ -64,5 +62,5 @@ type TestRoomService struct {
 	service.RoomService
 	router    *routingfakes.FakeRouter
 	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeRORoomStore
+	store     *servicefakes.FakeServiceStore
 }

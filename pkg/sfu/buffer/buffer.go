@@ -6,15 +6,16 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/deque"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 )
 
 const (
@@ -53,7 +54,7 @@ type Buffer struct {
 	twccExt    uint8
 	audioExt   uint8
 	bound      bool
-	closed     atomicBool
+	closed     atomic.Bool
 	mime       string
 
 	// supported feedbacks
@@ -89,7 +90,8 @@ type Buffer struct {
 	onAudioLevel func(level uint8, durationMs uint32)
 	feedbackCB   func([]rtcp.Packet)
 	feedbackTWCC func(sn uint16, timeNS int64, marker bool)
-	callbackOps  chan func()
+
+	callbacksQueue *utils.OpsQueue
 
 	// logger
 	logger logger.Logger
@@ -109,12 +111,12 @@ type Options struct {
 // NewBuffer constructs a new Buffer
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 	b := &Buffer{
-		mediaSSRC:   ssrc,
-		videoPool:   vp,
-		audioPool:   ap,
-		pliThrottle: int64(500 * time.Millisecond),
-		logger:      logger.Logger(logger.GetLogger()), // will be reset with correct context via SetLogger
-		callbackOps: make(chan func(), 50),
+		mediaSSRC:      ssrc,
+		videoPool:      vp,
+		audioPool:      ap,
+		pliThrottle:    int64(500 * time.Millisecond),
+		logger:         logger.Logger(logger.GetLogger()), // will be reset with correct context via SetLogger
+		callbacksQueue: utils.NewOpsQueue(),
 	}
 	b.bitrate.Store(make([]int64, len(b.bitrateHelper)))
 	b.extPackets.SetMinCapacity(7)
@@ -132,7 +134,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return
 	}
 
-	go b.doCallbacks()
+	b.callbacksQueue.Start()
 
 	b.clockRate = codec.ClockRate
 	b.maxBitrate = int64(o.MaxBitRate)
@@ -190,18 +192,12 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.logger.Debugw("NewBuffer", "MaxBitRate", o.MaxBitRate)
 }
 
-func (b *Buffer) doCallbacks() {
-	for op := range b.callbackOps {
-		op()
-	}
-}
-
 // Write adds an RTP Packet, out of order, new packet may be arrived later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	b.Lock()
 	defer b.Unlock()
 
-	if b.closed.get() {
+	if b.closed.Load() {
 		err = io.EOF
 		return
 	}
@@ -222,7 +218,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
 	for {
-		if b.closed.get() {
+		if b.closed.Load() {
 			err = io.EOF
 			return
 		}
@@ -246,7 +242,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 
 func (b *Buffer) ReadExtended() (*ExtPacket, error) {
 	for {
-		if b.closed.get() {
+		if b.closed.Load() {
 			return nil, io.EOF
 		}
 		b.Lock()
@@ -271,9 +267,9 @@ func (b *Buffer) Close() error {
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeAudio {
 			b.audioPool.Put(b.bucket.src)
 		}
-		b.closed.set(true)
+		b.closed.Store(true)
 		b.onClose()
-		close(b.callbackOps)
+		b.callbacksQueue.Stop()
 	})
 	return nil
 }
@@ -307,9 +303,9 @@ func (b *Buffer) SendPLI() {
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}
 
-	b.callbackOps <- func() {
+	b.callbacksQueue.Enqueue(func() {
 		b.feedbackCB(pli)
-	}
+	})
 }
 
 func (b *Buffer) SetRTT(rtt uint32) {
@@ -457,9 +453,9 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 		if ext := p.GetExtension(b.twccExt); len(ext) > 1 {
 			sn := binary.BigEndian.Uint16(ext[0:2])
 			marker := p.Marker
-			b.callbackOps <- func() {
+			b.callbacksQueue.Enqueue(func() {
 				b.feedbackTWCC(sn, arrivalTime, marker)
-			}
+			})
 		}
 	}
 
@@ -474,9 +470,9 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 				if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
 					duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
 					if duration > 0 {
-						b.callbackOps <- func() {
+						b.callbacksQueue.Enqueue(func() {
 							b.onAudioLevel(ext.Level, uint32(duration))
-						}
+						})
 					}
 
 					b.latestTSForAudioLevel = p.Timestamp
@@ -523,9 +519,9 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		b.callbackOps <- func() {
+		b.callbacksQueue.Enqueue(func() {
 			b.feedbackCB(r)
-		}
+		})
 		b.stats.TotalNACKs += uint32(numSeqNumsNacked)
 	}
 }
@@ -557,9 +553,9 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 	// RTCP reports
 	pkts := b.getRTCP()
-	b.callbackOps <- func() {
+	b.callbacksQueue.Enqueue(func() {
 		b.feedbackCB(pkts)
-	}
+	})
 }
 
 func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
@@ -684,7 +680,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	b.Lock()
 	defer b.Unlock()
-	if b.closed.get() {
+	if b.closed.Load() {
 		return 0, io.EOF
 	}
 	return b.bucket.GetPacket(buff, sn)
@@ -748,11 +744,10 @@ func (b *Buffer) GetClockRate() uint32 {
 
 // GetSenderReportData returns the rtp, ntp and nanos of the last sender report
 func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastReceivedTimeInNanosSinceEpoch int64) {
-	rtpTime = atomic.LoadUint32(&b.lastSRRTPTime)
-	ntpTime = atomic.LoadUint64(&b.lastSRNTPTime)
-	lastReceivedTimeInNanosSinceEpoch = atomic.LoadInt64(&b.lastSRRecv)
+	b.RLock()
+	defer b.RUnlock()
 
-	return rtpTime, ntpTime, lastReceivedTimeInNanosSinceEpoch
+	return b.lastSRRTPTime, b.lastSRNTPTime, b.lastSRRecv
 }
 
 func (b *Buffer) GetStats() *StreamStatsWithLayers {

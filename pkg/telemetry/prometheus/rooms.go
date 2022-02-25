@@ -68,7 +68,7 @@ func RoomStarted() {
 
 func RoomEnded(startedAt time.Time) {
 	if !startedAt.IsZero() {
-		promRoomDuration.Observe(float64(time.Now().Sub(startedAt)) / float64(time.Second))
+		promRoomDuration.Observe(float64(time.Since(startedAt)) / float64(time.Second))
 	}
 	promRoomTotal.Sub(1)
 	atomic.AddInt32(&atomicRoomTotal, -1)

@@ -9,10 +9,10 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -153,7 +153,7 @@ type StreamAllocator struct {
 	eventChMu sync.RWMutex
 	eventCh   chan Event
 
-	isStopped utils.AtomicFlag
+	isStopped atomic.Bool
 }
 
 func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
@@ -182,7 +182,7 @@ func (s *StreamAllocator) Start() {
 
 func (s *StreamAllocator) Stop() {
 	s.eventChMu.Lock()
-	if !s.isStopped.TrySet(true) {
+	if s.isStopped.Swap(true) {
 		s.eventChMu.Unlock()
 		return
 	}
@@ -320,7 +320,7 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 
 func (s *StreamAllocator) postEvent(event Event) {
 	s.eventChMu.RLock()
-	if s.isStopped.Get() {
+	if s.isStopped.Load() {
 		s.eventChMu.RUnlock()
 		return
 	}
@@ -340,7 +340,7 @@ func (s *StreamAllocator) ping() {
 
 	for {
 		<-ticker.C
-		if s.isStopped.Get() {
+		if s.isStopped.Load() {
 			return
 		}
 

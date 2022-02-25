@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -25,8 +25,8 @@ const (
 
 type MediaTrackReceiver struct {
 	params      MediaTrackReceiverParams
-	muted       utils.AtomicFlag
-	simulcasted utils.AtomicFlag
+	muted       atomic.Bool
+	simulcasted atomic.Bool
 
 	lock            sync.RWMutex
 	receiver        sfu.TrackReceiver
@@ -140,11 +140,11 @@ func (t *MediaTrackReceiver) PublisherIdentity() livekit.ParticipantIdentity {
 }
 
 func (t *MediaTrackReceiver) IsSimulcast() bool {
-	return t.simulcasted.Get()
+	return t.simulcasted.Load()
 }
 
 func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
-	t.simulcasted.TrySet(simulcast)
+	t.simulcasted.Store(simulcast)
 }
 
 func (t *MediaTrackReceiver) Name() string {
@@ -152,17 +152,16 @@ func (t *MediaTrackReceiver) Name() string {
 }
 
 func (t *MediaTrackReceiver) IsMuted() bool {
-	return t.muted.Get()
+	return t.muted.Load()
 }
 
 func (t *MediaTrackReceiver) SetMuted(muted bool) {
-	t.muted.TrySet(muted)
+	t.muted.Store(muted)
 
-	t.lock.RLock()
-	if t.receiver != nil {
-		t.receiver.SetUpTrackPaused(muted)
+	receiver := t.Receiver()
+	if receiver != nil {
+		receiver.SetUpTrackPaused(muted)
 	}
-	t.lock.RUnlock()
 
 	t.MediaTrackSubscriptions.SetMuted(muted)
 }
@@ -179,10 +178,9 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
+	receiver := t.Receiver()
 
-	if t.receiver == nil {
+	if receiver == nil {
 		// cannot add, no receiver
 		return errors.New("cannot subscribe without a receiver in place")
 	}
@@ -195,7 +193,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 		streamId = PackStreamID(t.PublisherID(), t.ID())
 	}
 
-	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, t.receiver.Codec(), NewWrappedReceiver(t.receiver, t.ID(), streamId))
+	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, receiver.Codec(), NewWrappedReceiver(receiver, t.ID(), streamId))
 	if err != nil {
 		return err
 	}
@@ -205,7 +203,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 			downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 		}
 
-		t.receiver.AddDownTrack(downTrack)
+		receiver.AddDownTrack(downTrack)
 	}
 	return nil
 }
@@ -341,20 +339,18 @@ func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":       t.ID(),
 		"Kind":     t.Kind().String(),
-		"PubMuted": t.muted.Get(),
+		"PubMuted": t.muted.Load(),
 	}
 
 	info["DownTracks"] = t.MediaTrackSubscriptions.DebugInfo()
 
-	t.lock.RLock()
-	if t.receiver != nil {
-		receiverInfo := t.receiver.DebugInfo()
+	receiver := t.Receiver()
+	if receiver != nil {
+		receiverInfo := receiver.DebugInfo()
 		for k, v := range receiverInfo {
 			info[k] = v
 		}
 	}
-	t.lock.RUnlock()
-
 	return info
 }
 
@@ -370,12 +366,10 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 		if f != nil && !t.IsMuted() {
 			_ = f(t.ID(), subscribedQualities, maxSubscribedQuality)
 		}
-
-		t.lock.RLock()
-		if t.receiver != nil {
-			t.receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(maxSubscribedQuality))
+		receiver := t.Receiver()
+		if receiver != nil {
+			receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(maxSubscribedQuality))
 		}
-		t.lock.RUnlock()
 	})
 }
 
