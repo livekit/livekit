@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	logConfig config.LoggingConfig
 	pionLevel zapcore.Level
 )
 
@@ -43,7 +42,6 @@ func SetLogger(l logr.Logger) {
 }
 
 func InitFromConfig(config config.LoggingConfig) {
-	logConfig = config
 	lvl := parseLevel(config.Level)
 	pionLevel = parseLevel(config.PionLevel)
 	if lvl > pionLevel {

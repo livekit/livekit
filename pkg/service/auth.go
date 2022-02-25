@@ -15,9 +15,10 @@ import (
 const (
 	authorizationHeader = "Authorization"
 	bearerPrefix        = "Bearer "
-	grantsKey           = "grants"
 	accessTokenParam    = "access_token"
 )
+
+type grantsKey struct{}
 
 var (
 	ErrPermissionDenied = errors.New("permissions denied")
@@ -75,18 +76,22 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		// set grants in context
 		ctx := r.Context()
-		r = r.WithContext(context.WithValue(ctx, grantsKey, grants))
+		r = r.WithContext(context.WithValue(ctx, grantsKey{}, grants))
 	}
 
 	next.ServeHTTP(w, r)
 }
 
 func GetGrants(ctx context.Context) *auth.ClaimGrants {
-	claims, ok := ctx.Value(grantsKey).(*auth.ClaimGrants)
+	claims, ok := ctx.Value(grantsKey{}).(*auth.ClaimGrants)
 	if !ok {
 		return nil
 	}
 	return claims
+}
+
+func WithGrants(ctx context.Context, grants *auth.ClaimGrants) context.Context {
+	return context.WithValue(ctx, grantsKey{}, grants)
 }
 
 func SetAuthorizationToken(r *http.Request, token string) {
