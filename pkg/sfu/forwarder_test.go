@@ -984,7 +984,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	extPkt, err := testutils.GetTestExtPacket(params)
+	extPkt, _ := testutils.GetTestExtPacket(params)
 
 	// should lock onto the first packet
 	expectedTP := TranslationParams{
@@ -1015,7 +1015,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		shouldDrop:         true,
@@ -1032,7 +1032,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		shouldDrop: true,
@@ -1049,7 +1049,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
@@ -1069,7 +1069,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
@@ -1090,7 +1090,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
@@ -1111,7 +1111,7 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 		SSRC:           0x87654321,
 		PayloadSize:    20,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
@@ -1387,7 +1387,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{
@@ -1407,7 +1407,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	extPkt, err = testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
 	expectedTP = TranslationParams{
 		rtp: &TranslationParamsRTP{

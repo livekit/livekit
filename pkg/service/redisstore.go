@@ -139,7 +139,7 @@ func (s *RedisStore) LockRoom(_ context.Context, name livekit.RoomName, duration
 		}
 
 		// stop waiting past lock duration
-		if time.Now().Sub(startTime) > duration {
+		if time.Since(startTime) > duration {
 			break
 		}
 
@@ -282,7 +282,7 @@ func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*li
 			return nil, err
 		}
 
-		data, err := s.rc.HMGet(s.ctx, EgressKey, ids...).Result()
+		data, _ := s.rc.HMGet(s.ctx, EgressKey, ids...).Result()
 		for _, d := range data {
 			if d == nil {
 				continue

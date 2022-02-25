@@ -381,7 +381,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			if time.Now().Sub(lastTokenUpdate) > tokenRefreshInterval {
+			if time.Since(lastTokenUpdate) > tokenRefreshInterval {
 				pLogger.Debugw("refreshing client token after interval")
 				// refresh token with the first API Key/secret pair
 				if err := r.refreshToken(participant); err != nil {

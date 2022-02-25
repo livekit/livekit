@@ -32,15 +32,14 @@ type rtpExtInfo struct {
 type Responder struct {
 	sync.Mutex
 
-	extInfo     []rtpExtInfo
-	lastReport  int64
-	cycles      uint32
-	lastExtSN   uint32
-	pktCtn      uint8
-	lastSn      uint16
-	lastExtInfo uint16
-	mSSRC       uint32
-	sSSRC       uint32
+	extInfo    []rtpExtInfo
+	lastReport int64
+	cycles     uint32
+	lastExtSN  uint32
+	pktCtn     uint8
+	lastSn     uint16
+	mSSRC      uint32
+	sSSRC      uint32
 
 	len      uint16
 	deltaLen uint16

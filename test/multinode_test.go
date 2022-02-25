@@ -185,7 +185,7 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 		grants, err := verifier.Verify(testApiSecret)
 		require.NoError(t, err)
 
-		if "metadata" != grants.Metadata {
+		if grants.Metadata != "metadata" {
 			return "metadata did not match"
 		}
 		if *grants.Video.CanPublish {

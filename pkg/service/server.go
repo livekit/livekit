@@ -279,7 +279,7 @@ func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 	if s.Node().Stats != nil {
 		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
 	}
-	if time.Now().Sub(updatedAt) > 4*time.Second {
+	if time.Since(updatedAt) > 4*time.Second {
 		w.WriteHeader(http.StatusNotAcceptable)
 		_, _ = w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
 		return

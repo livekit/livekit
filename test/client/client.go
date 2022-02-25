@@ -717,7 +717,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		c.bytesReceived[pId] += uint64(pkt.MarshalSize())
 		c.lock.Unlock()
 		numBytes += pkt.MarshalSize()
-		if time.Now().Sub(lastUpdate) > 30*time.Second {
+		if time.Since(lastUpdate) > 30*time.Second {
 			logger.Infow("consumed from participant",
 				"track", trackId, "pID", pId,
 				"size", numBytes)

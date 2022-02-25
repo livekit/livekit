@@ -29,8 +29,6 @@ type MediaTrack struct {
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
 
-	done chan struct{}
-
 	*MediaTrackReceiver
 
 	lock sync.RWMutex

@@ -40,7 +40,7 @@ func TestCreateRoom(t *testing.T) {
 		node.Stats.NumTracksIn = 100
 		node.Stats.NumTracksOut = 100
 
-		ra, conf := newTestRoomAllocator(t, conf, node)
+		ra, _ := newTestRoomAllocator(t, conf, node)
 
 		_, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
@@ -56,7 +56,7 @@ func TestCreateRoom(t *testing.T) {
 		node.Stats.BytesInPerSec = 1000
 		node.Stats.BytesOutPerSec = 1000
 
-		ra, conf := newTestRoomAllocator(t, conf, node)
+		ra, _ := newTestRoomAllocator(t, conf, node)
 
 		_, err = ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "low-limit-room"})
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
