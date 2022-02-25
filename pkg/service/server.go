@@ -230,11 +230,9 @@ func (s *LivekitServer) Stop(force bool) {
 	partTicker := time.NewTicker(5 * time.Second)
 	waitingForParticipants := !force && s.roomManager.HasParticipants()
 	for waitingForParticipants {
-		select {
-		case <-partTicker.C:
-			logger.Infow("waiting for participants to exit")
-			waitingForParticipants = s.roomManager.HasParticipants()
-		}
+		<-partTicker.C
+		logger.Infow("waiting for participants to exit")
+		waitingForParticipants = s.roomManager.HasParticipants()
 	}
 	partTicker.Stop()
 

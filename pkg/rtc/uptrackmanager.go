@@ -38,7 +38,7 @@ type UpTrackManager struct {
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	return &UpTrackManager{
 		params:               params,
-		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack, 0),
+		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
