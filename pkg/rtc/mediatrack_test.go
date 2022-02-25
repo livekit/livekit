@@ -36,7 +36,7 @@ func TestTrackInfo(t *testing.T) {
 	require.Equal(t, ti.Simulcast, outInfo.Simulcast)
 
 	// make it simulcasted
-	mt.simulcasted.TrySet(true)
+	mt.simulcasted.Store(true)
 	require.True(t, mt.ToProto().Simulcast)
 }
 

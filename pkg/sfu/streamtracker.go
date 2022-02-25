@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-
-	"github.com/livekit/protocol/utils"
 )
 
 type StreamStatus int32
@@ -54,7 +52,7 @@ type StreamTracker struct {
 	// only access by the same goroutine as Observe
 	lastSN uint16
 
-	isStopped utils.AtomicFlag
+	isStopped atomic.Bool
 }
 
 func NewStreamTracker(samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
@@ -110,7 +108,7 @@ func (s *StreamTracker) Start() {
 }
 
 func (s *StreamTracker) Stop() {
-	if !s.isStopped.TrySet(true) {
+	if s.isStopped.Swap(true) {
 		return
 	}
 
@@ -119,7 +117,7 @@ func (s *StreamTracker) Stop() {
 }
 
 func (s *StreamTracker) Reset() {
-	if s.isStopped.Get() {
+	if s.isStopped.Load() {
 		return
 	}
 

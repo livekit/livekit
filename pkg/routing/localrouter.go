@@ -7,7 +7,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,7 +18,7 @@ type LocalRouter struct {
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
-	isStarted        utils.AtomicFlag
+	isStarted        atomic.Bool
 
 	rtcMessageChan *MessageChannel
 
@@ -147,7 +147,7 @@ func (r *LocalRouter) OnRTCMessage(callback RTCMessageCallback) {
 }
 
 func (r *LocalRouter) Start() error {
-	if !r.isStarted.TrySet(true) {
+	if r.isStarted.Swap(true) {
 		return nil
 	}
 	go r.statsWorker()
@@ -166,7 +166,7 @@ func (r *LocalRouter) Stop() {
 
 func (r *LocalRouter) statsWorker() {
 	for {
-		if !r.isStarted.Get() {
+		if !r.isStarted.Load() {
 			return
 		}
 		// update every 10 seconds
@@ -179,7 +179,7 @@ func (r *LocalRouter) statsWorker() {
 
 func (r *LocalRouter) rtcMessageWorker() {
 	// is a new channel available? if so swap to that one
-	if !r.isStarted.Get() {
+	if !r.isStarted.Load() {
 		return
 	}
 

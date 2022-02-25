@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -96,7 +96,7 @@ type RTCNodeSink struct {
 	rc             *redis.Client
 	nodeID         livekit.NodeID
 	participantKey livekit.ParticipantKey
-	isClosed       utils.AtomicFlag
+	isClosed       atomic.Bool
 	onClose        func()
 }
 
@@ -109,14 +109,14 @@ func NewRTCNodeSink(rc *redis.Client, nodeID livekit.NodeID, participantKey live
 }
 
 func (s *RTCNodeSink) WriteMessage(msg proto.Message) error {
-	if s.isClosed.Get() {
+	if s.isClosed.Load() {
 		return ErrChannelClosed
 	}
 	return publishRTCMessage(s.rc, s.nodeID, s.participantKey, msg)
 }
 
 func (s *RTCNodeSink) Close() {
-	if !s.isClosed.TrySet(true) {
+	if s.isClosed.Swap(true) {
 		return
 	}
 	if s.onClose != nil {
@@ -132,7 +132,7 @@ type SignalNodeSink struct {
 	rc           *redis.Client
 	nodeID       livekit.NodeID
 	connectionID livekit.ConnectionID
-	isClosed     utils.AtomicFlag
+	isClosed     atomic.Bool
 	onClose      func()
 }
 
@@ -145,14 +145,14 @@ func NewSignalNodeSink(rc *redis.Client, nodeID livekit.NodeID, connectionID liv
 }
 
 func (s *SignalNodeSink) WriteMessage(msg proto.Message) error {
-	if s.isClosed.Get() {
+	if s.isClosed.Load() {
 		return ErrChannelClosed
 	}
 	return publishSignalMessage(s.rc, s.nodeID, s.connectionID, msg)
 }
 
 func (s *SignalNodeSink) Close() {
-	if !s.isClosed.TrySet(true) {
+	if s.isClosed.Swap(true) {
 		return
 	}
 	_ = publishSignalMessage(s.rc, s.nodeID, s.connectionID, &livekit.EndSession{})

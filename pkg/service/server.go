@@ -13,11 +13,11 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/urfave/negroni"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -35,7 +35,7 @@ type LivekitServer struct {
 	roomManager   *RoomManager
 	turnServer    *turn.Server
 	currentNode   routing.LocalNode
-	running       utils.AtomicFlag
+	running       atomic.Bool
 	doneChan      chan struct{}
 	closedChan    chan struct{}
 }
@@ -127,11 +127,11 @@ func (s *LivekitServer) HTTPPort() int {
 }
 
 func (s *LivekitServer) IsRunning() bool {
-	return s.running.Get()
+	return s.running.Load()
 }
 
 func (s *LivekitServer) Start() error {
-	if s.running.Get() {
+	if s.running.Load() {
 		return errors.New("already running")
 	}
 	s.doneChan = make(chan struct{})
@@ -203,7 +203,7 @@ func (s *LivekitServer) Start() error {
 	// give time for Serve goroutine to start
 	time.Sleep(100 * time.Millisecond)
 
-	s.running.TrySet(true)
+	s.running.Store(true)
 
 	<-s.doneChan
 
@@ -238,7 +238,7 @@ func (s *LivekitServer) Stop(force bool) {
 	}
 	partTicker.Stop()
 
-	if !s.running.TrySet(false) {
+	if !s.running.Swap(false) {
 		return
 	}
 

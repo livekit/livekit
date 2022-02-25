@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -25,8 +25,8 @@ const (
 
 type MediaTrackReceiver struct {
 	params      MediaTrackReceiverParams
-	muted       utils.AtomicFlag
-	simulcasted utils.AtomicFlag
+	muted       atomic.Bool
+	simulcasted atomic.Bool
 
 	lock            sync.RWMutex
 	receiver        sfu.TrackReceiver
@@ -140,11 +140,11 @@ func (t *MediaTrackReceiver) PublisherIdentity() livekit.ParticipantIdentity {
 }
 
 func (t *MediaTrackReceiver) IsSimulcast() bool {
-	return t.simulcasted.Get()
+	return t.simulcasted.Load()
 }
 
 func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
-	t.simulcasted.TrySet(simulcast)
+	t.simulcasted.Store(simulcast)
 }
 
 func (t *MediaTrackReceiver) Name() string {
@@ -152,11 +152,11 @@ func (t *MediaTrackReceiver) Name() string {
 }
 
 func (t *MediaTrackReceiver) IsMuted() bool {
-	return t.muted.Get()
+	return t.muted.Load()
 }
 
 func (t *MediaTrackReceiver) SetMuted(muted bool) {
-	t.muted.TrySet(muted)
+	t.muted.Store(muted)
 
 	receiver := t.Receiver()
 	if receiver != nil {
@@ -339,7 +339,7 @@ func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":       t.ID(),
 		"Kind":     t.Kind().String(),
-		"PubMuted": t.muted.Get(),
+		"PubMuted": t.muted.Load(),
 	}
 
 	info["DownTracks"] = t.MediaTrackSubscriptions.DebugInfo()
