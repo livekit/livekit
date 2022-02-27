@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -225,7 +224,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		NodeSelector: NodeSelectorConfig{
 			Kind:         "random",
-			SysloadLimit: 0.7,
+			SysloadLimit: 0.9,
 		},
 		Keys: map[string]string{},
 	}
@@ -264,17 +263,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if conf.Limit.NumTracks == 0 {
-		conf.Limit.NumTracks = defaultLimitNumTracksPerCPU * int32(runtime.NumCPU())
-		if conf.Limit.NumTracks > defaultLimitMaxNumTracks {
-			conf.Limit.NumTracks = defaultLimitMaxNumTracks
-		}
-	}
-
-	if conf.Limit.BytesPerSec == 0 {
-		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
 	}
 
 	if conf.LogLevel != "" {
