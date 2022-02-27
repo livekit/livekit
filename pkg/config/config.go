@@ -12,12 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	defaultLimitNumTracksPerCPU int32   = 400
-	defaultLimitMaxNumTracks    int32   = 8000
-	defaultLimitBytesPerSec     float32 = 1_000_000_000 // just under 10 Gbps
-)
-
 var DefaultStunServers = []string{
 	"stun.l.google.com:19302",
 	"stun1.l.google.com:19302",
