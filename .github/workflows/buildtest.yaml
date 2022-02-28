@@ -33,8 +33,15 @@ jobs:
       - name: Set up gotestfmt
         run: go install github.com/haveyoudebuggedit/gotestfmt/v2/cmd/gotestfmt@latest
 
-      - name: Download Go modules
-        run: go mod download
+      - name: Replace mutexes
+        run: |
+          go get github.com/sasha-s/go-deadlock
+          grep -rl sync.Mutex ./pkg | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
+          grep -rl sync.RWMutex ./pkg | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
+          go install golang.org/x/tools/cmd/goimports
+          grep -rl deadlock.Mutex ./pkg | xargs goimports -w
+          grep -rl deadlock.RWMutex ./pkg | xargs goimports -w
+          go mod tidy
 
       - name: Mage Build
         uses: magefile/mage-action@v1
