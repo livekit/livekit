@@ -156,7 +156,8 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	})
 }
 
-func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
+	publisher *livekit.ParticipantInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -167,6 +168,7 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 		ParticipantId: string(participantID),
 		Track:         track,
 		Room:          &livekit.Room{Name: string(roomName)},
+		Publisher:     publisher,
 	})
 }
 
