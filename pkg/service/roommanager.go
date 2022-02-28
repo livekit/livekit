@@ -71,8 +71,6 @@ func NewLocalRoomManager(
 
 func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc.Room {
 	r.lock.RLock()
-	r.lock.RLock()
-	defer r.lock.RUnlock()
 	defer r.lock.RUnlock()
 	return r.rooms[roomName]
 }
