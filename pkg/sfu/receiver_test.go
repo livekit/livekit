@@ -6,11 +6,11 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/gammazero/workerpool"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
 )
 
 func TestWebRTCReceiver_OnCloseHandler(t *testing.T) {
@@ -137,7 +137,7 @@ func benchmarkGoroutine(b *testing.B, buckets []int) {
 
 func benchmarkLoadBalanced(b *testing.B, numProcs, step, downTracks int) {
 	for i := 0; i < b.N; i++ {
-		start := uint64(0)
+		start := atomic.NewUint64(0)
 		step := uint64(step)
 		end := uint64(downTracks)
 
@@ -147,7 +147,7 @@ func benchmarkLoadBalanced(b *testing.B, numProcs, step, downTracks int) {
 			go func() {
 				defer wg.Done()
 				for {
-					n := atomic.AddUint64(&start, step)
+					n := start.Add(step)
 					if n >= end+step {
 						return
 					}
@@ -164,7 +164,7 @@ func benchmarkLoadBalanced(b *testing.B, numProcs, step, downTracks int) {
 
 func benchmarkLoadBalancedPool(b *testing.B, wp *workerpool.WorkerPool, numProcs, step, downTracks int) {
 	for i := 0; i < b.N; i++ {
-		start := uint64(0)
+		start := atomic.NewUint64(0)
 		step := uint64(step)
 		end := uint64(downTracks)
 
@@ -174,7 +174,7 @@ func benchmarkLoadBalancedPool(b *testing.B, wp *workerpool.WorkerPool, numProcs
 			wp.Submit(func() {
 				defer wg.Done()
 				for {
-					n := atomic.AddUint64(&start, step)
+					n := start.Add(step)
 					if n >= end+step {
 						return
 					}

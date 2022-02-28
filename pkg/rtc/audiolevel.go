@@ -2,7 +2,8 @@ package rtc
 
 import (
 	"math"
-	"sync/atomic"
+
+	"go.uber.org/atomic"
 )
 
 const (
@@ -13,7 +14,7 @@ const (
 // keeps track of audio level for a participant
 type AudioLevel struct {
 	levelThreshold uint8
-	currentLevel   uint32
+	currentLevel   *atomic.Uint32
 	// min duration to be considered active
 	minActiveDuration uint32
 
@@ -29,7 +30,7 @@ func NewAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint3
 	l := &AudioLevel{
 		levelThreshold:    activeLevel,
 		minActiveDuration: uint32(minPercentile) * observeDuration / 100,
-		currentLevel:      SilentAudioLevel,
+		currentLevel:      atomic.NewUint32(SilentAudioLevel),
 		observeLevel:      SilentAudioLevel,
 		durationToObserve: observeDuration,
 	}
@@ -51,9 +52,9 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
 			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(l.durationToObserve)))
-			atomic.StoreUint32(&l.currentLevel, level)
+			l.currentLevel.Store(level)
 		} else {
-			atomic.StoreUint32(&l.currentLevel, SilentAudioLevel)
+			l.currentLevel.Store(SilentAudioLevel)
 		}
 		l.observeLevel = SilentAudioLevel
 		l.activeDuration = 0
@@ -63,7 +64,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 
 // returns current audio level, 0 (loudest) to 127 (silent)
 func (l *AudioLevel) GetLevel() (uint8, bool) {
-	level := uint8(atomic.LoadUint32(&l.currentLevel))
+	level := uint8(l.currentLevel.Load())
 	active := level != SilentAudioLevel
 	return level, active
 }
