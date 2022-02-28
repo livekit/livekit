@@ -259,8 +259,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 
 	// initialize to default layer
 	t.notifySubscriberMaxQuality(subscriberID, livekit.VideoQuality_HIGH)
-
-	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
+	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto(),
+		&livekit.ParticipantInfo{Sid: string(t.params.MediaTrack.PublisherID()), Identity: string(t.params.MediaTrack.PublisherIdentity())})
 	return downTrack, nil
 }
 
