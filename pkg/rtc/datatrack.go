@@ -57,37 +57,8 @@ func (t *DataTrack) onData(label string, data []byte) {
 		default:
 			t.logger.Warnw("received unsupported data packet", nil, "payload", payload)
 		}
-		// dp := livekit.DataPacket{}
-		// if err := proto.Unmarshal(data, &dp); err != nil {
-		// 	t.logger.Warnw("could not parse data packet", err)
-		// 	return
-		// }
-
-		// switch label {
-		// case reliableDataChannel:
-		// 	dp.Kind = livekit.DataPacket_RELIABLE
-		// case lossyDataChannel:
-		// 	dp.Kind = livekit.DataPacket_LOSSY
-		// default:
-		// 	t.logger.Warnw("unsupported datachannel added", nil, "label", label)
-		// }
-
-		// // only forward on user payloads
-		// switch payload := dp.Value.(type) {
-		// case *livekit.DataPacket_User:
-		// 	payload.User.ParticipantSid = string(t.source.ID())
-		// 	f(t.source, &dp)
-		// default:
-		// 	t.logger.Warnw("received unsupported data packet", nil, "payload", payload)
-		// }
 	}
 }
-
-// func (t *DataTrackReceiver) OnData(f func(label string, data []byte)) {
-// 	t.lock.Lock()
-// 	t.onDataHandle = f
-// 	t.lock.Unlock()
-// }
 
 func (t *DataTrack) OnDataPacket(f func(*livekit.DataPacket)) {
 	t.lock.Lock()

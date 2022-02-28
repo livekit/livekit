@@ -1100,39 +1100,15 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			p.dataTrack.Write(label, msg.Data)
-			// p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
 		})
 	case lossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			p.dataTrack.Write(label, msg.Data)
-			// p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
 		})
 	default:
 		p.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
 	}
-}
-
-func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
-	// dp := livekit.DataPacket{}
-	// if err := proto.Unmarshal(data, &dp); err != nil {
-	// 	p.params.Logger.Warnw("could not parse data packet", err)
-	// 	return
-	// }
-
-	// // trust the channel that it came in as the source of truth
-	// dp.Kind = kind
-
-	// // only forward on user payloads
-	// switch payload := dp.Value.(type) {
-	// case *livekit.DataPacket_User:
-	// 	if p.onDataPacket != nil {
-	// 		payload.User.ParticipantSid = string(p.params.SID)
-	// 		p.onDataPacket(p, &dp)
-	// 	}
-	// default:
-	// 	p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
-	// }
 }
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
@@ -1659,7 +1635,7 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			} else {
 				p.lossyDC = dc
 				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
+					p.onDataTrackPublished(p, p.dataTrack)
 				})
 			}
 		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
@@ -1674,7 +1650,7 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			} else {
 				p.reliableDC = dc
 				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
+					p.onDataTrackPublished(p, p.dataTrack)
 				})
 			}
 		}
