@@ -59,6 +59,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
+	GetDataTrack() DataTrack
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -156,7 +157,6 @@ type LocalParticipant interface {
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 
 	UpdateRTT(rtt uint32)
-	GetDataTrack() DataTrack
 }
 
 // Room is a container of participants, and can provide room-level actions

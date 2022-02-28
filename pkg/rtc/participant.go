@@ -1621,10 +1621,14 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 	ordered := true
 	negotiated := true
 	for _, ci := range p.pendingDataChannels {
+		var (
+			dc  *webrtc.DataChannel
+			err error
+		)
 		if ci.Label == lossyDataChannel && p.lossyDC == nil {
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
-			dc, err := p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
 				Ordered:        &ordered,
 				MaxRetransmits: &retransmits,
 				Negotiated:     &negotiated,
@@ -1633,14 +1637,11 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			if err != nil {
 				p.params.Logger.Errorw("create migrated data channel failed", err, "label", lossyDataChannel)
 			} else {
-				p.lossyDC = dc
-				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.onDataTrackPublished(p, p.dataTrack)
-				})
+				p.onDataChannel(dc)
 			}
 		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
 			id := uint16(ci.GetId())
-			dc, err := p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
 				Ordered:    &ordered,
 				Negotiated: &negotiated,
 				ID:         &id,
@@ -1648,11 +1649,13 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			if err != nil {
 				p.params.Logger.Errorw("create migrated data channel failed", err, "label", reliableDataChannel)
 			} else {
-				p.reliableDC = dc
-				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.onDataTrackPublished(p, p.dataTrack)
-				})
+				p.onDataChannel(dc)
 			}
+		}
+		if err != nil {
+			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
+		} else if dc != nil {
+			p.onDataChannel(dc)
 		}
 	}
 	p.pendingDataChannels = nil
