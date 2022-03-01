@@ -44,6 +44,16 @@ type FakeParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
+	GetDataTrackStub        func() types.DataTrack
+	getDataTrackMutex       sync.RWMutex
+	getDataTrackArgsForCall []struct {
+	}
+	getDataTrackReturns struct {
+		result1 types.DataTrack
+	}
+	getDataTrackReturnsOnCall map[int]struct {
+		result1 types.DataTrack
+	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -370,6 +380,59 @@ func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]in
 	}
 	fake.debugInfoReturnsOnCall[i] = struct {
 		result1 map[string]interface{}
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetDataTrack() types.DataTrack {
+	fake.getDataTrackMutex.Lock()
+	ret, specificReturn := fake.getDataTrackReturnsOnCall[len(fake.getDataTrackArgsForCall)]
+	fake.getDataTrackArgsForCall = append(fake.getDataTrackArgsForCall, struct {
+	}{})
+	stub := fake.GetDataTrackStub
+	fakeReturns := fake.getDataTrackReturns
+	fake.recordInvocation("GetDataTrack", []interface{}{})
+	fake.getDataTrackMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetDataTrackCallCount() int {
+	fake.getDataTrackMutex.RLock()
+	defer fake.getDataTrackMutex.RUnlock()
+	return len(fake.getDataTrackArgsForCall)
+}
+
+func (fake *FakeParticipant) GetDataTrackCalls(stub func() types.DataTrack) {
+	fake.getDataTrackMutex.Lock()
+	defer fake.getDataTrackMutex.Unlock()
+	fake.GetDataTrackStub = stub
+}
+
+func (fake *FakeParticipant) GetDataTrackReturns(result1 types.DataTrack) {
+	fake.getDataTrackMutex.Lock()
+	defer fake.getDataTrackMutex.Unlock()
+	fake.GetDataTrackStub = nil
+	fake.getDataTrackReturns = struct {
+		result1 types.DataTrack
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetDataTrackReturnsOnCall(i int, result1 types.DataTrack) {
+	fake.getDataTrackMutex.Lock()
+	defer fake.getDataTrackMutex.Unlock()
+	fake.GetDataTrackStub = nil
+	if fake.getDataTrackReturnsOnCall == nil {
+		fake.getDataTrackReturnsOnCall = make(map[int]struct {
+			result1 types.DataTrack
+		})
+	}
+	fake.getDataTrackReturnsOnCall[i] = struct {
+		result1 types.DataTrack
 	}{result1}
 }
 
@@ -1153,6 +1216,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
+	fake.getDataTrackMutex.RLock()
+	defer fake.getDataTrackMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()

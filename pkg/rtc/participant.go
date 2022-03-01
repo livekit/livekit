@@ -109,23 +109,25 @@ type ParticipantImpl struct {
 	updateLock sync.Mutex
 	version    uint32
 
+	dataTrack *DataTrack
+
 	// callbacks & handlers
 	onTrackPublished func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated   func(types.LocalParticipant, types.MediaTrack)
 	onStateChange    func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.LocalParticipant)
-	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
 
 	migrateState        atomic.Value // types.MigrateState
 	pendingOffer        *webrtc.SessionDescription
 	pendingDataChannels []*livekit.DataChannelInfo
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
+
+	onDataTrackPublished func(types.LocalParticipant, types.DataTrack)
 }
 
 func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermission) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
-
 	p := &ParticipantImpl{
 		params:                   params,
 		rtcpCh:                   make(chan []rtcp.Packet, 50),
@@ -312,6 +314,10 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		info.Metadata = p.params.Grants.Metadata
 	}
 
+	if p.dataTrack != nil {
+		info.Tracks = append(info.Tracks, p.dataTrack.ToProto())
+	}
+
 	return info
 }
 
@@ -343,10 +349,6 @@ func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, t
 
 func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.LocalParticipant)) {
 	p.onMetadataUpdate = callback
-}
-
-func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
-	p.onDataPacket = callback
 }
 
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
@@ -496,6 +498,9 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		})
 	}
 
+	if p.dataTrack != nil {
+		p.dataTrack.Close()
+	}
 	p.UpTrackManager.Close()
 
 	p.pendingTracksLock.Lock()
@@ -1071,45 +1076,34 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 }
 
+func (p *ParticipantImpl) OnDataTrackPublished(f func(types.LocalParticipant, types.DataTrack)) {
+	p.onDataTrackPublished = f
+}
+
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return
 	}
-	switch dc.Label() {
+	if p.dataTrack == nil {
+		p.dataTrack = NewDataTrack(livekit.TrackID("DT_"+p.params.SID), p.params.SID, p.params.Logger)
+		if p.onDataTrackPublished != nil {
+			p.onDataTrackPublished(p, p.dataTrack)
+		}
+	}
+	label := dc.Label()
+	switch label {
 	case reliableDataChannel:
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
+			p.dataTrack.Write(label, msg.Data)
 		})
 	case lossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
+			p.dataTrack.Write(label, msg.Data)
 		})
 	default:
 		p.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
-	}
-}
-
-func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
-	dp := livekit.DataPacket{}
-	if err := proto.Unmarshal(data, &dp); err != nil {
-		p.params.Logger.Warnw("could not parse data packet", err)
-		return
-	}
-
-	// trust the channel that it came in as the source of truth
-	dp.Kind = kind
-
-	// only forward on user payloads
-	switch payload := dp.Value.(type) {
-	case *livekit.DataPacket_User:
-		if p.onDataPacket != nil {
-			payload.User.ParticipantSid = string(p.params.SID)
-			p.onDataPacket(p, &dp)
-		}
-	default:
-		p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 }
 
@@ -1613,44 +1607,41 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	return info
 }
 
+func (p *ParticipantImpl) GetDataTrack() types.DataTrack {
+	return p.dataTrack
+}
+
 func (p *ParticipantImpl) handlePendingDataChannels() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	ordered := true
 	negotiated := true
 	for _, ci := range p.pendingDataChannels {
+		var (
+			dc  *webrtc.DataChannel
+			err error
+		)
 		if ci.Label == lossyDataChannel && p.lossyDC == nil {
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
-			dc, err := p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
 				Ordered:        &ordered,
 				MaxRetransmits: &retransmits,
 				Negotiated:     &negotiated,
 				ID:             &id,
 			})
-			if err != nil {
-				p.params.Logger.Errorw("create migrated data channel failed", err, "label", lossyDataChannel)
-			} else {
-				p.lossyDC = dc
-				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
-				})
-			}
 		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
 			id := uint16(ci.GetId())
-			dc, err := p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
 				Ordered:    &ordered,
 				Negotiated: &negotiated,
 				ID:         &id,
 			})
-			if err != nil {
-				p.params.Logger.Errorw("create migrated data channel failed", err, "label", reliableDataChannel)
-			} else {
-				p.reliableDC = dc
-				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-					p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
-				})
-			}
+		}
+		if err != nil {
+			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
+		} else if dc != nil {
+			p.onDataChannel(dc)
 		}
 	}
 	p.pendingDataChannels = nil

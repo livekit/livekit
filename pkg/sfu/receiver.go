@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"errors"
 	"io"
 	"runtime"
 	"sync"
@@ -17,6 +18,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+)
+
+var (
+	ErrReceiverClosed        = errors.New("receiver closed")
+	ErrDownTrackAlreadyExist = errors.New("DownTrack already exist")
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
@@ -37,7 +43,7 @@ type TrackReceiver interface {
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
 
-	AddDownTrack(track TrackSender)
+	AddDownTrack(track TrackSender) error
 	DeleteDownTrack(peerID livekit.ParticipantID)
 
 	DebugInfo() map[string]interface{}
@@ -285,16 +291,16 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	w.streamTrackerManager.SetPaused(paused)
 }
 
-func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
+func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	if w.closed.Load() {
-		return
+		return ErrReceiverClosed
 	}
 
 	w.downTrackMu.RLock()
 	_, ok := w.index[track.PeerID()]
 	w.downTrackMu.RUnlock()
 	if ok {
-		return
+		return ErrDownTrackAlreadyExist
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
@@ -306,6 +312,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	}
 
 	w.storeDownTrack(track)
+	return nil
 }
 
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
