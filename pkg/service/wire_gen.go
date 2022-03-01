@@ -9,6 +9,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -19,7 +21,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // Injectors from wire.go:

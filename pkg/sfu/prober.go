@@ -109,11 +109,11 @@ package sfu
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gammazero/deque"
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/atomic"
 )
 
 type ProberParams struct {
@@ -123,7 +123,7 @@ type ProberParams struct {
 type Prober struct {
 	logger logger.Logger
 
-	clusterId uint32
+	clusterId atomic.Uint32
 
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque
@@ -179,7 +179,7 @@ func (p *Prober) AddCluster(desiredRateBps int, expectedRateBps int, minDuration
 		return ProbeClusterIdInvalid
 	}
 
-	clusterId := ProbeClusterId(atomic.AddUint32(&p.clusterId, 1))
+	clusterId := ProbeClusterId(p.clusterId.Inc())
 	cluster := NewCluster(clusterId, desiredRateBps, expectedRateBps, minDuration, maxDuration)
 	p.logger.Debugw("cluster added", "cluster", cluster.String())
 

@@ -1,7 +1,6 @@
 package prometheus
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -54,29 +53,29 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prev.UpdatedAt
 
-	bytesIn := atomic.LoadUint64(&atomicBytesIn)
-	bytesOut := atomic.LoadUint64(&atomicBytesOut)
-	packetsIn := atomic.LoadUint64(&atomicPacketsIn)
-	packetsOut := atomic.LoadUint64(&atomicPacketsOut)
-	nackTotal := atomic.LoadUint64(&atomicNackTotal)
+	bytesInNow := bytesIn.Load()
+	bytesOutNow := bytesOut.Load()
+	packetsInNow := packetsIn.Load()
+	packetsOutNow := packetsOut.Load()
+	nackTotalNow := nackTotal.Load()
 
 	return &livekit.NodeStats{
 		StartedAt:        prev.StartedAt,
 		UpdatedAt:        updatedAt,
-		NumRooms:         atomic.LoadInt32(&atomicRoomTotal),
-		NumClients:       atomic.LoadInt32(&atomicParticipantTotal),
-		NumTracksIn:      atomic.LoadInt32(&atomicTrackPublishedTotal),
-		NumTracksOut:     atomic.LoadInt32(&atomicTrackSubscribedTotal),
-		BytesIn:          bytesIn,
-		BytesOut:         bytesOut,
-		PacketsIn:        packetsIn,
-		PacketsOut:       packetsOut,
-		NackTotal:        nackTotal,
-		BytesInPerSec:    perSec(prev.BytesIn, bytesIn, elapsed),
-		BytesOutPerSec:   perSec(prev.BytesOut, bytesOut, elapsed),
-		PacketsInPerSec:  perSec(prev.PacketsIn, packetsIn, elapsed),
-		PacketsOutPerSec: perSec(prev.PacketsOut, packetsOut, elapsed),
-		NackPerSec:       perSec(prev.NackTotal, nackTotal, elapsed),
+		NumRooms:         roomTotal.Load(),
+		NumClients:       participantTotal.Load(),
+		NumTracksIn:      trackPublishedTotal.Load(),
+		NumTracksOut:     trackSubscribedTotal.Load(),
+		BytesIn:          bytesInNow,
+		BytesOut:         bytesOutNow,
+		PacketsIn:        packetsInNow,
+		PacketsOut:       packetsOutNow,
+		NackTotal:        nackTotalNow,
+		BytesInPerSec:    perSec(prev.BytesIn, bytesInNow, elapsed),
+		BytesOutPerSec:   perSec(prev.BytesOut, bytesOutNow, elapsed),
+		PacketsInPerSec:  perSec(prev.PacketsIn, packetsInNow, elapsed),
+		PacketsOutPerSec: perSec(prev.PacketsOut, packetsOutNow, elapsed),
+		NackPerSec:       perSec(prev.NackTotal, nackTotalNow, elapsed),
 		NumCpus:          numCPUs,
 		LoadAvgLast1Min:  avg1Min,
 		LoadAvgLast5Min:  avg5Min,

@@ -156,3 +156,52 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 
 	require.Equal(t, clientMetaConnect.ClientConnectTime, eventActive.ClientMeta.ClientConnectTime)
 }
+
+func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
+	fixture := createFixture()
+
+	// prepare participant to change status
+	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
+	partSID := "part1"
+	publisherInfo := &livekit.ParticipantInfo{Sid: "pub1", Identity: "publisher"}
+	trackInfo := &livekit.TrackInfo{Sid: "tr1", Type: livekit.TrackType_VIDEO}
+
+	clientInfo := &livekit.ClientInfo{
+		Sdk:            2,
+		Version:        "v1",
+		Os:             "mac",
+		OsVersion:      "v1",
+		DeviceModel:    "DM1",
+		Browser:        "chrome",
+		BrowserVersion: "97.0.1",
+	}
+	clientMeta := &livekit.AnalyticsClientMeta{
+		Region:     "dark-side",
+		Node:       "moon",
+		ClientAddr: "127.0.0.1",
+	}
+	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+
+	// do
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta)
+
+	// test
+	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
+	_, event := fixture.analytics.SendEventArgsForCall(0)
+	require.Equal(t, room, event.Room)
+
+	// test
+	// do
+
+	fixture.sut.TrackSubscribed(context.Background(), livekit.ParticipantID(partSID), trackInfo, publisherInfo)
+
+	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
+	_, eventTrackSubscribed := fixture.analytics.SendEventArgsForCall(1)
+	require.Equal(t, livekit.AnalyticsEventType_TRACK_SUBSCRIBED, eventTrackSubscribed.Type)
+	require.Equal(t, partSID, eventTrackSubscribed.ParticipantId)
+	require.Equal(t, trackInfo.Sid, eventTrackSubscribed.Track.Sid)
+	require.Equal(t, trackInfo.Type, eventTrackSubscribed.Track.Type)
+	require.Equal(t, publisherInfo.Sid, eventTrackSubscribed.Publisher.Sid)
+	require.Equal(t, publisherInfo.Identity, eventTrackSubscribed.Publisher.Identity)
+
+}

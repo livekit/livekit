@@ -1,9 +1,8 @@
 package prometheus
 
 import (
-	"sync/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 )
 
 type Direction string
@@ -14,11 +13,11 @@ const (
 )
 
 var (
-	atomicBytesIn    uint64
-	atomicBytesOut   uint64
-	atomicPacketsIn  uint64
-	atomicPacketsOut uint64
-	atomicNackTotal  uint64
+	bytesIn    atomic.Uint64
+	bytesOut   atomic.Uint64
+	packetsIn  atomic.Uint64
+	packetsOut atomic.Uint64
+	nackTotal  atomic.Uint64
 
 	promPacketLabels = []string{"direction"}
 
@@ -71,25 +70,25 @@ func initPacketStats(nodeID string) {
 func IncrementPackets(direction Direction, count uint64) {
 	promPacketTotal.WithLabelValues(string(direction)).Add(float64(count))
 	if direction == Incoming {
-		atomic.AddUint64(&atomicPacketsIn, count)
+		packetsIn.Add(count)
 	} else {
-		atomic.AddUint64(&atomicPacketsOut, count)
+		packetsOut.Add(count)
 	}
 }
 
 func IncrementBytes(direction Direction, count uint64) {
 	promPacketBytes.WithLabelValues(string(direction)).Add(float64(count))
 	if direction == Incoming {
-		atomic.AddUint64(&atomicBytesIn, count)
+		bytesIn.Add(count)
 	} else {
-		atomic.AddUint64(&atomicBytesOut, count)
+		bytesOut.Add(count)
 	}
 }
 
 func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	if nack > 0 {
 		promNackTotal.WithLabelValues(string(direction)).Add(float64(nack))
-		atomic.AddUint64(&atomicNackTotal, uint64(nack))
+		nackTotal.Add(uint64(nack))
 	}
 	if pli > 0 {
 		promPliTotal.WithLabelValues(string(direction)).Add(float64(pli))
