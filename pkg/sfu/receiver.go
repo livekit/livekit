@@ -21,8 +21,8 @@ import (
 )
 
 var (
-	ErrReceiverClosed       = errors.New("receiver closed")
-	ErrDownTrackAlreadExist = errors.New("DownTrack already exist")
+	ErrReceiverClosed        = errors.New("receiver closed")
+	ErrDownTrackAlreadyExist = errors.New("DownTrack already exist")
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
@@ -300,7 +300,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	_, ok := w.index[track.PeerID()]
 	w.downTrackMu.RUnlock()
 	if ok {
-		return ErrDownTrackAlreadExist
+		return ErrDownTrackAlreadyExist
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {

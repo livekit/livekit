@@ -40,9 +40,11 @@ func (t *DataTrack) onData(label string, data []byte) {
 	f := t.onDataPacket
 	dts := t.downTracks
 	t.lock.RUnlock()
+
 	for _, dt := range dts {
 		dt.Write(label, data)
 	}
+
 	if f != nil {
 		dp, err := DataPacketFromBytes(label, data)
 		if err != nil {
@@ -77,7 +79,7 @@ func (t *DataTrack) Write(label string, data []byte) {
 func (t *DataTrack) AddDownTrack(dt sfu.TrackSender) error {
 	dataDt, ok := dt.(DataTrackSender)
 	if !ok {
-		return errors.New("invalid DownTrack type, expect RelaySctpDownTrack")
+		return errors.New("invalid DownTrack type, expect DataTrackSender")
 	}
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -92,6 +94,7 @@ func (t *DataTrack) DeleteDownTrack(peerID livekit.ParticipantID) {
 		if v.PeerID() == peerID {
 			t.downTracks[k] = t.downTracks[len(t.downTracks)-1]
 			t.downTracks = t.downTracks[:len(t.downTracks)-1]
+			break
 		}
 	}
 }
