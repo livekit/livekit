@@ -107,7 +107,7 @@ type ParticipantImpl struct {
 	lock       sync.RWMutex
 	once       sync.Once
 	updateLock sync.Mutex
-	version    uint32
+	version    atomic.Uint32
 
 	dataTrack *DataTrack
 
@@ -137,8 +137,8 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
-		version:                  params.InitialVersion,
 	}
+	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.SetPermission(perms)
@@ -307,7 +307,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		JoinedAt: p.ConnectedAt().Unix(),
 		Hidden:   p.Hidden(),
 		Recorder: p.IsRecorder(),
-		Version:  atomic.NewUint32(p.version).Inc(),
+		Version:  p.version.Inc(),
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 	if p.params.Grants != nil {

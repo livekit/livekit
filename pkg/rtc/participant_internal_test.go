@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
@@ -167,27 +168,22 @@ func TestTrackPublishing(t *testing.T) {
 
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
+	p.SetMetadata("initial metadata")
 	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
-	pi := &livekit.ParticipantInfo{
-		Sid:      "PA_test2",
-		Identity: "test2",
-		Metadata: "123",
-		Version:  2,
-	}
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}))
+	pi1 := p.ToProto()
+	p.SetMetadata("second update")
+	pi2 := p.ToProto()
 
-	pi = &livekit.ParticipantInfo{
-		Sid:      "PA_test2",
-		Identity: "test2",
-		Metadata: "456",
-		Version:  1,
-	}
-	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi}))
+	require.Greater(t, pi2.Version, pi1.Version)
+
+	// send the second update first
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi2}))
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi1}))
 
 	// only sent once, and it's the earlier message
 	require.Equal(t, 1, sink.WriteMessageCallCount())
 	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
-	require.Equal(t, "123", sent.GetUpdate().Participants[0].Metadata)
+	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
 // after disconnection, things should continue to function and not panic
@@ -373,6 +369,9 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Sink:              &routingfakes.FakeMessageSink{},
 		ProtocolVersion:   opts.protocolVersion,
 		PLIThrottleConfig: conf.RTC.PLIThrottle,
+		Grants: &auth.ClaimGrants{
+			Video: &auth.VideoGrant{},
+		},
 	}, opts.permissions)
 	return p
 }
