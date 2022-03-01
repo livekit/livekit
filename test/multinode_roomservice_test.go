@@ -140,10 +140,10 @@ func TestMultiNodeMutePublishedTrack(t *testing.T) {
 			Identity: identity,
 		})
 		require.NoError(t, err)
-		if len(res.Tracks) == 2 {
+		if len(res.Tracks) == 3 {
 			return ""
 		} else {
-			return fmt.Sprintf("expected two tracks to be published, actual: %d", len(res.Tracks))
+			return fmt.Sprintf("expected three tracks to be published, actual: %d", len(res.Tracks))
 		}
 	})
 
