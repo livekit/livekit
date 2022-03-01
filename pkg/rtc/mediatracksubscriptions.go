@@ -27,7 +27,8 @@ type MediaTrackSubscriptions struct {
 	params MediaTrackSubscriptionsParams
 
 	subscribedTracksMu sync.RWMutex
-	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack // participantID => types.SubscribedTrack
+	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
+	pendingClose       map[livekit.ParticipantID]types.SubscribedTrack
 
 	onNoSubscribers func()
 
@@ -56,6 +57,7 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 	t := &MediaTrackSubscriptions{
 		params:                   params,
 		subscribedTracks:         make(map[livekit.ParticipantID]types.SubscribedTrack),
+		pendingClose:             make(map[livekit.ParticipantID]types.SubscribedTrack),
 		maxSubscriberQuality:     make(map[livekit.ParticipantID]livekit.VideoQuality),
 		maxSubscriberNodeQuality: make(map[livekit.NodeID]livekit.VideoQuality),
 		maxSubscribedQuality:     livekit.VideoQuality_LOW,
@@ -207,6 +209,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	downTrack.OnCloseHandler(func() {
 		t.subscribedTracksMu.Lock()
 		delete(t.subscribedTracks, subscriberID)
+		delete(t.pendingClose, subscriberID)
 		t.subscribedTracksMu.Unlock()
 
 		t.maybeNotifyNoSubscribers()
@@ -271,6 +274,9 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 
 	t.subscribedTracksMu.Lock()
 	delete(t.subscribedTracks, participantID)
+	if subTrack != nil {
+		t.pendingClose[participantID] = subTrack
+	}
 	t.subscribedTracksMu.Unlock()
 
 	if subTrack != nil {
@@ -284,6 +290,10 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.subscribedTracksMu.Lock()
 	subscribedTracks := t.getAllSubscribedTracksLocked()
 	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
+
+	for _, subTrack := range subscribedTracks {
+		t.pendingClose[subTrack.SubscriberID()] = subTrack
+	}
 	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
@@ -539,7 +549,7 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	}
 
 	t.subscribedTracksMu.RLock()
-	empty := len(t.subscribedTracks) == 0
+	empty := len(t.subscribedTracks) == 0 && len(t.pendingClose) == 0
 	t.subscribedTracksMu.RUnlock()
 
 	if empty {
