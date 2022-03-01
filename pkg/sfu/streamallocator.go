@@ -222,7 +222,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
 		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
-		downTrack.OnPacketSent(s.onPacketSent)
+		downTrack.OnPacketSentUnsafe(s.onPacketSent)
 	}
 }
 
