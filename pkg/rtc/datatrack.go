@@ -66,7 +66,6 @@ func (t *DataTrack) OnDataPacket(f func(*livekit.DataPacket)) {
 	t.lock.Unlock()
 }
 
-// for sfu.Receiver
 func (t *DataTrack) TrackID() livekit.TrackID {
 	return t.trackID
 }

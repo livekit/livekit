@@ -145,7 +145,6 @@ type LocalParticipant interface {
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
 	OnMetadataUpdate(callback func(LocalParticipant))
-	// OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(_callback func(LocalParticipant))
 	OnDataTrackPublished(callback func(LocalParticipant, DataTrack))

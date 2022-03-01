@@ -333,7 +333,6 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnStateChange(nil)
 	p.OnMetadataUpdate(nil)
 	p.OnDataTrackPublished(nil)
-	// p.OnDataPacket(nil)
 
 	// close participant as well
 	_ = p.Close(true)

@@ -351,10 +351,6 @@ func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.LocalParticipant)
 	p.onMetadataUpdate = callback
 }
 
-// func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
-// 	p.onDataPacket = callback
-// }
-
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
 	p.onClose = callback
 }
@@ -1634,11 +1630,6 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 				Negotiated:     &negotiated,
 				ID:             &id,
 			})
-			if err != nil {
-				p.params.Logger.Errorw("create migrated data channel failed", err, "label", lossyDataChannel)
-			} else {
-				p.onDataChannel(dc)
-			}
 		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
 			id := uint16(ci.GetId())
 			dc, err = p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
@@ -1646,11 +1637,6 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 				Negotiated: &negotiated,
 				ID:         &id,
 			})
-			if err != nil {
-				p.params.Logger.Errorw("create migrated data channel failed", err, "label", reliableDataChannel)
-			} else {
-				p.onDataChannel(dc)
-			}
 		}
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
