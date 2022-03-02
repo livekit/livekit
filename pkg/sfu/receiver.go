@@ -154,7 +154,7 @@ func NewWebRTCReceiver(
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
 		numProcs:             runtime.NumCPU(),
-		streamTrackerManager: NewStreamTrackerManager(),
+		streamTrackerManager: NewStreamTrackerManager(logger),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 
