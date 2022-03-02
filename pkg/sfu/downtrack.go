@@ -174,7 +174,7 @@ func NewDownTrack(
 		codec:          c,
 		kind:           kind,
 		forwarder:      NewForwarder(c, kind, logger),
-		callbacksQueue: utils.NewOpsQueue(),
+		callbacksQueue: utils.NewOpsQueue(logger),
 		closed:         make(chan struct{}),
 	}
 

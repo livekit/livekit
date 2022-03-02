@@ -4,9 +4,13 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/livekit/protocol/logger"
 )
 
 type StreamTrackerManager struct {
+	logger logger.Logger
+
 	lock sync.RWMutex
 
 	trackers [DefaultMaxLayerSpatial + 1]*StreamTracker
@@ -17,8 +21,9 @@ type StreamTrackerManager struct {
 	onAvailableLayersChanged func(availableLayers []int32)
 }
 
-func NewStreamTrackerManager() *StreamTrackerManager {
+func NewStreamTrackerManager(logger logger.Logger) *StreamTrackerManager {
 	return &StreamTrackerManager{
+		logger:           logger,
 		maxExpectedLayer: DefaultMaxLayerSpatial,
 	}
 }
@@ -37,7 +42,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 		cyclesRequired = 1 // 1 packet in 2 seconds
 		cycleDuration = 2 * time.Second
 	}
-	tracker := NewStreamTracker(samplesRequired, cyclesRequired, cycleDuration)
+	tracker := NewStreamTracker(s.logger, samplesRequired, cyclesRequired, cycleDuration)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
 			s.removeAvailableLayer(layer)

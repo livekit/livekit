@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
 )
 
@@ -58,13 +59,13 @@ type StreamTracker struct {
 	isStopped atomic.Bool
 }
 
-func NewStreamTracker(samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
+func NewStreamTracker(logger logger.Logger, samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
 	s := &StreamTracker{
 		samplesRequired: samplesRequired,
 		cyclesRequired:  cyclesRequired,
 		cycleDuration:   cycleDuration,
 		status:          StreamStatusStopped,
-		callbacksQueue:  utils.NewOpsQueue(),
+		callbacksQueue:  utils.NewOpsQueue(logger),
 	}
 	return s
 }
