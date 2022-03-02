@@ -110,13 +110,14 @@ type Options struct {
 
 // NewBuffer constructs a new Buffer
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
+	logger := logger.Logger(logger.GetLogger()) // will be reset with correct context via SetLogger
 	b := &Buffer{
 		mediaSSRC:      ssrc,
 		videoPool:      vp,
 		audioPool:      ap,
 		pliThrottle:    int64(500 * time.Millisecond),
-		logger:         logger.Logger(logger.GetLogger()), // will be reset with correct context via SetLogger
-		callbacksQueue: utils.NewOpsQueue(),
+		logger:         logger,
+		callbacksQueue: utils.NewOpsQueue(logger),
 	}
 	b.bitrate.Store(make([]int64, len(b.bitrateHelper)))
 	b.extPackets.SetMinCapacity(7)
@@ -125,6 +126,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 
 func (b *Buffer) SetLogger(logger logger.Logger) {
 	b.logger = logger
+	b.callbacksQueue.SetLogger(logger)
 }
 
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, o Options) {
@@ -268,7 +270,7 @@ func (b *Buffer) Close() error {
 			b.audioPool.Put(b.bucket.src)
 		}
 		b.closed.Store(true)
-		b.onClose()
+		b.callbacksQueue.Enqueue(b.onClose)
 		b.callbacksQueue.Stop()
 	})
 	return nil
