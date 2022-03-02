@@ -127,15 +127,25 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		return nil, nil
 	}
 	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
+	rcOptions := &redis.Options{
 		Addr:     conf.Redis.Address,
 		Username: conf.Redis.Username,
 		Password: conf.Redis.Password,
 		DB:       conf.Redis.DB,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
-	})
+	}
+	if conf.Redis.UseTLS {
+		rcOptions = &redis.Options{
+			Addr:     conf.Redis.Address,
+			Username: conf.Redis.Username,
+			Password: conf.Redis.Password,
+			DB:       conf.Redis.DB,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+	}
+	rc := redis.NewClient(rcOptions)
+
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
 		return nil, err
