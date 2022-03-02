@@ -268,7 +268,7 @@ func (b *Buffer) Close() error {
 			b.audioPool.Put(b.bucket.src)
 		}
 		b.closed.Store(true)
-		b.onClose()
+		b.callbacksQueue.Enqueue(b.onClose)
 		b.callbacksQueue.Stop()
 	})
 	return nil
