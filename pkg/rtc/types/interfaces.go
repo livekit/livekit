@@ -129,7 +129,7 @@ type LocalParticipant interface {
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
-	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer, region string) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error

@@ -381,12 +381,13 @@ type FakeLocalParticipant struct {
 	sendDataPacketReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendJoinResponseStub        func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) error
+	SendJoinResponseStub        func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
 		arg1 *livekit.Room
 		arg2 []*livekit.ParticipantInfo
 		arg3 []*livekit.ICEServer
+		arg4 string
 	}
 	sendJoinResponseReturns struct {
 		result1 error
@@ -2607,7 +2608,7 @@ func (fake *FakeLocalParticipant) SendDataPacketReturnsOnCall(i int, result1 err
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []*livekit.ParticipantInfo, arg3 []*livekit.ICEServer) error {
+func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []*livekit.ParticipantInfo, arg3 []*livekit.ICEServer, arg4 string) error {
 	var arg2Copy []*livekit.ParticipantInfo
 	if arg2 != nil {
 		arg2Copy = make([]*livekit.ParticipantInfo, len(arg2))
@@ -2624,13 +2625,14 @@ func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []*l
 		arg1 *livekit.Room
 		arg2 []*livekit.ParticipantInfo
 		arg3 []*livekit.ICEServer
-	}{arg1, arg2Copy, arg3Copy})
+		arg4 string
+	}{arg1, arg2Copy, arg3Copy, arg4})
 	stub := fake.SendJoinResponseStub
 	fakeReturns := fake.sendJoinResponseReturns
-	fake.recordInvocation("SendJoinResponse", []interface{}{arg1, arg2Copy, arg3Copy})
+	fake.recordInvocation("SendJoinResponse", []interface{}{arg1, arg2Copy, arg3Copy, arg4})
 	fake.sendJoinResponseMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1
@@ -2644,17 +2646,17 @@ func (fake *FakeLocalParticipant) SendJoinResponseCallCount() int {
 	return len(fake.sendJoinResponseArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) error) {
+func (fake *FakeLocalParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) error) {
 	fake.sendJoinResponseMutex.Lock()
 	defer fake.sendJoinResponseMutex.Unlock()
 	fake.SendJoinResponseStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer) {
+func (fake *FakeLocalParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) {
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	argsForCall := fake.sendJoinResponseArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeLocalParticipant) SendJoinResponseReturns(result1 error) {

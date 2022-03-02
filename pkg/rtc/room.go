@@ -167,7 +167,7 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
-func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer, region string) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -259,7 +259,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers); err != nil {
+	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers, region); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
