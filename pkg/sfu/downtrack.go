@@ -194,7 +194,6 @@ func NewDownTrack(
 			})
 		}
 	})
-	d.connectionStats.Start()
 
 	return d, nil
 }
@@ -211,6 +210,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if err != nil {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
+
+	d.callbacksQueue.Start()
 
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
@@ -231,7 +232,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 
 	go d.requestFirstKeyframe()
 
-	d.callbacksQueue.Start()
+	d.connectionStats.Start()
 
 	return codec, nil
 }
