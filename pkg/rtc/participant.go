@@ -599,6 +599,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 	roomInfo *livekit.Room,
 	otherParticipants []*livekit.ParticipantInfo,
 	iceServers []*livekit.ICEServer,
+	region string,
 ) error {
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
@@ -608,6 +609,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 				Participant:       p.ToProto(),
 				OtherParticipants: otherParticipants,
 				ServerVersion:     version.Version,
+				ServerRegion:      region,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary
 				SubscriberPrimary: p.SubscriberAsPrimary(),
