@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
+	"crypto/tls"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -111,6 +112,9 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		Username: conf.Redis.Username,
 		Password: conf.Redis.Password,
 		DB:       conf.Redis.DB,
+        TLSConfig: &tls.Config{
+                MinVersion: tls.VersionTLS12,
+            },
 	})
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")

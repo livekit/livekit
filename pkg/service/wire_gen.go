@@ -8,9 +8,8 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
-	"os"
-
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -21,6 +20,7 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
+	"os"
 )
 
 // Injectors from wire.go:
@@ -132,6 +132,9 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		Username: conf.Redis.Username,
 		Password: conf.Redis.Password,
 		DB:       conf.Redis.DB,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	})
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
