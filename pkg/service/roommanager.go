@@ -34,7 +34,7 @@ type RoomManager struct {
 	rtcConfig         *rtc.WebRTCConfig
 	currentNode       routing.LocalNode
 	router            routing.Router
-	roomStore         RoomStore
+	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
 
@@ -43,7 +43,7 @@ type RoomManager struct {
 
 func NewLocalRoomManager(
 	conf *config.Config,
-	roomStore RoomStore,
+	roomStore ObjectStore,
 	currentNode routing.LocalNode,
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
@@ -265,8 +265,9 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room), r.currentNode.Region); err != nil {
 		pLogger.Errorw("could not join room", err)
+		_ = participant.Close(true)
 		return
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
@@ -387,7 +388,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			if time.Now().Sub(lastTokenUpdate) > tokenRefreshInterval {
+			if time.Since(lastTokenUpdate) > tokenRefreshInterval {
 				pLogger.Debugw("refreshing client token after interval")
 				// refresh token with the first API Key/secret pair
 				if err := r.refreshToken(participant); err != nil {

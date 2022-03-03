@@ -1,13 +1,12 @@
 package rtc
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/bep/debounce"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -26,8 +25,8 @@ type SubscribedTrackParams struct {
 }
 type SubscribedTrack struct {
 	params   SubscribedTrackParams
-	subMuted utils.AtomicFlag
-	pubMuted utils.AtomicFlag
+	subMuted atomic.Bool
+	pubMuted atomic.Bool
 	settings atomic.Value // *livekit.UpdateTrackSettings
 
 	onBind func()
@@ -78,19 +77,19 @@ func (t *SubscribedTrack) MediaTrack() types.MediaTrack {
 
 // has subscriber indicated it wants to mute this track
 func (t *SubscribedTrack) IsMuted() bool {
-	return t.subMuted.Get()
+	return t.subMuted.Load()
 }
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
-	t.pubMuted.TrySet(muted)
+	t.pubMuted.Store(muted)
 	t.updateDownTrackMute()
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
-	visibilityChanged := t.subMuted.TrySet(settings.Disabled)
+	prevDisabled := t.subMuted.Swap(settings.Disabled)
 	t.settings.Store(settings)
 	// avoid frequent changes to mute & video layers, unless it became visible
-	if visibilityChanged && !settings.Disabled {
+	if prevDisabled != settings.Disabled && !settings.Disabled {
 		t.UpdateVideoLayer()
 	} else {
 		t.debouncer(t.UpdateVideoLayer)
@@ -116,6 +115,6 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
-	muted := t.subMuted.Get() || t.pubMuted.Get()
+	muted := t.subMuted.Load() || t.pubMuted.Load()
 	t.DownTrack().Mute(muted)
 }

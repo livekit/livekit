@@ -26,7 +26,7 @@ import (
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	store         RORoomStore
+	store         ServiceStore
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
 	config        *config.Config
@@ -38,7 +38,7 @@ type RTCService struct {
 func NewRTCService(
 	conf *config.Config,
 	ra RoomAllocator,
-	store RORoomStore,
+	store ServiceStore,
 	router routing.MessageRouter,
 	currentNode routing.LocalNode,
 ) *RTCService {
@@ -96,7 +96,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
 		// Make sure grant has CanPublish set,
-		if claims.Video.CanPublish != nil && *claims.Video.CanPublish == false {
+		if claims.Video.CanPublish != nil && !*claims.Video.CanPublish {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
 		// Make sure by default subscribe is off
@@ -151,8 +151,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
 			handleError(w, 404, err.Error())
+			return
 		} else if err != nil {
 			handleError(w, 500, err.Error())
+			return
 		}
 	}
 

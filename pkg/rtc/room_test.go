@@ -64,10 +64,10 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		pNew := newMockParticipant("new", types.DefaultProtocol, false)
 
-		rm.Join(pNew, nil, iceServersForRoom)
+		_ = rm.Join(pNew, nil, iceServersForRoom, "test")
 
 		// expect new participant to get a JoinReply
-		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
+		info, participants, iceServers, _ := pNew.SendJoinResponseArgsForCall(0)
 		require.Equal(t, info.Sid, rm.Room.Sid)
 		require.Len(t, participants, numParticipants)
 		require.Len(t, rm.GetParticipants(), numParticipants+1)
@@ -79,7 +79,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := newMockParticipant("new", types.DefaultProtocol, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -135,7 +135,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.Room.MaxParticipants = 1
 		p := newMockParticipant("second", types.ProtocolVersion(0), false)
 
-		err := rm.Join(p, nil, iceServersForRoom)
+		err := rm.Join(p, nil, iceServersForRoom, "")
 		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
 	})
 }
@@ -216,7 +216,7 @@ func TestRoomClosure(t *testing.T) {
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
 
-		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil, iceServersForRoom))
+		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil, iceServersForRoom, ""))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -420,7 +420,9 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
 
 		// ensure everyone has received the packet
 		for _, op := range participants {
@@ -451,7 +453,9 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
 
 		// only p1 should receive the data
 		for _, op := range participants {
@@ -479,7 +483,9 @@ func TestDataChannel(t *testing.T) {
 				},
 			},
 		}
-		p.OnDataPacketArgsForCall(0)(p, &packet)
+		dataTrack := &typesfakes.FakeDataTrack{}
+		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
+		dataTrack.OnDataPacketArgsForCall(0)(&packet)
 
 		// no one should've been sent packet
 		for _, op := range participants {
@@ -495,21 +501,22 @@ func TestHiddenParticipants(t *testing.T) {
 		defer rm.Close()
 
 		pNew := newMockParticipant("new", types.DefaultProtocol, false)
-		rm.Join(pNew, nil, iceServersForRoom)
+		rm.Join(pNew, nil, iceServersForRoom, "testregion")
 
 		// expect new participant to get a JoinReply
-		info, participants, iceServers := pNew.SendJoinResponseArgsForCall(0)
+		info, participants, iceServers, region := pNew.SendJoinResponseArgsForCall(0)
 		require.Equal(t, info.Sid, rm.Room.Sid)
 		require.Len(t, participants, 2)
 		require.Len(t, rm.GetParticipants(), 4)
 		require.NotEmpty(t, iceServers)
+		require.Equal(t, "testregion", region)
 	})
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		p := newMockParticipant("new", types.DefaultProtocol, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
+		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -566,7 +573,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
-		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
+		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)
 		require.NoError(t, err)

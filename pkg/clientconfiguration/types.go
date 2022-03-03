@@ -5,5 +5,5 @@ import (
 )
 
 type ClientConfigurationManager interface {
-	GetConfiguration(clientInfo *livekit.ClientInfo) *livekit.RTCClientConfiguration
+	GetConfiguration(clientInfo *livekit.ClientInfo) *livekit.ClientConfiguration
 }

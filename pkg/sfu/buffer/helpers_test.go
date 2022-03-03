@@ -3,7 +3,7 @@ package buffer
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVP8Helper_Unmarshal(t *testing.T) {
@@ -75,19 +75,19 @@ func TestVP8Helper_Unmarshal(t *testing.T) {
 				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if tt.checkTemporal {
-				assert.Equal(t, tt.temporalSupport, p.TIDPresent == 1)
+				require.Equal(t, tt.temporalSupport, p.TIDPresent == 1)
 			}
 			if tt.checkKeyFrame {
-				assert.Equal(t, tt.keyFrame, p.IsKeyFrame)
+				require.Equal(t, tt.keyFrame, p.IsKeyFrame)
 			}
 			if tt.checkPictureID {
-				assert.Equal(t, tt.pictureID, p.PictureID)
+				require.Equal(t, tt.pictureID, p.PictureID)
 			}
 			if tt.checkTlzIdx {
-				assert.Equal(t, tt.tlzIdx, p.TL0PICIDX)
+				require.Equal(t, tt.tlzIdx, p.TL0PICIDX)
 			}
 			if tt.checkTempID {
-				assert.Equal(t, tt.temporalID, p.TID)
+				require.Equal(t, tt.temporalID, p.TID)
 			}
 		})
 	}

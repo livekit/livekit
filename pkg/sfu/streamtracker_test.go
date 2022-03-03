@@ -6,16 +6,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/protocol/logger"
 )
 
 func TestStreamTracker(t *testing.T) {
 	t.Run("flips to active on first observe", func(t *testing.T) {
-		callbackCalled := atomicBool(0)
-		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		callbackCalled := atomic.NewBool(false)
+		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker.Start()
 		tracker.OnStatusChanged(func(status StreamStatus) {
-			callbackCalled.set(true)
+			callbackCalled.Store(true)
 		})
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
@@ -23,7 +26,7 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Observe(1)
 
 		testutils.WithTimeout(t, func() string {
-			if callbackCalled.get() {
+			if callbackCalled.Load() {
 				return ""
 			} else {
 				return "first packet didn't activate stream"
@@ -31,11 +34,14 @@ func TestStreamTracker(t *testing.T) {
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
-		require.True(t, callbackCalled.get())
+		require.True(t, callbackCalled.Load())
+
+		tracker.Stop()
 	})
 
 	t.Run("flips to inactive immediately", func(t *testing.T) {
-		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
@@ -47,20 +53,31 @@ func TestStreamTracker(t *testing.T) {
 			}
 		})
 
-		callbackCalled := atomicBool(0)
+		callbackCalled := atomic.NewBool(false)
 		tracker.OnStatusChanged(func(status StreamStatus) {
-			callbackCalled.set(true)
+			callbackCalled.Store(true)
 		})
 		require.Equal(t, StreamStatusActive, tracker.Status())
 
 		// run a single iteration
 		tracker.detectChanges()
+
+		testutils.WithTimeout(t, func() string {
+			if callbackCalled.Load() {
+				return ""
+			} else {
+				return "inactive cycle did not declare stream stopped"
+			}
+		})
 		require.Equal(t, StreamStatusStopped, tracker.Status())
-		require.True(t, callbackCalled.get())
+		require.True(t, callbackCalled.Load())
+
+		tracker.Stop()
 	})
 
 	t.Run("flips back to active after iterations", func(t *testing.T) {
-		tracker := NewStreamTracker(1, 2, 500*time.Millisecond)
+		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 1, 2, 500*time.Millisecond)
+		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Observe(1)
@@ -81,10 +98,13 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Observe(3)
 		tracker.detectChanges()
 		require.Equal(t, StreamStatusActive, tracker.Status())
+
+		tracker.Stop()
 	})
 
 	t.Run("does not change to inactive when paused", func(t *testing.T) {
-		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker.Start()
 		tracker.Observe(1)
 		testutils.WithTimeout(t, func() string {
 			if tracker.Status() == StreamStatusActive {
@@ -97,13 +117,16 @@ func TestStreamTracker(t *testing.T) {
 		tracker.SetPaused(true)
 		tracker.detectChanges()
 		require.Equal(t, StreamStatusActive, tracker.Status())
+
+		tracker.Stop()
 	})
 
 	t.Run("flips back to active on first observe after reset", func(t *testing.T) {
-		callbackCalled := atomicUint32(0)
-		tracker := NewStreamTracker(5, 60, 500*time.Millisecond)
+		callbackCalled := atomic.NewUint32(0)
+		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker.Start()
 		tracker.OnStatusChanged(func(status StreamStatus) {
-			callbackCalled.add(1)
+			callbackCalled.Inc()
 		})
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
@@ -111,15 +134,15 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Observe(1)
 
 		testutils.WithTimeout(t, func() string {
-			if callbackCalled.get() == 1 {
+			if callbackCalled.Load() == 1 {
 				return ""
 			} else {
-				return fmt.Sprintf("expected onStatusChanged to be called once, actual: %d", callbackCalled.get())
+				return fmt.Sprintf("expected onStatusChanged to be called once, actual: %d", callbackCalled.Load())
 			}
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
-		require.Equal(t, uint32(1), callbackCalled.get())
+		require.Equal(t, uint32(1), callbackCalled.Load())
 
 		// observe a few more
 		tracker.Observe(2)
@@ -139,14 +162,16 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Observe(1)
 
 		testutils.WithTimeout(t, func() string {
-			if callbackCalled.get() == 2 {
+			if callbackCalled.Load() == 2 {
 				return ""
 			} else {
-				return fmt.Sprintf("expected onStatusChanged to be called twice, actual %d", callbackCalled.get())
+				return fmt.Sprintf("expected onStatusChanged to be called twice, actual %d", callbackCalled.Load())
 			}
 		})
 
 		require.Equal(t, StreamStatusActive, tracker.Status())
-		require.Equal(t, uint32(2), callbackCalled.get())
+		require.Equal(t, uint32(2), callbackCalled.Load())
+
+		tracker.Stop()
 	})
 }

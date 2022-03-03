@@ -12,8 +12,8 @@ func TestScriptMatchConfiguration(t *testing.T) {
 		confs := []ConfigurationItem{
 			{
 				Match: &ScriptMatch{Expr: `c.protocol > 5 && c.browser != "firefox"`},
-				Configuration: &livekit.RTCClientConfiguration{
-					Signal: &livekit.SignalConfiguration{Migration: true},
+				Configuration: &livekit.ClientConfiguration{
+					ResumeConnection: livekit.ClientConfigSetting_ENABLED,
 				},
 			},
 		}
@@ -27,23 +27,23 @@ func TestScriptMatchConfiguration(t *testing.T) {
 		require.Nil(t, conf)
 
 		conf = cm.GetConfiguration(&livekit.ClientInfo{Protocol: 6, Browser: "chrome"})
-		require.True(t, conf.Signal.Migration)
+		require.Equal(t, conf.ResumeConnection, livekit.ClientConfigSetting_ENABLED)
 	})
 
 	t.Run("merge", func(t *testing.T) {
 		confs := []ConfigurationItem{
 			{
 				Match: &ScriptMatch{Expr: `c.protocol > 5 && c.browser != "firefox"`},
-				Configuration: &livekit.RTCClientConfiguration{
-					Signal: &livekit.SignalConfiguration{Migration: true},
+				Configuration: &livekit.ClientConfiguration{
+					ResumeConnection: livekit.ClientConfigSetting_ENABLED,
 				},
 				Merge: true,
 			},
 			{
 				Match: &ScriptMatch{Expr: `c.sdk == "ANDROID"`},
-				Configuration: &livekit.RTCClientConfiguration{
+				Configuration: &livekit.ClientConfiguration{
 					Video: &livekit.VideoConfiguration{
-						PreferredCodec: &livekit.Codec{Mime: "video/h264"},
+						HardwareEncoder: livekit.ClientConfigSetting_DISABLED,
 					},
 				},
 				Merge: true,
@@ -59,8 +59,8 @@ func TestScriptMatchConfiguration(t *testing.T) {
 		require.Nil(t, conf)
 
 		conf = cm.GetConfiguration(&livekit.ClientInfo{Protocol: 6, Browser: "chrome", Sdk: 3})
-		require.True(t, conf.Signal.Migration)
-		require.Equal(t, "video/h264", conf.Video.PreferredCodec.Mime)
+		require.Equal(t, conf.ResumeConnection, livekit.ClientConfigSetting_ENABLED)
+		require.Equal(t, conf.Video.HardwareEncoder, livekit.ClientConfigSetting_DISABLED)
 	})
 }
 

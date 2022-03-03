@@ -3,7 +3,6 @@ package rtc
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -15,21 +14,21 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+
+	"go.uber.org/atomic"
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params      MediaTrackParams
-	numUpTracks uint32
+	numUpTracks atomic.Uint32
 	buffer      *buffer.Buffer
 
 	layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
 
 	audioLevelMu sync.RWMutex
 	audioLevel   *AudioLevel
-
-	done chan struct{}
 
 	*MediaTrackReceiver
 
@@ -188,9 +187,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
 
-	atomic.AddUint32(&t.numUpTracks, 1)
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
-	if atomic.LoadUint32(&t.numUpTracks) > 1 || track.RID() != "" {
+	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
 		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
 		t.MediaTrackReceiver.SetSimulcast(true)
 	}

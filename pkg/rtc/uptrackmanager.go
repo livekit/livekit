@@ -38,7 +38,7 @@ type UpTrackManager struct {
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	return &UpTrackManager{
 		params:               params,
-		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack, 0),
+		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack),
 		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantID),
 	}
 }
@@ -222,7 +222,7 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UpTrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+func (u *UpTrackManager) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
 	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
@@ -233,7 +233,7 @@ func (u *UpTrackManager) UpdateSubscribedQuality(nodeID string, trackID livekit.
 	return nil
 }
 
-func (u *UpTrackManager) UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error {
+func (u *UpTrackManager) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
 	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)

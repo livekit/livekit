@@ -361,6 +361,11 @@ func TestAutoCreate(t *testing.T) {
 		token := joinToken(testRoom, "start-before-create")
 		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
 		require.Error(t, err)
+
+		// second join should also fail
+		token = joinToken(testRoom, "start-before-create-2")
+		_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
+		require.Error(t, err)
 	})
 
 	t.Run("join with explicit createRoom", func(t *testing.T) {
@@ -415,7 +420,7 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 		if pubRemote == nil {
 			return "could not find remote publisher"
 		}
-		if len(pubRemote.Tracks) != 2 {
+		if len(pubRemote.Tracks) != 3 {
 			return "did not receive metadata for published tracks"
 		}
 		return ""

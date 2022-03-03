@@ -8,6 +8,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -31,12 +32,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(client, currentNode)
-	roomStore := createStore(client)
-	roomAllocator, err := NewRoomAllocator(conf, router, roomStore)
+	objectStore := createStore(client)
+	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomAllocator, roomStore, router)
+	roomService, err := NewRoomService(roomAllocator, objectStore, router)
 	if err != nil {
 		return nil, err
 	}
@@ -51,19 +52,20 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
+	egressService := NewEgressService(messageBus, objectStore, roomService, telemetryService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, roomStore, router, currentNode)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
-	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService, clientConfigurationManager)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
 	if err != nil {
 		return nil, err
 	}
-	authHandler := newTurnAuthHandler(roomStore)
+	authHandler := newTurnAuthHandler(objectStore)
 	server, err := NewTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +129,25 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		return nil, nil
 	}
 	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
+	rcOptions := &redis.Options{
 		Addr:     conf.Redis.Address,
 		Username: conf.Redis.Username,
 		Password: conf.Redis.Password,
 		DB:       conf.Redis.DB,
-	})
+	}
+	if conf.Redis.UseTLS {
+		rcOptions = &redis.Options{
+			Addr:     conf.Redis.Address,
+			Username: conf.Redis.Username,
+			Password: conf.Redis.Password,
+			DB:       conf.Redis.DB,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+	}
+	rc := redis.NewClient(rcOptions)
+
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
 		return nil, err
@@ -148,11 +163,11 @@ func createMessageBus(rc *redis.Client) utils.MessageBus {
 	return utils.NewRedisMessageBus(rc)
 }
 
-func createStore(rc *redis.Client) RoomStore {
+func createStore(rc *redis.Client) ObjectStore {
 	if rc != nil {
-		return NewRedisRoomStore(rc)
+		return NewRedisStore(rc)
 	}
-	return NewLocalRoomStore()
+	return NewLocalStore()
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

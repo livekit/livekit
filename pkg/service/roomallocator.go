@@ -17,10 +17,10 @@ type StandardRoomAllocator struct {
 	config    *config.Config
 	router    routing.Router
 	selector  selector.NodeSelector
-	roomStore RoomStore
+	roomStore ObjectStore
 }
 
-func NewRoomAllocator(conf *config.Config, router routing.Router, rs RoomStore) (RoomAllocator, error) {
+func NewRoomAllocator(conf *config.Config, router routing.Router, rs ObjectStore) (RoomAllocator, error) {
 	ns, err := selector.CreateNodeSelector(conf)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	// select a new node
-	nodeID := req.NodeId
+	nodeID := livekit.NodeID(req.NodeId)
 	if nodeID == "" {
 		nodes, err := r.router.ListNodes()
 		if err != nil {
@@ -101,7 +101,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 			return nil, err
 		}
 
-		nodeID = node.Id
+		nodeID = livekit.NodeID(node.Id)
 	}
 
 	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeID)

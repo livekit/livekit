@@ -3,19 +3,19 @@ package service_test
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisRoomStore(redisClient())
+	rs := service.NewRedisStore(redisClient())
 
 	roomName := livekit.RoomName("room1")
 	_ = rs.DeleteRoom(ctx, roomName)
@@ -62,7 +62,7 @@ func TestParticipantPersistence(t *testing.T) {
 
 func TestRoomLock(t *testing.T) {
 	ctx := context.Background()
-	rs := service.NewRedisRoomStore(redisClient())
+	rs := service.NewRedisStore(redisClient())
 	lockInterval := 5 * time.Millisecond
 	roomName := livekit.RoomName("myroom")
 
@@ -77,7 +77,7 @@ func TestRoomLock(t *testing.T) {
 		token, err := rs.LockRoom(ctx, roomName, lockInterval)
 		require.NoError(t, err)
 		require.NotEmpty(t, token)
-		unlocked := uint32(0)
+		unlocked := atomic.NewUint32(0)
 		wg := sync.WaitGroup{}
 
 		wg.Add(1)
@@ -87,12 +87,12 @@ func TestRoomLock(t *testing.T) {
 			token2, err := rs.LockRoom(ctx, roomName, lockInterval)
 			require.NoError(t, err)
 			defer rs.UnlockRoom(ctx, roomName, token2)
-			require.Equal(t, uint32(1), atomic.LoadUint32(&unlocked))
+			require.Equal(t, uint32(1), unlocked.Load())
 		}()
 
 		// release after 2 ms
 		time.Sleep(2 * time.Millisecond)
-		atomic.StoreUint32(&unlocked, 1)
+		unlocked.Store(1)
 		_ = rs.UnlockRoom(ctx, roomName, token)
 
 		wg.Wait()

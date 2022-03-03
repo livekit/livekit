@@ -1,17 +1,17 @@
 package prometheus
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 )
 
 var (
-	atomicRoomTotal            int32
-	atomicParticipantTotal     int32
-	atomicTrackPublishedTotal  int32
-	atomicTrackSubscribedTotal int32
+	roomTotal            atomic.Int32
+	participantTotal     atomic.Int32
+	trackPublishedTotal  atomic.Int32
+	trackSubscribedTotal atomic.Int32
 
 	promRoomTotal            prometheus.Gauge
 	promRoomDuration         prometheus.Histogram
@@ -63,43 +63,43 @@ func initRoomStats(nodeID string) {
 
 func RoomStarted() {
 	promRoomTotal.Add(1)
-	atomic.AddInt32(&atomicRoomTotal, 1)
+	roomTotal.Inc()
 }
 
 func RoomEnded(startedAt time.Time) {
 	if !startedAt.IsZero() {
-		promRoomDuration.Observe(float64(time.Now().Sub(startedAt)) / float64(time.Second))
+		promRoomDuration.Observe(float64(time.Since(startedAt)) / float64(time.Second))
 	}
 	promRoomTotal.Sub(1)
-	atomic.AddInt32(&atomicRoomTotal, -1)
+	roomTotal.Dec()
 }
 
 func AddParticipant() {
 	promParticipantTotal.Add(1)
-	atomic.AddInt32(&atomicParticipantTotal, 1)
+	participantTotal.Inc()
 }
 
 func SubParticipant() {
 	promParticipantTotal.Sub(1)
-	atomic.AddInt32(&atomicParticipantTotal, -1)
+	participantTotal.Dec()
 }
 
 func AddPublishedTrack(kind string) {
 	promTrackPublishedTotal.WithLabelValues(kind).Add(1)
-	atomic.AddInt32(&atomicTrackPublishedTotal, 1)
+	trackPublishedTotal.Inc()
 }
 
 func SubPublishedTrack(kind string) {
 	promTrackPublishedTotal.WithLabelValues(kind).Sub(1)
-	atomic.AddInt32(&atomicTrackPublishedTotal, -1)
+	trackPublishedTotal.Dec()
 }
 
 func AddSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Add(1)
-	atomic.AddInt32(&atomicTrackSubscribedTotal, 1)
+	trackSubscribedTotal.Inc()
 }
 
 func SubSubscribedTrack(kind string) {
 	promTrackSubscribedTotal.WithLabelValues(kind).Sub(1)
-	atomic.AddInt32(&atomicTrackSubscribedTotal, -1)
+	trackSubscribedTotal.Dec()
 }

@@ -22,12 +22,15 @@ type TelemetryService interface {
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo)
 	TrackPublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32)
-	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
 	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 	ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta)
+	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
+	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
 }
 
 type doWorkFunc func()
@@ -108,9 +111,9 @@ func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID l
 	}
 }
 
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo) {
 	t.jobQueue <- func() {
-		t.internalService.TrackSubscribed(ctx, participantID, track)
+		t.internalService.TrackSubscribed(ctx, participantID, track, publisher)
 	}
 }
 
@@ -141,5 +144,23 @@ func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participant
 func (t *telemetryService) ParticipantActive(ctx context.Context, participantID livekit.ParticipantID, clientMeta *livekit.AnalyticsClientMeta) {
 	t.jobQueue <- func() {
 		t.internalService.ParticipantActive(ctx, participantID, clientMeta)
+	}
+}
+
+func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality) {
+	t.jobQueue <- func() {
+		t.internalService.TrackMaxSubscribedVideoQuality(ctx, participantID, track, maxQuality)
+	}
+}
+
+func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
+	t.jobQueue <- func() {
+		t.internalService.EgressStarted(ctx, info)
+	}
+}
+
+func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
+	t.jobQueue <- func() {
+		t.internalService.EgressEnded(ctx, info)
 	}
 }

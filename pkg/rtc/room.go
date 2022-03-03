@@ -44,9 +44,8 @@ type Room struct {
 	joinedAt atomic.Int64
 	holds    atomic.Int32
 	// time that the last participant left the room
-	leftAt    atomic.Int64
-	closed    chan struct{}
-	closeOnce sync.Once
+	leftAt atomic.Int64
+	closed chan struct{}
 
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
@@ -168,7 +167,7 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
-func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer, region string) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -182,7 +181,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		return ErrAlreadyJoined
 	}
 
-	if r.Room.MaxParticipants > 0 && int(r.Room.MaxParticipants) == len(r.participants) {
+	if r.Room.MaxParticipants > 0 && len(r.participants) >= int(r.Room.MaxParticipants) {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}
@@ -222,7 +221,11 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
-	participant.OnDataPacket(r.onDataPacket)
+	participant.OnDataTrackPublished(func(lp types.LocalParticipant, dt types.DataTrack) {
+		dt.OnDataPacket(func(dp *livekit.DataPacket) {
+			r.onDataPacket(lp, dp)
+		})
+	})
 	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -256,7 +259,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers); err != nil {
+	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers, region); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
@@ -329,7 +332,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnTrackPublished(nil)
 	p.OnStateChange(nil)
 	p.OnMetadataUpdate(nil)
-	p.OnDataPacket(nil)
+	p.OnDataTrackPublished(nil)
 
 	// close participant as well
 	_ = p.Close(true)
@@ -441,14 +444,15 @@ func (r *Room) IsClosed() bool {
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
 	r.lock.Lock()
-	defer r.lock.Unlock()
 
 	if r.IsClosed() || r.holds.Load() > 0 {
+		r.lock.Unlock()
 		return
 	}
 
 	for _, p := range r.participants {
 		if !p.Hidden() {
+			r.lock.Unlock()
 			return
 		}
 	}
@@ -464,27 +468,28 @@ func (r *Room) CloseIfEmpty() {
 	} else {
 		elapsed = time.Now().Unix() - r.Room.CreationTime
 	}
+	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.closeLocked()
+		r.Close()
 	}
 }
 
 func (r *Room) Close() {
 	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.closeLocked()
-}
-
-func (r *Room) closeLocked() {
-	r.closeOnce.Do(func() {
-		r.Logger.Infow("closing room")
-		if r.onClose != nil {
-			r.onClose()
-		}
-		close(r.closed)
-	})
+	select {
+	case <-r.closed:
+		r.lock.Unlock()
+		return
+	default:
+		// fall through
+	}
+	close(r.closed)
+	r.lock.Unlock()
+	r.Logger.Infow("closing room")
+	if r.onClose != nil {
+		r.onClose()
+	}
 }
 
 func (r *Room) OnClose(f func()) {

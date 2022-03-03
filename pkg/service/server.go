@@ -13,11 +13,11 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/urfave/negroni"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -25,22 +25,24 @@ import (
 )
 
 type LivekitServer struct {
-	config      *config.Config
-	recService  *RecordingService
-	rtcService  *RTCService
-	httpServer  *http.Server
-	promServer  *http.Server
-	router      routing.Router
-	roomManager *RoomManager
-	turnServer  *turn.Server
-	currentNode routing.LocalNode
-	running     utils.AtomicFlag
-	doneChan    chan struct{}
-	closedChan  chan struct{}
+	config        *config.Config
+	egressService *EgressService
+	recService    *RecordingService
+	rtcService    *RTCService
+	httpServer    *http.Server
+	promServer    *http.Server
+	router        routing.Router
+	roomManager   *RoomManager
+	turnServer    *turn.Server
+	currentNode   routing.LocalNode
+	running       atomic.Bool
+	doneChan      chan struct{}
+	closedChan    chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
+	egressService *EgressService,
 	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
@@ -50,11 +52,12 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:      conf,
-		recService:  recService,
-		rtcService:  rtcService,
-		router:      router,
-		roomManager: roomManager,
+		config:        conf,
+		egressService: egressService,
+		recService:    recService,
+		rtcService:    rtcService,
+		router:        router,
+		roomManager:   roomManager,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -77,10 +80,12 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	roomServer := livekit.NewRoomServiceServer(roomService)
+	egressServer := livekit.NewEgressServer(egressService)
 	recServer := livekit.NewRecordingServiceServer(recService)
 
 	mux := http.NewServeMux()
 	mux.Handle(roomServer.PathPrefix(), roomServer)
+	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
@@ -122,11 +127,11 @@ func (s *LivekitServer) HTTPPort() int {
 }
 
 func (s *LivekitServer) IsRunning() bool {
-	return s.running.Get()
+	return s.running.Load()
 }
 
 func (s *LivekitServer) Start() error {
-	if s.running.Get() {
+	if s.running.Load() {
 		return errors.New("already running")
 	}
 	s.doneChan = make(chan struct{})
@@ -144,6 +149,7 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
+	s.egressService.Start()
 	s.recService.Start()
 
 	// ensure we could listen
@@ -197,7 +203,7 @@ func (s *LivekitServer) Start() error {
 	// give time for Serve goroutine to start
 	time.Sleep(100 * time.Millisecond)
 
-	s.running.TrySet(true)
+	s.running.Store(true)
 
 	<-s.doneChan
 
@@ -211,6 +217,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.roomManager.Stop()
+	s.egressService.Stop()
 	s.recService.Stop()
 
 	close(s.closedChan)
@@ -223,15 +230,13 @@ func (s *LivekitServer) Stop(force bool) {
 	partTicker := time.NewTicker(5 * time.Second)
 	waitingForParticipants := !force && s.roomManager.HasParticipants()
 	for waitingForParticipants {
-		select {
-		case <-partTicker.C:
-			logger.Infow("waiting for participants to exit")
-			waitingForParticipants = s.roomManager.HasParticipants()
-		}
+		<-partTicker.C
+		logger.Infow("waiting for participants to exit")
+		waitingForParticipants = s.roomManager.HasParticipants()
 	}
 	partTicker.Stop()
 
-	if !s.running.TrySet(false) {
+	if !s.running.Swap(false) {
 		return
 	}
 
@@ -272,7 +277,7 @@ func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 	if s.Node().Stats != nil {
 		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
 	}
-	if time.Now().Sub(updatedAt) > 4*time.Second {
+	if time.Since(updatedAt) > 4*time.Second {
 		w.WriteHeader(http.StatusNotAcceptable)
 		_, _ = w.Write([]byte(fmt.Sprintf("Not Ready\nNode Updated At %s", updatedAt)))
 		return

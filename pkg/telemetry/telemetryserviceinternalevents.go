@@ -119,6 +119,21 @@ func (t *telemetryServiceInternal) TrackPublishedUpdate(ctx context.Context, par
 	})
 }
 
+func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
+	maxQuality livekit.VideoQuality) {
+
+	roomID, roomName := t.getRoomDetails(participantID)
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:                      livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY,
+		Timestamp:                 timestamppb.Now(),
+		RoomId:                    string(roomID),
+		ParticipantId:             string(participantID),
+		Track:                     track,
+		Room:                      &livekit.Room{Name: string(roomName)},
+		MaxSubscribedVideoQuality: maxQuality,
+	})
+}
+
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := livekit.RoomID("")
 	roomName := livekit.RoomName("")
@@ -141,7 +156,8 @@ func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, partici
 	})
 }
 
-func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
+	publisher *livekit.ParticipantInfo) {
 	prometheus.AddSubscribedTrack(track.Type.String())
 
 	roomID, roomName := t.getRoomDetails(participantID)
@@ -152,6 +168,7 @@ func (t *telemetryServiceInternal) TrackSubscribed(ctx context.Context, particip
 		ParticipantId: string(participantID),
 		Track:         track,
 		Room:          &livekit.Room{Name: string(roomName)},
+		Publisher:     publisher,
 	})
 }
 
@@ -230,5 +247,33 @@ func (t *telemetryServiceInternal) ParticipantActive(ctx context.Context, partic
 		ParticipantId: string(participantID),
 		Room:          &livekit.Room{Name: string(roomName)},
 		ClientMeta:    clientMeta,
+	})
+}
+
+func (t *telemetryServiceInternal) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
+		Event:      webhook.EventEgressStarted,
+		EgressInfo: info,
+	})
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:      livekit.AnalyticsEventType_EGRESS_STARTED,
+		Timestamp: timestamppb.Now(),
+		EgressId:  info.EgressId,
+		RoomId:    info.RoomId,
+	})
+}
+
+func (t *telemetryServiceInternal) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
+	t.notifyEvent(ctx, &livekit.WebhookEvent{
+		Event:      webhook.EventEgressEnded,
+		EgressInfo: info,
+	})
+
+	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
+		Type:      livekit.AnalyticsEventType_EGRESS_ENDED,
+		Timestamp: timestamppb.Now(),
+		EgressId:  info.EgressId,
+		RoomId:    info.RoomId,
 	})
 }

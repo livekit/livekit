@@ -10,7 +10,7 @@ import (
 
 type ConfigurationItem struct {
 	Match
-	Configuration *livekit.RTCClientConfiguration
+	Configuration *livekit.ClientConfiguration
 	Merge         bool
 }
 
@@ -22,8 +22,8 @@ func NewStaticClientConfigurationManager(confs []ConfigurationItem) *StaticClien
 	return &StaticClientConfigurationManager{confs: confs}
 }
 
-func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.ClientInfo) *livekit.RTCClientConfiguration {
-	var matchedConf []*livekit.RTCClientConfiguration
+func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.ClientInfo) *livekit.ClientConfiguration {
+	var matchedConf []*livekit.ClientConfiguration
 	for _, c := range s.confs {
 		matched, err := c.Match.Match(clientInfo)
 		if err != nil {
@@ -39,10 +39,10 @@ func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.
 		matchedConf = append(matchedConf, c.Configuration)
 	}
 
-	var conf *livekit.RTCClientConfiguration
+	var conf *livekit.ClientConfiguration
 	for k, v := range matchedConf {
 		if k == 0 {
-			conf = proto.Clone(matchedConf[0]).(*livekit.RTCClientConfiguration)
+			conf = proto.Clone(matchedConf[0]).(*livekit.ClientConfiguration)
 		} else {
 			// TODO : there is a problem use protobuf merge, we don't have flag to indicate 'no value',
 			// don't override default behavior or other configuration's field. So a bool value = false or

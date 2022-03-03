@@ -1,10 +1,10 @@
 package sfu
 
 import (
+	"errors"
 	"io"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -13,10 +13,16 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+)
+
+var (
+	ErrReceiverClosed        = errors.New("receiver closed")
+	ErrDownTrackAlreadyExist = errors.New("DownTrack already exist")
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
@@ -37,7 +43,7 @@ type TrackReceiver interface {
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
 
-	AddDownTrack(track TrackSender)
+	AddDownTrack(track TrackSender) error
 	DeleteDownTrack(peerID livekit.ParticipantID)
 
 	DebugInfo() map[string]interface{}
@@ -58,7 +64,7 @@ type WebRTCReceiver struct {
 	isSimulcast    bool
 	onCloseHandler func()
 	closeOnce      sync.Once
-	closed         atomicBool
+	closed         atomic.Bool
 	useTrackers    bool
 
 	rtcpCh chan []rtcp.Packet
@@ -148,7 +154,7 @@ func NewWebRTCReceiver(
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
 		numProcs:             runtime.NumCPU(),
-		streamTrackerManager: NewStreamTrackerManager(),
+		streamTrackerManager: NewStreamTrackerManager(logger),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 
@@ -239,7 +245,7 @@ func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 }
 
 func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) {
-	if w.closed.get() {
+	if w.closed.Load() {
 		return
 	}
 
@@ -285,16 +291,16 @@ func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
 	w.streamTrackerManager.SetPaused(paused)
 }
 
-func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
-	if w.closed.get() {
-		return
+func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
+	if w.closed.Load() {
+		return ErrReceiverClosed
 	}
 
 	w.downTrackMu.RLock()
 	_, ok := w.index[track.PeerID()]
 	w.downTrackMu.RUnlock()
 	if ok {
-		return
+		return ErrDownTrackAlreadyExist
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
@@ -306,6 +312,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) {
 	}
 
 	w.storeDownTrack(track)
+	return nil
 }
 
 func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
@@ -351,7 +358,7 @@ func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 
 // DeleteDownTrack removes a DownTrack from a Receiver
 func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
-	if w.closed.get() {
+	if w.closed.Load() {
 		return
 	}
 
@@ -368,7 +375,7 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
-	if w.closed.get() {
+	if w.closed.Load() {
 		return
 	}
 
@@ -446,7 +453,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 	defer func() {
 		w.closeOnce.Do(func() {
-			w.closed.set(true)
+			w.closed.Store(true)
 			w.closeTracks()
 		})
 
@@ -479,7 +486,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			}
 		} else {
 			// parallel - enables much more efficient multi-core utilization
-			start := uint64(0)
+			start := atomic.NewUint64(0)
 			end := uint64(len(downTracks))
 
 			// 100µs is enough to amortize the overhead and provide sufficient load balancing.
@@ -492,7 +499,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 				go func() {
 					defer wg.Done()
 					for {
-						n := atomic.AddUint64(&start, step)
+						n := start.Add(step)
 						if n >= end+step {
 							return
 						}

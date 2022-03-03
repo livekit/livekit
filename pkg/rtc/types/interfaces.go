@@ -59,6 +59,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
+	GetDataTrack() DataTrack
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -75,8 +76,8 @@ type Participant interface {
 	// updates from remotes
 	UpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
-	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -128,7 +129,7 @@ type LocalParticipant interface {
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
-	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer, region string) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
@@ -144,14 +145,14 @@ type LocalParticipant interface {
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
 	OnMetadataUpdate(callback func(LocalParticipant))
-	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(_callback func(LocalParticipant))
+	OnDataTrackPublished(callback func(LocalParticipant, DataTrack))
 
 	// session migration
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
+	SetMigrateInfo(mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 	SetPreviousAnswer(previous *webrtc.SessionDescription)
 
 	UpdateRTT(rtt uint32)
@@ -204,8 +205,8 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality)
+	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
 //counterfeiter:generate . LocalMediaTrack
@@ -236,4 +237,14 @@ type SubscribedTrack interface {
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
+}
+
+// DataTrack is the interface representing a data track published to the room
+//counterfeiter:generate . DataTrack
+type DataTrack interface {
+	TrackID() livekit.TrackID
+	Receiver() sfu.TrackReceiver
+	AddOnClose(func())
+	OnDataPacket(callback func(*livekit.DataPacket))
+	Kind() livekit.TrackType
 }

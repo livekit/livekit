@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -11,12 +10,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
-)
-
-const (
-	defaultLimitNumTracksPerCPU int32   = 400
-	defaultLimitMaxNumTracks    int32   = 8000
-	defaultLimitBytesPerSec     float32 = 1_000_000_000 // just under 10 Gbps
 )
 
 var DefaultStunServers = []string{
@@ -28,7 +21,7 @@ type CongestionControlProbeMode string
 
 const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
-	CongestionControlProbeModeMedia                              = "media"
+	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
 )
 
 type Config struct {
@@ -117,6 +110,7 @@ type RedisConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
+	UseTLS   bool   `yaml:"use_tls"`
 }
 
 type RoomConfig struct {
@@ -225,7 +219,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		},
 		NodeSelector: NodeSelectorConfig{
 			Kind:         "random",
-			SysloadLimit: 0.7,
+			SysloadLimit: 0.9,
 		},
 		Keys: map[string]string{},
 	}
@@ -264,17 +258,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if conf.Limit.NumTracks == 0 {
-		conf.Limit.NumTracks = defaultLimitNumTracksPerCPU * int32(runtime.NumCPU())
-		if conf.Limit.NumTracks > defaultLimitMaxNumTracks {
-			conf.Limit.NumTracks = defaultLimitMaxNumTracks
-		}
-	}
-
-	if conf.Limit.BytesPerSec == 0 {
-		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
 	}
 
 	if conf.LogLevel != "" {

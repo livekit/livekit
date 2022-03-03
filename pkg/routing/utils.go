@@ -7,12 +7,12 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func participantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) string {
-	return string(roomName) + "|" + string(identity)
+func participantKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) livekit.ParticipantKey {
+	return livekit.ParticipantKey(string(roomName) + "|" + string(identity))
 }
 
-func parseParticipantKey(pkey string) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
-	parts := strings.Split(pkey, "|")
+func parseParticipantKey(pkey livekit.ParticipantKey) (roomName livekit.RoomName, identity livekit.ParticipantIdentity, err error) {
+	parts := strings.Split(string(pkey), "|")
 	if len(parts) != 2 {
 		err = errors.New("invalid participant key")
 		return

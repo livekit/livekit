@@ -96,7 +96,7 @@ func (w *TrackWriter) writeNull() {
 				w.track.WriteSample(sample)
 			}
 		case <-w.ctx.Done():
-			break
+			return
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
+	"crypto/tls"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -29,7 +30,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createRedisClient,
 		createMessageBus,
 		createStore,
-		wire.Bind(new(RORoomStore), new(RoomStore)),
+		wire.Bind(new(ServiceStore), new(ObjectStore)),
+		wire.Bind(new(EgressStore), new(ObjectStore)),
 		createKeyProvider,
 		createWebhookNotifier,
 		createClientConfiguration,
@@ -38,6 +40,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
+		NewEgressService,
 		NewRecordingService,
 		NewRoomAllocator,
 		NewRoomService,
@@ -106,12 +109,25 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	}
 
 	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
-		Addr:     conf.Redis.Address,
-		Username: conf.Redis.Username,
-		Password: conf.Redis.Password,
-		DB:       conf.Redis.DB,
-	})
+    rcOptions :=  &redis.Options{
+                             Addr:     conf.Redis.Address,
+                             Username: conf.Redis.Username,
+                             Password: conf.Redis.Password,
+                             DB:       conf.Redis.DB,
+                         }
+	if conf.Redis.UseTLS {
+		rcOptions = &redis.Options{
+    		Addr:     conf.Redis.Address,
+    		Username: conf.Redis.Username,
+    		Password: conf.Redis.Password,
+    		DB:       conf.Redis.DB,
+            TLSConfig: &tls.Config{
+                    MinVersion: tls.VersionTLS12,
+                },
+    	}
+	}
+	rc := redis.NewClient(rcOptions)
+
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
 		return nil, err
@@ -127,11 +143,11 @@ func createMessageBus(rc *redis.Client) utils.MessageBus {
 	return utils.NewRedisMessageBus(rc)
 }
 
-func createStore(rc *redis.Client) RoomStore {
+func createStore(rc *redis.Client) ObjectStore {
 	if rc != nil {
-		return NewRedisRoomStore(rc)
+		return NewRedisStore(rc)
 	}
-	return NewLocalRoomStore()
+	return NewLocalStore()
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
