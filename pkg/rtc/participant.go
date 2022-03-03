@@ -60,6 +60,7 @@ type ParticipantParams struct {
 	SimTracks               map[uint32]SimulcastTrackInfo
 	Grants                  *auth.ClaimGrants
 	InitialVersion          uint32
+	ClientConf              *livekit.ClientConfiguration
 }
 
 type ParticipantImpl struct {
@@ -612,7 +613,8 @@ func (p *ParticipantImpl) SendJoinResponse(
 				ServerRegion:      region,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary
-				SubscriberPrimary: p.SubscriberAsPrimary(),
+				SubscriberPrimary:   p.SubscriberAsPrimary(),
+				ClientConfiguration: p.params.ClientConf,
 			},
 		},
 	})
