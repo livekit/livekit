@@ -352,6 +352,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		}
 	})
 
+	r.rooms[roomName] = newRoom
+
 	r.lock.Unlock()
 
 	newRoom.Hold()
