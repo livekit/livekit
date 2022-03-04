@@ -304,11 +304,11 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 // create the actual room object, to be used on RTC node
 func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.RoomName) (*rtc.Room, error) {
 	r.lock.RLock()
-	room := r.rooms[roomName]
+	lastSeenRoom := r.rooms[roomName]
 	r.lock.RUnlock()
 
-	if room != nil && room.Hold() {
-		return room, nil
+	if lastSeenRoom != nil && lastSeenRoom.Hold() {
+		return lastSeenRoom, nil
 	}
 
 	// create new room, get details first
@@ -317,14 +317,20 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
+	r.lock.Lock()
+
+	currentRoom := r.rooms[roomName]
+	if currentRoom != lastSeenRoom {
+		r.lock.Unlock()
+		currentRoom.Hold()
+		return currentRoom, nil
+	}
+
 	// construct ice servers
-	room = rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
-	room.Hold()
+	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
 
-	r.telemetry.RoomStarted(ctx, room.Room)
-
-	room.OnClose(func() {
-		r.telemetry.RoomEnded(ctx, room.Room)
+	newRoom.OnClose(func() {
+		r.telemetry.RoomEnded(ctx, newRoom.Room)
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			logger.Errorw("could not delete room", err)
 		}
@@ -332,13 +338,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		logger.Infow("room closed")
 	})
 
-	room.OnMetadataUpdate(func(metadata string) {
-		if err := r.roomStore.StoreRoom(ctx, room.Room); err != nil {
+	newRoom.OnMetadataUpdate(func(metadata string) {
+		if err := r.roomStore.StoreRoom(ctx, newRoom.Room); err != nil {
 			logger.Errorw("could not handle metadata update", err)
 		}
 	})
 
-	room.OnParticipantChanged(func(p types.LocalParticipant) {
+	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				logger.Errorw("could not handle participant change", err)
@@ -346,11 +352,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		}
 	})
 
-	r.lock.Lock()
-	r.rooms[roomName] = room
 	r.lock.Unlock()
 
-	return room, nil
+	newRoom.Hold()
+
+	r.telemetry.RoomStarted(ctx, newRoom.Room)
+
+	return newRoom, nil
 }
 
 // manages an RTC session for a participant, runs on the RTC node
