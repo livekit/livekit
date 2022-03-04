@@ -320,9 +320,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomName]
-	if currentRoom != lastSeenRoom {
+	if currentRoom != lastSeenRoom && currentRoom.Hold() {
 		r.lock.Unlock()
-		currentRoom.Hold()
 		return currentRoom, nil
 	}
 
