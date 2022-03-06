@@ -121,6 +121,7 @@ type LocalParticipant interface {
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
+	GetSubscribedTracks() []SubscribedTrack
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -201,6 +202,7 @@ type MediaTrack interface {
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RemoveAllSubscribers()
 	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
+	GetAllSubscribers() []livekit.ParticipantID
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality

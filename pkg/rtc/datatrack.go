@@ -176,6 +176,10 @@ func (t *DataTrack) GetBitrateTemporalCumulative() sfu.Bitrates {
 func (t *DataTrack) SendPLI(layer int32) {
 }
 
+func (t *DataTrack) LastPLI() int64 {
+	return 0
+}
+
 func (t *DataTrack) SetUpTrackPaused(paused bool) {
 
 }

@@ -1650,3 +1650,14 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 	}
 	p.pendingDataChannels = nil
 }
+
+func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
+	for _, t := range p.subscribedTracks {
+		tracks = append(tracks, t)
+	}
+	return tracks
+}
