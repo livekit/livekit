@@ -4,12 +4,10 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"errors"
 	"fmt"
 	"go/build"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -415,26 +413,20 @@ func pipe(first, second string) error {
 	c2 := exec.Command(a2[0], a2[1:]...)
 
 	c2.Stdin = p
-	var b bytes.Buffer
-	c2.Stdout = &b
+	c2.Stdout = os.Stdout
 	c2.Stderr = os.Stderr
 
 	if err = c1.Start(); err != nil {
-		fmt.Println("1")
 		return err
 	}
 	if err = c2.Start(); err != nil {
-		fmt.Println("2")
 		return err
 	}
 	if err = c1.Wait(); err != nil {
-		fmt.Println("3")
 		return err
 	}
 	if err = c2.Wait(); err != nil {
-		fmt.Println("5")
 		return err
 	}
-	io.Copy(os.Stdout, &b)
 	return nil
 }
