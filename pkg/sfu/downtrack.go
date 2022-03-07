@@ -493,14 +493,14 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 func (d *DownTrack) updateBitrate() {
 	lastRtp := d.lastRTP.Load()
 	d.statsLock.RLock()
-	update := lastRtp.Sub(d.lastBitrateReport) > time.Second
+	timeDiff := lastRtp.Sub(d.lastBitrateReport).Seconds()
 	d.statsLock.RUnlock()
-	if !update {
+	if timeDiff < 1 {
 		return
 	}
 	octets, _ := d.getSRStats()
 	d.statsLock.Lock()
-	d.bitrate = octets*8 - d.bitrateHelper
+	d.bitrate = uint64(float64(octets*8-d.bitrateHelper) / timeDiff)
 	d.bitrateHelper = octets * 8
 	d.lastBitrateReport = lastRtp
 	d.statsLock.Unlock()

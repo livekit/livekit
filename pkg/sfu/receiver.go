@@ -407,7 +407,7 @@ func (w *WebRTCReceiver) LastPLI() int64 {
 	var lastPLI int64
 	w.bufferMu.RLock()
 	for _, b := range w.buffers {
-		if b.LastPLI() > lastPLI {
+		if b != nil && b.LastPLI() > lastPLI {
 			lastPLI = b.LastPLI()
 		}
 	}
