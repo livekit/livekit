@@ -1310,5 +1310,9 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 }
 
 func (d *DownTrack) LastPLI() int64 {
-	return d.lastPli.Load().UnixNano()
+	t := d.lastPli.Load()
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
 }
