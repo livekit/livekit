@@ -111,10 +111,6 @@ func (v *VP8) Unmarshal(payload []byte) error {
 				return errShortPacket
 			}
 			v.TL0PICIDXPresent = 1
-
-			if idx >= payloadLen {
-				return errShortPacket
-			}
 			v.TL0PICIDX = payload[idx]
 		}
 		if T || K {
@@ -131,9 +127,6 @@ func (v *VP8) Unmarshal(payload []byte) error {
 				v.KEYIDXPresent = 1
 				v.KEYIDX = payload[idx] & 0x1f
 			}
-		}
-		if idx >= payloadLen {
-			return errShortPacket
 		}
 		idx++
 		if payloadLen < idx+1 {
@@ -197,7 +190,7 @@ func (v *VP8) MarshalTo(buf []byte) error {
 	return nil
 }
 
-func VP8PictureIdSizeDiff(mBit1 bool, mBit2 bool) int {
+func VPxPictureIdSizeDiff(mBit1 bool, mBit2 bool) int {
 	if mBit1 == mBit2 {
 		return 0
 	}
@@ -274,4 +267,176 @@ func IsH264Keyframe(payload []byte) bool {
 		return payload[1]&0x1F == 7
 	}
 	return false
+}
+
+// VP9 is a helper to get spatial/temporal data from VP9 packet header
+/*
+	VP9 Payload Descriptor (flexible mode)
+	     0 1 2 3 4 5 6 7
+        +-+-+-+-+-+-+-+-+
+        |I|P|L|F|B|E|V|Z| (REQUIRED)
+        +-+-+-+-+-+-+-+-+
+   I:   |M| PICTURE ID  | (REQUIRED)
+        +-+-+-+-+-+-+-+-+
+   M:   | EXTENDED PID  | (RECOMMENDED)
+        +-+-+-+-+-+-+-+-+
+   L:   | TID |U| SID |D| (CONDITIONALLY RECOMMENDED)
+        +-+-+-+-+-+-+-+-+                             -\
+   P,F: | P_DIFF      |N| (CONDITIONALLY REQUIRED)    - up to 3 times
+        +-+-+-+-+-+-+-+-+                             -/
+   V:   | SS            |
+        | ..            |
+        +-+-+-+-+-+-+-+-+
+
+	VP9 Payload Descriptor (non-flexible mode)
+	     0 1 2 3 4 5 6 7
+        +-+-+-+-+-+-+-+-+
+        |I|P|L|F|B|E|V|Z| (REQUIRED)
+        +-+-+-+-+-+-+-+-+
+   I:   |M| PICTURE ID  | (RECOMMENDED)
+        +-+-+-+-+-+-+-+-+
+   M:   | EXTENDED PID  | (RECOMMENDED)
+        +-+-+-+-+-+-+-+-+
+   L:   | TID |U| SID |D| (CONDITIONALLY RECOMMENDED)
+        +-+-+-+-+-+-+-+-+
+        |   TL0PICIDX   | (CONDITIONALLY REQUIRED)
+        +-+-+-+-+-+-+-+-+
+   V:   | SS            |
+        | ..            |
+        +-+-+-+-+-+-+-+-+
+*/
+type VP9 struct {
+	FirstByte byte
+
+	SpatialLayerSwitchUpPoint  bool
+	TemporalLayerSwitchUpPoint bool
+
+	PictureIDPresent int
+	PictureID        uint16 /* 8 or 16 bits, picture ID */
+	MBit             bool
+
+	TL0PICIDXPresent int
+	TL0PICIDX        uint8 /* 8 bits temporal level zero index */
+
+	LayersPresent int
+	TID           uint8 /* 3 bits temporal layer idx */
+	UBit          byte
+	SID           uint8 /* 3 bits spatial layer idx */
+	DBit          byte
+
+	HeaderSize int
+
+	// IsKeyFrame is a helper to detect if current packet is a keyframe
+	IsKeyFrame bool
+}
+
+// Unmarshal parses VP9 Payload Description
+func (v *VP9) Unmarshal(payload []byte) error {
+	if payload == nil {
+		return errNilPacket
+	}
+
+	payloadLen := len(payload)
+	if payloadLen < 1 {
+		return errShortPacket
+	}
+
+	idx := 0
+	v.FirstByte = payload[idx]
+	I := payload[idx]&0x80 > 0
+	P := payload[idx]&0x40 > 0
+	L := payload[idx]&0x20 > 0
+	F := payload[idx]&0x10 > 0
+	B := payload[idx]&0x08 > 0
+
+	if F && !I {
+		return errInvalidPacket
+	}
+
+	v.SpatialLayerSwitchUpPoint = !P
+
+	// Check for PictureID
+	if I {
+		idx++
+		if payloadLen < idx+1 {
+			return errShortPacket
+		}
+		v.PictureIDPresent = 1
+		pid := payload[idx] & 0x7f
+		// Check if m is 1, then Picture ID is 15 bits
+		if payload[idx]&0x80 > 0 {
+			idx++
+			if payloadLen < idx+1 {
+				return errShortPacket
+			}
+			v.MBit = true
+			v.PictureID = binary.BigEndian.Uint16([]byte{pid, payload[idx]})
+		} else {
+			v.PictureID = uint16(pid)
+		}
+	}
+
+	// Check if TL0PICIDX is present
+	if L {
+		idx++
+		if payloadLen < idx+1 {
+			return errShortPacket
+		}
+
+		v.LayersPresent = 1
+		v.TID = (payload[idx] >> 5) & 0x7
+		if P && v.TID != 0 {
+			return errInvalidPacket
+		}
+		v.UBit = (payload[idx] >> 4) & 0x1
+
+		v.SID = (payload[idx] >> 1) & 0x7
+		v.DBit = payload[idx] & 0x1
+
+		if !F {
+			idx++
+			if payloadLen < idx+1 {
+				return errShortPacket
+			}
+			v.TL0PICIDXPresent = 1
+			v.TL0PICIDX = payload[idx]
+		}
+	}
+
+	v.IsKeyFrame = !P && (v.LayersPresent == 0 || (v.LayersPresent == 1 && v.SID == 0)) && B
+	v.HeaderSize = idx
+	return nil
+}
+
+func (v *VP9) MarshalTo(buf []byte) error {
+	if len(buf) < v.HeaderSize {
+		return errShortPacket
+	}
+
+	idx := 0
+	buf[idx] = v.FirstByte
+
+	if v.PictureIDPresent == 1 {
+		idx++
+		if v.MBit {
+			buf[idx] = 0x80 | byte((v.PictureID>>8)&0x7f)
+			buf[idx+1] = byte(v.PictureID & 0xff)
+			idx += 2
+		} else {
+			buf[idx] = byte(v.PictureID)
+			idx++
+		}
+	}
+
+	if v.LayersPresent == 1 {
+		buf[idx] = v.TID<<5 | v.UBit<<4 | v.SID<<1 | v.DBit
+		idx++
+	}
+
+	if v.TL0PICIDXPresent == 1 {
+		buf[idx] = v.TL0PICIDX
+		idx++
+	}
+
+	return nil
 }

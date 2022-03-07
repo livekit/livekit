@@ -546,8 +546,8 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	// GetBitrate() method in sfu.Receiver uses the availableLayers
 	// set by stream tracker to report 0 bitrate if a layer is not available.
 	//
-	for i := 0; i < len(b.bitrateHelper); i++ {
-		for j := 0; j < len(b.bitrateHelper[0]); j++ {
+	for i := 0; i < len(b.bitrate); i++ {
+		for j := 0; j < len(b.bitrate[0]); j++ {
 			b.bitrate[i][j] = (8 * b.bitrateHelper[i][j] * int64(ReportDelta)) / timeDiff
 			b.bitrateHelper[i][j] = 0
 		}
@@ -703,38 +703,21 @@ func (b *Buffer) Bitrate() int64 {
 	return bitrate
 }
 
-// BitrateTemporalCumulative returns the current publisher stream bitrate temporal layer accumulated with lower temporal layers.
-func (b *Buffer) BitrateTemporalCumulative() Bitrates {
-	b.RLock()
-	defer b.RUnlock()
-
-	var bitrates Bitrates
-	for i := 0; i < len(b.bitrate); i++ {
-		for j := len(b.bitrate[0]) - 1; j >= 1; j-- {
-			bitrates[i][j] = b.bitrate[i][j]
-			if bitrates[i][j] != 0 {
-				for k := j - 1; k >= 0; k-- {
-					bitrates[i][j] += b.bitrate[i][k]
-				}
-			}
-		}
-	}
-
-	return bitrates
-}
-
 // BitrateCumulative returns the current publisher stream bitrate layer accumulated with lower layers.
 func (b *Buffer) BitrateCumulative() Bitrates {
 	b.RLock()
 	defer b.RUnlock()
 
 	var bitrates Bitrates
-	for i := len(b.bitrate) - 1; i >= 1; i-- {
-		for j := len(b.bitrate[0]) - 1; j >= 1; j-- {
-			bitrates[i][j] = b.bitrate[i][j]
-			if bitrates[i][j] != 0 {
-				for k := j - 1; k >= 0; k-- {
-					bitrates[i][j] += b.bitrate[i][k]
+	for i := len(b.bitrate) - 1; i >= 0; i-- {
+		for j := len(b.bitrate) - 1; j >= 0; j-- {
+			if b.bitrate[i][j] == 0 {
+				continue
+			}
+
+			for k := i; k >= 0; k-- {
+				for l := j; l >= 0; l-- {
+					bitrates[i][j] += b.bitrate[k][l]
 				}
 			}
 		}

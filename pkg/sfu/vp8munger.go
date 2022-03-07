@@ -135,7 +135,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			KEYIDXPresent:    vp8.KEYIDXPresent,
 			KEYIDX:           vp8.KEYIDX - v.keyIdxOffset,
 			IsKeyFrame:       vp8.IsKeyFrame,
-			HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
+			HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
 		return &TranslationParamsVP8{
 			header: vp8Packet,
@@ -218,7 +218,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		KEYIDXPresent:    vp8.KEYIDXPresent,
 		KEYIDX:           mungedKeyIdx,
 		IsKeyFrame:       vp8.IsKeyFrame,
-		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
+		HeaderSize:       vp8.HeaderSize + buffer.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
 	return &TranslationParamsVP8{
 		header: vp8Packet,

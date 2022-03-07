@@ -35,7 +35,7 @@ type TrackReceiver interface {
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
-	GetBitrateTemporalCumulative() buffer.Bitrates
+	GetBitrateCumulative() buffer.Bitrates
 
 	SendPLI(layer int32)
 	LastPLI() int64
@@ -331,21 +331,18 @@ func (w *WebRTCReceiver) downTrackLayerChange(layers []int32) {
 	}
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() buffer.Bitrates {
-	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
+func (w *WebRTCReceiver) GetBitrateCumulative() buffer.Bitrates {
 	var br buffer.Bitrates
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	for i, buff := range w.buffers {
-		if buff != nil {
-			var brs buffer.Bitrates
-			if w.streamTrackerManager.HasSpatialLayer(int32(i)) {
-				brs = buff.BitrateTemporalCumulative()
-			}
+		if buff == nil || !w.streamTrackerManager.HasSpatialLayer(int32(i)) {
+			continue
+		}
 
-			for j := 0; j < len(br[i]); j++ {
-				br[i][j] = brs[i][j]
-			}
+		brs := buff.BitrateCumulative()
+		for j := 0; j < len(brs[i]); j++ {
+			br[i][j] = brs[0][j]
 		}
 	}
 	return br

@@ -701,7 +701,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	return d.forwarder.BandwidthRequested(d.receiver.GetBitrateTemporalCumulative())
+	return d.forwarder.BandwidthRequested(d.receiver.GetBitrateCumulative())
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
@@ -709,13 +709,13 @@ func (d *DownTrack) DistanceToDesired() int32 {
 }
 
 func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateCumulative())
 	d.logger.Debugw("stream: allocation", "channel", availableChannelCapacity, "allocation", allocation)
 	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
-	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateTemporalCumulative())
+	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateCumulative())
 }
 
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
@@ -741,23 +741,23 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
-	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
+	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateCumulative())
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
-	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateCumulative())
 	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
 	return allocation, available
 }
 
 func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
-	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateCumulative())
 	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
 	return transition, available
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.Pause(d.receiver.GetBitrateCumulative())
 	d.logger.Debugw("stream: pause", "allocation", allocation)
 	return allocation
 }

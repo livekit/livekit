@@ -170,7 +170,7 @@ func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64
 	return
 }
 
-func (t *DataTrack) GetBitrateTemporalCumulative() buffer.Bitrates {
+func (t *DataTrack) GetBitrateCumulative() buffer.Bitrates {
 	return buffer.Bitrates{}
 }
 
