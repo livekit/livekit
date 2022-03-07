@@ -205,9 +205,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			// by default only enable opus and VP8
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
-				{Mime: webrtc.MimeTypeVP8},
-				{Mime: webrtc.MimeTypeH264},
-				// {Mime: webrtc.MimeTypeVP9},
+				//{Mime: webrtc.MimeTypeVP8},
+				//{Mime: webrtc.MimeTypeH264},
+				{Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,
 		},

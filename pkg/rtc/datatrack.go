@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
@@ -169,8 +170,8 @@ func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64
 	return
 }
 
-func (t *DataTrack) GetBitrateTemporalCumulative() sfu.Bitrates {
-	return sfu.Bitrates{}
+func (t *DataTrack) GetBitrateTemporalCumulative() buffer.Bitrates {
+	return buffer.Bitrates{}
 }
 
 func (t *DataTrack) SendPLI(layer int32) {

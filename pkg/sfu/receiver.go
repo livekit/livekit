@@ -26,7 +26,6 @@ var (
 )
 
 type AudioLevelHandle func(level uint8, duration uint32)
-type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
@@ -36,7 +35,7 @@ type TrackReceiver interface {
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
-	GetBitrateTemporalCumulative() Bitrates
+	GetBitrateTemporalCumulative() buffer.Bitrates
 
 	SendPLI(layer int32)
 
@@ -70,11 +69,11 @@ type WebRTCReceiver struct {
 	rtcpCh chan []rtcp.Packet
 
 	bufferMu sync.RWMutex
-	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	buffers  [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
 	rtt      uint32
 
 	upTrackMu sync.RWMutex
-	upTracks  [DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
+	upTracks  [buffer.DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
 
 	downTrackMu sync.RWMutex
 	downTracks  []TrackSender
@@ -331,20 +330,20 @@ func (w *WebRTCReceiver) downTrackLayerChange(layers []int32) {
 	}
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
+func (w *WebRTCReceiver) GetBitrateTemporalCumulative() buffer.Bitrates {
 	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
-	var br Bitrates
+	var br buffer.Bitrates
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	for i, buff := range w.buffers {
 		if buff != nil {
-			tls := make([]int64, DefaultMaxLayerTemporal+1)
+			var brs buffer.Bitrates
 			if w.streamTrackerManager.HasSpatialLayer(int32(i)) {
-				tls = buff.BitrateTemporalCumulative()
+				brs = buff.BitrateTemporalCumulative()
 			}
 
 			for j := 0; j < len(br[i]); j++ {
-				br[i][j] = tls[j]
+				br[i][j] = brs[i][j]
 			}
 		}
 	}

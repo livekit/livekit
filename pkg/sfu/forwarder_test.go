@@ -62,50 +62,50 @@ func TestForwarderLayersVideo(t *testing.T) {
 
 	maxLayers := f.MaxLayers()
 	expectedLayers := VideoLayers{
-		spatial:  DefaultMaxLayerSpatial,
-		temporal: DefaultMaxLayerTemporal,
+		spatial:  buffer.DefaultMaxLayerSpatial,
+		temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	require.Equal(t, expectedLayers, maxLayers)
 
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, InvalidLayers, f.TargetLayers())
 
-	changed, maxLayers, currentLayers := f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	changed, maxLayers, currentLayers := f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 	require.False(t, changed)
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, InvalidLayers, currentLayers)
 
-	changed, maxLayers, currentLayers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
+	changed, maxLayers, currentLayers = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
 	require.True(t, changed)
 	expectedLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial - 1,
-		temporal: DefaultMaxLayerTemporal,
+		spatial:  buffer.DefaultMaxLayerSpatial - 1,
+		temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
 	require.Equal(t, InvalidLayers, currentLayers)
 
 	f.currentLayers = VideoLayers{spatial: 0, temporal: 1}
-	changed, maxLayers, currentLayers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
+	changed, maxLayers, currentLayers = f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial - 1)
 	require.False(t, changed)
 	expectedLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial - 1,
-		temporal: DefaultMaxLayerTemporal,
+		spatial:  buffer.DefaultMaxLayerSpatial - 1,
+		temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
 	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
 
-	changed, maxLayers, currentLayers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
+	changed, maxLayers, currentLayers = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
 	require.False(t, changed)
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
 
-	changed, maxLayers, currentLayers = f.SetMaxTemporalLayer(DefaultMaxLayerTemporal - 1)
+	changed, maxLayers, currentLayers = f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal - 1)
 	require.True(t, changed)
 	expectedLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial - 1,
-		temporal: DefaultMaxLayerTemporal - 1,
+		spatial:  buffer.DefaultMaxLayerSpatial - 1,
+		temporal: buffer.DefaultMaxLayerTemporal - 1,
 	}
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
@@ -129,11 +129,11 @@ func TestForwarderGetForwardingStatus(t *testing.T) {
 
 	// when target is the max, should be optimal
 	f.Mute(false)
-	f.targetLayers.spatial = DefaultMaxLayerSpatial
+	f.targetLayers.spatial = buffer.DefaultMaxLayerSpatial
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
 
 	// when target is less than max subscribed and max available, should be partial
-	f.targetLayers.spatial = DefaultMaxLayerSpatial - 1
+	f.targetLayers.spatial = buffer.DefaultMaxLayerSpatial - 1
 	require.Equal(t, ForwardingStatusPartial, f.GetForwardingStatus())
 
 	// when available layers are lower than max subscribed, optimal as long as target is at max available
@@ -163,8 +163,8 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 func TestForwarderAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	emptyBitrates := Bitrates{}
-	bitrates := Bitrates{
+	emptyBitrates := buffer.Bitrates{}
+	bitrates := buffer.Bitrates{
 		{2, 3, 0, 0},
 		{4, 0, 0, 5},
 		{0, 7, 0, 0},
@@ -211,7 +211,7 @@ func TestForwarderAllocate(t *testing.T) {
 	f.UpTrackLayersChange([]int32{0})
 	expectedTargetLayers := VideoLayers{
 		spatial:  0,
-		temporal: DefaultMaxLayerTemporal,
+		temporal: buffer.DefaultMaxLayerTemporal,
 	}
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateAwaitingMeasurement,
@@ -351,7 +351,7 @@ func TestForwarderAllocate(t *testing.T) {
 func TestForwarderProvisionalAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -425,7 +425,7 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 func TestForwarderProvisionalAllocateMute(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -460,7 +460,7 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 0, 0},
@@ -553,7 +553,7 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -575,7 +575,7 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 func TestForwarderFinalizeAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -593,7 +593,7 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		bandwidthRequested: 0,
 		bandwidthDelta:     0,
 		availableLayers:    nil,
-		bitrates:           Bitrates{},
+		bitrates:           buffer.Bitrates{},
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
@@ -632,11 +632,11 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - bitrates[2][3],
 		availableLayers:    nil,
-		bitrates:           Bitrates{},
+		bitrates:           buffer.Bitrates{},
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
-	result = f.FinalizeAllocate(Bitrates{})
+	result = f.FinalizeAllocate(buffer.Bitrates{})
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -650,16 +650,16 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 		bandwidthRequested: 0,
 		bandwidthDelta:     -12,
 		availableLayers:    nil,
-		bitrates:           Bitrates{},
+		bitrates:           buffer.Bitrates{},
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
-	result = f.FinalizeAllocate(Bitrates{})
+	result = f.FinalizeAllocate(buffer.Bitrates{})
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
 	// sparse layers
-	bitrates = Bitrates{
+	bitrates = buffer.Bitrates{
 		{1, 2, 0, 0},
 		{5, 0, 0, 6},
 		{0, 0, 0, 0},
@@ -689,8 +689,8 @@ func TestForwarderFinalizeAllocate(t *testing.T) {
 func TestForwarderAllocateNextHigher(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
-	emptyBitrates := Bitrates{}
-	bitrates := Bitrates{
+	emptyBitrates := buffer.Bitrates{}
+	bitrates := buffer.Bitrates{
 		{2, 3, 0, 0},
 		{4, 0, 0, 5},
 		{0, 7, 0, 0},
@@ -895,7 +895,7 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 func TestForwarderPause(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},
@@ -925,7 +925,7 @@ func TestForwarderPause(t *testing.T) {
 func TestForwarderPauseMute(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
-	bitrates := Bitrates{
+	bitrates := buffer.Bitrates{
 		{1, 2, 3, 4},
 		{5, 6, 7, 8},
 		{9, 10, 11, 12},

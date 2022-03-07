@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -13,7 +14,7 @@ type StreamTrackerManager struct {
 
 	lock sync.RWMutex
 
-	trackers [DefaultMaxLayerSpatial + 1]*StreamTracker
+	trackers [buffer.DefaultMaxLayerSpatial + 1]*StreamTracker
 
 	availableLayers  []int32
 	maxExpectedLayer int32
@@ -24,7 +25,7 @@ type StreamTrackerManager struct {
 func NewStreamTrackerManager(logger logger.Logger) *StreamTrackerManager {
 	return &StreamTrackerManager{
 		logger:           logger,
-		maxExpectedLayer: DefaultMaxLayerSpatial,
+		maxExpectedLayer: buffer.DefaultMaxLayerSpatial,
 	}
 }
 
@@ -198,7 +199,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 
 func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.lock.Lock()
-	newLayers := make([]int32, 0, DefaultMaxLayerSpatial+1)
+	newLayers := make([]int32, 0, buffer.DefaultMaxLayerSpatial+1)
 	for _, l := range s.availableLayers {
 		if l != layer {
 			newLayers = append(newLayers, l)

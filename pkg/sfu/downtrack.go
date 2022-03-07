@@ -474,7 +474,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// So, retransmitting padding packets is only going to make matters worse.
 		//
 		if d.sequencer != nil {
-			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(InvalidLayerSpatial))
+			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(buffer.InvalidLayerSpatial))
 		}
 
 		bytesSent += size
@@ -493,7 +493,7 @@ func (d *DownTrack) Mute(muted bool) {
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		if muted {
 			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
+				d.onMaxLayerChanged(d, buffer.InvalidLayerSpatial)
 			})
 		} else {
 			//
@@ -543,7 +543,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
+				d.onMaxLayerChanged(d, buffer.InvalidLayerSpatial)
 			})
 		}
 
@@ -1061,7 +1061,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 	numRepeatedNACKs := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == int8(InvalidLayerSpatial) {
+		if meta.layer == int8(buffer.InvalidLayerSpatial) {
 			if meta.nacked > 1 {
 				numRepeatedNACKs++
 			}

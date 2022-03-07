@@ -15,6 +15,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (
@@ -910,8 +911,8 @@ func (s *StreamAllocator) allocateAllTracks() {
 			track.ProvisionalAllocatePrepare()
 		}
 
-		for spatial := int32(0); spatial <= DefaultMaxLayerSpatial; spatial++ {
-			for temporal := int32(0); temporal <= DefaultMaxLayerTemporal; temporal++ {
+		for spatial := int32(0); spatial <= buffer.DefaultMaxLayerSpatial; spatial++ {
+			for temporal := int32(0); temporal <= buffer.DefaultMaxLayerTemporal; temporal++ {
 				layers := VideoLayers{
 					spatial:  spatial,
 					temporal: temporal,

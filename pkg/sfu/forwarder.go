@@ -86,7 +86,7 @@ type VideoAllocation struct {
 	bandwidthRequested int64
 	bandwidthDelta     int64
 	availableLayers    []int32
-	bitrates           Bitrates
+	bitrates           buffer.Bitrates
 	targetLayers       VideoLayers
 	distanceToDesired  int32
 }
@@ -105,7 +105,7 @@ var (
 type VideoAllocationProvisional struct {
 	layers   VideoLayers
 	muted    bool
-	bitrates Bitrates
+	bitrates buffer.Bitrates
 }
 
 type VideoTransition struct {
@@ -144,23 +144,15 @@ func (v VideoLayers) SpatialGreaterThanOrEqual(v2 VideoLayers) bool {
 	return v.spatial >= v2.spatial
 }
 
-const (
-	InvalidLayerSpatial  = int32(-1)
-	InvalidLayerTemporal = int32(-1)
-
-	DefaultMaxLayerSpatial  = int32(2)
-	DefaultMaxLayerTemporal = int32(3)
-)
-
 var (
 	InvalidLayers = VideoLayers{
-		spatial:  InvalidLayerSpatial,
-		temporal: InvalidLayerTemporal,
+		spatial:  buffer.InvalidLayerSpatial,
+		temporal: buffer.InvalidLayerTemporal,
 	}
 
 	DefaultMaxLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial,
-		temporal: DefaultMaxLayerTemporal,
+		spatial:  buffer.DefaultMaxLayerSpatial,
+		temporal: buffer.DefaultMaxLayerTemporal,
 	}
 )
 
@@ -312,7 +304,7 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32) {
 	f.availableLayers = availableLayers
 }
 
-func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
+func (f *Forwarder) getOptimalBandwidthNeeded(brs buffer.Bitrates) int64 {
 	for i := f.maxLayers.spatial; i >= 0; i-- {
 		for j := f.maxLayers.temporal; j >= 0; j-- {
 			if brs[i][j] == 0 {
@@ -326,7 +318,7 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
 	return 0
 }
 
-func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers) int32 {
+func (f *Forwarder) getDistanceToDesired(brs buffer.Bitrates, targetLayers VideoLayers) int32 {
 	if f.muted {
 		return 0
 	}
@@ -361,7 +353,7 @@ func (f *Forwarder) IsDeficient() bool {
 	return f.lastAllocation.state == VideoAllocationStateDeficient
 }
 
-func (f *Forwarder) BandwidthRequested(brs Bitrates) int64 {
+func (f *Forwarder) BandwidthRequested(brs buffer.Bitrates) int64 {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
@@ -379,7 +371,7 @@ func (f *Forwarder) DistanceToDesired() int32 {
 	return f.lastAllocation.distanceToDesired
 }
 
-func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, brs Bitrates) VideoAllocation {
+func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, brs buffer.Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -523,7 +515,7 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, br
 	return f.lastAllocation
 }
 
-func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
+func (f *Forwarder) ProvisionalAllocatePrepare(bitrates buffer.Bitrates) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -832,7 +824,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	return f.lastAllocation
 }
 
-func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
+func (f *Forwarder) FinalizeAllocate(brs buffer.Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -902,7 +894,7 @@ func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
 	return f.lastAllocation
 }
 
-func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitrates) (VideoAllocation, bool) {
+func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs buffer.Bitrates) (VideoAllocation, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1014,7 +1006,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 	return f.lastAllocation, false
 }
 
-func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool) {
+func (f *Forwarder) GetNextHigherTransition(brs buffer.Bitrates) (VideoTransition, bool) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1082,7 +1074,7 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 	return VideoTransition{}, false
 }
 
-func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
+func (f *Forwarder) Pause(brs buffer.Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1144,7 +1136,7 @@ func (f *Forwarder) resyncLocked() {
 	f.lastSSRC = 0
 }
 
-func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [DefaultMaxLayerSpatial + 1]bool) {
+func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
 	if !FlagFilterRTX {
 		filtered = nacks
 		return
@@ -1163,7 +1155,7 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	//
 	// Without the curb, when congestion hits, RTX rate could be so high that it further congests the channel.
 	//
-	for layer := int32(0); layer < DefaultMaxLayerSpatial+1; layer++ {
+	for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
 		if f.lastAllocation.state == VideoAllocationStateDeficient &&
 			(f.targetLayers.spatial < f.currentLayers.spatial || layer > f.currentLayers.spatial) {
 			disallowedLayers[layer] = true

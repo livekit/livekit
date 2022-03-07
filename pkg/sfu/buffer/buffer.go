@@ -66,8 +66,8 @@ type Buffer struct {
 	latestTSForAudioLevel            uint32
 
 	lastPacketRead int
-	bitrate        atomic.Value
-	bitrateHelper  [4]int64
+	bitrate        Bitrates
+	bitrateHelper  Bitrates
 	lastSRNTPTime  uint64
 	lastSRRTPTime  uint32
 	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
@@ -119,7 +119,6 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		logger:         logger,
 		callbacksQueue: utils.NewOpsQueue(logger),
 	}
-	b.bitrate.Store(make([]int64, len(b.bitrateHelper)))
 	b.extPackets.SetMinCapacity(7)
 	return b
 }
@@ -360,14 +359,14 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		return
 	}
 
-	ep, temporalLayer := b.getExtPacket(pb, &p, arrivalTime)
+	ep, spatialLayer, temporalLayer := b.getExtPacket(pb, &p, arrivalTime)
 	if ep == nil {
 		return
 	}
 	b.extPackets.PushBack(ep)
 
-	if temporalLayer >= 0 {
-		b.bitrateHelper[temporalLayer] += int64(len(pkt))
+	if spatialLayer >= 0 && temporalLayer >= 0 {
+		b.bitrateHelper[spatialLayer][temporalLayer] += int64(len(pkt))
 	}
 
 	b.doNACKs()
@@ -484,7 +483,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) (*ExtPacket, int32) {
+func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) (*ExtPacket, int32, int32) {
 	ep := &ExtPacket{
 		Head:      rtpPacket.SequenceNumber == b.highestSN,
 		Packet:    rtpPacket,
@@ -494,16 +493,17 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 
 	if len(rtpPacket.Payload) == 0 {
 		// padding only packet, nothing else to do
-		return ep, -1
+		return ep, -1, -1
 	}
 
+	spatialLayer := int32(0)
 	temporalLayer := int32(0)
 	switch b.mime {
 	case "video/vp8":
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
-			return nil, -1
+			return nil, -1, -1
 		}
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
@@ -512,7 +512,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	}
 
-	return ep, temporalLayer
+	return ep, spatialLayer, temporalLayer
 }
 
 func (b *Buffer) doNACKs() {
@@ -542,16 +542,12 @@ func (b *Buffer) doReports(arrivalTime int64) {
 	// GetBitrate() method in sfu.Receiver uses the availableLayers
 	// set by stream tracker to report 0 bitrate if a layer is not available.
 	//
-	bitrates, ok := b.bitrate.Load().([]int64)
-	if !ok {
-		bitrates = make([]int64, len(b.bitrateHelper))
-	}
 	for i := 0; i < len(b.bitrateHelper); i++ {
-		br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / timeDiff
-		bitrates[i] = br
-		b.bitrateHelper[i] = 0
+		for j := 0; j < len(b.bitrateHelper[0]); j++ {
+			b.bitrate[i][j] = (8 * b.bitrateHelper[i][j] * int64(ReportDelta)) / timeDiff
+			b.bitrateHelper[i][j] = 0
+		}
 	}
-	b.bitrate.Store(bitrates)
 
 	// RTCP reports
 	pkts := b.getRTCP()
@@ -690,36 +686,56 @@ func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 
 // Bitrate returns the current publisher stream bitrate.
 func (b *Buffer) Bitrate() int64 {
-	bitrates, ok := b.bitrate.Load().([]int64)
+	b.RLock()
+	defer b.RUnlock()
+
 	bitrate := int64(0)
-	if ok {
-		for _, b := range bitrates {
-			bitrate += b
+	for i := 0; i < len(b.bitrate); i++ {
+		for j := 0; j < len(b.bitrate[0]); j++ {
+			bitrate += b.bitrate[i][j]
 		}
 	}
 	return bitrate
 }
 
 // BitrateTemporalCumulative returns the current publisher stream bitrate temporal layer accumulated with lower temporal layers.
-func (b *Buffer) BitrateTemporalCumulative() []int64 {
-	bitrates, ok := b.bitrate.Load().([]int64)
-	if !ok {
-		return make([]int64, len(b.bitrateHelper))
-	}
+func (b *Buffer) BitrateTemporalCumulative() Bitrates {
+	b.RLock()
+	defer b.RUnlock()
 
-	// copy and process
-	brs := make([]int64, len(bitrates))
-	copy(brs, bitrates)
-
-	for i := len(brs) - 1; i >= 1; i-- {
-		if brs[i] != 0 {
-			for j := i - 1; j >= 0; j-- {
-				brs[i] += brs[j]
+	var bitrates Bitrates
+	for i := 0; i < len(b.bitrate); i++ {
+		for j := len(b.bitrate[0]) - 1; j >= 1; j-- {
+			bitrates[i][j] = b.bitrate[i][j]
+			if bitrates[i][j] != 0 {
+				for k := j - 1; k >= 0; k-- {
+					bitrates[i][j] += b.bitrate[i][k]
+				}
 			}
 		}
 	}
 
-	return brs
+	return bitrates
+}
+
+// BitrateCumulative returns the current publisher stream bitrate layer accumulated with lower layers.
+func (b *Buffer) BitrateCumulative() Bitrates {
+	b.RLock()
+	defer b.RUnlock()
+
+	var bitrates Bitrates
+	for i := len(b.bitrate) - 1; i >= 1; i-- {
+		for j := len(b.bitrate[0]) - 1; j >= 1; j-- {
+			bitrates[i][j] = b.bitrate[i][j]
+			if bitrates[i][j] != 0 {
+				for k := j - 1; k >= 0; k-- {
+					bitrates[i][j] += b.bitrate[i][k]
+				}
+			}
+		}
+	}
+
+	return bitrates
 }
 
 func (b *Buffer) OnTransportWideCC(fn func(sn uint16, timeNS int64, marker bool)) {

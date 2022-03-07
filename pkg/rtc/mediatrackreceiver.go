@@ -398,7 +398,7 @@ func QualityForSpatialLayer(layer int32) livekit.VideoQuality {
 		return livekit.VideoQuality_MEDIUM
 	case 2:
 		return livekit.VideoQuality_HIGH
-	case sfu.InvalidLayerSpatial:
+	case buffer.InvalidLayerSpatial:
 		return livekit.VideoQuality_OFF
 	default:
 		return livekit.VideoQuality_OFF
