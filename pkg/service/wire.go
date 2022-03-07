@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -33,6 +34,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(EgressStore), new(ObjectStore)),
 		createKeyProvider,
 		createWebhookNotifier,
+		createClientConfiguration,
 		routing.CreateRouter,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
@@ -146,4 +148,8 @@ func createStore(rc *redis.Client) ObjectStore {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
+}
+
+func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
+	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }

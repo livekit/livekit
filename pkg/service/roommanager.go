@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -29,12 +30,13 @@ const (
 type RoomManager struct {
 	lock sync.RWMutex
 
-	config      *config.Config
-	rtcConfig   *rtc.WebRTCConfig
-	currentNode routing.LocalNode
-	router      routing.Router
-	roomStore   ObjectStore
-	telemetry   telemetry.TelemetryService
+	config            *config.Config
+	rtcConfig         *rtc.WebRTCConfig
+	currentNode       routing.LocalNode
+	router            routing.Router
+	roomStore         ObjectStore
+	telemetry         telemetry.TelemetryService
+	clientConfManager clientconfiguration.ClientConfigurationManager
 
 	rooms map[livekit.RoomName]*rtc.Room
 }
@@ -45,6 +47,7 @@ func NewLocalRoomManager(
 	currentNode routing.LocalNode,
 	router routing.Router,
 	telemetry telemetry.TelemetryService,
+	clientConfManager clientconfiguration.ClientConfigurationManager,
 ) (*RoomManager, error) {
 
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
@@ -53,12 +56,13 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		config:      conf,
-		rtcConfig:   rtcConf,
-		currentNode: currentNode,
-		router:      router,
-		roomStore:   roomStore,
-		telemetry:   telemetry,
+		config:            conf,
+		rtcConfig:         rtcConf,
+		currentNode:       currentNode,
+		router:            router,
+		roomStore:         roomStore,
+		telemetry:         telemetry,
+		clientConfManager: clientConfManager,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 	}
@@ -228,6 +232,8 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		"protocol", pi.Client.Protocol,
 	)
 
+	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
+
 	pv := types.ProtocolVersion(pi.Client.Protocol)
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
@@ -248,6 +254,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Grants:                  pi.Grants,
 		Hidden:                  pi.Hidden,
 		Logger:                  pLogger,
+		ClientConf:              clientConf,
 	}, pi.Permission)
 	if err != nil {
 		logger.Errorw("could not create participant", err)
@@ -305,11 +312,11 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 // create the actual room object, to be used on RTC node
 func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.RoomName) (*rtc.Room, error) {
 	r.lock.RLock()
-	room := r.rooms[roomName]
+	lastSeenRoom := r.rooms[roomName]
 	r.lock.RUnlock()
 
-	if room != nil && room.Hold() {
-		return room, nil
+	if lastSeenRoom != nil && lastSeenRoom.Hold() {
+		return lastSeenRoom, nil
 	}
 
 	// create new room, get details first
@@ -318,14 +325,25 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
+	r.lock.Lock()
+
+	currentRoom := r.rooms[roomName]
+	for currentRoom != lastSeenRoom {
+		r.lock.Unlock()
+		if currentRoom.Hold() {
+			return currentRoom, nil
+		} else {
+			lastSeenRoom = currentRoom
+			r.lock.Lock()
+			currentRoom = r.rooms[roomName]
+		}
+	}
+
 	// construct ice servers
-	room = rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
-	room.Hold()
+	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
 
-	r.telemetry.RoomStarted(ctx, room.Room)
-
-	room.OnClose(func() {
-		r.telemetry.RoomEnded(ctx, room.Room)
+	newRoom.OnClose(func() {
+		r.telemetry.RoomEnded(ctx, newRoom.Room)
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			logger.Errorw("could not delete room", err)
 		}
@@ -333,13 +351,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		logger.Infow("room closed")
 	})
 
-	room.OnMetadataUpdate(func(metadata string) {
-		if err := r.roomStore.StoreRoom(ctx, room.Room); err != nil {
+	newRoom.OnMetadataUpdate(func(metadata string) {
+		if err := r.roomStore.StoreRoom(ctx, newRoom.Room); err != nil {
 			logger.Errorw("could not handle metadata update", err)
 		}
 	})
 
-	room.OnParticipantChanged(func(p types.LocalParticipant) {
+	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				logger.Errorw("could not handle participant change", err)
@@ -347,11 +365,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		}
 	})
 
-	r.lock.Lock()
-	r.rooms[roomName] = room
+	r.rooms[roomName] = newRoom
+
 	r.lock.Unlock()
 
-	return room, nil
+	newRoom.Hold()
+
+	r.telemetry.RoomStarted(ctx, newRoom.Room)
+
+	return newRoom, nil
 }
 
 // manages an RTC session for a participant, runs on the RTC node

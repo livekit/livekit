@@ -26,6 +26,16 @@ type FakeMediaTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetAllSubscribersStub        func() []livekit.ParticipantID
+	getAllSubscribersMutex       sync.RWMutex
+	getAllSubscribersArgsForCall []struct {
+	}
+	getAllSubscribersReturns struct {
+		result1 []livekit.ParticipantID
+	}
+	getAllSubscribersReturnsOnCall map[int]struct {
+		result1 []livekit.ParticipantID
+	}
 	GetQualityForDimensionStub        func(uint32, uint32) livekit.VideoQuality
 	getQualityForDimensionMutex       sync.RWMutex
 	getQualityForDimensionArgsForCall []struct {
@@ -286,6 +296,59 @@ func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
 	}
 	fake.addSubscriberReturnsOnCall[i] = struct {
 		result1 error
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) GetAllSubscribers() []livekit.ParticipantID {
+	fake.getAllSubscribersMutex.Lock()
+	ret, specificReturn := fake.getAllSubscribersReturnsOnCall[len(fake.getAllSubscribersArgsForCall)]
+	fake.getAllSubscribersArgsForCall = append(fake.getAllSubscribersArgsForCall, struct {
+	}{})
+	stub := fake.GetAllSubscribersStub
+	fakeReturns := fake.getAllSubscribersReturns
+	fake.recordInvocation("GetAllSubscribers", []interface{}{})
+	fake.getAllSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) GetAllSubscribersCallCount() int {
+	fake.getAllSubscribersMutex.RLock()
+	defer fake.getAllSubscribersMutex.RUnlock()
+	return len(fake.getAllSubscribersArgsForCall)
+}
+
+func (fake *FakeMediaTrack) GetAllSubscribersCalls(stub func() []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = stub
+}
+
+func (fake *FakeMediaTrack) GetAllSubscribersReturns(result1 []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = nil
+	fake.getAllSubscribersReturns = struct {
+		result1 []livekit.ParticipantID
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) GetAllSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantID) {
+	fake.getAllSubscribersMutex.Lock()
+	defer fake.getAllSubscribersMutex.Unlock()
+	fake.GetAllSubscribersStub = nil
+	if fake.getAllSubscribersReturnsOnCall == nil {
+		fake.getAllSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []livekit.ParticipantID
+		})
+	}
+	fake.getAllSubscribersReturnsOnCall[i] = struct {
+		result1 []livekit.ParticipantID
 	}{result1}
 }
 
@@ -1207,6 +1270,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.getAllSubscribersMutex.RLock()
+	defer fake.getAllSubscribersMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.iDMutex.RLock()

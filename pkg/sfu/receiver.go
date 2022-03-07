@@ -38,6 +38,7 @@ type TrackReceiver interface {
 	GetBitrateTemporalCumulative() buffer.Bitrates
 
 	SendPLI(layer int32)
+	LastPLI() int64
 
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
@@ -168,7 +169,7 @@ func NewWebRTCReceiver(
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:     w.kind,
 		ClockRate:     w.codec.ClockRate,
-		GetTrackStats: w.getTrackStats,
+		GetTrackStats: w.GetTrackStats,
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
@@ -401,6 +402,18 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 	buff.SendPLI()
 }
 
+func (w *WebRTCReceiver) LastPLI() int64 {
+	var lastPLI int64
+	w.bufferMu.RLock()
+	for _, b := range w.buffers {
+		if b != nil && b.LastPLI() > lastPLI {
+			lastPLI = b.LastPLI()
+		}
+	}
+	w.bufferMu.RUnlock()
+	return lastPLI
+}
+
 func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
 }
@@ -421,7 +434,7 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 	return buff.GetPacket(buf, sn)
 }
 
-func (w *WebRTCReceiver) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
+func (w *WebRTCReceiver) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 

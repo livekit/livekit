@@ -20,6 +20,7 @@ type StreamStats struct {
 	TotalNACKs             uint32
 	TotalPLIs              uint32
 	TotalFIRs              uint32
+	LostRate               float32
 }
 
 type StreamStatsWithLayers struct {

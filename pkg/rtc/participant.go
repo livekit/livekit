@@ -60,6 +60,7 @@ type ParticipantParams struct {
 	SimTracks               map[uint32]SimulcastTrackInfo
 	Grants                  *auth.ClaimGrants
 	InitialVersion          uint32
+	ClientConf              *livekit.ClientConfiguration
 }
 
 type ParticipantImpl struct {
@@ -612,7 +613,8 @@ func (p *ParticipantImpl) SendJoinResponse(
 				ServerRegion:      region,
 				IceServers:        iceServers,
 				// indicates both server and client support subscriber as primary
-				SubscriberPrimary: p.SubscriberAsPrimary(),
+				SubscriberPrimary:   p.SubscriberAsPrimary(),
+				ClientConfiguration: p.params.ClientConf,
 			},
 		},
 	})
@@ -1647,4 +1649,15 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		}
 	}
 	p.pendingDataChannels = nil
+}
+
+func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
+	for _, t := range p.subscribedTracks {
+		tracks = append(tracks, t)
+	}
+	return tracks
 }

@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -54,7 +55,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	egressService := NewEgressService(messageBus, objectStore, roomService, telemetryService)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService)
+	clientConfigurationManager := createClientConfiguration()
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
 	if err != nil {
 		return nil, err
 	}
@@ -166,4 +168,8 @@ func createStore(rc *redis.Client) ObjectStore {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
+}
+
+func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
+	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }

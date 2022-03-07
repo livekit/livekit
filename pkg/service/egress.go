@@ -83,13 +83,15 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 
 	info, err := egress.SendRequest(ctx, s.bus, req)
 	if err != nil {
-		s.telemetry.EgressStarted(ctx, info)
-		go func() {
-			if err := s.store.StoreEgress(ctx, info); err != nil {
-				logger.Errorw("could not write egress info", err)
-			}
-		}()
+		return nil, err
 	}
+
+	s.telemetry.EgressStarted(ctx, info)
+	go func() {
+		if err := s.store.StoreEgress(ctx, info); err != nil {
+			logger.Errorw("could not write egress info", err)
+		}
+	}()
 
 	return info, nil
 }
