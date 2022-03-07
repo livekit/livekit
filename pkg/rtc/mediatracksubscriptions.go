@@ -331,6 +331,17 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 	return revokedSubscriberIDs
 }
 
+func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	subs := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
+	for id := range t.subscribedTracks {
+		subs = append(subs, id)
+	}
+	return subs
+}
+
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
 	for _, st := range t.getAllSubscribedTracks() {
 		st.UpdateVideoLayer()

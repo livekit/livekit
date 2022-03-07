@@ -321,6 +321,10 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
+func (b *Buffer) LastPLI() int64 {
+	return b.lastPli
+}
+
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	isRTX := false
 
@@ -638,6 +642,7 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 		packetsLost:      b.stats.TotalPacketsLost,
 		lastLossRate:     lossRate,
 	}
+	b.stats.LostRate = lossRate
 
 	return &rtcp.ReceptionReport{
 		SSRC:               b.mediaSSRC,

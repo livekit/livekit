@@ -104,6 +104,10 @@ type DownTrack struct {
 
 	connectionStats *connectionquality.ConnectionStats
 
+	bitrateHelper     uint64
+	bitrate           uint64
+	lastBitrateReport time.Time
+
 	// Debug info
 	lastPli     atomic.Time
 	lastRTP     atomic.Time
@@ -181,7 +185,7 @@ func NewDownTrack(
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:     kind,
 		ClockRate:     c.ClockRate,
-		GetTrackStats: d.getTrackStats,
+		GetTrackStats: d.GetTrackStats,
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
@@ -229,6 +233,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.callbacksQueue.Enqueue(d.onBind)
 	}
 	d.bound.Store(true)
+	d.lastBitrateReport = time.Now()
 
 	go d.requestFirstKeyframe()
 
@@ -377,6 +382,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		if extPkt.KeyFrame {
 			d.isNACKThrottled.Store(false)
 		}
+		d.updateBitrate()
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.Inc()
@@ -467,6 +473,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		for _, f := range d.onPaddingSentUnsafe {
 			f(d, size)
 		}
+		d.updateBitrate()
 
 		//
 		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
@@ -481,6 +488,26 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	}
 
 	return bytesSent
+}
+
+func (d *DownTrack) updateBitrate() {
+	lastRtp := d.lastRTP.Load()
+	d.statsLock.RLock()
+	timeDiff := lastRtp.Sub(d.lastBitrateReport).Seconds()
+	d.statsLock.RUnlock()
+	if timeDiff < 1 {
+		return
+	}
+	octets, _ := d.getSRStats()
+	d.statsLock.Lock()
+	d.bitrate = uint64(float64(octets*8-d.bitrateHelper) / timeDiff)
+	d.bitrateHelper = octets * 8
+	d.lastBitrateReport = lastRtp
+	d.statsLock.Unlock()
+}
+
+func (d *DownTrack) Bitrate() uint64 {
+	return d.bitrate
 }
 
 // Mute enables or disables media forwarding
@@ -985,6 +1012,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				d.stats.RTT = rtt
 
 				d.stats.Jitter = float64(r.Jitter)
+				d.stats.LostRate = float32(r.FractionLost) / 256
 				d.statsLock.Unlock()
 
 				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
@@ -1251,7 +1279,7 @@ func (d *DownTrack) GetConnectionScore() float32 {
 	return d.connectionStats.GetScore()
 }
 
-func (d *DownTrack) getTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
+func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	d.statsLock.RLock()
 	defer d.statsLock.RUnlock()
 
@@ -1279,4 +1307,12 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	totalPackets = d.stats.TotalPrimaryPackets + d.stats.TotalPaddingPackets
 	totalRepeatedNACKs = d.totalRepeatedNACKs
 	return
+}
+
+func (d *DownTrack) LastPLI() int64 {
+	t := d.lastPli.Load()
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
 }
