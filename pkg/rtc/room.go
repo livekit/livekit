@@ -244,7 +244,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p.ToProto())
+			otherParticipants = append(otherParticipants, p.ToProto(true))
 		}
 	}
 
