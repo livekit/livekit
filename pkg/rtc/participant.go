@@ -1099,11 +1099,17 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	case reliableDataChannel:
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			if !p.CanPublishData() {
+				return
+			}
 			p.dataTrack.Write(label, msg.Data)
 		})
 	case lossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			if !p.CanPublishData() {
+				return
+			}
 			p.dataTrack.Write(label, msg.Data)
 		})
 	default:
