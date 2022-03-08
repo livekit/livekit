@@ -642,10 +642,6 @@ func (r *Room) onParticipantMetadataUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
-	// don't forward if source isn't allowed to publish data
-	if source != nil && !source.CanPublishData() {
-		return
-	}
 	dest := dp.GetUser().GetDestinationSids()
 
 	for _, op := range r.GetParticipants() {
