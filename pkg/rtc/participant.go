@@ -1063,18 +1063,18 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	p.params.Logger.Debugw("mediaTrack added",
-		"kind", track.Kind().String(),
-		"trackID", track.ID(),
-		"rid", track.RID(),
-		"SSRC", track.SSRC())
-
 	if !p.CanPublish() {
 		p.params.Logger.Warnw("no permission to publish mediaTrack", nil)
 		return
 	}
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
+
+	p.params.Logger.Infow("mediaTrack published",
+		"kind", track.Kind().String(),
+		"trackID", publishedTrack.ID(),
+		"rid", track.RID(),
+		"SSRC", track.SSRC())
 	if !isNewTrack && publishedTrack != nil && p.IsReady() && p.onTrackUpdated != nil {
 		p.onTrackUpdated(p, publishedTrack)
 	}
