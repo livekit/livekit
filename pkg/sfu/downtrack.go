@@ -558,6 +558,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
 	// Otherwise, with transceiver re-use last frame from previous stream is held in the
 	// display buffer and there could be a brief moment where the previous stream is displayed.
+	d.logger.Infow("close downtrack", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
 		_ = d.writeBlankFrameRTP()
 	}

@@ -548,9 +548,10 @@ type FakeLocalParticipant struct {
 		arg2 livekit.TrackID
 		arg3 bool
 	}
-	ToProtoStub        func() *livekit.ParticipantInfo
+	ToProtoStub        func(bool) *livekit.ParticipantInfo
 	toProtoMutex       sync.RWMutex
 	toProtoArgsForCall []struct {
+		arg1 bool
 	}
 	toProtoReturns struct {
 		result1 *livekit.ParticipantInfo
@@ -3559,17 +3560,18 @@ func (fake *FakeLocalParticipant) SubscriptionPermissionUpdateArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeLocalParticipant) ToProto() *livekit.ParticipantInfo {
+func (fake *FakeLocalParticipant) ToProto(arg1 bool) *livekit.ParticipantInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
 	fake.toProtoArgsForCall = append(fake.toProtoArgsForCall, struct {
-	}{})
+		arg1 bool
+	}{arg1})
 	stub := fake.ToProtoStub
 	fakeReturns := fake.toProtoReturns
-	fake.recordInvocation("ToProto", []interface{}{})
+	fake.recordInvocation("ToProto", []interface{}{arg1})
 	fake.toProtoMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3583,10 +3585,17 @@ func (fake *FakeLocalParticipant) ToProtoCallCount() int {
 	return len(fake.toProtoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ToProtoCalls(stub func() *livekit.ParticipantInfo) {
+func (fake *FakeLocalParticipant) ToProtoCalls(stub func(bool) *livekit.ParticipantInfo) {
 	fake.toProtoMutex.Lock()
 	defer fake.toProtoMutex.Unlock()
 	fake.ToProtoStub = stub
+}
+
+func (fake *FakeLocalParticipant) ToProtoArgsForCall(i int) bool {
+	fake.toProtoMutex.RLock()
+	defer fake.toProtoMutex.RUnlock()
+	argsForCall := fake.toProtoArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) ToProtoReturns(result1 *livekit.ParticipantInfo) {

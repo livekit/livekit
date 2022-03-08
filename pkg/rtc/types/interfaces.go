@@ -53,7 +53,7 @@ type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 
-	ToProto() *livekit.ParticipantInfo
+	ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo
 
 	SetMetadata(metadata string)
 

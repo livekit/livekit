@@ -299,7 +299,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 }
 
-func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
+func (p *ParticipantImpl) ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      string(p.params.SID),
 		Identity: string(p.params.Identity),
@@ -315,7 +315,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		info.Metadata = p.params.Grants.Metadata
 	}
 
-	if p.dataTrack != nil {
+	if !mediaTrackOnly && p.dataTrack != nil {
 		info.Tracks = append(info.Tracks, p.dataTrack.ToProto())
 	}
 
@@ -607,7 +607,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
-				Participant:       p.ToProto(),
+				Participant:       p.ToProto(true),
 				OtherParticipants: otherParticipants,
 				ServerVersion:     version.Version,
 				ServerRegion:      region,
