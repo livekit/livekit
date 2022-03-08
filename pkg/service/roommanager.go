@@ -462,7 +462,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 			return
 		}
 		pLogger.Debugw("setting track muted",
-			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
+			"trackID", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
 			pLogger.Errorw("cannot unmute track, remote unmute is disabled", nil)
 			return

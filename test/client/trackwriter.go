@@ -54,7 +54,7 @@ func (w *TrackWriter) Start() error {
 	}
 
 	logger.Debugw("starting track writer",
-		"track", w.track.ID(),
+		"trackID", w.track.ID(),
 		"mime", w.mime)
 	switch w.mime {
 	case webrtc.MimeTypeOpus:

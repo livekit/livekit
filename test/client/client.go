@@ -320,7 +320,7 @@ func (c *RTCClient) Run() error {
 			c.lock.Unlock()
 
 		case *livekit.SignalResponse_TrackPublished:
-			logger.Debugw("track published", "track", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
+			logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
 				"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
 			c.lock.Lock()
 			c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
@@ -690,7 +690,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 
 	logger.Infow("client added track", "participant", c.localParticipant.Identity,
 		"pID", pId,
-		"track", trackId,
+		"trackID", trackId,
 	)
 
 	defer func() {
@@ -719,7 +719,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		numBytes += pkt.MarshalSize()
 		if time.Since(lastUpdate) > 30*time.Second {
 			logger.Infow("consumed from participant",
-				"track", trackId, "pID", pId,
+				"trackID", trackId, "pID", pId,
 				"size", numBytes)
 			lastUpdate = time.Now()
 		}
