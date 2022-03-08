@@ -420,7 +420,7 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 		if pubRemote == nil {
 			return "could not find remote publisher"
 		}
-		if len(pubRemote.Tracks) != 3 {
+		if len(pubRemote.Tracks) != 2 {
 			return "did not receive metadata for published tracks"
 		}
 		return ""
