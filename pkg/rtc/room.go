@@ -612,12 +612,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 		r.Logger.Debugw("subscribing to new track",
 			"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 			"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
-			"track", track.ID())
+			"trackID", track.ID())
 		if _, err := participant.AddSubscriber(existingParticipant, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}); err != nil {
 			r.Logger.Errorw("could not subscribe to remoteTrack", err,
 				"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
-				"track", track.ID())
+				"trackID", track.ID())
 		}
 	}
 

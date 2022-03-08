@@ -857,7 +857,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
-		"track", subTrack.ID())
+		"trackID", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	settings := p.subscribedTracksSettings[subTrack.ID()]
@@ -879,7 +879,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.params.Logger.Debugw("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
-		"track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
+		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
 
 	p.subscriber.RemoveTrack(subTrack)
 
@@ -1065,7 +1065,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	p.params.Logger.Debugw("mediaTrack added",
 		"kind", track.Kind().String(),
-		"track", track.ID(),
+		"trackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC())
 
@@ -1378,7 +1378,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	p.pendingTracksLock.RUnlock()
 
 	if !isPending {
-		p.params.Logger.Warnw("could not locate track", nil, "track", trackID)
+		p.params.Logger.Warnw("could not locate track", nil, "trackID", trackID)
 	}
 }
 
