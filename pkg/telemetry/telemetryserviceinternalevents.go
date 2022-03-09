@@ -87,6 +87,7 @@ func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *li
 		Timestamp:     timestamppb.Now(),
 		RoomId:        room.Sid,
 		ParticipantId: participant.Sid,
+		Participant:   participant,
 		Room:          room,
 	})
 }
