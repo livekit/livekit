@@ -515,6 +515,9 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	}
+	if ep.KeyFrame {
+		b.logger.Debugw("key frame received")
+	}
 
 	return ep, temporalLayer
 }
