@@ -108,7 +108,6 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 
 func (t *MediaTrackReceiver) Close() {
 	t.lock.Lock()
-	t.receiver = nil
 	onclose := t.onClose
 	t.lock.Unlock()
 
