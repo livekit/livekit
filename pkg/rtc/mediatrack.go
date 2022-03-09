@@ -172,6 +172,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		wr.OnCloseHandler(func() {
 			t.RemoveAllSubscribers()
 			t.MediaTrackReceiver.Close()
+			t.MediaTrackReceiver.ClearReceiver()
 			t.params.Telemetry.TrackUnpublished(context.Background(), t.PublisherID(), t.ToProto(), uint32(track.SSRC()))
 		})
 		wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
