@@ -350,6 +350,9 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	deltaStats.TotalPrimaryBytes = cur.TotalPrimaryBytes - prev.TotalPrimaryBytes
 	deltaStats.TotalPaddingBytes = cur.TotalPaddingBytes - prev.TotalPaddingBytes
 	deltaStats.TotalRetransmitBytes = cur.TotalRetransmitBytes - prev.TotalRetransmitBytes
+	if int64(deltaStats.TotalPrimaryBytes) < 0 || int64(deltaStats.TotalPaddingBytes) < 0 || int64(deltaStats.TotalRetransmitBytes) < 0 {
+		return nil
+	}
 
 	var videoLayer *livekit.AnalyticsVideoLayer
 	if len(cur.VideoLayers) > 0 && len(prev.VideoLayers) > 0 {
@@ -366,6 +369,9 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 		// we accumulate bytes/packets across layers
 		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
 		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
+		if int64(videoLayer.TotalBytes) < 0 || int32(videoLayer.TotalPackets) < 0 {
+			return nil
+		}
 	}
 	// if no packets from any layers, return nil to send no stats
 	if deltaStats.TotalPackets == 0 && deltaStats.TotalPrimaryPackets == 0 && deltaStats.TotalRetransmitPackets == 0 && deltaStats.TotalPaddingPackets == 0 {
