@@ -380,7 +380,11 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 		return
 	}
 
-	w.rtcpCh <- packets
+	select {
+	case w.rtcpCh <- packets:
+	default:
+		w.logger.Warnw("sendRTCP failed, rtcp channel full", nil)
+	}
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
