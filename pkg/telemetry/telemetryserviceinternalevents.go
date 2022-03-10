@@ -122,6 +122,9 @@ func (t *telemetryServiceInternal) TrackPublishedUpdate(ctx context.Context, par
 
 func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
 	maxQuality livekit.VideoQuality) {
+	if maxQuality == livekit.VideoQuality_OFF {
+		return
+	}
 
 	roomID, roomName := t.getRoomDetails(participantID)
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
