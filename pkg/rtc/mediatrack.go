@@ -75,17 +75,14 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		}
 	})
 	t.MediaTrackReceiver.OnVideoLayerUpdate(func(layers []*livekit.VideoLayer) {
-		for _, layer := range layers {
-			t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(),
-				&livekit.TrackInfo{
-					Sid:       string(t.ID()),
-					Type:      livekit.TrackType_VIDEO,
-					Muted:     t.IsMuted(),
-					Width:     layer.Width,
-					Height:    layer.Height,
-					Simulcast: t.IsSimulcast(),
-				})
-		}
+		t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(),
+			&livekit.TrackInfo{
+				Sid:       string(t.ID()),
+				Type:      livekit.TrackType_VIDEO,
+				Muted:     t.IsMuted(),
+				Simulcast: t.IsSimulcast(),
+				Layers:    layers,
+			})
 	})
 
 	return t

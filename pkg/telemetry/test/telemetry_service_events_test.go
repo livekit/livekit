@@ -83,16 +83,20 @@ func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
 	// prepare
 	partID := "part1"
 	trackID := "track1"
-	width := uint32(360)
-	height := uint32(720)
+	layer := &livekit.VideoLayer{
+		Quality: livekit.VideoQuality_HIGH,
+		Width:   uint32(360),
+		Height:  uint32(720),
+		Bitrate: 2048,
+	}
+
 	trackInfo := &livekit.TrackInfo{
 		Sid:        trackID,
 		Type:       livekit.TrackType_VIDEO,
 		Muted:      false,
-		Width:      width,
-		Height:     height,
 		Simulcast:  false,
 		DisableDtx: false,
+		Layers:     []*livekit.VideoLayer{layer},
 	}
 
 	// do
@@ -105,8 +109,10 @@ func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
 	require.Equal(t, partID, event.ParticipantId)
 
 	require.Equal(t, trackID, event.Track.Sid)
-	require.Equal(t, width, event.Track.Width)
-	require.Equal(t, height, event.Track.Height)
+	require.NotNil(t, event.Track.Layers)
+	require.Equal(t, layer.Width, event.Track.Layers[0].Width)
+	require.Equal(t, layer.Height, event.Track.Layers[0].Height)
+	require.Equal(t, layer.Quality, event.Track.Layers[0].Quality)
 
 }
 
