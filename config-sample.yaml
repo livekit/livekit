@@ -61,9 +61,8 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
-  # # interface filter. If server have more than one network interface and you wish to user or not use special interfaces.
-  # # can use include/exclude interface for filter. If none of them is set, all interfaces be used. If both of them is set,
-  # # only include interfaces will be use.
+  # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
+  # # both inclusion and exclusion filters can be used together. If neither is defined (default), all interfaces on the machine will be used. If both of them are set, then only interfaces that satisfy both filters will be used.
   # interfaces:
   #   includes:
   #     - en0
