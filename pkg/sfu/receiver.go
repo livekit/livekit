@@ -377,7 +377,7 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
-	if w.closed.Load() {
+	if packets == nil || w.closed.Load() {
 		return
 	}
 
