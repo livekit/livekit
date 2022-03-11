@@ -35,11 +35,10 @@ type TrackReceiver interface {
 	Codec() webrtc.RTPCodecCapability
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime)
 	GetBitrateTemporalCumulative() Bitrates
 
 	SendPLI(layer int32)
-	LastPLI() int64
 
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
@@ -424,7 +423,7 @@ func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
 }
 
-func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64) {
+func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime) {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	if w.buffers[layer] != nil {

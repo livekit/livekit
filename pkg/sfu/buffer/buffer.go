@@ -68,7 +68,7 @@ type Buffer struct {
 	lastPacketRead int
 	bitrate        atomic.Value
 	bitrateHelper  [4]int64
-	lastSRNTPTime  uint64
+	lastSRNTPTime  NtpTime
 	lastSRRTPTime  uint32
 	lastSRRecv     int64 // Represents wall clock of the most recent sender report arrival
 	lastTransit    uint32
@@ -663,7 +663,7 @@ func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 	b.Lock()
 	b.lastSRRTPTime = rtpTime
-	b.lastSRNTPTime = ntpTime
+	b.lastSRNTPTime = NtpTime(ntpTime)
 	b.lastSRRecv = time.Now().UnixNano()
 	b.Unlock()
 }
@@ -755,7 +755,7 @@ func (b *Buffer) GetClockRate() uint32 {
 }
 
 // GetSenderReportData returns the rtp, ntp and nanos of the last sender report
-func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime uint64, lastReceivedTimeInNanosSinceEpoch int64) {
+func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime NtpTime, lastReceivedTimeInNanosSinceEpoch int64) {
 	b.RLock()
 	defer b.RUnlock()
 

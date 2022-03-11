@@ -804,9 +804,9 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	}
 
 	now := time.Now()
-	nowNTP := toNtpTime(now)
+	nowNTP := buffer.ToNtpTime(now)
 
-	diff := (uint64(now.Sub(ntpTime(srNTP).Time())) * uint64(d.codec.ClockRate)) / uint64(time.Second)
+	diff := (uint64(now.Sub(srNTP.Time())) * uint64(d.codec.ClockRate)) / uint64(time.Second)
 	octets, packets := d.getSRStats()
 
 	return &rtcp.SenderReport{
