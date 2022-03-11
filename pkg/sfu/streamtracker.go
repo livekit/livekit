@@ -27,14 +27,22 @@ const (
 	StreamStatusActive  StreamStatus = 1
 )
 
+type StreamTrackerParams struct {
+	// number of samples needed per cycle
+	SamplesRequired uint32
+
+	// number of cycles needed to be active
+	CyclesRequired uint32
+
+	CycleDuration time.Duration
+
+	Logger logger.Logger
+}
+
 // StreamTracker keeps track of packet flow and ensures a particular up track is consistently producing
 // It runs its own goroutine for detection, and fires OnStatusChanged callback
 type StreamTracker struct {
-	// number of samples needed per cycle
-	samplesRequired uint32
-	// number of cycles needed to be active
-	cyclesRequired uint64
-	cycleDuration  time.Duration
+	params StreamTrackerParams
 
 	onStatusChanged func(status StreamStatus)
 
@@ -49,7 +57,7 @@ type StreamTracker struct {
 	status   StreamStatus
 
 	// only access within detectWorker
-	cycleCount uint64
+	cycleCount uint32
 
 	// only access by the same goroutine as Observe
 	lastSN uint16
@@ -59,13 +67,11 @@ type StreamTracker struct {
 	isStopped atomic.Bool
 }
 
-func NewStreamTracker(logger logger.Logger, samplesRequired uint32, cyclesRequired uint64, cycleDuration time.Duration) *StreamTracker {
+func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
 	s := &StreamTracker{
-		samplesRequired: samplesRequired,
-		cyclesRequired:  cyclesRequired,
-		cycleDuration:   cycleDuration,
-		status:          StreamStatusStopped,
-		callbacksQueue:  utils.NewOpsQueue(logger),
+		params:         params,
+		status:         StreamStatusStopped,
+		callbacksQueue: utils.NewOpsQueue(params.Logger),
 	}
 	return s
 }
@@ -181,7 +187,7 @@ func (s *StreamTracker) Observe(sn uint16) {
 }
 
 func (s *StreamTracker) detectWorker(generation uint32) {
-	ticker := time.NewTicker(s.cycleDuration)
+	ticker := time.NewTicker(s.params.CycleDuration)
 
 	for {
 		<-ticker.C
@@ -198,7 +204,7 @@ func (s *StreamTracker) detectChanges() {
 		return
 	}
 
-	if s.countSinceLast.Load() >= s.samplesRequired {
+	if s.countSinceLast.Load() >= s.params.SamplesRequired {
 		s.cycleCount += 1
 	} else {
 		s.cycleCount = 0
@@ -207,7 +213,7 @@ func (s *StreamTracker) detectChanges() {
 	if s.cycleCount == 0 {
 		// flip to stopped
 		s.maybeSetStopped()
-	} else if s.cycleCount >= s.cyclesRequired {
+	} else if s.cycleCount >= s.params.CyclesRequired {
 		// flip to active
 		s.maybeSetActive()
 	}

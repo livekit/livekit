@@ -104,10 +104,14 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 		return 0, nil
 	}
 
+	var trackIDs []livekit.TrackID
+	for _, track := range tracks {
+		trackIDs = append(trackIDs, track.ID())
+	}
 	u.params.Logger.Debugw("subscribing new participant to tracks",
 		"subscriber", sub.Identity(),
 		"subscriberID", sub.ID(),
-		"numTracks", len(tracks))
+		"trackIDs", trackIDs)
 
 	n := 0
 	for _, track := range tracks {
@@ -149,7 +153,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Debugw("mute status changed", "track", trackID, "muted", track.IsMuted())
+			u.params.Logger.Debugw("mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track, false)
 			}

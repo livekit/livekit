@@ -16,7 +16,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			return err
 		}
 	case *livekit.SignalRequest_AddTrack:
-		pLogger.Debugw("add track request", "track", msg.AddTrack.Cid)
+		pLogger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
 		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Answer:
 		sd := FromProtoSessionDescription(msg.Answer)

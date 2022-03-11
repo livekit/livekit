@@ -299,7 +299,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 }
 
-func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
+func (p *ParticipantImpl) ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      string(p.params.SID),
 		Identity: string(p.params.Identity),
@@ -315,7 +315,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		info.Metadata = p.params.Grants.Metadata
 	}
 
-	if p.dataTrack != nil {
+	if !mediaTrackOnly && p.dataTrack != nil {
 		info.Tracks = append(info.Tracks, p.dataTrack.ToProto())
 	}
 
@@ -607,7 +607,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
-				Participant:       p.ToProto(),
+				Participant:       p.ToProto(true),
 				OtherParticipants: otherParticipants,
 				ServerVersion:     version.Version,
 				ServerRegion:      region,
@@ -857,7 +857,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.params.Logger.Debugw("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
-		"track", subTrack.ID())
+		"trackID", subTrack.ID())
 	p.lock.Lock()
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	settings := p.subscribedTracksSettings[subTrack.ID()]
@@ -879,7 +879,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.params.Logger.Debugw("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
-		"track", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
+		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
 
 	p.subscriber.RemoveTrack(subTrack)
 
@@ -1063,18 +1063,18 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		return
 	}
 
-	p.params.Logger.Debugw("mediaTrack added",
-		"kind", track.Kind().String(),
-		"track", track.ID(),
-		"rid", track.RID(),
-		"SSRC", track.SSRC())
-
 	if !p.CanPublish() {
 		p.params.Logger.Warnw("no permission to publish mediaTrack", nil)
 		return
 	}
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
+
+	p.params.Logger.Infow("mediaTrack published",
+		"kind", track.Kind().String(),
+		"trackID", publishedTrack.ID(),
+		"rid", track.RID(),
+		"SSRC", track.SSRC())
 	if !isNewTrack && publishedTrack != nil && p.IsReady() && p.onTrackUpdated != nil {
 		p.onTrackUpdated(p, publishedTrack)
 	}
@@ -1099,11 +1099,17 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	case reliableDataChannel:
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			if !p.CanPublishData() {
+				return
+			}
 			p.dataTrack.Write(label, msg.Data)
 		})
 	case lossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			if !p.CanPublishData() {
+				return
+			}
 			p.dataTrack.Write(label, msg.Data)
 		})
 	default:
@@ -1372,7 +1378,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	p.pendingTracksLock.RUnlock()
 
 	if !isPending {
-		p.params.Logger.Warnw("could not locate track", nil, "track", trackID)
+		p.params.Logger.Warnw("could not locate track", nil, "trackID", trackID)
 	}
 }
 
@@ -1512,7 +1518,7 @@ func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
 }
 
 func (p *ParticipantImpl) onUpTrackManagerClose() {
-	close(p.rtcpCh)
+	p.rtcpCh <- nil
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {

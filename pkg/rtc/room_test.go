@@ -485,7 +485,9 @@ func TestDataChannel(t *testing.T) {
 		}
 		dataTrack := &typesfakes.FakeDataTrack{}
 		p.OnDataTrackPublishedArgsForCall(0)(p, dataTrack)
-		dataTrack.OnDataPacketArgsForCall(0)(&packet)
+		if p.CanPublishData() {
+			dataTrack.OnDataPacketArgsForCall(0)(&packet)
+		}
 
 		// no one should've been sent packet
 		for _, op := range participants {

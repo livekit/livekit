@@ -34,11 +34,10 @@ type TrackReceiver interface {
 	Codec() webrtc.RTPCodecCapability
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64)
+	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime)
 	GetBitrateCumulative() buffer.Bitrates
 
 	SendPLI(layer int32)
-	LastPLI() int64
 
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
@@ -137,6 +136,7 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track *webrtc.TrackRemote,
 	pid livekit.ParticipantID,
+	source livekit.TrackSource,
 	logger logger.Logger,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
@@ -154,7 +154,7 @@ func NewWebRTCReceiver(
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
 		numProcs:             runtime.NumCPU(),
-		streamTrackerManager: NewStreamTrackerManager(logger),
+		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 
@@ -372,11 +372,15 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
-	if w.closed.Load() {
+	if packets == nil || w.closed.Load() {
 		return
 	}
 
-	w.rtcpCh <- packets
+	select {
+	case w.rtcpCh <- packets:
+	default:
+		w.logger.Warnw("sendRTCP failed, rtcp channel full", nil)
+	}
 
 	for _, p := range packets {
 		switch pkt := p.(type) {
@@ -415,7 +419,7 @@ func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
 }
 
-func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64) {
+func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime) {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 	if w.buffers[layer] != nil {

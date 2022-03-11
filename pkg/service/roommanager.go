@@ -270,7 +270,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		_ = participant.Close(true)
 		return
 	}
-	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
+	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto(true)); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
 
@@ -287,7 +287,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	updateParticipantCount()
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
-	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(), pi.Client, clientMeta)
+	r.telemetry.ParticipantJoined(ctx, room.Room, participant.ToProto(true), pi.Client, clientMeta)
 	participant.OnClose(func(p types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
 		if err := r.roomStore.DeleteParticipant(ctx, roomName, p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
@@ -295,7 +295,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 
 		// update room store with new numParticipants
 		updateParticipantCount()
-		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto())
+		r.telemetry.ParticipantLeft(ctx, room.Room, p.ToProto(true))
 
 		room.RemoveDisallowedSubscriptions(p, disallowedSubscriptions)
 	})
@@ -359,7 +359,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
-			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
+			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto(true)); err != nil {
 				logger.Errorw("could not handle participant change", err)
 			}
 		}
@@ -462,7 +462,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 			return
 		}
 		pLogger.Debugw("setting track muted",
-			"track", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
+			"trackID", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
 		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
 			pLogger.Errorw("cannot unmute track, remote unmute is disabled", nil)
 			return

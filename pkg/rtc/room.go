@@ -244,7 +244,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p.ToProto())
+			otherParticipants = append(otherParticipants, p.ToProto(true))
 		}
 	}
 
@@ -612,12 +612,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 		r.Logger.Debugw("subscribing to new track",
 			"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 			"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
-			"track", track.ID())
+			"trackID", track.ID())
 		if _, err := participant.AddSubscriber(existingParticipant, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}); err != nil {
 			r.Logger.Errorw("could not subscribe to remoteTrack", err,
 				"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
-				"track", track.ID())
+				"trackID", track.ID())
 		}
 	}
 
@@ -642,10 +642,6 @@ func (r *Room) onParticipantMetadataUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
-	// don't forward if source isn't allowed to publish data
-	if source != nil && !source.CanPublishData() {
-		return
-	}
 	dest := dp.GetUser().GetDestinationSids()
 
 	for _, op := range r.GetParticipants() {

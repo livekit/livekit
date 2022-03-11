@@ -166,7 +166,7 @@ func (t *DataTrack) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	return 0, nil
 }
 
-func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64) {
+func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime) {
 	return
 }
 
