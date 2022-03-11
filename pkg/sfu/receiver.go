@@ -39,7 +39,6 @@ type TrackReceiver interface {
 	GetBitrateTemporalCumulative() Bitrates
 
 	SendPLI(layer int32)
-	// RAJA-REMOVE LastPLI() int64
 
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
