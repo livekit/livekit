@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -88,6 +89,36 @@ func TestVP8Helper_Unmarshal(t *testing.T) {
 			}
 			if tt.checkTempID {
 				require.Equal(t, tt.temporalID, p.TID)
+			}
+		})
+	}
+}
+
+// ------------------------------------------
+
+func Test_timeToNtp(t *testing.T) {
+	type args struct {
+		ns time.Time
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantNTP uint64
+	}{
+		{
+			name: "Must return correct NTP time",
+			args: args{
+				ns: time.Unix(1602391458, 1234),
+			},
+			wantNTP: 16369753560730047668,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			gotNTP := uint64(ToNtpTime(tt.args.ns))
+			if gotNTP != tt.wantNTP {
+				t.Errorf("timeToNtp() gotFraction = %v, want %v", gotNTP, tt.wantNTP)
 			}
 		})
 	}

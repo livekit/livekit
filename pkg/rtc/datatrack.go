@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
@@ -165,7 +166,7 @@ func (t *DataTrack) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	return 0, nil
 }
 
-func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS uint64) {
+func (t *DataTrack) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime) {
 	return
 }
 
