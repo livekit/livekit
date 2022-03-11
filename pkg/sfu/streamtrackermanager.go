@@ -5,11 +5,52 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+)
+
+var (
+	ConfigVideo = []StreamTrackerParams{
+		{
+			SamplesRequired: 1,
+			CyclesRequired:  4,
+			CycleDuration:   500 * time.Millisecond,
+		},
+		{
+			SamplesRequired: 5,
+			CyclesRequired:  60,
+			CycleDuration:   500 * time.Millisecond,
+		},
+		{
+			SamplesRequired: 5,
+			CyclesRequired:  60,
+			CycleDuration:   500 * time.Millisecond,
+		},
+	}
+
+	// be very forgiving for screen share to account for cases like static screen where there could be only one packet per second
+	ConfigScreenshare = []StreamTrackerParams{
+		{
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+		{
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+		{
+			SamplesRequired: 1,
+			CyclesRequired:  1,
+			CycleDuration:   2 * time.Second,
+		},
+	}
 )
 
 type StreamTrackerManager struct {
 	logger logger.Logger
+	source livekit.TrackSource
 
 	lock sync.RWMutex
 
@@ -21,9 +62,10 @@ type StreamTrackerManager struct {
 	onAvailableLayersChanged func(availableLayers []int32)
 }
 
-func NewStreamTrackerManager(logger logger.Logger) *StreamTrackerManager {
+func NewStreamTrackerManager(logger logger.Logger, source livekit.TrackSource) *StreamTrackerManager {
 	return &StreamTrackerManager{
 		logger:           logger,
+		source:           source,
 		maxExpectedLayer: DefaultMaxLayerSpatial,
 	}
 }
@@ -33,16 +75,22 @@ func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers [
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) {
-	cycleDuration := 500 * time.Millisecond
-	samplesRequired := uint32(5)
-	cyclesRequired := uint64(60) // 30s of continuous stream
-	if layer == 0 {
-		// be very forgiving for base layer to account for cases like static screen share where there could be only one packet per second
-		samplesRequired = 1
-		cyclesRequired = 1 // 1 packet in 2 seconds
-		cycleDuration = 2 * time.Second
+	var params StreamTrackerParams
+	if s.source == livekit.TrackSource_SCREEN_SHARE {
+		if int(layer) >= len(ConfigScreenshare) {
+			return
+		}
+
+		params = ConfigScreenshare[layer]
+	} else {
+		if int(layer) >= len(ConfigVideo) {
+			return
+		}
+
+		params = ConfigVideo[layer]
 	}
-	tracker := NewStreamTracker(s.logger, samplesRequired, cyclesRequired, cycleDuration)
+	params.Logger = s.logger
+	tracker := NewStreamTracker(params)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
 			s.removeAvailableLayer(layer)

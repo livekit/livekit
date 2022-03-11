@@ -1224,8 +1224,6 @@ func (t *Track) SetPriority(priority uint8) bool {
 		switch t.source {
 		case livekit.TrackSource_SCREEN_SHARE:
 			priority = PriorityDefaultScreenshare
-		case livekit.TrackSource_SCREEN_SHARE_AUDIO:
-			priority = PriorityDefaultScreenshare
 		default:
 			priority = PriorityDefaultVideo
 		}
@@ -1248,7 +1246,7 @@ func (t *Track) DownTrack() *DownTrack {
 }
 
 func (t *Track) IsManaged() bool {
-	return (t.source != livekit.TrackSource_SCREEN_SHARE && t.source != livekit.TrackSource_SCREEN_SHARE_AUDIO) || t.isSimulcast
+	return t.source != livekit.TrackSource_SCREEN_SHARE || t.isSimulcast
 }
 
 func (t *Track) ID() livekit.TrackID {
