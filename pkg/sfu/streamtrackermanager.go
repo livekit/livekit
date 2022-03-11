@@ -76,7 +76,7 @@ func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers [
 
 func (s *StreamTrackerManager) AddTracker(layer int32) {
 	var params StreamTrackerParams
-	if s.source == livekit.TrackSource_SCREEN_SHARE || s.source == livekit.TrackSource_SCREEN_SHARE_AUDIO {
+	if s.source == livekit.TrackSource_SCREEN_SHARE {
 		if int(layer) >= len(ConfigScreenshare) {
 			return
 		}
