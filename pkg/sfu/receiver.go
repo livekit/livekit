@@ -138,6 +138,7 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track *webrtc.TrackRemote,
 	pid livekit.ParticipantID,
+	source livekit.TrackSource,
 	logger logger.Logger,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
@@ -155,7 +156,7 @@ func NewWebRTCReceiver(
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
 		numProcs:             runtime.NumCPU(),
-		streamTrackerManager: NewStreamTrackerManager(logger),
+		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 
@@ -376,7 +377,7 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
-	if w.closed.Load() {
+	if packets == nil || w.closed.Load() {
 		return
 	}
 

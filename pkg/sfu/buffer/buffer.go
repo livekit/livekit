@@ -562,9 +562,11 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 	// RTCP reports
 	pkts := b.getRTCP()
-	b.callbacksQueue.Enqueue(func() {
-		b.feedbackCB(pkts)
-	})
+	if pkts != nil {
+		b.callbacksQueue.Enqueue(func() {
+			b.feedbackCB(pkts)
+		})
+	}
 }
 
 func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
