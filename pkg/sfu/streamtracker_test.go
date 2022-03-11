@@ -12,10 +12,19 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+func newStreamTracker(samplesRequired uint32, cyclesRequired uint32, cycleDuration time.Duration) *StreamTracker {
+	return NewStreamTracker(StreamTrackerParams{
+		SamplesRequired: samplesRequired,
+		CyclesRequired:  cyclesRequired,
+		CycleDuration:   cycleDuration,
+		Logger:          logger.Logger(logger.GetLogger()),
+	})
+}
+
 func TestStreamTracker(t *testing.T) {
 	t.Run("flips to active on first observe", func(t *testing.T) {
 		callbackCalled := atomic.NewBool(false)
-		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker := newStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Start()
 		tracker.OnStatusChanged(func(status StreamStatus) {
 			callbackCalled.Store(true)
@@ -40,7 +49,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("flips to inactive immediately", func(t *testing.T) {
-		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker := newStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
@@ -76,7 +85,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("flips back to active after iterations", func(t *testing.T) {
-		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 1, 2, 500*time.Millisecond)
+		tracker := newStreamTracker(1, 2, 500*time.Millisecond)
 		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
@@ -103,7 +112,7 @@ func TestStreamTracker(t *testing.T) {
 	})
 
 	t.Run("does not change to inactive when paused", func(t *testing.T) {
-		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker := newStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Start()
 		tracker.Observe(1)
 		testutils.WithTimeout(t, func() string {
@@ -123,7 +132,7 @@ func TestStreamTracker(t *testing.T) {
 
 	t.Run("flips back to active on first observe after reset", func(t *testing.T) {
 		callbackCalled := atomic.NewUint32(0)
-		tracker := NewStreamTracker(logger.Logger(logger.GetLogger()), 5, 60, 500*time.Millisecond)
+		tracker := newStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Start()
 		tracker.OnStatusChanged(func(status StreamStatus) {
 			callbackCalled.Inc()

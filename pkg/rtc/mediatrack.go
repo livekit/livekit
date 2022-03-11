@@ -160,6 +160,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			receiver,
 			track,
 			t.PublisherID(),
+			t.params.TrackInfo.Source,
 			t.params.Logger,
 			sfu.WithPliThrottle(t.params.PLIThrottleConfig),
 			sfu.WithLoadBalanceThreshold(20),
