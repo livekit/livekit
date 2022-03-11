@@ -64,7 +64,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 
-	if externalIP != "" {
+	if conf.RTC.UseExternalIP && externalIP != "" {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
 
@@ -178,6 +178,32 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	if rtcConf.UseICELite {
 		s.SetLite(true)
+	}
+
+	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {
+		includes := rtcConf.Interfaces.Includes
+		excludes := rtcConf.Interfaces.Excludes
+		s.SetInterfaceFilter(func(s string) bool {
+			//filter by include interfaces
+			if len(includes) > 0 {
+				for _, iface := range includes {
+					if iface == s {
+						return true
+					}
+				}
+				return false
+			}
+
+			// filter by exclude interfaces
+			if len(excludes) > 0 {
+				for _, iface := range excludes {
+					if iface == s {
+						return false
+					}
+				}
+			}
+			return true
+		})
 	}
 
 	return &WebRTCConfig{
