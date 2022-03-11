@@ -61,6 +61,14 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
+  # # interface filter. If server have more than one network interface and you wish to user or not use special interfaces.
+  # # can use include/exclude interface for filter. If none of them is set, all interfaces be used. If both of them is set,
+  # # only include interfaces will be use.
+  # interfaces:
+  #   includes:
+  #     - en0
+  #   excludes:
+  #     - docker0
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
