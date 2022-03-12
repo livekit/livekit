@@ -15,6 +15,16 @@ type FakeDataTrack struct {
 	addOnCloseArgsForCall []struct {
 		arg1 func()
 	}
+	IDStub        func() livekit.TrackID
+	iDMutex       sync.RWMutex
+	iDArgsForCall []struct {
+	}
+	iDReturns struct {
+		result1 livekit.TrackID
+	}
+	iDReturnsOnCall map[int]struct {
+		result1 livekit.TrackID
+	}
 	KindStub        func() livekit.TrackType
 	kindMutex       sync.RWMutex
 	kindArgsForCall []struct {
@@ -84,6 +94,59 @@ func (fake *FakeDataTrack) AddOnCloseArgsForCall(i int) func() {
 	defer fake.addOnCloseMutex.RUnlock()
 	argsForCall := fake.addOnCloseArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) ID() livekit.TrackID {
+	fake.iDMutex.Lock()
+	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
+	fake.iDArgsForCall = append(fake.iDArgsForCall, struct {
+	}{})
+	stub := fake.IDStub
+	fakeReturns := fake.iDReturns
+	fake.recordInvocation("ID", []interface{}{})
+	fake.iDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDataTrack) IDCallCount() int {
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
+	return len(fake.iDArgsForCall)
+}
+
+func (fake *FakeDataTrack) IDCalls(stub func() livekit.TrackID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = stub
+}
+
+func (fake *FakeDataTrack) IDReturns(result1 livekit.TrackID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	fake.iDReturns = struct {
+		result1 livekit.TrackID
+	}{result1}
+}
+
+func (fake *FakeDataTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
+	fake.iDMutex.Lock()
+	defer fake.iDMutex.Unlock()
+	fake.IDStub = nil
+	if fake.iDReturnsOnCall == nil {
+		fake.iDReturnsOnCall = make(map[int]struct {
+			result1 livekit.TrackID
+		})
+	}
+	fake.iDReturnsOnCall[i] = struct {
+		result1 livekit.TrackID
+	}{result1}
 }
 
 func (fake *FakeDataTrack) Kind() livekit.TrackType {
@@ -282,6 +345,8 @@ func (fake *FakeDataTrack) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addOnCloseMutex.RLock()
 	defer fake.addOnCloseMutex.RUnlock()
+	fake.iDMutex.RLock()
+	defer fake.iDMutex.RUnlock()
 	fake.kindMutex.RLock()
 	defer fake.kindMutex.RUnlock()
 	fake.onDataPacketMutex.RLock()

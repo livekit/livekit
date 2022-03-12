@@ -221,9 +221,9 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
-	participant.OnDataTrackPublished(func(lp types.LocalParticipant, dt types.DataTrack) {
+	participant.OnDataTrackPublished(func(p types.LocalParticipant, dt types.DataTrack) {
 		dt.OnDataPacket(func(dp *livekit.DataPacket) {
-			r.onDataPacket(lp, dp)
+			r.onDataPacket(p, dp)
 		})
 	})
 	r.Logger.Infow("new participant joined",
