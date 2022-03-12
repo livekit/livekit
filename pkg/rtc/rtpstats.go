@@ -19,8 +19,7 @@ func getPos(sn uint16) (uint16, uint16) {
 }
 
 type RTPStatsParams struct {
-	ClockRate      uint32
-	WindowDuration time.Duration
+	ClockRate uint32
 }
 
 type RTPStats struct {
@@ -28,11 +27,7 @@ type RTPStats struct {
 
 	lock sync.RWMutex
 
-	aggregateWindow *Window
-
-	activeWindowStartTime time.Time
-	activeWindow          *Window
-	windows               []*Window
+	stats Stats
 }
 
 func NewRTPStats(params RTPStatsParams) *RTPStats {
@@ -45,185 +40,56 @@ func (r *RTPStats) Stop() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	now := time.Now()
-
-	// close active window
-	if r.activeWindow != nil {
-		r.activeWindow.Close(now)
-		r.windows = append(r.windows, r.activeWindow)
-		r.activeWindow = nil
-	}
-
-	if r.aggregateWindow != nil {
-		r.aggregateWindow.Close(now)
-	}
+	r.stats.Close(time.Now())
 }
 
-func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) {
+func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) (bool, bool, uint16, uint16) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	now := time.Now()
-	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.Update(rtp, packetTime)
-	}
-
-	if aw := r.getActiveWindow(now); aw != nil {
-		aw.Update(rtp, packetTime)
-	}
+	return r.stats.Update(time.Now(), rtp, packetTime)
 }
 
 func (r *RTPStats) UpdateNack(nackCount int, nackMissCount int) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	now := time.Now()
-	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.UpdateNack(nackCount, nackMissCount)
-	}
-
-	if aw := r.getActiveWindow(now); aw != nil {
-		aw.UpdateNack(nackCount, nackMissCount)
-	}
+	r.stats.UpdateNack(nackCount, nackMissCount)
 }
 
 func (r *RTPStats) UpdatePli() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	now := time.Now()
-	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.UpdatePli(now)
-	}
-
-	if aw := r.getActiveWindow(now); aw != nil {
-		aw.UpdatePli(now)
-	}
+	r.stats.UpdatePli(time.Now())
 }
 
-func (r *RTPStats) TimeSinceLastPliAggregate() int64 {
+func (r *RTPStats) TimeSinceLastPli() int64 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	now := time.Now()
-	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.TimeSinceLastPli(now)
-	}
-
-	return 0
-}
-
-func (r *RTPStats) TimeSinceLastPliActive() int64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	now := time.Now()
-	if aw := r.getActiveWindow(now); aw != nil {
-		aw.TimeSinceLastPli(now)
-	}
-
-	return 0
+	return r.stats.TimeSinceLastPli(time.Now())
 }
 
 func (r *RTPStats) UpdateFir() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	now := time.Now()
-	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.UpdateFir(now)
-	}
-
-	if aw := r.getActiveWindow(now); aw != nil {
-		aw.UpdateFir(now)
-	}
-}
-
-func (r *RTPStats) ToProtoActive() *livekit.RTPStats {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	if r.activeWindow == nil {
-		return &livekit.RTPStats{}
-	}
-
-	return r.activeWindow.ToProto()
+	r.stats.UpdateFir(time.Now())
 }
 
 func (r *RTPStats) ToString() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	var str string
-	if r.aggregateWindow != nil {
-		str += "a:["
-		str += r.aggregateWindow.ToString()
-		str += "]"
-	}
-
-	if len(r.windows) > 1 {
-		// report only if more than one, else the aggregate window captures it
-		str += ", w:["
-		for idx, window := range r.windows {
-			if idx != 0 {
-				str += ", "
-			}
-			str += fmt.Sprintf("%d:[%s]", idx, window.ToString())
-		}
-		str += "]"
-	}
-
-	return str
+	return r.stats.ToString()
 }
 
-func (r *RTPStats) ToStringAggregateOnly() string {
+func (r *RTPStats) ToProto() *livekit.RTPStats {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	var str string
-	if r.aggregateWindow != nil {
-		str += r.aggregateWindow.ToString()
-	}
-
-	return str
-}
-
-func (r *RTPStats) ToProtoAggregateOnly() *livekit.RTPStats {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	if r.aggregateWindow == nil {
-		return nil
-	}
-
-	return r.aggregateWindow.ToProto()
-}
-
-func (r *RTPStats) getAggregateWindow(now time.Time) *Window {
-	if r.aggregateWindow == nil {
-		r.aggregateWindow = newWindow(now, r.params.ClockRate)
-	}
-
-	return r.aggregateWindow
-}
-
-func (r *RTPStats) getActiveWindow(now time.Time) *Window {
-	if r.params.WindowDuration != 0 && (r.activeWindowStartTime.IsZero() || time.Since(r.activeWindowStartTime) > r.params.WindowDuration) {
-		// close active window if any
-		if r.activeWindow != nil {
-			r.activeWindow.Close(now)
-			r.windows = append(r.windows, r.activeWindow)
-			r.activeWindow = nil
-		}
-
-		// start a new window
-		if r.activeWindow == nil {
-			r.activeWindowStartTime = now
-			r.activeWindow = newWindow(r.activeWindowStartTime, r.params.ClockRate)
-		}
-	}
-
-	return r.activeWindow
+	return r.stats.ToProto()
 }
 
 // ------------------------------------------------------------
@@ -232,7 +98,13 @@ type Stats struct {
 	clockRate uint32
 
 	initialized bool
+
+	startTime time.Time
+	endTime   time.Time
+
 	highestSN   uint16
+	highestTS   uint32
+	highestTime int64
 	extStartSN  uint32
 	cycles      uint16
 
@@ -269,10 +141,23 @@ func newStats(clockRate uint32) *Stats {
 	}
 }
 
-func (s *Stats) Update(rtp *rtp.Packet, packetTime int64) {
+func (s *Stats) Close(now time.Time) {
+	s.endTime = now
+}
+
+func (s *Stats) Update(now time.Time, rtp *rtp.Packet, packetTime int64) (isHighestSN bool, hasLoss bool, lossStartInclusive uint16, lossEndExclusive uint16) {
+	if !s.endTime.IsZero() {
+		return
+	}
+
 	if !s.initialized {
 		s.initialized = true
+
+		s.startTime = now
+
 		s.highestSN = rtp.SequenceNumber - 1
+		s.highestTS = rtp.Timestamp
+		s.highestTime = packetTime
 
 		s.extStartSN = uint32(rtp.SequenceNumber)
 		s.cycles = 0
@@ -302,6 +187,13 @@ func (s *Stats) Update(rtp *rtp.Packet, packetTime int64) {
 
 	// in-order
 	default:
+		isHighestSN = true
+		if int(diff) > 1 {
+			hasLoss = true
+			lossStartInclusive = s.highestSN + 1
+			lossEndExclusive = rtp.SequenceNumber
+		}
+
 		// update gap histogram
 		s.updateGapHistogram(int(diff))
 
@@ -314,6 +206,8 @@ func (s *Stats) Update(rtp *rtp.Packet, packetTime int64) {
 			s.cycles++
 		}
 		s.highestSN = rtp.SequenceNumber
+		s.highestTS = rtp.Timestamp
+		s.highestTime = packetTime
 
 		if rtp.Marker {
 			s.frames++
@@ -329,14 +223,24 @@ func (s *Stats) Update(rtp *rtp.Packet, packetTime int64) {
 	if !isDuplicate {
 		s.updateJitter(rtp, packetTime)
 	}
+
+	return
 }
 
 func (s *Stats) UpdateNack(nackCount int, nackMissCount int) {
+	if !s.endTime.IsZero() {
+		return
+	}
+
 	s.nacks += uint32(nackCount)
 	s.nackMisses += uint32(nackMissCount)
 }
 
 func (s *Stats) UpdatePli(now time.Time) {
+	if !s.endTime.IsZero() {
+		return
+	}
+
 	s.plis++
 	s.lastPli = now
 }
@@ -346,12 +250,16 @@ func (s *Stats) TimeSinceLastPli(now time.Time) int64 {
 }
 
 func (s *Stats) UpdateFir(now time.Time) {
+	if !s.endTime.IsZero() {
+		return
+	}
+
 	s.firs++
 	s.lastFir = now
 }
 
-func (s *Stats) ToString(startTime time.Time, endTime time.Time) string {
-	p := s.ToProto(startTime, endTime)
+func (s *Stats) ToString() string {
+	p := s.ToProto()
 	if p == nil {
 		return ""
 	}
@@ -398,15 +306,16 @@ func (s *Stats) ToString(startTime time.Time, endTime time.Time) string {
 	return str
 }
 
-func (s *Stats) ToProto(startTime time.Time, endTime time.Time) *livekit.RTPStats {
-	if startTime.IsZero() {
+func (s *Stats) ToProto() *livekit.RTPStats {
+	if s.startTime.IsZero() {
 		return nil
 	}
 
+	endTime := s.endTime
 	if endTime.IsZero() {
 		endTime = time.Now()
 	}
-	elapsed := endTime.Sub(startTime).Seconds()
+	elapsed := endTime.Sub(s.startTime).Seconds()
 
 	extHighestSN := uint32(s.cycles)<<16 | uint32(s.highestSN)
 	packetsExpected := extHighestSN - s.extStartSN
@@ -437,7 +346,7 @@ func (s *Stats) ToProto(startTime time.Time, endTime time.Time) *livekit.RTPStat
 	maxJitterTime := s.maxJitter / float64(s.clockRate) * 1e6
 
 	p := &livekit.RTPStats{
-		StartTime:            timestamppb.New(startTime),
+		StartTime:            timestamppb.New(s.startTime),
 		EndTime:              timestamppb.New(endTime),
 		Duration:             elapsed,
 		Packets:              packets,
@@ -536,70 +445,6 @@ func (s *Stats) updateGapHistogram(gap int) {
 	} else {
 		s.gapHistogram[missing-1]++
 	}
-}
-
-// ----------------------------------
-
-type Window struct {
-	startTime time.Time
-	endTime   time.Time
-
-	stats *Stats
-}
-
-func newWindow(startTime time.Time, clockRate uint32) *Window {
-	return &Window{
-		startTime: startTime,
-		stats:     newStats(clockRate),
-	}
-}
-
-func (w *Window) Close(endTime time.Time) {
-	w.endTime = endTime
-}
-
-func (w *Window) Update(rtp *rtp.Packet, packetTime int64) {
-	if !w.endTime.IsZero() {
-		return
-	}
-
-	w.stats.Update(rtp, packetTime)
-}
-
-func (w *Window) UpdateNack(nackCount int, nackMissCount int) {
-	if !w.endTime.IsZero() {
-		return
-	}
-
-	w.stats.UpdateNack(nackCount, nackMissCount)
-}
-
-func (w *Window) UpdatePli(now time.Time) {
-	if !w.endTime.IsZero() {
-		return
-	}
-
-	w.stats.UpdatePli(now)
-}
-
-func (w *Window) TimeSinceLastPli(now time.Time) int64 {
-	return w.stats.TimeSinceLastPli(now)
-}
-
-func (w *Window) UpdateFir(now time.Time) {
-	if !w.endTime.IsZero() {
-		return
-	}
-
-	w.stats.UpdateFir(now)
-}
-
-func (w *Window) ToString() string {
-	return w.stats.ToString(w.startTime, w.endTime)
-}
-
-func (w *Window) ToProto() *livekit.RTPStats {
-	return w.stats.ToProto(w.startTime, w.endTime)
 }
 
 // ----------------------------------

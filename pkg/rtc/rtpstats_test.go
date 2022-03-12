@@ -21,13 +21,11 @@ func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 
 func TestRTPStats(t *testing.T) {
 	clockRate := uint32(90000)
-	windowDuration := 5 * time.Second
 	r := NewRTPStats(RTPStatsParams{
-		ClockRate:      clockRate,
-		WindowDuration: windowDuration,
+		ClockRate: clockRate,
 	})
 
-	totalDuration := 4 * windowDuration
+	totalDuration := 5 * time.Second
 	bitrate := 1000000
 	packetSize := 1000
 	pps := (((bitrate + 7) / 8) + packetSize - 1) / packetSize
