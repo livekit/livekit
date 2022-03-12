@@ -107,7 +107,7 @@ func (r *RTPStats) TimeSinceLastPliAggregate() int64 {
 
 	now := time.Now()
 	if aw := r.getAggregateWindow(now); aw != nil {
-		aw.TimeSinceLastPli(now)
+		return aw.TimeSinceLastPli(now)
 	}
 
 	return 0
@@ -119,7 +119,7 @@ func (r *RTPStats) TimeSinceLastPliActive() int64 {
 
 	now := time.Now()
 	if aw := r.getActiveWindow(now); aw != nil {
-		aw.TimeSinceLastPli(now)
+		return aw.TimeSinceLastPli(now)
 	}
 
 	return 0
