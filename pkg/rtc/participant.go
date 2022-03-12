@@ -315,9 +315,11 @@ func (p *ParticipantImpl) ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo 
 		info.Metadata = p.params.Grants.Metadata
 	}
 
+	p.lock.RLock()
 	if !mediaTrackOnly && p.dataTrack != nil {
 		info.Tracks = append(info.Tracks, p.dataTrack.ToProto())
 	}
+	p.lock.RUnlock()
 
 	return info
 }
@@ -499,9 +501,16 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		})
 	}
 
-	if p.dataTrack != nil {
-		p.dataTrack.Close()
+	var dt *DataTrack
+	p.lock.Lock()
+	dt = p.dataTrack
+	p.dataTrack = nil
+	p.lock.Unlock()
+
+	if dt != nil {
+		dt.Close()
 	}
+
 	p.UpTrackManager.Close()
 
 	p.pendingTracksLock.Lock()
@@ -1085,15 +1094,25 @@ func (p *ParticipantImpl) OnDataTrackPublished(f func(types.LocalParticipant, ty
 }
 
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
+	p.lock.Lock()
+	created := p.onDataChannelLocked(dc)
+	dt := p.dataTrack
+	p.lock.Unlock()
+
+	if created && p.onDataTrackPublished != nil && dt != nil {
+		p.onDataTrackPublished(p, dt)
+	}
+}
+
+func (p *ParticipantImpl) onDataChannelLocked(dc *webrtc.DataChannel) (created bool) {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return
 	}
 	if p.dataTrack == nil {
 		p.dataTrack = NewDataTrack(livekit.TrackID("DT_"+p.params.SID), p.params.SID, p.params.Logger)
-		if p.onDataTrackPublished != nil {
-			p.onDataTrackPublished(p, p.dataTrack)
-		}
+		created = true
 	}
+
 	label := dc.Label()
 	switch label {
 	case reliableDataChannel:
@@ -1115,6 +1134,8 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	default:
 		p.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
 	}
+
+	return
 }
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
@@ -1618,12 +1639,19 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 }
 
 func (p *ParticipantImpl) GetDataTrack() types.DataTrack {
-	return p.dataTrack
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	if dt := p.dataTrack; dt != nil {
+		return dt
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) handlePendingDataChannels() {
 	p.lock.Lock()
-	defer p.lock.Unlock()
+	created := false
 	ordered := true
 	negotiated := true
 	for _, ci := range p.pendingDataChannels {
@@ -1651,10 +1679,18 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
 		} else if dc != nil {
-			p.onDataChannel(dc)
+			creating := p.onDataChannelLocked(dc)
+			created = created || creating
 		}
 	}
 	p.pendingDataChannels = nil
+
+	dt := p.dataTrack
+	p.lock.Unlock()
+
+	if created && p.onDataTrackPublished != nil && dt != nil {
+		p.onDataTrackPublished(p, dt)
+	}
 }
 
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {

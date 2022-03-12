@@ -69,6 +69,10 @@ func (t *DataTrack) OnDataPacket(f func(*livekit.DataPacket)) {
 	t.lock.Unlock()
 }
 
+func (t *DataTrack) ID() livekit.TrackID {
+	return t.trackID
+}
+
 func (t *DataTrack) TrackID() livekit.TrackID {
 	return t.trackID
 }
