@@ -244,6 +244,7 @@ type SubscribedTrack interface {
 // DataTrack is the interface representing a data track published to the room
 //counterfeiter:generate . DataTrack
 type DataTrack interface {
+	ID() livekit.TrackID
 	TrackID() livekit.TrackID
 	Receiver() sfu.TrackReceiver
 	AddOnClose(func())
