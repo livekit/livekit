@@ -1642,7 +1642,11 @@ func (p *ParticipantImpl) GetDataTrack() types.DataTrack {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.dataTrack
+	if dt := p.dataTrack; dt != nil {
+		return dt
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) handlePendingDataChannels() {
@@ -1675,7 +1679,8 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
 		} else if dc != nil {
-			created = created || p.onDataChannelLocked(dc)
+			creating := p.onDataChannelLocked(dc)
+			created = created || creating
 		}
 	}
 	p.pendingDataChannels = nil
