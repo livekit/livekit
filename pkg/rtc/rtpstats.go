@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtp"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,12 +28,13 @@ type RTPStats struct {
 
 	lock sync.RWMutex
 
-	stats Stats
+	stats *Stats
 }
 
 func NewRTPStats(params RTPStatsParams) *RTPStats {
 	return &RTPStats{
 		params: params,
+		stats:  newStats(params.ClockRate),
 	}
 }
 
@@ -76,6 +78,20 @@ func (r *RTPStats) UpdateFir() {
 	defer r.lock.Unlock()
 
 	r.stats.UpdateFir(time.Now())
+}
+
+func (r *RTPStats) SetSenderReportData(rtpTS uint32, ntpTS buffer.NtpTime) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.stats.SetSenderReportData(rtpTS, ntpTS)
+}
+
+func (r *RTPStats) GetSenderReportData() (rtpTS uint32, ntpTS buffer.NtpTime) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.stats.GetSenderReportData(time.Now())
 }
 
 func (r *RTPStats) ToString() string {
@@ -133,6 +149,9 @@ type Stats struct {
 
 	firs    uint32
 	lastFir time.Time
+
+	rtpSR uint32
+	ntpSR buffer.NtpTime
 }
 
 func newStats(clockRate uint32) *Stats {
@@ -256,6 +275,27 @@ func (s *Stats) UpdateFir(now time.Time) {
 
 	s.firs++
 	s.lastFir = now
+}
+
+func (s *Stats) SetSenderReportData(rtpTS uint32, ntpTS buffer.NtpTime) {
+	s.rtpSR = rtpTS
+	s.ntpSR = ntpTS
+}
+
+func (s *Stats) GetSenderReportData(now time.Time) (rtpTS uint32, ntpTS buffer.NtpTime) {
+	ntpTS = buffer.ToNtpTime(now)
+
+	ntpSR := s.highestTime
+	if s.ntpSR != 0 {
+		ntpSR = s.ntpSR.Time().UnixNano()
+	}
+
+	rtpTS = s.highestTS
+	if s.rtpSR != 0 {
+		rtpTS = s.rtpSR
+	}
+	rtpTS += uint32((now.UnixNano() - ntpSR) * int64(s.clockRate) / 1e9)
+	return
 }
 
 func (s *Stats) ToString() string {
