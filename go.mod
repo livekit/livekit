@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.11.14-0.20220311165704-a91198e400ac
+	github.com/livekit/protocol v0.11.14-0.20220314072422-5cea5d444f36
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -87,5 +87,3 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/livekit/protocol => ../protocol
