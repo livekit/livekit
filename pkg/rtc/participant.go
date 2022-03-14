@@ -110,21 +110,18 @@ type ParticipantImpl struct {
 	updateLock sync.Mutex
 	version    atomic.Uint32
 
-	dataTrack *DataTrack
-
 	// callbacks & handlers
 	onTrackPublished func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated   func(types.LocalParticipant, types.MediaTrack)
 	onStateChange    func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onMetadataUpdate func(types.LocalParticipant)
+	onDataPacket     func(types.LocalParticipant, *livekit.DataPacket)
 
 	migrateState        atomic.Value // types.MigrateState
 	pendingOffer        *webrtc.SessionDescription
 	pendingDataChannels []*livekit.DataChannelInfo
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
-
-	onDataTrackPublished func(types.LocalParticipant, types.DataTrack)
 }
 
 func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermission) (*ParticipantImpl, error) {
@@ -299,7 +296,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 }
 
-func (p *ParticipantImpl) ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo {
+func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:      string(p.params.SID),
 		Identity: string(p.params.Identity),
@@ -314,12 +311,6 @@ func (p *ParticipantImpl) ToProto(mediaTrackOnly bool) *livekit.ParticipantInfo 
 	if p.params.Grants != nil {
 		info.Metadata = p.params.Grants.Metadata
 	}
-
-	p.lock.RLock()
-	if !mediaTrackOnly && p.dataTrack != nil {
-		info.Tracks = append(info.Tracks, p.dataTrack.ToProto())
-	}
-	p.lock.RUnlock()
 
 	return info
 }
@@ -352,6 +343,10 @@ func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, t
 
 func (p *ParticipantImpl) OnMetadataUpdate(callback func(types.LocalParticipant)) {
 	p.onMetadataUpdate = callback
+}
+
+func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *livekit.DataPacket)) {
+	p.onDataPacket = callback
 }
 
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
@@ -501,16 +496,6 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		})
 	}
 
-	var dt *DataTrack
-	p.lock.Lock()
-	dt = p.dataTrack
-	p.dataTrack = nil
-	p.lock.Unlock()
-
-	if dt != nil {
-		dt.Close()
-	}
-
 	p.UpTrackManager.Close()
 
 	p.pendingTracksLock.Lock()
@@ -616,7 +601,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 		Message: &livekit.SignalResponse_Join{
 			Join: &livekit.JoinResponse{
 				Room:              roomInfo,
-				Participant:       p.ToProto(true),
+				Participant:       p.ToProto(),
 				OtherParticipants: otherParticipants,
 				ServerVersion:     version.Version,
 				ServerRegion:      region,
@@ -1089,53 +1074,50 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 	}
 }
 
-func (p *ParticipantImpl) OnDataTrackPublished(f func(types.LocalParticipant, types.DataTrack)) {
-	p.onDataTrackPublished = f
-}
-
 func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
-	p.lock.Lock()
-	created := p.onDataChannelLocked(dc)
-	dt := p.dataTrack
-	p.lock.Unlock()
-
-	if created && p.onDataTrackPublished != nil && dt != nil {
-		p.onDataTrackPublished(p, dt)
-	}
-}
-
-func (p *ParticipantImpl) onDataChannelLocked(dc *webrtc.DataChannel) (created bool) {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return
 	}
-	if p.dataTrack == nil {
-		p.dataTrack = NewDataTrack(livekit.TrackID("DT_"+p.params.SID), p.params.SID, p.params.Logger)
-		created = true
-	}
-
-	label := dc.Label()
-	switch label {
+	switch dc.Label() {
 	case reliableDataChannel:
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if !p.CanPublishData() {
-				return
+			if p.CanPublishData() {
+				p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
 			}
-			p.dataTrack.Write(label, msg.Data)
 		})
 	case lossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if !p.CanPublishData() {
-				return
+			if p.CanPublishData() {
+				p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
 			}
-			p.dataTrack.Write(label, msg.Data)
 		})
 	default:
 		p.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
 	}
+}
 
-	return
+func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+	dp := livekit.DataPacket{}
+	if err := proto.Unmarshal(data, &dp); err != nil {
+		p.params.Logger.Warnw("could not parse data packet", err)
+		return
+	}
+
+	// trust the channel that it came in as the source of truth
+	dp.Kind = kind
+
+	// only forward on user payloads
+	switch payload := dp.Value.(type) {
+	case *livekit.DataPacket_User:
+		if p.onDataPacket != nil {
+			payload.User.ParticipantSid = string(p.params.SID)
+			p.onDataPacket(p, &dp)
+		}
+	default:
+		p.params.Logger.Warnw("received unsupported data packet", nil, "payload", payload)
+	}
 }
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
@@ -1638,20 +1620,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (p *ParticipantImpl) GetDataTrack() types.DataTrack {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	if dt := p.dataTrack; dt != nil {
-		return dt
-	}
-
-	return nil
-}
-
 func (p *ParticipantImpl) handlePendingDataChannels() {
-	p.lock.Lock()
-	created := false
 	ordered := true
 	negotiated := true
 	for _, ci := range p.pendingDataChannels {
@@ -1679,18 +1648,10 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
 		} else if dc != nil {
-			creating := p.onDataChannelLocked(dc)
-			created = created || creating
+			p.onDataChannel(dc)
 		}
 	}
 	p.pendingDataChannels = nil
-
-	dt := p.dataTrack
-	p.lock.Unlock()
-
-	if created && p.onDataTrackPublished != nil && dt != nil {
-		p.onDataTrackPublished(p, dt)
-	}
 }
 
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
