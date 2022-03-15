@@ -31,10 +31,11 @@ import (
 )
 
 const (
-	lossyDataChannel    = "_lossy"
-	reliableDataChannel = "_reliable"
-	sdBatchSize         = 20
-	rttUpdateInterval   = 5 * time.Second
+	LossyDataChannel    = "_lossy"
+	ReliableDataChannel = "_reliable"
+
+	sdBatchSize       = 20
+	rttUpdateInterval = 5 * time.Second
 )
 
 type pendingTrackInfo struct {
@@ -197,14 +198,14 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		primaryPC = p.subscriber.pc
 		ordered := true
 		// also create data channels for subs
-		p.reliableDCSub, err = primaryPC.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+		p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
 			Ordered: &ordered,
 		})
 		if err != nil {
 			return nil, err
 		}
 		retransmits := uint16(0)
-		p.lossyDCSub, err = primaryPC.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+		p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
 			Ordered:        &ordered,
 			MaxRetransmits: &retransmits,
 		})
@@ -1079,14 +1080,14 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 		return
 	}
 	switch dc.Label() {
-	case reliableDataChannel:
+	case ReliableDataChannel:
 		p.reliableDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if p.CanPublishData() {
 				p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
 			}
 		})
-	case lossyDataChannel:
+	case LossyDataChannel:
 		p.lossyDC = dc
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if p.CanPublishData() {
@@ -1628,18 +1629,18 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			dc  *webrtc.DataChannel
 			err error
 		)
-		if ci.Label == lossyDataChannel && p.lossyDC == nil {
+		if ci.Label == LossyDataChannel && p.lossyDC == nil {
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
-			dc, err = p.publisher.pc.CreateDataChannel(lossyDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
 				Ordered:        &ordered,
 				MaxRetransmits: &retransmits,
 				Negotiated:     &negotiated,
 				ID:             &id,
 			})
-		} else if ci.Label == reliableDataChannel && p.reliableDC == nil {
+		} else if ci.Label == ReliableDataChannel && p.reliableDC == nil {
 			id := uint16(ci.GetId())
-			dc, err = p.publisher.pc.CreateDataChannel(reliableDataChannel, &webrtc.DataChannelInit{
+			dc, err = p.publisher.pc.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
 				Ordered:    &ordered,
 				Negotiated: &negotiated,
 				ID:         &id,
