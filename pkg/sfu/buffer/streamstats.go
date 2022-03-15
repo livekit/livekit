@@ -6,6 +6,7 @@ type LayerStats struct {
 	TotalFrames  uint32
 }
 
+// RAJA-REMOVE-START
 type StreamStats struct {
 	TotalPrimaryPackets    uint32
 	TotalPrimaryBytes      uint64
@@ -23,7 +24,11 @@ type StreamStats struct {
 	LostRate               float32
 }
 
+// RAJA-REMOVE-END
+
 type StreamStatsWithLayers struct {
+	// RAJA-REMOVE-START
 	StreamStats StreamStats
-	Layers      map[int]LayerStats
+	// RAJA-REMOVE-END
+	Layers map[int]LayerStats
 }

@@ -407,12 +407,30 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 	buff.SendPLI()
 }
 
+/* RAJA-TODO
 func (w *WebRTCReceiver) LastPLI() int64 {
 	var lastPLI int64
 	w.bufferMu.RLock()
 	for _, b := range w.buffers {
 		if b != nil && b.LastPLI() > lastPLI {
 			lastPLI = b.LastPLI()
+		}
+	}
+	w.bufferMu.RUnlock()
+	return lastPLI
+}
+*/
+func (w *WebRTCReceiver) LastPLI() time.Time {
+	var lastPLI time.Time
+	w.bufferMu.RLock()
+	for _, b := range w.buffers {
+		if b == nil {
+			continue
+		}
+
+		layerLastPLI := b.LastPLI()
+		if lastPLI.IsZero() || layerLastPLI.After(lastPLI) {
+			lastPLI = layerLastPLI
 		}
 	}
 	w.bufferMu.RUnlock()

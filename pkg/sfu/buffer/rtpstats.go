@@ -1,4 +1,4 @@
-package rtc
+package buffer
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
@@ -23,6 +22,13 @@ const (
 
 func getPos(sn uint16) (uint16, uint16) {
 	return sn >> 6, sn & 0x3f
+}
+
+type RTPFlowState struct {
+	IsHighestSN        bool
+	HasLoss            bool
+	LossStartInclusive uint16
+	LossEndExclusive   uint16
 }
 
 type RTPStatsParams struct {
@@ -48,17 +54,25 @@ type RTPStats struct {
 
 	lastTransit uint32
 
-	bytes             uint64
-	bytesDuplicate    uint64
-	bytesPadding      uint64
-	packetsDuplicate  uint32
-	packetsPadding    uint32
-	packetsOutOfOrder uint32
-	packetsLost       uint32
-	frames            uint32
+	bytes            uint64
+	bytesDuplicate   uint64
+	bytesPadding     uint64
+	packetsDuplicate uint32
+	packetsPadding   uint32
 
-	jitter    float64
-	maxJitter float64
+	packetsOutOfOrder uint32
+
+	packetsLost             uint32
+	isPacketsLostOverridden bool
+	packetsLostOverridden   uint32
+
+	frames uint32
+
+	jitter              float64
+	maxJitter           float64
+	isJitterOverridden  bool
+	jitterOverridden    float64
+	maxJitterOverridden float64
 
 	seenSNs      [NumSequenceNumbers / 64]uint64
 	gapHistogram [GapHistogramNumBins]uint32
@@ -76,7 +90,7 @@ type RTPStats struct {
 	maxRtt uint32
 
 	rtpSR     uint32
-	ntpSR     buffer.NtpTime
+	ntpSR     NtpTime
 	arrivalSR int64
 }
 
@@ -93,10 +107,14 @@ func (r *RTPStats) Stop() {
 	r.endTime = time.Now()
 }
 
-func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) (isHighestSN bool, hasLoss bool, lossStartInclusive uint16, lossEndExclusive uint16) {
-	// RAJA-TODO-START
-	// 1. Padding packet stats
-	// RAJA-TODO-END
+func (r *RTPStats) IsActive() bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.initialized && r.endTime.IsZero()
+}
+
+func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, packetTime int64) (flowState RTPFlowState) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -109,20 +127,24 @@ func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) (isHighestSN bool, 
 
 		r.startTime = time.Now()
 
-		r.highestSN = rtp.SequenceNumber - 1
-		r.highestTS = rtp.Timestamp
+		r.highestSN = rtph.SequenceNumber - 1
+		r.highestTS = rtph.Timestamp
 		r.highestTime = packetTime
 
-		r.extStartSN = uint32(rtp.SequenceNumber)
+		r.extStartSN = uint32(rtph.SequenceNumber)
 		r.cycles = 0
 	}
 
+	pktSize := uint64(rtph.MarshalSize() + payloadSize + paddingSize)
+	if payloadSize == 0 {
+		r.packetsPadding++
+		r.bytesPadding += pktSize
+	} else {
+		r.bytes += pktSize
+	}
+
 	isDuplicate := false
-
-	pktSize := uint64(rtp.MarshalSize())
-	r.bytes += pktSize
-
-	diff := rtp.SequenceNumber - r.highestSN
+	diff := rtph.SequenceNumber - r.highestSN
 	switch {
 	// duplicate or out-of-order
 	case diff == 0 || diff > (1<<15):
@@ -131,13 +153,13 @@ func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) (isHighestSN bool, 
 		}
 
 		// adjust start to account for out-of-order packets before o cycle completes
-		if !r.isCycleCompleted() && (rtp.SequenceNumber-uint16(r.extStartSN) > (1 << 15)) {
+		if !r.isCycleCompleted() && (rtph.SequenceNumber-uint16(r.extStartSN) > (1 << 15)) {
 			// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check below
-			r.packetsLost += uint32(uint16(r.extStartSN) - rtp.SequenceNumber)
-			r.extStartSN = uint32(rtp.SequenceNumber)
+			r.packetsLost += uint32(uint16(r.extStartSN) - rtph.SequenceNumber)
+			r.extStartSN = uint32(rtph.SequenceNumber)
 		}
 
-		if r.isSeenSN(rtp.SequenceNumber) {
+		if r.isSeenSN(rtph.SequenceNumber) {
 			r.bytesDuplicate += pktSize
 			r.packetsDuplicate++
 			isDuplicate = true
@@ -147,57 +169,73 @@ func (r *RTPStats) Update(rtp *rtp.Packet, packetTime int64) (isHighestSN bool, 
 
 	// in-order
 	default:
-		isHighestSN = true
+		flowState.IsHighestSN = true
 		if diff > 1 {
-			hasLoss = true
-			lossStartInclusive = r.highestSN + 1
-			lossEndExclusive = rtp.SequenceNumber
+			flowState.HasLoss = true
+			flowState.LossStartInclusive = r.highestSN + 1
+			flowState.LossEndExclusive = rtph.SequenceNumber
 		}
 
 		// update gap histogram
 		r.updateGapHistogram(int(diff))
 
 		// update missing sequence numbers
-		for lost := r.highestSN + 1; lost != rtp.SequenceNumber; lost++ {
+		for lost := r.highestSN + 1; lost != rtph.SequenceNumber; lost++ {
 			r.clearSeenSN(lost)
 		}
 		r.packetsLost += uint32(diff - 1)
 
-		if rtp.SequenceNumber < r.highestSN {
+		if rtph.SequenceNumber < r.highestSN {
 			r.cycles++
 		}
-		r.highestSN = rtp.SequenceNumber
-		r.highestTS = rtp.Timestamp
+		r.highestSN = rtph.SequenceNumber
+		r.highestTS = rtph.Timestamp
 		r.highestTime = packetTime
 
-		if rtp.Marker {
+		if rtph.Marker {
 			r.frames++
 		}
 	}
 
 	// set current sequence number in seen list
-	r.setSeenSN(rtp.SequenceNumber)
+	r.setSeenSN(rtph.SequenceNumber)
 
 	if !isDuplicate {
-		r.updateJitter(rtp, packetTime)
+		r.updateJitter(rtph, packetTime)
 	}
 
 	return
 }
 
-func (r *RTPStats) UpdateNack(nackCount int, nackMissCount int) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+func (r *RTPStats) GetTotalPackets() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.nacks += uint32(nackCount)
-	r.nackMisses += uint32(nackMissCount)
+	return r.getNumPacketsSeen() + r.packetsDuplicate + r.packetsPadding
 }
 
-func (r *RTPStats) UpdatePli() {
+func (r *RTPStats) GetTotalPacketsSansDuplicate() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.getNumPacketsSeen() + r.packetsPadding
+}
+
+func (r *RTPStats) GetTotalBytes() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.bytes + r.bytesDuplicate + r.bytesPadding
+}
+
+func (r *RTPStats) GetTotalBytesSansDuplicate() uint64 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.bytes + r.bytesPadding
+}
+
+func (r *RTPStats) UpdatePacketsLost(packetsLost uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -205,8 +243,94 @@ func (r *RTPStats) UpdatePli() {
 		return
 	}
 
-	r.plis++
+	r.isPacketsLostOverridden = true
+	r.packetsLostOverridden = packetsLost
+}
+
+func (r *RTPStats) UpdateJitter(jitter float64) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.isJitterOverridden = true
+	r.jitterOverridden = jitter
+	if jitter > r.maxJitterOverridden {
+		r.maxJitterOverridden = jitter
+	}
+}
+
+func (r *RTPStats) UpdateNack(nackCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.nacks += nackCount
+}
+
+func (r *RTPStats) UpdateNackMiss(nackMissCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.nackMisses += nackMissCount
+}
+
+func (r *RTPStats) UpdatePliAndTime(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliLocked(pliCount)
+	r.updatePliTimeLocked()
+}
+
+func (r *RTPStats) UpdatePli(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliLocked(pliCount)
+}
+
+func (r *RTPStats) updatePliLocked(pliCount uint32) {
+	r.plis += pliCount
+}
+
+func (r *RTPStats) UpdatePliTime() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updatePliTimeLocked()
+}
+
+func (r *RTPStats) updatePliTimeLocked() {
 	r.lastPli = time.Now()
+}
+
+func (r *RTPStats) LastPli() time.Time {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.lastPli
 }
 
 func (r *RTPStats) TimeSinceLastPli() int64 {
@@ -216,7 +340,7 @@ func (r *RTPStats) TimeSinceLastPli() int64 {
 	return time.Now().UnixNano() - r.lastPli.UnixNano()
 }
 
-func (r *RTPStats) UpdateFir() {
+func (r *RTPStats) UpdateFir(firCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -224,7 +348,17 @@ func (r *RTPStats) UpdateFir() {
 		return
 	}
 
-	r.firs++
+	r.firs += firCount
+}
+
+func (r *RTPStats) UpdateFirTime() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
 	r.lastFir = time.Now()
 }
 
@@ -242,7 +376,14 @@ func (r *RTPStats) UpdateRtt(rtt uint32) {
 	}
 }
 
-func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS buffer.NtpTime, arrival time.Time) {
+func (r *RTPStats) GetRtt() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.rtt
+}
+
+func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS NtpTime, arrival time.Time) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -252,12 +393,11 @@ func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS buffer.NtpTime, a
 }
 
 // RAJA-REMOVE-START
-func (r *RTPStats) GetRtcpSenderReportData() (rtpTS uint32, ntpTS buffer.NtpTime) {
+func (r *RTPStats) GetRtcpSenderReportData() (rtpTS uint32, ntpTS NtpTime, arrivalTime int64) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	now := time.Now()
-	ntpTS = buffer.ToNtpTime(now)
 
 	ntpSR := r.highestTime
 	if r.ntpSR != 0 {
@@ -269,6 +409,10 @@ func (r *RTPStats) GetRtcpSenderReportData() (rtpTS uint32, ntpTS buffer.NtpTime
 		rtpTS = r.rtpSR
 	}
 	rtpTS += uint32((now.UnixNano() - ntpSR) * int64(r.params.ClockRate) / 1e9)
+
+	ntpTS = ToNtpTime(now)
+
+	arrivalTime = r.arrivalSR
 	return
 }
 
@@ -283,7 +427,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	}
 
 	now := time.Now()
-	nowNTP := buffer.ToNtpTime(now)
+	nowNTP := ToNtpTime(now)
 	nowRTP := r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
 
 	return &rtcp.SenderReport{
@@ -370,7 +514,13 @@ func (r *RTPStats) ToString() string {
 
 	str += fmt.Sprintf(", o: %d", p.PacketsOutOfOrder)
 
-	str += fmt.Sprintf(", c: %d, j: %d(%.1fus)|%d(%.1fus)", r.params.ClockRate, uint32(r.jitter), p.JitterCurrent, uint32(r.maxJitter), p.JitterMax)
+	jitter := r.jitter
+	maxJitter := r.maxJitter
+	if r.isJitterOverridden {
+		jitter = r.jitterOverridden
+		maxJitter = r.maxJitterOverridden
+	}
+	str += fmt.Sprintf(", c: %d, j: %d(%.1fus)|%d(%.1fus)", r.params.ClockRate, uint32(jitter), p.JitterCurrent, uint32(maxJitter), p.JitterMax)
 
 	if len(p.GapHistogram) != 0 {
 		first := true
@@ -395,7 +545,7 @@ func (r *RTPStats) ToString() string {
 	str += fmt.Sprintf("%d|%+v", p.Firs, p.LastFir.AsTime().Format(time.UnixDate))
 
 	str += ", rtt(ms):"
-	str += fmt.Sprintf("%d|%+d", p.RttCurrent, p.RttMax)
+	str += fmt.Sprintf("%d|%d", p.RttCurrent, p.RttMax)
 
 	return str
 }
@@ -428,8 +578,12 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 
 	frameRate := float64(r.frames) / elapsed
 
-	packetLostRate := float64(r.packetsLost) / elapsed
-	packetLostPercentage := float32(r.packetsLost) / float32(packetsExpected) * 100.0
+	packetsLost := r.packetsLost
+	if r.isPacketsLostOverridden {
+		packetsLost = r.packetsLostOverridden
+	}
+	packetLostRate := float64(packetsLost) / elapsed
+	packetLostPercentage := float32(packetsLost) / float32(packetsExpected) * 100.0
 
 	packetDuplicateRate := float64(r.packetsDuplicate) / elapsed
 	bitrateDuplicate := float64(r.bytesDuplicate) * 8.0 / elapsed
@@ -437,8 +591,14 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	packetPaddingRate := float64(r.packetsPadding) / elapsed
 	bitratePadding := float64(r.bytesPadding) * 8.0 / elapsed
 
-	jitterTime := r.jitter / float64(r.params.ClockRate) * 1e6
-	maxJitterTime := r.maxJitter / float64(r.params.ClockRate) * 1e6
+	jitter := r.jitter
+	maxJitter := r.maxJitter
+	if r.isJitterOverridden {
+		jitter = r.jitterOverridden
+		maxJitter = r.maxJitterOverridden
+	}
+	jitterTime := jitter / float64(r.params.ClockRate) * 1e6
+	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	p := &livekit.RTPStats{
 		StartTime:            timestamppb.New(r.startTime),
@@ -557,9 +717,9 @@ func (r *RTPStats) numMissingSNs(startInclusive uint16, endInclusive uint16) uin
 	return uint32(endInclusive-startInclusive+1) - seen
 }
 
-func (r *RTPStats) updateJitter(rtp *rtp.Packet, packetTime int64) {
+func (r *RTPStats) updateJitter(rtph *rtp.Header, packetTime int64) {
 	packetTimeRTP := uint32(packetTime / 1e6 * int64(r.params.ClockRate/1e3))
-	transit := packetTimeRTP - rtp.Timestamp
+	transit := packetTimeRTP - rtph.Timestamp
 
 	if r.lastTransit != 0 {
 		d := int32(transit - r.lastTransit)

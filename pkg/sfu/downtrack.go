@@ -42,6 +42,8 @@ const (
 	firstKeyFramePLIInterval = 500 * time.Millisecond
 
 	FlagStopRTXOnPLI = true
+
+	bitrateReportDelta = 1
 )
 
 var (
@@ -98,19 +100,17 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	closeOnce               sync.Once
 
-	statsLock          sync.RWMutex
-	stats              buffer.StreamStats
+	rtpStats           *buffer.RTPStats
 	totalRepeatedNACKs uint32
 
 	connectionStats *connectionquality.ConnectionStats
 
+	statsLock         sync.RWMutex
 	bitrateHelper     uint64
 	bitrate           uint64
 	lastBitrateReport time.Time
 
 	// Debug info
-	lastPli     atomic.Time
-	lastRTP     atomic.Time
 	pktsDropped atomic.Uint32
 
 	isNACKThrottled atomic.Bool
@@ -197,6 +197,10 @@ func NewDownTrack(
 				d.onStatsUpdate(d, stat)
 			})
 		}
+	})
+
+	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
+		ClockRate: d.codec.ClockRate,
 	})
 
 	return d, nil
@@ -322,12 +326,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return nil
 	}
 
-	d.lastRTP.Store(time.Now())
-
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
 	if tp.shouldSendPLI {
-		d.lastPli.Store(time.Now())
 		d.receiver.SendPLI(layer)
+		d.rtpStats.UpdatePli(1)
+		d.rtpStats.UpdatePliTime()
 	}
 	if tp.shouldDrop {
 		if tp.isDroppingRelevant {
@@ -378,10 +381,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			})
 		}
 
-		d.updatePrimaryStats(pktSize, hdr.Marker)
 		if extPkt.KeyFrame {
 			d.isNACKThrottled.Store(false)
 		}
+
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
 		d.updateBitrate()
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
@@ -394,12 +398,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
 func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
-	d.statsLock.RLock()
-	if d.stats.TotalPrimaryPackets == 0 {
-		d.statsLock.RUnlock()
+	if !d.rtpStats.IsActive() {
 		return 0
 	}
-	d.statsLock.RUnlock()
 
 	// LK-TODO-START
 	// Ideally should look at header extensions negotiated for
@@ -469,10 +470,10 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		}
 
 		size := hdr.MarshalSize() + len(payload)
-		d.updatePaddingStats(size)
 		for _, f := range d.onPaddingSentUnsafe {
 			f(d, size)
 		}
+		d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
 		d.updateBitrate()
 
 		//
@@ -491,22 +492,25 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 }
 
 func (d *DownTrack) updateBitrate() {
-	lastRtp := d.lastRTP.Load()
-	d.statsLock.RLock()
-	timeDiff := lastRtp.Sub(d.lastBitrateReport).Seconds()
-	d.statsLock.RUnlock()
-	if timeDiff < 1 {
+	now := time.Now()
+
+	d.statsLock.Lock()
+	defer d.statsLock.Unlock()
+	timeDiff := now.Sub(d.lastBitrateReport).Seconds()
+	if timeDiff < bitrateReportDelta {
 		return
 	}
-	octets, _ := d.getSRStats()
-	d.statsLock.Lock()
-	d.bitrate = uint64(float64(octets*8-d.bitrateHelper) / timeDiff)
-	d.bitrateHelper = octets * 8
-	d.lastBitrateReport = lastRtp
-	d.statsLock.Unlock()
+
+	totalBytes := d.rtpStats.GetTotalBytes()
+	d.bitrate = uint64(float64(totalBytes*8-d.bitrateHelper) / timeDiff)
+	d.bitrateHelper = totalBytes * 8
+	d.lastBitrateReport = now
 }
 
 func (d *DownTrack) Bitrate() uint64 {
+	d.statsLock.RLock()
+	defer d.statsLock.RUnlock()
+
 	return d.bitrate
 }
 
@@ -568,6 +572,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.receiver.DeleteDownTrack(d.peerID)
 
 		d.connectionStats.Close()
+		d.rtpStats.Stop()
+		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
 		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 			d.callbacksQueue.Enqueue(func() {
@@ -793,66 +799,14 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	currentLayers := d.forwarder.CurrentLayers()
-	if currentLayers == InvalidLayers {
-		return nil
-	}
-
-	srRTP, srNTP := d.receiver.GetSenderReportTime(currentLayers.spatial)
-	if srRTP == 0 {
-		return nil
-	}
-
-	now := time.Now()
-	nowNTP := buffer.ToNtpTime(now)
-
-	diff := (uint64(now.Sub(srNTP.Time())) * uint64(d.codec.ClockRate)) / uint64(time.Second)
-	octets, packets := d.getSRStats()
-
-	return &rtcp.SenderReport{
-		SSRC:        d.ssrc,
-		NTPTime:     uint64(nowNTP),
-		RTPTime:     srRTP + uint32(diff),
-		PacketCount: packets,
-		OctetCount:  uint32(octets),
-	}
-}
-
-func (d *DownTrack) updatePrimaryStats(packetLen int, marker bool) {
-	d.statsLock.Lock()
-	defer d.statsLock.Unlock()
-
-	d.stats.TotalPrimaryPackets++
-	d.stats.TotalPrimaryBytes += uint64(packetLen)
-	if marker {
-		d.stats.TotalFrames++
-	}
-}
-
-func (d *DownTrack) updateRtxStats(packetLen int) {
-	d.statsLock.Lock()
-	defer d.statsLock.Unlock()
-
-	d.stats.TotalRetransmitPackets++
-	d.stats.TotalRetransmitBytes += uint64(packetLen)
-}
-
-func (d *DownTrack) updatePaddingStats(packetLen int) {
-	d.statsLock.Lock()
-	defer d.statsLock.Unlock()
-
-	d.stats.TotalPaddingPackets++
-	d.stats.TotalPaddingBytes += uint64(packetLen)
+	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
 func (d *DownTrack) writeBlankFrameRTP() error {
 	// don't send if nothing has been sent
-	d.statsLock.RLock()
-	if d.stats.TotalPrimaryPackets == 0 {
-		d.statsLock.RUnlock()
+	if !d.rtpStats.IsActive() {
 		return nil
 	}
-	d.statsLock.RUnlock()
 
 	// LK-TODO: Support other video codecs
 	if d.kind == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
@@ -901,8 +855,6 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			f(d, pktSize)
 		}
 
-		d.updatePrimaryStats(pktSize, hdr.Marker)
-
 		// only the first frame will need frameEndNeeded to close out the
 		// previous picture, rest are small key frames
 		frameEndNeeded = false
@@ -928,6 +880,9 @@ func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (in
 	copy(payload[blankVP8.HeaderSize:], VP8KeyFrame8x8)
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
+	if err == nil {
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	}
 	return hdr.MarshalSize() + len(payload), err
 }
 
@@ -945,7 +900,11 @@ func (d *DownTrack) writeH264BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 		copy(buf[offset:offset+len(payload)], payload)
 		offset += len(payload)
 	}
-	_, err := d.writeStream.WriteRTP(hdr, buf[:offset])
+	payload := buf[:offset]
+	_, err := d.writeStream.WriteRTP(hdr, payload)
+	if err == nil {
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	}
 	return hdr.MarshalSize() + offset, err
 }
 
@@ -961,9 +920,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
-				d.lastPli.Store(time.Now())
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.Store(true)
+				d.rtpStats.UpdatePliTime()
 				pliOnce = false
 			}
 		}
@@ -1003,20 +962,18 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				d.statsLock.Lock()
-				d.stats.TotalPacketsLost = r.TotalLost
+				d.rtpStats.UpdatePacketsLost(r.TotalLost)
 
 				rtt := getRttMs(&r)
-				if rtt != d.stats.RTT {
+				if rtt != d.rtpStats.GetRtt() {
 					rttToReport = rtt
 				}
-				d.stats.RTT = rtt
+				d.rtpStats.UpdateRtt(rtt)
 
-				d.stats.Jitter = float64(r.Jitter)
-				d.stats.LostRate = float32(r.FractionLost) / 256
-				d.statsLock.Unlock()
+				d.rtpStats.UpdateJitter(float64(r.Jitter))
+				// RAJA-TODO d.stats.LostRate = float32(r.FractionLost) / 256
 
-				d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
+				// RAJA-TODO d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1044,11 +1001,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 	}
 
-	d.statsLock.Lock()
-	d.stats.TotalNACKs += numNACKs
-	d.stats.TotalPLIs += numPLIs
-	d.stats.TotalFIRs += numFIRs
-	d.statsLock.Unlock()
+	d.rtpStats.UpdateNack(numNACKs)
+	d.rtpStats.UpdatePli(numPLIs)
+	d.rtpStats.UpdateFir(numFIRs)
 
 	if rttToReport != 0 {
 		if d.sequencer != nil {
@@ -1115,6 +1070,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
 		if err != nil {
+			d.rtpStats.UpdateNackMiss(1)
 			if err == io.EOF {
 				break
 			}
@@ -1164,23 +1120,13 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				f(d, pktSize)
 			}
 
-			d.updateRtxStats(pktSize)
+			d.rtpStats.Update(&pkt.Header, len(payload), 0, time.Now().UnixNano())
 		}
 	}
 
 	d.statsLock.Lock()
 	d.totalRepeatedNACKs += numRepeatedNACKs
 	d.statsLock.Unlock()
-}
-
-func (d *DownTrack) getSRStats() (uint64, uint32) {
-	d.statsLock.RLock()
-	defer d.statsLock.RUnlock()
-
-	packets := d.stats.TotalPrimaryPackets + d.stats.TotalRetransmitPackets + d.stats.TotalPaddingPackets
-	octets := d.stats.TotalPrimaryBytes + d.stats.TotalRetransmitBytes + d.stats.TotalPaddingBytes
-
-	return octets, packets
 }
 
 // writes RTP header extensions of track
@@ -1251,8 +1197,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"LastTS":            rtpMungerParams.lastTS,
 		"TSOffset":          rtpMungerParams.tsOffset,
 		"LastMarker":        rtpMungerParams.lastMarker,
-		"LastRTP":           d.lastRTP.Load(),
-		"LastPli":           d.lastPli.Load(),
+		"LastPli":           d.rtpStats.LastPli(),
 		"PacketsDropped":    d.pktsDropped.Load(),
 	}
 
@@ -1281,6 +1226,7 @@ func (d *DownTrack) GetConnectionScore() float32 {
 }
 
 func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
+	/* RAJA-TODO
 	d.statsLock.RLock()
 	defer d.statsLock.RUnlock()
 
@@ -1299,21 +1245,20 @@ func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	}
 
 	return stats
+	*/
+	return nil // RAJA_TODO
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
-	d.statsLock.RLock()
-	defer d.statsLock.RUnlock()
+	totalPackets = d.rtpStats.GetTotalPacketsSansDuplicate()
 
-	totalPackets = d.stats.TotalPrimaryPackets + d.stats.TotalPaddingPackets
+	d.statsLock.RLock()
 	totalRepeatedNACKs = d.totalRepeatedNACKs
+	d.statsLock.RUnlock()
+
 	return
 }
 
-func (d *DownTrack) LastPLI() int64 {
-	t := d.lastPli.Load()
-	if t.IsZero() {
-		return 0
-	}
-	return t.UnixNano()
+func (d *DownTrack) LastPLI() time.Time {
+	return d.rtpStats.LastPli()
 }
