@@ -1,4 +1,4 @@
-package rtc
+package buffer
 
 import (
 	"testing"

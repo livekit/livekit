@@ -15,20 +15,11 @@ const (
 	connectionQualityUpdateInterval = 5 * time.Second
 )
 
-type qualityWindow struct {
-	startSeqNum      uint32
-	endSeqNum        uint32
-	startPacketsLost uint32
-	endPacketsLost   uint32
-	maxRTT           uint32
-	maxJitter        uint32
-}
-
 type ConnectionStatsParams struct {
 	UpdateInterval      time.Duration
 	CodecType           webrtc.RTPCodecType
-	ClockRate           uint32
 	GetTrackStats       func() map[uint32]*buffer.StreamStatsWithLayers
+	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
 	Logger              logger.Logger
 }
@@ -38,9 +29,8 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock           sync.RWMutex
-	score          float32
-	qualityWindows map[uint32]*qualityWindow
+	lock  sync.RWMutex
+	score float32
 
 	done     chan struct{}
 	isClosed atomic.Bool
@@ -48,10 +38,9 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params:         params,
-		score:          4.0,
-		qualityWindows: make(map[uint32]*qualityWindow),
-		done:           make(chan struct{}),
+		params: params,
+		score:  4.0,
+		done:   make(chan struct{}),
 	}
 }
 
@@ -78,80 +67,23 @@ func (cs *ConnectionStats) GetScore() float32 {
 	return cs.score
 }
 
-func (cs *ConnectionStats) UpdateWindow(ssrc uint32, extHighestSeqNum uint32, packetsLost uint32, rtt uint32, jitter uint32) {
-	if cs.isClosed.Load() {
-		return
-	}
-
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
-	qw := cs.qualityWindows[ssrc]
-	if qw == nil {
-		qw = &qualityWindow{}
-		cs.qualityWindows[ssrc] = qw
-	}
-
-	if qw.startSeqNum == 0 {
-		qw.startSeqNum = extHighestSeqNum
-		qw.startPacketsLost = packetsLost
-	}
-
-	if extHighestSeqNum > qw.endSeqNum {
-		qw.endSeqNum = extHighestSeqNum
-		qw.endPacketsLost = packetsLost
-	}
-
-	if rtt > qw.maxRTT {
-		qw.maxRTT = rtt
-	}
-
-	if jitter > qw.maxJitter {
-		qw.maxJitter = jitter
-	}
-}
-
 func (cs *ConnectionStats) updateScore() float32 {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
-	expectedPacketsInInterval := uint32(0)
-	lostPacketsInInterval := uint32(0)
-	maxRTT := uint32(0)
-	maxJitter := uint32(0)
-	for _, qw := range cs.qualityWindows {
-		expectedPacketsInInterval += qw.endSeqNum - qw.startSeqNum + 1
-		lostPacketsInInterval += qw.endPacketsLost - qw.startPacketsLost
-		if qw.maxRTT > maxRTT {
-			maxRTT = qw.maxRTT
-		}
-		if qw.maxJitter > maxJitter {
-			maxJitter = qw.maxJitter
-		}
-
-		qw.startSeqNum = qw.endSeqNum
-		qw.startPacketsLost = qw.endPacketsLost
-		qw.maxRTT = 0
-		qw.maxJitter = 0
-	}
-
-	pctLoss := float32(0.0)
-	if int32(lostPacketsInInterval) < 0 {
-		lostPacketsInInterval = 0
-	}
-	if expectedPacketsInInterval > 0 {
-		pctLoss = (float32(lostPacketsInInterval) / float32(expectedPacketsInInterval)) * 100.0
+	s := cs.params.GetQualityParams()
+	if s == nil {
+		return cs.score
 	}
 
 	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
-		// covert jitter (in media samples units) to milliseconds
-		cs.score = AudioConnectionScore(pctLoss, maxRTT, float32(maxJitter)*1000.0/float32(cs.params.ClockRate))
+		cs.score = AudioConnectionScore(s.LossPercentage, s.Rtt, s.Jitter)
 	} else {
 		isReducedQuality := false
 		if cs.params.GetIsReducedQuality != nil {
 			isReducedQuality = cs.params.GetIsReducedQuality()
 		}
-		cs.score = VideoConnectionScore(pctLoss, isReducedQuality)
+		cs.score = VideoConnectionScore(s.LossPercentage, isReducedQuality)
 	}
 
 	return cs.score
@@ -169,15 +101,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 
 	analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
 	for ssrc, stream := range streams {
-		maxRTT := stream.StreamStats.RTT
-		maxJitter := uint32(stream.StreamStats.Jitter)
-
-		if qw := cs.qualityWindows[ssrc]; qw != nil {
-			maxRTT = qw.maxRTT
-			maxJitter = qw.maxJitter
-		}
-
-		as := ToAnalyticsStream(ssrc, &stream.StreamStats, maxRTT, maxJitter, cs.params.ClockRate)
+		as := ToAnalyticsStream(ssrc, stream.RTPStats)
 
 		//
 		// add video layer if either
@@ -225,24 +149,22 @@ func (cs *ConnectionStats) updateStats() {
 	}
 }
 
-func ToAnalyticsStream(ssrc uint32, streamStats *buffer.StreamStats, maxRTT uint32, maxJitter uint32, clockRate uint32) *livekit.AnalyticsStream {
-	// convert jitter (from number of media samples to microseconds
-	jitter := uint32((float32(maxJitter) * 1e6) / float32(clockRate))
+func ToAnalyticsStream(ssrc uint32, rtpStats *livekit.RTPStats) *livekit.AnalyticsStream {
 	return &livekit.AnalyticsStream{
 		Ssrc:                   ssrc,
-		TotalPrimaryPackets:    streamStats.TotalPrimaryPackets,
-		TotalPrimaryBytes:      streamStats.TotalPrimaryBytes,
-		TotalRetransmitPackets: streamStats.TotalRetransmitPackets,
-		TotalRetransmitBytes:   streamStats.TotalRetransmitBytes,
-		TotalPaddingPackets:    streamStats.TotalPaddingPackets,
-		TotalPaddingBytes:      streamStats.TotalPaddingBytes,
-		TotalPacketsLost:       streamStats.TotalPacketsLost,
-		TotalFrames:            streamStats.TotalFrames,
-		Rtt:                    maxRTT,
-		Jitter:                 jitter,
-		TotalNacks:             streamStats.TotalNACKs,
-		TotalPlis:              streamStats.TotalPLIs,
-		TotalFirs:              streamStats.TotalFIRs,
+		TotalPrimaryPackets:    rtpStats.Packets,
+		TotalPrimaryBytes:      rtpStats.Bytes,
+		TotalRetransmitPackets: rtpStats.PacketsDuplicate,
+		TotalRetransmitBytes:   rtpStats.BytesDuplicate,
+		TotalPaddingPackets:    rtpStats.PacketsPadding,
+		TotalPaddingBytes:      rtpStats.BytesPadding,
+		TotalPacketsLost:       rtpStats.PacketsLost,
+		TotalFrames:            rtpStats.Frames,
+		Rtt:                    rtpStats.RttMax,
+		Jitter:                 uint32(rtpStats.JitterMax),
+		TotalNacks:             rtpStats.Nacks,
+		TotalPlis:              rtpStats.Plis,
+		TotalFirs:              rtpStats.Firs,
 	}
 }
 
