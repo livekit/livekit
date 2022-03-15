@@ -397,23 +397,6 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 	buff.SendPLI()
 }
 
-func (w *WebRTCReceiver) LastPLI() time.Time {
-	var lastPLI time.Time
-	w.bufferMu.RLock()
-	for _, b := range w.buffers {
-		if b == nil {
-			continue
-		}
-
-		layerLastPLI := b.LastPLI()
-		if lastPLI.IsZero() || layerLastPLI.After(lastPLI) {
-			lastPLI = layerLastPLI
-		}
-	}
-	w.bufferMu.RUnlock()
-	return lastPLI
-}
-
 func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
 }
