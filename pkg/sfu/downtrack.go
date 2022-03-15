@@ -42,8 +42,6 @@ const (
 	firstKeyFramePLIInterval = 500 * time.Millisecond
 
 	FlagStopRTXOnPLI = true
-
-	bitrateReportDelta = 1
 )
 
 var (
@@ -100,16 +98,13 @@ type DownTrack struct {
 	listenerLock            sync.RWMutex
 	closeOnce               sync.Once
 
-	rtpStats           *buffer.RTPStats
+	rtpStats *buffer.RTPStats
+
+	statsLock          sync.RWMutex
 	totalRepeatedNACKs uint32
 
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
-
-	statsLock         sync.RWMutex
-	bitrateHelper     uint64
-	bitrate           uint64
-	lastBitrateReport time.Time
 
 	// Debug info
 	pktsDropped atomic.Uint32
@@ -239,7 +234,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.callbacksQueue.Enqueue(d.onBind)
 	}
 	d.bound.Store(true)
-	d.lastBitrateReport = time.Now()
 
 	go d.requestFirstKeyframe()
 
@@ -388,7 +382,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
-		d.updateBitrate()
 	} else {
 		d.logger.Errorw("writing rtp packet err", err)
 		d.pktsDropped.Inc()
@@ -476,7 +469,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 			f(d, size)
 		}
 		d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
-		d.updateBitrate()
 
 		//
 		// Register with sequencer with invalid layer so that NACKs for these can be filtered out.
@@ -491,33 +483,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 	}
 
 	return bytesSent
-}
-
-func (d *DownTrack) updateBitrate() {
-	now := time.Now()
-
-	d.statsLock.RLock()
-	timeDiff := now.Sub(d.lastBitrateReport).Seconds()
-	if timeDiff < bitrateReportDelta {
-		d.statsLock.RUnlock()
-		return
-	}
-	d.statsLock.RUnlock()
-
-	totalBytes := d.rtpStats.GetTotalBytes()
-
-	d.statsLock.Lock()
-	d.bitrate = uint64(float64(totalBytes*8-d.bitrateHelper) / timeDiff)
-	d.bitrateHelper = totalBytes * 8
-	d.lastBitrateReport = now
-	d.statsLock.Unlock()
-}
-
-func (d *DownTrack) Bitrate() uint64 {
-	d.statsLock.RLock()
-	defer d.statsLock.RUnlock()
-
-	return d.bitrate
 }
 
 // Mute enables or disables media forwarding
@@ -1278,8 +1243,4 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	d.statsLock.RUnlock()
 
 	return
-}
-
-func (d *DownTrack) LastPLI() time.Time {
-	return d.rtpStats.LastPli()
 }

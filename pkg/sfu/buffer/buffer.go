@@ -325,17 +325,6 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) LastPLI() time.Time {
-	b.RLock()
-	defer b.RUnlock()
-
-	if b.rtpStats == nil {
-		return time.Time{}
-	}
-
-	return b.rtpStats.LastPli()
-}
-
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	isRTX := false
 
