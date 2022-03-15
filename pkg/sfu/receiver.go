@@ -420,6 +420,9 @@ func (w *WebRTCReceiver) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayer
 		}
 
 		sswl := buff.GetStats()
+		if sswl == nil {
+			continue
+		}
 
 		// if simulcast, patch buffer stats with correct layer
 		if w.isSimulcast {
