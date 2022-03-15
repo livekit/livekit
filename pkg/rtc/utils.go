@@ -48,7 +48,7 @@ func UnpackDataTrackLabel(packed string) (peerID livekit.ParticipantID, trackID 
 func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {
-		infos = append(infos, op.ToProto(true))
+		infos = append(infos, op.ToProto())
 	}
 	return infos
 }

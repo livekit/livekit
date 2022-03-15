@@ -44,16 +44,6 @@ type FakeParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
-	GetDataTrackStub        func() types.DataTrack
-	getDataTrackMutex       sync.RWMutex
-	getDataTrackArgsForCall []struct {
-	}
-	getDataTrackReturns struct {
-		result1 types.DataTrack
-	}
-	getDataTrackReturnsOnCall map[int]struct {
-		result1 types.DataTrack
-	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -141,10 +131,9 @@ type FakeParticipant struct {
 	subscriptionPermissionReturnsOnCall map[int]struct {
 		result1 *livekit.SubscriptionPermission
 	}
-	ToProtoStub        func(bool) *livekit.ParticipantInfo
+	ToProtoStub        func() *livekit.ParticipantInfo
 	toProtoMutex       sync.RWMutex
 	toProtoArgsForCall []struct {
-		arg1 bool
 	}
 	toProtoReturns struct {
 		result1 *livekit.ParticipantInfo
@@ -381,59 +370,6 @@ func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]in
 	}
 	fake.debugInfoReturnsOnCall[i] = struct {
 		result1 map[string]interface{}
-	}{result1}
-}
-
-func (fake *FakeParticipant) GetDataTrack() types.DataTrack {
-	fake.getDataTrackMutex.Lock()
-	ret, specificReturn := fake.getDataTrackReturnsOnCall[len(fake.getDataTrackArgsForCall)]
-	fake.getDataTrackArgsForCall = append(fake.getDataTrackArgsForCall, struct {
-	}{})
-	stub := fake.GetDataTrackStub
-	fakeReturns := fake.getDataTrackReturns
-	fake.recordInvocation("GetDataTrack", []interface{}{})
-	fake.getDataTrackMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeParticipant) GetDataTrackCallCount() int {
-	fake.getDataTrackMutex.RLock()
-	defer fake.getDataTrackMutex.RUnlock()
-	return len(fake.getDataTrackArgsForCall)
-}
-
-func (fake *FakeParticipant) GetDataTrackCalls(stub func() types.DataTrack) {
-	fake.getDataTrackMutex.Lock()
-	defer fake.getDataTrackMutex.Unlock()
-	fake.GetDataTrackStub = stub
-}
-
-func (fake *FakeParticipant) GetDataTrackReturns(result1 types.DataTrack) {
-	fake.getDataTrackMutex.Lock()
-	defer fake.getDataTrackMutex.Unlock()
-	fake.GetDataTrackStub = nil
-	fake.getDataTrackReturns = struct {
-		result1 types.DataTrack
-	}{result1}
-}
-
-func (fake *FakeParticipant) GetDataTrackReturnsOnCall(i int, result1 types.DataTrack) {
-	fake.getDataTrackMutex.Lock()
-	defer fake.getDataTrackMutex.Unlock()
-	fake.GetDataTrackStub = nil
-	if fake.getDataTrackReturnsOnCall == nil {
-		fake.getDataTrackReturnsOnCall = make(map[int]struct {
-			result1 types.DataTrack
-		})
-	}
-	fake.getDataTrackReturnsOnCall[i] = struct {
-		result1 types.DataTrack
 	}{result1}
 }
 
@@ -906,18 +842,17 @@ func (fake *FakeParticipant) SubscriptionPermissionReturnsOnCall(i int, result1 
 	}{result1}
 }
 
-func (fake *FakeParticipant) ToProto(arg1 bool) *livekit.ParticipantInfo {
+func (fake *FakeParticipant) ToProto() *livekit.ParticipantInfo {
 	fake.toProtoMutex.Lock()
 	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
 	fake.toProtoArgsForCall = append(fake.toProtoArgsForCall, struct {
-		arg1 bool
-	}{arg1})
+	}{})
 	stub := fake.ToProtoStub
 	fakeReturns := fake.toProtoReturns
-	fake.recordInvocation("ToProto", []interface{}{arg1})
+	fake.recordInvocation("ToProto", []interface{}{})
 	fake.toProtoMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub()
 	}
 	if specificReturn {
 		return ret.result1
@@ -931,17 +866,10 @@ func (fake *FakeParticipant) ToProtoCallCount() int {
 	return len(fake.toProtoArgsForCall)
 }
 
-func (fake *FakeParticipant) ToProtoCalls(stub func(bool) *livekit.ParticipantInfo) {
+func (fake *FakeParticipant) ToProtoCalls(stub func() *livekit.ParticipantInfo) {
 	fake.toProtoMutex.Lock()
 	defer fake.toProtoMutex.Unlock()
 	fake.ToProtoStub = stub
-}
-
-func (fake *FakeParticipant) ToProtoArgsForCall(i int) bool {
-	fake.toProtoMutex.RLock()
-	defer fake.toProtoMutex.RUnlock()
-	argsForCall := fake.toProtoArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeParticipant) ToProtoReturns(result1 *livekit.ParticipantInfo) {
@@ -1225,8 +1153,6 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.closeMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
-	fake.getDataTrackMutex.RLock()
-	defer fake.getDataTrackMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
