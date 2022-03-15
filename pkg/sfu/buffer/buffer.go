@@ -677,6 +677,9 @@ func (b *Buffer) GetStats() *StreamStatsWithLayers {
 	}
 
 	stats := b.rtpStats.ToProto()
+	if stats == nil {
+		return nil
+	}
 
 	layers := make(map[int]LayerStats)
 	layers[0] = LayerStats{

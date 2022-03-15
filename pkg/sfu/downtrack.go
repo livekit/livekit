@@ -1201,6 +1201,9 @@ func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
 	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 
 	stats := d.rtpStats.ToProto()
+	if stats == nil {
+		return nil
+	}
 
 	layers := make(map[int]buffer.LayerStats)
 	layers[0] = buffer.LayerStats{
