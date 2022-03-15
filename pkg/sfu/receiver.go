@@ -35,7 +35,6 @@ type TrackReceiver interface {
 	Codec() webrtc.RTPCodecCapability
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime)
 	GetBitrateTemporalCumulative() Bitrates
 
 	SendPLI(layer int32)
@@ -168,9 +167,9 @@ func NewWebRTCReceiver(
 	}
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:     w.kind,
-		ClockRate:     w.codec.ClockRate,
-		GetTrackStats: w.GetTrackStats,
+		CodecType:        w.kind,
+		GetTrackStats:    w.GetTrackStats,
+		GetQualityParams: w.getQualityParams,
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
@@ -385,15 +384,6 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 	default:
 		w.logger.Warnw("sendRTCP failed, rtcp channel full", nil)
 	}
-
-	for _, p := range packets {
-		switch pkt := p.(type) {
-		case *rtcp.ReceiverReport:
-			for _, r := range pkt.Reports {
-				w.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, w.rtt, r.Jitter)
-			}
-		}
-	}
 }
 
 func (w *WebRTCReceiver) SendPLI(layer int32) {
@@ -407,19 +397,6 @@ func (w *WebRTCReceiver) SendPLI(layer int32) {
 	buff.SendPLI()
 }
 
-/* RAJA-TODO
-func (w *WebRTCReceiver) LastPLI() int64 {
-	var lastPLI int64
-	w.bufferMu.RLock()
-	for _, b := range w.buffers {
-		if b != nil && b.LastPLI() > lastPLI {
-			lastPLI = b.LastPLI()
-		}
-	}
-	w.bufferMu.RUnlock()
-	return lastPLI
-}
-*/
 func (w *WebRTCReceiver) LastPLI() time.Time {
 	var lastPLI time.Time
 	w.bufferMu.RLock()
@@ -439,15 +416,6 @@ func (w *WebRTCReceiver) LastPLI() time.Time {
 
 func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
-}
-
-func (w *WebRTCReceiver) GetSenderReportTime(layer int32) (rtpTS uint32, ntpTS buffer.NtpTime) {
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-	if w.buffers[layer] != nil {
-		rtpTS, ntpTS, _ = w.buffers[layer].GetSenderReportData()
-	}
-	return
 }
 
 func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
@@ -481,6 +449,46 @@ func (w *WebRTCReceiver) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayer
 	}
 
 	return stats
+}
+
+func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	packetsExpected := uint32(0)
+	packetsLost := uint32(0)
+	maxJitter := float64(0.0)
+	maxRtt := uint32(0)
+	for _, buff := range w.buffers {
+		if buff == nil {
+			continue
+		}
+
+		q := buff.GetQualityInfo()
+		if q == nil {
+			continue
+		}
+
+		packetsExpected += q.PacketsExpected
+		packetsLost += q.PacketsLost
+		if q.MaxJitter > maxJitter {
+			maxJitter = q.MaxJitter
+		}
+		if q.MaxRtt > maxRtt {
+			maxRtt = q.MaxRtt
+		}
+	}
+
+	lossPercentage := float32(0.0)
+	if packetsExpected != 0 {
+		lossPercentage = float32(packetsLost) * 100.0 / float32(packetsExpected)
+	}
+
+	return &buffer.ConnectionQualityParams{
+		LossPercentage: lossPercentage,
+		Jitter:         float32(maxJitter / 1000.0),
+		Rtt:            maxRtt,
+	}
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {

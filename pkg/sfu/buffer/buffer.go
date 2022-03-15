@@ -70,10 +70,11 @@ type Buffer struct {
 	bitrateHelper  [4]int64
 
 	pliThrottle int64
-	/* RAJA-TODO
-	rrSnapshot *receiverReportSnapshot
-	RAJA-TODO */
-	rtpStats *RTPStats
+
+	rtpStats                    *RTPStats
+	rrSnapshotId                uint32
+	rembSnapshotId              uint32
+	connectionQualitySnapshotId uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -87,12 +88,6 @@ type Buffer struct {
 
 	// logger
 	logger logger.Logger
-}
-
-type receiverReportSnapshot struct {
-	extHighestSeqNum uint32
-	packetsLost      uint32
-	lastLossRate     float32
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -131,6 +126,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.rtpStats = NewRTPStats(RTPStatsParams{
 		ClockRate: codec.ClockRate,
 	})
+	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
+	b.rembSnapshotId = b.rtpStats.NewSnapshotId()
+	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
+
 	b.callbacksQueue.Start()
 
 	b.clockRate = codec.ClockRate
@@ -264,7 +263,14 @@ func (b *Buffer) Close() error {
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeAudio {
 			b.audioPool.Put(b.bucket.src)
 		}
+
 		b.closed.Store(true)
+
+		if b.rtpStats != nil {
+			b.rtpStats.Stop()
+			b.logger.Debugw("rtp stats", "stats", b.rtpStats.ToString())
+		}
+
 		b.callbacksQueue.Enqueue(b.onClose)
 		b.callbacksQueue.Stop()
 	})
@@ -535,19 +541,24 @@ func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
 }
 
 func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
-	br := b.Bitrate()
-
-	lostRate := float32(0)
-	/* RAJA_TODO
-	if b.rrSnapshot != nil {
-		lostRate = b.rrSnapshot.lastLossRate
+	if b.rtpStats == nil {
+		return nil
 	}
-	RAJA-TODO */
 
+	br := b.Bitrate()
+	s := b.rtpStats.SnapshotInfo(b.rembSnapshotId)
+	if s == nil {
+		return nil
+	}
+
+	lostRate := float32(0.0)
+	if s.PacketsExpected != 0 {
+		lostRate = float32(s.PacketsLost) / float32(s.PacketsExpected)
+	}
 	if lostRate < 0.02 {
 		br = int64(float64(br)*1.09) + 2000
 	}
-	if lostRate > .1 {
+	if lostRate > 0.1 {
 		br = int64(float64(br) * float64(1-0.5*lostRate))
 	}
 	if br > b.maxBitrate {
@@ -564,59 +575,11 @@ func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
 }
 
 func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
-	/* RAJA-TODO
-	if b.rrSnapshot == nil {
-		return nil
-	}
-
-	extHighestSeqNum := (uint32(b.cycle) << 16) | uint32(b.highestSN)
-	expectedInInterval := extHighestSeqNum - b.rrSnapshot.extHighestSeqNum
-	if expectedInInterval == 0 {
-		return nil
-	}
-
-	lostInInterval := b.stats.TotalPacketsLost - b.rrSnapshot.packetsLost
-	if int32(lostInInterval) < 0 {
-		// could happen if retransmitted packets arrive and make received greater than expected
-		lostInInterval = 0
-	}
-
-	lossRate := float32(lostInInterval) / float32(expectedInInterval)
-	fracLost := uint8(lossRate * 256.0)
-	if b.lastFractionLostToReport > fracLost {
-		// max of fraction lost from all subscribers is bigger than sfu received, use it.
-		fracLost = b.lastFractionLostToReport
-	}
-
-	var dlsr uint32
-	if b.lastSRRecv != 0 {
-		delayMS := uint32((time.Now().UnixNano() - b.lastSRRecv) / 1e6)
-		dlsr = (delayMS / 1e3) << 16
-		dlsr |= (delayMS % 1e3) * 65536 / 1000
-	}
-
-	b.rrSnapshot = &receiverReportSnapshot{
-		extHighestSeqNum: extHighestSeqNum,
-		packetsLost:      b.stats.TotalPacketsLost,
-		lastLossRate:     lossRate,
-	}
-	b.stats.LostRate = lossRate
-
-	return &rtcp.ReceptionReport{
-		SSRC:               b.mediaSSRC,
-		FractionLost:       fracLost,
-		TotalLost:          b.stats.TotalPacketsLost,
-		LastSequenceNumber: extHighestSeqNum,
-		Jitter:             uint32(b.stats.Jitter),
-		LastSenderReport:   uint32(b.lastSRNTPTime >> 16),
-		Delay:              dlsr,
-	}
-	*/
 	if b.rtpStats == nil {
 		return nil
 	}
 
-	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport)
+	return b.rtpStats.SnapshotRtcpReceptionReport(b.mediaSSRC, b.lastFractionLostToReport, b.rrSnapshotId)
 }
 
 func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
@@ -716,34 +679,36 @@ func (b *Buffer) GetClockRate() uint32 {
 	return b.clockRate
 }
 
-// GetSenderReportData returns the rtp, ntp and nanos of the last sender report
-func (b *Buffer) GetSenderReportData() (rtpTime uint32, ntpTime NtpTime, lastReceivedTimeInNanosSinceEpoch int64) {
+func (b *Buffer) GetStats() *StreamStatsWithLayers {
 	b.RLock()
 	defer b.RUnlock()
 
 	if b.rtpStats == nil {
-		return
+		return nil
 	}
 
-	return b.rtpStats.GetRtcpSenderReportData()
-}
-
-func (b *Buffer) GetStats() *StreamStatsWithLayers {
-	/* RAJA-TODO
-	b.RLock()
-	defer b.RUnlock()
+	stats := b.rtpStats.ToProto()
 
 	layers := make(map[int]LayerStats)
 	layers[0] = LayerStats{
-		TotalPackets: b.stats.TotalPrimaryPackets + b.stats.TotalRetransmitPackets + b.stats.TotalPaddingPackets,
-		TotalBytes:   b.stats.TotalPrimaryBytes + b.stats.TotalRetransmitBytes + b.stats.TotalPaddingBytes,
-		TotalFrames:  b.stats.TotalFrames,
+		TotalPackets: stats.Packets + stats.PacketsDuplicate + stats.PacketsPadding,
+		TotalBytes:   stats.Bytes + stats.BytesDuplicate + stats.BytesPadding,
+		TotalFrames:  stats.Frames,
 	}
 
 	return &StreamStatsWithLayers{
-		StreamStats: b.stats,
-		Layers:      layers,
+		RTPStats: stats,
+		Layers:   layers,
 	}
-	*/
-	return nil
+}
+
+func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStats == nil {
+		return nil
+	}
+
+	return b.rtpStats.SnapshotInfo(b.connectionQualitySnapshotId)
 }

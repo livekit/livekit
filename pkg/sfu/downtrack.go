@@ -103,7 +103,8 @@ type DownTrack struct {
 	rtpStats           *buffer.RTPStats
 	totalRepeatedNACKs uint32
 
-	connectionStats *connectionquality.ConnectionStats
+	connectionStats             *connectionquality.ConnectionStats
+	connectionQualitySnapshotId uint32
 
 	statsLock         sync.RWMutex
 	bitrateHelper     uint64
@@ -183,9 +184,9 @@ func NewDownTrack(
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:     kind,
-		ClockRate:     c.ClockRate,
-		GetTrackStats: d.GetTrackStats,
+		CodecType:        kind,
+		GetTrackStats:    d.GetTrackStats,
+		GetQualityParams: d.getQualityParams,
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
@@ -202,6 +203,7 @@ func NewDownTrack(
 	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 	})
+	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
 }
@@ -494,17 +496,21 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 func (d *DownTrack) updateBitrate() {
 	now := time.Now()
 
-	d.statsLock.Lock()
-	defer d.statsLock.Unlock()
+	d.statsLock.RLock()
 	timeDiff := now.Sub(d.lastBitrateReport).Seconds()
 	if timeDiff < bitrateReportDelta {
+		d.statsLock.RUnlock()
 		return
 	}
+	d.statsLock.RUnlock()
 
 	totalBytes := d.rtpStats.GetTotalBytes()
+
+	d.statsLock.Lock()
 	d.bitrate = uint64(float64(totalBytes*8-d.bitrateHelper) / timeDiff)
 	d.bitrateHelper = totalBytes * 8
 	d.lastBitrateReport = now
+	d.statsLock.Unlock()
 }
 
 func (d *DownTrack) Bitrate() uint64 {
@@ -971,9 +977,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				d.rtpStats.UpdateRtt(rtt)
 
 				d.rtpStats.UpdateJitter(float64(r.Jitter))
-				// RAJA-TODO d.stats.LostRate = float32(r.FractionLost) / 256
-
-				// RAJA-TODO d.connectionStats.UpdateWindow(r.SSRC, r.LastSequenceNumber, r.TotalLost, rtt, r.Jitter)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1044,6 +1047,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	defer PacketFactory.Put(src)
 
 	numRepeatedNACKs := uint32(0)
+	nackMisses := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == int8(InvalidLayerSpatial) {
 			if meta.nacked > 1 {
@@ -1074,6 +1078,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			if err == io.EOF {
 				break
 			}
+			nackMisses++
 			continue
 		}
 		var pkt rtp.Packet
@@ -1127,6 +1132,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.statsLock.Lock()
 	d.totalRepeatedNACKs += numRepeatedNACKs
 	d.statsLock.Unlock()
+
+	d.rtpStats.UpdateNackMiss(nackMisses)
 }
 
 // writes RTP header extensions of track
@@ -1226,27 +1233,41 @@ func (d *DownTrack) GetConnectionScore() float32 {
 }
 
 func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
-	/* RAJA-TODO
-	d.statsLock.RLock()
-	defer d.statsLock.RUnlock()
+	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 
-	stats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
+	stats := d.rtpStats.ToProto()
 
 	layers := make(map[int]buffer.LayerStats)
 	layers[0] = buffer.LayerStats{
-		TotalPackets: d.stats.TotalPrimaryPackets + d.stats.TotalRetransmitPackets + d.stats.TotalPaddingPackets,
-		TotalBytes:   d.stats.TotalPrimaryBytes + d.stats.TotalRetransmitBytes + d.stats.TotalPaddingBytes,
-		TotalFrames:  d.stats.TotalFrames,
+		TotalPackets: stats.Packets + stats.PacketsDuplicate + stats.PacketsPadding,
+		TotalBytes:   stats.Bytes + stats.BytesDuplicate + stats.BytesPadding,
+		TotalFrames:  stats.Frames,
 	}
 
-	stats[d.ssrc] = &buffer.StreamStatsWithLayers{
-		StreamStats: d.stats,
-		Layers:      layers,
+	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
+		RTPStats: stats,
+		Layers:   layers,
 	}
 
-	return stats
-	*/
-	return nil // RAJA_TODO
+	return streamStats
+}
+
+func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
+	s := d.rtpStats.SnapshotInfo(d.connectionQualitySnapshotId)
+	if s == nil {
+		return nil
+	}
+
+	lossPercentage := float32(0.0)
+	if s.PacketsExpected != 0 {
+		lossPercentage = float32(s.PacketsLost) * 100.0 / float32(s.PacketsExpected)
+	}
+
+	return &buffer.ConnectionQualityParams{
+		LossPercentage: lossPercentage,
+		Jitter:         float32(s.MaxJitter / 1000.0),
+		Rtt:            s.MaxRtt,
+	}
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {

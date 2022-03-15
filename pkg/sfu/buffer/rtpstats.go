@@ -31,6 +31,21 @@ type RTPFlowState struct {
 	LossEndExclusive   uint16
 }
 
+type RTPSnapshotInfo struct {
+	PacketsExpected uint32
+	PacketsLost     uint32
+	MaxJitter       float64
+	MaxRtt          uint32
+}
+
+type Snapshot struct {
+	extStartSN          uint32
+	maxJitter           float64
+	isJitterOverridden  bool
+	maxJitterOverridden float64
+	maxRtt              uint32
+}
+
 type RTPStatsParams struct {
 	ClockRate uint32
 }
@@ -92,11 +107,16 @@ type RTPStats struct {
 	rtpSR     uint32
 	ntpSR     NtpTime
 	arrivalSR int64
+
+	nextSnapshotId uint32
+	snapshots      map[uint32]*Snapshot
 }
 
 func NewRTPStats(params RTPStatsParams) *RTPStats {
 	return &RTPStats{
-		params: params,
+		params:         params,
+		nextSnapshotId: 1,
+		snapshots:      make(map[uint32]*Snapshot),
 	}
 }
 
@@ -105,6 +125,15 @@ func (r *RTPStats) Stop() {
 	defer r.lock.Unlock()
 
 	r.endTime = time.Now()
+}
+
+func (r *RTPStats) NewSnapshotId() uint32 {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	id := r.nextSnapshotId
+	r.nextSnapshotId++
+	return id
 }
 
 func (r *RTPStats) IsActive() bool {
@@ -260,6 +289,25 @@ func (r *RTPStats) UpdateJitter(jitter float64) {
 	if jitter > r.maxJitterOverridden {
 		r.maxJitterOverridden = jitter
 	}
+
+	for _, s := range r.snapshots {
+		s.isJitterOverridden = true
+		if jitter > s.maxJitterOverridden {
+			s.maxJitterOverridden = jitter
+		}
+	}
+}
+
+func (r *RTPStats) UpdateNackAndMiss(nackCount uint32, nackMissCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.updateNackLocked(nackCount)
+	r.updateNackMissLocked(nackMissCount)
 }
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
@@ -270,6 +318,10 @@ func (r *RTPStats) UpdateNack(nackCount uint32) {
 		return
 	}
 
+	r.updateNackLocked(nackCount)
+}
+
+func (r *RTPStats) updateNackLocked(nackCount uint32) {
 	r.nacks += nackCount
 }
 
@@ -281,6 +333,10 @@ func (r *RTPStats) UpdateNackMiss(nackMissCount uint32) {
 		return
 	}
 
+	r.updateNackMissLocked(nackMissCount)
+}
+
+func (r *RTPStats) updateNackMissLocked(nackMissCount uint32) {
 	r.nackMisses += nackMissCount
 }
 
@@ -374,6 +430,12 @@ func (r *RTPStats) UpdateRtt(rtt uint32) {
 	if r.rtt > r.maxRtt {
 		r.maxRtt = r.rtt
 	}
+
+	for _, s := range r.snapshots {
+		if rtt > s.maxRtt {
+			s.maxRtt = rtt
+		}
+	}
 }
 
 func (r *RTPStats) GetRtt() uint32 {
@@ -391,32 +453,6 @@ func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS NtpTime, arrival 
 	r.ntpSR = ntpTS
 	r.arrivalSR = arrival.UnixNano()
 }
-
-// RAJA-REMOVE-START
-func (r *RTPStats) GetRtcpSenderReportData() (rtpTS uint32, ntpTS NtpTime, arrivalTime int64) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	now := time.Now()
-
-	ntpSR := r.highestTime
-	if r.ntpSR != 0 {
-		ntpSR = r.ntpSR.Time().UnixNano()
-	}
-
-	rtpTS = r.highestTS
-	if r.rtpSR != 0 {
-		rtpTS = r.rtpSR
-	}
-	rtpTS += uint32((now.UnixNano() - ntpSR) * int64(r.params.ClockRate) / 1e9)
-
-	ntpTS = ToNtpTime(now)
-
-	arrivalTime = r.arrivalSR
-	return
-}
-
-// RAJA-REMOVE-END
 
 func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	r.lock.RLock()
@@ -439,24 +475,24 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	}
 }
 
-func (r *RTPStats) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8) *rtcp.ReceptionReport {
-	// RAJA-TODO-START
-	// 1. Have to use snapshot or from beginning
-	// 2. Set up next snapshot
-	// RAJA-TODO-END
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotId uint32) *rtcp.ReceptionReport {
+	r.lock.Lock()
+	snapshot := r.getAndResetSnapshot(snapshotId)
+	r.lock.Unlock()
 
-	if !r.initialized {
+	if snapshot == nil {
 		return nil
 	}
 
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
 	extHighestSN := r.getExtHighestSN()
-	packetsExpected := extHighestSN - r.extStartSN + 1
+	packetsExpected := extHighestSN - snapshot.extStartSN + 1
 	if packetsExpected > NumSequenceNumbers {
 		logger.Warnw(
 			"too many packets expected in receiver report",
-			fmt.Errorf("start: %d, end: %d, expected: %d", r.extStartSN, extHighestSN, packetsExpected),
+			fmt.Errorf("start: %d, end: %d, expected: %d", snapshot.extStartSN, extHighestSN, packetsExpected),
 		)
 		return nil
 	}
@@ -464,7 +500,7 @@ func (r *RTPStats) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8) *rtc
 		return nil
 	}
 
-	packetsLost := r.numMissingSNs(uint16(r.extStartSN), uint16(extHighestSN))
+	packetsLost := r.numMissingSNs(uint16(snapshot.extStartSN), uint16(extHighestSN))
 	lossRate := float32(packetsLost) / float32(packetsExpected)
 	fracLost := uint8(lossRate * 256.0)
 	if proxyFracLost > fracLost {
@@ -478,14 +514,60 @@ func (r *RTPStats) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uint8) *rtc
 		dlsr |= (delayMS % 1e3) * 65536 / 1000
 	}
 
+	jitter := r.jitter
+	if r.isJitterOverridden {
+		jitter = r.jitterOverridden
+	}
+
 	return &rtcp.ReceptionReport{
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
 		TotalLost:          r.packetsLost,
 		LastSequenceNumber: extHighestSN,
-		Jitter:             uint32(r.jitter),
+		Jitter:             uint32(jitter),
 		LastSenderReport:   uint32(r.ntpSR >> 16),
 		Delay:              dlsr,
+	}
+}
+
+func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
+	r.lock.Lock()
+	snapshot := r.getAndResetSnapshot(snapshotId)
+	r.lock.Unlock()
+
+	if snapshot == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	extHighestSN := r.getExtHighestSN()
+	packetsExpected := extHighestSN - snapshot.extStartSN + 1
+	if packetsExpected > NumSequenceNumbers {
+		logger.Warnw(
+			"too many packets expected in loss percentage",
+			fmt.Errorf("start: %d, end: %d, expected: %d", snapshot.extStartSN, extHighestSN, packetsExpected),
+		)
+		return nil
+	}
+	if packetsExpected == 0 {
+		return nil
+	}
+
+	packetsLost := r.numMissingSNs(uint16(snapshot.extStartSN), uint16(extHighestSN))
+
+	maxJitter := snapshot.maxJitter
+	if snapshot.isJitterOverridden {
+		maxJitter = snapshot.maxJitterOverridden
+	}
+	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
+
+	return &RTPSnapshotInfo{
+		PacketsExpected: packetsExpected,
+		PacketsLost:     packetsLost,
+		MaxJitter:       maxJitterTime,
+		MaxRtt:          snapshot.maxRtt,
 	}
 }
 
@@ -697,7 +779,8 @@ func (r *RTPStats) numMissingSNs(startInclusive uint16, endInclusive uint16) uin
 
 	seen := uint32(0)
 	idx := startIdx
-	for idx != endIdx+1 {
+	loopEnd := (endIdx + 1) % uint16(len(r.seenSNs))
+	for idx != loopEnd {
 		mask := uint64((1 << 64) - 1)
 		if idx == startIdx {
 			mask &^= uint64((1 << startRem) - 1)
@@ -708,10 +791,7 @@ func (r *RTPStats) numMissingSNs(startInclusive uint16, endInclusive uint16) uin
 
 		seen += uint32(bits.OnesCount64(r.seenSNs[idx] & mask))
 
-		idx++
-		if idx == uint16(len(r.seenSNs)) {
-			idx = 0
-		}
+		idx = (idx + 1) % uint16(len(r.seenSNs))
 	}
 
 	return uint32(endInclusive-startInclusive+1) - seen
@@ -730,6 +810,12 @@ func (r *RTPStats) updateJitter(rtph *rtp.Header, packetTime int64) {
 		if r.jitter > r.maxJitter {
 			r.maxJitter = r.jitter
 		}
+
+		for _, s := range r.snapshots {
+			if r.jitter > s.maxJitter {
+				r.maxJitter = r.jitter
+			}
+		}
 	}
 
 	r.lastTransit = transit
@@ -746,6 +832,30 @@ func (r *RTPStats) updateGapHistogram(gap int) {
 	} else {
 		r.gapHistogram[missing-1]++
 	}
+}
+
+func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) *Snapshot {
+	if !r.initialized {
+		return nil
+	}
+
+	snapshot := r.snapshots[snapshotId]
+	if snapshot == nil {
+		snapshot = &Snapshot{
+			extStartSN: r.extStartSN,
+			maxJitter:  0.0,
+			maxRtt:     0,
+		}
+		r.snapshots[snapshotId] = snapshot
+	}
+
+	toReturn := *snapshot
+
+	snapshot.extStartSN = r.getExtHighestSN() + 1
+	snapshot.maxJitter = 0.0
+	snapshot.maxRtt = 0
+
+	return &toReturn
 }
 
 // ----------------------------------

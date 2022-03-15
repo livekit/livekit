@@ -162,7 +162,6 @@ func TestNewBuffer(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			var TestPackets = []*rtp.Packet{
 				{
@@ -195,7 +194,6 @@ func TestNewBuffer(t *testing.T) {
 			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
-			require.NotNil(t, TestPackets)
 			buff.OnFeedback(func(_ []rtcp.Packet) {
 			})
 			buff.Bind(webrtc.RTPParameters{
@@ -207,10 +205,8 @@ func TestNewBuffer(t *testing.T) {
 				buf, _ := p.Marshal()
 				_, _ = buff.Write(buf)
 			}
-			/* RAJA-TODO
-			require.Equal(t, uint16(1), buff.cycle)
-			require.Equal(t, uint16(2), buff.highestSN)
-			*/
+			require.Equal(t, uint16(1), buff.rtpStats.cycles)
+			require.Equal(t, uint16(2), buff.rtpStats.highestSN)
 		})
 	}
 }
