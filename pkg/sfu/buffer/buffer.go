@@ -460,6 +460,9 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	}
 	if ep.KeyFrame {
 		b.logger.Debugw("key frame received")
+		if b.rtpStats != nil {
+			b.rtpStats.UpdateKeyFrame(1)
+		}
 	}
 
 	return ep, temporalLayer

@@ -98,8 +98,14 @@ type RTPStats struct {
 	plis    uint32
 	lastPli time.Time
 
+	layerLockPlis    uint32
+	lastLayerLockPli time.Time
+
 	firs    uint32
 	lastFir time.Time
+
+	keyFrames    uint32
+	lastKeyFrame time.Time
 
 	rtt    uint32
 	maxRtt uint32
@@ -396,6 +402,18 @@ func (r *RTPStats) TimeSinceLastPli() int64 {
 	return time.Now().UnixNano() - r.lastPli.UnixNano()
 }
 
+func (r *RTPStats) UpdateLayerLockPliAndTime(pliCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.layerLockPlis += pliCount
+	r.lastLayerLockPli = time.Now()
+}
+
 func (r *RTPStats) UpdateFir(firCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -418,6 +436,18 @@ func (r *RTPStats) UpdateFirTime() {
 	r.lastFir = time.Now()
 }
 
+func (r *RTPStats) UpdateKeyFrame(kfCount uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.endTime.IsZero() {
+		return
+	}
+
+	r.keyFrames += kfCount
+	r.lastKeyFrame = time.Now()
+}
+
 func (r *RTPStats) UpdateRtt(rtt uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -427,8 +457,8 @@ func (r *RTPStats) UpdateRtt(rtt uint32) {
 	}
 
 	r.rtt = rtt
-	if r.rtt > r.maxRtt {
-		r.maxRtt = r.rtt
+	if rtt > r.maxRtt {
+		r.maxRtt = rtt
 	}
 
 	for _, s := range r.snapshots {
@@ -586,7 +616,7 @@ func (r *RTPStats) ToString() string {
 	str += fmt.Sprintf(", p: %d|%.2f/s", p.Packets, p.PacketRate)
 	str += fmt.Sprintf(", l: %d|%.1f/s|%.2f%%", p.PacketsLost, p.PacketLossRate, p.PacketLossPercentage)
 	str += fmt.Sprintf(", b: %d|%.1fbps", p.Bytes, p.Bitrate)
-	str += fmt.Sprintf(", f: %d|%.1f/s", p.Frames, p.FrameRate)
+	str += fmt.Sprintf(", f: %d|%.1f/s / %d|%+v", p.Frames, p.FrameRate, p.KeyFrames, p.LastKeyFrame.AsTime().Format(time.UnixDate))
 
 	str += fmt.Sprintf(", d: %d|%.2f/s", p.PacketsDuplicate, p.PacketDuplicateRate)
 	str += fmt.Sprintf(", bd: %d|%.1fbps", p.BytesDuplicate, p.BitrateDuplicate)
@@ -621,7 +651,10 @@ func (r *RTPStats) ToString() string {
 	str += fmt.Sprintf("%d|%d", p.Nacks, p.NackMisses)
 
 	str += ", pli:"
-	str += fmt.Sprintf("%d|%+v", p.Plis, p.LastPli.AsTime().Format(time.UnixDate))
+	str += fmt.Sprintf("%d|%+v / %d|%+v",
+		p.Plis, p.LastPli.AsTime().Format(time.UnixDate),
+		p.LayerLockPlis, p.LastLayerLockPli.AsTime().Format(time.UnixDate),
+	)
 
 	str += ", fir:"
 	str += fmt.Sprintf("%d|%+v", p.Firs, p.LastFir.AsTime().Format(time.UnixDate))
@@ -704,12 +737,16 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		PacketsOutOfOrder:    r.packetsOutOfOrder,
 		Frames:               r.frames,
 		FrameRate:            frameRate,
+		KeyFrames:            r.keyFrames,
+		LastKeyFrame:         timestamppb.New(r.lastKeyFrame),
 		JitterCurrent:        jitterTime,
 		JitterMax:            maxJitterTime,
 		Nacks:                r.nacks,
 		NackMisses:           r.nackMisses,
 		Plis:                 r.plis,
 		LastPli:              timestamppb.New(r.lastPli),
+		LayerLockPlis:        r.layerLockPlis,
+		LastLayerLockPli:     timestamppb.New(r.lastLayerLockPli),
 		Firs:                 r.firs,
 		LastFir:              timestamppb.New(r.lastFir),
 		RttCurrent:           r.rtt,
@@ -873,6 +910,8 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 	bytesPadding := uint64(0)
 	packetsOutOfOrder := uint32(0)
 	frames := uint32(0)
+	keyFrames := uint32(0)
+	lastKeyFrame := time.Time{}
 	jitter := float64(0.0)
 	maxJitter := float64(0)
 	gapHistogram := make(map[int32]uint32, GapHistogramNumBins)
@@ -880,6 +919,8 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 	nackMisses := uint32(0)
 	plis := uint32(0)
 	lastPli := time.Time{}
+	layerLockPlis := uint32(0)
+	lastLayerLockPli := time.Time{}
 	firs := uint32(0)
 	lastFir := time.Time{}
 	rtt := uint32(0)
@@ -909,6 +950,11 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 
 		frames += stats.Frames
 
+		keyFrames += stats.KeyFrames
+		if lastKeyFrame.IsZero() || lastKeyFrame.Before(stats.LastKeyFrame.AsTime()) {
+			lastKeyFrame = stats.LastKeyFrame.AsTime()
+		}
+
 		jitter += stats.JitterCurrent
 		if stats.JitterMax > maxJitter {
 			maxJitter = stats.JitterMax
@@ -924,6 +970,11 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 		plis += stats.Plis
 		if lastPli.IsZero() || lastPli.Before(stats.LastPli.AsTime()) {
 			lastPli = stats.LastPli.AsTime()
+		}
+
+		layerLockPlis += stats.LayerLockPlis
+		if lastLayerLockPli.IsZero() || lastLayerLockPli.Before(stats.LastLayerLockPli.AsTime()) {
+			lastLayerLockPli = stats.LastLayerLockPli.AsTime()
 		}
 
 		firs += stats.Firs
@@ -977,6 +1028,8 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 		PacketsOutOfOrder:    packetsOutOfOrder,
 		Frames:               frames,
 		FrameRate:            frameRate,
+		KeyFrames:            keyFrames,
+		LastKeyFrame:         timestamppb.New(lastKeyFrame),
 		JitterCurrent:        jitter / float64(len(statses)),
 		JitterMax:            maxJitter,
 		GapHistogram:         gapHistogram,
@@ -984,6 +1037,8 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 		NackMisses:           nackMisses,
 		Plis:                 plis,
 		LastPli:              timestamppb.New(lastPli),
+		LayerLockPlis:        layerLockPlis,
+		LastLayerLockPli:     timestamppb.New(lastLayerLockPli),
 		Firs:                 firs,
 		LastFir:              timestamppb.New(lastFir),
 		RttCurrent:           rtt / uint32(len(statses)),

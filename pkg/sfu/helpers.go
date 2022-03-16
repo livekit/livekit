@@ -48,6 +48,9 @@ func getRttMs(report *rtcp.ReceptionReport) uint32 {
 
 	// middle 32-bits of current NTP time
 	now := uint32(buffer.ToNtpTime(time.Now()) >> 16)
+	if now < (report.LastSenderReport + report.Delay) {
+		return 0
+	}
 	ntpDiff := now - report.LastSenderReport - report.Delay
 	return uint32(math.Ceil(float64(ntpDiff) * 1000.0 / 65536.0))
 }

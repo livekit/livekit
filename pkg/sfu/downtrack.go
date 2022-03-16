@@ -39,9 +39,10 @@ const (
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMax             = 6
 
-	firstKeyFramePLIInterval = 500 * time.Millisecond
-
 	FlagStopRTXOnPLI = true
+
+	keyFrameIntervalMin = 200
+	keyFrameIntervalMax = 1000
 )
 
 var (
@@ -103,6 +104,8 @@ type DownTrack struct {
 	statsLock          sync.RWMutex
 	totalRepeatedNACKs uint32
 
+	keyFrameRequestGeneration atomic.Uint32
+
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
 
@@ -140,8 +143,6 @@ type DownTrack struct {
 
 	// update rtt
 	onRttUpdate func(dt *DownTrack, rtt uint32)
-
-	closed chan struct{}
 }
 
 // NewDownTrack returns a DownTrack.
@@ -175,7 +176,6 @@ func NewDownTrack(
 		kind:           kind,
 		forwarder:      NewForwarder(c, kind, logger),
 		callbacksQueue: utils.NewOpsQueue(logger),
-		closed:         make(chan struct{}),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -235,8 +235,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	d.bound.Store(true)
 
-	go d.requestFirstKeyframe()
-
 	d.connectionStats.Start()
 
 	return codec, nil
@@ -293,17 +291,38 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
-func (d *DownTrack) requestFirstKeyframe() {
-	ticker := time.NewTicker(firstKeyFramePLIInterval)
-	for !d.forwarder.ReceivedFirstKeyFrame() {
-		select {
-		case <-d.closed:
-			return
+func (d *DownTrack) maybeStartKeyFrameRequester() {
+	//
+	// Always move to next generation to abandon any running key frame requester
+	// This ensures that it is stopped if forwarding is disabled due to mute
+	// or paused due to bandwidth constraints. A new key frame requester is
+	// started if a layer lock is required.
+	//
+	gen := d.keyFrameRequestGeneration.Inc()
 
-		case <-ticker.C:
-			if l := d.forwarder.TargetLayers(); l != InvalidLayers {
-				d.receiver.SendPLI(l.spatial)
-			}
+	locked, layer := d.forwarder.CheckSync()
+	if !locked {
+		go d.keyFrameRequester(gen, layer)
+	}
+}
+
+func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
+	interval := 2 * d.rtpStats.GetRtt()
+	if interval < keyFrameIntervalMin {
+		interval = keyFrameIntervalMin
+	}
+	if interval > keyFrameIntervalMax {
+		interval = keyFrameIntervalMax
+	}
+	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	for {
+		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
+		d.receiver.SendPLI(layer)
+		d.rtpStats.UpdateLayerLockPliAndTime(1)
+
+		<-ticker.C
+		if generation != d.keyFrameRequestGeneration.Load() {
+			return
 		}
 	}
 }
@@ -323,11 +342,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
-	if tp.shouldSendPLI {
-		d.receiver.SendPLI(layer)
-		d.rtpStats.UpdatePli(1)
-		d.rtpStats.UpdatePliTime()
-	}
 	if tp.shouldDrop {
 		if tp.isDroppingRelevant {
 			d.pktsDropped.Inc()
@@ -379,6 +393,13 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 		if extPkt.KeyFrame {
 			d.isNACKThrottled.Store(false)
+			d.rtpStats.UpdateKeyFrame(1)
+
+			locked, _ := d.forwarder.CheckSync()
+			if locked {
+				// move generator to stop key frame requester
+				d.keyFrameRequestGeneration.Inc()
+			}
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
@@ -557,7 +578,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		}
 
 		d.callbacksQueue.Stop()
-		close(d.closed)
+		d.keyFrameRequestGeneration.Inc()
 	})
 }
 
@@ -689,6 +710,7 @@ func (d *DownTrack) DistanceToDesired() int32 {
 func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
 	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
 	d.logger.Debugw("stream: allocation", "channel", availableChannelCapacity, "allocation", allocation)
+	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
@@ -715,6 +737,7 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
 	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
+	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
@@ -725,6 +748,7 @@ func (d *DownTrack) FinalizeAllocate() VideoAllocation {
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
 	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
+	d.maybeStartKeyFrameRequester()
 	return allocation, available
 }
 
@@ -737,6 +761,7 @@ func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
 func (d *DownTrack) Pause() VideoAllocation {
 	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
 	d.logger.Debugw("stream: pause", "allocation", allocation)
+	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
