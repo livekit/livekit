@@ -690,7 +690,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		PacketRate:           packetRate,
 		Bytes:                r.bytes,
 		Bitrate:              bitrate,
-		PacketsLost:          r.packetsLost,
+		PacketsLost:          packetsLost,
 		PacketLossRate:       packetLostRate,
 		PacketLossPercentage: packetLostPercentage,
 		PacketsDuplicate:     r.packetsDuplicate,
