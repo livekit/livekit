@@ -571,6 +571,8 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		}
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
+		// in case of migration, subscriber data channel will not fire OnOpen callback
+		p.activeCounter.CAS(0, 2)
 	}
 	p.lock.Unlock()
 	if s == types.MigrateStateComplete {
