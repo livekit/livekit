@@ -2,7 +2,6 @@ package selector_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -11,30 +10,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 )
 
-var (
-	nodeLoadLow = &livekit.Node{
-		State: livekit.NodeState_SERVING,
-		Stats: &livekit.NodeStats{
-			UpdatedAt:       time.Now().Unix(),
-			NumCpus:         1,
-			CpuLoad:         0.1,
-			LoadAvgLast1Min: 0.0,
-		},
-	}
-
-	nodeLoadHigh = &livekit.Node{
-		State: livekit.NodeState_SERVING,
-		Stats: &livekit.NodeStats{
-			UpdatedAt:       time.Now().Unix(),
-			NumCpus:         1,
-			CpuLoad:         0.99,
-			LoadAvgLast1Min: 2.0,
-		},
-	}
-)
-
-func TestSystemLoadSelector_SelectNode(t *testing.T) {
-	sel := selector.SystemLoadSelector{SysloadLimit: 1.0}
+func TestCPULoadSelector_SelectNode(t *testing.T) {
+	sel := selector.CPULoadSelector{CPULoadLimit: 0.8}
 
 	var nodes []*livekit.Node
 	_, err := sel.SelectNode(nodes)

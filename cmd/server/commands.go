@@ -6,11 +6,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -154,7 +155,7 @@ func listNodes(c *cli.Context) error {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
-		"CPUs", "Load",
+		"CPUs", "CPU Usage", "Load",
 		"Clients", "Rooms", "Tracks In/Out",
 		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
 		"Started At", "Updated At",
@@ -164,6 +165,7 @@ func listNodes(c *cli.Context) error {
 
 		// System stats
 		cpus := strconv.Itoa(int(stats.NumCpus))
+		cpuUsage := fmt.Sprintf("%.2f %%", stats.CpuLoad*100)
 		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
 
 		// Room stats
@@ -184,7 +186,7 @@ func listNodes(c *cli.Context) error {
 
 		table.Append([]string{
 			node.Id, node.Ip, node.Region,
-			cpus, loadAvg,
+			cpus, cpuUsage, loadAvg,
 			clients, rooms, tracks,
 			bytes, packets, nack, bps, packetsPerSec, nackPerSec,
 			startedAt, updatedAt,

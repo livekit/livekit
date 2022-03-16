@@ -3,9 +3,11 @@ package prometheus
 import (
 	"time"
 
+	"github.com/mackerelio/go-osstat/loadavg"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const livekitNamespace string = "livekit"
@@ -45,7 +47,12 @@ func init() {
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
-	numCPUs, avg1Min, avg5Min, avg15Min, err := getSystemStats()
+	loadAvg, err := loadavg.Get()
+	if err != nil {
+		return nil, err
+	}
+
+	cpuLoad, numCPUs, err := getCPUStats()
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +84,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
 		PacketsOutPerSec: perSec(prev.PacketsOut, packetsOutNow, elapsed),
 		NackPerSec:       perSec(prev.NackTotal, nackTotalNow, elapsed),
 		NumCpus:          numCPUs,
-		LoadAvgLast1Min:  avg1Min,
-		LoadAvgLast5Min:  avg5Min,
-		LoadAvgLast15Min: avg15Min,
+		CpuLoad:          cpuLoad,
+		LoadAvgLast1Min:  float32(loadAvg.Loadavg1),
+		LoadAvgLast5Min:  float32(loadAvg.Loadavg5),
+		LoadAvgLast15Min: float32(loadAvg.Loadavg15),
 	}, nil
 }
 
