@@ -292,12 +292,17 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 }
 
 func (d *DownTrack) maybeStartKeyFrameRequester() {
-	disabled, locked, layer := d.forwarder.CheckResync()
-	if disabled {
-		// move to next generation to abandon any running key frame requester
-		d.keyFrameRequestGeneration.Inc()
-	} else if !locked {
-		go d.keyFrameRequester(d.keyFrameRequestGeneration.Inc(), layer)
+	//
+	// Always move to next generation to abandon any running key frame requester
+	// This ensures that it is stopped if forwarding is disabled due to mute
+	// or paused due to bandwidth constraints. A new key frame requester is
+	// started if a layer lock is required.
+	//
+	gen := d.keyFrameRequestGeneration.Inc()
+
+	locked, layer := d.forwarder.CheckSync()
+	if !locked {
+		go d.keyFrameRequester(gen, layer)
 	}
 }
 
@@ -390,7 +395,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.isNACKThrottled.Store(false)
 			d.rtpStats.UpdateKeyFrame(1)
 
-			_, locked, _ := d.forwarder.CheckResync()
+			locked, _ := d.forwarder.CheckSync()
 			if locked {
 				// move generator to stop key frame requester
 				d.keyFrameRequestGeneration.Inc()
@@ -737,9 +742,7 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
-	allocation := d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
-	d.maybeStartKeyFrameRequester()
-	return allocation
+	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {

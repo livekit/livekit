@@ -1143,17 +1143,12 @@ func (f *Forwarder) resyncLocked() {
 	f.lastSSRC = 0
 }
 
-func (f *Forwarder) CheckResync() (disabled bool, locked bool, layer int32) {
+func (f *Forwarder) CheckSync() (locked bool, layer int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
 	layer = f.targetLayers.spatial
-	if f.targetLayers == InvalidLayers {
-		disabled = true
-	}
-	if f.targetLayers.spatial == f.currentLayers.spatial {
-		locked = true
-	}
+	locked = f.targetLayers.spatial == f.currentLayers.spatial
 
 	return
 }
