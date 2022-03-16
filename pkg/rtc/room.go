@@ -221,11 +221,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
-	participant.OnDataTrackPublished(func(lp types.LocalParticipant, dt types.DataTrack) {
-		dt.OnDataPacket(func(dp *livekit.DataPacket) {
-			r.onDataPacket(lp, dp)
-		})
-	})
+	participant.OnDataPacket(r.onDataPacket)
 	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -244,7 +240,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
 		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p.ToProto(true))
+			otherParticipants = append(otherParticipants, p.ToProto())
 		}
 	}
 
@@ -332,7 +328,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnTrackPublished(nil)
 	p.OnStateChange(nil)
 	p.OnMetadataUpdate(nil)
-	p.OnDataTrackPublished(nil)
+	p.OnDataPacket(nil)
 
 	// close participant as well
 	_ = p.Close(true)
@@ -663,7 +659,10 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 				continue
 			}
 		}
-		_ = op.SendDataPacket(dp)
+		err := op.SendDataPacket(dp)
+		if err != nil {
+			r.Logger.Infow("send datapacket error", "error", err, "participant", op.Identity())
+		}
 	}
 }
 

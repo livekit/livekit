@@ -170,9 +170,9 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.SetMetadata("initial metadata")
 	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
-	pi1 := p.ToProto(true)
+	pi1 := p.ToProto()
 	p.SetMetadata("second update")
-	pi2 := p.ToProto(true)
+	pi2 := p.ToProto()
 
 	require.Greater(t, pi2.Version, pi1.Version)
 
@@ -208,7 +208,7 @@ func TestDisconnectTiming(t *testing.T) {
 
 func TestCorrectJoinedAt(t *testing.T) {
 	p := newParticipantForTest("test")
-	info := p.ToProto(true)
+	info := p.ToProto()
 	require.NotZero(t, info.JoinedAt)
 	require.True(t, time.Now().Unix()-info.JoinedAt <= 1)
 }

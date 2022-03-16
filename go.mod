@@ -14,7 +14,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.11.14-0.20220311165704-a91198e400ac
+	github.com/livekit/protocol v0.11.14-0.20220314072422-5cea5d444f36
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -23,7 +23,7 @@ require (
 	github.com/pion/interceptor v0.1.7
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.9
-	github.com/pion/rtp v1.7.4
+	github.com/pion/rtp v1.7.7
 	github.com/pion/sdp/v3 v3.0.4
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.0
