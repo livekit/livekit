@@ -21,6 +21,10 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 		kind = "random"
 	}
 	switch kind {
+	case "cpuload":
+		return &CPULoadSelector{
+			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
+		}, nil
 	case "sysload":
 		return &SystemLoadSelector{
 			SysloadLimit: conf.NodeSelector.SysloadLimit,

@@ -158,6 +158,7 @@ type WebHookConfig struct {
 
 type NodeSelectorConfig struct {
 	Kind         string         `yaml:"kind"`
+	CPULoadLimit float32        `yaml:"cpu_load_limit"`
 	SysloadLimit float32        `yaml:"sysload_limit"`
 	Regions      []RegionConfig `yaml:"regions"`
 }
@@ -226,6 +227,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		NodeSelector: NodeSelectorConfig{
 			Kind:         "random",
 			SysloadLimit: 0.9,
+			CPULoadLimit: 0.9,
 		},
 		Keys: map[string]string{},
 	}

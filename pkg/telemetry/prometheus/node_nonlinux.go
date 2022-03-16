@@ -3,6 +3,24 @@
 
 package prometheus
 
-func getSystemStats() (numCPUs uint32, avg1Min, avg5Min, avg15Min float32, err error) {
+import (
+	"github.com/mackerelio/go-osstat/cpu"
+)
+
+var lastCPUTotal, lastCPUIdle uint64
+
+func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
+	cpuInfo, err := cpu.Get()
+	if err != nil {
+		return
+	}
+
+	if lastCPUTotal > 0 && lastCPUTotal < cpuInfo.Total {
+		cpuLoad = 1 - float32(cpuInfo.Idle-lastCPUIdle)/float32(cpuInfo.Total-lastCPUTotal)
+	}
+
+	lastCPUTotal = cpuInfo.Total
+	lastCPUIdle = cpuInfo.Idle
+
 	return
 }
