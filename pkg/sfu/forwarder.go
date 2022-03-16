@@ -1143,19 +1143,19 @@ func (f *Forwarder) resyncLocked() {
 	f.lastSSRC = 0
 }
 
-func (f *Forwarder) NeedResync() (bool, int32) {
+func (f *Forwarder) CheckResync() (disabled bool, locked bool, layer int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
+	layer = f.targetLayers.spatial
 	if f.targetLayers == InvalidLayers {
-		return false, InvalidLayerSpatial
+		disabled = true
 	}
-
 	if f.targetLayers.spatial == f.currentLayers.spatial {
-		return false, f.targetLayers.spatial
+		locked = true
 	}
 
-	return true, f.targetLayers.spatial
+	return
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [DefaultMaxLayerSpatial + 1]bool) {

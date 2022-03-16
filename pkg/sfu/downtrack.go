@@ -42,6 +42,7 @@ const (
 	FlagStopRTXOnPLI = true
 
 	keyFrameIntervalMin = 200
+	keyFrameIntervalMax = 1000
 )
 
 var (
@@ -291,9 +292,12 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 }
 
 func (d *DownTrack) maybeStartKeyFrameRequester() {
-	resync, layer := d.forwarder.NeedResync()
-	if resync {
-		go d.keyFrameRequester(d.keyFrameRequestGeneration.Load(), layer)
+	disabled, locked, layer := d.forwarder.CheckResync()
+	if disabled {
+		// move to next generation to abandon any running key frame requester
+		d.keyFrameRequestGeneration.Inc()
+	} else if !locked {
+		go d.keyFrameRequester(d.keyFrameRequestGeneration.Inc(), layer)
 	}
 }
 
@@ -302,8 +306,12 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	if interval < keyFrameIntervalMin {
 		interval = keyFrameIntervalMin
 	}
+	if interval > keyFrameIntervalMax {
+		interval = keyFrameIntervalMax
+	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	for {
+		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 		d.receiver.SendPLI(layer)
 		d.rtpStats.UpdateLayerLockPliAndTime(1)
 
@@ -382,9 +390,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.isNACKThrottled.Store(false)
 			d.rtpStats.UpdateKeyFrame(1)
 
-			resync, _ := d.forwarder.NeedResync()
-			if !resync {
-				// move generator to stop previous requester
+			_, locked, _ := d.forwarder.CheckResync()
+			if locked {
+				// move generator to stop key frame requester
 				d.keyFrameRequestGeneration.Inc()
 			}
 		}
@@ -729,7 +737,9 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 }
 
 func (d *DownTrack) FinalizeAllocate() VideoAllocation {
-	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
+	allocation := d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
+	d.maybeStartKeyFrameRequester()
+	return allocation
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
@@ -748,6 +758,7 @@ func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
 func (d *DownTrack) Pause() VideoAllocation {
 	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
 	d.logger.Debugw("stream: pause", "allocation", allocation)
+	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
