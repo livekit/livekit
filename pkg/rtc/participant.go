@@ -36,6 +36,8 @@ const (
 
 	sdBatchSize       = 20
 	rttUpdateInterval = 5 * time.Second
+
+	stateActiveCond = 3 // reliableDCOpen,lossyDCOpen,PeerConnectionStateConnected
 )
 
 type pendingTrackInfo struct {
@@ -123,6 +125,8 @@ type ParticipantImpl struct {
 	pendingDataChannels []*livekit.DataChannelInfo
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
+
+	activeCounter atomic.Int32
 }
 
 func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermission) (*ParticipantImpl, error) {
@@ -204,6 +208,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		if err != nil {
 			return nil, err
 		}
+		p.reliableDCSub.OnOpen(p.incActiveCounter)
 		retransmits := uint16(0)
 		p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
 			Ordered:        &ordered,
@@ -212,6 +217,9 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		if err != nil {
 			return nil, err
 		}
+		p.lossyDCSub.OnOpen(p.incActiveCounter)
+	} else {
+		p.activeCounter.Add(2)
 	}
 	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
 	p.publisher.pc.OnTrack(p.onMediaTrack)
@@ -1127,7 +1135,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
 			p.SetMigrateState(types.MigrateStateComplete)
 		}
-		p.updateState(livekit.ParticipantInfo_ACTIVE)
+		p.incActiveCounter()
 	} else if state == webrtc.PeerConnectionStateFailed {
 		// only close when failed, to allow clients opportunity to reconnect
 		go func() {
@@ -1664,4 +1672,10 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 		tracks = append(tracks, t)
 	}
 	return tracks
+}
+
+func (p *ParticipantImpl) incActiveCounter() {
+	if p.activeCounter.Inc() == stateActiveCond {
+		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	}
 }

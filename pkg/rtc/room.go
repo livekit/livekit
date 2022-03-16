@@ -659,7 +659,10 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 				continue
 			}
 		}
-		_ = op.SendDataPacket(dp)
+		err := op.SendDataPacket(dp)
+		if err != nil {
+			r.Logger.Infow("send datapacket error", "error", err, "participant", op.Identity())
+		}
 	}
 }
 
