@@ -1167,8 +1167,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		temporal: 1,
 	}
 	expectedTP = TranslationParams{
-		shouldDrop:    true,
-		shouldSendPLI: true,
+		shouldDrop: true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)

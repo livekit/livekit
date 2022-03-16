@@ -121,7 +121,6 @@ const (
 type TranslationParams struct {
 	shouldDrop            bool
 	isDroppingRelevant    bool
-	shouldSendPLI         bool
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
 	vp8                   *TranslationParamsVP8
@@ -1144,6 +1143,21 @@ func (f *Forwarder) resyncLocked() {
 	f.lastSSRC = 0
 }
 
+func (f *Forwarder) NeedResync() (bool, int32) {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if f.targetLayers == InvalidLayers {
+		return false, InvalidLayerSpatial
+	}
+
+	if f.targetLayers.spatial == f.currentLayers.spatial {
+		return false, f.targetLayers.spatial
+	}
+
+	return true, f.targetLayers.spatial
+}
+
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [DefaultMaxLayerSpatial + 1]bool) {
 	if !FlagFilterRTX {
 		filtered = nacks
@@ -1247,7 +1261,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	tp.shouldSendPLI = false
 	if f.targetLayers.spatial != f.currentLayers.spatial {
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
@@ -1258,8 +1271,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 					tp.isSwitchingToMaxLayer = true
 				}
 				f.receivedFirstKeyFrame.Store(true)
-			} else {
-				tp.shouldSendPLI = true
 			}
 		}
 	}
