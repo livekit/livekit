@@ -304,13 +304,13 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	for {
+		d.receiver.SendPLI(layer)
+		d.rtpStats.UpdateLayerLockPliAndTime(1)
+
 		<-ticker.C
 		if generation != d.keyFrameRequestGeneration.Load() {
 			return
 		}
-
-		d.receiver.SendPLI(layer)
-		d.rtpStats.UpdateLayerLockPliAndTime(1)
 	}
 }
 
