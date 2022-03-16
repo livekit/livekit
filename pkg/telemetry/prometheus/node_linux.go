@@ -22,7 +22,7 @@ func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 	lastCPUTotal = cpuInfo.Total
 	lastCPUIdle = cpuInfo.Idle // + cpu.Iowait
 
-	numCPUs = cpuInfo.CPUCount
+	numCPUs = uint32(cpuInfo.CPUCount)
 
 	return
 }
