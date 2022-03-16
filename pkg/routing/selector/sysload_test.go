@@ -17,6 +17,7 @@ var (
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
+			CpuLoad:         0.1,
 			LoadAvgLast1Min: 0.0,
 		},
 	}
@@ -26,6 +27,7 @@ var (
 		Stats: &livekit.NodeStats{
 			UpdatedAt:       time.Now().Unix(),
 			NumCpus:         1,
+			CpuLoad:         0.99,
 			LoadAvgLast1Min: 2.0,
 		},
 	}
