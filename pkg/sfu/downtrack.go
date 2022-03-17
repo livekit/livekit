@@ -116,8 +116,6 @@ type DownTrack struct {
 
 	callbacksQueue *utils.OpsQueue
 
-	qc chan struct{}
-
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
@@ -178,7 +176,6 @@ func NewDownTrack(
 		kind:           kind,
 		forwarder:      NewForwarder(c, kind, logger),
 		callbacksQueue: utils.NewOpsQueue(logger),
-		qc:             make(chan struct{}),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -239,6 +236,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bound.Store(true)
 
 	d.connectionStats.Start()
+	d.logger.Debugw("binded")
 
 	return codec, nil
 }
@@ -322,12 +320,9 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 		d.receiver.SendPLI(layer)
 		d.rtpStats.UpdateLayerLockPliAndTime(1)
 
-		select {
-		case <-ticker.C:
-		case <-d.qc:
-			return
-		}
-		if generation != d.keyFrameRequestGeneration.Load() {
+		<-ticker.C
+
+		if generation != d.keyFrameRequestGeneration.Load() || !d.bound.Load() {
 			return
 		}
 	}
@@ -585,7 +580,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		d.callbacksQueue.Stop()
 		d.keyFrameRequestGeneration.Inc()
-		close(d.qc)
 	})
 }
 
