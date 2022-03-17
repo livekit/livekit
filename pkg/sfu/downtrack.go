@@ -245,6 +245,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 // because a track has been stopped.
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
+	d.stopKeyFrameRequester()
 	return nil
 }
 
@@ -298,12 +299,16 @@ func (d *DownTrack) maybeStartKeyFrameRequester() {
 	// or paused due to bandwidth constraints. A new key frame requester is
 	// started if a layer lock is required.
 	//
-	gen := d.keyFrameRequestGeneration.Inc()
+	d.stopKeyFrameRequester()
 
 	locked, layer := d.forwarder.CheckSync()
 	if !locked {
-		go d.keyFrameRequester(gen, layer)
+		go d.keyFrameRequester(d.keyFrameRequestGeneration.Load(), layer)
 	}
+}
+
+func (d *DownTrack) stopKeyFrameRequester() {
+	d.keyFrameRequestGeneration.Inc()
 }
 
 func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
@@ -398,8 +403,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 			locked, _ := d.forwarder.CheckSync()
 			if locked {
-				// move generator to stop key frame requester
-				d.keyFrameRequestGeneration.Inc()
+				d.stopKeyFrameRequester()
 			}
 		}
 
@@ -579,7 +583,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		}
 
 		d.callbacksQueue.Stop()
-		d.keyFrameRequestGeneration.Inc()
+		d.stopKeyFrameRequester()
 	})
 }
 
