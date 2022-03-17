@@ -287,8 +287,11 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
-	// get real address (forwarded http header)
-	ci.Address = xff.GetRemoteAddr(r)
+	// get real address (forwarded http header) - check Cloudfare headers first, fall back to X-Forwaded-For
+	ci.Address = r.Header.Get("CF-Connecting-IP")
+	if len(ci.Address) == 0 {
+		ci.Address = xff.GetRemoteAddr(r)
+	}
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
