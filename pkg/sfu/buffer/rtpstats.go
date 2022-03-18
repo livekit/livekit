@@ -619,6 +619,9 @@ func (r *RTPStats) ToString() string {
 		return ""
 	}
 
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
 	expectedPackets := p.Packets + p.PacketsLost
 	expectedPacketRate := float64(expectedPackets) / p.Duration
 
@@ -695,11 +698,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	}
 
 	packetsExpected := r.getExtHighestSN() - r.extStartSN + 1
-
-	packets := packetsExpected
-	if r.packetsLost < packets {
-		packets -= r.packetsLost
-	}
+	packets := r.getNumPacketsSeen()
 	packetRate := float64(packets) / elapsed
 	bitrate := float64(r.bytes) * 8.0 / elapsed
 
@@ -731,7 +730,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		StartTime:            timestamppb.New(r.startTime),
 		EndTime:              timestamppb.New(endTime),
 		Duration:             elapsed,
-		Packets:              r.getNumPacketsSeen(),
+		Packets:              packets,
 		PacketRate:           packetRate,
 		Bytes:                r.bytes,
 		Bitrate:              bitrate,
