@@ -149,11 +149,13 @@ func (p *Prober) IsRunning() bool {
 }
 
 func (p *Prober) Reset() {
+	reset := false
 	var info ProbeClusterInfo
 
 	p.clustersMu.Lock()
 	if p.activeCluster != nil {
 		p.logger.Debugw("resetting active cluster", "cluster", p.activeCluster.String())
+		reset = true
 		info = p.activeCluster.GetInfo()
 	}
 
@@ -161,7 +163,7 @@ func (p *Prober) Reset() {
 	p.activeCluster = nil
 	p.clustersMu.Unlock()
 
-	if p.onProbeClusterDone != nil && info.BytesSent != 0 {
+	if p.onProbeClusterDone != nil && reset {
 		p.onProbeClusterDone(info)
 	}
 }
