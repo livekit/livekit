@@ -273,6 +273,8 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.availableLayers = newLayers
 	s.lock.Unlock()
 
+	s.logger.Debugw("available layers changed", "layers", newLayers)
+
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(newLayers)
