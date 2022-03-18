@@ -682,7 +682,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		return nil
 	}
 
-	packetsExpected := r.getExtHighestSN() - r.extStartSN
+	packetsExpected := r.getExtHighestSN() - r.extStartSN + 1
 
 	packets := packetsExpected
 	if r.packetsLost < packets {
