@@ -10,6 +10,10 @@ import (
 )
 
 var (
+	exemptLayers = []int32{0}
+)
+
+var (
 	ConfigVideo = []StreamTrackerParams{
 		{
 			SamplesRequired: 1,
@@ -93,7 +97,18 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 	tracker := NewStreamTracker(params)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
-			s.removeAvailableLayer(layer)
+			exempt := false
+			for _, l := range exemptLayers {
+				if layer == l {
+					exempt = true
+					break
+				}
+			}
+			if !exempt {
+				s.removeAvailableLayer(layer)
+			} else {
+				s.logger.Debugw("not removing exempt layer", "layer", layer)
+			}
 		} else {
 			s.addAvailableLayer(layer)
 		}
