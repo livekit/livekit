@@ -160,6 +160,10 @@ func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID) logger.Logger {
 
 func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Logger {
 	lr := logr.Logger(l)
+	if lr.GetSink() == nil {
+		return l
+	}
+
 	lr = lr.WithValues("transport", target)
 	return logger.Logger(lr)
 }
