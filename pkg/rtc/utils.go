@@ -157,3 +157,9 @@ func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID) logger.Logger {
 	}
 	return logger.Logger(lr)
 }
+
+func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Logger {
+	lr := logr.Logger(l)
+	lr = lr.WithValues("transport", target)
+	return logger.Logger(lr)
+}
