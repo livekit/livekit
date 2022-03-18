@@ -160,7 +160,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               p.params.Telemetry,
 		EnabledCodecs:           p.params.EnabledCodecs,
-		Logger:                  params.Logger,
+		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               p.params.Telemetry,
 		EnabledCodecs:           p.params.EnabledCodecs,
-		Logger:                  params.Logger,
+		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 	})
 	if err != nil {
 		return nil, err
@@ -188,7 +188,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		p.sendIceCandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
 	p.subscriber.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED || p.MigrateState() == types.MigrateStateInit {
 			return
 		}
 		p.sendIceCandidate(c, livekit.SignalTarget_SUBSCRIBER)
@@ -996,7 +996,7 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 
 	// write candidate
 	p.params.Logger.Debugw("sending ice candidates",
-		"candidate", c.String())
+		"candidate", c.String(), "target", target)
 	trickle := ToProtoTrickle(ci)
 	trickle.Target = target
 	_ = p.writeMessage(&livekit.SignalResponse{
