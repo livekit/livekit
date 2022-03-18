@@ -161,7 +161,7 @@ func (p *Prober) Reset() {
 	p.activeCluster = nil
 	p.clustersMu.Unlock()
 
-	if p.onProbeClusterDone != nil && info.BytesSent != 0 {
+	if p.onProbeClusterDone != nil {
 		p.onProbeClusterDone(info)
 	}
 }

@@ -644,15 +644,20 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
 		// LK-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
-		s.params.Logger.Debugw("probe: aborting, no trend")
+		s.params.Logger.Debugw("probe: aborting, no trend", "cluster", s.probeClusterId)
 		s.abortProbe()
 	case trend == ChannelTrendCongesting:
 		// stop immediately if the probe is congesting channel more
-		s.params.Logger.Debugw("probe: aborting, channel is congesting")
+		s.params.Logger.Debugw("probe: aborting, channel is congesting", "cluster", s.probeClusterId)
 		s.abortProbe()
 	case s.probeChannelObserver.GetHighestEstimate() > s.probeGoalBps:
 		// reached goal, stop probing
-		s.params.Logger.Debugw("probe: stopping, goal reached")
+		s.params.Logger.Debugw(
+			"probe: stopping, goal reached",
+			"cluster", s.probeClusterId,
+			"goal", s.probeGoalBps,
+			"highest", s.probeChannelObserver.GetHighestEstimate(),
+		)
 		s.stopProbe()
 	}
 }
@@ -672,9 +677,6 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	lossAdjustedEstimate := s.lastReceivedEstimate
 	if nackRatio > NackRatioThresholdNonProbe {
 		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator*nackRatio))
-	}
-	if s.committedChannelCapacity == lossAdjustedEstimate {
-		return
 	}
 
 	s.params.Logger.Infow(
@@ -814,12 +816,7 @@ func (s *StreamAllocator) finalizeProbe() {
 	// reset probe interval on a successful probe
 	s.resetProbeInterval()
 
-	if s.committedChannelCapacity == highestEstimateInProbe {
-		// no increase for whatever reason, don't backoff though
-		return
-	}
-
-	// probe estimate is higher, commit it and try allocate deficient tracks
+	// probe estimate is same or higher, commit it and try allocate deficient tracks
 	s.params.Logger.Infow(
 		"successful probe, updating channel capacity",
 		"old(bps)", s.committedChannelCapacity,
@@ -827,6 +824,10 @@ func (s *StreamAllocator) finalizeProbe() {
 	)
 	s.committedChannelCapacity = highestEstimateInProbe
 
+	s.maybeBoostDeficientTracks()
+}
+
+func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	availableChannelCapacity := s.committedChannelCapacity - s.getExpectedBandwidthUsage()
 	if availableChannelCapacity <= 0 {
 		return
@@ -981,10 +982,11 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 	return aggPacketDelta, aggRepeatedNackDelta
 }
 
-func (s *StreamAllocator) initProbe(goalBps int64) {
+func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.lastProbeStartTime = time.Now()
 
-	s.probeGoalBps = goalBps
+	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+	s.probeGoalBps = expectedBandwidthUsage + probeRateBps
 
 	s.abortedProbeClusterId = ProbeClusterIdInvalid
 
@@ -994,6 +996,22 @@ func (s *StreamAllocator) initProbe(goalBps int64) {
 
 	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NackRatioThresholdProbe)
 	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
+
+	s.probeClusterId = s.prober.AddCluster(
+		int(s.committedChannelCapacity+probeRateBps),
+		int(expectedBandwidthUsage),
+		ProbeMinDuration,
+		ProbeMaxDuration,
+	)
+	s.params.Logger.Debugw(
+		"starting probe",
+		"probeClusterId", s.probeClusterId,
+		"current usage", expectedBandwidthUsage,
+		"committed", s.committedChannelCapacity,
+		"lastReceived", s.lastReceivedEstimate,
+		"probeRateBps", probeRateBps,
+		"goalBps", expectedBandwidthUsage+probeRateBps,
+	)
 }
 
 func (s *StreamAllocator) resetProbe() {
@@ -1083,13 +1101,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			probeRateBps = ProbeMinBps
 		}
 
-		s.initProbe(s.getExpectedBandwidthUsage() + probeRateBps)
-		s.probeClusterId = s.prober.AddCluster(
-			int(s.committedChannelCapacity+probeRateBps),
-			int(s.getExpectedBandwidthUsage()),
-			ProbeMinDuration,
-			ProbeMaxDuration,
-		)
+		s.initProbe(probeRateBps)
 		break
 	}
 }
@@ -1504,7 +1516,12 @@ func (c *ChannelObserver) GetTrend() ChannelTrend {
 
 	switch {
 	case estimateDirection == TrendDirectionDownward:
-		c.logger.Debugw("channel observer: estimate is trending downward")
+		c.logger.Debugw(
+			"channel observer: estimate is trending downward",
+			"lowest", c.estimateTrend.GetLowest(),
+			"highest", c.estimateTrend.GetHighest(),
+			"estimates", c.estimateTrend.GetValues(),
+		)
 		return ChannelTrendCongesting
 	case nackRatio > c.nackRatioThreshold:
 		c.logger.Debugw("channel observer: high rate of repeated NACKs", "ratio", nackRatio)
@@ -1596,6 +1613,10 @@ func (t *TrendDetector) GetLowest() int64 {
 
 func (t *TrendDetector) GetHighest() int64 {
 	return t.highestvalue
+}
+
+func (t *TrendDetector) GetValues() []int64 {
+	return t.values
 }
 
 func (t *TrendDetector) GetDirection() TrendDirection {

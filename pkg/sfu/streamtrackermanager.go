@@ -254,6 +254,8 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	layers := s.availableLayers
 	s.lock.Unlock()
 
+	s.logger.Debugw("available layers changed", "layers", layers)
+
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(layers)
 	}
