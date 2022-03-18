@@ -210,6 +210,18 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			flowState.LossStartInclusive = r.highestSN + 1
 			flowState.LossEndExclusive = rtph.SequenceNumber
 		}
+		// LK-DEBUG-REMOVE START
+		if diff > 100 {
+			logger.Debugw(
+				"DEBUG huge difference in sequence number",
+				"diff", diff,
+				"highestSN", r.highestSN,
+				"sn", rtph.SequenceNumber,
+				"highestTime", r.highestTime,
+				"now", packetTime,
+			)
+		}
+		// LK-DEBUG-REMOVE END
 
 		// update gap histogram
 		r.updateGapHistogram(int(diff))
