@@ -188,7 +188,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 
 		// adjust start to account for out-of-order packets before o cycle completes
-		if !r.isCycleCompleted() && (rtph.SequenceNumber-uint16(r.extStartSN) > (1 << 15)) {
+		if !r.isCycleCompleted() && (rtph.SequenceNumber-uint16(r.extStartSN)) > (1<<15) {
 			// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check below
 			r.packetsLost += uint32(uint16(r.extStartSN) - rtph.SequenceNumber)
 			r.extStartSN = uint32(rtph.SequenceNumber)
