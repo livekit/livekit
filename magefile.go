@@ -13,10 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/magefile/mage/mg"
 
@@ -156,7 +154,7 @@ func PublishDocker() error {
 
 // run unit tests, skipping integration
 func Test() error {
-	mg.Deps(generateWire, macULimit)
+	mg.Deps(generateWire, setULimit)
 	cmd := exec.Command("go", "test", "-short", "./...", "-count=1")
 	connectStd(cmd)
 	return cmd.Run()
@@ -164,7 +162,7 @@ func Test() error {
 
 // run all tests including integration
 func TestAll() error {
-	mg.Deps(generateWire, macULimit)
+	mg.Deps(generateWire, setULimit)
 	return run("go test ./... -count=1 -timeout=4m -v")
 }
 
@@ -267,21 +265,6 @@ func getToolPath(name string) (string, error) {
 func connectStd(cmd *exec.Cmd) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-}
-
-func macULimit() error {
-	// raise ulimit if on Mac
-	if runtime.GOOS != "darwin" {
-		return nil
-	}
-	var rLimit syscall.Rlimit
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-	if err != nil {
-		return err
-	}
-	rLimit.Max = 10000
-	rLimit.Cur = 10000
-	return syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 }
 
 // A helper checksum library that generates a fast, non-portable checksum over a directory of files
