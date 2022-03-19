@@ -326,43 +326,36 @@ func (b *Buffer) SetRTT(rtt uint32) {
 }
 
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
-	isRTX := false
-
 	pb, err := b.bucket.AddPacket(pkt)
 	if err != nil {
+		//
+		// Even when erroring, do
+		//  1. state update
+		//  2. TWCC just in case remote side is retransmitting an old packet for probing
+		//
+		// But, do not forward those packets
+		//
+		var rtpPacket rtp.Packet
+		if uerr := rtpPacket.Unmarshal(pkt); uerr == nil {
+			b.updateStreamState(&rtpPacket, arrivalTime)
+			b.processHeaderExtensions(&rtpPacket, arrivalTime)
+		}
+
 		if err != ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
-			return
-		} else {
-			isRTX = true
 		}
+		return
 	}
 
 	var p rtp.Packet
-	if isRTX {
-		err = p.Unmarshal(pkt)
-	} else {
-		err = p.Unmarshal(pb)
-	}
+	err = p.Unmarshal(pb)
 	if err != nil {
 		b.logger.Warnw("error unmarshaling RTP packet", err)
 		return
 	}
 
 	flowState := b.updateStreamState(&p, arrivalTime)
-
 	b.processHeaderExtensions(&p, arrivalTime)
-
-	if isRTX {
-		//
-		// Run RTX packets through
-		//  1. state update - to update stats
-		//  2. TWCC just in case remote side is retransmitting an old packet for probing
-		//
-		// But, do not forward those packets
-		//
-		return
-	}
 
 	ep, temporalLayer := b.getExtPacket(pb, &p, arrivalTime, flowState.IsHighestSN)
 	if ep == nil {

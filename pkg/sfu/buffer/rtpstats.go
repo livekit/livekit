@@ -212,8 +212,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 		// LK-DEBUG-REMOVE START
 		if diff > 100 {
-			logger.Debugw(
-				"DEBUG huge difference in sequence number",
+			logger.Errorw(
+				"DEBUG huge difference in sequence number", nil,
 				"diff", diff,
 				"highestSN", r.highestSN,
 				"sn", rtph.SequenceNumber,
