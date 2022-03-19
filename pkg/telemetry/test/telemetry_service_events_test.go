@@ -151,7 +151,8 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 	clientMetaConnect := &livekit.AnalyticsClientMeta{
 		ClientConnectTime: 420,
 	}
-	fixture.sut.ParticipantActive(context.Background(), livekit.ParticipantID(partSID), clientMetaConnect)
+
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
 	_, eventActive := fixture.analytics.SendEventArgsForCall(1)

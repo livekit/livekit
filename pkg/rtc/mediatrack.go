@@ -171,12 +171,23 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.RemoveAllSubscribers()
 			t.MediaTrackReceiver.Close()
 			t.MediaTrackReceiver.ClearReceiver()
-			t.params.Telemetry.TrackUnpublished(context.Background(), t.PublisherID(), t.ToProto(), uint32(track.SSRC()))
+			t.params.Telemetry.TrackUnpublished(
+				context.Background(),
+				t.PublisherID(),
+				t.PublisherIdentity(),
+				t.ToProto(),
+				uint32(track.SSRC()),
+			)
 		})
 		wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
-		t.params.Telemetry.TrackPublished(context.Background(), t.PublisherID(), t.ToProto())
+		t.params.Telemetry.TrackPublished(
+			context.Background(),
+			t.PublisherID(),
+			t.PublisherIdentity(),
+			t.ToProto(),
+		)
 
 		t.buffer = buff
 

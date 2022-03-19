@@ -10,7 +10,8 @@ import (
 
 func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
-	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
+	sid := utils.NewGuid(utils.ParticipantPrefix)
+	p.IDReturns(livekit.ParticipantID(sid))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
@@ -18,6 +19,11 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.CanPublishReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)
+	p.ToProtoReturns(&livekit.ParticipantInfo{
+		Sid:      sid,
+		Identity: string(identity),
+		State:    livekit.ParticipantInfo_JOINED,
+	})
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.LocalParticipant)

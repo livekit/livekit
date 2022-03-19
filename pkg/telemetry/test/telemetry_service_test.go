@@ -359,7 +359,8 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	// prepare
 	room := &livekit.Room{}
 	partSID := livekit.ParticipantID("part1")
-	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
+	identity := livekit.ParticipantIdentity("part1Identity")
+	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID), Identity: string(identity)}
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil)
 
 	// there should be bytes reported so that stats are sent
@@ -429,7 +430,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	require.True(t, found2)
 
 	// remove 1 track - track stats were flushed above, so no more calls to SendStats
-	fixture.sut.TrackUnpublished(context.Background(), partSID, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
+	fixture.sut.TrackUnpublished(context.Background(), partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
 	fixture.sut.SendAnalytics()
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 }

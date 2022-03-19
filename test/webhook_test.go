@@ -65,6 +65,20 @@ func TestWebhooks(t *testing.T) {
 	require.Equal(t, "c2", joined.Participant.Identity)
 	ts.ClearEvents()
 
+	// track published
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+	testutils.WithTimeout(t, func() string {
+		ev := ts.GetEvent(webhook.EventTrackPublished)
+		if ev == nil {
+			return "did not receive TrackPublished"
+		}
+		require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
+		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
+		return ""
+	})
+	ts.ClearEvents()
+
 	// first participant leaves
 	c1.Stop()
 	testutils.WithTimeout(t, func() string {

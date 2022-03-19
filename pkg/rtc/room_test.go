@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -564,7 +566,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
 		},
-		telemetry.NewTelemetryService(nil, nil),
+		telemetry.NewTelemetryService(webhook.NewNotifier("", "", nil), &telemetryfakes.FakeAnalyticsService{}),
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
