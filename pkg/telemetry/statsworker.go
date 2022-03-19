@@ -63,11 +63,12 @@ type Stats struct {
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
-	ctx           context.Context
-	t             TelemetryReporter
-	roomID        livekit.RoomID
-	roomName      livekit.RoomName
-	participantID livekit.ParticipantID
+	ctx                 context.Context
+	t                   TelemetryReporter
+	roomID              livekit.RoomID
+	roomName            livekit.RoomName
+	participantID       livekit.ParticipantID
+	participantIdentity livekit.ParticipantIdentity
 
 	outgoingPerTrack map[livekit.TrackID]Stats
 	incomingPerTrack map[livekit.TrackID]Stats
@@ -82,13 +83,15 @@ func newStatsWorker(
 	roomID livekit.RoomID,
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
 ) *StatsWorker {
 	s := &StatsWorker{
-		ctx:           ctx,
-		t:             t,
-		roomID:        roomID,
-		roomName:      roomName,
-		participantID: participantID,
+		ctx:                 ctx,
+		t:                   t,
+		roomID:              roomID,
+		roomName:            roomName,
+		participantID:       participantID,
+		participantIdentity: identity,
 
 		outgoingPerTrack: make(map[livekit.TrackID]Stats),
 		incomingPerTrack: make(map[livekit.TrackID]Stats),

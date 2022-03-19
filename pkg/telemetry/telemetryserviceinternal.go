@@ -9,6 +9,8 @@ import (
 	"github.com/livekit/protocol/webhook"
 )
 
+const maxWebhookWorkers = 50
+
 type TelemetryServiceInternal interface {
 	TelemetryService
 	SendAnalytics()
@@ -31,14 +33,13 @@ type telemetryServiceInternal struct {
 func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsService) TelemetryServiceInternal {
 	return &telemetryServiceInternal{
 		notifier:    notifier,
-		webhookPool: workerpool.New(1),
+		webhookPool: workerpool.New(maxWebhookWorkers),
 		workers:     make(map[livekit.ParticipantID]*StatsWorker),
 		analytics:   analytics,
 	}
 }
 
 func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
-
 	direction := prometheus.Incoming
 	if streamType == livekit.StreamType_DOWNSTREAM {
 		direction = prometheus.Outgoing
