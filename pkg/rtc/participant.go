@@ -344,7 +344,10 @@ func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 	p.resSinkValid.Store(sink != nil)
-	p.resSink.Store(sink)
+	if sink != nil {
+		// cannot store nil into atomic.Value
+		p.resSink.Store(sink)
+	}
 }
 
 func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
