@@ -6,7 +6,6 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
-	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -47,24 +46,6 @@ func TestIsReady(t *testing.T) {
 			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
-}
-
-func TestICEStateChange(t *testing.T) {
-	t.Run("onClose gets called when ICE disconnected", func(t *testing.T) {
-		p := newParticipantForTest("test")
-		closeChan := make(chan struct{})
-		p.onClose = func(participant types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
-			close(closeChan)
-		}
-		p.handlePrimaryStateChange(webrtc.PeerConnectionStateFailed)
-
-		select {
-		case <-closeChan:
-			return
-		case <-time.After(time.Millisecond * 10):
-			t.Fatalf("onClose was not called after timeout")
-		}
-	})
 }
 
 func TestTrackPublishing(t *testing.T) {
