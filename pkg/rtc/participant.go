@@ -74,6 +74,8 @@ type ParticipantImpl struct {
 	permission          *livekit.ParticipantPermission
 	state               atomic.Value // livekit.ParticipantInfo_State
 	updateCache         *lru.Cache
+	resSink             atomic.Value // routing.MessageSink
+	resSinkValid        atomic.Bool
 	subscriberAsPrimary bool
 
 	// reliable and unreliable data channels
@@ -145,6 +147,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	p.migrateState.Store(types.MigrateStateInit)
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.SetPermission(perms)
+	p.SetResponseSink(params.Sink)
 
 	var err error
 	// keep last participants and when updates were sent
@@ -195,13 +198,16 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 	})
 
 	primaryPC := p.publisher.pc
+	secondaryPC := p.subscriber.pc
 	// primary connection does not change, canSubscribe can change if permission was updated
 	// after the participant has joined
 	p.subscriberAsPrimary = p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
 	if p.SubscriberAsPrimary() {
 		primaryPC = p.subscriber.pc
+		secondaryPC = p.publisher.pc
 		ordered := true
-		// also create data channels for subs
+		// also create data channels for subs, this is for legacy clients that do not use subscriber
+		// as primary channel
 		p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
 			Ordered: &ordered,
 		})
@@ -222,6 +228,7 @@ func NewParticipant(params ParticipantParams, perms *livekit.ParticipantPermissi
 		p.activeCounter.Add(2)
 	}
 	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
+	secondaryPC.OnConnectionStateChange(p.handleSecondaryStateChange)
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
@@ -325,11 +332,22 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 }
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
-	return p.params.Sink
+	if !p.resSinkValid.Load() {
+		return nil
+	}
+	sink := p.resSink.Load()
+	if s, ok := sink.(routing.MessageSink); ok {
+		return s
+	}
+	return nil
 }
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.params.Sink = sink
+	p.resSinkValid.Store(sink != nil)
+	if sink != nil {
+		// cannot store nil into atomic.Value
+		p.resSink.Store(sink)
+	}
 }
 
 func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
@@ -531,10 +549,8 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
+	p.closeSignalConnection()
 	p.lock.RLock()
-	if p.params.Sink != nil {
-		p.params.Sink.Close()
-	}
 	onClose := p.onClose
 	p.lock.RUnlock()
 	if onClose != nil {
@@ -972,6 +988,15 @@ func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
 	}
 }
 
+// closes signal connection to notify client to resume/reconnect
+func (p *ParticipantImpl) closeSignalConnection() {
+	sink := p.GetResponseSink()
+	if sink != nil {
+		sink.Close()
+		p.SetResponseSink(nil)
+	}
+}
+
 func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager = NewUpTrackManager(UpTrackManagerParams{
 		SID:    p.params.SID,
@@ -1028,7 +1053,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return nil
 	}
-	sink := p.params.Sink
+	sink := p.GetResponseSink()
 	if sink == nil {
 		return nil
 	}
@@ -1138,11 +1163,18 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 			p.SetMigrateState(types.MigrateStateComplete)
 		}
 		p.incActiveCounter()
-	} else if state == webrtc.PeerConnectionStateFailed {
-		// only close when failed, to allow clients opportunity to reconnect
-		go func() {
-			_ = p.Close(false)
-		}()
+	} else if state == webrtc.PeerConnectionStateDisconnected {
+		// clients support resuming of connections when websocket becomes disconnected
+		p.closeSignalConnection()
+	}
+}
+
+// for the secondary peer connection, we still need to handle when they become disconnected
+// instead of allowing them to silently fail.
+func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
+	if state == webrtc.PeerConnectionStateDisconnected {
+		// clients support resuming of connections when websocket becomes disconnected
+		p.closeSignalConnection()
 	}
 }
 
