@@ -186,6 +186,8 @@ type Forwarder struct {
 
 	rtpMunger *RTPMunger
 	vp8Munger *VP8Munger
+
+	isTemporalSupported bool
 }
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
@@ -204,6 +206,7 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	}
 
 	if strings.ToLower(codec.MimeType) == "video/vp8" {
+		f.isTemporalSupported = true
 		f.vp8Munger = NewVP8Munger(logger)
 	}
 
@@ -1255,6 +1258,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// lock to target layer
 				f.logger.Debugw("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				f.currentLayers.spatial = f.targetLayers.spatial
+				if !f.isTemporalSupported {
+					f.currentLayers.temporal = f.targetLayers.temporal
+				}
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
