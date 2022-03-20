@@ -98,7 +98,7 @@ func TestStreamTracker(t *testing.T) {
 			}
 		})
 
-		tracker.maybeSetStopped()
+		tracker.maybeSetStatus(StreamStatusStopped)
 
 		tracker.Observe(2, 0, 0)
 		tracker.detectChanges()
@@ -111,7 +111,7 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Stop()
 	})
 
-	t.Run("does not change to inactive when paused", func(t *testing.T) {
+	t.Run("changes to inactive when paused", func(t *testing.T) {
 		tracker := newStreamTracker(5, 60, 500*time.Millisecond)
 		tracker.Start()
 		tracker.Observe(1, 0, 0)
@@ -125,7 +125,7 @@ func TestStreamTracker(t *testing.T) {
 
 		tracker.SetPaused(true)
 		tracker.detectChanges()
-		require.Equal(t, StreamStatusActive, tracker.Status())
+		require.Equal(t, StreamStatusStopped, tracker.Status())
 
 		tracker.Stop()
 	})
