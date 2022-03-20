@@ -340,10 +340,10 @@ func TestActiveSpeakers(t *testing.T) {
 			updates := getActiveSpeakerUpdates(p)
 			lastUpdate := updates[len(updates)-1]
 			if len(lastUpdate) == 0 {
-				return fmt.Sprintf("did not get updates of speaker going quiet")
+				return "did not get updates of speaker going quiet"
 			}
 			if lastUpdate[0].Active {
-				return fmt.Sprintf("speaker should not have been active")
+				return "speaker should not have been active"
 			}
 			return ""
 		})

@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -23,22 +21,4 @@ func boolValue(s string) bool {
 func IsValidDomain(domain string) bool {
 	domainRegexp := regexp.MustCompile(`^(?i)[a-z0-9-]+(\.[a-z0-9-]+)+\.?$`)
 	return domainRegexp.MatchString(domain)
-}
-
-func permissionFromGrant(claim *auth.VideoGrant) *livekit.ParticipantPermission {
-	p := &livekit.ParticipantPermission{
-		CanSubscribe:   true,
-		CanPublish:     true,
-		CanPublishData: true,
-	}
-	if claim.CanPublish != nil {
-		p.CanPublish = *claim.CanPublish
-	}
-	if claim.CanSubscribe != nil {
-		p.CanSubscribe = *claim.CanSubscribe
-	}
-	if claim.CanPublishData != nil {
-		p.CanPublishData = *claim.CanPublishData
-	}
-	return p
 }
