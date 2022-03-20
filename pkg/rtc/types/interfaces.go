@@ -100,7 +100,7 @@ type LocalParticipant interface {
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
-	SetPermission(permission *livekit.ParticipantPermission)
+	SetPermission(permission *livekit.ParticipantPermission) bool
 	CanPublish() bool
 	CanSubscribe() bool
 	CanPublishData() bool
@@ -144,7 +144,8 @@ type LocalParticipant interface {
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
-	OnMetadataUpdate(callback func(LocalParticipant))
+	// OnParticipantUpdate - metadata or permission is updated
+	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(_callback func(LocalParticipant))

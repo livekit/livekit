@@ -252,10 +252,9 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		CongestionControlConfig: r.config.RTC.CongestionControl,
 		EnabledCodecs:           room.Room.EnabledCodecs,
 		Grants:                  pi.Grants,
-		Hidden:                  pi.Hidden,
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
-	}, pi.Permission)
+	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)
 		return
@@ -472,7 +471,8 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 		if participant == nil {
 			return
 		}
-		pLogger.Debugw("updating participant")
+		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
+			"permission", rm.UpdateParticipant.Permission)
 		if rm.UpdateParticipant.Metadata != "" {
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}

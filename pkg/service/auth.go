@@ -83,7 +83,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 }
 
 func GetGrants(ctx context.Context) *auth.ClaimGrants {
-	claims, ok := ctx.Value(grantsKey{}).(*auth.ClaimGrants)
+	val := ctx.Value(grantsKey{})
+	claims, ok := val.(*auth.ClaimGrants)
 	if !ok {
 		return nil
 	}
