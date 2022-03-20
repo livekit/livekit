@@ -18,22 +18,20 @@ import (
 	"go.uber.org/atomic"
 )
 
-const (
-	ReportDelta = 1e9
-)
-
 type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
 }
 
 type ExtPacket struct {
-	Head      bool
-	Arrival   int64
-	Packet    *rtp.Packet
-	Payload   interface{}
-	KeyFrame  bool
-	RawPacket []byte
+	Head          bool
+	Arrival       int64
+	Packet        *rtp.Packet
+	Payload       interface{}
+	KeyFrame      bool
+	RawPacket     []byte
+	SpatialLayer  int32
+	TemporalLayer int32
 }
 
 // Buffer contains all packets
@@ -49,8 +47,6 @@ type Buffer struct {
 	closeOnce  sync.Once
 	mediaSSRC  uint32
 	clockRate  uint32
-	maxBitrate int64
-	lastReport int64
 	twccExt    uint8
 	audioExt   uint8
 	bound      bool
@@ -66,14 +62,11 @@ type Buffer struct {
 	latestTSForAudioLevel            uint32
 
 	lastPacketRead int
-	bitrate        atomic.Value
-	bitrateHelper  [4]int64
 
 	pliThrottle int64
 
 	rtpStats                    *RTPStats
 	rrSnapshotId                uint32
-	rembSnapshotId              uint32
 	connectionQualitySnapshotId uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
@@ -106,7 +99,6 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		logger:         logger,
 		callbacksQueue: utils.NewOpsQueue(logger),
 	}
-	b.bitrate.Store(make([]int64, len(b.bitrateHelper)))
 	b.extPackets.SetMinCapacity(7)
 	return b
 }
@@ -127,13 +119,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		ClockRate: codec.ClockRate,
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
-	b.rembSnapshotId = b.rtpStats.NewSnapshotId()
 	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.callbacksQueue.Start()
 
 	b.clockRate = codec.ClockRate
-	b.maxBitrate = int64(o.MaxBitRate)
 	b.mime = strings.ToLower(codec.MimeType)
 
 	switch {
@@ -159,6 +149,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			switch fb.Type {
 			case webrtc.TypeRTCPFBGoogREMB:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
+				b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
 				b.remb = true
 			case webrtc.TypeRTCPFBTransportCC:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
@@ -357,15 +348,11 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	flowState := b.updateStreamState(&p, arrivalTime)
 	b.processHeaderExtensions(&p, arrivalTime)
 
-	ep, temporalLayer := b.getExtPacket(pb, &p, arrivalTime, flowState.IsHighestSN)
+	ep := b.getExtPacket(pb, &p, arrivalTime, flowState.IsHighestSN)
 	if ep == nil {
 		return
 	}
 	b.extPackets.PushBack(ep)
-
-	if temporalLayer >= 0 {
-		b.bitrateHelper[temporalLayer] += int64(len(pkt))
-	}
 
 	b.doNACKs()
 
@@ -424,30 +411,32 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64, isHighestSN bool) (*ExtPacket, int32) {
+func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64, isHighestSN bool) *ExtPacket {
 	ep := &ExtPacket{
-		Head:      isHighestSN,
-		Packet:    rtpPacket,
-		Arrival:   arrivalTime,
-		RawPacket: rawPacket,
+		Head:          isHighestSN,
+		Packet:        rtpPacket,
+		Arrival:       arrivalTime,
+		RawPacket:     rawPacket,
+		SpatialLayer:  -1,
+		TemporalLayer: -1,
 	}
 
 	if len(rtpPacket.Payload) == 0 {
 		// padding only packet, nothing else to do
-		return ep, -1
+		return ep
 	}
 
-	temporalLayer := int32(0)
+	ep.TemporalLayer = 0
 	switch b.mime {
 	case "video/vp8":
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
-			return nil, -1
+			return nil
 		}
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
-		temporalLayer = int32(vp8Packet.TID)
+		ep.TemporalLayer = int32(vp8Packet.TID)
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	}
@@ -458,7 +447,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		}
 	}
 
-	return ep, temporalLayer
+	return ep
 }
 
 func (b *Buffer) doNACKs() {
@@ -477,30 +466,6 @@ func (b *Buffer) doNACKs() {
 }
 
 func (b *Buffer) doReports(arrivalTime int64) {
-	timeDiff := arrivalTime - b.lastReport
-	if timeDiff < ReportDelta {
-		return
-	}
-
-	b.lastReport = arrivalTime
-
-	//
-	// As this happens in the data path, if there are no packets received
-	// in an interval, the bitrate will be stuck with the old value.
-	// GetBitrate() method in sfu.Receiver uses the availableLayers
-	// set by stream tracker to report 0 bitrate if a layer is not available.
-	//
-	bitrates, ok := b.bitrate.Load().([]int64)
-	if !ok {
-		bitrates = make([]int64, len(b.bitrateHelper))
-	}
-	for i := 0; i < len(b.bitrateHelper); i++ {
-		br := (8 * b.bitrateHelper[i] * int64(ReportDelta)) / timeDiff
-		bitrates[i] = br
-		b.bitrateHelper[i] = 0
-	}
-	b.bitrate.Store(bitrates)
-
 	// RTCP reports
 	pkts := b.getRTCP()
 	if pkts != nil {
@@ -523,40 +488,6 @@ func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
 		return pkts, numSeqNumsNacked
 	}
 	return nil, 0
-}
-
-func (b *Buffer) buildREMBPacket() *rtcp.ReceiverEstimatedMaximumBitrate {
-	if b.rtpStats == nil {
-		return nil
-	}
-
-	br := b.Bitrate()
-	s := b.rtpStats.SnapshotInfo(b.rembSnapshotId)
-	if s == nil {
-		return nil
-	}
-
-	lostRate := float32(0.0)
-	if s.PacketsExpected != 0 {
-		lostRate = float32(s.PacketsLost) / float32(s.PacketsExpected)
-	}
-	if lostRate < 0.02 {
-		br = int64(float64(br)*1.09) + 2000
-	}
-	if lostRate > 0.1 {
-		br = int64(float64(br) * float64(1-0.5*lostRate))
-	}
-	if br > b.maxBitrate {
-		br = b.maxBitrate
-	}
-	if br < 100000 {
-		br = 100000
-	}
-
-	return &rtcp.ReceiverEstimatedMaximumBitrate{
-		Bitrate: float32(br),
-		SSRCs:   []uint32{b.mediaSSRC},
-	}
 }
 
 func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
@@ -592,10 +523,6 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 		})
 	}
 
-	if b.remb && !b.twcc {
-		pkts = append(pkts, b.buildREMBPacket())
-	}
-
 	return pkts
 }
 
@@ -606,40 +533,6 @@ func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 		return 0, io.EOF
 	}
 	return b.bucket.GetPacket(buff, sn)
-}
-
-// Bitrate returns the current publisher stream bitrate.
-func (b *Buffer) Bitrate() int64 {
-	bitrates, ok := b.bitrate.Load().([]int64)
-	bitrate := int64(0)
-	if ok {
-		for _, b := range bitrates {
-			bitrate += b
-		}
-	}
-	return bitrate
-}
-
-// BitrateTemporalCumulative returns the current publisher stream bitrate temporal layer accumulated with lower temporal layers.
-func (b *Buffer) BitrateTemporalCumulative() []int64 {
-	bitrates, ok := b.bitrate.Load().([]int64)
-	if !ok {
-		return make([]int64, len(b.bitrateHelper))
-	}
-
-	// copy and process
-	brs := make([]int64, len(bitrates))
-	copy(brs, bitrates)
-
-	for i := len(brs) - 1; i >= 1; i-- {
-		if brs[i] != 0 {
-			for j := i - 1; j >= 0; j-- {
-				brs[i] += brs[j]
-			}
-		}
-	}
-
-	return brs
 }
 
 func (b *Buffer) OnTransportWideCC(fn func(sn uint16, timeNS int64, marker bool)) {

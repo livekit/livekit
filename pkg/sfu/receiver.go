@@ -157,6 +157,7 @@ func NewWebRTCReceiver(
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
+	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	if runtime.GOMAXPROCS(0) < w.numProcs {
 		w.numProcs = runtime.GOMAXPROCS(0)
@@ -331,24 +332,20 @@ func (w *WebRTCReceiver) downTrackLayerChange(layers []int32) {
 	}
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
-	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
-	var br Bitrates
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-	for i, buff := range w.buffers {
-		if buff != nil {
-			tls := make([]int64, DefaultMaxLayerTemporal+1)
-			if w.streamTrackerManager.HasSpatialLayer(int32(i)) {
-				tls = buff.BitrateTemporalCumulative()
-			}
+func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
+	w.downTrackMu.RLock()
+	downTracks := w.downTracks
+	w.downTrackMu.RUnlock()
 
-			for j := 0; j < len(br[i]); j++ {
-				br[i][j] = tls[j]
-			}
+	for _, dt := range downTracks {
+		if dt != nil {
+			dt.UpTrackBitrateAvailabilityChange()
 		}
 	}
-	return br
+}
+
+func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
+	return w.streamTrackerManager.GetBitrateTemporalCumulative()
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -498,8 +495,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		if tracker != nil {
-			tracker.Observe(pkt.Packet.SequenceNumber)
+		if tracker != nil && len(pkt.Packet.Payload) > 0 {
+			tracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket))
 		}
 
 		w.downTrackMu.RLock()

@@ -63,7 +63,8 @@ type StreamTrackerManager struct {
 	availableLayers  []int32
 	maxExpectedLayer int32
 
-	onAvailableLayersChanged func(availableLayers []int32)
+	onAvailableLayersChanged     func(availableLayers []int32)
+	onBitrateAvailabilityChanged func()
 }
 
 func NewStreamTrackerManager(logger logger.Logger, source livekit.TrackSource) *StreamTrackerManager {
@@ -76,6 +77,10 @@ func NewStreamTrackerManager(logger logger.Logger, source livekit.TrackSource) *
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers []int32)) {
 	s.onAvailableLayersChanged = f
+}
+
+func (s *StreamTrackerManager) OnBitrateAvailabilityChanged(f func()) {
+	s.onBitrateAvailabilityChanged = f
 }
 
 func (s *StreamTrackerManager) AddTracker(layer int32) {
@@ -111,6 +116,11 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 			}
 		} else {
 			s.addAvailableLayer(layer)
+		}
+	})
+	tracker.OnBitrateAvailable(func() {
+		if s.onBitrateAvailabilityChanged != nil {
+			s.onBitrateAvailabilityChanged()
 		}
 	})
 
@@ -155,9 +165,9 @@ func (s *StreamTrackerManager) GetTracker(layer int32) *StreamTracker {
 }
 
 func (s *StreamTrackerManager) SetPaused(paused bool) {
-	s.lock.Lock()
+	s.lock.RLock()
 	trackers := s.trackers
-	s.lock.Unlock()
+	s.lock.RUnlock()
 
 	for _, tracker := range trackers {
 		if tracker != nil {
@@ -211,6 +221,29 @@ func (s *StreamTrackerManager) IsReducedQuality() bool {
 	return int32(len(s.availableLayers)) < (s.maxExpectedLayer + 1)
 }
 
+func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
+	var br Bitrates
+
+	for i, tracker := range s.trackers {
+		if tracker != nil {
+			var tls [DefaultMaxLayerTemporal + 1]int64
+			if s.hasSpatialLayerLocked(int32(i)) {
+				tls = tracker.BitrateTemporalCumulative()
+			}
+
+			for j := 0; j < len(br[i]); j++ {
+				br[i][j] = tls[j]
+			}
+		}
+	}
+
+	return br
+}
+
 func (s *StreamTrackerManager) GetAvailableLayers() []int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
@@ -254,7 +287,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	layers := s.availableLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed", "layers", layers)
+	s.logger.Debugw("available layers changed - layer seen", "layers", layers)
 
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(layers)
@@ -273,7 +306,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.availableLayers = newLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed", "layers", newLayers)
+	s.logger.Debugw("available layers changed - layer gone", "layers", newLayers)
 
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {

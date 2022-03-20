@@ -26,6 +26,7 @@ import (
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
 	UpTrackLayersChange(availableLayers []int32)
+	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
 	// ID is the globally unique identifier for this Track.
@@ -122,6 +123,9 @@ type DownTrack struct {
 
 	// simulcast layer availability change callback
 	onAvailableLayersChanged func(dt *DownTrack)
+
+	// layer bitrate availability change callback
+	onBitrateAvailabilityChanged func(dt *DownTrack)
 
 	// subscription change callback
 	onSubscriptionChanged func(dt *DownTrack)
@@ -643,6 +647,14 @@ func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	}
 }
 
+func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
+	if d.onBitrateAvailabilityChanged != nil {
+		d.callbacksQueue.Enqueue(func() {
+			d.onBitrateAvailabilityChanged(d)
+		})
+	}
+}
+
 // OnCloseHandler method to be called on remote tracked removed
 func (d *DownTrack) OnCloseHandler(fn func()) {
 	d.onCloseHandler = fn
@@ -669,6 +681,10 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 
 func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack)) {
 	d.onAvailableLayersChanged = fn
+}
+
+func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
+	d.onBitrateAvailabilityChanged = fn
 }
 
 func (d *DownTrack) OnSubscriptionChanged(fn func(dt *DownTrack)) {
@@ -743,10 +759,6 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
-}
-
-func (d *DownTrack) FinalizeAllocate() VideoAllocation {
-	return d.forwarder.FinalizeAllocate(d.receiver.GetBitrateTemporalCumulative())
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
