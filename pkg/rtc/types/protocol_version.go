@@ -2,7 +2,7 @@ package types
 
 type ProtocolVersion int
 
-const DefaultProtocol = 2
+const DefaultProtocol = 6
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
@@ -42,4 +42,8 @@ func (v ProtocolVersion) SupportsSessionMigrate() bool {
 
 func (v ProtocolVersion) SupportsICELite() bool {
 	return v > 5
+}
+
+func (v ProtocolVersion) SupportsUnpublish() bool {
+	return v > 6
 }

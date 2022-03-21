@@ -27,8 +27,8 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 
 	p.SetMetadataStub = func(m string) {
 		var f func(participant types.LocalParticipant)
-		if p.OnMetadataUpdateCallCount() > 0 {
-			f = p.OnMetadataUpdateArgsForCall(p.OnMetadataUpdateCallCount() - 1)
+		if p.OnParticipantUpdateCallCount() > 0 {
+			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
 		}
 		if f != nil {
 			f(p)

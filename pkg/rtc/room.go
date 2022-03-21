@@ -222,7 +222,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
-	participant.OnMetadataUpdate(r.onParticipantMetadataUpdate)
+	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
 	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
@@ -329,7 +329,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
 	p.OnStateChange(nil)
-	p.OnMetadataUpdate(nil)
+	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
 
 	// close participant as well
@@ -423,6 +423,7 @@ func (r *Room) SetParticipantPermission(participant types.LocalParticipant, perm
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -632,7 +633,7 @@ func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 	}
 }
 
-func (r *Room) onParticipantMetadataUpdate(p types.LocalParticipant) {
+func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 	r.broadcastParticipantState(p, false)
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)

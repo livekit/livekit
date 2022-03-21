@@ -36,6 +36,7 @@ type RTCClient struct {
 	subscriber *rtc.PCTransport
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
+	trackSenders       map[string]*webrtc.RTPSender
 	lock               sync.Mutex
 	wsLock             sync.Mutex
 	ctx                context.Context
@@ -89,7 +90,7 @@ type Options struct {
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc?protocol=6")
+	u, err := url.Parse(host + "/rtc?protocol=7")
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +116,7 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	c := &RTCClient{
 		conn:                   conn,
 		localTracks:            make(map[string]webrtc.TrackLocal),
+		trackSenders:           make(map[string]*webrtc.RTPSender),
 		pendingPublishedTracks: make(map[string]*livekit.TrackInfo),
 		subscribedTracks:       make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
 		remoteParticipants:     make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
@@ -329,6 +331,19 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			c.refreshToken = msg.RefreshToken
 			c.lock.Unlock()
+		case *livekit.SignalResponse_TrackUnpublished:
+			sid := msg.TrackUnpublished.TrackSid
+			c.lock.Lock()
+			sender := c.trackSenders[sid]
+			if sender != nil {
+				if err := c.publisher.PeerConnection().RemoveTrack(sender); err != nil {
+					logger.Errorw("Could not unpublish track", err)
+				}
+				c.publisher.Negotiate()
+			}
+			delete(c.trackSenders, sid)
+			delete(c.localTracks, sid)
+			c.lock.Unlock()
 		}
 	}
 }
@@ -477,11 +492,13 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.localTracks[ti.Sid] = track
 
-	if _, err = c.publisher.PeerConnection().AddTrack(track); err != nil {
+	sender, err := c.publisher.PeerConnection().AddTrack(track)
+	if err != nil {
 		return
 	}
+	c.localTracks[ti.Sid] = track
+	c.trackSenders[ti.Sid] = sender
 	c.publisher.Negotiate()
 	writer = NewTrackWriter(c.ctx, track, path)
 

@@ -272,22 +272,19 @@ func TestNewTrack(t *testing.T) {
 
 func TestActiveSpeakers(t *testing.T) {
 	t.Parallel()
-	getActiveSpeakerUpdates := func(p *typesfakes.FakeLocalParticipant) []*livekit.ActiveSpeakerUpdate {
-		var updates []*livekit.ActiveSpeakerUpdate
-		numCalls := p.SendDataPacketCallCount()
+	getActiveSpeakerUpdates := func(p *typesfakes.FakeLocalParticipant) [][]*livekit.SpeakerInfo {
+		var updates [][]*livekit.SpeakerInfo
+		numCalls := p.SendSpeakerUpdateCallCount()
 		for i := 0; i < numCalls; i++ {
-			dp := p.SendDataPacketArgsForCall(i)
-			switch val := dp.Value.(type) {
-			case *livekit.DataPacket_Speaker:
-				updates = append(updates, val.Speaker)
-			}
+			infos := p.SendSpeakerUpdateArgsForCall(i)
+			updates = append(updates, infos)
 		}
 		return updates
 	}
 
 	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: types.DefaultProtocol})
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: 2})
 		defer rm.Close()
 		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
@@ -298,7 +295,7 @@ func TestActiveSpeakers(t *testing.T) {
 		require.Empty(t, updates)
 	})
 
-	t.Run("speakers should be sorted by loudness (protocol 0)", func(t *testing.T) {
+	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close()
 		participants := rm.GetParticipants()
@@ -313,8 +310,8 @@ func TestActiveSpeakers(t *testing.T) {
 		require.Equal(t, string(p2.ID()), speakers[1].Sid)
 	})
 
-	t.Run("participants are getting audio updates (protocol 2)", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol})
+	t.Run("participants are getting audio updates (protocol 3+)", func(t *testing.T) {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3})
 		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
@@ -342,15 +339,18 @@ func TestActiveSpeakers(t *testing.T) {
 		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(p)
 			lastUpdate := updates[len(updates)-1]
-			if len(lastUpdate.Speakers) != 0 {
-				return fmt.Sprintf("expected no speakers, but found %d", len(lastUpdate.Speakers))
+			if len(lastUpdate) == 0 {
+				return "did not get updates of speaker going quiet"
+			}
+			if lastUpdate[0].Active {
+				return "speaker should not have been active"
 			}
 			return ""
 		})
 	})
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
-		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: types.DefaultProtocol, audioSmoothIntervals: 3})
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3, audioSmoothIntervals: 3})
 		defer rm.Close()
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
@@ -363,7 +363,7 @@ func TestActiveSpeakers(t *testing.T) {
 			if len(updates) == 0 {
 				return "no speaker updates received"
 			}
-			lastSpeakers := updates[len(updates)-1].Speakers
+			lastSpeakers := updates[len(updates)-1]
 			if len(lastSpeakers) == 0 {
 				return "no speakers in the update"
 			}
@@ -378,7 +378,7 @@ func TestActiveSpeakers(t *testing.T) {
 			if len(updates) == 0 {
 				return "no updates received"
 			}
-			lastSpeakers := updates[len(updates)-1].Speakers
+			lastSpeakers := updates[len(updates)-1]
 			if len(lastSpeakers) == 0 {
 				return "no speakers found"
 			}
@@ -389,14 +389,13 @@ func TestActiveSpeakers(t *testing.T) {
 		})
 
 		p.GetAudioLevelReturns(127, false)
-
 		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
 			if len(updates) == 0 {
 				return "no speaker updates received"
 			}
-			lastSpeakers := updates[len(updates)-1].Speakers
-			if len(lastSpeakers) == 0 {
+			lastSpeakers := updates[len(updates)-1]
+			if len(lastSpeakers) == 1 && !lastSpeakers[0].Active {
 				return ""
 			}
 			return "speakers didn't go back to zero"

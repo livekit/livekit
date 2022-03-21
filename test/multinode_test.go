@@ -200,3 +200,51 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 		return ""
 	})
 }
+
+func TestMultiNodeRevokePublishPermission(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestMultiNodeRevokePublishPermission")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c2 := createRTCClient("c2", secondServerPort, nil)
+	waitUntilConnected(t, c1, c2)
+
+	// c1 publishes a track for c2
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+
+	testutils.WithTimeout(t, func() string {
+		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+			return "c2 did not receive c1's tracks"
+		}
+		return ""
+	})
+
+	// revoke permission
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err := roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "c1",
+		Permission: &livekit.ParticipantPermission{
+			CanPublish:     false,
+			CanPublishData: true,
+			CanSubscribe:   true,
+		},
+	})
+	require.NoError(t, err)
+
+	// ensure c1 no longer has track published, c2 no longer see track under C1
+	testutils.WithTimeout(t, func() string {
+		if len(c1.GetPublishedTrackIDs()) != 0 {
+			return "c1 did not unpublish tracks"
+		}
+		remoteC1 := c2.GetRemoteParticipant(c1.ID())
+		if remoteC1 == nil {
+			return "c2 doesn't know about c1"
+		}
+		if len(remoteC1.Tracks) != 0 {
+			return "c2 still has c1's tracks"
+		}
+		return ""
+	})
+}

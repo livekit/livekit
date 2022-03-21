@@ -30,12 +30,8 @@ type MessageSource interface {
 type ParticipantInit struct {
 	Identity      livekit.ParticipantIdentity
 	Name          livekit.ParticipantName
-	Metadata      string
 	Reconnect     bool
-	Permission    *livekit.ParticipantPermission
 	AutoSubscribe bool
-	Hidden        bool
-	Recorder      bool
 	Client        *livekit.ClientInfo
 	Grants        *auth.ClaimGrants
 }

@@ -317,9 +317,9 @@ type FakeLocalParticipant struct {
 	onDataPacketArgsForCall []struct {
 		arg1 func(types.LocalParticipant, *livekit.DataPacket)
 	}
-	OnMetadataUpdateStub        func(func(types.LocalParticipant))
-	onMetadataUpdateMutex       sync.RWMutex
-	onMetadataUpdateArgsForCall []struct {
+	OnParticipantUpdateStub        func(func(types.LocalParticipant))
+	onParticipantUpdateMutex       sync.RWMutex
+	onParticipantUpdateArgsForCall []struct {
 		arg1 func(types.LocalParticipant)
 	}
 	OnStateChangeStub        func(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State))
@@ -455,10 +455,16 @@ type FakeLocalParticipant struct {
 	setMigrateStateArgsForCall []struct {
 		arg1 types.MigrateState
 	}
-	SetPermissionStub        func(*livekit.ParticipantPermission)
+	SetPermissionStub        func(*livekit.ParticipantPermission) bool
 	setPermissionMutex       sync.RWMutex
 	setPermissionArgsForCall []struct {
 		arg1 *livekit.ParticipantPermission
+	}
+	setPermissionReturns struct {
+		result1 bool
+	}
+	setPermissionReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	SetPreviousAnswerStub        func(*webrtc.SessionDescription)
 	setPreviousAnswerMutex       sync.RWMutex
@@ -2239,35 +2245,35 @@ func (fake *FakeLocalParticipant) OnDataPacketArgsForCall(i int) func(types.Loca
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnMetadataUpdate(arg1 func(types.LocalParticipant)) {
-	fake.onMetadataUpdateMutex.Lock()
-	fake.onMetadataUpdateArgsForCall = append(fake.onMetadataUpdateArgsForCall, struct {
+func (fake *FakeLocalParticipant) OnParticipantUpdate(arg1 func(types.LocalParticipant)) {
+	fake.onParticipantUpdateMutex.Lock()
+	fake.onParticipantUpdateArgsForCall = append(fake.onParticipantUpdateArgsForCall, struct {
 		arg1 func(types.LocalParticipant)
 	}{arg1})
-	stub := fake.OnMetadataUpdateStub
-	fake.recordInvocation("OnMetadataUpdate", []interface{}{arg1})
-	fake.onMetadataUpdateMutex.Unlock()
+	stub := fake.OnParticipantUpdateStub
+	fake.recordInvocation("OnParticipantUpdate", []interface{}{arg1})
+	fake.onParticipantUpdateMutex.Unlock()
 	if stub != nil {
-		fake.OnMetadataUpdateStub(arg1)
+		fake.OnParticipantUpdateStub(arg1)
 	}
 }
 
-func (fake *FakeLocalParticipant) OnMetadataUpdateCallCount() int {
-	fake.onMetadataUpdateMutex.RLock()
-	defer fake.onMetadataUpdateMutex.RUnlock()
-	return len(fake.onMetadataUpdateArgsForCall)
+func (fake *FakeLocalParticipant) OnParticipantUpdateCallCount() int {
+	fake.onParticipantUpdateMutex.RLock()
+	defer fake.onParticipantUpdateMutex.RUnlock()
+	return len(fake.onParticipantUpdateArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) OnMetadataUpdateCalls(stub func(func(types.LocalParticipant))) {
-	fake.onMetadataUpdateMutex.Lock()
-	defer fake.onMetadataUpdateMutex.Unlock()
-	fake.OnMetadataUpdateStub = stub
+func (fake *FakeLocalParticipant) OnParticipantUpdateCalls(stub func(func(types.LocalParticipant))) {
+	fake.onParticipantUpdateMutex.Lock()
+	defer fake.onParticipantUpdateMutex.Unlock()
+	fake.OnParticipantUpdateStub = stub
 }
 
-func (fake *FakeLocalParticipant) OnMetadataUpdateArgsForCall(i int) func(types.LocalParticipant) {
-	fake.onMetadataUpdateMutex.RLock()
-	defer fake.onMetadataUpdateMutex.RUnlock()
-	argsForCall := fake.onMetadataUpdateArgsForCall[i]
+func (fake *FakeLocalParticipant) OnParticipantUpdateArgsForCall(i int) func(types.LocalParticipant) {
+	fake.onParticipantUpdateMutex.RLock()
+	defer fake.onParticipantUpdateMutex.RUnlock()
+	argsForCall := fake.onParticipantUpdateArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -3043,17 +3049,23 @@ func (fake *FakeLocalParticipant) SetMigrateStateArgsForCall(i int) types.Migrat
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetPermission(arg1 *livekit.ParticipantPermission) {
+func (fake *FakeLocalParticipant) SetPermission(arg1 *livekit.ParticipantPermission) bool {
 	fake.setPermissionMutex.Lock()
+	ret, specificReturn := fake.setPermissionReturnsOnCall[len(fake.setPermissionArgsForCall)]
 	fake.setPermissionArgsForCall = append(fake.setPermissionArgsForCall, struct {
 		arg1 *livekit.ParticipantPermission
 	}{arg1})
 	stub := fake.SetPermissionStub
+	fakeReturns := fake.setPermissionReturns
 	fake.recordInvocation("SetPermission", []interface{}{arg1})
 	fake.setPermissionMutex.Unlock()
 	if stub != nil {
-		fake.SetPermissionStub(arg1)
+		return stub(arg1)
 	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) SetPermissionCallCount() int {
@@ -3062,7 +3074,7 @@ func (fake *FakeLocalParticipant) SetPermissionCallCount() int {
 	return len(fake.setPermissionArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetPermissionCalls(stub func(*livekit.ParticipantPermission)) {
+func (fake *FakeLocalParticipant) SetPermissionCalls(stub func(*livekit.ParticipantPermission) bool) {
 	fake.setPermissionMutex.Lock()
 	defer fake.setPermissionMutex.Unlock()
 	fake.SetPermissionStub = stub
@@ -3073,6 +3085,29 @@ func (fake *FakeLocalParticipant) SetPermissionArgsForCall(i int) *livekit.Parti
 	defer fake.setPermissionMutex.RUnlock()
 	argsForCall := fake.setPermissionArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SetPermissionReturns(result1 bool) {
+	fake.setPermissionMutex.Lock()
+	defer fake.setPermissionMutex.Unlock()
+	fake.SetPermissionStub = nil
+	fake.setPermissionReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SetPermissionReturnsOnCall(i int, result1 bool) {
+	fake.setPermissionMutex.Lock()
+	defer fake.setPermissionMutex.Unlock()
+	fake.SetPermissionStub = nil
+	if fake.setPermissionReturnsOnCall == nil {
+		fake.setPermissionReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.setPermissionReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) SetPreviousAnswer(arg1 *webrtc.SessionDescription) {
@@ -3959,8 +3994,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onCloseMutex.RUnlock()
 	fake.onDataPacketMutex.RLock()
 	defer fake.onDataPacketMutex.RUnlock()
-	fake.onMetadataUpdateMutex.RLock()
-	defer fake.onMetadataUpdateMutex.RUnlock()
+	fake.onParticipantUpdateMutex.RLock()
+	defer fake.onParticipantUpdateMutex.RUnlock()
 	fake.onStateChangeMutex.RLock()
 	defer fake.onStateChangeMutex.RUnlock()
 	fake.onTrackPublishedMutex.RLock()
