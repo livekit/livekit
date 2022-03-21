@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 )
@@ -229,7 +230,10 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		if err != nil {
 			return err
 		}
-		if participant.Metadata != req.Metadata {
+		if req.Metadata != "" && participant.Metadata != req.Metadata {
+			return ErrOperationFailed
+		}
+		if req.Permission != nil && !proto.Equal(req.Permission, participant.Permission) {
 			return ErrOperationFailed
 		}
 		return nil

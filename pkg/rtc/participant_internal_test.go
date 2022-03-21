@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -344,16 +345,23 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	if err != nil {
 		panic(err)
 	}
+	grants := &auth.ClaimGrants{
+		Video: &auth.VideoGrant{},
+	}
+	if opts.permissions != nil {
+		grants.Video.SetCanPublish(opts.permissions.CanPublish)
+		grants.Video.SetCanPublishData(opts.permissions.CanPublishData)
+		grants.Video.SetCanSubscribe(opts.permissions.CanSubscribe)
+	}
 	p, _ := NewParticipant(ParticipantParams{
+		SID:               livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)),
 		Identity:          identity,
 		Config:            rtcConf,
 		Sink:              &routingfakes.FakeMessageSink{},
 		ProtocolVersion:   opts.protocolVersion,
 		PLIThrottleConfig: conf.RTC.PLIThrottle,
-		Grants: &auth.ClaimGrants{
-			Video: &auth.VideoGrant{},
-		},
-	}, opts.permissions)
+		Grants:            grants,
+	})
 	return p
 }
 

@@ -13,7 +13,8 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.11.14
+	// TODO: replace with merged protocol version
+	github.com/livekit/protocol v0.11.15-0.20220320074808-41056286643d
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0

@@ -96,7 +96,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
 		// Make sure grant has CanPublish set,
-		if claims.Video.CanPublish != nil && !*claims.Video.CanPublish {
+		if !claims.Video.GetCanPublish() {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
 		// Make sure by default subscribe is off
@@ -117,9 +117,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Identity:      livekit.ParticipantIdentity(claims.Identity),
 		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
-		Metadata:      claims.Metadata,
-		Hidden:        claims.Video.Hidden,
-		Recorder:      claims.Video.Recorder,
 		Client:        s.ParseClientInfo(r),
 		Grants:        claims,
 	}
@@ -127,7 +124,6 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
 	}
-	pi.Permission = permissionFromGrant(claims.Video)
 
 	return roomName, pi, http.StatusOK, nil
 }

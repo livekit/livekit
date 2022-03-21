@@ -283,6 +283,9 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 
 func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack) {
 	track.RemoveAllSubscribers()
+	u.lock.Lock()
+	delete(u.publishedTracks, track.ID())
+	u.lock.Unlock()
 }
 
 // should be called with lock held
