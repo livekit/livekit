@@ -18,6 +18,10 @@ import (
 	"go.uber.org/atomic"
 )
 
+const (
+	ReportDelta = 1e9
+)
+
 type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
@@ -47,6 +51,7 @@ type Buffer struct {
 	closeOnce  sync.Once
 	mediaSSRC  uint32
 	clockRate  uint32
+	lastReport int64
 	twccExt    uint8
 	audioExt   uint8
 	bound      bool
@@ -124,6 +129,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.callbacksQueue.Start()
 
 	b.clockRate = codec.ClockRate
+	b.lastReport = time.Now().UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 
 	switch {
@@ -466,6 +472,13 @@ func (b *Buffer) doNACKs() {
 }
 
 func (b *Buffer) doReports(arrivalTime int64) {
+	timeDiff := arrivalTime - b.lastReport
+	if timeDiff < ReportDelta {
+		return
+	}
+
+	b.lastReport = arrivalTime
+
 	// RTCP reports
 	pkts := b.getRTCP()
 	if pkts != nil {
