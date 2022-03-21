@@ -157,6 +157,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		return
 	}
 
+	first := false
 	if !r.initialized {
 		r.initialized = true
 
@@ -168,6 +169,8 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		r.extStartSN = uint32(rtph.SequenceNumber)
 		r.cycles = 0
+
+		first = true
 	}
 
 	pktSize := uint64(rtph.MarshalSize() + payloadSize + paddingSize)
@@ -232,7 +235,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 		r.packetsLost += uint32(diff - 1)
 
-		if rtph.SequenceNumber < r.highestSN {
+		if rtph.SequenceNumber < r.highestSN && !first {
 			r.cycles++
 		}
 		r.highestSN = rtph.SequenceNumber
@@ -890,9 +893,11 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) *Snapshot {
 	snapshot := r.snapshots[snapshotId]
 	if snapshot == nil {
 		snapshot = &Snapshot{
-			extStartSN: r.extStartSN,
-			maxJitter:  0.0,
-			maxRtt:     0,
+			extStartSN:          r.extStartSN,
+			maxJitter:           0.0,
+			isJitterOverridden:  false,
+			maxJitterOverridden: 0.0,
+			maxRtt:              0,
 		}
 		r.snapshots[snapshotId] = snapshot
 	}
@@ -901,6 +906,8 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) *Snapshot {
 
 	snapshot.extStartSN = r.getExtHighestSN() + 1
 	snapshot.maxJitter = 0.0
+	snapshot.isJitterOverridden = false
+	snapshot.maxJitterOverridden = 0.0
 	snapshot.maxRtt = 0
 
 	return &toReturn

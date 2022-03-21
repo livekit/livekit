@@ -102,9 +102,10 @@ var (
 )
 
 type VideoAllocationProvisional struct {
-	layers   VideoLayers
-	muted    bool
-	bitrates Bitrates
+	layers          VideoLayers
+	muted           bool
+	bitrates        Bitrates
+	availableLayers []int32
 }
 
 type VideoTransition struct {
@@ -325,6 +326,26 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
 	return 0
 }
 
+func (f *Forwarder) bitrateAvailable(brs Bitrates, availableLayers []int32) bool {
+	neededLayers := 0
+	var bitrateAvailableLayers []int32
+	for _, layer := range f.availableLayers {
+		if layer > f.maxLayers.spatial {
+			continue
+		}
+
+		neededLayers++
+		for t := f.maxLayers.temporal; t >= 0; t-- {
+			if brs[layer][t] != 0 {
+				bitrateAvailableLayers = append(bitrateAvailableLayers, layer)
+				break
+			}
+		}
+	}
+
+	return len(bitrateAvailableLayers) == neededLayers
+}
+
 func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers) int32 {
 	if f.muted {
 		return 0
@@ -378,15 +399,13 @@ func (f *Forwarder) DistanceToDesired() int32 {
 	return f.lastAllocation.distanceToDesired
 }
 
-func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, brs Bitrates) VideoAllocation {
+func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return f.lastAllocation
 	}
-
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
 
 	state := VideoAllocationStateNone
 	change := VideoStreamingChangeNone
@@ -396,110 +415,47 @@ func (f *Forwarder) Allocate(availableChannelCapacity int64, allowPause bool, br
 	switch {
 	case f.muted:
 		state = VideoAllocationStateMuted
-	case optimalBandwidthNeeded == 0:
-		if len(f.availableLayers) == 0 {
-			// feed is dry
-			state = VideoAllocationStateFeedDry
-		} else {
-			// feed bitrate is not yet calculated
-			state = VideoAllocationStateAwaitingMeasurement
+	case len(f.availableLayers) == 0:
+		// feed is dry
+		state = VideoAllocationStateFeedDry
+	case !f.bitrateAvailable(brs, f.availableLayers):
+		// feed bitrate not yet calculated for all available layers
+		state = VideoAllocationStateAwaitingMeasurement
 
-			if availableChannelCapacity == ChannelCapacityInfinity {
-				//
-				// Channel capacity allows a free pass.
-				// So, resume with the highest layer available <= max subscribed layer
-				// If already resumed, move allocation to the highest available layer <= max subscribed layer
-				//
-				targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[len(f.availableLayers)-1])))
-				targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
+		//
+		// Resume with the highest layer available <= max subscribed layer
+		// If already resumed, move allocation to the highest available layer <= max subscribed layer
+		//
+		targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[len(f.availableLayers)-1])))
+		targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
 
-				if f.targetLayers == InvalidLayers {
-					change = VideoStreamingChangeResuming
-				}
-			} else {
-				if !allowPause {
-					// when pause is disallowed, pick the lowest available
-					targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[0])))
-					targetLayers.temporal = int32(math.Min(0, float64(f.maxLayers.temporal)))
-
-					if f.targetLayers == InvalidLayers {
-						change = VideoStreamingChangeResuming
-					}
-				} else {
-					// disable forwarding as it is not known how big this stream is
-					// and if it will fit in the available channel capacity
-					state = VideoAllocationStateDeficient
-
-					if f.targetLayers != InvalidLayers {
-						change = VideoStreamingChangePausing
-					}
-				}
-			}
+		if f.targetLayers == InvalidLayers {
+			change = VideoStreamingChangeResuming
 		}
 	default:
-		// allocate best layer that fits
+		// allocate best layer available
 		for s := f.maxLayers.spatial; s >= 0; s-- {
 			for t := f.maxLayers.temporal; t >= 0; t-- {
 				if brs[s][t] == 0 {
 					continue
 				}
 
-				if brs[s][t] <= availableChannelCapacity {
-					targetLayers = VideoLayers{
-						spatial:  s,
-						temporal: t,
-					}
-
-					bandwidthRequested = brs[s][t]
-					if bandwidthRequested == optimalBandwidthNeeded {
-						state = VideoAllocationStateOptimal
-					} else {
-						state = VideoAllocationStateDeficient
-					}
-
-					if f.targetLayers == InvalidLayers {
-						change = VideoStreamingChangeResuming
-					}
-					break
+				targetLayers = VideoLayers{
+					spatial:  s,
+					temporal: t,
 				}
-			}
-			if bandwidthRequested != 0 {
+
+				bandwidthRequested = brs[s][t]
+				state = VideoAllocationStateOptimal
+
+				if f.targetLayers == InvalidLayers {
+					change = VideoStreamingChangeResuming
+				}
 				break
 			}
-		}
 
-		if bandwidthRequested == 0 {
-			state = VideoAllocationStateDeficient
-
-			if !allowPause {
-				// find the lowest layer to prevent pausing
-				for s := int32(0); s <= f.maxLayers.spatial; s++ {
-					for t := int32(0); t <= f.maxLayers.temporal; t++ {
-						if brs[s][t] == 0 {
-							continue
-						}
-
-						targetLayers = VideoLayers{
-							spatial:  s,
-							temporal: t,
-						}
-
-						bandwidthRequested = brs[s][t]
-
-						if f.targetLayers == InvalidLayers {
-							change = VideoStreamingChangeResuming
-						}
-						break
-					}
-
-					if bandwidthRequested != 0 {
-						break
-					}
-				}
-			} else {
-				if f.targetLayers != InvalidLayers {
-					change = VideoStreamingChangePausing
-				}
+			if bandwidthRequested != 0 {
+				break
 			}
 		}
 	}
@@ -527,9 +483,10 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 	defer f.lock.Unlock()
 
 	f.provisional = &VideoAllocationProvisional{
-		layers:   InvalidLayers,
-		muted:    f.muted,
-		bitrates: bitrates,
+		layers:          InvalidLayers,
+		muted:           f.muted,
+		bitrates:        bitrates,
+		availableLayers: f.availableLayers,
 	}
 }
 
@@ -586,7 +543,7 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	//   4. If not currently streaming, find the minimum layers that can unpause the stream.
 	//
 	// To summarize, co-operative streaming means
-	//   - Try to keep tracks streaming, i.e. no pauses even if not at optimal layers
+	//   - Try to keep tracks streaming, i.e. no pauses at the expense of some streams not being at optimal layers
 	//   - Do not make an upgrade as it could affect other tracks
 	//
 	f.lock.Lock()
@@ -645,7 +602,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	}
 
 	// currently not streaming, find minimal
-	// NOTE: a layer in feed could have paused and there could be other options than going back to minimal, but the cooperative scheme knocks things back to minimal
+	// NOTE: a layer in feed could have paused and there could be other options than going back to minimal,
+	// but the cooperative scheme knocks things back to minimal
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
 	for s := int32(0); s <= f.maxLayers.spatial; s++ {
@@ -703,7 +661,7 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 		}
 	}
 
-	maxReachableLayerTemporal := int32(-1)
+	maxReachableLayerTemporal := InvalidLayerTemporal
 	for t := f.maxLayers.temporal; t >= 0; t-- {
 		for s := f.maxLayers.spatial; s >= 0; s-- {
 			if f.provisional.bitrates[s][t] != 0 {
@@ -711,18 +669,19 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 				break
 			}
 		}
-		if maxReachableLayerTemporal != -1 {
+		if maxReachableLayerTemporal != InvalidLayerTemporal {
 			break
 		}
 	}
 
-	if maxReachableLayerTemporal == -1 {
+	if maxReachableLayerTemporal == InvalidLayerTemporal {
 		// feed has gone dry,
 		f.provisional.layers = InvalidLayers
 		return VideoTransition{
 			from:           f.targetLayers,
 			to:             InvalidLayers,
 			bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+			// LK-TODO should this take current bitrate of current target layers?
 		}
 	}
 
@@ -770,8 +729,6 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(f.provisional.bitrates)
-
 	state := VideoAllocationStateNone
 	change := VideoStreamingChangeNone
 	bandwidthRequested := int64(0)
@@ -779,21 +736,9 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	switch {
 	case f.provisional.muted:
 		state = VideoAllocationStateMuted
-	case optimalBandwidthNeeded == 0:
-		if len(f.availableLayers) == 0 {
-			// feed is dry
-			state = VideoAllocationStateFeedDry
-		} else {
-			// feed bitrate is not yet calculated
-			state = VideoAllocationStateDeficient
-
-			// disable forwarding as it is not known how big this stream is
-			// and if it will fit in the available channel capacity
-
-			if f.targetLayers != InvalidLayers {
-				change = VideoStreamingChangePausing
-			}
-		}
+	case len(f.provisional.availableLayers) == 0:
+		// feed is dry
+		state = VideoAllocationStateFeedDry
 	case f.provisional.layers == InvalidLayers:
 		state = VideoAllocationStateDeficient
 
@@ -802,7 +747,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		}
 	default:
 		bandwidthRequested = f.provisional.bitrates[f.provisional.layers.spatial][f.provisional.layers.temporal]
-		if bandwidthRequested == optimalBandwidthNeeded {
+		if bandwidthRequested == f.getOptimalBandwidthNeeded(f.provisional.bitrates) {
 			state = VideoAllocationStateOptimal
 		} else {
 			state = VideoAllocationStateDeficient
@@ -818,7 +763,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		change:             change,
 		bandwidthRequested: bandwidthRequested,
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.availableLayers,
+		availableLayers:    f.provisional.availableLayers,
 		bitrates:           f.provisional.bitrates,
 		targetLayers:       f.provisional.layers,
 		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.layers),
@@ -826,76 +771,6 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 	f.targetLayers = f.lastAllocation.targetLayers
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
-	}
-
-	return f.lastAllocation
-}
-
-func (f *Forwarder) FinalizeAllocate(brs Bitrates) VideoAllocation {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
-	if f.lastAllocation.state != VideoAllocationStateAwaitingMeasurement {
-		f.lastAllocation.change = VideoStreamingChangeNone
-		return f.lastAllocation
-	}
-
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	if optimalBandwidthNeeded == 0 {
-		if len(f.availableLayers) == 0 {
-			// feed dry
-			f.lastAllocation = VideoAllocation{
-				state:              VideoAllocationStateFeedDry,
-				change:             VideoStreamingChangeNone,
-				bandwidthRequested: 0,
-				bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
-				availableLayers:    f.availableLayers,
-				bitrates:           brs,
-				targetLayers:       InvalidLayers,
-				distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
-			}
-			f.targetLayers = f.lastAllocation.targetLayers
-			if f.targetLayers == InvalidLayers {
-				f.resyncLocked()
-			}
-		}
-
-		// still awaiting measurement
-		return f.lastAllocation
-	}
-
-	// finalize using optimal layer
-	for s := f.maxLayers.spatial; s >= 0; s-- {
-		for t := f.maxLayers.temporal; t >= 0; t-- {
-			bandwidthRequested := brs[s][t]
-			if bandwidthRequested == 0 {
-				continue
-			}
-
-			state := VideoAllocationStateOptimal
-			if bandwidthRequested != optimalBandwidthNeeded {
-				state = VideoAllocationStateDeficient
-			}
-
-			change := VideoStreamingChangeNone
-			if f.targetLayers == InvalidLayers {
-				change = VideoStreamingChangeResuming
-			}
-
-			targetLayers := VideoLayers{spatial: s, temporal: t}
-			f.lastAllocation = VideoAllocation{
-				state:              state,
-				change:             change,
-				bandwidthRequested: bandwidthRequested,
-				bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-				availableLayers:    f.availableLayers,
-				bitrates:           brs,
-				targetLayers:       targetLayers,
-				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
-			}
-			f.targetLayers = f.lastAllocation.targetLayers
-			return f.lastAllocation
-		}
 	}
 
 	return f.lastAllocation
@@ -923,11 +798,6 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 	}
 
 	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	if optimalBandwidthNeeded == 0 {
-		// either feed is dry or awaiting measurement, don't hunt for higher
-		f.lastAllocation.change = VideoStreamingChangeNone
-		return f.lastAllocation, false
-	}
 
 	alreadyAllocated := int64(0)
 	if f.targetLayers != InvalidLayers {
@@ -1031,12 +901,6 @@ func (f *Forwarder) GetNextHigherTransition(brs Bitrates) (VideoTransition, bool
 		return VideoTransition{}, false
 	}
 
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-	if optimalBandwidthNeeded == 0 {
-		// either feed is dry or awaiting measurement, don't hunt for higher
-		return VideoTransition{}, false
-	}
-
 	alreadyAllocated := int64(0)
 	if f.targetLayers != InvalidLayers {
 		alreadyAllocated = brs[f.targetLayers.spatial][f.targetLayers.temporal]
@@ -1085,27 +949,17 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
-
 	state := VideoAllocationStateNone
 	change := VideoStreamingChangeNone
 
 	switch {
 	case f.muted:
 		state = VideoAllocationStateMuted
-	case optimalBandwidthNeeded == 0:
-		if len(f.availableLayers) == 0 {
-			// feed is dry
-			state = VideoAllocationStateFeedDry
-		} else {
-			// feed bitrate is not yet calculated
-			state = VideoAllocationStateDeficient
-
-			if f.targetLayers != InvalidLayers {
-				change = VideoStreamingChangePausing
-			}
-		}
+	case len(f.availableLayers) == 0:
+		// feed is dry
+		state = VideoAllocationStateFeedDry
 	default:
+		// feed bitrate is not yet calculated or pausing due to lack of bandwidth
 		state = VideoAllocationStateDeficient
 
 		if f.targetLayers != InvalidLayers {

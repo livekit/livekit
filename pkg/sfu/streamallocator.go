@@ -72,6 +72,7 @@ const (
 	SignalEstimate
 	SignalTargetBitrate
 	SignalAvailableLayersChange
+	SignalBitrateAvailabilityChange
 	SignalSubscriptionChange
 	SignalSubscribedLayersChange
 	SignalPeriodicPing
@@ -91,6 +92,10 @@ func (s Signal) String() string {
 		return "ESTIMATE"
 	case SignalTargetBitrate:
 		return "TARGET_BITRATE"
+	case SignalAvailableLayersChange:
+		return "AVAILABLE_LAYERS_CHANGE"
+	case SignalBitrateAvailabilityChange:
+		return "BITRATE_AVAILABILITY_CHANGE"
 	case SignalSubscriptionChange:
 		return "SUBSCRIPTION_CHANGE"
 	case SignalSubscribedLayersChange:
@@ -220,6 +225,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 		downTrack.OnREMB(s.onREMB)
 		downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
 		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
+		downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
 		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
 		downTrack.OnPacketSentUnsafe(s.onPacketSent)
@@ -276,6 +282,14 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack) {
 	s.postEvent(Event{
 		Signal:    SignalAvailableLayersChange,
+		DownTrack: downTrack,
+	})
+}
+
+// called when feeding track's bitrate measurement of any layer is available
+func (s *StreamAllocator) onBitrateAvailabilityChanged(downTrack *DownTrack) {
+	s.postEvent(Event{
+		Signal:    SignalBitrateAvailabilityChange,
 		DownTrack: downTrack,
 	})
 }
@@ -364,6 +378,8 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 		s.handleSignalTargetBitrate(event)
 	case SignalAvailableLayersChange:
 		s.handleSignalAvailableLayersChange(event)
+	case SignalBitrateAvailabilityChange:
+		s.handleSignalBitrateAvailabilityChange(event)
 	case SignalSubscriptionChange:
 		s.handleSignalSubscriptionChange(event)
 	case SignalSubscribedLayersChange:
@@ -510,6 +526,15 @@ func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
 	s.allocateTrack(track)
 }
 
+func (s *StreamAllocator) handleSignalBitrateAvailabilityChange(event *Event) {
+	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
+	if !ok {
+		return
+	}
+
+	s.allocateTrack(track)
+}
+
 func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
 	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
 	if !ok {
@@ -536,9 +561,6 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	if s.isInProbe() && !s.probeEndTime.IsZero() && time.Now().After(s.probeEndTime) {
 		s.finalizeProbe()
 	}
-
-	// catch up on all optimistically streamed tracks
-	s.finalizeTracks()
 
 	// probe if necessary and timing is right
 	if s.state == StateDeficient {
@@ -704,7 +726,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
+		allocation := track.AllocateOptimal()
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -885,7 +907,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
+		allocation := track.AllocateOptimal()
 		update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -951,14 +973,6 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 			s.params.Logger.Errorw("could not send streamed tracks update", err)
 		}
 	}
-}
-
-func (s *StreamAllocator) finalizeTracks() {
-	for _, t := range s.videoTracks {
-		t.FinalizeAllocate()
-	}
-
-	s.adjustState()
 }
 
 func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
@@ -1277,8 +1291,8 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	return t.downTrack.Allocate(availableChannelCapacity, allowPause)
+func (t *Track) AllocateOptimal() VideoAllocation {
+	return t.downTrack.AllocateOptimal()
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {
@@ -1307,10 +1321,6 @@ func (t *Track) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocat
 
 func (t *Track) GetNextHigherTransition() (VideoTransition, bool) {
 	return t.downTrack.GetNextHigherTransition()
-}
-
-func (t *Track) FinalizeAllocate() {
-	t.downTrack.FinalizeAllocate()
 }
 
 func (t *Track) Pause() VideoAllocation {

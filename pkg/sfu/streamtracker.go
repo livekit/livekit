@@ -27,6 +27,10 @@ const (
 	StreamStatusActive  StreamStatus = 1
 )
 
+const (
+	bitrateReportInterval = 1 * time.Second
+)
+
 type StreamTrackerParams struct {
 	// number of samples needed per cycle
 	SamplesRequired uint32
@@ -44,17 +48,18 @@ type StreamTrackerParams struct {
 type StreamTracker struct {
 	params StreamTrackerParams
 
-	onStatusChanged func(status StreamStatus)
+	onStatusChanged    func(status StreamStatus)
+	onBitrateAvailable func()
 
-	paused         atomic.Bool
-	countSinceLast atomic.Uint32 // number of packets received since last check
+	lock sync.RWMutex
+
+	paused         bool
+	countSinceLast uint32 // number of packets received since last check
 	generation     atomic.Uint32
 
-	initMu      sync.Mutex
 	initialized bool
 
-	statusMu sync.RWMutex
-	status   StreamStatus
+	status StreamStatus
 
 	// only access within detectWorker
 	cycleCount uint32
@@ -62,9 +67,13 @@ type StreamTracker struct {
 	// only access by the same goroutine as Observe
 	lastSN uint16
 
+	lastBitrateReport time.Time
+	bytesForBitrate   [4]int64
+	bitrate           [4]int64
+
 	callbacksQueue *utils.OpsQueue
 
-	isStopped atomic.Bool
+	isStopped bool
 }
 
 func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
@@ -80,22 +89,28 @@ func (s *StreamTracker) OnStatusChanged(f func(status StreamStatus)) {
 	s.onStatusChanged = f
 }
 
+func (s *StreamTracker) OnBitrateAvailable(f func()) {
+	s.onBitrateAvailable = f
+}
+
 func (s *StreamTracker) Status() StreamStatus {
-	s.statusMu.RLock()
-	defer s.statusMu.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	return s.status
 }
 
-func (s *StreamTracker) maybeSetStatus(status StreamStatus) {
+func (s *StreamTracker) maybeSetStatus(status StreamStatus) (StreamStatus, bool) {
 	changed := false
-	s.statusMu.Lock()
 	if s.status != status {
 		s.status = status
 		changed = true
 	}
-	s.statusMu.Unlock()
 
+	return status, changed
+}
+
+func (s *StreamTracker) maybeNotifyStatus(status StreamStatus, changed bool) {
 	if changed && s.onStatusChanged != nil {
 		s.callbacksQueue.Enqueue(func() {
 			s.onStatusChanged(status)
@@ -103,16 +118,12 @@ func (s *StreamTracker) maybeSetStatus(status StreamStatus) {
 	}
 }
 
-func (s *StreamTracker) maybeSetActive() {
-	s.maybeSetStatus(StreamStatusActive)
-}
-
-func (s *StreamTracker) maybeSetStopped() {
-	s.maybeSetStatus(StreamStatusStopped)
-}
-
 func (s *StreamTracker) init() {
-	s.maybeSetActive()
+	s.lock.Lock()
+	status, changed := s.maybeSetStatus(StreamStatusActive)
+	s.lock.Unlock()
+
+	s.maybeNotifyStatus(status, changed)
 
 	go s.detectWorker(s.generation.Load())
 }
@@ -122,9 +133,13 @@ func (s *StreamTracker) Start() {
 }
 
 func (s *StreamTracker) Stop() {
-	if s.isStopped.Swap(true) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.isStopped {
 		return
 	}
+	s.isStopped = true
 
 	s.callbacksQueue.Stop()
 
@@ -133,90 +148,175 @@ func (s *StreamTracker) Stop() {
 }
 
 func (s *StreamTracker) Reset() {
-	if s.isStopped.Load() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.isStopped {
 		return
 	}
 
+	s.resetLocked()
+}
+
+func (s *StreamTracker) resetLocked() {
 	// bump generation to trigger exit of current worker
 	s.generation.Inc()
 
-	s.countSinceLast.Store(0)
+	s.countSinceLast = 0
 	s.cycleCount = 0
 
-	s.initMu.Lock()
 	s.initialized = false
-	s.initMu.Unlock()
 
-	s.statusMu.Lock()
 	s.status = StreamStatusStopped
-	s.statusMu.Unlock()
+
+	for i := 0; i < len(s.bytesForBitrate); i++ {
+		s.bytesForBitrate[i] = 0
+	}
+	for i := 0; i < len(s.bitrate); i++ {
+		s.bitrate[i] = 0
+	}
 }
 
 func (s *StreamTracker) SetPaused(paused bool) {
-	s.paused.Store(paused)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.paused = paused
+
+	if !paused {
+		s.resetLocked()
+	}
 }
 
 // Observe a packet that's received
-func (s *StreamTracker) Observe(sn uint16) {
-	if s.paused.Load() {
+func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.isStopped || s.paused {
 		return
 	}
 
-	s.initMu.Lock()
 	if !s.initialized {
 		// first packet
 		s.initialized = true
-		s.initMu.Unlock()
 
 		s.lastSN = sn
-		s.countSinceLast.Inc()
+		s.countSinceLast = 1
+
+		s.lastBitrateReport = time.Now()
+		if temporalLayer >= 0 {
+			s.bytesForBitrate[temporalLayer] += int64(pktSize)
+		}
 
 		// declare stream active and start the detection worker
 		go s.init()
 
 		return
 	}
-	s.initMu.Unlock()
 
 	// ignore out-of-order SNs
 	if (sn - s.lastSN) > uint16(1<<15) {
 		return
 	}
 	s.lastSN = sn
-	s.countSinceLast.Inc()
+	s.countSinceLast++
+
+	if temporalLayer >= 0 {
+		s.bytesForBitrate[temporalLayer] += int64(pktSize)
+	}
+}
+
+// BitrateTemporalCumulative returns the current stream bitrate temporal layer accumulated with lower temporal layers.
+func (s *StreamTracker) BitrateTemporalCumulative() [4]int64 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	// copy and process
+	var brs [4]int64
+	for i := 0; i < len(s.bitrate); i++ {
+		brs[i] = s.bitrate[i]
+	}
+
+	for i := len(brs) - 1; i >= 1; i-- {
+		if brs[i] != 0 {
+			for j := i - 1; j >= 0; j-- {
+				brs[i] += brs[j]
+			}
+		}
+	}
+
+	return brs
 }
 
 func (s *StreamTracker) detectWorker(generation uint32) {
 	ticker := time.NewTicker(s.params.CycleDuration)
+	tickerBitrate := time.NewTicker(bitrateReportInterval / 2)
 
 	for {
-		<-ticker.C
-		if generation != s.generation.Load() {
-			return
-		}
+		select {
+		case <-ticker.C:
+			if generation != s.generation.Load() {
+				return
+			}
+			s.detectChanges()
 
-		s.detectChanges()
+		case <-tickerBitrate.C:
+			if generation != s.generation.Load() {
+				return
+			}
+			s.bitrateReport()
+		}
 	}
 }
 
 func (s *StreamTracker) detectChanges() {
-	if s.paused.Load() {
-		return
-	}
-
-	if s.countSinceLast.Load() >= s.params.SamplesRequired {
-		s.cycleCount += 1
+	s.lock.Lock()
+	if s.countSinceLast >= s.params.SamplesRequired {
+		s.cycleCount++
 	} else {
 		s.cycleCount = 0
 	}
 
+	status := s.status
+	changed := false
 	if s.cycleCount == 0 {
 		// flip to stopped
-		s.maybeSetStopped()
+		status, changed = s.maybeSetStatus(StreamStatusStopped)
 	} else if s.cycleCount >= s.params.CyclesRequired {
 		// flip to active
-		s.maybeSetActive()
+		status, changed = s.maybeSetStatus(StreamStatusActive)
 	}
 
-	s.countSinceLast.Store(0)
+	s.countSinceLast = 0
+	s.lock.Unlock()
+
+	s.maybeNotifyStatus(status, changed)
+}
+
+func (s *StreamTracker) bitrateReport() {
+	// run this even if paused to drain out bitrate if there are no packets coming in
+	s.lock.Lock()
+	if time.Since(s.lastBitrateReport) < bitrateReportInterval {
+		s.lock.Unlock()
+		return
+	}
+
+	now := time.Now()
+	diff := now.Sub(s.lastBitrateReport)
+	s.lastBitrateReport = now
+
+	aggLast := int64(0)
+	aggNow := int64(0)
+	for i := 0; i < len(s.bytesForBitrate); i++ {
+		aggLast += s.bitrate[i]
+		s.bitrate[i] = int64(float64(s.bytesForBitrate[i]*8) / diff.Seconds())
+		aggNow += s.bitrate[i]
+		s.bytesForBitrate[i] = 0
+	}
+	s.lock.Unlock()
+
+	if aggLast == 0 && aggNow > 0 && s.onBitrateAvailable != nil {
+		s.onBitrateAvailable()
+	}
 }
