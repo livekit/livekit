@@ -726,7 +726,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
+		allocation := track.AllocateOptimal()
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -907,7 +907,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.Allocate(ChannelCapacityInfinity, s.params.Config.AllowPause)
+		allocation := track.AllocateOptimal()
 		update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -1291,8 +1291,8 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	return t.downTrack.Allocate(availableChannelCapacity, allowPause)
+func (t *Track) AllocateOptimal() VideoAllocation {
+	return t.downTrack.AllocateOptimal()
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {

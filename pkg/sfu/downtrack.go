@@ -727,9 +727,9 @@ func (d *DownTrack) DistanceToDesired() int32 {
 	return d.forwarder.DistanceToDesired()
 }
 
-func (d *DownTrack) Allocate(availableChannelCapacity int64, allowPause bool) VideoAllocation {
-	allocation := d.forwarder.Allocate(availableChannelCapacity, allowPause, d.receiver.GetBitrateTemporalCumulative())
-	d.logger.Debugw("stream: allocation", "channel", availableChannelCapacity, "allocation", allocation)
+func (d *DownTrack) AllocateOptimal() VideoAllocation {
+	allocation := d.forwarder.AllocateOptimal(d.receiver.GetBitrateTemporalCumulative())
+	d.logger.Debugw("stream: allocation optimal available", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }

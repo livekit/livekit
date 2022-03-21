@@ -183,7 +183,7 @@ func TestForwarderAllocate(t *testing.T) {
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
-	result := f.Allocate(ChannelCapacityInfinity, true, bitrates)
+	result := f.AllocateOptimal(bitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -201,7 +201,7 @@ func TestForwarderAllocate(t *testing.T) {
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  0,
 	}
-	result = f.Allocate(ChannelCapacityInfinity, true, emptyBitrates)
+	result = f.AllocateOptimal(emptyBitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 
@@ -223,51 +223,13 @@ func TestForwarderAllocate(t *testing.T) {
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
 	}
-	result = f.Allocate(ChannelCapacityInfinity, true, emptyBitrates)
+	result = f.AllocateOptimal(emptyBitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 
-	// while awaiting measurement, less than infinite channel capacity should pause the stream when pause is allowed
-	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangePausing,
-		bandwidthRequested: 0,
-		bandwidthDelta:     0,
-		availableLayers:    []int32{0},
-		bitrates:           emptyBitrates,
-		targetLayers:       InvalidLayers,
-		distanceToDesired:  0,
-	}
-	result = f.Allocate(ChannelCapacityInfinity-1, true, emptyBitrates)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, InvalidLayers, f.TargetLayers())
-
-	// while awaiting measurement, less than infinite channel capacity should not pause the stream when pause is not allowed
-	expectedTargetLayers = VideoLayers{
-		spatial:  0,
-		temporal: 0,
-	}
-	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateAwaitingMeasurement,
-		change:             VideoStreamingChangeResuming,
-		bandwidthRequested: 0,
-		bandwidthDelta:     0,
-		availableLayers:    []int32{0},
-		bitrates:           emptyBitrates,
-		targetLayers:       expectedTargetLayers,
-		distanceToDesired:  0,
-	}
-	result = f.Allocate(ChannelCapacityInfinity-1, false, emptyBitrates)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, expectedTargetLayers, f.TargetLayers())
-
-	// allocate using bitrates and less than infinite channel capacity, but enough for optimal
+	// allocate using bitrates, allocation should choose optimal
 	expectedTargetLayers = VideoLayers{
 		spatial:  2,
 		temporal: 1,
@@ -282,66 +244,7 @@ func TestForwarderAllocate(t *testing.T) {
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
 	}
-	result = f.Allocate(ChannelCapacityInfinity-1, true, bitrates)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, expectedTargetLayers, f.TargetLayers())
-
-	// give it a bitrate that is less than optimal
-	expectedTargetLayers = VideoLayers{
-		spatial:  1,
-		temporal: 3,
-	}
-	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeNone,
-		bandwidthRequested: bitrates[1][3],
-		bandwidthDelta:     bitrates[1][3] - bitrates[2][1],
-		availableLayers:    []int32{0},
-		bitrates:           bitrates,
-		targetLayers:       expectedTargetLayers,
-		distanceToDesired:  1,
-	}
-	result = f.Allocate(bitrates[2][1]-1, true, bitrates)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, expectedTargetLayers, f.TargetLayers())
-
-	// give it a bitrate that cannot fit any layer
-	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangePausing,
-		bandwidthRequested: 0,
-		bandwidthDelta:     0 - bitrates[1][3],
-		availableLayers:    []int32{0},
-		bitrates:           bitrates,
-		targetLayers:       InvalidLayers,
-		distanceToDesired:  5,
-	}
-	result = f.Allocate(bitrates[0][0]-1, true, bitrates)
-	require.Equal(t, expectedResult, result)
-	require.Equal(t, expectedResult, f.lastAllocation)
-	require.Equal(t, InvalidLayers, f.CurrentLayers())
-	require.Equal(t, InvalidLayers, f.TargetLayers())
-
-	// give it a bitrate that cannot fit any layer, but disallow pause, should allocate the lowest available layer
-	expectedTargetLayers = VideoLayers{
-		spatial:  0,
-		temporal: 0,
-	}
-	expectedResult = VideoAllocation{
-		state:              VideoAllocationStateDeficient,
-		change:             VideoStreamingChangeResuming,
-		bandwidthRequested: bitrates[0][0],
-		bandwidthDelta:     bitrates[0][0],
-		availableLayers:    []int32{0},
-		bitrates:           bitrates,
-		targetLayers:       expectedTargetLayers,
-		distanceToDesired:  4,
-	}
-	result = f.Allocate(bitrates[0][0]-1, false, bitrates)
+	result = f.AllocateOptimal(bitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
