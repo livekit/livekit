@@ -641,7 +641,6 @@ func (s *StreamAllocator) adjustState() {
 }
 
 func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
-	s.params.Logger.Debugw("new estimate", "bps", receivedEstimate) // REMOVE
 	s.lastReceivedEstimate = receivedEstimate
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
@@ -1575,7 +1574,6 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 }
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
-	c.params.Logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks) // REMOVE
 	if c.params.NackWindowDuration != 0 && time.Since(c.nackWindowStartTime) > c.params.NackWindowDuration {
 		c.nackWindowStartTime = time.Now()
 		c.packets = 0
