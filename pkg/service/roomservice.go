@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 )

@@ -21,7 +21,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
