@@ -109,7 +109,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 					break
 				}
 			}
-			if !exempt {
+			if !exempt || layer > s.maxExpectedLayer {
 				s.removeAvailableLayer(layer)
 			} else {
 				s.logger.Debugw("not removing exempt layer", "layer", layer)
