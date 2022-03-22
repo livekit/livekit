@@ -87,10 +87,11 @@ type PLIThrottleConfig struct {
 }
 
 type CongestionControlConfig struct {
-	Enabled        bool                       `yaml:"enabled"`
-	AllowPause     bool                       `yaml:"allow_pause"`
-	UseSendSideBWE bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
-	ProbeMode      CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
+	Enabled            bool                       `yaml:"enabled"`
+	AllowPause         bool                       `yaml:"allow_pause"`
+	UseSendSideBWE     bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode          CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity int64                      `yaml:"min_channel_capacity,omitempty"`
 }
 
 type InterfacesConfig struct {

@@ -850,7 +850,16 @@ func (s *StreamAllocator) finalizeProbe() {
 }
 
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
-	availableChannelCapacity := s.committedChannelCapacity - s.getExpectedBandwidthUsage()
+	committedChannelCapacity := s.committedChannelCapacity
+	if s.params.Config.MinChannelCapacity > committedChannelCapacity {
+		committedChannelCapacity = s.params.Config.MinChannelCapacity
+		s.params.Logger.Debugw(
+			"overriding channel capacity",
+			"actual", s.committedChannelCapacity,
+			"override", committedChannelCapacity,
+		)
+	}
+	availableChannelCapacity := committedChannelCapacity - s.getExpectedBandwidthUsage()
 	if availableChannelCapacity <= 0 {
 		return
 	}
@@ -897,6 +906,14 @@ func (s *StreamAllocator) allocateAllTracks() {
 	update := NewStreamStateUpdate()
 
 	availableChannelCapacity := s.committedChannelCapacity
+	if s.params.Config.MinChannelCapacity > availableChannelCapacity {
+		availableChannelCapacity = s.params.Config.MinChannelCapacity
+		s.params.Logger.Debugw(
+			"overriding channel capacity",
+			"actual", s.committedChannelCapacity,
+			"override", availableChannelCapacity,
+		)
+	}
 
 	//
 	// This pass is find out if there is any leftover channel capacity after allocating exempt tracks.
@@ -1011,8 +1028,9 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NackRatioThresholdProbe)
 	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
 
+	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
 	s.probeClusterId = s.prober.AddCluster(
-		int(s.committedChannelCapacity+probeRateBps),
+		desiredRateBps,
 		int(expectedBandwidthUsage),
 		ProbeMinDuration,
 		ProbeMaxDuration,
