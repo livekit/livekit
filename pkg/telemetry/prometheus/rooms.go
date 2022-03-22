@@ -22,9 +22,9 @@ var (
 
 func initRoomStats(nodeID string) {
 	promRoomTotal = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: livekitNamespace,
-		Subsystem: "room",
-		Name:      "total",
+		Namespace:   livekitNamespace,
+		Subsystem:   "room",
+		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	})
 	promRoomDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
