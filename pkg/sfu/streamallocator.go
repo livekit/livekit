@@ -26,6 +26,9 @@ const (
 	DownwardTrendThresholdNonProbe = -0.5
 	DownwardTrendThresholdProbe    = 0.0
 
+	NackWindowDurationProbe    = 0 * time.Second
+	NackWindowDurationNonProbe = 2 * time.Second
+
 	NackRatioThresholdNonProbe = 0.08
 	NackRatioThresholdProbe    = 0.04
 
@@ -1031,25 +1034,27 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 }
 
 func (s *StreamAllocator) newChannelObserverProbe() *ChannelObserver {
-	return NewChannelObserver(
-		"probe",
-		s.params.Logger,
-		NumRequiredEstimatesProbe,
-		DownwardTrendThresholdProbe,
-		false,
-		NackRatioThresholdProbe,
-	)
+	return NewChannelObserver(ChannelObserverParams{
+		Name:                           "probe",
+		Logger:                         s.params.Logger,
+		EstimateRequiredSamples:        NumRequiredEstimatesProbe,
+		EstimateDownwardTrendThreshold: DownwardTrendThresholdProbe,
+		EstimateCollapseValues:         false,
+		NackWindowDuration:             NackWindowDurationProbe,
+		NackRatioThreshold:             NackRatioThresholdProbe,
+	})
 }
 
 func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
-	return NewChannelObserver(
-		"non-probe",
-		s.params.Logger,
-		NumRequiredEstimatesNonProbe,
-		DownwardTrendThresholdNonProbe,
-		true,
-		NackRatioThresholdNonProbe,
-	)
+	return NewChannelObserver(ChannelObserverParams{
+		Name:                           "non-probe",
+		Logger:                         s.params.Logger,
+		EstimateRequiredSamples:        NumRequiredEstimatesNonProbe,
+		EstimateDownwardTrendThreshold: DownwardTrendThresholdNonProbe,
+		EstimateCollapseValues:         true,
+		NackWindowDuration:             NackWindowDurationNonProbe,
+		NackRatioThreshold:             NackRatioThresholdNonProbe,
+	})
 }
 
 func (s *StreamAllocator) initProbe(probeRateBps int64) {
@@ -1522,30 +1527,37 @@ func (c ChannelCongestionReason) String() string {
 	}
 }
 
+type ChannelObserverParams struct {
+	Name                           string
+	Logger                         logger.Logger
+	EstimateRequiredSamples        int
+	EstimateDownwardTrendThreshold float64
+	EstimateCollapseValues         bool
+	NackWindowDuration             time.Duration
+	NackRatioThreshold             float64
+}
+
 type ChannelObserver struct {
-	name   string
-	logger logger.Logger
+	params ChannelObserverParams
 
 	estimateTrend *TrendDetector
 
-	nackRatioThreshold float64
-	packets            uint32
-	repeatedNacks      uint32
+	nackWindowStartTime time.Time
+	packets             uint32
+	repeatedNacks       uint32
 }
 
-func NewChannelObserver(
-	name string,
-	logger logger.Logger,
-	estimateRequiredSamples int,
-	estimateDownwardTrendThreshold float64,
-	estimateCollapseValues bool,
-	nackRatioThreshold float64,
-) *ChannelObserver {
+func NewChannelObserver(params ChannelObserverParams) *ChannelObserver {
 	return &ChannelObserver{
-		name:               name,
-		logger:             logger,
-		estimateTrend:      NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples, estimateDownwardTrendThreshold, estimateCollapseValues),
-		nackRatioThreshold: nackRatioThreshold,
+		params: params,
+		estimateTrend: NewTrendDetector(TrendDetectorParams{
+			Name:                   params.Name + "-estimate",
+			Logger:                 params.Logger,
+			RequiredSamples:        params.EstimateRequiredSamples,
+			DownwardTrendThreshold: params.EstimateDownwardTrendThreshold,
+			CollapseValues:         params.EstimateCollapseValues,
+		}),
+		nackWindowStartTime: time.Now(),
 	}
 }
 
@@ -1563,7 +1575,13 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 }
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
-	c.logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks) // REMOVE
+	c.params.Logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks) // REMOVE
+	if c.params.NackWindowDuration != 0 && time.Since(c.nackWindowStartTime) > c.params.NackWindowDuration {
+		c.nackWindowStartTime = time.Now()
+		c.packets = 0
+		c.repeatedNacks = 0
+	}
+
 	c.packets += packets
 	c.repeatedNacks += repeatedNacks
 }
@@ -1594,16 +1612,16 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 
 	switch {
 	case estimateDirection == TrendDirectionDownward:
-		c.logger.Debugw(
+		c.params.Logger.Debugw(
 			"channel observer: estimate is trending downward",
-			"name", c.name,
+			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
-	case nackRatio > c.nackRatioThreshold:
-		c.logger.Debugw(
+	case nackRatio > c.params.NackRatioThreshold:
+		c.params.Logger.Debugw(
 			"channel observer: high rate of repeated NACKs",
-			"name", c.name,
+			"name", c.params.Name,
 			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
@@ -1637,12 +1655,16 @@ func (t TrendDirection) String() string {
 	}
 }
 
+type TrendDetectorParams struct {
+	Name                   string
+	Logger                 logger.Logger
+	RequiredSamples        int
+	DownwardTrendThreshold float64
+	CollapseValues         bool
+}
+
 type TrendDetector struct {
-	name                   string
-	logger                 logger.Logger
-	requiredSamples        int
-	downwardTrendThreshold float64
-	collapseValues         bool
+	params TrendDetectorParams
 
 	startTime    time.Time
 	numSamples   int
@@ -1653,15 +1675,11 @@ type TrendDetector struct {
 	direction TrendDirection
 }
 
-func NewTrendDetector(name string, logger logger.Logger, requiredSamples int, downwardTrendThreshold float64, collapseValues bool) *TrendDetector {
+func NewTrendDetector(params TrendDetectorParams) *TrendDetector {
 	return &TrendDetector{
-		name:                   name,
-		logger:                 logger,
-		requiredSamples:        requiredSamples,
-		downwardTrendThreshold: downwardTrendThreshold,
-		collapseValues:         collapseValues,
-		direction:              TrendDirectionNeutral,
-		startTime:              time.Now(),
+		params:    params,
+		startTime: time.Now(),
+		direction: TrendDirectionNeutral,
 	}
 }
 
@@ -1683,11 +1701,11 @@ func (t *TrendDetector) AddValue(value int64) {
 	}
 
 	// ignore duplicate values
-	if t.collapseValues && len(t.values) != 0 && t.values[len(t.values)-1] == value {
+	if t.params.CollapseValues && len(t.values) != 0 && t.values[len(t.values)-1] == value {
 		return
 	}
 
-	if len(t.values) == t.requiredSamples {
+	if len(t.values) == t.params.RequiredSamples {
 		t.values = t.values[1:]
 	}
 	t.values = append(t.values, value)
@@ -1714,14 +1732,14 @@ func (t *TrendDetector) GetDirection() TrendDirection {
 func (t *TrendDetector) ToString() string {
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
-	str := fmt.Sprintf("n: %s", t.name)
+	str := fmt.Sprintf("n: %s", t.params.Name)
 	str += fmt.Sprintf(", t: %+v|%+v|%.2fs", t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
 	str += fmt.Sprintf(", v: %d|%d|%d|%+v|%.2f", t.numSamples, t.lowestValue, t.highestValue, t.values, kendallsTau(t.values))
 	return str
 }
 
 func (t *TrendDetector) updateDirection() {
-	if len(t.values) < t.requiredSamples {
+	if len(t.values) < t.params.RequiredSamples {
 		t.direction = TrendDirectionNeutral
 		return
 	}
@@ -1733,7 +1751,7 @@ func (t *TrendDetector) updateDirection() {
 	switch {
 	case kt > 0:
 		t.direction = TrendDirectionUpward
-	case kt < t.downwardTrendThreshold:
+	case kt < t.params.DownwardTrendThreshold:
 		t.direction = TrendDirectionDownward
 	}
 }
