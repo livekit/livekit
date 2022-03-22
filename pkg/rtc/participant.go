@@ -635,11 +635,13 @@ func (p *ParticipantImpl) ICERestart() error {
 func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	level = SilentAudioLevel
 	for _, pt := range p.GetPublishedTracks() {
-		tl, ta := pt.(types.LocalMediaTrack).GetAudioLevel()
-		if ta {
-			active = true
-			if tl < level {
-				level = tl
+		if pt.(types.LocalMediaTrack).Source() == livekit.TrackSource_MICROPHONE {
+			tl, ta := pt.(types.LocalMediaTrack).GetAudioLevel()
+			if ta {
+				active = true
+				if tl < level {
+					level = tl
+				}
 			}
 		}
 	}
