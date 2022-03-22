@@ -35,8 +35,9 @@ const (
 	sdBatchSize       = 20
 	rttUpdateInterval = 5 * time.Second
 
-	stateActiveCond = 3 // reliableDCOpen,lossyDCOpen,PeerConnectionStateConnected
-	initNetWorkCost = 100
+	stateActiveCond           = 3 // reliableDCOpen,lossyDCOpen,PeerConnectionStateConnected
+	initNetWorkCost           = 100
+	disconnectCleanupDuration = 15 * time.Second
 )
 
 type pendingTrackInfo struct {
@@ -83,6 +84,8 @@ type ParticipantImpl struct {
 
 	// when first connected
 	connectedAt time.Time
+	// timer that's set when disconnect is detected on primary PC
+	disconnectTimer *time.Timer
 
 	rtcpCh chan []rtcp.Packet
 
@@ -984,6 +987,33 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 	} else if state == webrtc.PeerConnectionStateDisconnected {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
+
+		// detect when participant has actually left.
+		go func() {
+			p.lock.Lock()
+			if p.disconnectTimer != nil {
+				p.disconnectTimer.Stop()
+			}
+			p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
+				p.lock.Lock()
+				p.disconnectTimer = nil
+				p.lock.Unlock()
+
+				if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+					return
+				}
+				primaryPC := p.publisher.pc
+				if p.SubscriberAsPrimary() {
+					primaryPC = p.subscriber.pc
+				}
+				if primaryPC.ConnectionState() != webrtc.PeerConnectionStateConnected {
+					p.params.Logger.Infow("closing disconnected participant")
+					p.Close(true)
+				}
+			})
+			p.lock.Unlock()
+		}()
+
 	}
 }
 
