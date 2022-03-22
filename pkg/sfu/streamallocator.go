@@ -148,7 +148,6 @@ type StreamAllocator struct {
 	abortedProbeClusterId ProbeClusterId
 	probeTrendObserved    bool
 	probeEndTime          time.Time
-	probeChannelObserver  *ChannelObserver
 
 	prober *Prober
 
@@ -170,14 +169,6 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		channelObserver: NewChannelObserver(
-			"non-probe",
-			params.Logger,
-			NumRequiredEstimatesNonProbe,
-			DownwardTrendThresholdNonProbe,
-			true,
-			NackRatioThresholdNonProbe,
-		),
 		videoTracks:     make(map[livekit.TrackID]*Track),
 		eventCh:         make(chan Event, 20),
 	}
@@ -258,7 +249,7 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8)
 }
 
 func (s *StreamAllocator) resetState() {
-	s.channelObserver.Reset()
+	s.channelObserver = s.newChannelObserverNonProbe()
 	s.resetProbe()
 
 	s.state = StateStable
@@ -613,7 +604,7 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 
 	// ensure probe queue is flushed
 	// LK-TODO: ProbeSettleWait should actually be a certain number of RTTs.
-	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.probeChannelObserver.GetLowestEstimate())))
+	lowestEstimate := int64(math.Min(float64(s.committedChannelCapacity), float64(s.channelObserver.GetLowestEstimate())))
 	expectedDuration := float64(info.BytesSent*8*1000) / float64(lowestEstimate)
 	queueTime := expectedDuration - float64(info.Duration.Milliseconds())
 	if queueTime < 0.0 {
@@ -667,10 +658,10 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		return
 	}
 
-	s.probeChannelObserver.AddEstimate(s.lastReceivedEstimate)
-	s.probeChannelObserver.AddNack(packetDelta, repeatedNackDelta)
+	s.channelObserver.AddEstimate(s.lastReceivedEstimate)
+	s.channelObserver.AddNack(packetDelta, repeatedNackDelta)
 
-	trend, _ := s.probeChannelObserver.GetTrend()
+	trend, _ := s.channelObserver.GetTrend()
 	if trend != ChannelTrendNeutral {
 		s.probeTrendObserved = true
 	}
@@ -688,13 +679,13 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		// stop immediately if the probe is congesting channel more
 		s.params.Logger.Debugw("probe: aborting, channel is congesting", "cluster", s.probeClusterId)
 		s.abortProbe()
-	case s.probeChannelObserver.GetHighestEstimate() > s.probeGoalBps:
+	case s.channelObserver.GetHighestEstimate() > s.probeGoalBps:
 		// reached goal, stop probing
 		s.params.Logger.Debugw(
 			"probe: stopping, goal reached",
 			"cluster", s.probeClusterId,
 			"goal", s.probeGoalBps,
-			"highest", s.probeChannelObserver.GetHighestEstimate(),
+			"highest", s.channelObserver.GetHighestEstimate(),
 		)
 		s.stopProbe()
 	}
@@ -737,7 +728,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	s.committedChannelCapacity = estimateToCommit
 
 	// reset to get new set of samples for next trend
-	s.channelObserver.Reset()
+	s.channelObserver = s.newChannelObserverNonProbe()
 
 	// reset probe to ensure it does not start too soon after a downward trend
 	s.resetProbe()
@@ -838,7 +829,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 
 func (s *StreamAllocator) finalizeProbe() {
 	aborted := s.probeClusterId == s.abortedProbeClusterId
-	highestEstimateInProbe := s.probeChannelObserver.GetHighestEstimate()
+	highestEstimateInProbe := s.channelObserver.GetHighestEstimate()
 
 	s.clearProbe()
 
@@ -853,7 +844,7 @@ func (s *StreamAllocator) finalizeProbe() {
 	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
 	// the send side is in full control of bandwidth estimation.
 	//
-	s.channelObserver.Reset()
+	s.channelObserver = s.newChannelObserverNonProbe()
 
 	if aborted {
 		// failed probe, backoff
@@ -1039,6 +1030,28 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 	return aggPacketDelta, aggRepeatedNackDelta
 }
 
+func (s *StreamAllocator) newChannelObserverProbe() *ChannelObserver {
+	return NewChannelObserver(
+		"probe",
+		s.params.Logger,
+		NumRequiredEstimatesProbe,
+		DownwardTrendThresholdProbe,
+		false,
+		NackRatioThresholdProbe,
+	)
+}
+
+func (s *StreamAllocator) newChannelObserverNonProbe() *ChannelObserver {
+	return NewChannelObserver(
+		"non-probe",
+		s.params.Logger,
+		NumRequiredEstimatesNonProbe,
+		DownwardTrendThresholdNonProbe,
+		true,
+		NackRatioThresholdNonProbe,
+	)
+}
+
 func (s *StreamAllocator) initProbe(probeRateBps int64) {
 	s.lastProbeStartTime = time.Now()
 
@@ -1051,15 +1064,8 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 
 	s.probeEndTime = time.Time{}
 
-	s.probeChannelObserver = NewChannelObserver(
-		"probe",
-		s.params.Logger,
-		NumRequiredEstimatesProbe,
-		DownwardTrendThresholdProbe,
-		false,
-		NackRatioThresholdProbe,
-	)
-	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
+	s.channelObserver = s.newChannelObserverProbe()
+	s.channelObserver.SeedEstimate(s.lastReceivedEstimate)
 
 	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
 	s.probeClusterId = s.prober.AddCluster(
@@ -1090,12 +1096,6 @@ func (s *StreamAllocator) resetProbe() {
 func (s *StreamAllocator) clearProbe() {
 	s.probeClusterId = ProbeClusterIdInvalid
 	s.abortedProbeClusterId = ProbeClusterIdInvalid
-
-	s.probeTrendObserved = false
-
-	s.probeEndTime = time.Time{}
-
-	s.probeChannelObserver = nil
 }
 
 func (s *StreamAllocator) backoffProbeInterval() {
@@ -1549,13 +1549,6 @@ func NewChannelObserver(
 	}
 }
 
-func (c *ChannelObserver) Reset() {
-	c.estimateTrend.Reset()
-
-	c.packets = 0
-	c.repeatedNacks = 0
-}
-
 func (c *ChannelObserver) SeedEstimate(estimate int64) {
 	c.estimateTrend.Seed(estimate)
 }
@@ -1670,12 +1663,6 @@ func NewTrendDetector(name string, logger logger.Logger, requiredSamples int, do
 		direction:       TrendDirectionNeutral,
 		startTime: time.Now(),
 	}
-}
-
-func (t *TrendDetector) Reset() {
-	t.values = nil
-	t.lowestValue = int64(0)
-	t.highestValue = int64(0)
 }
 
 func (t *TrendDetector) Seed(value int64) {

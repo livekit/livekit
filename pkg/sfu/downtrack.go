@@ -1056,12 +1056,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == int8(InvalidLayerSpatial) {
-			/*
-			if meta.nacked > 1 {
-				numRepeatedNACKs++
-			}
-			*/
-
 			// padding packet, no RTX for those
 			continue
 		}
@@ -1281,7 +1275,6 @@ func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
-	// RAJA-REMOVE totalPackets = d.rtpStats.GetTotalPacketsSansDuplicate()
 	totalPackets = d.rtpStats.GetTotalPacketsPrimary()
 
 	d.statsLock.RLock()
