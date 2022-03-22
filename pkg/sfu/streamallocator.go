@@ -23,7 +23,10 @@ const (
 	NumRequiredEstimatesNonProbe = 8
 	NumRequiredEstimatesProbe    = 3
 
-	NackRatioThresholdNonProbe = 0.06
+	DownwardTrendThresholdNonProbe = -0.5
+	DownwardTrendThresholdProbe = 0.0
+
+	NackRatioThresholdNonProbe = 0.08
 	NackRatioThresholdProbe    = 0.04
 
 	NackRatioAttenuator = 0.4 // how much to attenuate NACK ratio while calculating loss adjusted estimate
@@ -167,7 +170,14 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		channelObserver: NewChannelObserver("non-probe", params.Logger, NumRequiredEstimatesNonProbe, NackRatioThresholdNonProbe),
+		channelObserver: NewChannelObserver(
+			"non-probe",
+			params.Logger,
+			NumRequiredEstimatesNonProbe,
+			DownwardTrendThresholdNonProbe,
+			true,
+			NackRatioThresholdNonProbe,
+		),
 		videoTracks:     make(map[livekit.TrackID]*Track),
 		eventCh:         make(chan Event, 20),
 	}
@@ -637,6 +647,7 @@ func (s *StreamAllocator) adjustState() {
 }
 
 func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
+	s.params.Logger.Debugw("new estimate", "bps", receivedEstimate)	// REMOVE
 	s.lastReceivedEstimate = receivedEstimate
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
@@ -648,19 +659,23 @@ func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
 }
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
-	s.probeChannelObserver.AddEstimate(s.lastReceivedEstimate)
-
+	// always update NACKs, even if aborted
 	packetDelta, repeatedNackDelta := s.getNackDelta()
+
+	if s.abortedProbeClusterId != ProbeClusterIdInvalid {
+		// waiting for aborted probe to finalize
+		return
+	}
+
+	s.probeChannelObserver.AddEstimate(s.lastReceivedEstimate)
 	s.probeChannelObserver.AddNack(packetDelta, repeatedNackDelta)
 
-	trend := s.probeChannelObserver.GetTrend()
+	trend, _ := s.probeChannelObserver.GetTrend()
 	if trend != ChannelTrendNeutral {
 		s.probeTrendObserved = true
 	}
 
 	switch {
-	case s.abortedProbeClusterId != ProbeClusterIdInvalid:
-		return
 	case !s.probeTrendObserved && time.Since(s.lastProbeStartTime) > ProbeTrendWait:
 		//
 		// More of a safety net.
@@ -691,25 +706,35 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	packetDelta, repeatedNackDelta := s.getNackDelta()
 	s.channelObserver.AddNack(packetDelta, repeatedNackDelta)
 
-	trend := s.channelObserver.GetTrend()
+	trend, reason := s.channelObserver.GetTrend()
 	if trend != ChannelTrendCongesting {
 		return
 	}
 
-	nackRatio := s.channelObserver.GetNackRatio()
-	lossAdjustedEstimate := s.lastReceivedEstimate
-	if nackRatio > NackRatioThresholdNonProbe {
-		lossAdjustedEstimate = int64(float64(lossAdjustedEstimate) * (1.0 - NackRatioAttenuator*nackRatio))
+	var estimateToCommit int64
+	var nackRatio float64
+	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+	switch reason {
+	case ChannelCongestionReasonLoss:
+		estimateToCommit = expectedBandwidthUsage
+		nackRatio = s.channelObserver.GetNackRatio()
+		if nackRatio > NackRatioThresholdNonProbe {
+			estimateToCommit = int64(float64(estimateToCommit) * (1.0 - NackRatioAttenuator*nackRatio))
+		}
+	default:
+		estimateToCommit = s.lastReceivedEstimate
 	}
 
 	s.params.Logger.Infow(
 		"channel congestion detected, updating channel capacity",
+		"reason", reason,
 		"old(bps)", s.committedChannelCapacity,
-		"new(bps)", lossAdjustedEstimate,
+		"new(bps)", estimateToCommit,
 		"lastReceived(bps)", s.lastReceivedEstimate,
+		"expectedUsage(bps)", expectedBandwidthUsage,
 		"nackRatio", nackRatio,
 	)
-	s.committedChannelCapacity = lossAdjustedEstimate
+	s.committedChannelCapacity = estimateToCommit
 
 	// reset to get new set of samples for next trend
 	s.channelObserver.Reset()
@@ -1026,7 +1051,14 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 
 	s.probeEndTime = time.Time{}
 
-	s.probeChannelObserver = NewChannelObserver("probe", s.params.Logger, NumRequiredEstimatesProbe, NackRatioThresholdProbe)
+	s.probeChannelObserver = NewChannelObserver(
+		"probe",
+		s.params.Logger,
+		NumRequiredEstimatesProbe,
+		DownwardTrendThresholdProbe,
+		false,
+		NackRatioThresholdProbe,
+	)
 	s.probeChannelObserver.SeedEstimate(s.lastReceivedEstimate)
 
 	desiredRateBps := int(probeRateBps) + int(math.Max(float64(s.committedChannelCapacity), float64(expectedBandwidthUsage)))
@@ -1469,6 +1501,27 @@ func (c ChannelTrend) String() string {
 	}
 }
 
+type ChannelCongestionReason int
+
+const (
+	ChannelCongestionReasonNone ChannelCongestionReason = iota
+	ChannelCongestionReasonEstimate
+	ChannelCongestionReasonLoss
+)
+
+func (c ChannelCongestionReason) String() string {
+	switch c {
+	case ChannelCongestionReasonNone:
+		return "NONE"
+	case ChannelCongestionReasonEstimate:
+		return "ESTIMATE"
+	case ChannelCongestionReasonLoss:
+		return "LOSS"
+	default:
+		return fmt.Sprintf("%d", int(c))
+	}
+}
+
 type ChannelObserver struct {
 	name   string
 	logger logger.Logger
@@ -1484,12 +1537,14 @@ func NewChannelObserver(
 	name string,
 	logger logger.Logger,
 	estimateRequiredSamples int,
+	estimateDownwardTrendThreshold float64,
+	estimateCollapseValues bool,
 	nackRatioThreshold float64,
 ) *ChannelObserver {
 	return &ChannelObserver{
 		name:               name,
 		logger:             logger,
-		estimateTrend:      NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples),
+		estimateTrend:      NewTrendDetector(name+"-estimate", logger, estimateRequiredSamples, estimateDownwardTrendThreshold, estimateCollapseValues),
 		nackRatioThreshold: nackRatioThreshold,
 	}
 }
@@ -1515,6 +1570,7 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 }
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
+	c.logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks)	// REMOVE
 	c.packets += packets
 	c.repeatedNacks += repeatedNacks
 }
@@ -1539,7 +1595,7 @@ func (c *ChannelObserver) GetNackRatio() float64 {
 	return ratio
 }
 
-func (c *ChannelObserver) GetTrend() ChannelTrend {
+func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 	nackRatio := c.GetNackRatio()
 
@@ -1547,17 +1603,22 @@ func (c *ChannelObserver) GetTrend() ChannelTrend {
 	case estimateDirection == TrendDirectionDownward:
 		c.logger.Debugw(
 			"channel observer: estimate is trending downward",
+			"name", c.name,
 			"estimate", c.estimateTrend.ToString(),
 		)
-		return ChannelTrendCongesting
+		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 	case nackRatio > c.nackRatioThreshold:
-		c.logger.Debugw("channel observer: high rate of repeated NACKs", "ratio", nackRatio)
-		return ChannelTrendCongesting
+		c.logger.Debugw(
+			"channel observer: high rate of repeated NACKs",
+			"name", c.name,
+			"ratio", nackRatio,
+		)
+		return ChannelTrendCongesting, ChannelCongestionReasonLoss
 	case estimateDirection == TrendDirectionUpward:
-		return ChannelTrendClearing
+		return ChannelTrendClearing, ChannelCongestionReasonNone
 	}
 
-	return ChannelTrendNeutral
+	return ChannelTrendNeutral, ChannelCongestionReasonNone
 }
 
 // ------------------------------------------------
@@ -1587,6 +1648,8 @@ type TrendDetector struct {
 	name            string
 	logger          logger.Logger
 	requiredSamples int
+	downwardTrendThreshold float64
+	collapseValues bool
 
 	startTime    time.Time
 	numSamples   int
@@ -1597,12 +1660,15 @@ type TrendDetector struct {
 	direction TrendDirection
 }
 
-func NewTrendDetector(name string, logger logger.Logger, requiredSamples int) *TrendDetector {
+func NewTrendDetector(name string, logger logger.Logger, requiredSamples int, downwardTrendThreshold float64, collapseValues bool) *TrendDetector {
 	return &TrendDetector{
 		name:            name,
 		logger:          logger,
 		requiredSamples: requiredSamples,
+		downwardTrendThreshold: downwardTrendThreshold,
+		collapseValues: collapseValues,
 		direction:       TrendDirectionNeutral,
+		startTime: time.Now(),
 	}
 }
 
@@ -1627,6 +1693,11 @@ func (t *TrendDetector) AddValue(value int64) {
 	}
 	if value > t.highestValue {
 		t.highestValue = value
+	}
+
+	// ignore duplicate values
+	if t.collapseValues && len(t.values) != 0 && t.values[len(t.values)-1] == value {
+		return
 	}
 
 	if len(t.values) == t.requiredSamples {
@@ -1656,8 +1727,9 @@ func (t *TrendDetector) GetDirection() TrendDirection {
 func (t *TrendDetector) ToString() string {
 	now := time.Now()
 	elapsed := now.Sub(t.startTime).Seconds()
-	str := fmt.Sprintf("t: %+v|%+v|%.2fs", t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
-	str += fmt.Sprintf(", v: %d|%d|%d|%+v", t.numSamples, t.lowestValue, t.highestValue, t.values)
+	str := fmt.Sprintf("n: %s", t.name)
+	str += fmt.Sprintf(", t: %+v|%+v|%.2fs", t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
+	str += fmt.Sprintf(", v: %d|%d|%d|%+v|%.2f", t.numSamples, t.lowestValue, t.highestValue, t.values, kendallsTau(t.values))
 	return str
 }
 
@@ -1668,32 +1740,36 @@ func (t *TrendDetector) updateDirection() {
 	}
 
 	// using Kendall's Tau to find trend
+	kt := kendallsTau(t.values)
+
+	t.direction = TrendDirectionNeutral
+	switch {
+	case kt > 0:
+		t.direction = TrendDirectionUpward
+	case kt < t.downwardTrendThreshold:
+		t.direction = TrendDirectionDownward
+	}
+}
+
+// ------------------------------------------------
+
+func kendallsTau(values []int64) float64 {
 	concordantPairs := 0
 	discordantPairs := 0
 
-	for i := 0; i < len(t.values)-1; i++ {
-		for j := i + 1; j < len(t.values); j++ {
-			if t.values[i] < t.values[j] {
+	for i := 0; i < len(values)-1; i++ {
+		for j := i + 1; j < len(values); j++ {
+			if values[i] < values[j] {
 				concordantPairs++
-			} else if t.values[i] > t.values[j] {
+			} else if values[i] > values[j] {
 				discordantPairs++
 			}
 		}
 	}
 
 	if (concordantPairs + discordantPairs) == 0 {
-		t.direction = TrendDirectionNeutral
-		return
+		return 0.0
 	}
 
-	t.direction = TrendDirectionNeutral
-	kt := (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
-	switch {
-	case kt > 0:
-		t.direction = TrendDirectionUpward
-	case kt < 0:
-		t.direction = TrendDirectionDownward
-	}
+	return  (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
 }
-
-// ------------------------------------------------

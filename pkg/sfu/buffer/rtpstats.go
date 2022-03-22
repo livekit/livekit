@@ -264,11 +264,24 @@ func (r *RTPStats) GetTotalPackets() uint32 {
 	return r.getNumPacketsSeen() + r.packetsDuplicate + r.packetsPadding
 }
 
+/* RAJA-REMOVE
 func (r *RTPStats) GetTotalPacketsSansDuplicate() uint32 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
 	return r.getNumPacketsSeen() + r.packetsPadding
+}
+RAJA-REMOVE */
+func (r *RTPStats) GetTotalPacketsPrimary() uint32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	packetsSeen := r.getNumPacketsSeen()
+	if r.packetsPadding > packetsSeen {
+		return 0
+	}
+
+	return packetsSeen - r.packetsPadding
 }
 
 func (r *RTPStats) GetTotalBytes() uint64 {
