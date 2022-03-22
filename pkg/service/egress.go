@@ -17,16 +17,16 @@ import (
 
 type EgressService struct {
 	bus         utils.MessageBus
-	store       EgressStore
+	store       ServiceStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	shutdown    chan struct{}
 }
 
-func NewEgressService(bus utils.MessageBus, es EgressStore, rs livekit.RoomService, ts telemetry.TelemetryService) *EgressService {
+func NewEgressService(bus utils.MessageBus, store ServiceStore, rs livekit.RoomService, ts telemetry.TelemetryService) *EgressService {
 	return &EgressService{
 		bus:         bus,
-		store:       es,
+		store:       store,
 		roomService: rs,
 		telemetry:   ts,
 		shutdown:    make(chan struct{}),

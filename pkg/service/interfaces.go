@@ -13,7 +13,6 @@ import (
 //counterfeiter:generate . ObjectStore
 type ObjectStore interface {
 	ServiceStore
-	EgressStore
 
 	// enable locking on a specific room to prevent race
 	// returns a (lock uuid, error)
@@ -36,11 +35,6 @@ type ServiceStore interface {
 
 	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
-}
-
-//counterfeiter:generate . EgressStore
-type EgressStore interface {
-	LoadRoom(ctx context.Context, name livekit.RoomName) (*livekit.Room, error)
 
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error
 	LoadEgress(ctx context.Context, egressID string) (*livekit.EgressInfo, error)
