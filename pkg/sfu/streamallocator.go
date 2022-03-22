@@ -657,6 +657,7 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 	if trend != ChannelTrendNeutral {
 		s.probeTrendObserved = true
 	}
+
 	switch {
 	case s.abortedProbeClusterId != ProbeClusterIdInvalid:
 		return
@@ -1546,9 +1547,7 @@ func (c *ChannelObserver) GetTrend() ChannelTrend {
 	case estimateDirection == TrendDirectionDownward:
 		c.logger.Debugw(
 			"channel observer: estimate is trending downward",
-			"lowest", c.estimateTrend.GetLowest(),
-			"highest", c.estimateTrend.GetHighest(),
-			"estimates", c.estimateTrend.GetValues(),
+			"estimate", c.estimateTrend.ToString(),
 		)
 		return ChannelTrendCongesting
 	case nackRatio > c.nackRatioThreshold:
@@ -1589,9 +1588,11 @@ type TrendDetector struct {
 	logger          logger.Logger
 	requiredSamples int
 
+	startTime    time.Time
+	numSamples   int
 	values       []int64
-	lowestvalue  int64
-	highestvalue int64
+	lowestValue  int64
+	highestValue int64
 
 	direction TrendDirection
 }
@@ -1607,8 +1608,8 @@ func NewTrendDetector(name string, logger logger.Logger, requiredSamples int) *T
 
 func (t *TrendDetector) Reset() {
 	t.values = nil
-	t.lowestvalue = int64(0)
-	t.highestvalue = int64(0)
+	t.lowestValue = int64(0)
+	t.highestValue = int64(0)
 }
 
 func (t *TrendDetector) Seed(value int64) {
@@ -1620,11 +1621,12 @@ func (t *TrendDetector) Seed(value int64) {
 }
 
 func (t *TrendDetector) AddValue(value int64) {
-	if t.lowestvalue == 0 || value < t.lowestvalue {
-		t.lowestvalue = value
+	t.numSamples++
+	if t.lowestValue == 0 || value < t.lowestValue {
+		t.lowestValue = value
 	}
-	if value > t.highestvalue {
-		t.highestvalue = value
+	if value > t.highestValue {
+		t.highestValue = value
 	}
 
 	if len(t.values) == t.requiredSamples {
@@ -1636,11 +1638,11 @@ func (t *TrendDetector) AddValue(value int64) {
 }
 
 func (t *TrendDetector) GetLowest() int64 {
-	return t.lowestvalue
+	return t.lowestValue
 }
 
 func (t *TrendDetector) GetHighest() int64 {
-	return t.highestvalue
+	return t.highestValue
 }
 
 func (t *TrendDetector) GetValues() []int64 {
@@ -1649,6 +1651,14 @@ func (t *TrendDetector) GetValues() []int64 {
 
 func (t *TrendDetector) GetDirection() TrendDirection {
 	return t.direction
+}
+
+func (t *TrendDetector) ToString() string {
+	now := time.Now()
+	elapsed := now.Sub(t.startTime).Seconds()
+	str := fmt.Sprintf("t: %+v|%+v|%.2fs", t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
+	str += fmt.Sprintf(", v: %d|%d|%d|%+v", t.numSamples, t.lowestValue, t.highestValue, t.values)
+	return str
 }
 
 func (t *TrendDetector) updateDirection() {
