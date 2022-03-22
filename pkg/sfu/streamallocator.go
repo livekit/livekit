@@ -24,7 +24,7 @@ const (
 	NumRequiredEstimatesProbe    = 3
 
 	DownwardTrendThresholdNonProbe = -0.5
-	DownwardTrendThresholdProbe = 0.0
+	DownwardTrendThresholdProbe    = 0.0
 
 	NackRatioThresholdNonProbe = 0.08
 	NackRatioThresholdProbe    = 0.04
@@ -169,8 +169,8 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 		prober: NewProber(ProberParams{
 			Logger: params.Logger,
 		}),
-		videoTracks:     make(map[livekit.TrackID]*Track),
-		eventCh:         make(chan Event, 20),
+		videoTracks: make(map[livekit.TrackID]*Track),
+		eventCh:     make(chan Event, 20),
 	}
 
 	s.resetState()
@@ -638,7 +638,7 @@ func (s *StreamAllocator) adjustState() {
 }
 
 func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
-	s.params.Logger.Debugw("new estimate", "bps", receivedEstimate)	// REMOVE
+	s.params.Logger.Debugw("new estimate", "bps", receivedEstimate) // REMOVE
 	s.lastReceivedEstimate = receivedEstimate
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
@@ -1563,7 +1563,7 @@ func (c *ChannelObserver) AddEstimate(estimate int64) {
 }
 
 func (c *ChannelObserver) AddNack(packets uint32, repeatedNacks uint32) {
-	c.logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks)	// REMOVE
+	c.logger.Debugw("NACKS", "packets", packets, "repeatedNacks", repeatedNacks) // REMOVE
 	c.packets += packets
 	c.repeatedNacks += repeatedNacks
 }
@@ -1638,11 +1638,11 @@ func (t TrendDirection) String() string {
 }
 
 type TrendDetector struct {
-	name            string
-	logger          logger.Logger
-	requiredSamples int
+	name                   string
+	logger                 logger.Logger
+	requiredSamples        int
 	downwardTrendThreshold float64
-	collapseValues bool
+	collapseValues         bool
 
 	startTime    time.Time
 	numSamples   int
@@ -1655,13 +1655,13 @@ type TrendDetector struct {
 
 func NewTrendDetector(name string, logger logger.Logger, requiredSamples int, downwardTrendThreshold float64, collapseValues bool) *TrendDetector {
 	return &TrendDetector{
-		name:            name,
-		logger:          logger,
-		requiredSamples: requiredSamples,
+		name:                   name,
+		logger:                 logger,
+		requiredSamples:        requiredSamples,
 		downwardTrendThreshold: downwardTrendThreshold,
-		collapseValues: collapseValues,
-		direction:       TrendDirectionNeutral,
-		startTime: time.Now(),
+		collapseValues:         collapseValues,
+		direction:              TrendDirectionNeutral,
+		startTime:              time.Now(),
 	}
 }
 
@@ -1758,5 +1758,5 @@ func kendallsTau(values []int64) float64 {
 		return 0.0
 	}
 
-	return  (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
+	return (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
 }
