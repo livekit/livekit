@@ -32,10 +32,12 @@ const (
 	LossyDataChannel    = "_lossy"
 	ReliableDataChannel = "_reliable"
 
-	sdBatchSize               = 20
-	rttUpdateInterval         = 5 * time.Second
-	disconnectCleanupDuration = 15 * time.Second
+	sdBatchSize       = 20
+	rttUpdateInterval = 5 * time.Second
+
 	stateActiveCond           = 3 // reliableDCOpen,lossyDCOpen,PeerConnectionStateConnected
+	initNetWorkCost           = 100
+	disconnectCleanupDuration = 15 * time.Second
 )
 
 type pendingTrackInfo struct {
@@ -127,6 +129,7 @@ type ParticipantImpl struct {
 	onClaimsChanged     func(participant types.LocalParticipant)
 
 	activeCounter atomic.Int32
+	networkCost   int32
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -148,6 +151,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
+		networkCost:              initNetWorkCost,
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -602,6 +606,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.pendingOffer = nil
 		// in case of migration, subscriber data channel will not fire OnOpen callback
 		p.activeCounter.CAS(0, 2)
+
+		// use lower network cost to make sure migrated's node has higher priority candidate
+		p.networkCost--
 	}
 	p.lock.Unlock()
 	if s == types.MigrateStateComplete {

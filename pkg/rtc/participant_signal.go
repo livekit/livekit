@@ -178,6 +178,7 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 	// write candidate
 	p.params.Logger.Debugw("sending ice candidates",
 		"candidate", c.String(), "target", target)
+	ci.Candidate += fmt.Sprintf(" network-cost %d", p.networkCost)
 	trickle := ToProtoTrickle(ci)
 	trickle.Target = target
 	_ = p.writeMessage(&livekit.SignalResponse{
