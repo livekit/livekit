@@ -197,7 +197,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			},
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
-				AllowPause: true,
+				AllowPause: false,
 				ProbeMode:  CongestionControlProbeModePadding,
 			},
 		},
