@@ -56,14 +56,19 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 }
 
 func (t *telemetryService) run() {
+	lastUpdatedAt := time.Now()
 	ticker := time.NewTicker(updateFrequency)
 	for {
 		select {
 		case <-ticker.C:
-			t.internalService.SendAnalytics()
+			lastUpdatedAt = t.internalService.SendAnalytics()
 		case job, ok := <-t.jobQueue:
 			if ok {
 				job()
+			}
+			// check if we missed sending analytics every updateFrequency seconds
+			if time.Now().After(lastUpdatedAt.Add(updateFrequency)) {
+				lastUpdatedAt = t.internalService.SendAnalytics()
 			}
 		}
 	}

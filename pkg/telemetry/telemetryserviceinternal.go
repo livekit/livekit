@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"time"
 
 	"github.com/gammazero/workerpool"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -13,7 +14,7 @@ const maxWebhookWorkers = 50
 
 type TelemetryServiceInternal interface {
 	TelemetryService
-	SendAnalytics()
+	SendAnalytics() time.Time
 }
 
 type TelemetryReporter interface {
@@ -85,8 +86,9 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 	t.analytics.SendStats(ctx, stats)
 }
 
-func (t *telemetryServiceInternal) SendAnalytics() {
+func (t *telemetryServiceInternal) SendAnalytics() time.Time {
 	for _, worker := range t.workers {
 		worker.Update()
 	}
+	return time.Now()
 }
