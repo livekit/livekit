@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"go.uber.org/atomic"
 
@@ -52,6 +53,7 @@ type MediaTrackReceiverParams struct {
 	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
+	VideoConfig         config.VideoConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
@@ -66,6 +68,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		BufferFactory:    params.BufferFactory,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
+		VideoConfig:      t.params.VideoConfig,
 		Telemetry:        params.Telemetry,
 		Logger:           params.Logger,
 	})

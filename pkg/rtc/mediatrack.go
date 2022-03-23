@@ -48,6 +48,7 @@ type MediaTrackParams struct {
 	SubscriberConfig  DirectionConfig
 	PLIThrottleConfig config.PLIThrottleConfig
 	AudioConfig       config.AudioConfig
+	VideoConfig       config.VideoConfig
 	Telemetry         telemetry.TelemetryService
 	Logger            logger.Logger
 }
@@ -65,6 +66,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		BufferFactory:       params.BufferFactory,
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
+		VideoConfig:         params.VideoConfig,
 		Telemetry:           params.Telemetry,
 		Logger:              params.Logger,
 	})
