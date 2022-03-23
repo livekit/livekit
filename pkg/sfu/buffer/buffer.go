@@ -109,8 +109,14 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 }
 
 func (b *Buffer) SetLogger(logger logger.Logger) {
+	b.Lock()
+	defer b.Unlock()
+
 	b.logger = logger
 	b.callbacksQueue.SetLogger(logger)
+	if b.rtpStats != nil {
+		b.rtpStats.SetLogger(logger)
+	}
 }
 
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, o Options) {
@@ -122,6 +128,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	b.rtpStats = NewRTPStats(RTPStatsParams{
 		ClockRate: codec.ClockRate,
+		Logger:    b.logger,
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
 	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()

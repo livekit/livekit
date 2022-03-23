@@ -48,10 +48,12 @@ type Snapshot struct {
 
 type RTPStatsParams struct {
 	ClockRate uint32
+	Logger    logger.Logger
 }
 
 type RTPStats struct {
 	params RTPStatsParams
+	logger logger.Logger
 
 	lock sync.RWMutex
 
@@ -121,9 +123,14 @@ type RTPStats struct {
 func NewRTPStats(params RTPStatsParams) *RTPStats {
 	return &RTPStats{
 		params:         params,
+		logger:         params.Logger,
 		nextSnapshotId: 1,
 		snapshots:      make(map[uint32]*Snapshot),
 	}
+}
+
+func (r *RTPStats) SetLogger(logger logger.Logger) {
+	r.logger = logger
 }
 
 func (r *RTPStats) Stop() {
@@ -192,6 +199,23 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 		// adjust start to account for out-of-order packets before o cycle completes
 		if !r.isCycleCompleted() && (rtph.SequenceNumber-uint16(r.extStartSN)) > (1<<15) {
+			// LK-DEBUG-REMOVE START
+			r.logger.Debugw(
+				"RTPSTATS_DEBUG moving starting SN back",
+				"diff", rtph.SequenceNumber-uint16(r.extStartSN),
+				"loss added", uint16(r.extStartSN)-rtph.SequenceNumber,
+				"highestSN", r.highestSN,
+				"sn", rtph.SequenceNumber,
+				"startSN", r.extStartSN,
+				"lost", r.packetsLost,
+				"highestTS", r.highestTS,
+				"ts", rtph.Timestamp,
+				"tsDiff", rtph.Timestamp-r.highestTS,
+				"highestTime", r.highestTime,
+				"now", packetTime,
+				"timeDiff(ms)", float64(packetTime-r.highestTime)/float64(1e6),
+			)
+			// LK-DEBUG-REMOVE END
 			// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check below
 			r.packetsLost += uint32(uint16(r.extStartSN) - rtph.SequenceNumber)
 			r.extStartSN = uint32(rtph.SequenceNumber)
@@ -215,13 +239,19 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 		// LK-DEBUG-REMOVE START
 		if diff > 100 {
-			logger.Errorw(
-				"DEBUG huge difference in sequence number", nil,
+			r.logger.Debugw(
+				"RTPSTATS_DEBUG huge difference in sequence number",
 				"diff", diff,
 				"highestSN", r.highestSN,
 				"sn", rtph.SequenceNumber,
+				"startSN", r.extStartSN,
+				"lost", r.packetsLost,
+				"highestTS", r.highestTS,
+				"ts", rtph.Timestamp,
+				"tsDiff", rtph.Timestamp-r.highestTS,
 				"highestTime", r.highestTime,
 				"now", packetTime,
+				"timeDiff(ms)", float64(packetTime-r.highestTime)/float64(1e6),
 			)
 		}
 		// LK-DEBUG-REMOVE END
@@ -634,6 +664,8 @@ func (r *RTPStats) ToString() string {
 	expectedPacketRate := float64(expectedPackets) / p.Duration
 
 	str := fmt.Sprintf("t: %+v|%+v|%.2fs", p.StartTime.AsTime().Format(time.UnixDate), p.EndTime.AsTime().Format(time.UnixDate), p.Duration)
+
+	str += fmt.Sprintf(" sn: %d|%d", r.extStartSN, r.getExtHighestSN())
 
 	str += fmt.Sprintf(", ep: %d|%.2f/s", expectedPackets, expectedPacketRate)
 	str += fmt.Sprintf(", p: %d|%.2f/s", p.Packets, p.PacketRate)
