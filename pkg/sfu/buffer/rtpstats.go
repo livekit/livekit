@@ -293,19 +293,16 @@ func (r *RTPStats) GetTotalPacketsPrimary() uint32 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	return r.getTotalPacketsPrimary()
+}
+
+func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	packetsSeen := r.getNumPacketsSeen()
 	if r.packetsPadding > packetsSeen {
 		return 0
 	}
 
 	return packetsSeen - r.packetsPadding
-}
-
-func (r *RTPStats) GetTotalBytes() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.bytes + r.bytesDuplicate + r.bytesPadding
 }
 
 func (r *RTPStats) UpdatePacketsLost(packetsLost uint32) {
@@ -538,7 +535,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     nowRTP,
-		PacketCount: r.getNumPacketsSeen() + r.packetsDuplicate + r.packetsPadding,
+		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
 	}
 }
@@ -726,7 +723,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	}
 
 	packetsExpected := r.getExtHighestSN() - r.extStartSN + 1
-	packets := r.getNumPacketsSeen()
+	packets := r.getTotalPacketsPrimary()
 	packetRate := float64(packets) / elapsed
 	bitrate := float64(r.bytes) * 8.0 / elapsed
 
