@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 
+	"github.com/livekit/protocol/logger"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
@@ -370,11 +372,13 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 		// store new max layer for next round
 		cur.MaxLayer = maxLayer
 		// we accumulate bytes/packets across layers
-		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
-		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
-		if int64(videoLayer.TotalBytes) < 0 || int32(videoLayer.TotalPackets) < 0 {
+
+		if cur.TotalBytes < prev.TotalBytes || cur.TotalPackets < prev.TotalPackets {
+			logger.Debugw("computeDeltaStats cur less than prev", "current", cur, "prev", prev)
 			return nil
 		}
+		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
+		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
 	}
 	// if no packets from any layers, return nil to send no stats
 	if deltaStats.TotalPackets == 0 && deltaStats.TotalPrimaryPackets == 0 && deltaStats.TotalRetransmitPackets == 0 && deltaStats.TotalPaddingPackets == 0 {
