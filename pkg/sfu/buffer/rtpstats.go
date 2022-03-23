@@ -175,6 +175,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.highestTime = packetTime
 
 		r.extStartSN = uint32(rtph.SequenceNumber)
+		r.logger.Debugw("RTPSTATS_DEBUG, setting extStartSN init", "extStartSN", r.extStartSN) // LK-DEBUG-REMOVE
 		r.cycles = 0
 
 		first = true
@@ -197,7 +198,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.packetsOutOfOrder++
 		}
 
-		// adjust start to account for out-of-order packets before o cycle completes
+		// adjust start to account for out-of-order packets before a cycle completes
 		if !r.isCycleCompleted() && (rtph.SequenceNumber-uint16(r.extStartSN)) > (1<<15) {
 			// LK-DEBUG-REMOVE START
 			r.logger.Debugw(
@@ -219,6 +220,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check below
 			r.packetsLost += uint32(uint16(r.extStartSN) - rtph.SequenceNumber)
 			r.extStartSN = uint32(rtph.SequenceNumber)
+			r.logger.Debugw("RTPSTATS_DEBUG, setting extStartSN moving back", "extStartSN", r.extStartSN) // LK-DEBUG-REMOVE
 		}
 
 		if r.isSeenSN(rtph.SequenceNumber) {
@@ -287,37 +289,20 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	return
 }
 
-func (r *RTPStats) GetTotalPackets() uint32 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.getNumPacketsSeen() + r.packetsDuplicate + r.packetsPadding
-}
-
 func (r *RTPStats) GetTotalPacketsPrimary() uint32 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	return r.getTotalPacketsPrimary()
+}
+
+func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	packetsSeen := r.getNumPacketsSeen()
 	if r.packetsPadding > packetsSeen {
 		return 0
 	}
 
 	return packetsSeen - r.packetsPadding
-}
-
-func (r *RTPStats) GetTotalBytes() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.bytes + r.bytesDuplicate + r.bytesPadding
-}
-
-func (r *RTPStats) GetTotalBytesSansDuplicate() uint64 {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	return r.bytes + r.bytesPadding
 }
 
 func (r *RTPStats) UpdatePacketsLost(packetsLost uint32) {
@@ -550,7 +535,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 		SSRC:        ssrc,
 		NTPTime:     uint64(nowNTP),
 		RTPTime:     nowRTP,
-		PacketCount: r.getNumPacketsSeen() + r.packetsDuplicate + r.packetsPadding,
+		PacketCount: r.getTotalPacketsPrimary() + r.packetsDuplicate + r.packetsPadding,
 		OctetCount:  uint32(r.bytes + r.bytesDuplicate + r.bytesPadding),
 	}
 }
@@ -738,7 +723,7 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 	}
 
 	packetsExpected := r.getExtHighestSN() - r.extStartSN + 1
-	packets := r.getNumPacketsSeen()
+	packets := r.getTotalPacketsPrimary()
 	packetRate := float64(packets) / elapsed
 	bitrate := float64(r.bytes) * 8.0 / elapsed
 
