@@ -65,7 +65,7 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 		maxSubscriberQuality:         make(map[livekit.ParticipantID]livekit.VideoQuality),
 		maxSubscriberNodeQuality:     make(map[livekit.NodeID]livekit.VideoQuality),
 		maxSubscribedQuality:         livekit.VideoQuality_LOW,
-		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.SubscribedQualityUpdateThrottle),
+		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.DynacastPauseDelay),
 	}
 
 	return t
@@ -511,8 +511,11 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		return
 	}
 
-	if (t.maxSubscribedQuality != livekit.VideoQuality_OFF && maxSubscribedQuality != livekit.VideoQuality_OFF) &&
-		t.maxSubscribedQuality > maxSubscribedQuality && !force {
+	// if quality comes down(or become OFF), delay notify to publisher
+	if (t.maxSubscribedQuality != livekit.VideoQuality_OFF) &&
+		(t.maxSubscribedQuality > maxSubscribedQuality || maxSubscribedQuality == livekit.VideoQuality_OFF) &&
+		t.params.VideoConfig.DynacastPauseDelay > 0 && !force {
+
 		t.params.Logger.Debugw("throttle quality change", "from", t.maxSubscribedQuality, "to", maxSubscribedQuality)
 		t.maxQualityLock.Unlock()
 		t.maxSubscribedQualityDebounce(func() {

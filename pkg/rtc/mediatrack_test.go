@@ -175,7 +175,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 			VideoConfig: config.VideoConfig{
-				SubscribedQualityUpdateThrottle: 100 * time.Millisecond,
+				DynacastPauseDelay: 100 * time.Millisecond,
 			},
 		})
 

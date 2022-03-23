@@ -114,7 +114,7 @@ type AudioConfig struct {
 }
 
 type VideoConfig struct {
-	SubscribedQualityUpdateThrottle time.Duration `yaml:"subscribed_quality_update_throttle,omitempty"`
+	DynacastPauseDelay time.Duration `yaml:"dynacast_pause_delay,omitempty"`
 }
 
 type RedisConfig struct {
@@ -213,7 +213,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			SmoothIntervals: 2,
 		},
 		Video: VideoConfig{
-			SubscribedQualityUpdateThrottle: 5 * time.Second,
+			DynacastPauseDelay: 5 * time.Second,
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{
