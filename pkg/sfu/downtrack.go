@@ -201,6 +201,7 @@ func NewDownTrack(
 
 	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
+		Logger:    d.logger,
 	})
 	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
 
