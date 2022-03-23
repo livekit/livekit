@@ -240,6 +240,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		// muting "s1" also should disable all qualities
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
+		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			{Quality: livekit.VideoQuality_LOW, Enabled: false},
@@ -251,6 +252,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 		// unmuting "s1" should enable previously set max quality
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
+		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			{Quality: livekit.VideoQuality_LOW, Enabled: true},
