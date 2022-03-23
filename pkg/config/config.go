@@ -30,6 +30,7 @@ type Config struct {
 	RTC            RTCConfig          `yaml:"rtc,omitempty"`
 	Redis          RedisConfig        `yaml:"redis,omitempty"`
 	Audio          AudioConfig        `yaml:"audio,omitempty"`
+	Video          VideoConfig        `yaml:"video,omitempty"`
 	Room           RoomConfig         `yaml:"room,omitempty"`
 	TURN           TURNConfig         `yaml:"turn,omitempty"`
 	WebHook        WebHookConfig      `yaml:"webhook,omitempty"`
@@ -110,6 +111,10 @@ type AudioConfig struct {
 	// smoothing for audioLevel values sent to the client.
 	// audioLevel will be an average of `smooth_intervals`, 0 to disable
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
+}
+
+type VideoConfig struct {
+	SubscribedQualityUpdateThrottle time.Duration `yaml:"subscribed_quality_update_throttle,omitempty"`
 }
 
 type RedisConfig struct {
@@ -206,6 +211,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			MinPercentile:   40,
 			UpdateInterval:  400,
 			SmoothIntervals: 2,
+		},
+		Video: VideoConfig{
+			SubscribedQualityUpdateThrottle: 5 * time.Second,
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{

@@ -51,6 +51,7 @@ type ParticipantParams struct {
 	Config                  *WebRTCConfig
 	Sink                    routing.MessageSink
 	AudioConfig             config.AudioConfig
+	VideoConfig             config.VideoConfig
 	ProtocolVersion         types.ProtocolVersion
 	Telemetry               telemetry.TelemetryService
 	PLIThrottleConfig       config.PLIThrottleConfig
@@ -1353,6 +1354,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			BufferFactory:       p.params.Config.BufferFactory,
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
+			VideoConfig:         p.params.VideoConfig,
 			Telemetry:           p.params.Telemetry,
 			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,
