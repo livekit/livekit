@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bep/debounce"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -37,6 +39,7 @@ type MediaTrackSubscriptions struct {
 	maxSubscriberQuality         map[livekit.ParticipantID]livekit.VideoQuality
 	maxSubscriberNodeQuality     map[livekit.NodeID]livekit.VideoQuality
 	maxSubscribedQuality         livekit.VideoQuality
+	maxSubscribedQualityDebounce func(func())
 	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality)
 	maxQualityTimer              *time.Timer
 }
@@ -47,6 +50,7 @@ type MediaTrackSubscriptionsParams struct {
 	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
+	VideoConfig      config.VideoConfig
 
 	Telemetry telemetry.TelemetryService
 
@@ -55,12 +59,13 @@ type MediaTrackSubscriptionsParams struct {
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
 	t := &MediaTrackSubscriptions{
-		params:                   params,
-		subscribedTracks:         make(map[livekit.ParticipantID]types.SubscribedTrack),
-		pendingClose:             make(map[livekit.ParticipantID]types.SubscribedTrack),
-		maxSubscriberQuality:     make(map[livekit.ParticipantID]livekit.VideoQuality),
-		maxSubscriberNodeQuality: make(map[livekit.NodeID]livekit.VideoQuality),
-		maxSubscribedQuality:     livekit.VideoQuality_LOW,
+		params:                       params,
+		subscribedTracks:             make(map[livekit.ParticipantID]types.SubscribedTrack),
+		pendingClose:                 make(map[livekit.ParticipantID]types.SubscribedTrack),
+		maxSubscriberQuality:         make(map[livekit.ParticipantID]livekit.VideoQuality),
+		maxSubscriberNodeQuality:     make(map[livekit.NodeID]livekit.VideoQuality),
+		maxSubscribedQuality:         livekit.VideoQuality_LOW,
+		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.SubscribedQualityUpdateThrottle),
 	}
 
 	return t
@@ -503,6 +508,16 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 
 	if maxSubscribedQuality == t.maxSubscribedQuality && !force {
 		t.maxQualityLock.Unlock()
+		return
+	}
+
+	if (t.maxSubscribedQuality != livekit.VideoQuality_OFF && maxSubscribedQuality != livekit.VideoQuality_OFF) &&
+		t.maxSubscribedQuality > maxSubscribedQuality && !force {
+		t.params.Logger.Debugw("throttle quality change", "from", t.maxSubscribedQuality, "to", maxSubscribedQuality)
+		t.maxQualityLock.Unlock()
+		t.maxSubscribedQualityDebounce(func() {
+			t.UpdateQualityChange(true)
+		})
 		return
 	}
 

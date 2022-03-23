@@ -51,6 +51,7 @@ type ParticipantParams struct {
 	Config                  *WebRTCConfig
 	Sink                    routing.MessageSink
 	AudioConfig             config.AudioConfig
+	VideoConfig             config.VideoConfig
 	ProtocolVersion         types.ProtocolVersion
 	Telemetry               telemetry.TelemetryService
 	PLIThrottleConfig       config.PLIThrottleConfig
@@ -635,11 +636,14 @@ func (p *ParticipantImpl) ICERestart() error {
 func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
 	level = SilentAudioLevel
 	for _, pt := range p.GetPublishedTracks() {
-		tl, ta := pt.(types.LocalMediaTrack).GetAudioLevel()
-		if ta {
-			active = true
-			if tl < level {
-				level = tl
+		mediaTrack := pt.(types.LocalMediaTrack)
+		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
+			tl, ta := mediaTrack.GetAudioLevel()
+			if ta {
+				active = true
+				if tl < level {
+					level = tl
+				}
 			}
 		}
 	}
@@ -1350,6 +1354,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			BufferFactory:       p.params.Config.BufferFactory,
 			ReceiverConfig:      p.params.Config.Receiver,
 			AudioConfig:         p.params.AudioConfig,
+			VideoConfig:         p.params.VideoConfig,
 			Telemetry:           p.params.Telemetry,
 			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,

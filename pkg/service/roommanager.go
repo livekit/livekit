@@ -246,6 +246,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Config:                  &rtcConf,
 		Sink:                    responseSink,
 		AudioConfig:             r.config.Audio,
+		VideoConfig:             r.config.Video,
 		ProtocolVersion:         pv,
 		Telemetry:               r.telemetry,
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,

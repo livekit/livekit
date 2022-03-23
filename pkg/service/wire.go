@@ -5,21 +5,22 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
-	"github.com/livekit/livekit-server/pkg/clientconfiguration"
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
-	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
-	"crypto/tls"
 
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -31,7 +32,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createMessageBus,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
-		wire.Bind(new(EgressStore), new(ObjectStore)),
 		createKeyProvider,
 		createWebhookNotifier,
 		createClientConfiguration,
@@ -109,22 +109,22 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	}
 
 	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-    rcOptions :=  &redis.Options{
-                             Addr:     conf.Redis.Address,
-                             Username: conf.Redis.Username,
-                             Password: conf.Redis.Password,
-                             DB:       conf.Redis.DB,
-                         }
+	rcOptions := &redis.Options{
+		Addr:     conf.Redis.Address,
+		Username: conf.Redis.Username,
+		Password: conf.Redis.Password,
+		DB:       conf.Redis.DB,
+	}
 	if conf.Redis.UseTLS {
 		rcOptions = &redis.Options{
-    		Addr:     conf.Redis.Address,
-    		Username: conf.Redis.Username,
-    		Password: conf.Redis.Password,
-    		DB:       conf.Redis.DB,
-            TLSConfig: &tls.Config{
-                    MinVersion: tls.VersionTLS12,
-                },
-    	}
+			Addr:     conf.Redis.Address,
+			Username: conf.Redis.Username,
+			Password: conf.Redis.Password,
+			DB:       conf.Redis.DB,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
 	}
 	rc := redis.NewClient(rcOptions)
 
