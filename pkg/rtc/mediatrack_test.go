@@ -2,7 +2,9 @@ package rtc
 
 import (
 	"testing"
+	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 )
@@ -148,29 +150,34 @@ func TestSubscribedMaxQuality(t *testing.T) {
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
-			Sid:    "v1",
-			Type:   livekit.TrackType_VIDEO,
-			Width:  1080,
-			Height: 720,
-			Layers: []*livekit.VideoLayer{
-				{
-					Quality: livekit.VideoQuality_LOW,
-					Width:   480,
-					Height:  270,
-				},
-				{
-					Quality: livekit.VideoQuality_MEDIUM,
-					Width:   960,
-					Height:  540,
-				},
-				{
-					Quality: livekit.VideoQuality_HIGH,
-					Width:   1080,
-					Height:  720,
+		mt := NewMediaTrack(MediaTrackParams{
+			TrackInfo: &livekit.TrackInfo{
+				Sid:    "v1",
+				Type:   livekit.TrackType_VIDEO,
+				Width:  1080,
+				Height: 720,
+				Layers: []*livekit.VideoLayer{
+					{
+						Quality: livekit.VideoQuality_LOW,
+						Width:   480,
+						Height:  270,
+					},
+					{
+						Quality: livekit.VideoQuality_MEDIUM,
+						Width:   960,
+						Height:  540,
+					},
+					{
+						Quality: livekit.VideoQuality_HIGH,
+						Width:   1080,
+						Height:  720,
+					},
 				},
 			},
-		}})
+			VideoConfig: config.VideoConfig{
+				SubscribedQualityUpdateThrottle: 100 * time.Millisecond,
+			},
+		})
 
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
@@ -194,6 +201,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		// "s1" dropping to MEDIUM should disable HIGH layer
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_MEDIUM)
 
+		// wait for throttle to kick in
+		time.Sleep(110 * time.Millisecond)
+
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			{Quality: livekit.VideoQuality_LOW, Enabled: true},
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -205,6 +215,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		// "s1" and "s1" dropping to LOW should disable HIGH & MEDIUM
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
 		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_LOW)
+
+		// wait for throttle to kick in
+		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedQuality{
 			{Quality: livekit.VideoQuality_LOW, Enabled: true},
