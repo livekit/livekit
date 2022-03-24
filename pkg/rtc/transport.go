@@ -28,6 +28,10 @@ import (
 const (
 	negotiationFrequency       = 150 * time.Millisecond
 	dtlsRetransmissionInterval = 100 * time.Millisecond
+
+	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
+	iceFailedTimeout       = 25 * time.Second // pion's default
+	iceKeepaliveInterval   = 2 * time.Second  // pion's default
 )
 
 const (
@@ -113,6 +117,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
+	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
 	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
 	if lf != nil {
