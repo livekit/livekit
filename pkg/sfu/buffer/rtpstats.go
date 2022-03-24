@@ -182,13 +182,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	}
 
 	pktSize := uint64(rtph.MarshalSize() + payloadSize + paddingSize)
-	if payloadSize == 0 {
-		r.packetsPadding++
-		r.bytesPadding += pktSize
-	} else {
-		r.bytes += pktSize
-	}
-
 	isDuplicate := false
 	diff := rtph.SequenceNumber - r.highestSN
 	switch {
@@ -283,6 +276,13 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	r.setSeenSN(rtph.SequenceNumber)
 
 	if !isDuplicate {
+		if payloadSize == 0 {
+			r.packetsPadding++
+			r.bytesPadding += pktSize
+		} else {
+			r.bytes += pktSize
+		}
+
 		r.updateJitter(rtph, packetTime)
 	}
 
@@ -645,14 +645,14 @@ func (r *RTPStats) ToString() string {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	expectedPackets := p.Packets + p.PacketsLost
+	expectedPackets := r.getExtHighestSN() - r.extStartSN + 1
 	expectedPacketRate := float64(expectedPackets) / p.Duration
 
 	str := fmt.Sprintf("t: %+v|%+v|%.2fs", p.StartTime.AsTime().Format(time.UnixDate), p.EndTime.AsTime().Format(time.UnixDate), p.Duration)
 
 	str += fmt.Sprintf(" sn: %d|%d", r.extStartSN, r.getExtHighestSN())
-
 	str += fmt.Sprintf(", ep: %d|%.2f/s", expectedPackets, expectedPacketRate)
+
 	str += fmt.Sprintf(", p: %d|%.2f/s", p.Packets, p.PacketRate)
 	str += fmt.Sprintf(", l: %d|%.1f/s|%.2f%%", p.PacketsLost, p.PacketLossRate, p.PacketLossPercentage)
 	str += fmt.Sprintf(", b: %d|%.1fbps", p.Bytes, p.Bitrate)
