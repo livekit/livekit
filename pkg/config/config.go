@@ -132,6 +132,7 @@ type RoomConfig struct {
 	MaxParticipants    uint32      `yaml:"max_participants"`
 	EmptyTimeout       uint32      `yaml:"empty_timeout"`
 	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute"`
+	MaxMetadataSize    uint32      `yaml:"max_metadata_size"`
 }
 
 type CodecSpec struct {

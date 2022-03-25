@@ -12,4 +12,5 @@ var (
 	ErrTrackNotFound        = errors.New("track is not found")
 	ErrWebHookMissingAPIKey = errors.New("api_key is required to use webhooks")
 	ErrOperationFailed      = errors.New("operation cannot be completed")
+	ErrMetadataExceedLimits = errors.New("metadata size exceed limits")
 )

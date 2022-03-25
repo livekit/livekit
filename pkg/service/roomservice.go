@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
@@ -24,13 +26,15 @@ type RoomService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
 	roomStore     ServiceStore
+	conf          config.RoomConfig
 }
 
-func NewRoomService(ra RoomAllocator, rs ServiceStore, router routing.MessageRouter) (svc *RoomService, err error) {
+func NewRoomService(ra RoomAllocator, rs ServiceStore, router routing.MessageRouter, conf config.RoomConfig) (svc *RoomService, err error) {
 	svc = &RoomService{
 		router:        router,
 		roomAllocator: ra,
 		roomStore:     rs,
+		conf:          conf,
 	}
 	return
 }
@@ -216,6 +220,10 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
+	if s.conf.MaxMetadataSize > 0 && len(req.Metadata) > int(s.conf.MaxMetadataSize) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedLimits.Error(), strconv.Itoa(int(s.conf.MaxMetadataSize)))
+	}
+
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateParticipant{
 			UpdateParticipant: req,
@@ -278,6 +286,10 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 }
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
+	if s.conf.MaxMetadataSize > 0 && len(req.Metadata) > int(s.conf.MaxMetadataSize) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedLimits.Error(), strconv.Itoa(int(s.conf.MaxMetadataSize)))
+	}
+
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
 		return nil, twirpAuthError(err)
 	}
