@@ -37,7 +37,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomAllocator, objectStore, router)
+	roomConfig := getRoomConf(conf)
+	roomService, err := NewRoomService(roomAllocator, objectStore, router, roomConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -172,4 +173,8 @@ func createStore(rc *redis.Client) ObjectStore {
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
+}
+
+func getRoomConf(config2 *config.Config) config.RoomConfig {
+	return config2.Room
 }

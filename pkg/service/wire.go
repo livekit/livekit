@@ -36,6 +36,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		createClientConfiguration,
 		routing.CreateRouter,
+		getRoomConf,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -152,4 +153,8 @@ func createStore(rc *redis.Client) ObjectStore {
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
+}
+
+func getRoomConf(config *config.Config) config.RoomConfig {
+	return config.Room
 }
