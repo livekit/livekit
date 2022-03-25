@@ -113,6 +113,8 @@ keys:
 #   # allow tracks to be unmuted remotely, defaults to false
 #   # tracks can always be muted from the Room Service APIs
 #   enable_remote_unmute: true
+#   # limit size of room and participant's metadata, 0 for no limit
+#   max_metadata_size: 0
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events
