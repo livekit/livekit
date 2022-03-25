@@ -305,7 +305,7 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	cur := stats.curStats
 	prev := stats.prevStats
 
-	var maxLayer int32
+	maxLayer := int32(-1)
 	var maxDeltaBytes uint64
 	//create a map of VideoLayers - to pick max/best layer wrt current and prev
 	curLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
@@ -332,7 +332,12 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 				maxLayer = layer.Layer
 			}
 		}
-		return cur.ToAnalyticsStats(curLayers[maxLayer])
+		// no layers (non-video tracks) and/or no deltas due to OFF/FREEZE
+		if maxLayer != -1 {
+			return cur.ToAnalyticsStats(curLayers[maxLayer])
+		} else {
+			return cur.ToAnalyticsStats(nil)
+		}
 	}
 
 	// we have prevStats, find delta between cur and prev
@@ -360,7 +365,8 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 	}
 
 	var videoLayer *livekit.AnalyticsVideoLayer
-	if len(cur.VideoLayers) > 0 && len(prev.VideoLayers) > 0 {
+	// handle deltas being 0 due to freeze/OFF for video tracks when no maxLayer is found
+	if len(cur.VideoLayers) > 0 && len(prev.VideoLayers) > 0 && maxLayer != -1 {
 		videoLayer = new(livekit.AnalyticsVideoLayer)
 		// find the current layer for the same layer id as previous, compute current round of delta with it
 		if curLayer, ok := curLayers[prev.MaxLayer]; ok {
@@ -380,6 +386,12 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
 		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
 	}
+
+	// carry forward maxLayer info when no deltas were found
+	if maxLayer == -1 {
+		cur.MaxLayer = prev.MaxLayer
+	}
+
 	// if no packets from any layers, return nil to send no stats
 	if deltaStats.TotalPackets == 0 && deltaStats.TotalPrimaryPackets == 0 && deltaStats.TotalRetransmitPackets == 0 && deltaStats.TotalPaddingPackets == 0 {
 		return nil
