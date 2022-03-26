@@ -94,7 +94,7 @@ func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomNam
 }
 
 func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) error {
-	if err := r.rc.HDel(r.ctx, NodeRoomKey, string(roomName)).Err(); err != nil {
+	if err := r.rc.HDel(context.Background(), NodeRoomKey, string(roomName)).Err(); err != nil {
 		return errors.Wrap(err, "could not clear room state")
 	}
 	return nil
