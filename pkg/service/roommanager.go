@@ -394,22 +394,23 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		participant.Identity(), participant.ID(),
 	)
 
-	lastTokenUpdate := time.Now()
+	// send first refresh for cases when client token is close to expiring
+	_ = r.refreshToken(participant)
+	tokenTicker := time.NewTicker(tokenRefreshInterval)
+	defer tokenTicker.Stop()
+	stateCheckTicker := time.NewTicker(time.Millisecond * 50)
+	defer stateCheckTicker.Stop()
 	for {
 		select {
-		case <-time.After(time.Millisecond * 50):
+		case <-stateCheckTicker.C:
 			// periodic check to ensure participant didn't become disconnected
 			if participant.State() == livekit.ParticipantInfo_DISCONNECTED {
 				return
 			}
-
-			if time.Since(lastTokenUpdate) > tokenRefreshInterval {
-				pLogger.Debugw("refreshing client token after interval")
-				// refresh token with the first API Key/secret pair
-				if err := r.refreshToken(participant); err != nil {
-					pLogger.Errorw("could not refresh token", err)
-				}
-				lastTokenUpdate = time.Now()
+		case <-tokenTicker.C:
+			// refresh token with the first API Key/secret pair
+			if err := r.refreshToken(participant); err != nil {
+				pLogger.Errorw("could not refresh token", err)
 			}
 		case obj := <-requestSource.ReadChan():
 			// In single node mode, the request source is directly tied to the signal message channel
