@@ -1,8 +1,11 @@
 package routing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"runtime/pprof"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -22,6 +25,7 @@ const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
+	statsMaxDelaySeconds  = 10
 )
 
 // RedisRouter uses Redis pub/sub to route signaling messages across different nodes
@@ -33,6 +37,7 @@ type RedisRouter struct {
 	rc        *redis.Client
 	ctx       context.Context
 	isStarted atomic.Bool
+	statsMu   sync.Mutex
 
 	pubsub *redis.PubSub
 	cancel func()
@@ -338,18 +343,35 @@ func (r *RedisRouter) getParticipantSignalNode(connectionID livekit.ConnectionID
 
 // update node stats and cleanup
 func (r *RedisRouter) statsWorker() {
+	goroutineDumped := false
 	for r.ctx.Err() == nil {
-		// update periodically seconds
+		// update periodically
 		select {
 		case <-time.After(statsUpdateInterval):
 			_ = r.WriteNodeRTC(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
 				Message: &livekit.RTCNodeMessage_KeepAlive{},
 			})
+			r.statsMu.Lock()
+			stats := r.currentNode.Stats
+			r.statsMu.Unlock()
+
+			delaySeconds := time.Now().Unix() - stats.UpdatedAt
+			if delaySeconds > statsMaxDelaySeconds {
+				if !goroutineDumped {
+					goroutineDumped = true
+					buf := bytes.NewBuffer(nil)
+					_ = pprof.Lookup("goroutine").WriteTo(buf, 2)
+					logger.Errorw("status update delayed, possible deadlock", nil,
+						"delay", delaySeconds,
+						"goroutines", buf.String())
+				}
+			} else {
+				goroutineDumped = false
+			}
 		case <-r.ctx.Done():
 			return
 		}
 	}
-
 }
 
 // worker that consumes redis messages intended for this node
@@ -455,12 +477,14 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			break
 		}
 
+		r.statsMu.Lock()
 		updated, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats)
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
 		} else {
 			r.currentNode.Stats = updated
 		}
+		r.statsMu.Unlock()
 
 		// TODO: check stats against config.Limit values
 		if err := r.RegisterNode(); err != nil {
