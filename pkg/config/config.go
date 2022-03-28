@@ -219,12 +219,12 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		Redis: RedisConfig{},
 		Room: RoomConfig{
 			AutoCreate: true,
-			// by default only enable opus and VP8
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
 				{Mime: webrtc.MimeTypeVP8},
 				{Mime: webrtc.MimeTypeH264},
-				// {Mime: webrtc.MimeTypeVP9},
+				{Mime: webrtc.MimeTypeAV1},
+				{Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,
 		},
