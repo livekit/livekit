@@ -148,6 +148,8 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	for layer := range s.trackers {
 		s.trackers[layer] = nil
 	}
+	s.availableLayers = make([]int32, 0)
+	s.maxExpectedLayer = DefaultMaxLayerSpatial
 	s.lock.Unlock()
 
 	for _, tracker := range trackers {
