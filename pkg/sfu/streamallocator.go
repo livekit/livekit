@@ -134,7 +134,7 @@ type Event struct {
 }
 
 func (e Event) String() string {
-	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %s}", e.Signal, e.Data)
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %+v}", e.Signal, e.Data)
 }
 
 type StreamAllocatorParams struct {
