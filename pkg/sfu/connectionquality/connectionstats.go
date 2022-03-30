@@ -4,11 +4,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 const (

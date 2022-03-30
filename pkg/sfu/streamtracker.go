@@ -4,9 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/logger"
-	"go.uber.org/atomic"
 )
 
 type StreamStatus int32
@@ -228,12 +229,12 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
 }
 
 // BitrateTemporalCumulative returns the current stream bitrate temporal layer accumulated with lower temporal layers.
-func (s *StreamTracker) BitrateTemporalCumulative() [4]int64 {
+func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
 	// copy and process
-	var brs [4]int64
+	brs := make([]int64, len(s.bitrate))
 	for i := 0; i < len(s.bitrate); i++ {
 		brs[i] = s.bitrate[i]
 	}

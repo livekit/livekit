@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"google.golang.org/protobuf/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate

@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/pkg/errors"
-	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"

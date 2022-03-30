@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )

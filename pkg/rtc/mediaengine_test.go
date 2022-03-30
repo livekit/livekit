@@ -3,9 +3,10 @@ package rtc
 import (
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestIsCodecEnabled(t *testing.T) {

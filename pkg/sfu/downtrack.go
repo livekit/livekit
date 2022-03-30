@@ -9,14 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/transport/packetio"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -241,7 +242,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bound.Store(true)
 
 	d.connectionStats.Start()
-	d.logger.Debugw("binded")
+	d.logger.Debugw("bound")
 
 	return codec, nil
 }
@@ -555,7 +556,7 @@ func (d *DownTrack) Close() {
 // 1. When transceiver is reused by other participant's video track,
 //    set flush=true to avoid previous video shows before previous stream is displayed.
 // 2. in case of session migration, participant migrate from other node, video track should
-//    be resumed with same participant, set flush=false since we don't need flush decoder.
+//    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.forwarder.Mute(true)
 
@@ -563,7 +564,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
 	// Otherwise, with transceiver re-use last frame from previous stream is held in the
 	// display buffer and there could be a brief moment where the previous stream is displayed.
-	d.logger.Infow("close downtrack", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
+	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
 		_ = d.writeBlankFrameRTP()
 	}

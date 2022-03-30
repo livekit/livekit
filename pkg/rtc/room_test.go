@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
