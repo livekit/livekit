@@ -11,9 +11,10 @@ import (
 	"github.com/sebest/xff"
 
 	"github.com/gorilla/websocket"
+	"github.com/ua-parser/uap-go/uaparser"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -82,6 +83,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	onlyName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
 		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
+	}
+
+	if claims.Identity == "" {
+		return "", routing.ParticipantInit{}, http.StatusBadRequest, ErrIdentityEmpty
 	}
 
 	roomName := livekit.RoomName(r.FormValue("room"))
