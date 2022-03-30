@@ -12,14 +12,15 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/thoas/go-funk"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 )

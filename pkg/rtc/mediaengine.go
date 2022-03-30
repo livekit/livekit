@@ -3,8 +3,9 @@ package rtc
 import (
 	"strings"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig) error {

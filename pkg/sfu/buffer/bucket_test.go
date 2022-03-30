@@ -85,7 +85,7 @@ func Test_queue(t *testing.T) {
 	_, err = q.GetPacket(buff, 0)
 	require.ErrorIs(t, err, ErrPacketNotFound)
 
-	// ask for soemething ahead of headSN
+	// ask for something ahead of headSN
 	_, err = q.GetPacket(buff, 11)
 	require.ErrorIs(t, err, ErrPacketNotFound)
 }

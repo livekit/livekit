@@ -4,9 +4,11 @@ import (
 	"context"
 
 	"github.com/gammazero/workerpool"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
+
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const maxWebhookWorkers = 50
@@ -75,8 +77,8 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 		totalPackets := uint32(0)
 		totalBytes := uint64(0)
 		for _, stream := range stat.Streams {
-			totalPackets += (stream.TotalPrimaryPackets + stream.TotalRetransmitPackets + stream.TotalPaddingPackets)
-			totalBytes += (stream.TotalPrimaryBytes + stream.TotalRetransmitBytes + stream.TotalPaddingBytes)
+			totalPackets += stream.TotalPrimaryPackets + stream.TotalRetransmitPackets + stream.TotalPaddingPackets
+			totalBytes += stream.TotalPrimaryBytes + stream.TotalRetransmitBytes + stream.TotalPaddingBytes
 		}
 		prometheus.IncrementPackets(direction, uint64(totalPackets))
 		prometheus.IncrementBytes(direction, totalBytes)

@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -205,12 +206,12 @@ func (w *WebRTCReceiver) SetRTT(rtt uint32) {
 	buffers := w.buffers
 	w.bufferMu.Unlock()
 
-	for _, buffer := range buffers {
-		if buffer == nil {
+	for _, buff := range buffers {
+		if buff == nil {
 			continue
 		}
 
-		buffer.SetRTT(rtt)
+		buff.SetRTT(rtt)
 	}
 }
 
@@ -440,7 +441,7 @@ func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
 
 	packetsExpected := uint32(0)
 	packetsLost := uint32(0)
-	maxJitter := float64(0.0)
+	maxJitter := 0.0
 	maxRtt := uint32(0)
 	for _, buff := range w.buffers {
 		if buff == nil {

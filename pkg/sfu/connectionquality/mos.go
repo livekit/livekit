@@ -22,7 +22,7 @@ func Score2Rating(score float32) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(pctLoss float32, rtt uint32, jitter float32) float32 {
+func mosAudioEModel(pctLoss float32, rtt uint32, jitter float32) float32 {
 	rx := 93.2 - pctLoss
 	ry := 0.18*rx*rx - 27.9*rx + 1126.62
 
@@ -68,7 +68,7 @@ func loss2Score(pctLoss float32, reducedQuality bool) float32 {
 }
 
 func AudioConnectionScore(pctLoss float32, rtt uint32, jitter float32) float32 {
-	return mosAudioEmodel(pctLoss, rtt, jitter)
+	return mosAudioEModel(pctLoss, rtt, jitter)
 }
 
 func VideoConnectionScore(pctLoss float32, reducedQuality bool) float32 {

@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )

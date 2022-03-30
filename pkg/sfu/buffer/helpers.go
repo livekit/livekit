@@ -5,8 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp/codecs"
+
+	"github.com/livekit/protocol/logger"
 )
 
 var (

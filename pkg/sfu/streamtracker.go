@@ -4,9 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/logger"
-	"go.uber.org/atomic"
 )
 
 type StreamStatus int32

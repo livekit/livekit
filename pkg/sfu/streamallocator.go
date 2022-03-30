@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -864,7 +865,7 @@ func (s *StreamAllocator) finalizeProbe() {
 	// reset probe interval on a successful probe
 	s.resetProbeInterval()
 
-	// probe estimate is same or higher, commit it and try allocate deficient tracks
+	// probe estimate is same or higher, commit it and try to allocate deficient tracks
 	s.params.Logger.Infow(
 		"successful probe, updating channel capacity",
 		"old(bps)", s.committedChannelCapacity,
@@ -1597,7 +1598,7 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 }
 
 func (c *ChannelObserver) GetNackRatio() float64 {
-	ratio := float64(0.0)
+	ratio := 0.0
 	if c.packets != 0 {
 		ratio = float64(c.repeatedNacks) / float64(c.packets)
 		if ratio > 1.0 {

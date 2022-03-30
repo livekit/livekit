@@ -6,11 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -224,7 +225,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 				"tsDiff", rtph.Timestamp-r.highestTS,
 				"highestTime", r.highestTime,
 				"now", packetTime,
-				"timeDiff(ms)", float64(packetTime-r.highestTime)/float64(1e6),
+				"timeDiff(ms)", float64(packetTime-r.highestTime)/1e6,
 			)
 		}
 		// LK-DEBUG-REMOVE END
@@ -290,7 +291,7 @@ func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, packetTime int64) {
 		"tsDiff", rtph.Timestamp-r.highestTS,
 		"highestTime", r.highestTime,
 		"now", packetTime,
-		"timeDiff(ms)", float64(packetTime-r.highestTime)/float64(1e6),
+		"timeDiff(ms)", float64(packetTime-r.highestTime)/1e6,
 	)
 	// LK-DEBUG-REMOVE END
 	// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check
@@ -839,12 +840,12 @@ func (r *RTPStats) getNumPacketsSeen() uint32 {
 
 func (r *RTPStats) setSeenSN(sn uint16) {
 	idx, rem := getPos(sn)
-	r.seenSNs[idx] |= (1 << rem)
+	r.seenSNs[idx] |= 1 << rem
 }
 
 func (r *RTPStats) clearSeenSN(sn uint16) {
 	idx, rem := getPos(sn)
-	r.seenSNs[idx] &^= (1 << rem)
+	r.seenSNs[idx] &^= 1 << rem
 }
 
 func (r *RTPStats) isSeenSN(sn uint16) bool {
@@ -943,7 +944,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) *Snapshot {
 
 // ----------------------------------
 
-func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
+func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 	startTime := time.Time{}
 	endTime := time.Time{}
 
@@ -958,7 +959,7 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 	frames := uint32(0)
 	keyFrames := uint32(0)
 	lastKeyFrame := time.Time{}
-	jitter := float64(0.0)
+	jitter := 0.0
 	maxJitter := float64(0)
 	gapHistogram := make(map[int32]uint32, GapHistogramNumBins)
 	nacks := uint32(0)
@@ -972,7 +973,7 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 	rtt := uint32(0)
 	maxRtt := uint32(0)
 
-	for _, stats := range statses {
+	for _, stats := range statsList {
 		if startTime.IsZero() || startTime.After(stats.StartTime.AsTime()) {
 			startTime = stats.StartTime.AsTime()
 		}
@@ -1076,7 +1077,7 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 		FrameRate:            frameRate,
 		KeyFrames:            keyFrames,
 		LastKeyFrame:         timestamppb.New(lastKeyFrame),
-		JitterCurrent:        jitter / float64(len(statses)),
+		JitterCurrent:        jitter / float64(len(statsList)),
 		JitterMax:            maxJitter,
 		GapHistogram:         gapHistogram,
 		Nacks:                nacks,
@@ -1087,7 +1088,7 @@ func AggregateRTPStats(statses []*livekit.RTPStats) *livekit.RTPStats {
 		LastLayerLockPli:     timestamppb.New(lastLayerLockPli),
 		Firs:                 firs,
 		LastFir:              timestamppb.New(lastFir),
-		RttCurrent:           rtt / uint32(len(statses)),
+		RttCurrent:           rtt / uint32(len(statsList)),
 		RttMax:               maxRtt,
 	}
 }

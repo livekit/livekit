@@ -115,7 +115,7 @@ availability. For detailed instructions, see [Kubernetes guide](https://docs.liv
 
 ### Testing your deployment
 
-Use the [connection tester](https://livekit.io/connection-test) to ensure your installation is set-up properly for user
+Use the [connection tester](https://livekit.io/connection-test) to ensure your installation is set up properly for user
 traffic.
 
 ## Building from source

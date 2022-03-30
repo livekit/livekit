@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/pion/rtcp"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/rtcp"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -205,7 +205,9 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 			downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 		}
 
-		receiver.AddDownTrack(downTrack)
+		if err = receiver.AddDownTrack(downTrack); err != nil {
+			logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
+		}
 	}
 	return nil
 }

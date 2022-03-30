@@ -112,8 +112,9 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
-	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/logger"
 )
 
 type ProberParams struct {

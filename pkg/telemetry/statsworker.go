@@ -6,9 +6,9 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/protocol/livekit"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Stat struct {
@@ -307,7 +307,7 @@ func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
 
 	maxLayer := int32(-1)
 	var maxDeltaBytes uint64
-	//create a map of VideoLayers - to pick max/best layer wrt current and prev
+	// create a map of VideoLayers - to pick max/best layer wrt current and prev
 	curLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
 	// if we have prev, find max delta total bytes for each layer
 	if prev != nil {

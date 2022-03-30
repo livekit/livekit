@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"

@@ -4,10 +4,11 @@ import (
 	"errors"
 	"net"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/ice/v2"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
@@ -184,7 +185,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		includes := rtcConf.Interfaces.Includes
 		excludes := rtcConf.Interfaces.Excludes
 		s.SetInterfaceFilter(func(s string) bool {
-			//filter by include interfaces
+			// filter by include interfaces
 			if len(includes) > 0 {
 				for _, iface := range includes {
 					if iface == s {

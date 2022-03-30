@@ -8,15 +8,16 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -607,7 +608,10 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.handlePendingDataChannels()
 	}
 	if pendingOffer != nil {
-		p.HandleOffer(*pendingOffer)
+		_, err := p.HandleOffer(*pendingOffer)
+		if err != nil {
+			p.GetLogger().Errorw("could not handle offer", err)
+		}
 	}
 }
 
@@ -671,7 +675,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
 		Quality:        rating,
-		Score:          float32(avgScore),
+		Score:          avgScore,
 	}
 }
 
@@ -1321,7 +1325,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	// use existing mediatrack to handle simulcast
+	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))

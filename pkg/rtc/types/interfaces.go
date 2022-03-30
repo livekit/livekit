@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"

@@ -8,9 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sebest/xff"
-
 	"github.com/gorilla/websocket"
+	"github.com/sebest/xff"
 	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/protocol/livekit"
@@ -147,7 +146,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// when autocreate is disabled, we'll check to ensure it's already created
+	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
@@ -288,7 +287,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
-	// get real address (forwarded http header) - check Cloudfare headers first, fall back to X-Forwaded-For
+	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = r.Header.Get("CF-Connecting-IP")
 	if len(ci.Address) == 0 {
 		ci.Address = xff.GetRemoteAddr(r)

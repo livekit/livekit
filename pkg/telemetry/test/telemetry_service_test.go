@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
@@ -447,7 +448,7 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	// do
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo)
 
-	// should not be called if there are not track stats
+	// should not be called if there are no track stats
 	require.Equal(t, 0, fixture.analytics.SendStatsCallCount())
 }
 
@@ -482,7 +483,7 @@ func Test_AddUpTrack(t *testing.T) {
 	require.Equal(t, 1, len(stats))
 	require.Equal(t, livekit.StreamType_UPSTREAM, stats[0].Kind)
 	require.Equal(t, totalBytes, stats[0].Streams[0].TotalPrimaryBytes)
-	require.Equal(t, totalPackets, uint32(stats[0].Streams[0].TotalPrimaryPackets))
+	require.Equal(t, totalPackets, stats[0].Streams[0].TotalPrimaryPackets)
 	require.Equal(t, string(trackID), stats[0].TrackId)
 }
 

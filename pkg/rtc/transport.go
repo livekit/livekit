@@ -8,14 +8,15 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
@@ -391,7 +392,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	//
 	// Simulate client side peer connection and set DTLS role from previous answer.
 	// Role needs to be set properly (one side needs to be server and the other side
-	// eeds to be the client) for DTLS connection to form properly. As this is
+	// needs to be the client) for DTLS connection to form properly. As this is
 	// trying to replicate previous setup, read from previous answer and use that role.
 	//
 	se := webrtc.SettingEngine{}
