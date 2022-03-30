@@ -873,7 +873,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 	p.state.Store(state)
-	p.params.Logger.Debugw("updating participant state", "state", state.String())
+	p.params.Logger.Warnw("updating participant state", nil, "state", state.String())
 	p.lock.RLock()
 	onStateChange := p.onStateChange
 	p.lock.RUnlock()
@@ -1547,6 +1547,7 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
 		} else if dc != nil {
+			p.params.Logger.Debugw("create migrated data channel", "label", dc.Label(), "id", dc.ID())
 			p.onDataChannel(dc)
 		}
 	}
