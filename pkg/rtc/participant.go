@@ -597,9 +597,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	var pendingOffer *webrtc.SessionDescription
 	p.migrateState.Store(s)
 	if s == types.MigrateStateSync {
-		if !p.hasPendingMigratedTrack() {
-			p.migrateState.Store(types.MigrateStateComplete)
-		}
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
 		// in case of migration, subscriber data channel will not fire OnOpen callback
@@ -1547,6 +1544,7 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 		if err != nil {
 			p.params.Logger.Errorw("create migrated data channel failed", err, "label", ci.Label)
 		} else if dc != nil {
+			p.params.Logger.Debugw("create migrated data channel", "label", dc.Label(), "id", dc.ID())
 			p.onDataChannel(dc)
 		}
 	}
