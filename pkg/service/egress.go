@@ -43,10 +43,10 @@ func (s *EgressService) Stop() {
 	close(s.shutdown)
 }
 
-func (s *EgressService) StartWebCompositeEgress(ctx context.Context, req *livekit.WebCompositeEgressRequest) (*livekit.EgressInfo, error) {
+func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
 	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
-		Request: &livekit.StartEgressRequest_WebComposite{
-			WebComposite: req,
+		Request: &livekit.StartEgressRequest_RoomComposite{
+			RoomComposite: req,
 		},
 	})
 }
@@ -115,8 +115,8 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 
 	var roomName string
 	switch r := info.Request.(type) {
-	case *livekit.EgressInfo_WebComposite:
-		roomName = r.WebComposite.RoomName
+	case *livekit.EgressInfo_RoomComposite:
+		roomName = r.RoomComposite.RoomName
 	case *livekit.EgressInfo_TrackComposite:
 		roomName = r.TrackComposite.RoomName
 	case *livekit.EgressInfo_Track:
