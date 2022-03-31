@@ -165,6 +165,10 @@ func (r *LocalRouter) Stop() {
 	r.rtcMessageChan.Close()
 }
 
+func (r *LocalRouter) GetRegion() string {
+	return r.currentNode.Region
+}
+
 func (r *LocalRouter) statsWorker() {
 	for {
 		if !r.isStarted.Load() {

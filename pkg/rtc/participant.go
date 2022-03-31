@@ -63,6 +63,7 @@ type ParticipantParams struct {
 	Grants                  *auth.ClaimGrants
 	InitialVersion          uint32
 	ClientConf              *livekit.ClientConfiguration
+	Region                  string
 }
 
 type ParticipantImpl struct {
@@ -357,6 +358,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		JoinedAt:   p.ConnectedAt().Unix(),
 		Version:    p.version.Inc(),
 		Permission: grants.Video.ToPermission(),
+		Region:     p.params.Region,
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 	if p.params.Grants != nil {
