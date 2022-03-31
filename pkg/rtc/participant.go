@@ -1238,10 +1238,17 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		return nil
 	}
 
+	trackPrefix := utils.TrackPrefix
+	if req.Type == livekit.TrackType_VIDEO {
+		trackPrefix += "V"
+	} else if req.Type == livekit.TrackType_AUDIO {
+		trackPrefix += "A"
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:       req.Type,
 		Name:       req.Name,
-		Sid:        utils.NewGuid(utils.TrackPrefix),
+		Sid:        utils.NewGuid(trackPrefix),
 		Width:      req.Width,
 		Height:     req.Height,
 		Muted:      req.Muted,
