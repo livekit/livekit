@@ -35,6 +35,7 @@ type ParticipantInit struct {
 	AutoSubscribe bool
 	Client        *livekit.ClientInfo
 	Grants        *auth.ClaimGrants
+	Region        string
 }
 
 type NewParticipantCallback func(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
@@ -54,6 +55,8 @@ type Router interface {
 	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
 	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
+
+	GetRegion() string
 
 	Start() error
 	Drain()
