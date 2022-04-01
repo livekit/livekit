@@ -6,8 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
@@ -298,7 +299,7 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 		return ForwardingStatusOff
 	}
 
-	if f.targetLayers.spatial < f.maxLayers.spatial && f.targetLayers.spatial < int32(f.availableLayers[len(f.availableLayers)-1]) {
+	if f.targetLayers.spatial < f.maxLayers.spatial && f.targetLayers.spatial < f.availableLayers[len(f.availableLayers)-1] {
 		return ForwardingStatusPartial
 	}
 

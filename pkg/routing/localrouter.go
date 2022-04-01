@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 // a router of messages on the same node, basic implementation for local testing
@@ -162,6 +163,10 @@ func (r *LocalRouter) Drain() {
 
 func (r *LocalRouter) Stop() {
 	r.rtcMessageChan.Close()
+}
+
+func (r *LocalRouter) GetRegion() string {
+	return r.currentNode.Region
 }
 
 func (r *LocalRouter) statsWorker() {

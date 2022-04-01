@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 func TestTrackInfo(t *testing.T) {

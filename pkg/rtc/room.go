@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -664,7 +665,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 		}
 		err := op.SendDataPacket(dp)
 		if err != nil {
-			r.Logger.Infow("send datapacket error", "error", err, "participant", op.Identity())
+			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
 		}
 	}
 }

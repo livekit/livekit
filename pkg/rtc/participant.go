@@ -8,15 +8,16 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -62,6 +63,7 @@ type ParticipantParams struct {
 	Grants                  *auth.ClaimGrants
 	InitialVersion          uint32
 	ClientConf              *livekit.ClientConfiguration
+	Region                  string
 }
 
 type ParticipantImpl struct {
@@ -356,6 +358,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		JoinedAt:   p.ConnectedAt().Unix(),
 		Version:    p.version.Inc(),
 		Permission: grants.Video.ToPermission(),
+		Region:     p.params.Region,
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 	if p.params.Grants != nil {
@@ -597,9 +600,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	var pendingOffer *webrtc.SessionDescription
 	p.migrateState.Store(s)
 	if s == types.MigrateStateSync {
-		if !p.hasPendingMigratedTrack() {
-			p.migrateState.Store(types.MigrateStateComplete)
-		}
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
 		// in case of migration, subscriber data channel will not fire OnOpen callback
@@ -610,7 +610,10 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.handlePendingDataChannels()
 	}
 	if pendingOffer != nil {
-		p.HandleOffer(*pendingOffer)
+		_, err := p.HandleOffer(*pendingOffer)
+		if err != nil {
+			p.GetLogger().Errorw("could not handle offer", err)
+		}
 	}
 }
 
@@ -674,7 +677,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
 		Quality:        rating,
-		Score:          float32(avgScore),
+		Score:          avgScore,
 	}
 }
 
@@ -982,7 +985,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 			p.SetMigrateState(types.MigrateStateComplete)
 		}
 		p.incActiveCounter()
-	} else if state == webrtc.PeerConnectionStateFailed {
+	} else if state == webrtc.PeerConnectionStateDisconnected {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 
@@ -1018,7 +1021,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 // for the secondary peer connection, we still need to handle when they become disconnected
 // instead of allowing them to silently fail.
 func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateFailed {
+	if state == webrtc.PeerConnectionStateDisconnected {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 	}
@@ -1235,10 +1238,27 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		return nil
 	}
 
+	trackPrefix := utils.TrackPrefix
+	if req.Type == livekit.TrackType_VIDEO {
+		trackPrefix += "V"
+	} else if req.Type == livekit.TrackType_AUDIO {
+		trackPrefix += "A"
+	}
+	switch req.Source {
+	case livekit.TrackSource_CAMERA:
+		trackPrefix += "C"
+	case livekit.TrackSource_MICROPHONE:
+		trackPrefix += "M"
+	case livekit.TrackSource_SCREEN_SHARE:
+		trackPrefix += "S"
+	case livekit.TrackSource_SCREEN_SHARE_AUDIO:
+		trackPrefix += "s"
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:       req.Type,
 		Name:       req.Name,
-		Sid:        utils.NewGuid(utils.TrackPrefix),
+		Sid:        utils.NewGuid(trackPrefix),
 		Width:      req.Width,
 		Height:     req.Height,
 		Muted:      req.Muted,
@@ -1324,7 +1344,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	// use existing mediatrack to handle simulcast
+	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))

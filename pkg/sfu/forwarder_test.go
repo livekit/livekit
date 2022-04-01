@@ -4,9 +4,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
@@ -1400,7 +1401,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
-	// also number of padding should be RTPBlnkFramesMax
+	// also number of padding should be RTPBlankFramesMax
 	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames()
 	require.NoError(t, err)
 	require.False(t, frameEndNeeded)

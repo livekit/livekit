@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"google.golang.org/protobuf/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -34,6 +35,7 @@ type ParticipantInit struct {
 	AutoSubscribe bool
 	Client        *livekit.ClientInfo
 	Grants        *auth.ClaimGrants
+	Region        string
 }
 
 type NewParticipantCallback func(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
@@ -53,6 +55,8 @@ type Router interface {
 	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
 	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
+
+	GetRegion() string
 
 	Start() error
 	Drain()

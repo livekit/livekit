@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sebest/xff"
-
 	"github.com/gorilla/websocket"
+	"github.com/sebest/xff"
+	"github.com/ua-parser/uap-go/uaparser"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -84,6 +84,10 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 	}
 
+	if claims.Identity == "" {
+		return "", routing.ParticipantInit{}, http.StatusBadRequest, ErrIdentityEmpty
+	}
+
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
@@ -104,7 +108,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		claims.Identity += "#" + publishParam
 	}
 
+	region := ""
 	if router, ok := s.router.(routing.Router); ok {
+		region = router.GetRegion()
 		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
 				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
@@ -119,6 +125,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		AutoSubscribe: true,
 		Client:        s.ParseClientInfo(r),
 		Grants:        claims,
+		Region:        region,
 	}
 
 	if autoSubParam != "" {
@@ -142,7 +149,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// when autocreate is disabled, we'll check to ensure it's already created
+	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
@@ -283,7 +290,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
-	// get real address (forwarded http header) - check Cloudfare headers first, fall back to X-Forwaded-For
+	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = r.Header.Get("CF-Connecting-IP")
 	if len(ci.Address) == 0 {
 		ci.Address = xff.GetRemoteAddr(r)

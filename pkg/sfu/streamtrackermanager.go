@@ -232,7 +232,7 @@ func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {
 
 	for i, tracker := range s.trackers {
 		if tracker != nil {
-			var tls [DefaultMaxLayerTemporal + 1]int64
+			tls := make([]int64, DefaultMaxLayerTemporal+1)
 			if s.hasSpatialLayerLocked(int32(i)) {
 				tls = tracker.BitrateTemporalCumulative()
 			}

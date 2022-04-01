@@ -4,9 +4,10 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"

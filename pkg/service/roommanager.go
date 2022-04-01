@@ -255,6 +255,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Grants:                  pi.Grants,
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
+		Region:                  pi.Region,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)

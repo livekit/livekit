@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/livekit/protocol/livekit"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 const (

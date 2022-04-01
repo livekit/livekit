@@ -63,7 +63,7 @@ func (n *NackQueue) Pairs() ([]rtcp.NackPair, int) {
 	// set it far back to get the first pair
 	baseSN := n.nacks[0].seqNum - 17
 
-	snsToPurge := []uint16{}
+	snsToPurge := make([]uint16, 0)
 
 	numSeqNumsNacked := 0
 	isPairActive := false
