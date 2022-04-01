@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -31,6 +32,8 @@ type MediaTrack struct {
 	audioLevel   *AudioLevel
 
 	*MediaTrackReceiver
+
+	alternateReceiver *MediaTrackReceiver
 
 	lock sync.RWMutex
 }
@@ -156,8 +159,25 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
+	mtReceiver := t.MediaTrackReceiver
 	t.lock.Lock()
-	if t.Receiver() == nil {
+	altTrack := strings.HasSuffix(strings.ToLower(track.Codec().MimeType), t.params.TrackInfo.AlternativeMimeType)
+	if altTrack && t.alternateReceiver == nil {
+		t.alternateReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
+			TrackInfo:           t.params.TrackInfo,
+			MediaTrack:          t,
+			ParticipantID:       t.params.ParticipantID,
+			ParticipantIdentity: t.params.ParticipantIdentity,
+			BufferFactory:       t.params.BufferFactory,
+			ReceiverConfig:      t.params.ReceiverConfig,
+			SubscriberConfig:    t.params.SubscriberConfig,
+			VideoConfig:         t.params.VideoConfig,
+			Telemetry:           t.params.Telemetry,
+			Logger:              t.params.Logger,
+		})
+		mtReceiver = t.alternateReceiver
+	}
+	if mtReceiver.Receiver() == nil {
 		wr := sfu.NewWebRTCReceiver(
 			receiver,
 			track,
@@ -193,16 +213,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		t.buffer = buff
 
-		t.MediaTrackReceiver.SetupReceiver(wr)
+		mtReceiver.SetupReceiver(wr)
 	}
 	t.lock.Unlock()
 
-	t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	mtReceiver.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
 	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
 		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
-		t.MediaTrackReceiver.SetSimulcast(true)
+		mtReceiver.SetSimulcast(true)
 	}
 
 	if t.IsSimulcast() {

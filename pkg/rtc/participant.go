@@ -922,11 +922,19 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 
-	p.params.Logger.Infow("mediaTrack published",
-		"kind", track.Kind().String(),
-		"trackID", publishedTrack.ID(),
-		"rid", track.RID(),
-		"SSRC", track.SSRC())
+	if publishedTrack != nil {
+		p.params.Logger.Infow("mediaTrack published",
+			"kind", track.Kind().String(),
+			"trackID", publishedTrack.ID(),
+			"rid", track.RID(),
+			"SSRC", track.SSRC())
+	} else {
+		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
+			"kind", track.Kind().String(),
+			"webrtcTrackID", track.ID(),
+			"rid", track.RID(),
+			"SSRC", track.SSRC())
+	}
 	if !isNewTrack && publishedTrack != nil && p.IsReady() && p.onTrackUpdated != nil {
 		p.onTrackUpdated(p, publishedTrack)
 	}
