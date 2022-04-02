@@ -1234,7 +1234,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
-	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil {
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid, req.Type) != nil {
 		return nil
 	}
 
@@ -1264,15 +1264,16 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 
 	ti := &livekit.TrackInfo{
-		Type:       req.Type,
-		Name:       req.Name,
-		Sid:        utils.NewGuid(trackPrefix),
-		Width:      req.Width,
-		Height:     req.Height,
-		Muted:      req.Muted,
-		DisableDtx: req.DisableDtx,
-		Source:     req.Source,
-		Layers:     req.Layers,
+		Type:                req.Type,
+		Name:                req.Name,
+		Sid:                 utils.NewGuid(trackPrefix),
+		Width:               req.Width,
+		Height:              req.Height,
+		Muted:               req.Muted,
+		DisableDtx:          req.DisableDtx,
+		Source:              req.Source,
+		Layers:              req.Layers,
+		AlternativeMimeType: req.AlternativeCodec,
 	}
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{TrackInfo: ti}
 
@@ -1353,7 +1354,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	newTrack := false
 
 	// use existing media track to handle simulcast
-	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID(), ToProtoTrackKind(track.Kind())).(*MediaTrack)
 	if !ok {
 		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
@@ -1489,9 +1490,9 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 	return nil
 }
 
-func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string, kind livekit.TrackType) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).SdpCid() == clientId {
+		if publishedTrack.(types.LocalMediaTrack).SdpCid() == clientId || publishedTrack.Kind() == kind {
 			return publishedTrack
 		}
 	}

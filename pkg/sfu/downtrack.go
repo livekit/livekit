@@ -91,6 +91,7 @@ type DownTrack struct {
 	forwarder *Forwarder
 
 	codec                   webrtc.RTPCodecCapability
+	altCodec                webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
@@ -153,6 +154,7 @@ type DownTrack struct {
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(
 	c webrtc.RTPCodecCapability,
+	altCodec webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
 	peerID livekit.ParticipantID,
@@ -178,6 +180,7 @@ func NewDownTrack(
 		bufferFactory:  bf,
 		receiver:       r,
 		codec:          c,
+		altCodec:       altCodec,
 		kind:           kind,
 		forwarder:      NewForwarder(c, kind, logger),
 		callbacksQueue: utils.NewOpsQueue(logger),
@@ -216,9 +219,17 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if d.bound.Load() {
 		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
 	}
-	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
-	codec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
-	if err != nil {
+	var codec webrtc.RTPCodecParameters
+	for _, c := range []webrtc.RTPCodecCapability{d.codec, d.altCodec} {
+		parameters := webrtc.RTPCodecParameters{RTPCodecCapability: c}
+		matchCodec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
+		if err == nil {
+			codec = matchCodec
+			break
+		}
+	}
+
+	if codec.MimeType == "" {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
 
@@ -236,6 +247,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if strings.HasPrefix(d.codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
+	d.codec = codec.RTPCodecCapability
 	if d.onBind != nil {
 		d.callbacksQueue.Enqueue(d.onBind)
 	}

@@ -31,6 +31,7 @@ type MediaTrackReceiver struct {
 
 	lock            sync.RWMutex
 	receiver        sfu.TrackReceiver
+	altReceiver     sfu.TrackReceiver
 	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
 
 	// track audio fraction lost
@@ -83,6 +84,14 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	}
 
 	return t
+}
+
+func (t *MediaTrackReceiver) SetupAltReceiver(receiver sfu.TrackReceiver) {
+	t.lock.Lock()
+	t.altReceiver = receiver
+	t.lock.Unlock()
+
+	t.MediaTrackSubscriptions.Start()
 }
 
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
@@ -195,7 +204,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 		streamId = PackStreamID(t.PublisherID(), t.ID())
 	}
 
-	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, receiver.Codec(), NewWrappedReceiver(receiver, t.ID(), streamId))
+	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, receiver.Codec(), NewWrappedReceiver(receiver, t.altReceiver, t.ID(), streamId))
 	if err != nil {
 		return err
 	}
@@ -205,9 +214,6 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 			downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
 		}
 
-		if err = receiver.AddDownTrack(downTrack); err != nil {
-			logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
-		}
 	}
 	return nil
 }
@@ -363,6 +369,12 @@ func (t *MediaTrackReceiver) Receiver() sfu.TrackReceiver {
 	defer t.lock.RUnlock()
 
 	return t.receiver
+}
+
+func (t *MediaTrackReceiver) AltReceiver() sfu.TrackReceiver {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.altReceiver
 }
 
 func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error) {

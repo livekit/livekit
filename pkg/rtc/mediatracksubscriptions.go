@@ -105,7 +105,7 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, codec webrtc.RTPCodecCapability, wr WrappedReceiver) (*sfu.DownTrack, error) {
+func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, codec webrtc.RTPCodecCapability, wr *WrappedReceiver) (*sfu.DownTrack, error) {
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
 
@@ -124,6 +124,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	case livekit.TrackType_VIDEO:
 		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
 	}
+	var altCodec webrtc.RTPCodecCapability
+	if wr.altReceiver != nil {
+		altCodec = wr.altReceiver.Codec()
+		altCodec.RTCPFeedback = rtcpFeedback
+	}
 	downTrack, err := sfu.NewDownTrack(
 		webrtc.RTPCodecCapability{
 			MimeType:     codec.MimeType,
@@ -132,6 +137,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 			SDPFmtpLine:  codec.SDPFmtpLine,
 			RTCPFeedback: rtcpFeedback,
 		},
+		altCodec,
 		wr,
 		t.params.BufferFactory,
 		subscriberID,
@@ -196,6 +202,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 
 	// when out track is bound, start loop to send reports
 	downTrack.OnBind(func() {
+		wr.DetermineReceiver(downTrack.Codec())
+		if err = wr.AddDownTrack(downTrack); err != nil {
+			logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
+		}
 		go subTrack.Bound()
 		go t.sendDownTrackBindingReports(sub)
 	})

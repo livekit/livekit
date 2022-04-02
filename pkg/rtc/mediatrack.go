@@ -33,8 +33,6 @@ type MediaTrack struct {
 
 	*MediaTrackReceiver
 
-	alternateReceiver *MediaTrackReceiver
-
 	lock sync.RWMutex
 }
 
@@ -159,25 +157,48 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
-	mtReceiver := t.MediaTrackReceiver
 	t.lock.Lock()
+	t.params.Logger.Debugw("AddReceiver", "mime", track.Codec().MimeType, "altermime", t.params.TrackInfo.AlternativeMimeType)
 	altTrack := strings.HasSuffix(strings.ToLower(track.Codec().MimeType), t.params.TrackInfo.AlternativeMimeType)
-	if altTrack && t.alternateReceiver == nil {
-		t.alternateReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
-			TrackInfo:           t.params.TrackInfo,
-			MediaTrack:          t,
-			ParticipantID:       t.params.ParticipantID,
-			ParticipantIdentity: t.params.ParticipantIdentity,
-			BufferFactory:       t.params.BufferFactory,
-			ReceiverConfig:      t.params.ReceiverConfig,
-			SubscriberConfig:    t.params.SubscriberConfig,
-			VideoConfig:         t.params.VideoConfig,
-			Telemetry:           t.params.Telemetry,
-			Logger:              t.params.Logger,
-		})
-		mtReceiver = t.alternateReceiver
-	}
-	if mtReceiver.Receiver() == nil {
+	if altTrack {
+		if t.AltReceiver() == nil {
+
+			wr := sfu.NewWebRTCReceiver(
+				receiver,
+				track,
+				t.PublisherID(),
+				t.params.TrackInfo.Source,
+				t.params.Logger,
+				sfu.WithPliThrottle(t.params.PLIThrottleConfig),
+				sfu.WithLoadBalanceThreshold(20),
+				sfu.WithStreamTrackers(),
+			)
+			wr.SetRTCPCh(t.params.RTCPChan)
+			wr.OnCloseHandler(func() {
+				t.RemoveAllSubscribers()
+				t.MediaTrackReceiver.Close()
+				t.MediaTrackReceiver.ClearReceiver()
+				t.params.Telemetry.TrackUnpublished(
+					context.Background(),
+					t.PublisherID(),
+					t.PublisherIdentity(),
+					t.ToProto(),
+					uint32(track.SSRC()),
+				)
+			})
+			wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+				t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
+			})
+			t.params.Telemetry.TrackPublished(
+				context.Background(),
+				t.PublisherID(),
+				t.PublisherIdentity(),
+				t.ToProto(),
+			)
+
+			t.MediaTrackReceiver.SetupAltReceiver(wr)
+		}
+	} else if t.Receiver() == nil {
 		wr := sfu.NewWebRTCReceiver(
 			receiver,
 			track,
@@ -213,16 +234,20 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		t.buffer = buff
 
-		mtReceiver.SetupReceiver(wr)
+		t.MediaTrackReceiver.SetupReceiver(wr)
 	}
 	t.lock.Unlock()
 
-	mtReceiver.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	if altTrack {
+		t.AltReceiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	} else {
+		t.Receiver().(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
+	}
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
 	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
 		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
-		mtReceiver.SetSimulcast(true)
+		t.SetSimulcast(true)
 	}
 
 	if t.IsSimulcast() {
