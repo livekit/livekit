@@ -1216,8 +1216,22 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		SubscribedQualities: subscribedQualities,
 	}
 
-	p.params.Telemetry.TrackMaxSubscribedVideoQuality(context.Background(), p.ID(), &livekit.TrackInfo{Sid: string(trackID), Type: livekit.TrackType_VIDEO}, maxSubscribedQuality)
+	p.params.Telemetry.TrackMaxSubscribedVideoQuality(
+		context.Background(),
+		p.ID(),
+		&livekit.TrackInfo{
+			Sid:  string(trackID),
+			Type: livekit.TrackType_VIDEO,
+		},
+		maxSubscribedQuality,
+	)
 
+	p.params.Logger.Debugw(
+		"sending max subscribed quality",
+		"trackID", trackID,
+		"qualities", subscribedQualities,
+		"max", maxSubscribedQuality,
+	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
 			SubscribedQualityUpdate: subscribedQualityUpdate,
