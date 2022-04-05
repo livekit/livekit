@@ -11,7 +11,6 @@ import (
 
 type TestExtPacketParams struct {
 	SetMarker      bool
-	SetPadding     bool
 	IsHead         bool
 	IsKeyFrame     bool
 	PayloadType    uint8
@@ -19,7 +18,7 @@ type TestExtPacketParams struct {
 	Timestamp      uint32
 	SSRC           uint32
 	PayloadSize    int
-	PaddingSize    int
+	PaddingSize    byte
 	ArrivalTime    int64
 }
 
@@ -29,7 +28,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	packet := rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
-			Padding:        params.SetPadding,
+			Padding:        params.PaddingSize != 0,
 			Marker:         params.SetMarker,
 			PayloadType:    params.PayloadType,
 			SequenceNumber: params.SequenceNumber,
