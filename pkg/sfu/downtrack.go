@@ -934,6 +934,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
