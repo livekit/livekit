@@ -410,6 +410,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			if locked {
 				d.stopKeyFrameRequester()
 			}
+
+			d.logger.Debugw("forwarding key frame", "layer", layer)
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
