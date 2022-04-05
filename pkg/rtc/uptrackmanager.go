@@ -49,14 +49,13 @@ func (u *UpTrackManager) Start() {
 func (u *UpTrackManager) Close() {
 	u.lock.Lock()
 	u.closed = true
-
-	// remove all subscribers
-	for _, t := range u.publishedTracks {
-		t.RemoveAllSubscribers()
-	}
-
 	notify := len(u.publishedTracks) == 0
 	u.lock.Unlock()
+
+	// remove all subscribers
+	for _, t := range u.GetPublishedTracks() {
+		t.RemoveAllSubscribers()
+	}
 
 	if notify && u.onClose != nil {
 		u.onClose()
