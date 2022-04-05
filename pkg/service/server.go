@@ -291,6 +291,7 @@ func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 // worker to perform periodic tasks per node
 func (s *LivekitServer) backgroundWorker() {
 	roomTicker := time.NewTicker(30 * time.Second)
+	defer roomTicker.Stop()
 	for {
 		select {
 		case <-s.doneChan:

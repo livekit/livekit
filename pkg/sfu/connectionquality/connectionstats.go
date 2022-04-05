@@ -132,7 +132,10 @@ func (cs *ConnectionStats) updateStats() {
 	if interval == 0 {
 		interval = connectionQualityUpdateInterval
 	}
+
 	tk := time.NewTicker(interval)
+	defer tk.Stop()
+
 	for {
 		select {
 		case <-cs.done:
