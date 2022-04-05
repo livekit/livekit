@@ -366,6 +366,7 @@ func (s *StreamAllocator) processEvents() {
 
 func (s *StreamAllocator) ping() {
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
 		<-ticker.C

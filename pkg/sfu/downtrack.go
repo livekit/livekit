@@ -325,6 +325,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 		interval = keyFrameIntervalMax
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 		d.receiver.SendPLI(layer)
