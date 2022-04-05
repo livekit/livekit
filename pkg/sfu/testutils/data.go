@@ -36,8 +36,8 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 			Timestamp:      params.Timestamp,
 			SSRC:           params.SSRC,
 		},
-		Payload: make([]byte, params.PayloadSize),
-		// LK-TODO need a newer version of pion/rtp PaddingSize: params.PaddingSize,
+		Payload:     make([]byte, params.PayloadSize),
+		PaddingSize: params.PaddingSize,
 	}
 
 	raw, err := packet.Marshal()
