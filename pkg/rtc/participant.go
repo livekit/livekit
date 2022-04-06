@@ -64,6 +64,7 @@ type ParticipantParams struct {
 	InitialVersion          uint32
 	ClientConf              *livekit.ClientConfiguration
 	Region                  string
+	Migration               bool
 }
 
 type ParticipantImpl struct {
@@ -216,10 +217,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		primaryPC = p.subscriber.pc
 		secondaryPC = p.publisher.pc
 		ordered := true
+		negotiated := p.params.Migration
 		// also create data channels for subs, this is for legacy clients that do not use subscriber
 		// as primary channel
 		p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
-			Ordered: &ordered,
+			Ordered:    &ordered,
+			Negotiated: &negotiated,
 		})
 		if err != nil {
 			return nil, err
@@ -229,6 +232,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
 			Ordered:        &ordered,
 			MaxRetransmits: &retransmits,
+			Negotiated:     &negotiated,
 		})
 		if err != nil {
 			return nil, err
@@ -602,8 +606,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	if s == types.MigrateStateSync {
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
-		// in case of migration, subscriber data channel will not fire OnOpen callback
-		p.activeCounter.CAS(0, 2)
 	}
 	p.lock.Unlock()
 	if s == types.MigrateStateComplete {
