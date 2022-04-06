@@ -411,6 +411,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			if locked {
 				d.stopKeyFrameRequester()
 			}
+
+			d.logger.Debugw("forwarding key frame", "layer", layer)
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
@@ -935,6 +937,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()

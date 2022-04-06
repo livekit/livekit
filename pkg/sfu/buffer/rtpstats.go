@@ -176,7 +176,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.highestTime = packetTime
 
 		r.extStartSN = uint32(rtph.SequenceNumber)
-		r.logger.Debugw("RTPSTATS_DEBUG, setting extStartSN init", "extStartSN", r.extStartSN) // LK-DEBUG-REMOVE
 		r.cycles = 0
 
 		first = true
@@ -211,24 +210,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			flowState.LossStartInclusive = r.highestSN + 1
 			flowState.LossEndExclusive = rtph.SequenceNumber
 		}
-		// LK-DEBUG-REMOVE START
-		if diff > 100 {
-			r.logger.Debugw(
-				"RTPSTATS_DEBUG huge difference in sequence number",
-				"diff", diff,
-				"highestSN", r.highestSN,
-				"sn", rtph.SequenceNumber,
-				"startSN", r.extStartSN,
-				"lost", r.packetsLost,
-				"highestTS", r.highestTS,
-				"ts", rtph.Timestamp,
-				"tsDiff", rtph.Timestamp-r.highestTS,
-				"highestTime", r.highestTime,
-				"now", packetTime,
-				"timeDiff(ms)", float64(packetTime-r.highestTime)/1e6,
-			)
-		}
-		// LK-DEBUG-REMOVE END
 
 		// update gap histogram
 		r.updateGapHistogram(int(diff))
@@ -277,27 +258,9 @@ func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, packetTime int64) {
 		return
 	}
 
-	// LK-DEBUG-REMOVE START
-	r.logger.Debugw(
-		"RTPSTATS_DEBUG moving starting SN back",
-		"diff", rtph.SequenceNumber-uint16(r.extStartSN),
-		"loss added", uint16(r.extStartSN)-rtph.SequenceNumber,
-		"highestSN", r.highestSN,
-		"sn", rtph.SequenceNumber,
-		"startSN", r.extStartSN,
-		"lost", r.packetsLost,
-		"highestTS", r.highestTS,
-		"ts", rtph.Timestamp,
-		"tsDiff", rtph.Timestamp-r.highestTS,
-		"highestTime", r.highestTime,
-		"now", packetTime,
-		"timeDiff(ms)", float64(packetTime-r.highestTime)/1e6,
-	)
-	// LK-DEBUG-REMOVE END
 	// NOTE: current sequence number is counted as loss as it will be deducted in the duplicate check
 	r.packetsLost += uint32(uint16(r.extStartSN) - rtph.SequenceNumber)
 	r.extStartSN = uint32(rtph.SequenceNumber)
-	r.logger.Debugw("RTPSTATS_DEBUG, setting extStartSN moving back", "extStartSN", r.extStartSN) // LK-DEBUG-REMOVE
 }
 
 func (r *RTPStats) GetTotalPacketsPrimary() uint32 {
