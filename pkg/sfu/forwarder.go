@@ -1175,6 +1175,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			// Compute how much time passed between the old RTP extPkt
 			// and the current packet, and fix timestamp on source change
 			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
+			if tDiffMs < 0 {
+				tDiffMs = 0
+			}
 			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
 			if td == 0 {
 				td = 1
