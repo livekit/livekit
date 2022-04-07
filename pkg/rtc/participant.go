@@ -578,6 +578,7 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		return nil
 	}
 
+	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave)
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{

@@ -334,6 +334,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnDataPacket(nil)
 
 	// close participant as well
+	r.Logger.Infow("closing participant for removal", "participantID", p.ID())
 	_ = p.Close(true)
 
 	r.lock.RLock()
