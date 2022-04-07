@@ -241,8 +241,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 	primaryPC := p.subscriber.pc
 	ordered := true
-	// also create data channels for subs, this is for legacy clients that do not use subscriber
-	// as primary channel
 	var (
 		reliableID, lossyID       uint16
 		reliableIDPtr, lossyIDPtr *uint16
