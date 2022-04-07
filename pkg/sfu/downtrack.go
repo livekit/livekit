@@ -45,6 +45,7 @@ const (
 
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
+	flushTimeout        = 1 * time.Second
 )
 
 var (
@@ -569,7 +570,18 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// display buffer and there could be a brief moment where the previous stream is displayed.
 	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
-		_ = d.writeBlankFrameRTP()
+		doneFlushing := make(chan struct{})
+		go func() {
+			defer close(doneFlushing)
+			_ = d.writeBlankFrameRTP()
+		}()
+
+		// wait a limited time to flush
+		timer := time.NewTimer(flushTimeout)
+		select {
+		case <-doneFlushing:
+		case <-timer.C:
+		}
 	}
 
 	d.closeOnce.Do(func() {

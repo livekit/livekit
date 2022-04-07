@@ -230,6 +230,12 @@ func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {
 	}
 
 	f.muted = val
+
+	// resync when muted so that sequence numbers do not jump on unmute
+	if val {
+		f.resyncLocked()
+	}
+
 	return true, f.maxLayers
 }
 
@@ -1058,27 +1064,49 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if !f.started {
-			// start of stream
 			f.started = true
 			f.rtpMunger.SetLastSnTs(extPkt)
+			if f.vp8Munger != nil {
+				f.vp8Munger.SetLast(extPkt)
+			}
 		} else {
 			// LK-TODO-START
-			// TS offset of 1 is not accurate. It should ideally
-			// be driven by packetization of the incoming track.
-			// But, on a track switch, won't have any historic data
-			// of a new track though.
+			// The below offset calculation is not technically correct.
+			// Timestamps based on the system time of an intermediate box like
+			// SFU is not going to be accurate. Packets arrival/processing
+			// are subject to vagaries of network delays, SFU processing etc.
+			// But, the correct way is a lot harder. Will have to
+			// look at RTCP SR to get timestamps and align (and figure out alignment
+			// of layers and use that during layer switch in simulcast case).
+			// That can get tricky. Given the complexity of that approach, maybe
+			// this is just fine till it is not :-).
 			// LK-TODO-END
-			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, 1)
+
+			// Compute how much time passed between the old RTP extPkt
+			// and the current packet, and fix timestamp on source change
+			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
+			if tDiffMs < 0 {
+				tDiffMs = 0
+			}
+			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
+			if td == 0 {
+				td = 1
+			}
+			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
+			if f.vp8Munger != nil {
+				f.vp8Munger.UpdateOffsets(extPkt)
+			}
 		}
 
 		f.lastSSRC = extPkt.Packet.SSRC
 	}
 
-	tp := &TranslationParams{}
+	f.lTSCalc = extPkt.Arrival
 
+	tp := &TranslationParams{}
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
@@ -1095,6 +1123,11 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*Transl
 
 	tp.rtp = tpRTP
 	return tp, nil
+}
+
+// should be called with lock held
+func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+	return f.getTranslationParamsCommon(extPkt)
 }
 
 // should be called with lock held
@@ -1152,64 +1185,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if f.lastSSRC != extPkt.Packet.SSRC {
-		if !f.started {
-			f.started = true
-			f.rtpMunger.SetLastSnTs(extPkt)
-			if f.vp8Munger != nil {
-				f.vp8Munger.SetLast(extPkt)
-			}
-		} else {
-			// LK-TODO-START
-			// The below offset calculation is not technically correct.
-			// Timestamps based on the system time of an intermediate box like
-			// SFU is not going to be accurate. Packets arrival/processing
-			// are subject to vagaries of network delays, SFU processing etc.
-			// But, the correct way is a lot harder. Will have to
-			// look at RTCP SR to get timestamps and figure out alignment
-			// of layers and use that during layer switch. That can
-			// get tricky. Given the complexity of that approach, maybe
-			// this is just fine till it is not :-).
-			// LK-TODO-END
-
-			// Compute how much time passed between the old RTP extPkt
-			// and the current packet, and fix timestamp on source change
-			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
-			if tDiffMs < 0 {
-				tDiffMs = 0
-			}
-			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
-			if td == 0 {
-				td = 1
-			}
-			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
-			if f.vp8Munger != nil {
-				f.vp8Munger.UpdateOffsets(extPkt)
-			}
-		}
-
-		f.lastSSRC = extPkt.Packet.SSRC
-	}
-
-	f.lTSCalc = extPkt.Arrival
-
-	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		tp.shouldDrop = true
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			if err == ErrOutOfOrderSequenceNumberCacheMiss {
-				tp.isDroppingRelevant = true
-			}
-			return tp, nil
-		}
-
-		tp.isDroppingRelevant = true
+	tp, err := f.getTranslationParamsCommon(extPkt)
+	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
-	}
-
-	if f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
-		tp.rtp = tpRTP
-		return tp, nil
 	}
 
 	// catch up temporal layer if necessary
@@ -1222,8 +1200,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 	}
 
-	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.currentLayers.temporal)
+	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tp.rtp.snOrdering, f.currentLayers.temporal)
 	if err != nil {
+		tp.rtp = nil
 		tp.shouldDrop = true
 		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
 			if err == ErrFilteredVP8TemporalLayer {
@@ -1240,7 +1219,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
 	return tp, nil
 }
