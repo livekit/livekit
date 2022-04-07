@@ -1024,7 +1024,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 			p.SetMigrateState(types.MigrateStateComplete)
 		}
 		p.incActiveCounter()
-	} else if state == webrtc.PeerConnectionStateDisconnected {
+	} else if state == webrtc.PeerConnectionStateFailed {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 
@@ -1060,7 +1060,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 // for the secondary peer connection, we still need to handle when they become disconnected
 // instead of allowing them to silently fail.
 func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateDisconnected {
+	if state == webrtc.PeerConnectionStateFailed {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 	}
