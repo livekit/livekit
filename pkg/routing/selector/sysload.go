@@ -1,8 +1,6 @@
 package selector
 
 import (
-	"github.com/thoas/go-funk"
-
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -10,6 +8,7 @@ import (
 // then selects a node randomly from nodes that are not overloaded
 type SystemLoadSelector struct {
 	SysloadLimit float32
+	SortBy       string
 }
 
 func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
@@ -20,12 +19,7 @@ func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node
 
 	nodesLowLoad := make([]*livekit.Node, 0)
 	for _, node := range nodes {
-		stats := node.Stats
-		numCpus := stats.NumCpus
-		if numCpus == 0 {
-			numCpus = 1
-		}
-		if stats.LoadAvgLast1Min/float32(numCpus) < s.SysloadLimit {
+		if GetNodeSysload(node) < s.SysloadLimit {
 			nodesLowLoad = append(nodesLowLoad, node)
 		}
 	}
@@ -41,6 +35,5 @@ func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, e
 		return nil, err
 	}
 
-	idx := funk.RandomInt(0, len(nodes))
-	return nodes[idx], nil
+	return SelectSortedNode(nodes, s.SortBy)
 }
