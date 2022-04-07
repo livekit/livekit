@@ -1,13 +1,12 @@
 package selector
 
 import (
-	"github.com/thoas/go-funk"
-
 	"github.com/livekit/protocol/livekit"
 )
 
 // RandomSelector selects an available node at random
 type RandomSelector struct {
+	SortBy string
 }
 
 func (s *RandomSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
@@ -16,6 +15,5 @@ func (s *RandomSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error
 		return nil, ErrNoAvailableNodes
 	}
 
-	idx := funk.RandomInt(0, len(nodes))
-	return nodes[idx], nil
+	return SelectSortedNode(nodes, s.SortBy)
 }
