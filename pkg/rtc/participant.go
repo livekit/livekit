@@ -214,6 +214,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// after the participant has joined
 	p.subscriberAsPrimary = p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
 	if p.SubscriberAsPrimary() {
+		primaryPC = p.subscriber.pc
+		secondaryPC = p.publisher.pc
 		if !params.Migration {
 			if err := p.createDataChannelForSubscriberAsPrimary(); err != nil {
 				return nil, err
