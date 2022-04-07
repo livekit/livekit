@@ -35,7 +35,6 @@ type WebRTCConfig struct {
 
 type ReceiverConfig struct {
 	PacketBufferSize int
-	maxBitrate       uint64
 }
 
 type RTPHeaderExtensionConfig struct {
@@ -150,7 +149,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBGoogREMB},
 				{Type: webrtc.TypeRTCPFBTransportCC},
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},
@@ -212,7 +210,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		SettingEngine: s,
 		Receiver: ReceiverConfig{
 			PacketBufferSize: rtcConf.PacketBufferSize,
-			maxBitrate:       rtcConf.MaxBitrate,
 		},
 		UDPMux:         udpMux,
 		UDPMuxConn:     udpMuxConn,

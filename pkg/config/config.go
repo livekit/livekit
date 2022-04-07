@@ -61,9 +61,6 @@ type RTCConfig struct {
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
 
-	// Max bitrate for REMB
-	MaxBitrate uint64 `yaml:"max_bitrate,omitempty"`
-
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
@@ -194,7 +191,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
-			MaxBitrate:        10 * 1024 * 1024, // 10 mbps
 			PacketBufferSize:  500,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,

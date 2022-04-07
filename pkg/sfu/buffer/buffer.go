@@ -121,7 +121,7 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	}
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, o Options) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
 	b.Lock()
 	defer b.Unlock()
 	if b.bound {
@@ -190,8 +190,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 	b.pPackets = nil
 	b.bound = true
-
-	b.logger.Debugw("NewBuffer", "MaxBitRate", o.MaxBitRate)
 }
 
 // Write adds an RTP Packet, out of order, new packet may be arrived later

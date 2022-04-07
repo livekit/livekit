@@ -31,8 +31,6 @@ rtc:
   # port_range_start & end must not be set for this config to take effect
   # udp_port: 7882
   # optional settings
-  # # when using REMB, the max bitrate that the SFU would accept, defaults to 3Mbps
-  # max_bitrate: 3145728
   # # number of packets to buffer in the SFU, defaults to 500
   # packet_buffer_size: 500
   # # optional STUN servers for LiveKit clients to use. Clients will be configured to use these STUN servers automatically.

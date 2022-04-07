@@ -212,9 +212,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	}
 
-	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, buffer.Options{
-		MaxBitRate: t.params.ReceiverConfig.maxBitrate,
-	})
+	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
 }
 
 func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
