@@ -1620,12 +1620,14 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 			"channel observer: estimate is trending downward",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
+			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
 		c.logger.Debugw(
 			"channel observer: high rate of repeated NACKs",
 			"name", c.params.Name,
+			"estimate", c.estimateTrend.ToString(),
 			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
