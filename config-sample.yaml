@@ -165,7 +165,7 @@ keys:
 
 # # node selector
 # node_selector:
-#   # default: random. valid values: random, sysload, cpuload, regionaware
+#   # default: any. valid values: any, sysload, cpuload, regionaware
 #   kind: sysload
 #   # priority used for selection of node when multiple are available
 #   # default: random. valid values: random, sysload, cpuload, rooms, clients, tracks, bytespersec

@@ -5,7 +5,7 @@ import (
 )
 
 // CPULoadSelector eliminates nodes that have CPU usage higher than CPULoadLimit
-// then selects a node randomly from nodes that are not overloaded
+// then selects a node from nodes that are not overloaded
 type CPULoadSelector struct {
 	CPULoadLimit float32
 	SortBy       string

@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 )
@@ -18,9 +19,11 @@ type NodeSelector interface {
 func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 	kind := conf.NodeSelector.Kind
 	if kind == "" {
-		kind = "random"
+		kind = "any"
 	}
 	switch kind {
+	case "any":
+		return &AnySelector{conf.NodeSelector.SortBy}, nil
 	case "cpuload":
 		return &CPULoadSelector{
 			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
@@ -39,7 +42,8 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 		s.SysloadLimit = conf.NodeSelector.SysloadLimit
 		return s, nil
 	case "random":
-		return &RandomSelector{conf.NodeSelector.SortBy}, nil
+		logger.Warnw("random node selector is deprecated, please switch to \"any\" or another selector", nil)
+		return &AnySelector{conf.NodeSelector.SortBy}, nil
 	default:
 		return nil, ErrUnsupportedSelector
 	}

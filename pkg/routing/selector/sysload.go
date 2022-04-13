@@ -5,7 +5,7 @@ import (
 )
 
 // SystemLoadSelector eliminates nodes that surpass has a per-cpu node higher than SysloadLimit
-// then selects a node randomly from nodes that are not overloaded
+// then selects a node from nodes that are not overloaded
 type SystemLoadSelector struct {
 	SysloadLimit float32
 	SortBy       string

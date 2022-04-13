@@ -232,7 +232,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			Enabled: false,
 		},
 		NodeSelector: NodeSelectorConfig{
-			Kind:         "random",
+			Kind:         "any",
 			SortBy:       "random",
 			SysloadLimit: 0.9,
 			CPULoadLimit: 0.9,
