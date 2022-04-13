@@ -1082,10 +1082,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			continue
 		}
 
-		if meta.nacked > 1 {
-			numRepeatedNACKs++
-		}
-
 		if pool != nil {
 			PacketFactory.Put(pool)
 			pool = nil
@@ -1100,6 +1096,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			}
 			continue
 		}
+
+		if meta.nacked > 1 {
+			numRepeatedNACKs++
+		}
+
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
 			continue
