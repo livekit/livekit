@@ -486,6 +486,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 			}
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
+		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
 			_ = p.Close(true)
 		}

@@ -45,6 +45,7 @@ const (
 
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
+	flushTimeout        = 1 * time.Second
 )
 
 var (
@@ -337,6 +338,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 		interval = keyFrameIntervalMax
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
 		d.receiver.SendPLI(layer)
@@ -422,6 +424,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			if locked {
 				d.stopKeyFrameRequester()
 			}
+
+			d.logger.Debugw("forwarding key frame", "layer", layer)
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
@@ -578,7 +582,18 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// display buffer and there could be a brief moment where the previous stream is displayed.
 	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
-		_ = d.writeBlankFrameRTP()
+		doneFlushing := make(chan struct{})
+		go func() {
+			defer close(doneFlushing)
+			_ = d.writeBlankFrameRTP()
+		}()
+
+		// wait a limited time to flush
+		timer := time.NewTimer(flushTimeout)
+		select {
+		case <-doneFlushing:
+		case <-timer.C:
+		}
 	}
 
 	d.closeOnce.Do(func() {
@@ -946,6 +961,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()

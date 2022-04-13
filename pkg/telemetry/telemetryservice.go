@@ -57,6 +57,7 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 
 func (t *telemetryService) run() {
 	ticker := time.NewTicker(updateFrequency)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:

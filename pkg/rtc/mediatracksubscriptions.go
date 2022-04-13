@@ -109,13 +109,13 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
 
-	t.subscribedTracksMu.Lock()
-	defer t.subscribedTracksMu.Unlock()
-
 	// don't subscribe to the same track multiple times
+	t.subscribedTracksMu.Lock()
 	if _, ok := t.subscribedTracks[subscriberID]; ok {
+		t.subscribedTracksMu.Unlock()
 		return nil, nil
 	}
+	t.subscribedTracksMu.Unlock()
 
 	var rtcpFeedback []webrtc.RTCPFeedback
 	switch t.params.MediaTrack.Kind() {
@@ -267,7 +267,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		sub.Negotiate()
 	})
 
+	t.subscribedTracksMu.Lock()
 	t.subscribedTracks[subscriberID] = subTrack
+	t.subscribedTracksMu.Unlock()
 	subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 
 	// since sub will lock, run it in a goroutine to avoid deadlocks

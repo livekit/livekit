@@ -64,6 +64,7 @@ type ParticipantParams struct {
 	InitialVersion          uint32
 	ClientConf              *livekit.ClientConfiguration
 	Region                  string
+	Migration               bool
 }
 
 type ParticipantImpl struct {
@@ -215,25 +216,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if p.SubscriberAsPrimary() {
 		primaryPC = p.subscriber.pc
 		secondaryPC = p.publisher.pc
-		ordered := true
-		// also create data channels for subs, this is for legacy clients that do not use subscriber
-		// as primary channel
-		p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
-			Ordered: &ordered,
-		})
-		if err != nil {
-			return nil, err
+		if !params.Migration {
+			if err := p.createDataChannelForSubscriberAsPrimary(); err != nil {
+				return nil, err
+			}
 		}
-		p.reliableDCSub.OnOpen(p.incActiveCounter)
-		retransmits := uint16(0)
-		p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
-			Ordered:        &ordered,
-			MaxRetransmits: &retransmits,
-		})
-		if err != nil {
-			return nil, err
-		}
-		p.lossyDCSub.OnOpen(p.incActiveCounter)
 	} else {
 		p.activeCounter.Add(2)
 	}
@@ -249,6 +236,59 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupUpTrackManager()
 
 	return p, nil
+}
+
+func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
+	primaryPC := p.subscriber.pc
+	ordered := true
+	// also create data channels for subs, this is for legacy clients that do not use subscriber
+	// as primary channel
+	var (
+		reliableID, lossyID       uint16
+		reliableIDPtr, lossyIDPtr *uint16
+	)
+	// for old version migration clients, they don't send subscriber data channel info
+	// so we need to create data channels with default ID and don't negotiate as client already has
+	// data channels with default ID.
+	// for new version migration clients, we create data channels with new ID and negotiate with client
+
+	for _, dc := range p.pendingDataChannels {
+		if dc.Target == livekit.SignalTarget_SUBSCRIBER {
+			if dc.Label == ReliableDataChannel {
+				// pion use step 2 for auto generated ID, so we need to add 4 to avoid conflict
+				reliableID = uint16(dc.Id) + 4
+				reliableIDPtr = &reliableID
+			} else if dc.Label == LossyDataChannel {
+				lossyID = uint16(dc.Id) + 4
+				lossyIDPtr = &lossyID
+			}
+		}
+	}
+
+	var err error
+	negotiated := p.params.Migration && reliableIDPtr == nil
+	p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		ID:         reliableIDPtr,
+		Negotiated: &negotiated,
+	})
+	if err != nil {
+		return err
+	}
+	p.reliableDCSub.OnOpen(p.incActiveCounter)
+	retransmits := uint16(0)
+	negotiated = p.params.Migration && lossyIDPtr == nil
+	p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             lossyIDPtr,
+		Negotiated:     &negotiated,
+	})
+	if err != nil {
+		return err
+	}
+	p.lossyDCSub.OnOpen(p.incActiveCounter)
+	return nil
 }
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {
@@ -482,14 +522,20 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	})
 }
 
-func (p *ParticipantImpl) SetMigrateInfo(mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo) {
+func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo) {
 	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	for _, t := range mediaTracks {
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{t.GetTrack(), true}
 	}
 	p.pendingDataChannels = dataChannels
+
+	if p.SubscriberAsPrimary() {
+		if err := p.createDataChannelForSubscriberAsPrimary(); err != nil {
+			p.params.Logger.Errorw("create data channel failed", err)
+		}
+	}
+	p.pendingTracksLock.Unlock()
+	p.subscriber.SetPreviousAnswer(previousAnswer)
 }
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
@@ -532,6 +578,7 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 		return nil
 	}
 
+	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave)
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{
@@ -585,10 +632,6 @@ func (p *ParticipantImpl) Negotiate() {
 	}
 }
 
-func (p *ParticipantImpl) SetPreviousAnswer(previous *webrtc.SessionDescription) {
-	p.subscriber.SetPreviousAnswer(previous)
-}
-
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.lock.Lock()
 	preState := p.MigrateState()
@@ -602,12 +645,10 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	if s == types.MigrateStateSync {
 		pendingOffer = p.pendingOffer
 		p.pendingOffer = nil
-		// in case of migration, subscriber data channel will not fire OnOpen callback
-		p.activeCounter.CAS(0, 2)
 	}
 	p.lock.Unlock()
 	if s == types.MigrateStateComplete {
-		p.handlePendingDataChannels()
+		p.handlePendingPublisherDataChannels()
 	}
 	if pendingOffer != nil {
 		_, err := p.HandleOffer(*pendingOffer)
@@ -1224,8 +1265,22 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		SubscribedQualities: subscribedQualities,
 	}
 
-	p.params.Telemetry.TrackMaxSubscribedVideoQuality(context.Background(), p.ID(), &livekit.TrackInfo{Sid: string(trackID), Type: livekit.TrackType_VIDEO}, maxSubscribedQuality)
+	p.params.Telemetry.TrackMaxSubscribedVideoQuality(
+		context.Background(),
+		p.ID(),
+		&livekit.TrackInfo{
+			Sid:  string(trackID),
+			Type: livekit.TrackType_VIDEO,
+		},
+		maxSubscribedQuality,
+	)
 
+	p.params.Logger.Debugw(
+		"sending max subscribed quality",
+		"trackID", trackID,
+		"qualities", subscribedQualities,
+		"max", maxSubscribedQuality,
+	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
 			SubscribedQualityUpdate: subscribedQualityUpdate,
@@ -1548,7 +1603,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (p *ParticipantImpl) handlePendingDataChannels() {
+func (p *ParticipantImpl) handlePendingPublisherDataChannels() {
 	ordered := true
 	negotiated := true
 	for _, ci := range p.pendingDataChannels {
@@ -1556,6 +1611,9 @@ func (p *ParticipantImpl) handlePendingDataChannels() {
 			dc  *webrtc.DataChannel
 			err error
 		)
+		if ci.Target == livekit.SignalTarget_SUBSCRIBER {
+			continue
+		}
 		if ci.Label == LossyDataChannel && p.lossyDC == nil {
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())

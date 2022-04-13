@@ -252,7 +252,10 @@ func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 
 func (s *StreamTracker) detectWorker(generation uint32) {
 	ticker := time.NewTicker(s.params.CycleDuration)
+	defer ticker.Stop()
+
 	tickerBitrate := time.NewTicker(bitrateReportInterval / 2)
+	defer tickerBitrate.Stop()
 
 	for {
 		select {
