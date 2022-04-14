@@ -40,9 +40,16 @@ const (
 	disconnectCleanupDuration = 15 * time.Second
 )
 
+type pendingCodec struct {
+	mime     string
+	priority int // lower is higher priority
+	cid      string
+}
+
 type pendingTrackInfo struct {
 	*livekit.TrackInfo
 	migrated bool
+	codecs   []pendingCodec
 }
 
 type ParticipantParams struct {
@@ -525,7 +532,15 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
-		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{t.GetTrack(), true}
+		pendingInfo := &pendingTrackInfo{TrackInfo: t.GetTrack(), migrated: true}
+		for idx, codec := range t.GetTrack().GetCodecs() {
+			pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
+				mime:     codec.MimeType,
+				priority: idx,
+				// TODO : need cid here for migrate
+			})
+		}
+		p.pendingTracks[t.GetCid()] = pendingInfo
 	}
 	p.pendingDataChannels = dataChannels
 
@@ -1319,18 +1334,28 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 
 	ti := &livekit.TrackInfo{
-		Type:                req.Type,
-		Name:                req.Name,
-		Sid:                 utils.NewGuid(trackPrefix),
-		Width:               req.Width,
-		Height:              req.Height,
-		Muted:               req.Muted,
-		DisableDtx:          req.DisableDtx,
-		Source:              req.Source,
-		Layers:              req.Layers,
-		AlternativeMimeType: req.AlternativeCodec,
+		Type:       req.Type,
+		Name:       req.Name,
+		Sid:        utils.NewGuid(trackPrefix),
+		Width:      req.Width,
+		Height:     req.Height,
+		Muted:      req.Muted,
+		DisableDtx: req.DisableDtx,
+		Source:     req.Source,
+		Layers:     req.Layers,
 	}
-	p.pendingTracks[req.Cid] = &pendingTrackInfo{TrackInfo: ti}
+	pendingInfo := &pendingTrackInfo{TrackInfo: ti}
+	for idx, codec := range req.SimulcastCodecs {
+		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
+			MimeType: codec.Codec,
+		})
+		pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
+			mime:     codec.Codec,
+			cid:      codec.Cid,
+			priority: idx,
+		})
+	}
+	p.pendingTracks[req.Cid] = pendingInfo
 
 	return ti
 }

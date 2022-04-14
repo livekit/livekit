@@ -91,8 +91,8 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
+	upstreamCodecs          []webrtc.RTPCodecCapability
 	codec                   webrtc.RTPCodecCapability
-	altCodec                webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
@@ -154,8 +154,7 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(
-	c webrtc.RTPCodecCapability,
-	altCodec webrtc.RTPCodecCapability,
+	codecs []webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
 	peerID livekit.ParticipantID,
@@ -164,9 +163,9 @@ func NewDownTrack(
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
-	case strings.HasPrefix(c.MimeType, "audio/"):
+	case strings.HasPrefix(codecs[0].MimeType, "audio/"):
 		kind = webrtc.RTPCodecTypeAudio
-	case strings.HasPrefix(c.MimeType, "video/"):
+	case strings.HasPrefix(codecs[0].MimeType, "video/"):
 		kind = webrtc.RTPCodecTypeVideo
 	default:
 		kind = webrtc.RTPCodecType(0)
@@ -180,10 +179,8 @@ func NewDownTrack(
 		streamID:       r.StreamID(),
 		bufferFactory:  bf,
 		receiver:       r,
-		codec:          c,
-		altCodec:       altCodec,
+		upstreamCodecs: codecs,
 		kind:           kind,
-		forwarder:      NewForwarder(c, kind, logger),
 		callbacksQueue: utils.NewOpsQueue(logger),
 	}
 
@@ -221,7 +218,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
 	}
 	var codec webrtc.RTPCodecParameters
-	for _, c := range []webrtc.RTPCodecCapability{d.codec, d.altCodec} {
+	for _, c := range d.upstreamCodecs {
 		parameters := webrtc.RTPCodecParameters{RTPCodecCapability: c}
 		matchCodec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
 		if err == nil {
@@ -245,10 +242,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.handleRTCP(pkt)
 		})
 	}
-	if strings.HasPrefix(d.codec.MimeType, "video/") {
+	if strings.HasPrefix(codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
 	d.codec = codec.RTPCodecCapability
+	d.forwarder = NewForwarder(d.codec, d.kind, d.logger)
 	if d.onBind != nil {
 		d.callbacksQueue.Enqueue(d.onBind)
 	}
@@ -574,7 +572,9 @@ func (d *DownTrack) Close() {
 // 2. in case of session migration, participant migrate from other node, video track should
 //    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
-	d.forwarder.Mute(true)
+	if d.forwarder != nil {
+		d.forwarder.Mute(true)
+	}
 
 	// write blank frames after disabling so that other frames do not interfere.
 	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.

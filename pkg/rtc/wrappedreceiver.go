@@ -1,6 +1,8 @@
 package rtc
 
 import (
+	"sort"
+
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
@@ -12,18 +14,24 @@ import (
 
 type WrappedReceiver struct {
 	sfu.TrackReceiver
-	mainReceiver, altReceiver sfu.TrackReceiver
-	trackID                   livekit.TrackID
-	streamId                  string
+	receivers []sfu.TrackReceiver
+	trackID   livekit.TrackID
+	streamId  string
 }
 
-func NewWrappedReceiver(mainReceiver, alterReceiver sfu.TrackReceiver, trackID livekit.TrackID, streamId string) *WrappedReceiver {
+func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID, streamId string) *WrappedReceiver {
+	sort.Slice(receivers, func(i, j int) bool {
+		return receivers[i].Priority() < receivers[j].Priority()
+	})
+	sfuReceivers := make([]sfu.TrackReceiver, 0, len(receivers))
+	for _, r := range receivers {
+		sfuReceivers = append(sfuReceivers, r.TrackReceiver)
+	}
+
 	return &WrappedReceiver{
-		TrackReceiver: mainReceiver,
-		mainReceiver:  mainReceiver,
-		altReceiver:   alterReceiver,
-		trackID:       trackID,
-		streamId:      streamId,
+		receivers: sfuReceivers,
+		trackID:   trackID,
+		streamId:  streamId,
 	}
 }
 
@@ -36,9 +44,18 @@ func (r *WrappedReceiver) StreamID() string {
 }
 
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
-	if codec.MimeType == r.mainReceiver.Codec().MimeType {
-		r.TrackReceiver = r.mainReceiver
-	} else if codec.MimeType == r.altReceiver.Codec().MimeType {
-		r.TrackReceiver = r.altReceiver
+	for _, receiver := range r.receivers {
+		if receiver.Codec().MimeType == codec.MimeType {
+			r.TrackReceiver = receiver
+			break
+		}
 	}
+}
+
+func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecCapability {
+	codecs := make([]webrtc.RTPCodecCapability, 0, len(r.receivers))
+	for _, receiver := range r.receivers {
+		codecs = append(codecs, receiver.Codec())
+	}
+	return codecs
 }
