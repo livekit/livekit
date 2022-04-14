@@ -89,11 +89,6 @@ func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
 	}
-
-	// update quality based on subscription if unmuting
-	if !muted {
-		t.UpdateQualityChange(true)
-	}
 }
 
 func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool {
