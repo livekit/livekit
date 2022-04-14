@@ -325,17 +325,16 @@ func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotAcceptable)
 		return
 	}
-	var grant auth.VideoGrant
+	grant := auth.VideoGrant{}
+	grant.Room = req.CallKey
+	grant.RoomJoin = true
 	at := auth.NewAccessToken(req.InternalKey, req.InternalSecret)
 	switch req.Method {
 	case "start":
 		grant.RoomCreate = true
-		at.AddGrant(&grant)
 	case "invite":
-		grant.RoomJoin = true
-		grant.Room = req.CallKey
-		at.AddGrant(&grant).SetIdentity(req.NameIdentity).SetName(req.NameCalled).SetMetadata("metadata" + req.NameIdentity)
 	}
+	at.AddGrant(&grant).SetIdentity(req.NameIdentity).SetName(req.NameCalled).SetMetadata("metadata" + req.NameIdentity).SetValidFor(time.Hour)
 	t, err := at.ToJWT()
 	if err != nil {
 		w.WriteHeader(http.StatusNotAcceptable)
