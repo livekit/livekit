@@ -100,7 +100,6 @@ func (s *StatsWorker) getDeltaStats(
 		return nil
 	}
 
-	logger.Infow("RAJA sending analytics stat", "stat", analyticsStat) // REMOVE
 	s.patch(analyticsStat, ts, trackID, kind)
 	return analyticsStat
 }
