@@ -3,65 +3,12 @@ package telemetry
 import (
 	"context"
 
-	"github.com/livekit/protocol/logger"
-
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
-
-type Stat struct {
-	Score                  float32
-	Rtt                    uint32
-	Jitter                 uint32
-	TotalPrimaryPackets    uint32
-	TotalPrimaryBytes      uint64
-	TotalRetransmitPackets uint32
-	TotalRetransmitBytes   uint64
-	TotalPaddingPackets    uint32
-	TotalPaddingBytes      uint64
-	TotalPacketsLost       uint32
-	TotalFrames            uint32
-	TotalNacks             uint32
-	TotalPlis              uint32
-	TotalFirs              uint32
-	VideoLayers            map[int32]*livekit.AnalyticsVideoLayer
-	TotalBytes             uint64
-	TotalPackets           uint32
-	MaxLayer               int32
-}
-
-func (stat *Stat) ToAnalyticsStats(layers *livekit.AnalyticsVideoLayer) *livekit.AnalyticsStat {
-	stream := &livekit.AnalyticsStream{
-		TotalPrimaryPackets:    stat.TotalPrimaryPackets,
-		TotalPrimaryBytes:      stat.TotalPrimaryBytes,
-		TotalRetransmitPackets: stat.TotalRetransmitPackets,
-		TotalRetransmitBytes:   stat.TotalRetransmitBytes,
-		TotalPaddingPackets:    stat.TotalPaddingPackets,
-		TotalPaddingBytes:      stat.TotalPaddingBytes,
-		TotalPacketsLost:       stat.TotalPacketsLost,
-		TotalFrames:            stat.TotalFrames,
-		Rtt:                    stat.Rtt,
-		Jitter:                 stat.Jitter,
-		TotalNacks:             stat.TotalNacks,
-		TotalPlis:              stat.TotalPlis,
-		TotalFirs:              stat.TotalFirs,
-	}
-	if layers != nil {
-		stream.VideoLayers = []*livekit.AnalyticsVideoLayer{layers}
-	}
-	return &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{stream}, Score: stat.Score}
-}
-
-type Stats struct {
-	// local stats context used for coalesce/delta calculations
-	curStats  *Stat
-	prevStats *Stat
-
-	// current stats received per stream
-	queue []*livekit.AnalyticsStat
-}
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
@@ -72,11 +19,8 @@ type StatsWorker struct {
 	participantID       livekit.ParticipantID
 	participantIdentity livekit.ParticipantIdentity
 
-	outgoingPerTrack map[livekit.TrackID]Stats
-	incomingPerTrack map[livekit.TrackID]Stats
-
-	// clean up stats for unpublished tracks
-	closedTracks map[livekit.TrackID]bool
+	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 }
 
 func newStatsWorker(
@@ -95,40 +39,17 @@ func newStatsWorker(
 		participantID:       participantID,
 		participantIdentity: identity,
 
-		outgoingPerTrack: make(map[livekit.TrackID]Stats),
-		incomingPerTrack: make(map[livekit.TrackID]Stats),
-		closedTracks:     make(map[livekit.TrackID]bool),
+		outgoingPerTrack: make(map[livekit.TrackID][]*livekit.AnalyticsStat),
+		incomingPerTrack: make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 	}
 	return s
 }
 
-func (s *StatsWorker) appendOutgoing(trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
-	stats := s.outgoingPerTrack[trackID]
-	stats.queue = append(stats.queue, stat)
-	s.outgoingPerTrack[trackID] = stats
-}
-
-func (s *StatsWorker) appendIncoming(trackID livekit.TrackID, stat *livekit.AnalyticsStat) {
-	stats := s.incomingPerTrack[trackID]
-	stats.queue = append(stats.queue, stat)
-	s.incomingPerTrack[trackID] = stats
-}
-
 func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.StreamType, stat *livekit.AnalyticsStat) {
 	if direction == livekit.StreamType_DOWNSTREAM {
-		s.appendOutgoing(trackID, stat)
+		s.outgoingPerTrack[trackID] = append(s.outgoingPerTrack[trackID], stat)
 	} else {
-		s.appendIncoming(trackID, stat)
-	}
-}
-
-func (s *StatsWorker) CleanUpTrackStats() {
-	if len(s.closedTracks) > 0 {
-		for trackID := range s.closedTracks {
-			delete(s.outgoingPerTrack, trackID)
-			delete(s.incomingPerTrack, trackID)
-		}
-		s.closedTracks = make(map[livekit.TrackID]bool)
+		s.incomingPerTrack[trackID] = append(s.incomingPerTrack[trackID], stat)
 	}
 }
 
@@ -141,46 +62,46 @@ func (s *StatsWorker) Update() {
 	if len(stats) > 0 {
 		s.t.Report(s.ctx, stats)
 	}
-	s.CleanUpTrackStats()
 }
 
 func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
 	for trackID, analyticsStats := range s.outgoingPerTrack {
-		analyticsStat := s.getDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_DOWNSTREAM)
+		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, livekit.StreamType_DOWNSTREAM)
 		if analyticsStat != nil {
 			stats = append(stats, analyticsStat)
 		}
 		// clear the queue
-		analyticsStats.queue = nil
-		s.outgoingPerTrack[trackID] = analyticsStats
+		s.outgoingPerTrack[trackID] = nil
 	}
 	return stats
 }
 
 func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
 	for trackID, analyticsStats := range s.incomingPerTrack {
-		analyticsStat := s.getDeltaStats(&analyticsStats, ts, trackID, livekit.StreamType_UPSTREAM)
+		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, livekit.StreamType_UPSTREAM)
 		if analyticsStat != nil {
 			stats = append(stats, analyticsStat)
 		}
 		// clear the queue
-		analyticsStats.queue = nil
-		s.incomingPerTrack[trackID] = analyticsStats
+		s.incomingPerTrack[trackID] = nil
 	}
 	return stats
 }
-func (s *StatsWorker) getDeltaStats(stats *Stats, ts *timestamppb.Timestamp, trackID livekit.TrackID, kind livekit.StreamType) *livekit.AnalyticsStat {
+
+func (s *StatsWorker) getDeltaStats(
+	stats []*livekit.AnalyticsStat,
+	ts *timestamppb.Timestamp,
+	trackID livekit.TrackID,
+	kind livekit.StreamType,
+) *livekit.AnalyticsStat {
 	// merge all streams stats of track
-	stats.coalesce()
-	// create deltaStats to send
-	analyticsStat := stats.computeDeltaStats()
-	// update stats for next interval
+	analyticsStat := coalesce(stats)
 	if analyticsStat == nil {
 		return nil
 	}
-	stats.update()
-	s.patch(analyticsStat, ts, trackID, kind)
 
+	logger.Infow("RAJA sending analytics stat", "stat", analyticsStat) // REMOVE
+	s.patch(analyticsStat, ts, trackID, kind)
 	return analyticsStat
 }
 
@@ -202,203 +123,100 @@ func (s *StatsWorker) Close() {
 	s.Update()
 }
 
-// create a single stream and single video layer post aggregation
-func (stats *Stats) update() {
-	stats.prevStats = stats.curStats
-	stats.curStats = nil
-}
+// -------------------------------------------------------------------------
 
 // create a single stream and single video layer post aggregation
-func (stats *Stats) coalesce() {
-	if len(stats.queue) == 0 {
-		return
-	}
-
-	// average score of all available stats
-	score := float32(0.0)
-	for _, stat := range stats.queue {
-		score += stat.Score
-	}
-	score = score / float32(len(stats.queue))
-
-	// aggregate streams across all stats
-	maxRTT := make(map[uint32]uint32)
-	maxJitter := make(map[uint32]uint32)
-	analyticsStreams := make(map[uint32]*livekit.AnalyticsStream)
-	for _, stat := range stats.queue {
-		//
-		// For each stream (identified by SSRC) consolidate reports.
-		// For cumulative stats, take the latest report.
-		// For instantaneous stats, take maximum (or some other appropriate representation)
-		//
-		for _, stream := range stat.Streams {
-			ssrc := stream.Ssrc
-			analyticsStream := analyticsStreams[ssrc]
-			if analyticsStream == nil {
-				analyticsStreams[ssrc] = stream
-				maxRTT[ssrc] = stream.Rtt
-				maxJitter[ssrc] = stream.Jitter
-				continue
-			}
-
-			if stream.TotalPrimaryPackets <= analyticsStream.TotalPrimaryPackets {
-				// total count should be monotonically increasing
-				continue
-			}
-
-			analyticsStreams[ssrc] = stream
-			if stream.Rtt > maxRTT[ssrc] {
-				maxRTT[ssrc] = stream.Rtt
-			}
-
-			if stream.Jitter > maxJitter[ssrc] {
-				maxJitter[ssrc] = stream.Jitter
-			}
-		}
-	}
-
-	curStats := Stat{Score: score, VideoLayers: make(map[int32]*livekit.AnalyticsVideoLayer)}
-	// find aggregates across streams
-	for ssrc, analyticsStream := range analyticsStreams {
-		rtt := maxRTT[ssrc]
-		if rtt > curStats.Rtt {
-			curStats.Rtt = rtt
-		}
-
-		jitter := maxJitter[ssrc]
-		if jitter > curStats.Jitter {
-			curStats.Jitter = jitter
-		}
-
-		curStats.TotalPrimaryPackets += analyticsStream.TotalPrimaryPackets
-		curStats.TotalPrimaryBytes += analyticsStream.TotalPrimaryBytes
-		curStats.TotalRetransmitPackets += analyticsStream.TotalRetransmitPackets
-		curStats.TotalRetransmitBytes += analyticsStream.TotalRetransmitBytes
-		curStats.TotalPaddingPackets += analyticsStream.TotalPaddingPackets
-		curStats.TotalPaddingBytes += analyticsStream.TotalPaddingBytes
-		curStats.TotalPacketsLost += analyticsStream.TotalPacketsLost
-		curStats.TotalFrames += analyticsStream.TotalFrames
-		curStats.TotalNacks += analyticsStream.TotalNacks
-		curStats.TotalPlis += analyticsStream.TotalPlis
-		curStats.TotalFirs += analyticsStream.TotalFirs
-		// add/update new video VideoLayers data to current and sum up video layer bytes/packets
-		for _, videoLayer := range analyticsStream.VideoLayers {
-			curStats.VideoLayers[videoLayer.Layer] = proto.Clone(videoLayer).(*livekit.AnalyticsVideoLayer)
-			curStats.TotalPackets += videoLayer.TotalPackets
-			curStats.TotalBytes += videoLayer.TotalBytes
-		}
-
-	}
-
-	// update currentStats
-	stats.curStats = &curStats
-}
-
-// find delta between  curStats and prevStats and prepare proto payload
-func (stats *Stats) computeDeltaStats() *livekit.AnalyticsStat {
-
-	if stats.curStats == nil {
+func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
+	if len(stats) == 0 {
 		return nil
 	}
 
-	// Stats in both queue/prev contain consolidated single deltaStats
-	cur := stats.curStats
-	prev := stats.prevStats
+	// find aggregates across streams
+	score := float32(0.0)
+	maxRtt := uint32(0)
+	maxJitter := uint32(0)
+	coalescedVideoLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
+	coalescedStream := &livekit.AnalyticsStream{}
+	for _, stat := range stats {
+		if !isValid(stat) {
+			logger.Warnw("telemetry skipping invalid stat", nil, "stat", stat)
+			continue
+		}
 
-	maxLayer := int32(-1)
-	var maxDeltaBytes uint64
-	// create a map of VideoLayers - to pick max/best layer wrt current and prev
-	curLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
-	// if we have prev, find max delta total bytes for each layer
-	if prev != nil {
-		// find max delta bytes
-		for _, layer := range cur.VideoLayers {
-			curLayers[layer.Layer] = layer
-			if prevLayer, ok := prev.VideoLayers[layer.Layer]; ok {
-				delta := layer.TotalBytes - prevLayer.TotalBytes
-				if delta > maxDeltaBytes {
-					maxDeltaBytes = delta
-					maxLayer = layer.Layer
+		score += stat.Score
+		for _, analyticsStream := range stat.Streams {
+			if analyticsStream.Rtt > maxRtt {
+				maxRtt = analyticsStream.Rtt
+			}
+
+			if analyticsStream.Jitter > maxJitter {
+				maxJitter = analyticsStream.Jitter
+			}
+
+			coalescedStream.PrimaryPackets += analyticsStream.PrimaryPackets
+			coalescedStream.PrimaryBytes += analyticsStream.PrimaryBytes
+			coalescedStream.RetransmitPackets += analyticsStream.RetransmitPackets
+			coalescedStream.RetransmitBytes += analyticsStream.RetransmitBytes
+			coalescedStream.PaddingPackets += analyticsStream.PaddingPackets
+			coalescedStream.PaddingBytes += analyticsStream.PaddingBytes
+			coalescedStream.PacketsLost += analyticsStream.PacketsLost
+			coalescedStream.Frames += analyticsStream.Frames
+			coalescedStream.Nacks += analyticsStream.Nacks
+			coalescedStream.Plis += analyticsStream.Plis
+			coalescedStream.Firs += analyticsStream.Firs
+
+			for _, videoLayer := range analyticsStream.VideoLayers {
+				coalescedVideoLayer := coalescedVideoLayers[videoLayer.Layer]
+				if coalescedVideoLayer == nil {
+					coalescedVideoLayer = proto.Clone(videoLayer).(*livekit.AnalyticsVideoLayer)
+				} else {
+					coalescedVideoLayer.Packets += videoLayer.Packets
+					coalescedVideoLayer.Bytes += videoLayer.Bytes
+					coalescedVideoLayer.Frames += videoLayer.Frames
 				}
 			}
 		}
-	} else {
-		// if we don't have prev layer, find max layer in current - based on totalBytes for a layer
-		for _, layer := range cur.VideoLayers {
-			curLayers[layer.Layer] = layer
-			// identify layer which sent max data
-			if layer.TotalBytes > maxDeltaBytes {
-				maxDeltaBytes = layer.TotalBytes
-				maxLayer = layer.Layer
-			}
-		}
-		// no layers (non-video tracks) and/or no deltas due to OFF/FREEZE
-		if maxLayer != -1 {
-			return cur.ToAnalyticsStats(curLayers[maxLayer])
-		} else {
-			return cur.ToAnalyticsStats(nil)
+	}
+
+	// whittle it down to one video layer, just the max available layer
+	maxVideoLayer := int32(-1)
+	for _, coalescedVideoLayer := range coalescedVideoLayers {
+		if maxVideoLayer == -1 || maxVideoLayer < coalescedVideoLayer.Layer {
+			maxVideoLayer = coalescedVideoLayer.Layer
+			coalescedStream.VideoLayers = []*livekit.AnalyticsVideoLayer{coalescedVideoLayer}
 		}
 	}
 
-	// we have prevStats, find delta between cur and prev
-	deltaStats := Stat{Score: cur.Score}
-	deltaStats.Rtt = cur.Rtt
-	deltaStats.Jitter = cur.Jitter
-	deltaStats.TotalPlis = cur.TotalPlis - prev.TotalPlis
-	deltaStats.TotalFrames = cur.TotalFrames - prev.TotalFrames
-	deltaStats.TotalNacks = cur.TotalNacks - prev.TotalNacks
-	deltaStats.TotalFirs = cur.TotalFirs - prev.TotalFirs
-	deltaStats.TotalPacketsLost = cur.TotalPacketsLost - prev.TotalPacketsLost
-	// https://datatracker.ietf.org/doc/html/rfc3550#page-83
-	if int32(deltaStats.TotalPacketsLost) < 0 {
-		deltaStats.TotalPacketsLost = 0
+	return &livekit.AnalyticsStat{
+		Score:   score / float32(len(stats)),
+		Streams: []*livekit.AnalyticsStream{coalescedStream},
 	}
-	deltaStats.TotalPrimaryPackets = cur.TotalPrimaryPackets - prev.TotalPrimaryPackets
-	deltaStats.TotalRetransmitPackets = cur.TotalRetransmitPackets - prev.TotalRetransmitPackets
-	deltaStats.TotalPaddingPackets = cur.TotalPaddingPackets - prev.TotalPaddingPackets
-	deltaStats.TotalPaddingPackets = cur.TotalPaddingPackets - prev.TotalPaddingPackets
-	deltaStats.TotalPrimaryBytes = cur.TotalPrimaryBytes - prev.TotalPrimaryBytes
-	deltaStats.TotalPaddingBytes = cur.TotalPaddingBytes - prev.TotalPaddingBytes
-	deltaStats.TotalRetransmitBytes = cur.TotalRetransmitBytes - prev.TotalRetransmitBytes
-	if int64(deltaStats.TotalPrimaryBytes) < 0 || int64(deltaStats.TotalPaddingBytes) < 0 || int64(deltaStats.TotalRetransmitBytes) < 0 {
-		return nil
-	}
-
-	var videoLayer *livekit.AnalyticsVideoLayer
-	// handle deltas being 0 due to freeze/OFF for video tracks when no maxLayer is found
-	if len(cur.VideoLayers) > 0 && len(prev.VideoLayers) > 0 && maxLayer != -1 {
-		videoLayer = new(livekit.AnalyticsVideoLayer)
-		// find the current layer for the same layer id as previous, compute current round of delta with it
-		if curLayer, ok := curLayers[prev.MaxLayer]; ok {
-			videoLayer.Layer = prev.MaxLayer
-			videoLayer.TotalFrames = curLayer.TotalFrames - prev.VideoLayers[prev.MaxLayer].TotalFrames
-		} else {
-			videoLayer = curLayers[maxLayer]
-		}
-		// store new max layer for next round
-		cur.MaxLayer = maxLayer
-		// we accumulate bytes/packets across layers
-
-		if cur.TotalBytes < prev.TotalBytes || cur.TotalPackets < prev.TotalPackets {
-			logger.Debugw("computeDeltaStats cur less than prev", "current", cur, "prev", prev)
-			return nil
-		}
-		videoLayer.TotalBytes = cur.TotalBytes - prev.TotalBytes
-		videoLayer.TotalPackets = cur.TotalPackets - prev.TotalPackets
-	}
-
-	// carry forward maxLayer info when no deltas were found
-	if maxLayer == -1 {
-		cur.MaxLayer = prev.MaxLayer
-	}
-
-	// if no packets from any layers, return nil to send no stats
-	if deltaStats.TotalPackets == 0 && deltaStats.TotalPrimaryPackets == 0 && deltaStats.TotalRetransmitPackets == 0 && deltaStats.TotalPaddingPackets == 0 {
-		return nil
-	}
-	return deltaStats.ToAnalyticsStats(videoLayer)
 }
 
-func (s *StatsWorker) RemoveStats(trackID livekit.TrackID) {
-	s.closedTracks[trackID] = true
+func isValid(stat *livekit.AnalyticsStat) bool {
+	for _, analyticsStream := range stat.Streams {
+		if int32(analyticsStream.PrimaryPackets) < 0 ||
+			int64(analyticsStream.PrimaryBytes) < 0 ||
+			int32(analyticsStream.RetransmitPackets) < 0 ||
+			int64(analyticsStream.RetransmitBytes) < 0 ||
+			int32(analyticsStream.PaddingPackets) < 0 ||
+			int64(analyticsStream.PaddingBytes) < 0 ||
+			int32(analyticsStream.PacketsLost) < 0 ||
+			int32(analyticsStream.Frames) < 0 ||
+			int32(analyticsStream.Nacks) < 0 ||
+			int32(analyticsStream.Plis) < 0 ||
+			int32(analyticsStream.Firs) < 0 {
+			return false
+		}
+
+		for _, videoLayer := range analyticsStream.VideoLayers {
+			if int32(videoLayer.Packets) < 0 ||
+				int64(videoLayer.Bytes) < 0 ||
+				int32(videoLayer.Frames) < 0 {
+				return false
+			}
+		}
+	}
+
+	return true
 }

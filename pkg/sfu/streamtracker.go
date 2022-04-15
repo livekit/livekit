@@ -81,7 +81,7 @@ func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
 	s := &StreamTracker{
 		params:         params,
 		status:         StreamStatusStopped,
-		callbacksQueue: utils.NewOpsQueue(params.Logger),
+		callbacksQueue: utils.NewOpsQueue(params.Logger, "streamtracker", 50),
 	}
 	return s
 }
