@@ -541,7 +541,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 
 func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotId uint32) *rtcp.ReceptionReport {
 	r.lock.Lock()
-	now, then := r.getAndResetSnapshot(snapshotId)
+	then, now := r.getAndResetSnapshot(snapshotId)
 	r.lock.Unlock()
 
 	if now == nil || then == nil {
@@ -595,7 +595,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 	r.lock.Lock()
-	now, then := r.getAndResetSnapshot(snapshotId)
+	then, now := r.getAndResetSnapshot(snapshotId)
 	r.lock.Unlock()
 
 	if now == nil || then == nil {
@@ -635,7 +635,7 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 
 func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	r.lock.Lock()
-	now, then := r.getAndResetSnapshot(snapshotId)
+	then, now := r.getAndResetSnapshot(snapshotId)
 	r.lock.Unlock()
 
 	if now == nil || then == nil {
@@ -959,20 +959,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 	then := r.snapshots[snapshotId]
 	if then == nil {
 		then = &Snapshot{
-			extStartSN:          r.extStartSN,
-			bytes:               r.bytes,
-			packetsDuplicate:    r.packetsDuplicate,
-			bytesDuplicate:      r.bytesDuplicate,
-			packetsPadding:      r.packetsPadding,
-			bytesPadding:        r.bytesPadding,
-			frames:              r.frames,
-			nacks:               r.nacks,
-			plis:                r.plis,
-			firs:                r.firs,
-			maxJitter:           0.0,
-			isJitterOverridden:  false,
-			maxJitterOverridden: 0.0,
-			maxRtt:              0,
+			extStartSN: r.extStartSN,
 		}
 		r.snapshots[snapshotId] = then
 	}
