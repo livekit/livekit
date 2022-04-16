@@ -266,7 +266,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, string(participantKey))
 	resSink := NewSignalNodeSink(r.rc, livekit.NodeID(signalNode), livekit.ConnectionID(ss.ConnectionId))
-	r.onNewParticipant(
+	go r.onNewParticipant(
 		r.ctx,
 		livekit.RoomName(ss.RoomName),
 		pi,
