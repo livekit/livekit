@@ -35,12 +35,37 @@ type RTPFlowState struct {
 type RTPSnapshotInfo struct {
 	PacketsExpected uint32
 	PacketsLost     uint32
-	MaxJitter       float64
-	MaxRtt          uint32
+	JitterMax       float64
+	RttMax          uint32
+}
+
+type RTPDeltaInfo struct {
+	Packets          uint32
+	Bytes            uint64
+	PacketsDuplicate uint32
+	BytesDuplicate   uint64
+	PacketsPadding   uint32
+	BytesPadding     uint64
+	PacketsLost      uint32
+	Frames           uint32
+	RttMax           uint32
+	JitterMax        float64
+	Nacks            uint32
+	Plis             uint32
+	Firs             uint32
 }
 
 type Snapshot struct {
 	extStartSN          uint32
+	bytes               uint64
+	packetsDuplicate    uint32
+	bytesDuplicate      uint64
+	packetsPadding      uint32
+	bytesPadding        uint64
+	frames              uint32
+	nacks               uint32
+	plis                uint32
+	firs                uint32
 	maxJitter           float64
 	isJitterOverridden  bool
 	maxJitterOverridden float64
@@ -516,22 +541,21 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 
 func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8, snapshotId uint32) *rtcp.ReceptionReport {
 	r.lock.Lock()
-	snapshot := r.getAndResetSnapshot(snapshotId)
+	then, now := r.getAndResetSnapshot(snapshotId)
 	r.lock.Unlock()
 
-	if snapshot == nil {
+	if now == nil || then == nil {
 		return nil
 	}
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	extHighestSN := r.getExtHighestSN()
-	packetsExpected := extHighestSN - snapshot.extStartSN + 1
+	packetsExpected := now.extStartSN - then.extStartSN + 1
 	if packetsExpected > NumSequenceNumbers {
 		logger.Warnw(
 			"too many packets expected in receiver report",
-			fmt.Errorf("start: %d, end: %d, expected: %d", snapshot.extStartSN, extHighestSN, packetsExpected),
+			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
 		return nil
 	}
@@ -539,7 +563,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 		return nil
 	}
 
-	packetsLost := r.numMissingSNs(uint16(snapshot.extStartSN), uint16(extHighestSN))
+	packetsLost := r.numMissingSNs(uint16(then.extStartSN), uint16(now.extStartSN))
 	lossRate := float32(packetsLost) / float32(packetsExpected)
 	fracLost := uint8(lossRate * 256.0)
 	if proxyFracLost > fracLost {
@@ -562,7 +586,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 		SSRC:               ssrc,
 		FractionLost:       fracLost,
 		TotalLost:          r.packetsLost,
-		LastSequenceNumber: extHighestSN,
+		LastSequenceNumber: now.extStartSN,
 		Jitter:             uint32(jitter),
 		LastSenderReport:   uint32(r.ntpSR >> 16),
 		Delay:              dlsr,
@@ -571,22 +595,21 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 	r.lock.Lock()
-	snapshot := r.getAndResetSnapshot(snapshotId)
+	then, now := r.getAndResetSnapshot(snapshotId)
 	r.lock.Unlock()
 
-	if snapshot == nil {
+	if now == nil || then == nil {
 		return nil
 	}
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	extHighestSN := r.getExtHighestSN()
-	packetsExpected := extHighestSN - snapshot.extStartSN + 1
+	packetsExpected := now.extStartSN - then.extStartSN + 1
 	if packetsExpected > NumSequenceNumbers {
 		logger.Warnw(
-			"too many packets expected in loss percentage",
-			fmt.Errorf("start: %d, end: %d, expected: %d", snapshot.extStartSN, extHighestSN, packetsExpected),
+			"too many packets expected in snapshot",
+			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
 		return nil
 	}
@@ -594,19 +617,70 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 		return nil
 	}
 
-	packetsLost := r.numMissingSNs(uint16(snapshot.extStartSN), uint16(extHighestSN))
+	packetsLost := r.numMissingSNs(uint16(then.extStartSN), uint16(now.extStartSN))
 
-	maxJitter := snapshot.maxJitter
-	if snapshot.isJitterOverridden {
-		maxJitter = snapshot.maxJitterOverridden
+	maxJitter := then.maxJitter
+	if then.isJitterOverridden {
+		maxJitter = then.maxJitterOverridden
 	}
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	return &RTPSnapshotInfo{
 		PacketsExpected: packetsExpected,
 		PacketsLost:     packetsLost,
-		MaxJitter:       maxJitterTime,
-		MaxRtt:          snapshot.maxRtt,
+		JitterMax:       maxJitterTime,
+		RttMax:          then.maxRtt,
+	}
+}
+
+func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
+	r.lock.Lock()
+	then, now := r.getAndResetSnapshot(snapshotId)
+	r.lock.Unlock()
+
+	if now == nil || then == nil {
+		return nil
+	}
+
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	packetsExpected := now.extStartSN - then.extStartSN + 1
+	if packetsExpected > NumSequenceNumbers {
+		logger.Warnw(
+			"too many packets expected in delta",
+			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
+		)
+		return nil
+	}
+	if packetsExpected == 0 {
+		return nil
+	}
+
+	packetsLost := r.numMissingSNs(uint16(then.extStartSN), uint16(now.extStartSN))
+	packetsPadding := now.packetsPadding - then.packetsPadding
+	bytesPadding := now.bytesPadding - then.bytesPadding
+
+	maxJitter := then.maxJitter
+	if then.isJitterOverridden {
+		maxJitter = then.maxJitterOverridden
+	}
+	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
+
+	return &RTPDeltaInfo{
+		Packets:          packetsExpected - packetsPadding,
+		Bytes:            now.bytes - then.bytes - bytesPadding,
+		PacketsDuplicate: now.packetsDuplicate - then.packetsDuplicate,
+		BytesDuplicate:   now.bytesDuplicate - then.bytesDuplicate,
+		PacketsPadding:   packetsPadding,
+		BytesPadding:     bytesPadding,
+		PacketsLost:      packetsLost,
+		Frames:           now.frames - then.frames,
+		RttMax:           then.maxRtt,
+		JitterMax:        maxJitterTime,
+		Nacks:            now.nacks - then.nacks,
+		Plis:             now.plis - then.plis,
+		Firs:             now.firs - then.firs,
 	}
 }
 
@@ -877,32 +951,40 @@ func (r *RTPStats) updateGapHistogram(gap int) {
 	}
 }
 
-func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) *Snapshot {
+func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot) {
 	if !r.initialized {
-		return nil
+		return nil, nil
 	}
 
-	snapshot := r.snapshots[snapshotId]
-	if snapshot == nil {
-		snapshot = &Snapshot{
-			extStartSN:          r.extStartSN,
-			maxJitter:           0.0,
-			isJitterOverridden:  false,
-			maxJitterOverridden: 0.0,
-			maxRtt:              0,
+	then := r.snapshots[snapshotId]
+	if then == nil {
+		then = &Snapshot{
+			extStartSN: r.extStartSN,
 		}
-		r.snapshots[snapshotId] = snapshot
+		r.snapshots[snapshotId] = then
 	}
 
-	toReturn := *snapshot
+	// snapshot now
+	r.snapshots[snapshotId] = &Snapshot{
+		extStartSN:          r.getExtHighestSN(),
+		bytes:               r.bytes,
+		packetsDuplicate:    r.packetsDuplicate,
+		bytesDuplicate:      r.bytesDuplicate,
+		packetsPadding:      r.packetsPadding,
+		bytesPadding:        r.bytesPadding,
+		frames:              r.frames,
+		nacks:               r.nacks,
+		plis:                r.plis,
+		firs:                r.firs,
+		maxJitter:           0.0,
+		isJitterOverridden:  false,
+		maxJitterOverridden: 0.0,
+		maxRtt:              0,
+	}
+	// make a copy so that it can be used independently
+	now := *r.snapshots[snapshotId]
 
-	snapshot.extStartSN = r.getExtHighestSN() + 1
-	snapshot.maxJitter = 0.0
-	snapshot.isJitterOverridden = false
-	snapshot.maxJitterOverridden = 0.0
-	snapshot.maxRtt = 0
-
-	return &toReturn
+	return then, &now
 }
 
 // ----------------------------------

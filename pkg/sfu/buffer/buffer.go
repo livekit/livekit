@@ -15,6 +15,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -75,6 +76,7 @@ type Buffer struct {
 	rtpStats                    *RTPStats
 	rrSnapshotId                uint32
 	connectionQualitySnapshotId uint32
+	deltaStatsSnapshotId        uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -104,7 +106,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		audioPool:      ap,
 		pliThrottle:    int64(500 * time.Millisecond),
 		logger:         logger,
-		callbacksQueue: utils.NewOpsQueue(logger),
+		callbacksQueue: utils.NewOpsQueue(logger, "sfu-buffer", 50),
 	}
 	b.extPackets.SetMinCapacity(7)
 	return b
@@ -134,6 +136,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
 	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
+	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.callbacksQueue.Start()
 
@@ -581,7 +584,7 @@ func (b *Buffer) GetClockRate() uint32 {
 	return b.clockRate
 }
 
-func (b *Buffer) GetStats() *StreamStatsWithLayers {
+func (b *Buffer) GetStats() *livekit.RTPStats {
 	b.RLock()
 	defer b.RUnlock()
 
@@ -589,22 +592,7 @@ func (b *Buffer) GetStats() *StreamStatsWithLayers {
 		return nil
 	}
 
-	stats := b.rtpStats.ToProto()
-	if stats == nil {
-		return nil
-	}
-
-	layers := make(map[int]LayerStats)
-	layers[0] = LayerStats{
-		TotalPackets: stats.Packets + stats.PacketsDuplicate + stats.PacketsPadding,
-		TotalBytes:   stats.Bytes + stats.BytesDuplicate + stats.BytesPadding,
-		TotalFrames:  stats.Frames,
-	}
-
-	return &StreamStatsWithLayers{
-		RTPStats: stats,
-		Layers:   layers,
-	}
+	return b.rtpStats.ToProto()
 }
 
 func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
@@ -616,4 +604,30 @@ func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
 	}
 
 	return b.rtpStats.SnapshotInfo(b.connectionQualitySnapshotId)
+}
+
+func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStats == nil {
+		return nil
+	}
+
+	deltaStats := b.rtpStats.DeltaInfo(b.deltaStatsSnapshotId)
+	if deltaStats == nil {
+		return nil
+	}
+
+	layers := make(map[int]LayerStats)
+	layers[0] = LayerStats{
+		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
+		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
+		Frames:  deltaStats.Frames,
+	}
+
+	return &StreamStatsWithLayers{
+		RTPStats: deltaStats,
+		Layers:   layers,
+	}
 }

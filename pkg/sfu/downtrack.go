@@ -111,6 +111,7 @@ type DownTrack struct {
 
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
+	deltaStatsSnapshotId        uint32
 
 	// Debug info
 	pktsDropped atomic.Uint32
@@ -181,12 +182,12 @@ func NewDownTrack(
 		codec:          c,
 		kind:           kind,
 		forwarder:      NewForwarder(c, kind, logger),
-		callbacksQueue: utils.NewOpsQueue(logger),
+		callbacksQueue: utils.NewOpsQueue(logger, "sfu-downtrack", 50),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        kind,
-		GetTrackStats:    d.GetTrackStats,
+		GetDeltaStats:    d.getDeltaStats,
 		GetQualityParams: d.getQualityParams,
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
@@ -206,6 +207,7 @@ func NewDownTrack(
 		Logger:    d.logger,
 	})
 	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
+	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
 }
@@ -1252,27 +1254,8 @@ func (d *DownTrack) GetConnectionScore() float32 {
 	return d.connectionStats.GetScore()
 }
 
-func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
-	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
-
-	stats := d.rtpStats.ToProto()
-	if stats == nil {
-		return nil
-	}
-
-	layers := make(map[int]buffer.LayerStats)
-	layers[0] = buffer.LayerStats{
-		TotalPackets: stats.Packets + stats.PacketsDuplicate + stats.PacketsPadding,
-		TotalBytes:   stats.Bytes + stats.BytesDuplicate + stats.BytesPadding,
-		TotalFrames:  stats.Frames,
-	}
-
-	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
-		RTPStats: stats,
-		Layers:   layers,
-	}
-
-	return streamStats
+func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
+	return d.rtpStats.ToProto()
 }
 
 func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
@@ -1288,9 +1271,32 @@ func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
 
 	return &buffer.ConnectionQualityParams{
 		LossPercentage: lossPercentage,
-		Jitter:         float32(s.MaxJitter / 1000.0),
-		Rtt:            s.MaxRtt,
+		Jitter:         float32(s.JitterMax / 1000.0),
+		Rtt:            s.RttMax,
 	}
+}
+
+func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
+	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
+
+	deltaStats := d.rtpStats.DeltaInfo(d.deltaStatsSnapshotId)
+	if deltaStats == nil {
+		return nil
+	}
+
+	layers := make(map[int]buffer.LayerStats)
+	layers[0] = buffer.LayerStats{
+		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
+		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
+		Frames:  deltaStats.Frames,
+	}
+
+	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
+		RTPStats: deltaStats,
+		Layers:   layers,
+	}
+
+	return streamStats
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {

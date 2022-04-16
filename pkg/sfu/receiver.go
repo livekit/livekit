@@ -170,7 +170,7 @@ func NewWebRTCReceiver(
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        w.kind,
-		GetTrackStats:    w.GetTrackStats,
+		GetDeltaStats:    w.getDeltaStats,
 		GetQualityParams: w.getQualityParams,
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
@@ -406,13 +406,12 @@ func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error
 	return buff.GetPacket(buf, sn)
 }
 
-func (w *WebRTCReceiver) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
+func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
 
-	stats := make(map[uint32]*buffer.StreamStatsWithLayers, len(w.buffers))
-
-	for layer, buff := range w.buffers {
+	var stats []*livekit.RTPStats
+	for _, buff := range w.buffers {
 		if buff == nil {
 			continue
 		}
@@ -422,17 +421,10 @@ func (w *WebRTCReceiver) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayer
 			continue
 		}
 
-		// if simulcast, patch buffer stats with correct layer
-		if w.isSimulcast {
-			patched := make(map[int]buffer.LayerStats, 1)
-			patched[layer] = sswl.Layers[0]
-			sswl.Layers = patched
-		}
-
-		stats[w.SSRC(layer)] = sswl
+		stats = append(stats, sswl)
 	}
 
-	return stats
+	return buffer.AggregateRTPStats(stats)
 }
 
 func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
@@ -455,11 +447,11 @@ func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
 
 		packetsExpected += q.PacketsExpected
 		packetsLost += q.PacketsLost
-		if q.MaxJitter > maxJitter {
-			maxJitter = q.MaxJitter
+		if q.JitterMax > maxJitter {
+			maxJitter = q.JitterMax
 		}
-		if q.MaxRtt > maxRtt {
-			maxRtt = q.MaxRtt
+		if q.RttMax > maxRtt {
+			maxRtt = q.RttMax
 		}
 	}
 
@@ -473,6 +465,35 @@ func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
 		Jitter:         float32(maxJitter / 1000.0),
 		Rtt:            maxRtt,
 	}
+}
+
+func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	deltaStats := make(map[uint32]*buffer.StreamStatsWithLayers, len(w.buffers))
+
+	for layer, buff := range w.buffers {
+		if buff == nil {
+			continue
+		}
+
+		sswl := buff.GetDeltaStats()
+		if sswl == nil {
+			continue
+		}
+
+		// if simulcast, patch buffer stats with correct layer
+		if w.isSimulcast {
+			patched := make(map[int]buffer.LayerStats, 1)
+			patched[layer] = sswl.Layers[0]
+			sswl.Layers = patched
+		}
+
+		deltaStats[w.SSRC(layer)] = sswl
+	}
+
+	return deltaStats
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {

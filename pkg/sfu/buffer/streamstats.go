@@ -1,15 +1,13 @@
 package buffer
 
-import "github.com/livekit/protocol/livekit"
-
 type LayerStats struct {
-	TotalPackets uint32
-	TotalBytes   uint64
-	TotalFrames  uint32
+	Packets uint32
+	Bytes   uint64
+	Frames  uint32
 }
 
 type StreamStatsWithLayers struct {
-	RTPStats *livekit.RTPStats
+	RTPStats *RTPDeltaInfo
 	Layers   map[int]LayerStats
 }
 

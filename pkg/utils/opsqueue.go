@@ -6,22 +6,22 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const (
-	MaxOps = 50
-)
-
 type OpsQueue struct {
 	logger logger.Logger
+	name   string
+	size   int
 
 	lock      sync.RWMutex
 	ops       chan func()
 	isStopped bool
 }
 
-func NewOpsQueue(logger logger.Logger) *OpsQueue {
+func NewOpsQueue(logger logger.Logger, name string, size int) *OpsQueue {
 	return &OpsQueue{
 		logger: logger,
-		ops:    make(chan func(), MaxOps),
+		name:   name,
+		size:   size,
+		ops:    make(chan func(), size),
 	}
 }
 
@@ -55,7 +55,7 @@ func (oq *OpsQueue) Enqueue(op func()) {
 	select {
 	case oq.ops <- op:
 	default:
-		oq.logger.Warnw("ops queue full", nil)
+		oq.logger.Warnw("ops queue full", nil, "name", oq.name, "size", oq.size)
 	}
 	oq.lock.RUnlock()
 }
