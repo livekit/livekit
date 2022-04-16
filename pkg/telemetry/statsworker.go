@@ -178,6 +178,8 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 			}
 		}
 	}
+	coalescedStream.Rtt = maxRtt
+	coalescedStream.Jitter = maxJitter
 
 	// whittle it down to one video layer, just the max available layer
 	maxVideoLayer := int32(-1)
