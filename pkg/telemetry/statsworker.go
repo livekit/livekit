@@ -71,7 +71,7 @@ func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []
 			stats = append(stats, analyticsStat)
 		}
 		// clear the queue
-		s.outgoingPerTrack[trackID] = nil
+		delete(s.outgoingPerTrack, trackID)
 	}
 	return stats
 }
@@ -83,7 +83,7 @@ func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*l
 			stats = append(stats, analyticsStat)
 		}
 		// clear the queue
-		s.incomingPerTrack[trackID] = nil
+		delete(s.incomingPerTrack, trackID)
 	}
 	return stats
 }
