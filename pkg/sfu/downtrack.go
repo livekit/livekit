@@ -203,8 +203,9 @@ func NewDownTrack(
 	})
 
 	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
-		ClockRate: d.codec.ClockRate,
-		Logger:    d.logger,
+		ClockRate:              d.codec.ClockRate,
+		IsReceiverReportDriven: true,
+		Logger:                 d.logger,
 	})
 	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
 	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
@@ -994,15 +995,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				d.rtpStats.UpdatePacketsLost(r.TotalLost)
-
 				rtt := getRttMs(&r)
 				if rtt != d.rtpStats.GetRtt() {
 					rttToReport = rtt
 				}
-				d.rtpStats.UpdateRtt(rtt)
 
-				d.rtpStats.UpdateJitter(float64(r.Jitter))
+				d.rtpStats.UpdateFromReceiverReport(r.LastSequenceNumber, r.TotalLost, rtt, float64(r.Jitter))
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
