@@ -26,7 +26,7 @@ const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
-	statsMaxDelaySeconds  = 10
+	statsMaxDelaySeconds  = 30
 )
 
 // RedisRouter uses Redis pub/sub to route signaling messages across different nodes
