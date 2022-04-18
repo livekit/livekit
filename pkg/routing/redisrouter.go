@@ -483,7 +483,9 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
 		} else {
-			r.currentNode.Stats = updated
+			if updated != nil {
+				r.currentNode.Stats = updated
+			}
 		}
 		r.statsMu.Unlock()
 
