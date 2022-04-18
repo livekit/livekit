@@ -627,7 +627,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	subscribedCodec := make([]*livekit.SubscribedCodec, 0, len(t.maxSubscribedQuality))
 	maxSubscribedQualities := make([]types.SubscribedCodecQuality, 0, len(t.maxSubscribedQuality))
 	for mime, maxQuality := range t.maxSubscribedQuality {
-		mime = strings.TrimLeft(mime, "video/")
+		mime = strings.ToLower(strings.TrimLeft(mime, "video/"))
 		maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
 			CodecMime: mime,
 			Quality:   maxQuality,
@@ -635,8 +635,12 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 
 		if maxQuality == livekit.VideoQuality_OFF {
 			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
-				Codec:   mime,
-				Enabled: false,
+				Codec: mime,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
 			})
 		} else {
 			var subscribedQualities []*livekit.SubscribedQuality
@@ -648,7 +652,6 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 			}
 			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
 				Codec:     mime,
-				Enabled:   true,
 				Qualities: subscribedQualities,
 			})
 		}
