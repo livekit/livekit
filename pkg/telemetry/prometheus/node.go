@@ -10,7 +10,10 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-const livekitNamespace string = "livekit"
+const (
+	livekitNamespace    string = "livekit"
+	forceUpdateInterval int64  = 15
+)
 
 var (
 	MessageCounter          *prometheus.CounterVec
@@ -65,6 +68,15 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
 	packetsInNow := packetsIn.Load()
 	packetsOutNow := packetsOut.Load()
 	nackTotalNow := nackTotal.Load()
+
+	if bytesInNow == prev.BytesIn &&
+		bytesOutNow == prev.BytesOut &&
+		packetsInNow == prev.PacketsIn &&
+		packetsOutNow == prev.PacketsOut &&
+		nackTotalNow == prev.NackTotal &&
+		elapsed < forceUpdateInterval {
+		return nil, nil
+	}
 
 	return &livekit.NodeStats{
 		StartedAt:        prev.StartedAt,

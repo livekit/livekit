@@ -15,6 +15,11 @@ const AvailableSeconds = 5
 
 // checks if a node has been updated recently to be considered for selection
 func IsAvailable(node *livekit.Node) bool {
+	if node.Stats == nil {
+		// available till stats are available
+		return true
+	}
+
 	delta := time.Now().Unix() - node.Stats.UpdatedAt
 	return int(delta) < AvailableSeconds
 }
@@ -82,12 +87,12 @@ func SelectSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node, erro
 		return nodes[0], nil
 	case "tracks":
 		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.NumTracksIn + nodes[i].Stats.NumTracksOut < nodes[j].Stats.NumTracksIn + nodes[j].Stats.NumTracksOut
+			return nodes[i].Stats.NumTracksIn+nodes[i].Stats.NumTracksOut < nodes[j].Stats.NumTracksIn+nodes[j].Stats.NumTracksOut
 		})
 		return nodes[0], nil
 	case "bytespersec":
 		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].Stats.BytesInPerSec + nodes[i].Stats.BytesOutPerSec < nodes[j].Stats.BytesInPerSec + nodes[j].Stats.BytesOutPerSec
+			return nodes[i].Stats.BytesInPerSec+nodes[i].Stats.BytesOutPerSec < nodes[j].Stats.BytesInPerSec+nodes[j].Stats.BytesOutPerSec
 		})
 		return nodes[0], nil
 	default:

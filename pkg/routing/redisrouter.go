@@ -26,7 +26,7 @@ const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
-	statsMaxDelaySeconds  = 10
+	statsMaxDelaySeconds  = 30
 )
 
 // RedisRouter uses Redis pub/sub to route signaling messages across different nodes
@@ -483,7 +483,9 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
 		} else {
-			r.currentNode.Stats = updated
+			if updated != nil {
+				r.currentNode.Stats = updated
+			}
 		}
 		r.statsMu.Unlock()
 
