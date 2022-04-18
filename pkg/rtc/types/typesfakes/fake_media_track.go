@@ -161,6 +161,10 @@ type FakeMediaTrack struct {
 		arg1 livekit.ParticipantID
 		arg2 bool
 	}
+	RestartStub        func()
+	restartMutex       sync.RWMutex
+	restartArgsForCall []struct {
+	}
 	RevokeDisallowedSubscribersStub        func([]livekit.ParticipantID) []livekit.ParticipantID
 	revokeDisallowedSubscribersMutex       sync.RWMutex
 	revokeDisallowedSubscribersArgsForCall []struct {
@@ -1022,6 +1026,30 @@ func (fake *FakeMediaTrack) RemoveSubscriberArgsForCall(i int) (livekit.Particip
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeMediaTrack) Restart() {
+	fake.restartMutex.Lock()
+	fake.restartArgsForCall = append(fake.restartArgsForCall, struct {
+	}{})
+	stub := fake.RestartStub
+	fake.recordInvocation("Restart", []interface{}{})
+	fake.restartMutex.Unlock()
+	if stub != nil {
+		fake.RestartStub()
+	}
+}
+
+func (fake *FakeMediaTrack) RestartCallCount() int {
+	fake.restartMutex.RLock()
+	defer fake.restartMutex.RUnlock()
+	return len(fake.restartArgsForCall)
+}
+
+func (fake *FakeMediaTrack) RestartCalls(stub func()) {
+	fake.restartMutex.Lock()
+	defer fake.restartMutex.Unlock()
+	fake.RestartStub = stub
+}
+
 func (fake *FakeMediaTrack) RevokeDisallowedSubscribers(arg1 []livekit.ParticipantID) []livekit.ParticipantID {
 	var arg1Copy []livekit.ParticipantID
 	if arg1 != nil {
@@ -1300,6 +1328,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.restartMutex.RLock()
+	defer fake.restartMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()
 	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
 	fake.setMutedMutex.RLock()

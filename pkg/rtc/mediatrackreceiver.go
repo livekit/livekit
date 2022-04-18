@@ -85,6 +85,17 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	return t
 }
 
+func (t *MediaTrackReceiver) Restart() {
+	t.lock.Lock()
+	receiver := t.receiver
+	t.lock.Unlock()
+
+	if receiver != nil {
+		receiver.SetMaxExpectedSpatialLayer(sfu.DefaultMaxLayerSpatial)
+		t.MediaTrackSubscriptions.Restart()
+	}
+}
+
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
 	t.lock.Lock()
 	t.receiver = receiver

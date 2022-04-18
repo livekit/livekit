@@ -65,7 +65,7 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 		pendingClose:                 make(map[livekit.ParticipantID]types.SubscribedTrack),
 		maxSubscriberQuality:         make(map[livekit.ParticipantID]livekit.VideoQuality),
 		maxSubscriberNodeQuality:     make(map[livekit.NodeID]livekit.VideoQuality),
-		maxSubscribedQuality:         livekit.VideoQuality_LOW,
+		maxSubscribedQuality:         livekit.VideoQuality_HIGH,
 		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.DynacastPauseDelay),
 	}
 
@@ -73,7 +73,11 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 }
 
 func (t *MediaTrackSubscriptions) Start() {
-	t.startMaxQualityTimer()
+	t.startMaxQualityTimer(false)
+}
+
+func (t *MediaTrackSubscriptions) Restart() {
+	t.startMaxQualityTimer(true)
 }
 
 func (t *MediaTrackSubscriptions) Close() {
@@ -546,7 +550,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	}
 }
 
-func (t *MediaTrackSubscriptions) startMaxQualityTimer() {
+func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
 	t.maxQualityLock.Lock()
 	defer t.maxQualityLock.Unlock()
 
@@ -556,7 +560,7 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer() {
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
-		t.UpdateQualityChange(false)
+		t.UpdateQualityChange(force)
 	})
 }
 
