@@ -95,8 +95,19 @@ func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
 }
 
-func (t *MediaTrack) SdpCid() string {
-	return t.params.SdpCid
+func (t *MediaTrack) HasSdpCid(cid string) bool {
+	if t.params.SdpCid == cid {
+		return true
+	}
+
+	info := t.MediaTrackReceiver.TrackInfo()
+	t.params.Logger.Debugw("MediaTrack.HasSdpCid", "cid", cid, "trackInfo", info.String())
+	for _, c := range info.Codecs {
+		if c.Cid == cid {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
@@ -164,7 +175,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	if wr == nil {
 		var priority int
 		for idx, c := range t.params.TrackInfo.Codecs {
-			if c.MimeType == mime {
+			if strings.HasSuffix(mime, c.MimeType) {
 				priority = idx
 				break
 			}
@@ -183,30 +194,34 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		newWR.OnCloseHandler(func() {
 			t.RemoveAllSubscribers()
 			t.MediaTrackReceiver.ClearReceiver(mime)
-			t.MediaTrackReceiver.TryClose()
-			t.params.Telemetry.TrackUnpublished(
-				context.Background(),
-				t.PublisherID(),
-				t.PublisherIdentity(),
-				t.ToProto(),
-				uint32(track.SSRC()),
-			)
+			if t.MediaTrackReceiver.TryClose() {
+				t.params.Telemetry.TrackUnpublished(
+					context.Background(),
+					t.PublisherID(),
+					t.PublisherIdentity(),
+					t.ToProto(),
+					uint32(track.SSRC()),
+				)
+			}
 		})
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
-		t.params.Telemetry.TrackPublished(
-			context.Background(),
-			t.PublisherID(),
-			t.PublisherIdentity(),
-			t.ToProto(),
-		)
+		if t.PrimaryReceiver() == nil {
+			t.params.Telemetry.TrackPublished(
+				context.Background(),
+				t.PublisherID(),
+				t.PublisherIdentity(),
+				t.ToProto(),
+			)
+		}
 
 		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority)
 		wr = newWR
 	}
+	t.lock.Unlock()
 
 	wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff)
 
@@ -255,5 +270,5 @@ func (t *MediaTrack) GetConnectionScore() float32 {
 }
 
 func (t *MediaTrack) SetRTT(rtt uint32) {
-	t.SetRTT(rtt)
+	t.MediaTrackReceiver.SetRTT(rtt)
 }

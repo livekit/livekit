@@ -170,6 +170,7 @@ func NewWebRTCReceiver(
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        w.kind,
+		MimeType:         w.codec.MimeType,
 		GetTrackStats:    w.GetTrackStats,
 		GetQualityParams: w.getQualityParams,
 		GetIsReducedQuality: func() bool {

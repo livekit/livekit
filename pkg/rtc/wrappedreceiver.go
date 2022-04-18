@@ -1,8 +1,6 @@
 package rtc
 
 import (
-	"sort"
-
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/livekit"
@@ -20,9 +18,6 @@ type WrappedReceiver struct {
 }
 
 func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID, streamId string) *WrappedReceiver {
-	sort.Slice(receivers, func(i, j int) bool {
-		return receivers[i].Priority() < receivers[j].Priority()
-	})
 	sfuReceivers := make([]sfu.TrackReceiver, 0, len(receivers))
 	for _, r := range receivers {
 		sfuReceivers = append(sfuReceivers, r.TrackReceiver)

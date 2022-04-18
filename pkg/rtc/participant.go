@@ -49,7 +49,6 @@ type pendingCodec struct {
 type pendingTrackInfo struct {
 	*livekit.TrackInfo
 	migrated bool
-	codecs   []pendingCodec
 }
 
 type ParticipantParams struct {
@@ -533,13 +532,6 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
 		pendingInfo := &pendingTrackInfo{TrackInfo: t.GetTrack(), migrated: true}
-		for idx, codec := range t.GetTrack().GetCodecs() {
-			pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
-				mime:     codec.MimeType,
-				priority: idx,
-				// TODO : need cid here for migrate
-			})
-		}
 		p.pendingTracks[t.GetCid()] = pendingInfo
 	}
 	p.pendingDataChannels = dataChannels
@@ -1270,31 +1262,35 @@ func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) err
 	})
 }
 
-func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error {
+func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualites []types.SubscribedCodecQuality) error {
 	if len(subscribedQualities) == 0 {
 		return nil
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
 		TrackSid:            string(trackID),
-		SubscribedQualities: subscribedQualities,
+		SubscribedQualities: subscribedQualities[0].Qualities, // for compatible with old client
+		SubscribedCodecs:    subscribedQualities,
 	}
 
-	p.params.Telemetry.TrackMaxSubscribedVideoQuality(
-		context.Background(),
-		p.ID(),
-		&livekit.TrackInfo{
-			Sid:  string(trackID),
-			Type: livekit.TrackType_VIDEO,
-		},
-		maxSubscribedQuality,
-	)
+	for _, maxSubscribedQuality := range maxSubscribedQualites {
+		p.params.Telemetry.TrackMaxSubscribedVideoQuality(
+			context.Background(),
+			p.ID(),
+			&livekit.TrackInfo{
+				Sid:  string(trackID),
+				Type: livekit.TrackType_VIDEO,
+			},
+			maxSubscribedQuality.CodecMime,
+			maxSubscribedQuality.Quality,
+		)
+	}
 
 	p.params.Logger.Debugw(
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
-		"max", maxSubscribedQuality,
+		"max", maxSubscribedQualites,
 	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
@@ -1304,7 +1300,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
-	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid, req.Type) != nil {
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil {
 		return nil
 	}
 
@@ -1345,17 +1341,26 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		Layers:     req.Layers,
 	}
 	pendingInfo := &pendingTrackInfo{TrackInfo: ti}
-	for idx, codec := range req.SimulcastCodecs {
+	for _, codec := range req.SimulcastCodecs {
+		// mime := livekit.CodecMimeFromClientCodec(codec.Codec, req.Type)
+		mime := codec.Codec
+		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
+			mime = "video/" + mime
+		} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
+			mime = "audio/" + mime
+		}
 		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-			MimeType: codec.Codec,
+			MimeType: string(mime),
+			Cid:      codec.Cid,
 		})
-		pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
-			mime:     codec.Codec,
-			cid:      codec.Cid,
-			priority: idx,
-		})
+		// pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
+		// 	mime:     codec.Codec,
+		// 	cid:      codec.Cid,
+		// 	priority: idx,
+		// })
 	}
 	p.pendingTracks[req.Cid] = pendingInfo
+	p.params.Logger.Debugw("pending track added", "track", ti.String(), "request", req.String())
 
 	return ti
 }
@@ -1433,8 +1438,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
+	p.params.Logger.Debugw("media track received", "track", track.ID(), "kind", track.Kind())
 	// use existing media track to handle simulcast
-	mt, ok := p.getPublishedTrackBySdpCid(track.ID(), ToProtoTrackKind(track.Kind())).(*MediaTrack)
+	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()))
 		if ti == nil {
@@ -1535,18 +1541,36 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
 	signalCid := clientId
 	trackInfo := p.pendingTracks[clientId]
-
 	if trackInfo == nil {
-		//
-		// If no match on client id, find first one matching type
-		// as MediaStreamTrack can change client id when transceiver
-		// is added to peer connection.
-		//
+	track_loop:
 		for cid, ti := range p.pendingTracks {
-			if ti.Type == kind {
+			if cid == clientId {
 				trackInfo = ti
 				signalCid = cid
 				break
+			}
+
+			for _, c := range ti.Codecs {
+				if c.Cid == clientId {
+					trackInfo = ti
+					signalCid = cid
+					break track_loop
+				}
+			}
+		}
+
+		if trackInfo == nil {
+			//
+			// If no match on client id, find first one matching type
+			// as MediaStreamTrack can change client id when transceiver
+			// is added to peer connection.
+			//
+			for cid, ti := range p.pendingTracks {
+				if ti.Type == kind {
+					trackInfo = ti
+					signalCid = cid
+					break
+				}
 			}
 		}
 	}
@@ -1570,9 +1594,10 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 	return nil
 }
 
-func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string, kind livekit.TrackType) types.MediaTrack {
+func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).SdpCid() == clientId || publishedTrack.Kind() == kind {
+		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
+			p.params.Logger.Debugw("found track by sdp cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
 	}

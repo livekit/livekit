@@ -230,6 +230,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if codec.MimeType == "" {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
+	d.logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec)
 
 	d.callbacksQueue.Start()
 

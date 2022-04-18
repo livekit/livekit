@@ -104,6 +104,8 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		return t.receivers[i].Priority() < t.receivers[j].Priority()
 	})
 	t.lock.Unlock()
+	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receivers)
+	t.MediaTrackSubscriptions.AddCodec(receiver.Codec().MimeType)
 
 	t.MediaTrackSubscriptions.Start()
 }
@@ -133,11 +135,11 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 	t.onVideoLayerUpdate = f
 }
 
-func (t *MediaTrackReceiver) TryClose() {
+func (t *MediaTrackReceiver) TryClose() bool {
 	t.lock.Lock()
 	if len(t.receivers) > 0 {
 		t.lock.Unlock()
-		return
+		return false
 	}
 	onclose := t.onClose
 	t.lock.Unlock()
@@ -147,6 +149,7 @@ func (t *MediaTrackReceiver) TryClose() {
 	for _, f := range onclose {
 		f()
 	}
+	return true
 }
 
 func (t *MediaTrackReceiver) ID() livekit.TrackID {
@@ -415,14 +418,16 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	}
 }
 
-func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) error) {
-	t.MediaTrackSubscriptions.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedQuality, maxSubscribedQuality livekit.VideoQuality) {
+func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error) {
+	t.MediaTrackSubscriptions.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
 		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities, maxSubscribedQuality)
+			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
 		}
-		receiver := t.Receiver()
-		if receiver != nil {
-			receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(maxSubscribedQuality))
+		for _, q := range maxSubscribedQualities {
+			receiver := t.Receiver(q.CodecMime)
+			if receiver != nil {
+				receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(q.Quality))
+			}
 		}
 	})
 }
