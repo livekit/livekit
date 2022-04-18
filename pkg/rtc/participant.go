@@ -666,6 +666,9 @@ func (p *ParticipantImpl) ICERestart() error {
 		// not connected, skip
 		return nil
 	}
+
+	p.UpTrackManager.Restart()
+
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
 	})

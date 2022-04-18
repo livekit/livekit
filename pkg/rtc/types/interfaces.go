@@ -192,6 +192,7 @@ type MediaTrack interface {
 	IsSimulcast() bool
 
 	Receiver() sfu.TrackReceiver
+	Restart()
 
 	// callbacks
 	AddOnClose(func())

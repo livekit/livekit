@@ -46,6 +46,12 @@ func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 func (u *UpTrackManager) Start() {
 }
 
+func (u *UpTrackManager) Restart() {
+	for _, t := range u.GetPublishedTracks() {
+		t.Restart()
+	}
+}
+
 func (u *UpTrackManager) Close() {
 	u.lock.Lock()
 	u.closed = true
