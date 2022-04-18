@@ -190,7 +190,7 @@ func (s *StreamTracker) SetPaused(paused bool) {
 }
 
 // Observe a packet that's received
-func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
+func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, payloadSize int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -206,7 +206,7 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
 		s.countSinceLast = 1
 
 		s.lastBitrateReport = time.Now()
-		if temporalLayer >= 0 {
+		if temporalLayer >= 0 && payloadSize > 0 {
 			s.bytesForBitrate[temporalLayer] += int64(pktSize)
 		}
 
@@ -223,7 +223,7 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
 	s.lastSN = sn
 	s.countSinceLast++
 
-	if temporalLayer >= 0 {
+	if temporalLayer >= 0 && payloadSize > 0 {
 		s.bytesForBitrate[temporalLayer] += int64(pktSize)
 	}
 }

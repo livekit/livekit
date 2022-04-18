@@ -517,8 +517,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		if tracker != nil && len(pkt.Packet.Payload) > 0 {
-			tracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket))
+		if tracker != nil {
+			tracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket), len(pkt.Packet.Payload))
 		}
 
 		w.downTrackMu.RLock()
