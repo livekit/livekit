@@ -256,6 +256,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
 		Region:                  pi.Region,
+		AdaptiveStream:          pi.AdaptiveStream,
 	})
 	if err != nil {
 		logger.Errorw("could not create participant", err)

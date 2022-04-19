@@ -87,6 +87,7 @@ type LocalParticipant interface {
 	Participant
 
 	GetLogger() logger.Logger
+	GetAdaptiveStream() bool
 
 	ProtocolVersion() ProtocolVersion
 

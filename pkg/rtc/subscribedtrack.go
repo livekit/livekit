@@ -23,6 +23,7 @@ type SubscribedTrackParams struct {
 	SubscriberID      livekit.ParticipantID
 	MediaTrack        types.MediaTrack
 	DownTrack         *sfu.DownTrack
+	AdaptiveStream    bool
 }
 
 type SubscribedTrack struct {
@@ -42,7 +43,9 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 
-	s.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	if !s.params.AdaptiveStream {
+		s.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
 	return s
 }
 

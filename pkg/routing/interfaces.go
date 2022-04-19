@@ -29,13 +29,14 @@ type MessageSource interface {
 }
 
 type ParticipantInit struct {
-	Identity      livekit.ParticipantIdentity
-	Name          livekit.ParticipantName
-	Reconnect     bool
-	AutoSubscribe bool
-	Client        *livekit.ClientInfo
-	Grants        *auth.ClaimGrants
-	Region        string
+	Identity       livekit.ParticipantIdentity
+	Name           livekit.ParticipantName
+	Reconnect      bool
+	AutoSubscribe  bool
+	Client         *livekit.ClientInfo
+	Grants         *auth.ClaimGrants
+	Region         string
+	AdaptiveStream bool
 }
 
 type NewParticipantCallback func(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, requestSource MessageSource, responseSink MessageSink)
