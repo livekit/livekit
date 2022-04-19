@@ -624,8 +624,13 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 	if onClose != nil {
 		onClose(p, disallowedSubscriptions)
 	}
-	p.publisher.Close()
-	p.subscriber.Close()
+
+	// Close peer connections without blocking participant close. If peer connections are gathering candidates
+	// Close will block.
+	go func() {
+		p.publisher.Close()
+		p.subscriber.Close()
+	}()
 	return nil
 }
 

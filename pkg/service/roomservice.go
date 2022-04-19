@@ -10,10 +10,9 @@ import (
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/livekit"
 )
 
 const (
