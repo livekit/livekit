@@ -62,17 +62,18 @@ func TestForwarderLayersVideo(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	maxLayers := f.MaxLayers()
-	expectedLayers := VideoLayers{
-		spatial:  DefaultMaxLayerSpatial,
-		temporal: DefaultMaxLayerTemporal,
-	}
+	expectedLayers := VideoLayers{spatial: InvalidLayerSpatial, temporal: DefaultMaxLayerTemporal}
 	require.Equal(t, expectedLayers, maxLayers)
 
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 	require.Equal(t, InvalidLayers, f.TargetLayers())
 
+	expectedLayers = VideoLayers{
+		spatial:  DefaultMaxLayerSpatial,
+		temporal: DefaultMaxLayerTemporal,
+	}
 	changed, maxLayers, currentLayers := f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
-	require.False(t, changed)
+	require.True(t, changed)
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, InvalidLayers, currentLayers)
 
@@ -89,10 +90,6 @@ func TestForwarderLayersVideo(t *testing.T) {
 	f.currentLayers = VideoLayers{spatial: 0, temporal: 1}
 	changed, maxLayers, currentLayers = f.SetMaxSpatialLayer(DefaultMaxLayerSpatial - 1)
 	require.False(t, changed)
-	expectedLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial - 1,
-		temporal: DefaultMaxLayerTemporal,
-	}
 	require.Equal(t, expectedLayers, maxLayers)
 	require.Equal(t, expectedLayers, f.MaxLayers())
 	require.Equal(t, VideoLayers{spatial: 0, temporal: 1}, currentLayers)
@@ -115,6 +112,8 @@ func TestForwarderLayersVideo(t *testing.T) {
 
 func TestForwarderGetForwardingStatus(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	// no available layers, should be optimal
 	require.Equal(t, ForwardingStatusOptimal, f.GetForwardingStatus())
@@ -163,6 +162,8 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 
 func TestForwarderAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	emptyBitrates := Bitrates{}
 	bitrates := Bitrates{
@@ -254,6 +255,8 @@ func TestForwarderAllocate(t *testing.T) {
 
 func TestForwarderProvisionalAllocate(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{
@@ -365,6 +368,8 @@ func TestForwarderProvisionalAllocateMute(t *testing.T) {
 
 func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{
@@ -460,6 +465,8 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 
 func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	bitrates := Bitrates{
 		{1, 2, 3, 4},
@@ -482,6 +489,8 @@ func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
 
 func TestForwarderAllocateNextHigher(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	emptyBitrates := Bitrates{}
 	bitrates := Bitrates{
@@ -495,6 +504,8 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.False(t, boosted)
 
 	f = newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	// when not in deficient state, does not boost
 	f.lastAllocation.state = VideoAllocationStateNone
@@ -688,6 +699,8 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 
 func TestForwarderPause(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{
@@ -720,6 +733,8 @@ func TestForwarderPause(t *testing.T) {
 
 func TestForwarderPauseMute(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.SetMaxSpatialLayer(DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(DefaultMaxLayerTemporal)
 
 	availableLayers := []int32{0, 1, 2}
 	bitrates := Bitrates{

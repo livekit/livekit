@@ -17,9 +17,12 @@ import (
 // Forwarder
 //
 const (
-	FlagPauseOnDowngrade = true
-	FlagFilterRTX        = true
+	FlagPauseOnDowngrade  = true
+	FlagFilterRTX         = true
+	TransitionCostSpatial = 10
 )
+
+// -------------------------------------------------------------------
 
 type ForwardingStatus int
 
@@ -28,6 +31,8 @@ const (
 	ForwardingStatusPartial
 	ForwardingStatusOptimal
 )
+
+// -------------------------------------------------------------------
 
 type VideoStreamingChange int
 
@@ -49,6 +54,8 @@ func (v VideoStreamingChange) String() string {
 		return fmt.Sprintf("%d", int(v))
 	}
 }
+
+// -------------------------------------------------------------------
 
 type VideoAllocationState int
 
@@ -102,12 +109,17 @@ var (
 	}
 )
 
+// -------------------------------------------------------------------
+
 type VideoAllocationProvisional struct {
 	layers          VideoLayers
 	muted           bool
 	bitrates        Bitrates
 	availableLayers []int32
+	maxLayers       VideoLayers
 }
+
+// -------------------------------------------------------------------
 
 type VideoTransition struct {
 	from           VideoLayers
@@ -115,9 +127,7 @@ type VideoTransition struct {
 	bandwidthDelta int64
 }
 
-const (
-	TransitionCostSpatial = 10
-)
+// -------------------------------------------------------------------
 
 type TranslationParams struct {
 	shouldDrop            bool
@@ -126,6 +136,8 @@ type TranslationParams struct {
 	rtp                   *TranslationParamsRTP
 	vp8                   *TranslationParamsVP8
 }
+
+// -------------------------------------------------------------------
 
 type VideoLayers struct {
 	spatial  int32
@@ -144,6 +156,12 @@ func (v VideoLayers) SpatialGreaterThanOrEqual(v2 VideoLayers) bool {
 	return v.spatial >= v2.spatial
 }
 
+func (v VideoLayers) IsValid() bool {
+	return v.spatial != InvalidLayerSpatial && v.temporal != InvalidLayerTemporal
+}
+
+// -------------------------------------------------------------------
+
 const (
 	InvalidLayerSpatial  = int32(-1)
 	InvalidLayerTemporal = int32(-1)
@@ -157,12 +175,9 @@ var (
 		spatial:  InvalidLayerSpatial,
 		temporal: InvalidLayerTemporal,
 	}
-
-	DefaultMaxLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial,
-		temporal: DefaultMaxLayerTemporal,
-	}
 )
+
+// -------------------------------------------------------------------
 
 type Forwarder struct {
 	lock   sync.RWMutex
@@ -213,7 +228,7 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
-		f.maxLayers = DefaultMaxLayers
+		f.maxLayers = VideoLayers{spatial: InvalidLayerSpatial, temporal: DefaultMaxLayerTemporal}
 	} else {
 		f.maxLayers = InvalidLayers
 	}
@@ -436,7 +451,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[len(f.availableLayers)-1])))
 		targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
 
-		if f.targetLayers == InvalidLayers {
+		if f.targetLayers == InvalidLayers && targetLayers.IsValid() {
 			change = VideoStreamingChangeResuming
 		}
 	default:
@@ -467,6 +482,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		}
 	}
 
+	if !targetLayers.IsValid() {
+		targetLayers = InvalidLayers
+	}
 	f.lastAllocation = VideoAllocation{
 		state:              state,
 		change:             change,
@@ -494,6 +512,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		muted:           f.muted,
 		bitrates:        bitrates,
 		availableLayers: f.availableLayers,
+		maxLayers:       f.maxLayers,
 	}
 }
 
@@ -501,11 +520,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted {
-		return 0
-	}
-
-	if layers.GreaterThan(f.maxLayers) {
+	if f.provisional.muted || !f.provisional.maxLayers.IsValid() || layers.GreaterThan(f.provisional.maxLayers) {
 		return 0
 	}
 
@@ -571,8 +586,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 		// what is the highest that is available
 		maximalLayers := InvalidLayers
 		maximalBandwidthRequired := int64(0)
-		for s := f.maxLayers.spatial; s >= 0; s-- {
-			for t := f.maxLayers.temporal; t >= 0; t-- {
+		for s := f.provisional.maxLayers.spatial; s >= 0; s-- {
+			for t := f.provisional.maxLayers.temporal; t >= 0; t-- {
 				if f.provisional.bitrates[s][t] != 0 {
 					maximalLayers = VideoLayers{spatial: s, temporal: t}
 					maximalBandwidthRequired = f.provisional.bitrates[s][t]
@@ -613,8 +628,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	// but the cooperative scheme knocks things back to minimal
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
-	for s := int32(0); s <= f.maxLayers.spatial; s++ {
-		for t := int32(0); t <= f.maxLayers.temporal; t++ {
+	for s := int32(0); s <= f.provisional.maxLayers.spatial; s++ {
+		for t := int32(0); t <= f.provisional.maxLayers.temporal; t++ {
 			if f.provisional.bitrates[s][t] != 0 {
 				minimalLayers = VideoLayers{spatial: s, temporal: t}
 				bandwidthRequired = f.provisional.bitrates[s][t]
@@ -669,8 +684,8 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	}
 
 	maxReachableLayerTemporal := InvalidLayerTemporal
-	for t := f.maxLayers.temporal; t >= 0; t-- {
-		for s := f.maxLayers.spatial; s >= 0; s-- {
+	for t := f.provisional.maxLayers.temporal; t >= 0; t-- {
+		for s := f.provisional.maxLayers.spatial; s >= 0; s-- {
 			if f.provisional.bitrates[s][t] != 0 {
 				maxReachableLayerTemporal = t
 				break

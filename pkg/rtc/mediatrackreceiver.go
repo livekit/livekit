@@ -91,7 +91,7 @@ func (t *MediaTrackReceiver) Restart() {
 	t.lock.Unlock()
 
 	if receiver != nil {
-		receiver.SetMaxExpectedSpatialLayer(sfu.DefaultMaxLayerSpatial)
+		receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
 		t.MediaTrackSubscriptions.Restart()
 	}
 }
