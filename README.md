@@ -65,12 +65,8 @@ docker run --rm -p 7880:7880 \
     -p 7882:7882/udp \
     -v $PWD/livekit.yaml:/livekit.yaml \
     livekit/livekit-server \
-    --config /livekit.yaml \
-    --node-ip <machine-ip>
+    --config /livekit.yaml
 ```
-
-When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service will be exposed to
-the public Internet, this should the machine's public IP.
 
 ### Test with example app
 
