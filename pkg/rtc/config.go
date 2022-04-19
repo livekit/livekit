@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	"github.com/pion/ice/v2"
@@ -205,6 +206,16 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		})
 	}
 
+	// use STUN servers for server to support NAT
+	// when deployed in production, we expect UseExternalIP to be used, and ports being accessible
+	if !conf.RTC.UseExternalIP {
+		if len(conf.RTC.STUNServers) > 0 {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(conf.RTC.STUNServers)}
+		} else {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(config.DefaultStunServers)}
+		}
+	}
+
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
@@ -222,4 +233,12 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
+}
+
+func iceServerForStunServers(servers []string) webrtc.ICEServer {
+	iceServer := webrtc.ICEServer{}
+	for _, stunServer := range servers {
+		iceServer.URLs = append(iceServer.URLs, fmt.Sprintf("stun:%s", stunServer))
+	}
+	return iceServer
 }
