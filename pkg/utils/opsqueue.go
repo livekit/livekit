@@ -55,7 +55,7 @@ func (oq *OpsQueue) Enqueue(op func()) {
 	select {
 	case oq.ops <- op:
 	default:
-		oq.logger.Warnw("ops queue full", nil, "name", oq.name, "size", oq.size)
+		oq.logger.Errorw("ops queue full", nil, "name", oq.name, "size", oq.size)
 	}
 	oq.lock.RUnlock()
 }
