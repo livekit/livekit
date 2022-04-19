@@ -207,7 +207,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	}
 
 	// use STUN servers for server to support NAT
-	// when deployed in production, we expect UseExternalIP to be used, and ports being accessible
+	// when deployed in production, we expect UseExternalIP to be used, and ports accessible
 	if !conf.RTC.UseExternalIP {
 		if len(conf.RTC.STUNServers) > 0 {
 			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(conf.RTC.STUNServers)}
