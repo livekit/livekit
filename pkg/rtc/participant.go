@@ -65,6 +65,7 @@ type ParticipantParams struct {
 	ClientConf              *livekit.ClientConfiguration
 	Region                  string
 	Migration               bool
+	AdaptiveStream          bool
 }
 
 type ParticipantImpl struct {
@@ -291,6 +292,10 @@ func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 
 func (p *ParticipantImpl) GetLogger() logger.Logger {
 	return p.params.Logger
+}
+
+func (p *ParticipantImpl) GetAdaptiveStream() bool {
+	return p.params.AdaptiveStream
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {

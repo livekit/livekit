@@ -121,6 +121,16 @@ type FakeLocalParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
+	GetAdaptiveStreamStub        func() bool
+	getAdaptiveStreamMutex       sync.RWMutex
+	getAdaptiveStreamArgsForCall []struct {
+	}
+	getAdaptiveStreamReturns struct {
+		result1 bool
+	}
+	getAdaptiveStreamReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	GetAudioLevelStub        func() (uint8, bool)
 	getAudioLevelMutex       sync.RWMutex
 	getAudioLevelArgsForCall []struct {
@@ -1187,6 +1197,59 @@ func (fake *FakeLocalParticipant) DebugInfoReturnsOnCall(i int, result1 map[stri
 	}
 	fake.debugInfoReturnsOnCall[i] = struct {
 		result1 map[string]interface{}
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStream() bool {
+	fake.getAdaptiveStreamMutex.Lock()
+	ret, specificReturn := fake.getAdaptiveStreamReturnsOnCall[len(fake.getAdaptiveStreamArgsForCall)]
+	fake.getAdaptiveStreamArgsForCall = append(fake.getAdaptiveStreamArgsForCall, struct {
+	}{})
+	stub := fake.GetAdaptiveStreamStub
+	fakeReturns := fake.getAdaptiveStreamReturns
+	fake.recordInvocation("GetAdaptiveStream", []interface{}{})
+	fake.getAdaptiveStreamMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamCallCount() int {
+	fake.getAdaptiveStreamMutex.RLock()
+	defer fake.getAdaptiveStreamMutex.RUnlock()
+	return len(fake.getAdaptiveStreamArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamCalls(stub func() bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamReturns(result1 bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = nil
+	fake.getAdaptiveStreamReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamReturnsOnCall(i int, result1 bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = nil
+	if fake.getAdaptiveStreamReturnsOnCall == nil {
+		fake.getAdaptiveStreamReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getAdaptiveStreamReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -3917,6 +3980,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.connectedAtMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
+	fake.getAdaptiveStreamMutex.RLock()
+	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()

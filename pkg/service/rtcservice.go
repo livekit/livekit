@@ -92,6 +92,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
+	adaptiveStreamParam := r.FormValue("adaptive_stream")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -130,6 +131,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
+	}
+	if adaptiveStreamParam != "" {
+		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
 	}
 
 	return roomName, pi, http.StatusOK, nil

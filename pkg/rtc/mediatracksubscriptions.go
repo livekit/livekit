@@ -147,6 +147,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 		SubscriberID:      subscriberID,
 		MediaTrack:        t.params.MediaTrack,
 		DownTrack:         downTrack,
+		AdaptiveStream:    sub.GetAdaptiveStream(),
 	})
 
 	var transceiver *webrtc.RTPTransceiver
