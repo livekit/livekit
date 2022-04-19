@@ -12,7 +12,7 @@ import (
 
 const (
 	livekitNamespace    string = "livekit"
-	forceUpdateInterval int64  = 15
+	forceUpdateInterval int64  = 5
 )
 
 var (
