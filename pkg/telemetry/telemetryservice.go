@@ -4,13 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 )
-
-const updateFrequency = time.Second * 10
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 . TelemetryService
 type TelemetryService interface {
@@ -57,7 +56,7 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 }
 
 func (t *telemetryService) run() {
-	ticker := time.NewTicker(updateFrequency)
+	ticker := time.NewTicker(config.StatsUpdateFrequency)
 	defer ticker.Stop()
 	for {
 		<-ticker.C

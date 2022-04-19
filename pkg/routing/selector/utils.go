@@ -11,7 +11,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
-const AvailableSeconds = 10
+const AvailableSeconds = 5
 
 // checks if a node has been updated recently to be considered for selection
 func IsAvailable(node *livekit.Node) bool {

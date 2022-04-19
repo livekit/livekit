@@ -39,6 +39,8 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted atomic.Bool
 	statsMu   sync.Mutex
+	// previous stats for computing averages
+	prevStats *livekit.NodeStats
 
 	pubsub *redis.PubSub
 	cancel func()
@@ -479,13 +481,18 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 
 		r.statsMu.Lock()
-		updated, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats)
+		if r.prevStats == nil {
+			r.prevStats = r.currentNode.Stats
+		}
+		updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
-		} else {
-			if updated != nil {
-				r.currentNode.Stats = updated
-			}
+			r.statsMu.Unlock()
+			return err
+		}
+		r.currentNode.Stats = updated
+		if computedAvg {
+			r.prevStats = updated
 		}
 		r.statsMu.Unlock()
 
