@@ -69,7 +69,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
 	// include sufficient buffer to be sure a stats update had taken place
-	computeAverage := elapsed > int64(config.StatsUpdateFrequency.Seconds()+2)
+	computeAverage := elapsed > int64(config.StatsUpdateInterval.Seconds()+2)
 	if bytesInNow != prevAverage.BytesIn ||
 		bytesOutNow != prevAverage.BytesOut ||
 		packetsInNow != prevAverage.PacketsIn ||
