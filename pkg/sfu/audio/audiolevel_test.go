@@ -1,4 +1,4 @@
-package rtc_test
+package audio
 
 import (
 	"testing"

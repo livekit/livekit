@@ -27,9 +27,6 @@ type MediaTrack struct {
 
 	layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
 
-	audioLevelMu sync.RWMutex
-	audioLevel   *AudioLevel
-
 	*MediaTrackReceiver
 
 	lock sync.RWMutex
@@ -121,24 +118,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		return
 	}
 
-	if t.Kind() == livekit.TrackType_AUDIO {
-		t.audioLevelMu.Lock()
-		t.audioLevel = NewAudioLevel(t.params.AudioConfig.ActiveLevel, t.params.AudioConfig.MinPercentile, t.params.AudioConfig.UpdateInterval)
-		buff.OnAudioLevel(func(level uint8, duration uint32) {
-			t.audioLevelMu.RLock()
-			defer t.audioLevelMu.RUnlock()
-
-			t.audioLevel.Observe(level, duration)
-		})
-		t.audioLevelMu.Unlock()
-	} else if t.Kind() == livekit.TrackType_VIDEO {
-		if twcc != nil {
-			buff.OnTransportWideCC(func(sn uint16, timeNS int64, marker bool) {
-				twcc.Push(sn, timeNS, marker)
-			})
-		}
-	}
-
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
 		if err != nil {
@@ -164,6 +143,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.PublisherID(),
 			t.params.TrackInfo.Source,
 			t.params.Logger,
+			twcc,
 			sfu.WithPliThrottle(t.params.PLIThrottleConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
@@ -219,16 +199,6 @@ func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
 	if int(layer) < len(t.layerSSRCs) && t.layerSSRCs[layer] == 0 {
 		t.layerSSRCs[layer] = ssrc
 	}
-}
-
-func (t *MediaTrack) GetAudioLevel() (level uint8, active bool) {
-	t.audioLevelMu.RLock()
-	defer t.audioLevelMu.RUnlock()
-
-	if t.audioLevel == nil {
-		return SilentAudioLevel, false
-	}
-	return t.audioLevel.GetLevel()
 }
 
 func (t *MediaTrack) GetConnectionScore() float32 {

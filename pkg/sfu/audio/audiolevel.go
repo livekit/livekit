@@ -1,4 +1,4 @@
-package rtc
+package audio
 
 import (
 	"math"

@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -192,7 +193,6 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	receiver := t.Receiver()
-
 	if receiver == nil {
 		// cannot add, no receiver
 		return errors.New("cannot subscribe without a receiver in place")
@@ -302,6 +302,15 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	}
 
 	return quality
+}
+
+func (t *MediaTrackReceiver) GetAudioLevel() (uint8, bool) {
+	receiver := t.Receiver()
+	if receiver == nil {
+		return audio.SilentAudioLevel, false
+	}
+
+	return receiver.GetAudioLevel()
 }
 
 // handles max loss for audio streams

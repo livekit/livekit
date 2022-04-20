@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -130,7 +131,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
 			Sid:    string(p.ID()),
-			Level:  ConvertAudioLevel(level),
+			Level:  audio.ConvertAudioLevel(level),
 			Active: active,
 		})
 	}
@@ -768,7 +769,7 @@ func (r *Room) audioUpdateWorker() {
 		smoothValues = make(map[livekit.ParticipantID]float32)
 		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
 		smoothFactor = 2 / float32(ss+1)
-		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
+		activeThreshold = audio.ConvertAudioLevel(r.audioConfig.ActiveLevel)
 	}
 
 	lastActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo)

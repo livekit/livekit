@@ -17,8 +17,10 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 )
 
 var (
@@ -37,6 +39,8 @@ type TrackReceiver interface {
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetBitrateTemporalCumulative() Bitrates
+
+	GetAudioLevel() (uint8, bool)
 
 	SendPLI(layer int32)
 
@@ -68,6 +72,8 @@ type WebRTCReceiver struct {
 	useTrackers    bool
 
 	rtcpCh chan []rtcp.Packet
+
+	twcc *twcc.Responder
 
 	bufferMu sync.RWMutex
 	buffers  [DefaultMaxLayerSpatial + 1]*buffer.Buffer
@@ -139,6 +145,7 @@ func NewWebRTCReceiver(
 	pid livekit.ParticipantID,
 	source livekit.TrackSource,
 	logger logger.Logger,
+	twcc *twcc.Responder,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -151,6 +158,7 @@ func NewWebRTCReceiver(
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast:          len(track.RID()) > 0,
+		twcc:                 twcc,
 		downTracks:           make([]TrackSender, 0),
 		index:                make(map[livekit.ParticipantID]int),
 		free:                 make(map[int]struct{}),
@@ -253,6 +261,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 
 	layer := RidToLayer(track.RID())
 	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
+	buff.SetTWCC(w.twcc)
 	buff.OnFeedback(w.sendRTCP)
 
 	var duration time.Duration
@@ -425,6 +434,25 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	}
 
 	return buffer.AggregateRTPStats(stats)
+}
+
+func (w *WebRTCReceiver) GetAudioLevel() (uint8, bool) {
+	if w.Kind() == webrtc.RTPCodecTypeVideo {
+		return audio.SilentAudioLevel, false
+	}
+
+	w.bufferMu.RLock()
+	defer w.bufferMu.RUnlock()
+
+	for _, buff := range w.buffers {
+		if buff == nil {
+			continue
+		}
+
+		return buff.GetAudioLevel()
+	}
+
+	return audio.SilentAudioLevel, false
 }
 
 func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
