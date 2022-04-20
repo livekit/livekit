@@ -44,7 +44,9 @@ var (
 )
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
+	serverlogger.InitFromConfig(config.LoggingConfig{
+		Config: logger.Config{Level: "debug"},
+	})
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
