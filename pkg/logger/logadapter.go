@@ -22,7 +22,10 @@ func (l *logAdapter) Tracef(format string, args ...interface{}) {
 }
 
 func (l *logAdapter) Debug(msg string) {
-	l.Debugf(msg)
+	if l.level > zapcore.DebugLevel {
+		return
+	}
+	l.logger.V(1).Info(msg)
 }
 
 func (l *logAdapter) Debugf(format string, args ...interface{}) {
@@ -33,7 +36,10 @@ func (l *logAdapter) Debugf(format string, args ...interface{}) {
 }
 
 func (l *logAdapter) Info(msg string) {
-	l.Infof(msg)
+	if l.level > zapcore.InfoLevel {
+		return
+	}
+	l.logger.Info(msg)
 }
 
 func (l *logAdapter) Infof(format string, args ...interface{}) {
@@ -44,7 +50,10 @@ func (l *logAdapter) Infof(format string, args ...interface{}) {
 }
 
 func (l *logAdapter) Warn(msg string) {
-	l.Warnf(msg)
+	if l.level > zapcore.WarnLevel {
+		return
+	}
+	l.logger.Info(msg)
 }
 
 func (l *logAdapter) Warnf(format string, args ...interface{}) {
@@ -55,7 +64,10 @@ func (l *logAdapter) Warnf(format string, args ...interface{}) {
 }
 
 func (l *logAdapter) Error(msg string) {
-	l.Errorf(msg)
+	if l.level > zapcore.ErrorLevel {
+		return
+	}
+	l.logger.Error(nil, msg)
 }
 
 func (l *logAdapter) Errorf(format string, args ...interface{}) {

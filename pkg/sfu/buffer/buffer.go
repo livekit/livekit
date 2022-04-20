@@ -99,14 +99,14 @@ type Options struct {
 
 // NewBuffer constructs a new Buffer
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
-	logger := logger.Logger(logger.GetLogger()) // will be reset with correct context via SetLogger
+	l := logger.GetDefaultLogger() // will be reset with correct context via SetLogger
 	b := &Buffer{
 		mediaSSRC:      ssrc,
 		videoPool:      vp,
 		audioPool:      ap,
 		pliThrottle:    int64(500 * time.Millisecond),
-		logger:         logger,
-		callbacksQueue: utils.NewOpsQueue(logger, "sfu-buffer", 50),
+		logger:         l,
+		callbacksQueue: utils.NewOpsQueue(l, "sfu-buffer", 50),
 	}
 	b.extPackets.SetMinCapacity(7)
 	return b
