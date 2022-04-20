@@ -361,7 +361,7 @@ func TestActiveSpeakers(t *testing.T) {
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
 		p.GetAudioLevelReturns(30, true)
-		convertedLevel := audio.ConvertAudioLevel(30)
+		convertedLevel := float32(audio.ConvertAudioLevel(30))
 
 		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
