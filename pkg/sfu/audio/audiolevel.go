@@ -7,10 +7,8 @@ import (
 )
 
 const (
-	silentAudioLevel          = 127
-	negInv20                  = -1.0 / 20
-	audioLevelQuantization    = 8
-	invAudioLevelQuantization = 1.0 / audioLevelQuantization
+	silentAudioLevel = 127
+	negInv20         = -1.0 / 20
 )
 
 type AudioLevelParams struct {
@@ -71,13 +69,12 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 			// > 0 if active for longer than observe duration
 			// < 0 if active for less than observe duration
 			activityWeight := 20 * math.Log10(float64(l.activeDuration)/float64(l.params.ObserveDuration))
-			adjustedLevel := float64(l.loudestObservedLevel) + activityWeight
+			adjustedLevel := float64(l.loudestObservedLevel) - activityWeight
 			linearLevel := ConvertAudioLevel(adjustedLevel)
 
 			// exponential smoothing to dampen transients
 			smoothedLevel := l.smoothedLevel.Load()
 			smoothedLevel += (linearLevel - smoothedLevel) * l.smoothFactor
-			smoothedLevel = math.Ceil(smoothedLevel*audioLevelQuantization) * invAudioLevelQuantization
 			l.smoothedLevel.Store(smoothedLevel)
 		} else {
 			l.smoothedLevel.Store(0)

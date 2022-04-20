@@ -53,8 +53,8 @@ func TestAudioLevel(t *testing.T) {
 
 		level, noisy := a.GetLevel()
 		require.True(t, noisy)
-		require.Less(t, level, uint8(defaultActiveLevel))
-		require.Greater(t, level, uint8(25))
+		require.Greater(t, level, ConvertAudioLevel(float64(defaultActiveLevel)))
+		require.Less(t, level, ConvertAudioLevel(float64(25)))
 	})
 }
 
