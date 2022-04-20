@@ -16,6 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -360,7 +361,7 @@ func TestActiveSpeakers(t *testing.T) {
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
 		p.GetAudioLevelReturns(30, true)
-		convertedLevel := rtc.ConvertAudioLevel(30)
+		convertedLevel := audio.ConvertAudioLevel(30)
 
 		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)
