@@ -182,7 +182,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName, ""),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, ""),
 		pi.Identity, "",
 	)
 	done := make(chan struct{})

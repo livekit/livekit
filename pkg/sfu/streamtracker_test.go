@@ -17,7 +17,7 @@ func newStreamTracker(samplesRequired uint32, cyclesRequired uint32, cycleDurati
 		SamplesRequired: samplesRequired,
 		CyclesRequired:  cyclesRequired,
 		CycleDuration:   cycleDuration,
-		Logger:          logger.Logger(logger.GetLogger()),
+		Logger:          logger.GetDefaultLogger(),
 	})
 }
 

@@ -45,7 +45,7 @@ const jobQueueBufferSize = 10000
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
 		internalService: NewTelemetryServiceInternal(notifier, analytics),
-		jobQueue:        utils.NewOpsQueue(logger.Logger(logger.GetLogger()), "telemetry", jobQueueBufferSize),
+		jobQueue:        utils.NewOpsQueue(logger.GetDefaultLogger(), "telemetry", jobQueueBufferSize),
 	}
 
 	t.jobQueue.Start()

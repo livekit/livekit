@@ -27,7 +27,7 @@ func compare(expected *VP8Munger, actual *VP8Munger) bool {
 }
 
 func newVP8Munger() *VP8Munger {
-	return NewVP8Munger(logger.Logger(logger.GetLogger()))
+	return NewVP8Munger(logger.GetDefaultLogger())
 }
 
 func TestSetLast(t *testing.T) {

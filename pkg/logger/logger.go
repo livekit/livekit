@@ -2,9 +2,7 @@ package serverlogger
 
 import (
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
 	"github.com/pion/logging"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/logger"
@@ -43,43 +41,6 @@ func SetLogger(l logr.Logger) {
 }
 
 func InitFromConfig(config config.LoggingConfig) {
-	lvl := parseLevel(config.Level)
-	pionLevel = parseLevel(config.PionLevel)
-	if lvl > pionLevel {
-		pionLevel = lvl
-	}
-	zapConfig := zap.Config{
-		Level:            zap.NewAtomicLevelAt(lvl),
-		Development:      false,
-		Encoding:         "console",
-		EncoderConfig:    zap.NewDevelopmentEncoderConfig(),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-	if config.Sample {
-		zapConfig.Sampling = &zap.SamplingConfig{
-			Initial:    100,
-			Thereafter: 100,
-		}
-	}
-	if config.JSON {
-		zapConfig.Encoding = "json"
-		zapConfig.EncoderConfig = zap.NewProductionEncoderConfig()
-	}
-	initLogger(zapConfig)
-}
-
-// valid levels: debug, info, warn, error, fatal, panic
-func initLogger(config zap.Config) {
-	l, _ := config.Build()
-	zapLogger := zapr.NewLogger(l)
-	SetLogger(zapLogger)
-}
-
-func parseLevel(level string) zapcore.Level {
-	lvl := zapcore.InfoLevel
-	if level != "" {
-		_ = lvl.UnmarshalText([]byte(level))
-	}
-	return lvl
+	pionLevel = logger.ParseZapLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
 }

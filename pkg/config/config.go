@@ -10,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/logger"
 )
 
 var DefaultStunServers = []string{
@@ -140,10 +142,8 @@ type CodecSpec struct {
 }
 
 type LoggingConfig struct {
-	JSON      bool   `yaml:"json"`
-	Level     string `yaml:"level"`
-	Sample    bool   `yaml:"sample,omitempty"`
-	PionLevel string `yaml:"pion_level,omitempty"`
+	logger.Config `yaml:",inline"`
+	PionLevel     string `yaml:"pion_level,omitempty"`
 }
 
 type TURNConfig struct {

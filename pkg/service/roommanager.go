@@ -392,7 +392,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 	defer rtc.Recover()
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), room.Name(), room.ID()),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), room.Name(), room.ID()),
 		participant.Identity(), participant.ID(),
 	)
 
@@ -448,7 +448,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 		sid = participant.ID()
 	}
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName, room.ID()),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, room.ID()),
 		identity,
 		sid,
 	)

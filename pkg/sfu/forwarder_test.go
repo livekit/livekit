@@ -19,7 +19,7 @@ func disable(f *Forwarder) {
 }
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
-	return NewForwarder(codec, kind, logger.Logger(logger.GetLogger()))
+	return NewForwarder(codec, kind, logger.GetDefaultLogger())
 
 }
 
