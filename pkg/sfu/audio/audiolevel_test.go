@@ -1,11 +1,9 @@
-package rtc_test
+package audio
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 const (
@@ -18,7 +16,7 @@ const (
 
 func TestAudioLevel(t *testing.T) {
 	t.Run("initially to return not noisy, within a few samples", func(t *testing.T) {
-		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
+		a := createAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
 		_, noisy := a.GetLevel()
 		require.False(t, noisy)
 
@@ -28,7 +26,7 @@ func TestAudioLevel(t *testing.T) {
 	})
 
 	t.Run("not noisy when all samples are below threshold", func(t *testing.T) {
-		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
+		a := createAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
 
 		observeSamples(a, 35, 100)
 		_, noisy := a.GetLevel()
@@ -36,7 +34,7 @@ func TestAudioLevel(t *testing.T) {
 	})
 
 	t.Run("not noisy when less than percentile samples are above threshold", func(t *testing.T) {
-		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
+		a := createAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
 
 		observeSamples(a, 35, samplesPerBatch-2)
 		observeSamples(a, 25, 1)
@@ -47,7 +45,7 @@ func TestAudioLevel(t *testing.T) {
 	})
 
 	t.Run("noisy when higher than percentile samples are above threshold", func(t *testing.T) {
-		a := rtc.NewAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
+		a := createAudioLevel(defaultActiveLevel, defaultPercentile, defaultObserveDuration)
 
 		observeSamples(a, 35, samplesPerBatch-16)
 		observeSamples(a, 25, 8)
@@ -60,7 +58,15 @@ func TestAudioLevel(t *testing.T) {
 	})
 }
 
-func observeSamples(a *rtc.AudioLevel, level uint8, count int) {
+func createAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint32) *AudioLevel {
+	return NewAudioLevel(AudioLevelParams{
+		ActiveLevel:     activeLevel,
+		MinPercentile:   minPercentile,
+		ObserveDuration: observeDuration,
+	})
+}
+
+func observeSamples(a *AudioLevel, level uint8, count int) {
 	for i := 0; i < count; i++ {
 		a.Observe(level, 20)
 	}

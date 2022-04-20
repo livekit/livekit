@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -689,7 +690,7 @@ func (p *ParticipantImpl) ICERestart() error {
 //
 
 func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
-	level = SilentAudioLevel
+	level = audio.SilentAudioLevel
 	for _, pt := range p.GetPublishedTracks() {
 		mediaTrack := pt.(types.LocalMediaTrack)
 		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
@@ -1466,9 +1467,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			if err := p.publisher.pc.WriteRTCP([]rtcp.Packet{&pkt}); err != nil {
-				p.params.Logger.Errorw("could not write RTCP to participant", err)
-			}
+			p.rtcpCh <- []rtcp.Packet{&pkt}
 		})
 	}
 	p.pendingTracksLock.Unlock()

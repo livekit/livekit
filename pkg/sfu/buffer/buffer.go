@@ -18,23 +18,14 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
 	ReportDelta = 1e9
 )
-
-type twccMetadata struct {
-	sn          uint16
-	arrivalTime int64
-	marker      bool
-}
-
-type audioLevelMetadata struct {
-	level    uint8
-	duration uint32
-}
 
 type pendingPacket struct {
 	arrivalTime int64
@@ -55,33 +46,30 @@ type ExtPacket struct {
 // Buffer contains all packets
 type Buffer struct {
 	sync.RWMutex
-	bucket     *Bucket
-	nacker     *NackQueue
-	videoPool  *sync.Pool
-	audioPool  *sync.Pool
-	codecType  webrtc.RTPCodecType
-	extPackets deque.Deque
-	pPackets   []pendingPacket
-	closeOnce  sync.Once
-	mediaSSRC  uint32
-	clockRate  uint32
-	lastReport int64
-	twccExt    uint8
-	audioExt   uint8
-	bound      bool
-	closed     atomic.Bool
-	mime       string
+	bucket        *Bucket
+	nacker        *NackQueue
+	videoPool     *sync.Pool
+	audioPool     *sync.Pool
+	codecType     webrtc.RTPCodecType
+	extPackets    deque.Deque
+	pPackets      []pendingPacket
+	closeOnce     sync.Once
+	mediaSSRC     uint32
+	clockRate     uint32
+	lastReport    int64
+	twccExt       uint8
+	audioLevelExt uint8
+	bound         bool
+	closed        atomic.Bool
+	mime          string
 
 	// supported feedbacks
-	remb                             bool
-	nack                             bool
-	twcc                             bool
-	audioLevel                       bool
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	twccPending       []twccMetadata
-	audioLevelPending []audioLevelMetadata
+	twcc             *twcc.Responder
+	audioLevelParams audio.AudioLevelParams
+	audioLevel       *audio.AudioLevel
 
 	lastPacketRead int
 
@@ -95,10 +83,8 @@ type Buffer struct {
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
 	// callbacks
-	onClose      func()
-	onAudioLevel func(level uint8, durationMs uint32)
-	feedbackCB   func([]rtcp.Packet)
-	feedbackTWCC func(sn uint16, timeNS int64, marker bool)
+	onClose    func()
+	feedbackCB func([]rtcp.Packet)
 
 	callbacksQueue *utils.OpsQueue
 
@@ -137,6 +123,20 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	}
 }
 
+func (b *Buffer) SetTWCC(twcc *twcc.Responder) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.twcc = twcc
+}
+
+func (b *Buffer) SetAudioLevelParams(audioLevelParams audio.AudioLevelParams) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.audioLevelParams = audioLevelParams
+}
+
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
 	b.Lock()
 	defer b.Unlock()
@@ -169,35 +169,31 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		b.codecType = webrtc.RTPCodecType(0)
 	}
 
-	for _, ext := range params.HeaderExtensions {
-		if ext.URI == sdp.TransportCCURI {
-			b.twccExt = uint8(ext.ID)
-			break
-		}
-	}
-
 	if b.codecType == webrtc.RTPCodecTypeVideo {
 		for _, fb := range codec.RTCPFeedback {
 			switch fb.Type {
 			case webrtc.TypeRTCPFBGoogREMB:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
 				b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
-				b.remb = true
 			case webrtc.TypeRTCPFBTransportCC:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
-				b.twcc = true
+				for _, ext := range params.HeaderExtensions {
+					if ext.URI == sdp.TransportCCURI {
+						b.twccExt = uint8(ext.ID)
+						break
+					}
+				}
 			case webrtc.TypeRTCPFBNACK:
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
 				b.nacker.SetRTT(70) // default till it is updated
-				b.nack = true
 			}
 		}
 	} else if b.codecType == webrtc.RTPCodecTypeAudio {
 		for _, h := range params.HeaderExtensions {
 			if h.URI == sdp.AudioLevelURI {
-				b.audioLevel = true
-				b.audioExt = uint8(h.ID)
+				b.audioLevelExt = uint8(h.ID)
+				b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
 			}
 		}
 	}
@@ -408,37 +404,24 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowStat
 func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	// submit to TWCC even if it is a padding only packet. Clients use padding only packets as probes
 	// for bandwidth estimation
-	if b.twcc {
-		if ext := p.GetExtension(b.twccExt); len(ext) > 1 {
-			b.twccPending = append(b.twccPending, twccMetadata{
-				sn:          binary.BigEndian.Uint16(ext[0:2]),
-				arrivalTime: arrivalTime,
-				marker:      p.Marker,
-			})
-			if len(b.twccPending) == 1 {
-				b.callbacksQueue.Enqueue(b.processTWCCPending)
-			}
+	if b.twcc != nil && b.twccExt != 0 {
+		if ext := p.GetExtension(b.twccExt); ext != nil {
+			b.twcc.Push(binary.BigEndian.Uint16(ext[0:2]), arrivalTime, p.Marker)
 		}
 	}
 
-	if b.audioLevel {
+	if b.audioLevelExt != 0 {
 		if !b.latestTSForAudioLevelInitialized {
 			b.latestTSForAudioLevelInitialized = true
 			b.latestTSForAudioLevel = p.Timestamp
 		}
-		if e := p.GetExtension(b.audioExt); e != nil && b.onAudioLevel != nil {
+		if e := p.GetExtension(b.audioLevelExt); e != nil {
 			ext := rtp.AudioLevelExtension{}
 			if err := ext.Unmarshal(e); err == nil {
 				if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
 					duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
 					if duration > 0 {
-						b.audioLevelPending = append(b.audioLevelPending, audioLevelMetadata{
-							level:    ext.Level,
-							duration: uint32(duration),
-						})
-						if len(b.audioLevelPending) == 1 {
-							b.callbacksQueue.Enqueue(b.processAudioLevelPending)
-						}
+						b.audioLevel.Observe(ext.Level, uint32(duration))
 					}
 
 					b.latestTSForAudioLevel = p.Timestamp
@@ -583,16 +566,8 @@ func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	return b.bucket.GetPacket(buff, sn)
 }
 
-func (b *Buffer) OnTransportWideCC(fn func(sn uint16, timeNS int64, marker bool)) {
-	b.feedbackTWCC = fn
-}
-
 func (b *Buffer) OnFeedback(fn func(fb []rtcp.Packet)) {
 	b.feedbackCB = fn
-}
-
-func (b *Buffer) OnAudioLevel(fn func(level uint8, durationMs uint32)) {
-	b.onAudioLevel = fn
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
@@ -653,28 +628,13 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	}
 }
 
-func (b *Buffer) processTWCCPending() {
-	b.Lock()
-	pending := b.twccPending
-	b.twccPending = nil
-	b.Unlock()
+func (b *Buffer) GetAudioLevel() (uint8, bool) {
+	b.RLock()
+	defer b.RUnlock()
 
-	if b.feedbackTWCC != nil {
-		for _, p := range pending {
-			b.feedbackTWCC(p.sn, p.arrivalTime, p.marker)
-		}
+	if b.audioLevel == nil {
+		return audio.SilentAudioLevel, false
 	}
-}
 
-func (b *Buffer) processAudioLevelPending() {
-	b.Lock()
-	pending := b.audioLevelPending
-	b.audioLevelPending = nil
-	b.Unlock()
-
-	if b.onAudioLevel != nil {
-		for _, p := range pending {
-			b.onAudioLevel(p.level, p.duration)
-		}
-	}
+	return b.audioLevel.GetLevel()
 }
