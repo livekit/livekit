@@ -32,7 +32,7 @@ type twccMetadata struct {
 }
 
 type audioLevelMetadata struct {
-	level    byte
+	level    uint8
 	duration uint32
 }
 
