@@ -12,6 +12,9 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+// aggregated channel for all participants
+const localRTCChannelSize = 10000
+
 // a router of messages on the same node, basic implementation for local testing
 type LocalRouter struct {
 	currentNode LocalNode
@@ -32,7 +35,7 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 		currentNode:      currentNode,
 		requestChannels:  make(map[string]*MessageChannel),
 		responseChannels: make(map[string]*MessageChannel),
-		rtcMessageChan:   NewMessageChannel(),
+		rtcMessageChan:   NewMessageChannel(localRTCChannelSize),
 	}
 }
 
@@ -114,7 +117,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
-		r.rtcMessageChan = NewMessageChannel()
+		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
 	}
 	msg.ParticipantKey = string(participantKey(roomName, identity))
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
@@ -128,7 +131,7 @@ func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTCNodeMessage) error {
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
-		r.rtcMessageChan = NewMessageChannel()
+		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
 	}
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
@@ -228,7 +231,7 @@ func (r *LocalRouter) getOrCreateMessageChannel(target map[string]*MessageChanne
 		return mc
 	}
 
-	mc = NewMessageChannel()
+	mc = NewMessageChannel(DefaultMessageChannelSize)
 	mc.OnClose(func() {
 		r.lock.Lock()
 		delete(target, key)

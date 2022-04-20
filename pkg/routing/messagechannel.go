@@ -4,16 +4,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const DefaultMessageChannelSize = 200
+
 type MessageChannel struct {
 	msgChan chan proto.Message
 	closed  chan struct{}
 	onClose func()
 }
 
-func NewMessageChannel() *MessageChannel {
+func NewMessageChannel(size int) *MessageChannel {
 	return &MessageChannel{
 		// allow some buffer to avoid blocked writes
-		msgChan: make(chan proto.Message, 200),
+		msgChan: make(chan proto.Message, size),
 		closed:  make(chan struct{}),
 	}
 }

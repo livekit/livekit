@@ -178,12 +178,12 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	if rtcConf.UseICELite {
 		s.SetLite(true)
-	} else if !conf.RTC.UseExternalIP {
+	} else if !rtcConf.UseExternalIP {
 		// use STUN servers for server to support NAT
 		// when deployed in production, we expect UseExternalIP to be used, and ports accessible
 		// this is not compatible with ICE Lite
-		if len(conf.RTC.STUNServers) > 0 {
-			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(conf.RTC.STUNServers)}
+		if len(rtcConf.STUNServers) > 0 {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(rtcConf.STUNServers)}
 		} else {
 			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(config.DefaultStunServers)}
 		}
