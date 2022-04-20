@@ -257,12 +257,13 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 	}
 
 	pi := ParticipantInit{
-		Identity:      livekit.ParticipantIdentity(ss.Identity),
-		Name:          livekit.ParticipantName(ss.Name),
-		Reconnect:     ss.Reconnect,
-		Client:        ss.Client,
-		AutoSubscribe: ss.AutoSubscribe,
-		Grants:        claims,
+		Identity:       livekit.ParticipantIdentity(ss.Identity),
+		Name:           livekit.ParticipantName(ss.Name),
+		Reconnect:      ss.Reconnect,
+		Client:         ss.Client,
+		AutoSubscribe:  ss.AutoSubscribe,
+		Grants:         claims,
+		AdaptiveStream: ss.AdaptiveStream,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, string(participantKey))
