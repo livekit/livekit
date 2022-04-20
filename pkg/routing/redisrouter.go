@@ -167,11 +167,12 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		Identity: string(pi.Identity),
 		Name:     string(pi.Name),
 		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:  string(connectionID),
-		Reconnect:     pi.Reconnect,
-		AutoSubscribe: pi.AutoSubscribe,
-		Client:        pi.Client,
-		GrantsJson:    string(claims),
+		ConnectionId:   string(connectionID),
+		Reconnect:      pi.Reconnect,
+		AutoSubscribe:  pi.AutoSubscribe,
+		Client:         pi.Client,
+		GrantsJson:     string(claims),
+		AdaptiveStream: pi.AdaptiveStream,
 	})
 	if err != nil {
 		return
