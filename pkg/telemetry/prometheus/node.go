@@ -6,13 +6,13 @@ import (
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 )
 
 const (
-	livekitNamespace    string = "livekit"
-	forceUpdateInterval int64  = 15
+	livekitNamespace string = "livekit"
 )
 
 var (
@@ -49,19 +49,16 @@ func init() {
 	initRoomStats(nodeID)
 }
 
-func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
+func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
 	loadAvg, err := loadavg.Get()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	cpuLoad, numCPUs, err := getCPUStats()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-
-	updatedAt := time.Now().Unix()
-	elapsed := updatedAt - prev.UpdatedAt
 
 	bytesInNow := bytesIn.Load()
 	bytesOutNow := bytesOut.Load()
@@ -69,16 +66,19 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
 	packetsOutNow := packetsOut.Load()
 	nackTotalNow := nackTotal.Load()
 
-	if bytesInNow == prev.BytesIn &&
-		bytesOutNow == prev.BytesOut &&
-		packetsInNow == prev.PacketsIn &&
-		packetsOutNow == prev.PacketsOut &&
-		nackTotalNow == prev.NackTotal &&
-		elapsed < forceUpdateInterval {
-		return nil, nil
+	updatedAt := time.Now().Unix()
+	elapsed := updatedAt - prevAverage.UpdatedAt
+	// include sufficient buffer to be sure a stats update had taken place
+	computeAverage := elapsed > int64(config.StatsUpdateFrequency.Seconds()+2)
+	if bytesInNow != prevAverage.BytesIn ||
+		bytesOutNow != prevAverage.BytesOut ||
+		packetsInNow != prevAverage.PacketsIn ||
+		packetsOutNow != prevAverage.PacketsOut ||
+		nackTotalNow != prevAverage.NackTotal {
+		computeAverage = true
 	}
 
-	return &livekit.NodeStats{
+	stats := &livekit.NodeStats{
 		StartedAt:        prev.StartedAt,
 		UpdatedAt:        updatedAt,
 		NumRooms:         roomTotal.Load(),
@@ -90,17 +90,28 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats) (*livekit.NodeStats, error) {
 		PacketsIn:        packetsInNow,
 		PacketsOut:       packetsOutNow,
 		NackTotal:        nackTotalNow,
-		BytesInPerSec:    perSec(prev.BytesIn, bytesInNow, elapsed),
-		BytesOutPerSec:   perSec(prev.BytesOut, bytesOutNow, elapsed),
-		PacketsInPerSec:  perSec(prev.PacketsIn, packetsInNow, elapsed),
-		PacketsOutPerSec: perSec(prev.PacketsOut, packetsOutNow, elapsed),
-		NackPerSec:       perSec(prev.NackTotal, nackTotalNow, elapsed),
+		BytesInPerSec:    prevAverage.BytesInPerSec,
+		BytesOutPerSec:   prevAverage.BytesOutPerSec,
+		PacketsInPerSec:  prevAverage.PacketsInPerSec,
+		PacketsOutPerSec: prevAverage.PacketsOutPerSec,
+		NackPerSec:       prevAverage.NackPerSec,
 		NumCpus:          numCPUs,
 		CpuLoad:          cpuLoad,
 		LoadAvgLast1Min:  float32(loadAvg.Loadavg1),
 		LoadAvgLast5Min:  float32(loadAvg.Loadavg5),
 		LoadAvgLast15Min: float32(loadAvg.Loadavg15),
-	}, nil
+	}
+
+	// update stats
+	if computeAverage {
+		stats.BytesInPerSec = perSec(prevAverage.BytesIn, bytesInNow, elapsed)
+		stats.BytesOutPerSec = perSec(prevAverage.BytesOut, bytesOutNow, elapsed)
+		stats.PacketsInPerSec = perSec(prevAverage.PacketsIn, packetsInNow, elapsed)
+		stats.PacketsInPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
+		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
+	}
+
+	return stats, computeAverage, nil
 }
 
 func perSec(prev, curr uint64, secs int64) float32 {

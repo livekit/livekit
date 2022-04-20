@@ -22,6 +22,8 @@ type CongestionControlProbeMode string
 const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
+
+	StatsUpdateFrequency = time.Second * 10
 )
 
 type Config struct {
