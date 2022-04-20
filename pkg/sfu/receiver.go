@@ -40,7 +40,7 @@ type TrackReceiver interface {
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetBitrateTemporalCumulative() Bitrates
 
-	GetAudioLevel() (uint8, bool)
+	GetAudioLevel() (float64, bool)
 
 	SendPLI(layer int32)
 
@@ -275,6 +275,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		ActiveLevel:     w.audioConfig.ActiveLevel,
 		MinPercentile:   w.audioConfig.MinPercentile,
 		ObserveDuration: w.audioConfig.UpdateInterval,
+		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
 	buff.OnFeedback(w.sendRTCP)
 
@@ -450,9 +451,9 @@ func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
 	return buffer.AggregateRTPStats(stats)
 }
 
-func (w *WebRTCReceiver) GetAudioLevel() (uint8, bool) {
+func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
-		return audio.SilentAudioLevel, false
+		return 0, false
 	}
 
 	w.bufferMu.RLock()
@@ -466,7 +467,7 @@ func (w *WebRTCReceiver) GetAudioLevel() (uint8, bool) {
 		return buff.GetAudioLevel()
 	}
 
-	return audio.SilentAudioLevel, false
+	return 0, false
 }
 
 func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {

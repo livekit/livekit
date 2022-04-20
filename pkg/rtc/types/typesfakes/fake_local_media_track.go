@@ -36,16 +36,16 @@ type FakeLocalMediaTrack struct {
 	getAllSubscribersReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantID
 	}
-	GetAudioLevelStub        func() (uint8, bool)
+	GetAudioLevelStub        func() (float64, bool)
 	getAudioLevelMutex       sync.RWMutex
 	getAudioLevelArgsForCall []struct {
 	}
 	getAudioLevelReturns struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}
 	getAudioLevelReturnsOnCall map[int]struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}
 	GetConnectionScoreStub        func() float32
@@ -403,7 +403,7 @@ func (fake *FakeLocalMediaTrack) GetAllSubscribersReturnsOnCall(i int, result1 [
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) GetAudioLevel() (uint8, bool) {
+func (fake *FakeLocalMediaTrack) GetAudioLevel() (float64, bool) {
 	fake.getAudioLevelMutex.Lock()
 	ret, specificReturn := fake.getAudioLevelReturnsOnCall[len(fake.getAudioLevelArgsForCall)]
 	fake.getAudioLevelArgsForCall = append(fake.getAudioLevelArgsForCall, struct {
@@ -427,34 +427,34 @@ func (fake *FakeLocalMediaTrack) GetAudioLevelCallCount() int {
 	return len(fake.getAudioLevelArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) GetAudioLevelCalls(stub func() (uint8, bool)) {
+func (fake *FakeLocalMediaTrack) GetAudioLevelCalls(stub func() (float64, bool)) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) GetAudioLevelReturns(result1 uint8, result2 bool) {
+func (fake *FakeLocalMediaTrack) GetAudioLevelReturns(result1 float64, result2 bool) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = nil
 	fake.getAudioLevelReturns = struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}{result1, result2}
 }
 
-func (fake *FakeLocalMediaTrack) GetAudioLevelReturnsOnCall(i int, result1 uint8, result2 bool) {
+func (fake *FakeLocalMediaTrack) GetAudioLevelReturnsOnCall(i int, result1 float64, result2 bool) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = nil
 	if fake.getAudioLevelReturnsOnCall == nil {
 		fake.getAudioLevelReturnsOnCall = make(map[int]struct {
-			result1 uint8
+			result1 float64
 			result2 bool
 		})
 	}
 	fake.getAudioLevelReturnsOnCall[i] = struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}{result1, result2}
 }

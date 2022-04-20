@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -689,15 +688,15 @@ func (p *ParticipantImpl) ICERestart() error {
 // signal connection methods
 //
 
-func (p *ParticipantImpl) GetAudioLevel() (level uint8, active bool) {
-	level = audio.SilentAudioLevel
+func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
+	level = 0
 	for _, pt := range p.GetPublishedTracks() {
 		mediaTrack := pt.(types.LocalMediaTrack)
 		if mediaTrack.Source() == livekit.TrackSource_MICROPHONE {
 			tl, ta := mediaTrack.GetAudioLevel()
 			if ta {
 				active = true
-				if tl < level {
+				if tl > level {
 					level = tl
 				}
 			}
@@ -975,11 +974,13 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 
-	p.params.Logger.Infow("mediaTrack published",
-		"kind", track.Kind().String(),
-		"trackID", publishedTrack.ID(),
-		"rid", track.RID(),
-		"SSRC", track.SSRC())
+	if publishedTrack != nil {
+		p.params.Logger.Infow("mediaTrack published",
+			"kind", track.Kind().String(),
+			"trackID", publishedTrack.ID(),
+			"rid", track.RID(),
+			"SSRC", track.SSRC())
+	}
 	if !isNewTrack && publishedTrack != nil && p.IsReady() && p.onTrackUpdated != nil {
 		p.onTrackUpdated(p, publishedTrack)
 	}
