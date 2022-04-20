@@ -306,8 +306,8 @@ func TestActiveSpeakers(t *testing.T) {
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
-		p.GetAudioLevelReturns(10, true)
-		p2.GetAudioLevelReturns(20, true)
+		p.GetAudioLevelReturns(20, true)
+		p2.GetAudioLevelReturns(10, true)
 
 		speakers := rm.GetActiveSpeakers()
 		require.Len(t, speakers, 2)
