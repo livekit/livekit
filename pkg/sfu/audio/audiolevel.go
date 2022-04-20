@@ -11,28 +11,33 @@ const (
 	SilentAudioLevel = 127
 )
 
+type AudioLevelParams struct {
+	ActiveLevel     uint8
+	MinPercentile   uint8
+	ObserveDuration uint32
+}
+
 // keeps track of audio level for a participant
 type AudioLevel struct {
-	levelThreshold uint8
-	currentLevel   *atomic.Uint32
+	params AudioLevelParams
+
+	currentLevel *atomic.Uint32
 	// min duration to be considered active
 	minActiveDuration uint32
 
 	// for Observe goroutine use
 	// keeps track of current activity
-	observeLevel      uint8
-	activeDuration    uint32 // ms
-	observedDuration  uint32 // ms
-	durationToObserve uint32 // ms
+	observeLevel     uint8
+	activeDuration   uint32 // ms
+	observedDuration uint32 // ms
 }
 
-func NewAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint32) *AudioLevel {
+func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 	l := &AudioLevel{
-		levelThreshold:    activeLevel,
-		minActiveDuration: uint32(minPercentile) * observeDuration / 100,
+		params:            params,
+		minActiveDuration: uint32(params.MinPercentile) * params.ObserveDuration / 100,
 		currentLevel:      atomic.NewUint32(SilentAudioLevel),
 		observeLevel:      SilentAudioLevel,
-		durationToObserve: observeDuration,
 	}
 	return l
 }
@@ -41,17 +46,17 @@ func NewAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration uint3
 func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 	l.observedDuration += durationMs
 
-	if level <= l.levelThreshold {
+	if level <= l.params.ActiveLevel {
 		l.activeDuration += durationMs
 		if l.observeLevel > level {
 			l.observeLevel = level
 		}
 	}
 
-	if l.observedDuration >= l.durationToObserve {
+	if l.observedDuration >= l.params.ObserveDuration {
 		// compute and reset
 		if l.activeDuration >= l.minActiveDuration {
-			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(l.durationToObserve)))
+			level := uint32(l.observeLevel) - uint32(20*math.Log10(float64(l.activeDuration)/float64(l.params.ObserveDuration)))
 			l.currentLevel.Store(level)
 		} else {
 			l.currentLevel.Store(SilentAudioLevel)

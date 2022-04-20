@@ -67,8 +67,9 @@ type Buffer struct {
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	twcc       *twcc.Responder
-	audioLevel *audio.AudioLevel
+	twcc             *twcc.Responder
+	audioLevelParams audio.AudioLevelParams
+	audioLevel       *audio.AudioLevel
 
 	lastPacketRead int
 
@@ -129,6 +130,13 @@ func (b *Buffer) SetTWCC(twcc *twcc.Responder) {
 	b.twcc = twcc
 }
 
+func (b *Buffer) SetAudioLevelParams(audioLevelParams audio.AudioLevelParams) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.audioLevelParams = audioLevelParams
+}
+
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability) {
 	b.Lock()
 	defer b.Unlock()
@@ -185,8 +193,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		for _, h := range params.HeaderExtensions {
 			if h.URI == sdp.AudioLevelURI {
 				b.audioLevelExt = uint8(h.ID)
-				// RAJA-TODO - active speaker config
-				b.audioLevel = audio.NewAudioLevel(35, 40, 400)
+				b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
 			}
 		}
 	}

@@ -58,6 +58,7 @@ type WebRTCReceiver struct {
 	logger logger.Logger
 
 	pliThrottleConfig config.PLIThrottleConfig
+	audioConfig       config.AudioConfig
 
 	peerID         livekit.ParticipantID
 	trackID        livekit.TrackID
@@ -110,10 +111,18 @@ func RidToLayer(rid string) int32 {
 
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
-// WithPliThrottle indicates minimum time(ms) between sending PLIs
-func WithPliThrottle(pliThrottleConfig config.PLIThrottleConfig) ReceiverOpts {
+// WithPliThrottleConfig indicates minimum time(ms) between sending PLIs
+func WithPliThrottleConfig(pliThrottleConfig config.PLIThrottleConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.pliThrottleConfig = pliThrottleConfig
+		return w
+	}
+}
+
+// WithAudioConfig sets up parameters for active speaker detection
+func WithAudioConfig(audioConfig config.AudioConfig) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		w.audioConfig = audioConfig
 		return w
 	}
 }
@@ -262,6 +271,11 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	layer := RidToLayer(track.RID())
 	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
 	buff.SetTWCC(w.twcc)
+	buff.SetAudioLevelParams(audio.AudioLevelParams{
+		ActiveLevel:     w.audioConfig.ActiveLevel,
+		MinPercentile:   w.audioConfig.MinPercentile,
+		ObserveDuration: w.audioConfig.UpdateInterval,
+	})
 	buff.OnFeedback(w.sendRTCP)
 
 	var duration time.Duration
