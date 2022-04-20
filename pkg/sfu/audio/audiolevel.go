@@ -7,9 +7,7 @@ import (
 )
 
 const (
-	// duration of audio frames for observe window
-	SilentAudioLevel = 127
-
+	silentAudioLevel          = 127
 	negInv20                  = -1.0 / 20
 	audioLevelQuantization    = 8
 	invAudioLevelQuantization = 1.0 / audioLevelQuantization
@@ -43,7 +41,7 @@ func NewAudioLevel(params AudioLevelParams) *AudioLevel {
 		minActiveDuration:    uint32(params.MinPercentile) * params.ObserveDuration / 100,
 		smoothFactor:         1,
 		activeThreshold:      ConvertAudioLevel(float64(params.ActiveLevel)),
-		loudestObservedLevel: SilentAudioLevel,
+		loudestObservedLevel: silentAudioLevel,
 	}
 
 	if l.params.SmoothIntervals > 0 {
@@ -84,7 +82,7 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32) {
 		} else {
 			l.smoothedLevel.Store(0)
 		}
-		l.loudestObservedLevel = SilentAudioLevel
+		l.loudestObservedLevel = silentAudioLevel
 		l.activeDuration = 0
 		l.observedDuration = 0
 	}
