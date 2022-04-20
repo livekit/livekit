@@ -25,6 +25,17 @@ const (
 	ReportDelta = 1e9
 )
 
+type twccMetadata struct {
+	sn          uint16
+	arrivalTime int64
+	marker      bool
+}
+
+type audioLevelMetadata struct {
+	level    uint8
+	duration uint32
+}
+
 type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
@@ -68,6 +79,9 @@ type Buffer struct {
 	audioLevel                       bool
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
+
+	twccPending       []twccMetadata
+	audioLevelPending []audioLevelMetadata
 
 	lastPacketRead int
 
@@ -396,11 +410,14 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	// for bandwidth estimation
 	if b.twcc {
 		if ext := p.GetExtension(b.twccExt); len(ext) > 1 {
-			sn := binary.BigEndian.Uint16(ext[0:2])
-			marker := p.Marker
-			b.callbacksQueue.Enqueue(func() {
-				b.feedbackTWCC(sn, arrivalTime, marker)
+			b.twccPending = append(b.twccPending, twccMetadata{
+				sn:          binary.BigEndian.Uint16(ext[0:2]),
+				arrivalTime: arrivalTime,
+				marker:      p.Marker,
 			})
+			if len(b.twccPending) == 1 {
+				b.callbacksQueue.Enqueue(b.processTWCCPending)
+			}
 		}
 	}
 
@@ -415,9 +432,13 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 				if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
 					duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
 					if duration > 0 {
-						b.callbacksQueue.Enqueue(func() {
-							b.onAudioLevel(ext.Level, uint32(duration))
+						b.audioLevelPending = append(b.audioLevelPending, audioLevelMetadata{
+							level:    ext.Level,
+							duration: uint32(duration),
 						})
+						if len(b.audioLevelPending) == 1 {
+							b.callbacksQueue.Enqueue(b.processAudioLevelPending)
+						}
 					}
 
 					b.latestTSForAudioLevel = p.Timestamp
@@ -629,5 +650,31 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
 		Layers:   layers,
+	}
+}
+
+func (b *Buffer) processTWCCPending() {
+	b.Lock()
+	pending := b.twccPending
+	b.twccPending = nil
+	b.Unlock()
+
+	if b.feedbackTWCC != nil {
+		for _, p := range pending {
+			b.feedbackTWCC(p.sn, p.arrivalTime, p.marker)
+		}
+	}
+}
+
+func (b *Buffer) processAudioLevelPending() {
+	b.Lock()
+	pending := b.audioLevelPending
+	b.audioLevelPending = nil
+	b.Unlock()
+
+	if b.onAudioLevel != nil {
+		for _, p := range pending {
+			b.onAudioLevel(p.level, p.duration)
+		}
 	}
 }
