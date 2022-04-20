@@ -15,7 +15,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -304,10 +303,10 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	return quality
 }
 
-func (t *MediaTrackReceiver) GetAudioLevel() (uint8, bool) {
+func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 	receiver := t.Receiver()
 	if receiver == nil {
-		return audio.SilentAudioLevel, false
+		return 0, false
 	}
 
 	return receiver.GetAudioLevel()

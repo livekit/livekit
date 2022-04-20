@@ -127,7 +127,7 @@ type LocalParticipant interface {
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
@@ -220,7 +220,7 @@ type LocalMediaTrack interface {
 	SignalCid() string
 	SdpCid() string
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (level float64, active bool)
 	GetConnectionScore() float32
 
 	SetRTT(rtt uint32)
