@@ -221,7 +221,6 @@ func TestMuteSetting(t *testing.T) {
 }
 
 func TestConnectionQuality(t *testing.T) {
-
 	// loss based score is currently a publisher method.
 	videoScore := func(loss float32, numPublishing, numRegistered uint32) float32 {
 		var reducedQuality bool

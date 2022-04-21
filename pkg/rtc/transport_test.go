@@ -88,6 +88,8 @@ func TestNegotiationTiming(t *testing.T) {
 	require.NoError(t, err)
 	transportB, err := NewPCTransport(params)
 	require.NoError(t, err)
+	require.False(t, transportA.IsEstablished())
+	require.False(t, transportB.IsEstablished())
 
 	handleICEExchange(t, transportA, transportB)
 	offer := atomic.Value{}
@@ -117,6 +119,9 @@ func TestNegotiationTiming(t *testing.T) {
 	require.NoError(t, transportB.pc.SetLocalDescription(answer))
 	require.NoError(t, transportA.SetRemoteDescription(answer))
 	time.Sleep(5 * time.Millisecond)
+
+	require.True(t, transportA.IsEstablished())
+	require.True(t, transportB.IsEstablished())
 
 	// it should still be negotiating again
 	require.Equal(t, negotiationStateClient, transportA.negotiationState)
