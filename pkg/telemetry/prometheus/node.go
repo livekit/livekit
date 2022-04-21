@@ -73,8 +73,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	if bytesInNow != prevAverage.BytesIn ||
 		bytesOutNow != prevAverage.BytesOut ||
 		packetsInNow != prevAverage.PacketsIn ||
-		packetsOutNow != prevAverage.PacketsOut ||
-		nackTotalNow != prevAverage.NackTotal {
+		packetsOutNow != prevAverage.PacketsOut {
 		computeAverage = true
 	}
 
@@ -107,7 +106,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.BytesInPerSec = perSec(prevAverage.BytesIn, bytesInNow, elapsed)
 		stats.BytesOutPerSec = perSec(prevAverage.BytesOut, bytesOutNow, elapsed)
 		stats.PacketsInPerSec = perSec(prevAverage.PacketsIn, packetsInNow, elapsed)
-		stats.PacketsInPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
+		stats.PacketsOutPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 	}
 
