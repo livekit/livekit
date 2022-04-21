@@ -354,7 +354,11 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
-	s.eventCh <- event
+	select {
+	case s.eventCh <- event:
+	default:
+		s.params.Logger.Warnw("event queue full", nil)
+	}
 	s.eventChMu.RUnlock()
 }
 
