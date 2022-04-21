@@ -189,6 +189,10 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		}
 	}
 
+	if rtcConf.AcceptAggressiveNomination {
+		s.SetICEAcceptAggressiveNomination(true)
+	}
+
 	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {
 		includes := rtcConf.Interfaces.Includes
 		excludes := rtcConf.Interfaces.Excludes

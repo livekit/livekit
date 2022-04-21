@@ -18,7 +18,7 @@ require (
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.2.4
+	github.com/pion/ice/v2 v2.2.5
 	github.com/pion/interceptor v0.1.10
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.9
@@ -27,7 +27,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.0
 	github.com/pion/turn/v2 v2.0.8
-	github.com/pion/webrtc/v3 v3.1.32
+	github.com/pion/webrtc/v3 v3.1.33
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/cors v1.8.2
@@ -76,13 +76,13 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20220208050332-20e1d8d225ab // indirect
+	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect
 	golang.org/x/mod v0.5.1 // indirect
-	golang.org/x/net v0.0.0-20220401154927-543a649e0bdd // indirect
-	golang.org/x/sys v0.0.0-20220207234003-57398862261d // indirect
+	golang.org/x/net v0.0.0-20220420153159-1850ba15e1be // indirect
+	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.7 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 	google.golang.org/grpc v1.42.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
