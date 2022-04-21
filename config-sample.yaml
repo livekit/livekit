@@ -68,6 +68,9 @@ rtc:
   #     - en0
   #   excludes:
   #     - docker0
+  # # accept ice aggressive nomination, when set to true, server will accept client's aggressive nomination to update
+  # # selected candidate pair. This is useful when client has aggressive nomination in special network environment.
+  # accept_aggressive_nomination: true
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
