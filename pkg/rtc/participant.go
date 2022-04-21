@@ -147,7 +147,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 	p := &ParticipantImpl{
 		params:                   params,
-		rtcpCh:                   make(chan []rtcp.Packet, 50),
+		rtcpCh:                   make(chan []rtcp.Packet, 100),
 		pendingTracks:            make(map[string]*pendingTrackInfo),
 		subscribedTracks:         make(map[livekit.TrackID]types.SubscribedTrack),
 		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
@@ -1468,7 +1468,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	if p.twcc == nil {
 		p.twcc = twcc.NewTransportWideCCResponder(ssrc)
 		p.twcc.OnFeedback(func(pkt rtcp.RawPacket) {
-			p.rtcpCh <- []rtcp.Packet{&pkt}
+			p.postRtcp([]rtcp.Packet{&pkt})
 		})
 	}
 	p.pendingTracksLock.Unlock()
@@ -1506,7 +1506,7 @@ func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
 }
 
 func (p *ParticipantImpl) onUpTrackManagerClose() {
-	p.rtcpCh <- nil
+	p.postRtcp(nil)
 }
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType) (string, *livekit.TrackInfo) {
@@ -1657,5 +1657,13 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 func (p *ParticipantImpl) incActiveCounter() {
 	if p.activeCounter.Inc() == stateActiveCond {
 		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	}
+}
+
+func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
+	select {
+	case p.rtcpCh <- pkts:
+	default:
+		p.params.Logger.Warnw("rtcp channel full", nil)
 	}
 }
