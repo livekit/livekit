@@ -494,12 +494,18 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		return
 	}
 
+	if p.isPublisher.Load() != p.CanPublish() {
+		p.isPublisher.Store(p.CanPublish())
+		// trigger update as well
+		if p.onParticipantUpdate != nil {
+			p.onParticipantUpdate(p)
+		}
+	}
+
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
-
-	p.isPublisher.Store(p.CanPublish())
 
 	return
 }
