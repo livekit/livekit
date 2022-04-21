@@ -116,8 +116,12 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	// now leave, and ensure that it's immediate
 	c2.Stop()
 
-	time.Sleep(testutils.ConnectTimeout)
-	require.Empty(t, c1.RemoteParticipants())
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) > 0 {
+			return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
+		}
+		return ""
+	})
 }
 
 func scenarioDataPublish(t *testing.T) {

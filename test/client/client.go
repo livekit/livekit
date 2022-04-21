@@ -314,10 +314,14 @@ func (c *RTCClient) Run() error {
 		case *livekit.SignalResponse_Update:
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
-				if p.State != livekit.ParticipantInfo_DISCONNECTED {
-					c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
-				} else {
-					delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
+				if livekit.ParticipantID(p.Sid) != c.id {
+					//logger.Debugw("applying participant update",
+					//	"update", p)
+					if p.State != livekit.ParticipantInfo_DISCONNECTED {
+						c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
+					} else {
+						delete(c.remoteParticipants, livekit.ParticipantID(p.Sid))
+					}
 				}
 			}
 			c.lock.Unlock()
