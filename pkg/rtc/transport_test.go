@@ -118,11 +118,17 @@ func TestNegotiationTiming(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, transportB.pc.SetLocalDescription(answer))
 	require.NoError(t, transportA.SetRemoteDescription(answer))
-	time.Sleep(5 * time.Millisecond)
 
-	require.True(t, transportA.IsEstablished())
-	require.True(t, transportB.IsEstablished())
-
+	testutils.WithTimeout(t, func() string {
+		if !transportA.IsEstablished() {
+			return "transportA is not established"
+		}
+		if !transportB.IsEstablished() {
+			return "transportB is not established"
+		}
+		return ""
+	})
+	
 	// it should still be negotiating again
 	require.Equal(t, negotiationStateClient, transportA.negotiationState)
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)
