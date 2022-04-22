@@ -102,15 +102,25 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	reqChan = r.getOrCreateMessageChannel(r.requestChannels, string(key))
 	resChan = r.getOrCreateMessageChannel(r.responseChannels, string(key))
 
-	r.onNewParticipant(
-		ctx,
-		roomName,
-		pi,
-		// request source
-		reqChan,
-		// response sink
-		resChan,
-	)
+	go func() {
+		err := r.onNewParticipant(
+			ctx,
+			roomName,
+			pi,
+			// request source
+			reqChan,
+			// response sink
+			resChan,
+		)
+		if err != nil {
+			reqChan.Close()
+			resChan.Close()
+			logger.Errorw("could not handle new participant", err,
+				"room", roomName,
+				"participant", pi.Identity,
+			)
+		}
+	}()
 	return livekit.ConnectionID(pi.Identity), reqChan, resChan, nil
 }
 
