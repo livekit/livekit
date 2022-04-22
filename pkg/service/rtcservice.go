@@ -189,6 +189,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
 		pLogger.Infow("server closing WS connection", "connID", connId)
+		resSource.Close()
 		reqSink.Close()
 		close(done)
 	}()
