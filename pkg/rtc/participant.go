@@ -79,6 +79,7 @@ type ParticipantImpl struct {
 	resSinkValid        atomic.Bool
 	subscriberAsPrimary bool
 	grants              atomic.Value // *auth.ClaimGrants
+	isPublisher         atomic.Bool
 
 	// reliable and unreliable data channels
 	reliableDC    *webrtc.DataChannel
@@ -231,7 +232,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
 	p.subscriber.OnOffer(p.onOffer)
-
 	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
 
 	p.setupUpTrackManager()
@@ -381,6 +381,8 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 			}
 		}
 	}
+	// update isPublisher attribute
+	p.isPublisher.Store(video.GetCanPublish() && p.publisher.IsEstablished())
 
 	if p.onParticipantUpdate != nil {
 		p.onParticipantUpdate(p)
@@ -394,14 +396,15 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	grants := p.ClaimGrants()
 	info := &livekit.ParticipantInfo{
-		Sid:        string(p.params.SID),
-		Identity:   string(p.params.Identity),
-		Name:       string(p.params.Name),
-		State:      p.State(),
-		JoinedAt:   p.ConnectedAt().Unix(),
-		Version:    p.version.Inc(),
-		Permission: grants.Video.ToPermission(),
-		Region:     p.params.Region,
+		Sid:         string(p.params.SID),
+		Identity:    string(p.params.Identity),
+		Name:        string(p.params.Name),
+		State:       p.State(),
+		JoinedAt:    p.ConnectedAt().Unix(),
+		Version:     p.version.Inc(),
+		Permission:  grants.Video.ToPermission(),
+		Region:      p.params.Region,
+		IsPublisher: p.isPublisher.Load(),
 	}
 	info.Tracks = p.UpTrackManager.ToProto()
 	if p.params.Grants != nil {
@@ -489,6 +492,14 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
+	}
+
+	if p.isPublisher.Load() != p.CanPublish() {
+		p.isPublisher.Store(p.CanPublish())
+		// trigger update as well if participant is already fully connected
+		if p.State() == livekit.ParticipantInfo_ACTIVE && p.onParticipantUpdate != nil {
+			p.onParticipantUpdate(p)
+		}
 	}
 
 	if p.State() == livekit.ParticipantInfo_JOINING {

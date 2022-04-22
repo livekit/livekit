@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -17,7 +19,7 @@ func WithTimeout(t *testing.T, f func() string) {
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatal("timed out: " + lastErr)
+			require.Empty(t, lastErr)
 		case <-time.After(10 * time.Millisecond):
 			lastErr = f()
 			if lastErr == "" {
