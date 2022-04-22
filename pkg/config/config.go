@@ -61,7 +61,7 @@ type RTCConfig struct {
 	UseExternalIP              bool             `yaml:"use_external_ip"`
 	UseICELite                 bool             `yaml:"use_ice_lite,omitempty"`
 	Interfaces                 InterfacesConfig `yaml:"interfaces"`
-	AcceptAggressiveNomination bool             `yaml:"accept_aggressive_nomination"`
+	RejectAggressiveNomination bool             `yaml:"reject_aggressive_nomination"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
