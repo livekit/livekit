@@ -189,7 +189,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		}
 	}
 
-	if rtcConf.AcceptAggressiveNomination {
+	if !rtcConf.RejectAggressiveNomination {
 		s.SetICEAcceptAggressiveNomination(true)
 	}
 
