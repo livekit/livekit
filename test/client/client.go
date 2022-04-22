@@ -315,8 +315,6 @@ func (c *RTCClient) Run() error {
 			c.lock.Lock()
 			for _, p := range msg.Update.Participants {
 				if livekit.ParticipantID(p.Sid) != c.id {
-					//logger.Debugw("applying participant update",
-					//	"update", p)
 					if p.State != livekit.ParticipantInfo_DISCONNECTED {
 						c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
 					} else {

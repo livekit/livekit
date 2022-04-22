@@ -128,7 +128,7 @@ func TestNegotiationTiming(t *testing.T) {
 		}
 		return ""
 	})
-	
+
 	// it should still be negotiating again
 	require.Equal(t, negotiationStateClient, transportA.negotiationState)
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)

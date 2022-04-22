@@ -496,7 +496,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 	if p.isPublisher.Load() != p.CanPublish() {
 		p.isPublisher.Store(p.CanPublish())
-		// trigger update as well if participant when participant is already fully connected
+		// trigger update as well if participant is already fully connected
 		if p.State() == livekit.ParticipantInfo_ACTIVE && p.onParticipantUpdate != nil {
 			p.onParticipantUpdate(p)
 		}
