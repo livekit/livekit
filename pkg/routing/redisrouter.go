@@ -240,7 +240,7 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		}
 	}
 
-	pi, err := ParticipantInitFromStartSession(ss)
+	pi, err := ParticipantInitFromStartSession(ss, r.currentNode.Region)
 	if err != nil {
 		return err
 	}
