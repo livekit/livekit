@@ -46,7 +46,7 @@ func TestNack(t *testing.T) {
 		var wg sync.WaitGroup
 		// 5 tries
 		wg.Add(5)
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
@@ -96,7 +96,7 @@ func TestNack(t *testing.T) {
 			1:     0,
 		}
 		wg.Add(5 * len(expects)) // retry 5 times
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
@@ -194,7 +194,7 @@ func TestNewBuffer(t *testing.T) {
 			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
-			buff.OnFeedback(func(_ []rtcp.Packet) {
+			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {
 			})
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
@@ -224,7 +224,7 @@ func TestFractionLostReport(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	buff.SetLastFractionLostReport(55)
-	buff.OnFeedback(func(fb []rtcp.Packet) {
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 		for _, pkt := range fb {
 			switch p := pkt.(type) {
 			case *rtcp.ReceiverReport:
