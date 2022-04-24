@@ -277,7 +277,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		ObserveDuration: w.audioConfig.UpdateInterval,
 		SmoothIntervals: w.audioConfig.SmoothIntervals,
 	})
-	buff.OnFeedback(w.sendRTCP)
+	buff.OnRtcpFeedback(w.sendRTCP)
 
 	var duration time.Duration
 	switch track.RID() {

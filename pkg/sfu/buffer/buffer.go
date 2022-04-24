@@ -20,7 +20,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -83,10 +82,8 @@ type Buffer struct {
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
 	// callbacks
-	onClose    func()
-	feedbackCB func([]rtcp.Packet)
-
-	callbacksQueue *utils.OpsQueue
+	onClose        func()
+	onRtcpFeedback func([]rtcp.Packet)
 
 	// logger
 	logger logger.Logger
@@ -101,12 +98,11 @@ type Options struct {
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 	l := logger.GetDefaultLogger() // will be reset with correct context via SetLogger
 	b := &Buffer{
-		mediaSSRC:      ssrc,
-		videoPool:      vp,
-		audioPool:      ap,
-		pliThrottle:    int64(500 * time.Millisecond),
-		logger:         l,
-		callbacksQueue: utils.NewOpsQueue(l, "sfu-buffer", 50),
+		mediaSSRC:   ssrc,
+		videoPool:   vp,
+		audioPool:   ap,
+		pliThrottle: int64(500 * time.Millisecond),
+		logger:      l,
 	}
 	b.extPackets.SetMinCapacity(7)
 	return b
@@ -117,7 +113,6 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	defer b.Unlock()
 
 	b.logger = logger
-	b.callbacksQueue.SetLogger(logger)
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(logger)
 	}
@@ -151,8 +146,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
 	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
-
-	b.callbacksQueue.Start()
 
 	b.clockRate = codec.ClockRate
 	b.lastReport = time.Now().UnixNano()
@@ -288,8 +281,9 @@ func (b *Buffer) Close() error {
 			b.logger.Debugw("rtp stats", "stats", b.rtpStats.ToString())
 		}
 
-		b.callbacksQueue.Enqueue(b.onClose)
-		b.callbacksQueue.Stop()
+		if b.onClose != nil {
+			b.onClose()
+		}
 	})
 	return nil
 }
@@ -320,9 +314,9 @@ func (b *Buffer) SendPLI() {
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}
 
-	b.callbacksQueue.Enqueue(func() {
-		b.feedbackCB(pli)
-	})
+	if b.onRtcpFeedback != nil {
+		b.onRtcpFeedback(pli)
+	}
 }
 
 func (b *Buffer) SetRTT(rtt uint32) {
@@ -480,9 +474,9 @@ func (b *Buffer) doNACKs() {
 	}
 
 	if r, numSeqNumsNacked := b.buildNACKPacket(); r != nil {
-		b.callbacksQueue.Enqueue(func() {
-			b.feedbackCB(r)
-		})
+		if b.onRtcpFeedback != nil {
+			b.onRtcpFeedback(r)
+		}
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateNack(uint32(numSeqNumsNacked))
 		}
@@ -499,10 +493,8 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 	// RTCP reports
 	pkts := b.getRTCP()
-	if pkts != nil {
-		b.callbacksQueue.Enqueue(func() {
-			b.feedbackCB(pkts)
-		})
+	if pkts != nil && b.onRtcpFeedback != nil {
+		b.onRtcpFeedback(pkts)
 	}
 }
 
@@ -566,8 +558,8 @@ func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	return b.bucket.GetPacket(buff, sn)
 }
 
-func (b *Buffer) OnFeedback(fn func(fb []rtcp.Packet)) {
-	b.feedbackCB = fn
+func (b *Buffer) OnRtcpFeedback(fn func(fb []rtcp.Packet)) {
+	b.onRtcpFeedback = fn
 }
 
 // GetMediaSSRC returns the associated SSRC of the RTP stream
