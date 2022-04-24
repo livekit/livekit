@@ -32,7 +32,7 @@ func (oq *OpsQueue) SetLogger(logger logger.Logger) {
 
 func (oq *OpsQueue) Start() {
 	oq.lock.Lock()
-	if oq.isStopped {
+	if oq.isStarted {
 		oq.lock.Unlock()
 		return
 	}
