@@ -548,9 +548,7 @@ func (d *DownTrack) Mute(muted bool) {
 	}
 
 	if d.onSubscriptionChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscriptionChanged(d)
-		})
+		d.onSubscriptionChanged(d)
 	}
 }
 
@@ -638,9 +636,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscribedLayersChanged(d, maxLayers)
-		})
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -651,9 +647,7 @@ func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscribedLayersChanged(d, maxLayers)
-		})
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -669,17 +663,13 @@ func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	d.forwarder.UpTrackLayersChange(availableLayers)
 
 	if d.onAvailableLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onAvailableLayersChanged(d)
-		})
+		d.onAvailableLayersChanged(d)
 	}
 }
 
 func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 	if d.onBitrateAvailabilityChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onBitrateAvailabilityChanged(d)
-		})
+		d.onBitrateAvailabilityChanged(d)
 	}
 }
 
@@ -986,9 +976,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if d.onREMB != nil {
-				d.callbacksQueue.Enqueue(func() {
-					d.onREMB(d, p)
-				})
+				d.onREMB(d, p)
 			}
 
 		case *rtcp.ReceiverReport:
@@ -1029,9 +1017,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
-				d.callbacksQueue.Enqueue(func() {
-					d.onTransportCCFeedback(d, p)
-				})
+				d.onTransportCCFeedback(d, p)
 			}
 		}
 	}
