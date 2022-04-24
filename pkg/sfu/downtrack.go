@@ -595,17 +595,25 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtpStats.Stop()
 		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
-		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
-			})
-		}
+		if d.callbacksQueue.IsStarted() {
+			if d.kind == webrtc.RTPCodecTypeVideo {
+				d.callbacksQueue.Enqueue(func() {
+					if d.onMaxLayerChanged != nil {
+						d.onMaxLayerChanged(d, InvalidLayerSpatial)
+					}
+				})
+			}
 
-		if d.onCloseHandler != nil {
-			d.callbacksQueue.Enqueue(d.onCloseHandler)
-		}
+			if d.onCloseHandler != nil {
+				d.callbacksQueue.Enqueue(d.onCloseHandler)
+			}
 
-		d.callbacksQueue.Stop()
+			d.callbacksQueue.Stop()
+		} else {
+			if d.onCloseHandler != nil {
+				d.onCloseHandler()
+			}
+		}
 		d.stopKeyFrameRequester()
 	})
 }

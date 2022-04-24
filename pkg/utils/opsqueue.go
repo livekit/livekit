@@ -13,6 +13,7 @@ type OpsQueue struct {
 
 	lock      sync.RWMutex
 	ops       chan func()
+	isStarted bool
 	isStopped bool
 }
 
@@ -30,6 +31,15 @@ func (oq *OpsQueue) SetLogger(logger logger.Logger) {
 }
 
 func (oq *OpsQueue) Start() {
+	oq.lock.Lock()
+	if oq.isStarted {
+		oq.lock.Unlock()
+		return
+	}
+
+	oq.isStarted = true
+	oq.lock.Unlock()
+
 	go oq.process()
 }
 
@@ -43,6 +53,13 @@ func (oq *OpsQueue) Stop() {
 	oq.isStopped = true
 	close(oq.ops)
 	oq.lock.Unlock()
+}
+
+func (oq *OpsQueue) IsStarted() bool {
+	oq.lock.RLock()
+	defer oq.lock.RUnlock()
+
+	return oq.isStarted
 }
 
 func (oq *OpsQueue) Enqueue(op func()) {
