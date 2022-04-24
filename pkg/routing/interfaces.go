@@ -122,7 +122,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 	}, nil
 }
 
-func ParticipantInitFromStartSession(ss *livekit.StartSession) (*ParticipantInit, error) {
+func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*ParticipantInit, error) {
 	claims := &auth.ClaimGrants{}
 	if err := json.Unmarshal([]byte(ss.GrantsJson), claims); err != nil {
 		return nil, err
@@ -135,6 +135,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession) (*ParticipantInit
 		Client:         ss.Client,
 		AutoSubscribe:  ss.AutoSubscribe,
 		Grants:         claims,
+		Region:         region,
 		AdaptiveStream: ss.AdaptiveStream,
 	}, nil
 }
