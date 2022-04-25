@@ -339,11 +339,6 @@ func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.
 		return twirpAuthError(err)
 	}
 
-	_, err := s.roomStore.LoadParticipant(ctx, room, identity)
-	if err != nil {
-		return err
-	}
-
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
 }
 
