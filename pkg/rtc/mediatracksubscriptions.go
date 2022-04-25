@@ -205,7 +205,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		t.notifySubscriberMaxQuality(subscriberID, QualityForSpatialLayer(layer))
+		go t.notifySubscriberMaxQuality(subscriberID, QualityForSpatialLayer(layer))
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
@@ -213,48 +213,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	})
 
 	downTrack.OnCloseHandler(func() {
-		t.subscribedTracksMu.Lock()
-		delete(t.subscribedTracks, subscriberID)
-		delete(t.pendingClose, subscriberID)
-		t.subscribedTracksMu.Unlock()
-
-		t.maybeNotifyNoSubscribers()
-
-		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
-
-		// ignore if the subscribing sub is not connected
-		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
-			return
-		}
-
-		// if the source has been terminated, we'll need to terminate all the subscribed tracks
-		// however, if the dest sub has disconnected, then we can skip
-		if sender == nil {
-			return
-		}
-		t.params.Logger.Debugw("removing peerconnection track",
-			"subscriber", sub.Identity(),
-			"subscriberID", subscriberID,
-			"kind", t.params.MediaTrack.Kind(),
-		)
-		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
-			if err == webrtc.ErrConnectionClosed {
-				// sub closing, can skip removing subscribedtracks
-				return
-			}
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				// most of these are safe to ignore, since the track state might have already
-				// been set to Inactive
-				t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
-					"error", err,
-					"subscriber", sub.Identity(),
-					"subscriberID", subscriberID,
-				)
-			}
-		}
-
-		sub.RemoveSubscribedTrack(subTrack)
-		sub.Negotiate()
+		go t.downTrackClosed(sub, subTrack, sender)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -587,4 +546,54 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	if empty {
 		t.onNoSubscribers()
 	}
+}
+
+func (t *MediaTrackSubscriptions) downTrackClosed(
+	sub types.LocalParticipant,
+	subTrack types.SubscribedTrack,
+	sender *webrtc.RTPSender,
+) {
+	subscriberID := sub.ID()
+	t.subscribedTracksMu.Lock()
+	delete(t.subscribedTracks, subscriberID)
+	delete(t.pendingClose, subscriberID)
+	t.subscribedTracksMu.Unlock()
+
+	t.maybeNotifyNoSubscribers()
+
+	t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
+
+	// ignore if the subscribing sub is not connected
+	if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return
+	}
+
+	// if the source has been terminated, we'll need to terminate all the subscribed tracks
+	// however, if the dest sub has disconnected, then we can skip
+	if sender == nil {
+		return
+	}
+	t.params.Logger.Debugw("removing peerconnection track",
+		"subscriber", sub.Identity(),
+		"subscriberID", subscriberID,
+		"kind", t.params.MediaTrack.Kind(),
+	)
+	if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+		if err == webrtc.ErrConnectionClosed {
+			// sub closing, can skip removing subscribedtracks
+			return
+		}
+		if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+			// most of these are safe to ignore, since the track state might have already
+			// been set to Inactive
+			t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+				"error", err,
+				"subscriber", sub.Identity(),
+				"subscriberID", subscriberID,
+			)
+		}
+	}
+
+	sub.RemoveSubscribedTrack(subTrack)
+	sub.Negotiate()
 }

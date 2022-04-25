@@ -21,7 +21,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -118,8 +117,6 @@ type DownTrack struct {
 
 	isNACKThrottled atomic.Bool
 
-	callbacksQueue *utils.OpsQueue
-
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
 	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
@@ -172,17 +169,16 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		peerID:         peerID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		codec:          c,
-		kind:           kind,
-		forwarder:      NewForwarder(c, kind, logger),
-		callbacksQueue: utils.NewOpsQueue(logger, "sfu-downtrack", 50),
+		logger:        logger,
+		id:            r.TrackID(),
+		peerID:        peerID,
+		maxTrack:      mt,
+		streamID:      r.StreamID(),
+		bufferFactory: bf,
+		receiver:      r,
+		codec:         c,
+		kind:          kind,
+		forwarder:     NewForwarder(c, kind, logger),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -196,9 +192,7 @@ func NewDownTrack(
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
-			d.callbacksQueue.Enqueue(func() {
-				d.onStatsUpdate(d, stat)
-			})
+			d.onStatsUpdate(d, stat)
 		}
 	})
 
@@ -226,8 +220,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
 
-	d.callbacksQueue.Start()
-
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
 	d.writeStream = t.WriteStream()
@@ -240,10 +232,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if strings.HasPrefix(d.codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
-	if d.onBind != nil {
-		d.callbacksQueue.Enqueue(d.onBind)
-	}
+
 	d.bound.Store(true)
+	if d.onBind != nil {
+		d.onBind()
+	}
 
 	d.connectionStats.Start()
 	d.logger.Debugw("bound")
@@ -402,9 +395,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		if tp.isSwitchingToMaxLayer && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, layer)
-			})
+			d.onMaxLayerChanged(d, layer)
 		}
 
 		if extPkt.KeyFrame {
@@ -531,20 +522,16 @@ func (d *DownTrack) Mute(muted bool) {
 	}
 
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		if muted {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
-			})
-		} else {
+		notifyLayer := InvalidLayerSpatial
+		if !muted {
 			//
 			// When unmuting, don't wait for layer lock as
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, maxLayers.spatial)
-			})
+			notifyLayer = maxLayers.spatial
 		}
+		d.onMaxLayerChanged(d, notifyLayer)
 	}
 
 	if d.onSubscriptionChanged != nil {
@@ -593,25 +580,16 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtpStats.Stop()
 		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
-		if d.callbacksQueue.IsStarted() {
-			if d.kind == webrtc.RTPCodecTypeVideo {
-				d.callbacksQueue.Enqueue(func() {
-					if d.onMaxLayerChanged != nil {
-						d.onMaxLayerChanged(d, InvalidLayerSpatial)
-					}
-				})
-			}
-
-			if d.onCloseHandler != nil {
-				d.callbacksQueue.Enqueue(d.onCloseHandler)
-			}
-
-			d.callbacksQueue.Stop()
-		} else {
-			if d.onCloseHandler != nil {
-				d.onCloseHandler()
+		if d.kind == webrtc.RTPCodecTypeVideo {
+			if d.onMaxLayerChanged != nil {
+				d.onMaxLayerChanged(d, InvalidLayerSpatial)
 			}
 		}
+
+		if d.onCloseHandler != nil {
+			d.onCloseHandler()
+		}
+
 		d.stopKeyFrameRequester()
 	})
 }
@@ -630,9 +608,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
 		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
-		d.callbacksQueue.Enqueue(func() {
-			d.onMaxLayerChanged(d, maxLayers.spatial)
-		})
+		d.onMaxLayerChanged(d, maxLayers.spatial)
 	}
 
 	if d.onSubscribedLayersChanged != nil {
@@ -1032,9 +1008,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 
 		if d.onRttUpdate != nil {
-			d.callbacksQueue.Enqueue(func() {
-				d.onRttUpdate(d, rttToReport)
-			})
+			d.onRttUpdate(d, rttToReport)
 		}
 	}
 }
