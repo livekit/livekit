@@ -580,10 +580,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtpStats.Stop()
 		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
-		if d.kind == webrtc.RTPCodecTypeVideo {
-			if d.onMaxLayerChanged != nil {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
-			}
+		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+			d.onMaxLayerChanged(d, InvalidLayerSpatial)
 		}
 
 		if d.onCloseHandler != nil {
