@@ -19,17 +19,20 @@ type DownTrackSpreaderParams struct {
 type DownTrackSpreader struct {
 	params DownTrackSpreaderParams
 
-	index    map[livekit.ParticipantID]int
-	free     map[int]struct{}
-	numProcs int
+	downTrackMu sync.RWMutex
+	downTracks  []TrackSender
+	index       map[livekit.ParticipantID]int
+	free        map[int]struct{}
+	numProcs    int
 }
 
 func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
 	d := &DownTrackSpreader{
-		params:   params,
-		index:    make(map[livekit.ParticipantID]int),
-		free:     make(map[int]struct{}),
-		numProcs: runtime.NumCPU(),
+		params:     params,
+		downTracks: make([]TrackSender, 0),
+		index:      make(map[livekit.ParticipantID]int),
+		free:       make(map[int]struct{}),
+		numProcs:   runtime.NumCPU(),
 	}
 
 	if runtime.GOMAXPROCS(0) < d.numProcs {
@@ -39,40 +42,71 @@ func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
 	return d
 }
 
-func (d *DownTrackSpreader) Clear() {
-	d.index = make(map[livekit.ParticipantID]int)
-	d.free = make(map[int]struct{})
+func (d *DownTrackSpreader) GetDownTracks() []TrackSender {
+	d.downTrackMu.RLock()
+	defer d.downTrackMu.RUnlock()
+
+	return d.downTracks
 }
 
-func (d *DownTrackSpreader) Store(peerID livekit.ParticipantID, numDownTracks int) (int, bool) {
+func (d *DownTrackSpreader) ResetAndGetDownTracks() []TrackSender {
+	d.downTrackMu.Lock()
+	defer d.downTrackMu.Unlock()
+
+	downTracks := d.downTracks
+
+	d.index = make(map[livekit.ParticipantID]int)
+	d.free = make(map[int]struct{})
+	d.downTracks = make([]TrackSender, 0)
+
+	return downTracks
+}
+
+func (d *DownTrackSpreader) Store(ts TrackSender) {
+	d.downTrackMu.Lock()
+	defer d.downTrackMu.Unlock()
+
+	peerID := ts.PeerID()
 	for idx := range d.free {
 		d.index[peerID] = idx
 		delete(d.free, idx)
-		return idx, true
+		d.downTracks[idx] = ts
+		return
 	}
 
-	d.index[peerID] = numDownTracks
-	return numDownTracks, false
+	d.index[peerID] = len(d.downTracks)
+	d.downTracks = append(d.downTracks, ts)
 }
 
-func (d *DownTrackSpreader) Free(peerID livekit.ParticipantID) (int, bool) {
+func (d *DownTrackSpreader) Free(peerID livekit.ParticipantID) {
+	d.downTrackMu.Lock()
+	defer d.downTrackMu.Unlock()
+
 	idx, ok := d.index[peerID]
 	if !ok {
-		return idx, ok
+		return
 	}
 
 	delete(d.index, peerID)
+	d.downTracks[idx] = nil
 	d.free[idx] = struct{}{}
-	return idx, ok
 }
 
-func (d *DownTrackSpreader) GetIndex(peerID livekit.ParticipantID) (int, bool) {
-	idx, ok := d.index[peerID]
-	return idx, ok
+func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
+	d.downTrackMu.RLock()
+	defer d.downTrackMu.RUnlock()
+
+	_, ok := d.index[peerID]
+	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(downTracks []TrackSender, layer int32, pkt *buffer.ExtPacket) {
-	if d.params.Threshold == 0 || len(downTracks)-len(d.free) < d.params.Threshold {
+func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
+	d.downTrackMu.RLock()
+	downTracks := d.downTracks
+	free := d.free
+	d.downTrackMu.RUnlock()
+
+	if d.params.Threshold == 0 || len(downTracks)-len(free) < d.params.Threshold {
 		// serial - not enough down tracks for parallelization to outweigh overhead
 		for _, dt := range downTracks {
 			if dt != nil {
