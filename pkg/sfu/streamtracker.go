@@ -75,11 +75,10 @@ type StreamTracker struct {
 }
 
 func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
-	s := &StreamTracker{
+	return &StreamTracker{
 		params: params,
 		status: StreamStatusStopped,
 	}
-	return s
 }
 
 func (s *StreamTracker) OnStatusChanged(f func(status StreamStatus)) {

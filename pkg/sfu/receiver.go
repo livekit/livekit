@@ -3,14 +3,12 @@ package sfu
 import (
 	"errors"
 	"io"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
-	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
@@ -85,12 +83,11 @@ type WebRTCReceiver struct {
 
 	downTrackMu sync.RWMutex
 	downTracks  []TrackSender
-	index       map[livekit.ParticipantID]int
-	free        map[int]struct{}
-	numProcs    int
 	lbThreshold int
 
 	streamTrackerManager *StreamTrackerManager
+
+	downTrackSpreader *DownTrackSpreader
 
 	connectionStats *connectionquality.ConnectionStats
 
@@ -169,21 +166,19 @@ func NewWebRTCReceiver(
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
 		downTracks:           make([]TrackSender, 0),
-		index:                make(map[livekit.ParticipantID]int),
-		free:                 make(map[int]struct{}),
-		numProcs:             runtime.NumCPU(),
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
-	if runtime.GOMAXPROCS(0) < w.numProcs {
-		w.numProcs = runtime.GOMAXPROCS(0)
-	}
-
 	for _, opt := range opts {
 		w = opt(w)
 	}
+
+	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
+		Threshold: w.lbThreshold,
+		Logger:    logger,
+	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        w.kind,
@@ -323,7 +318,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	}
 
 	w.downTrackMu.RLock()
-	_, ok := w.index[track.PeerID()]
+	_, ok := w.downTrackSpreader.GetIndex(track.PeerID())
 	w.downTrackMu.RUnlock()
 	if ok {
 		return ErrDownTrackAlreadyExist
@@ -387,13 +382,11 @@ func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
 	w.downTrackMu.Lock()
 	defer w.downTrackMu.Unlock()
 
-	idx, ok := w.index[peerID]
+	idx, ok := w.downTrackSpreader.Free(peerID)
 	if !ok {
 		return
 	}
-	delete(w.index, peerID)
 	w.downTracks[idx] = nil
-	w.free[idx] = struct{}{}
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
@@ -566,51 +559,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 		w.downTrackMu.RLock()
 		downTracks := w.downTracks
-		free := w.free
 		w.downTrackMu.RUnlock()
-		if w.lbThreshold == 0 || len(downTracks)-len(free) < w.lbThreshold {
-			// serial - not enough down tracks for parallelization to outweigh overhead
-			for _, dt := range downTracks {
-				if dt != nil {
-					w.writeRTP(layer, dt, pkt)
-				}
-			}
-		} else {
-			// parallel - enables much more efficient multi-core utilization
-			start := atomic.NewUint64(0)
-			end := uint64(len(downTracks))
 
-			// 100µs is enough to amortize the overhead and provide sufficient load balancing.
-			// WriteRTP takes about 50µs on average, so we write to 2 down tracks per loop.
-			step := uint64(2)
-
-			var wg sync.WaitGroup
-			wg.Add(w.numProcs)
-			for p := 0; p < w.numProcs; p++ {
-				go func() {
-					defer wg.Done()
-					for {
-						n := start.Add(step)
-						if n >= end+step {
-							return
-						}
-
-						for i := n - step; i < n && i < end; i++ {
-							if dt := downTracks[i]; dt != nil {
-								w.writeRTP(layer, dt, pkt)
-							}
-						}
-					}
-				}()
-			}
-			wg.Wait()
-		}
-	}
-}
-
-func (w *WebRTCReceiver) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
-	if err := dt.WriteRTP(pkt, layer); err != nil {
-		log.Error().Err(err).Str("id", dt.ID()).Msg("Error writing to down track")
+		w.downTrackSpreader.Broadcast(downTracks, layer, pkt)
 	}
 }
 
@@ -625,8 +576,7 @@ func (w *WebRTCReceiver) closeTracks() {
 		}
 	}
 	w.downTracks = make([]TrackSender, 0)
-	w.index = make(map[livekit.ParticipantID]int)
-	w.free = make(map[int]struct{})
+	w.downTrackSpreader.Clear()
 	w.downTrackMu.Unlock()
 
 	if w.onCloseHandler != nil {
@@ -638,14 +588,12 @@ func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
 	w.downTrackMu.Lock()
 	defer w.downTrackMu.Unlock()
 
-	for idx := range w.free {
-		w.index[track.PeerID()] = idx
+	idx, foundFree := w.downTrackSpreader.Store(track.PeerID(), len(w.downTracks))
+	if foundFree {
 		w.downTracks[idx] = track
-		delete(w.free, idx)
 		return
 	}
 
-	w.index[track.PeerID()] = len(w.downTracks)
 	w.downTracks = append(w.downTracks, track)
 }
 
