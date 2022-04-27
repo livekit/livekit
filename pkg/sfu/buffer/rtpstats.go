@@ -241,6 +241,7 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.bytesDuplicate += pktSize
 			r.packetsDuplicate++
 			isDuplicate = true
+			r.logger.Debugw("LT_DEBUG, dup pkt", "sn", rtph.SequenceNumber) // REMOVE
 		} else {
 			r.packetsLost--
 		}
