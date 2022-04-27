@@ -99,6 +99,12 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.snOffset += 1
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
+
+	r.snOffsetsWritePtr = (r.snOffsetsWritePtr - 1) & SnOffsetCacheMask
+	r.snOffsetsOccupancy--
+	if r.snOffsetsOccupancy < 0 {
+		r.logger.Warnw("sequence number offset cache is invalid", nil, "occupancy", r.snOffsetsOccupancy)
+	}
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
@@ -116,16 +122,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 			sequenceNumber: extPkt.Packet.SequenceNumber - snOffset,
 			timestamp:      extPkt.Packet.Timestamp - r.tsOffset,
 		}, nil
-	}
-
-	// record sn offset
-	for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber+1; i++ {
-		r.snOffsets[r.snOffsetsWritePtr] = r.snOffset
-		r.snOffsetsWritePtr = (r.snOffsetsWritePtr + 1) & SnOffsetCacheMask
-		r.snOffsetsOccupancy++
-	}
-	if r.snOffsetsOccupancy > SnOffsetCacheSize {
-		r.snOffsetsOccupancy = SnOffsetCacheSize
 	}
 
 	ordering := SequenceNumberOrderingContiguous
@@ -153,6 +149,16 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 				snOrdering: SequenceNumberOrderingContiguous,
 			}, ErrPaddingOnlyPacket
 		}
+	}
+
+	// record sn offset
+	for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber+1; i++ {
+		r.snOffsets[r.snOffsetsWritePtr] = r.snOffset
+		r.snOffsetsWritePtr = (r.snOffsetsWritePtr + 1) & SnOffsetCacheMask
+		r.snOffsetsOccupancy++
+	}
+	if r.snOffsetsOccupancy > SnOffsetCacheSize {
+		r.snOffsetsOccupancy = SnOffsetCacheSize
 	}
 
 	// in-order incoming packet, may or may not be contiguous.
