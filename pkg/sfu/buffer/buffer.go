@@ -17,6 +17,8 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
+	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
+
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -30,14 +32,15 @@ type pendingPacket struct {
 }
 
 type ExtPacket struct {
-	Head          bool
-	Arrival       int64
-	Packet        *rtp.Packet
-	Payload       interface{}
-	KeyFrame      bool
-	RawPacket     []byte
-	SpatialLayer  int32
-	TemporalLayer int32
+	Head                 bool
+	Arrival              int64
+	Packet               *rtp.Packet
+	Payload              interface{}
+	KeyFrame             bool
+	RawPacket            []byte
+	SpatialLayer         int32
+	TemporalLayer        int32
+	DependencyDescriptor *dd.DependencyDescriptor
 }
 
 // Buffer contains all packets
@@ -88,6 +91,11 @@ type Buffer struct {
 
 	// logger
 	logger logger.Logger
+
+	// depencency descriptor
+	ddExt               uint8
+	videoStreamReceiver *VideoStreamReceiver
+	maxLayerChangedCB   func(int, int)
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -155,7 +163,16 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	for _, ext := range params.HeaderExtensions {
 		if ext.URI == sdp.TransportCCURI {
 			b.twccExt = uint8(ext.ID)
-			break
+		}
+		if ext.URI == dd.ExtensionUrl {
+			b.ddExt = uint8(ext.ID)
+			b.videoStreamReceiver = NewVideoStreamReceiver(b.ddExt, b.logger, func(spatial, temporal int) {
+				if b.maxLayerChangedCB != nil {
+					b.callbacksQueue.Enqueue(func() {
+						b.maxLayerChangedCB(spatial, temporal)
+					})
+				}
+			})
 		}
 	}
 
@@ -460,6 +477,13 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	case "video/av1":
 		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
 	}
+	if b.videoStreamReceiver != nil {
+		ep.DependencyDescriptor, _ = b.videoStreamReceiver.ParseGenericDependencyExtension(rtpPacket)
+		// TODO : notify active decode target change if changed.
+		// if ep.DependencyDescriptor != nil {
+		// 	ep.TemporalLayer = int32(ep.DependencyDescriptor.FrameDependencies.TemporalId)
+		// }
+	}
 	if ep.KeyFrame {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
@@ -618,4 +642,8 @@ func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
 	}
 
 	return b.rtpStats.SnapshotInfo(b.connectionQualitySnapshotId)
+}
+
+func (b *Buffer) OnMaxLayerChanged(fn func(int, int)) {
+	b.maxLayerChangedCB = fn
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
@@ -94,6 +95,8 @@ type DownTrack struct {
 	upstreamCodecs          []webrtc.RTPCodecCapability
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
+	absSendTimeID           int
+	dependencyDescriptorID  int
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
@@ -282,6 +285,15 @@ func (d *DownTrack) PeerID() livekit.ParticipantID { return d.peerID }
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
 	d.rtpHeaderExtensions = rtpHeaderExtensions
+	for _, ext := range rtpHeaderExtensions {
+		switch ext.URI {
+		case sdp.ABSSendTimeURI:
+			d.absSendTimeID = ext.ID
+		case dd.ExtensionUrl:
+			d.dependencyDescriptorID = ext.ID
+		}
+	}
+	d.logger.Debugw("set extension id", "absSendTimeID", d.absSendTimeID, "dependencyDescriptorID", d.dependencyDescriptorID)
 }
 
 // Kind controls if this TrackLocal is audio or video
@@ -396,12 +408,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	hdr, err := d.getTranslatedRTPHeader(extPkt, tp.rtp)
+	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.pktsDropped.Inc()
 		return err
 	}
 
+	// if d.kind == webrtc.RTPCodecTypeVideo {
+	// 	d.logger.Debugw("sending RTP packet", "ssrc", d.ssrc, "seq", hdr.SequenceNumber, "ts", hdr.Timestamp, "layer", layer)
+	// }
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
 		pktSize := hdr.MarshalSize() + len(payload)
@@ -1168,26 +1183,30 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.rtpStats.UpdateNackMiss(nackMisses)
 }
 
+type extensionData struct {
+	id      uint8
+	payload []byte
+}
+
 // writes RTP header extensions of track
-func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
+func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header, extraExtensions ...extensionData) error {
 	// clear out extensions that may have been in the forwarded header
 	hdr.Extension = false
 	hdr.ExtensionProfile = 0
 	hdr.Extensions = []rtp.Extension{}
 
-	for _, ext := range d.rtpHeaderExtensions {
-		if ext.URI != sdp.ABSSendTimeURI {
-			// supporting only abs-send-time
-			continue
-		}
+	for _, ext := range extraExtensions {
+		hdr.SetExtension(uint8(ext.id), ext.payload)
+	}
 
+	if d.absSendTimeID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(time.Now())
 		b, err := sendTime.Marshal()
 		if err != nil {
 			return err
 		}
 
-		err = hdr.SetExtension(uint8(ext.ID), b)
+		err = hdr.SetExtension(uint8(d.absSendTimeID), b)
 		if err != nil {
 			return err
 		}
@@ -1196,14 +1215,29 @@ func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
 	return nil
 }
 
-func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tpRTP *TranslationParamsRTP) (*rtp.Header, error) {
+func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
+	tpRTP := tp.rtp
 	hdr := extPkt.Packet.Header
 	hdr.PayloadType = d.payloadType
 	hdr.Timestamp = tpRTP.timestamp
 	hdr.SequenceNumber = tpRTP.sequenceNumber
 	hdr.SSRC = d.ssrc
+	hdr.Marker = tp.marker
 
-	err := d.writeRTPHeaderExtensions(&hdr)
+	var extension []extensionData
+	if d.dependencyDescriptorID != 0 && tp.ddExtension != nil {
+		bytes, err := tp.ddExtension.Marshal()
+		if err != nil {
+			d.logger.Infow("marshalling dependency descriptor extension err", "err", err)
+		} else {
+			d.logger.Debugw("marshalling dependency descriptor extension", "bytes", len(bytes))
+			extension = append(extension, extensionData{
+				id:      uint8(d.dependencyDescriptorID),
+				payload: bytes,
+			})
+		}
+	}
+	err := d.writeRTPHeaderExtensions(&hdr, extension...)
 	if err != nil {
 		return nil, err
 	}

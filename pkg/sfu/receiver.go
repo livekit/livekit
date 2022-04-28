@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -157,7 +158,10 @@ func NewWebRTCReceiver(
 		numProcs:             runtime.NumCPU(),
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
-	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
+
+	if !strings.EqualFold(w.codec.MimeType, "video/av1") {
+		w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
+	}
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	if runtime.GOMAXPROCS(0) < w.numProcs {
@@ -284,6 +288,16 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
 		w.streamTrackerManager.AddTracker(layer)
 	}
+	if strings.EqualFold(w.codec.MimeType, "video/av1") {
+		buff.OnMaxLayerChanged(func(spatial, _ int) {
+			layers := make([]int32, 0, spatial)
+			for i := 0; i < spatial; i++ {
+				layers = append(layers, int32(i))
+			}
+			w.downTrackLayerChange(layers)
+
+		})
+	}
 	go w.forwardRTP(layer)
 }
 
@@ -323,6 +337,7 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 }
 
 func (w *WebRTCReceiver) downTrackLayerChange(layers []int32) {
+	w.logger.Debugw("downTrackLayerChange", "layers", layers)
 	w.downTrackMu.RLock()
 	downTracks := w.downTracks
 	w.downTrackMu.RUnlock()

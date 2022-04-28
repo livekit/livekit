@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
 )
 
 //
@@ -125,6 +126,8 @@ type TranslationParams struct {
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
 	vp8                   *TranslationParamsVP8
+	ddExtension           *dd.DependencyDescriptorExtension
+	marker                bool
 }
 
 type VideoLayers struct {
@@ -190,6 +193,8 @@ type Forwarder struct {
 	vp8Munger *VP8Munger
 
 	isTemporalSupported bool
+
+	layerSelector *VideoLayerSelector
 }
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
@@ -210,6 +215,10 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	if strings.ToLower(codec.MimeType) == "video/vp8" {
 		f.isTemporalSupported = true
 		f.vp8Munger = NewVP8Munger(logger)
+	}
+
+	if strings.ToLower(codec.MimeType) == "video/av1" {
+		f.layerSelector = NewVideoLayerSelector(f.logger)
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -1140,6 +1149,17 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
+	if f.layerSelector != nil {
+		if selected, marker, ddext := f.layerSelector.Select(extPkt); !selected {
+			tp.shouldDrop = true
+			f.rtpMunger.PacketDropped(extPkt)
+			return tp, nil
+		} else {
+			tp.ddExtension = ddext
+			tp.marker = marker
+		}
+	}
+
 	if f.targetLayers.spatial != f.currentLayers.spatial {
 		if f.targetLayers.spatial == layer {
 			if extPkt.KeyFrame {
@@ -1148,6 +1168,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if !f.isTemporalSupported {
 					f.currentLayers.temporal = f.targetLayers.temporal
+				}
+				if f.layerSelector != nil {
+					f.layerSelector.SelectLayer(f.currentLayers)
 				}
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
@@ -1185,7 +1208,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
+	ddext, marker := tp.ddExtension, tp.marker
 	tp, err := f.getTranslationParamsCommon(extPkt)
+	tp.ddExtension, tp.marker = ddext, marker
 	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
 	}
