@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -159,9 +158,9 @@ func NewWebRTCReceiver(
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
 
-	if !strings.EqualFold(w.codec.MimeType, "video/av1") {
-		w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
-	}
+	// if !strings.EqualFold(w.codec.MimeType, "video/av1") {
+	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
+	// }
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	if runtime.GOMAXPROCS(0) < w.numProcs {
@@ -288,16 +287,16 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
 		w.streamTrackerManager.AddTracker(layer)
 	}
-	if strings.EqualFold(w.codec.MimeType, "video/av1") {
-		buff.OnMaxLayerChanged(func(spatial, _ int) {
-			layers := make([]int32, 0, spatial)
-			for i := 0; i < spatial; i++ {
-				layers = append(layers, int32(i))
-			}
-			w.downTrackLayerChange(layers)
+	// if strings.EqualFold(w.codec.MimeType, "video/av1") {
+	// 	buff.OnMaxLayerChanged(func(spatial, _ int) {
+	// 		layers := make([]int32, 0, spatial)
+	// 		for i := 0; i <= spatial; i++ {
+	// 			layers = append(layers, int32(i))
+	// 		}
+	// 		w.downTrackLayerChange(layers)
 
-		})
-	}
+	// 	})
+	// }
 	go w.forwardRTP(layer)
 }
 
@@ -512,8 +511,19 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		if tracker != nil && len(pkt.Packet.Payload) > 0 {
-			tracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket))
+		// svc packet, dispatch to correct tracker
+		spatialTracker := tracker
+		spatialLayer := layer
+		if pkt.SpatialLayer > 0 {
+			spatialLayer = pkt.SpatialLayer
+			spatialTracker = w.streamTrackerManager.GetTracker(pkt.SpatialLayer)
+			if spatialTracker == nil {
+				spatialTracker = w.streamTrackerManager.AddTracker(pkt.SpatialLayer)
+			}
+		}
+
+		if spatialTracker != nil && len(pkt.Packet.Payload) > 0 {
+			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket))
 		}
 
 		w.downTrackMu.RLock()
@@ -524,7 +534,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			// serial - not enough down tracks for parallelization to outweigh overhead
 			for _, dt := range downTracks {
 				if dt != nil {
-					w.writeRTP(layer, dt, pkt)
+					w.writeRTP(spatialLayer, dt, pkt)
 				}
 			}
 		} else {
@@ -549,7 +559,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 
 						for i := n - step; i < n && i < end; i++ {
 							if dt := downTracks[i]; dt != nil {
-								w.writeRTP(layer, dt, pkt)
+								w.writeRTP(spatialLayer, dt, pkt)
 							}
 						}
 					}

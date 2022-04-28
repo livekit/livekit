@@ -3,8 +3,6 @@ package buffer
 import (
 	"fmt"
 
-	"github.com/pion/rtp"
-
 	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
 
 	"github.com/livekit/protocol/logger"
@@ -15,7 +13,7 @@ type videoLayer struct {
 	temporal int
 }
 
-type VideoStreamReceiver struct {
+type DependencyDescriptorParser struct {
 	structure         *dd.FrameDependencyStructure
 	ddExt             uint8
 	logger            logger.Logger
@@ -23,16 +21,17 @@ type VideoStreamReceiver struct {
 	decodeTargetLayer []videoLayer
 }
 
-func NewVideoStreamReceiver(ddExt uint8, logger logger.Logger, onMaxLayerChanged func(int, int)) *VideoStreamReceiver {
+func NewDependencyDescriptorParser(ddExt uint8, logger logger.Logger, onMaxLayerChanged func(int, int)) *DependencyDescriptorParser {
 	logger.Infow("creating video stream receiver", "ddExt", ddExt)
-	return &VideoStreamReceiver{
+	return &DependencyDescriptorParser{
 		ddExt:             ddExt,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
 	}
 }
 
-func (r *VideoStreamReceiver) ParseGenericDependencyExtension(pkt *rtp.Packet) (*dd.DependencyDescriptor, []byte) {
+func (r *DependencyDescriptorParser) Parse(ep *ExtPacket) {
+	pkt := ep.Packet
 	if ddBuf := pkt.GetExtension(r.ddExt); ddBuf != nil {
 		var ddVal dd.DependencyDescriptor
 		ext := &dd.DependencyDescriptorExtension{
@@ -42,12 +41,12 @@ func (r *VideoStreamReceiver) ParseGenericDependencyExtension(pkt *rtp.Packet) (
 		_, err := ext.Unmarshal(ddBuf)
 		if err != nil {
 			r.logger.Infow("failed to parse generic dependency descriptor", "err", err)
-			return nil, ddBuf
+			return
 		}
 
 		if ddVal.AttachedStructure != nil && !ddVal.FirstPacketInFrame {
 			r.logger.Infow("ignoring non-first packet in frame with attached structure")
-			return nil, ddBuf
+			return
 		}
 
 		if ddVal.AttachedStructure != nil {
@@ -97,7 +96,8 @@ func (r *VideoStreamReceiver) ParseGenericDependencyExtension(pkt *rtp.Packet) (
 			r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
 			r.onMaxLayerChanged(maxSpatial, maxTemporal)
 		}
-		return &ddVal, ddBuf
+		ep.DependencyDescriptor = &ddVal
+		ep.SpatialLayer = int32(ddVal.FrameDependencies.SpatialId)
+		ep.TemporalLayer = int32(ddVal.FrameDependencies.TemporalId)
 	}
-	return nil, nil
 }

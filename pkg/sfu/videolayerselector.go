@@ -10,12 +10,8 @@ import (
 )
 
 type targetLayer struct {
-	target int
-	layer  VideoLayers
-}
-
-func (t targetLayer) String() string {
-	return fmt.Sprintf("target:%d, layer:%s", t.target, t.layer)
+	Target int
+	Layer  VideoLayers
 }
 
 type VideoLayerSelector struct {
@@ -35,22 +31,23 @@ func NewVideoLayerSelector(logger logger.Logger) *VideoLayerSelector {
 	}
 }
 
-func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket) (selected, marker bool, ddExt *dd.DependencyDescriptorExtension) {
+func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
 	// return true
+	tp.marker = expPkt.Packet.Marker
 	if expPkt.DependencyDescriptor == nil {
 		// packet don't have dependency descriptor, pass check
-		return true, expPkt.Packet.Marker, nil
+		return true
 	}
 
 	if expPkt.DependencyDescriptor.AttachedStructure != nil {
 		// update decode target layer and active decode targets
-		// TODO : these two can be shared by all the downtracks, no need calculate in every selector
+		// TODO : these targets info can be shared by all the downtracks, no need calculate in every selector
 		s.updateDependencyStructure(expPkt.DependencyDescriptor.AttachedStructure)
 	}
 
 	// forward all packets before locking
 	if s.layer == InvalidLayers {
-		return true, expPkt.Packet.Marker, nil
+		return true
 	}
 
 	// TODO : we don't have a rtp queue to ensure the order of packets now,
@@ -68,10 +65,10 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket) (selected, marker 
 	currentTarget := -1
 	for _, dt := range s.decodeTargetLayer {
 		// find target match with selected layer
-		if dt.layer.spatial <= s.layer.spatial && dt.layer.temporal <= s.layer.temporal {
-			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.target) != 0) {
+		if dt.Layer.spatial <= s.layer.spatial && dt.Layer.temporal <= s.layer.temporal {
+			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.Target) != 0) {
 				// TODO : check frame chain integrity
-				currentTarget = dt.target
+				currentTarget = dt.Target
 				// s.logger.Debugw("select target", "target", currentTarget, "layer", dt.layer, "dtis", expPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications)
 				break
 			}
@@ -82,7 +79,7 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket) (selected, marker 
 		s.logger.Debugw(fmt.Sprintf("drop packet for no target found, deocdeTargets %v, selected layer %v, s:%d, t:%d",
 			s.decodeTargetLayer, s.layer, expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		// no active decode target, forward all packets
-		return false, false, nil
+		return false
 	}
 
 	dtis := expPkt.DependencyDescriptor.FrameDependencies.DecodeTargetIndications
@@ -90,47 +87,51 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket) (selected, marker 
 		// dtis error, dependency descriptor might lost
 		s.logger.Debugw(fmt.Sprintf("drop packet for dtis error, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
 			expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
-		return false, false, nil
+		return false
 	}
 
 	// TODO : if bandwidth in congest, could drop the 'Discardable' packet
 	if dtis[currentTarget] == dd.DecodeTargetNotPresent {
 		// s.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
 		// expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
-		return false, false, nil
+		return false
 	}
 
 	// TODO : add frame to forwarded queue if entire frame is forwarded
 	// s.logger.Debugw("select packet", "target", currentTarget, "layer", s.layer)
 
-	if expPkt.DependencyDescriptor.AttachedStructure == nil {
-		expPkt.DependencyDescriptor.ActiveDecodeTargetsBitmask = s.activeDecodeTargetsBitmask
-		s.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
-	}
-
-	mark := expPkt.Packet.Header.Marker || (expPkt.DependencyDescriptor.LastPacketInFrame && s.layer.spatial == int32(expPkt.DependencyDescriptor.FrameDependencies.SpatialId))
-	return true, mark, &dd.DependencyDescriptorExtension{
+	tp.ddExtension = &dd.DependencyDescriptorExtension{
 		Descriptor: expPkt.DependencyDescriptor,
 		Structure:  s.structure,
 	}
+	if expPkt.DependencyDescriptor.AttachedStructure == nil && s.activeDecodeTargetsBitmask != nil {
+		// clone and override activebitmask
+		ddClone := *tp.ddExtension.Descriptor
+		ddClone.ActiveDecodeTargetsBitmask = s.activeDecodeTargetsBitmask
+		tp.ddExtension.Descriptor = &ddClone
+		// s.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
+	}
+
+	mark := expPkt.Packet.Header.Marker || (expPkt.DependencyDescriptor.LastPacketInFrame && s.layer.spatial == int32(expPkt.DependencyDescriptor.FrameDependencies.SpatialId))
+	tp.marker = mark
+
+	return true
 }
 
 func (s *VideoLayerSelector) SelectLayer(layer VideoLayers) {
-	// time.AfterFunc(time.Duration(5)*time.Second, func() {
-	layer = VideoLayers{1, 1}
+	// layer = VideoLayers{1, 1}
 	s.layer = layer
 	activeBitMask := uint32(0)
 	var maxSpatial, maxTemporal int32
 	for _, dt := range s.decodeTargetLayer {
-		if dt.layer.spatial > maxSpatial {
-			maxSpatial = dt.layer.spatial
+		if dt.Layer.spatial > maxSpatial {
+			maxSpatial = dt.Layer.spatial
 		}
-		if dt.layer.temporal > maxTemporal {
-			maxTemporal = dt.layer.temporal
+		if dt.Layer.temporal > maxTemporal {
+			maxTemporal = dt.Layer.temporal
 		}
-		if dt.layer.spatial <= layer.spatial && dt.layer.temporal <= layer.temporal {
-
-			activeBitMask |= 1 << dt.target
+		if dt.Layer.spatial <= layer.spatial && dt.Layer.temporal <= layer.temporal {
+			activeBitMask |= 1 << dt.Target
 		}
 	}
 	if layer.spatial == maxSpatial && layer.temporal == maxTemporal {
@@ -140,8 +141,6 @@ func (s *VideoLayerSelector) SelectLayer(layer VideoLayers) {
 		s.activeDecodeTargetsBitmask = &activeBitMask
 	}
 	s.logger.Debugw("select layer ", "layer", layer, "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
-	// })
-
 }
 
 func (s *VideoLayerSelector) updateDependencyStructure(structure *dd.FrameDependencyStructure) {
@@ -161,17 +160,16 @@ func (s *VideoLayerSelector) updateDependencyStructure(structure *dd.FrameDepend
 			}
 		}
 		s.decodeTargetLayer = append(s.decodeTargetLayer, targetLayer{target, layer})
-		s.logger.Debugw("append decode target", "target", target, "layer", layer)
 	}
 
 	// sort decode target layer by spatial and temporal from high to low
 	sort.Slice(s.decodeTargetLayer, func(i, j int) bool {
-		if s.decodeTargetLayer[i].layer.spatial == s.decodeTargetLayer[j].layer.spatial {
-			return s.decodeTargetLayer[i].layer.temporal > s.decodeTargetLayer[j].layer.temporal
+		if s.decodeTargetLayer[i].Layer.spatial == s.decodeTargetLayer[j].Layer.spatial {
+			return s.decodeTargetLayer[i].Layer.temporal > s.decodeTargetLayer[j].Layer.temporal
 		}
-		return s.decodeTargetLayer[i].layer.spatial > s.decodeTargetLayer[j].layer.spatial
+		return s.decodeTargetLayer[i].Layer.spatial > s.decodeTargetLayer[j].Layer.spatial
 	})
-
+	s.logger.Debugw(fmt.Sprintf("update decode targets: %v", s.decodeTargetLayer))
 }
 
 // TODO : use generic wrapper when updated to go 1.18

@@ -42,6 +42,8 @@ type StreamTrackerParams struct {
 	CycleDuration time.Duration
 
 	Logger logger.Logger
+
+	Layer int32
 }
 
 // StreamTracker keeps track of packet flow and ensures a particular up track is consistently producing
@@ -83,6 +85,7 @@ func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
 		status:         StreamStatusStopped,
 		callbacksQueue: utils.NewOpsQueue(params.Logger),
 	}
+	s.params.Logger.Debugw("StreamTrackerManager.NewStreamTracker", "layer", s.params.Layer)
 	return s
 }
 

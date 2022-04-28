@@ -2,8 +2,6 @@ package dependencydescriptor
 
 import (
 	"fmt"
-
-	"github.com/livekit/protocol/logger"
 )
 
 type TemplateMatch struct {
@@ -237,7 +235,6 @@ func (w *DependencyDescriptorWriter) writeExtendedFields() error {
 		if err := w.writeBits(uint64(*w.descriptor.ActiveDecodeTargetsBitmask), w.structure.NumDecodeTargets); err != nil {
 			return err
 		}
-		logger.Debugw("active_decode_targets_bitmask", "bitmask", *w.descriptor.ActiveDecodeTargetsBitmask)
 	}
 
 	return nil

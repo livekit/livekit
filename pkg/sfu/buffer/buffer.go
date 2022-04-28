@@ -32,12 +32,15 @@ type pendingPacket struct {
 }
 
 type ExtPacket struct {
-	Head                 bool
-	Arrival              int64
-	Packet               *rtp.Packet
-	Payload              interface{}
-	KeyFrame             bool
-	RawPacket            []byte
+	Head      bool
+	Arrival   int64
+	Packet    *rtp.Packet
+	Payload   interface{}
+	KeyFrame  bool
+	RawPacket []byte
+	// TODO: we have spatial layer here, also have layer argument
+	// in receiver/downtrack methods represent spatial layer (in simulcast case)
+	// need a unify way to represent spatial layer
 	SpatialLayer         int32
 	TemporalLayer        int32
 	DependencyDescriptor *dd.DependencyDescriptor
@@ -93,9 +96,9 @@ type Buffer struct {
 	logger logger.Logger
 
 	// depencency descriptor
-	ddExt               uint8
-	videoStreamReceiver *VideoStreamReceiver
-	maxLayerChangedCB   func(int, int)
+	ddExt             uint8
+	ddParser          *DependencyDescriptorParser
+	maxLayerChangedCB func(int, int)
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -166,7 +169,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 		if ext.URI == dd.ExtensionUrl {
 			b.ddExt = uint8(ext.ID)
-			b.videoStreamReceiver = NewVideoStreamReceiver(b.ddExt, b.logger, func(spatial, temporal int) {
+			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int) {
 				if b.maxLayerChangedCB != nil {
 					b.callbacksQueue.Enqueue(func() {
 						b.maxLayerChangedCB(spatial, temporal)
@@ -477,8 +480,8 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	case "video/av1":
 		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
 	}
-	if b.videoStreamReceiver != nil {
-		ep.DependencyDescriptor, _ = b.videoStreamReceiver.ParseGenericDependencyExtension(rtpPacket)
+	if b.ddParser != nil {
+		b.ddParser.Parse(ep)
 		// TODO : notify active decode target change if changed.
 		// if ep.DependencyDescriptor != nil {
 		// 	ep.TemporalLayer = int32(ep.DependencyDescriptor.FrameDependencies.TemporalId)

@@ -1073,7 +1073,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, tp *TranslationParams) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if !f.started {
 			f.started = true
@@ -1115,7 +1115,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*Trans
 
 	f.lTSCalc = extPkt.Arrival
 
-	tp := &TranslationParams{}
+	if tp == nil {
+		tp = &TranslationParams{}
+	}
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
@@ -1136,7 +1138,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*Trans
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt)
+	return f.getTranslationParamsCommon(extPkt, nil)
 }
 
 // should be called with lock held
@@ -1150,13 +1152,10 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	if f.layerSelector != nil {
-		if selected, marker, ddext := f.layerSelector.Select(extPkt); !selected {
+		if selected := f.layerSelector.Select(extPkt, tp); !selected {
 			tp.shouldDrop = true
 			f.rtpMunger.PacketDropped(extPkt)
 			return tp, nil
-		} else {
-			tp.ddExtension = ddext
-			tp.marker = marker
 		}
 	}
 
@@ -1208,9 +1207,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	ddext, marker := tp.ddExtension, tp.marker
-	tp, err := f.getTranslationParamsCommon(extPkt)
-	tp.ddExtension, tp.marker = ddext, marker
+	_, err := f.getTranslationParamsCommon(extPkt, tp)
 	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
 	}

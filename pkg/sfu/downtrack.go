@@ -414,9 +414,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		return err
 	}
 
-	// if d.kind == webrtc.RTPCodecTypeVideo {
-	// 	d.logger.Debugw("sending RTP packet", "ssrc", d.ssrc, "seq", hdr.SequenceNumber, "ts", hdr.Timestamp, "layer", layer)
-	// }
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
 		pktSize := hdr.MarshalSize() + len(payload)
@@ -1230,7 +1227,6 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 		if err != nil {
 			d.logger.Infow("marshalling dependency descriptor extension err", "err", err)
 		} else {
-			d.logger.Debugw("marshalling dependency descriptor extension", "bytes", len(bytes))
 			extension = append(extension, extensionData{
 				id:      uint8(d.dependencyDescriptorID),
 				payload: bytes,
