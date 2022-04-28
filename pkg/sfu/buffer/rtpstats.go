@@ -67,7 +67,6 @@ type Snapshot struct {
 }
 
 type SnInfo struct {
-	sn            uint16
 	pktSize       uint16
 	isPaddingOnly bool
 	marker        bool
@@ -949,7 +948,6 @@ func (r *RTPStats) setSnInfo(sn uint16, pktSize uint16, payloadSize uint16, mark
 	}
 
 	snInfo := &r.snInfos[writePtr]
-	snInfo.sn = sn
 	snInfo.pktSize = pktSize
 	snInfo.isPaddingOnly = payloadSize == 0
 	snInfo.marker = marker
@@ -958,7 +956,6 @@ func (r *RTPStats) setSnInfo(sn uint16, pktSize uint16, payloadSize uint16, mark
 func (r *RTPStats) clearSnInfos(startInclusive uint16, endExclusive uint16) {
 	for sn := startInclusive; sn != endExclusive; sn++ {
 		snInfo := &r.snInfos[r.snInfoWritePtr]
-		snInfo.sn = sn
 		snInfo.pktSize = 0
 		snInfo.isPaddingOnly = false
 		snInfo.marker = false
