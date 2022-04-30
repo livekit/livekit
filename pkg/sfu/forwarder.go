@@ -17,9 +17,12 @@ import (
 // Forwarder
 //
 const (
-	FlagPauseOnDowngrade = true
-	FlagFilterRTX        = true
+	FlagPauseOnDowngrade  = true
+	FlagFilterRTX         = true
+	TransitionCostSpatial = 10
 )
+
+// -------------------------------------------------------------------
 
 type ForwardingStatus int
 
@@ -28,6 +31,8 @@ const (
 	ForwardingStatusPartial
 	ForwardingStatusOptimal
 )
+
+// -------------------------------------------------------------------
 
 type VideoStreamingChange int
 
@@ -49,6 +54,8 @@ func (v VideoStreamingChange) String() string {
 		return fmt.Sprintf("%d", int(v))
 	}
 }
+
+// -------------------------------------------------------------------
 
 type VideoAllocationState int
 
@@ -102,12 +109,17 @@ var (
 	}
 )
 
+// -------------------------------------------------------------------
+
 type VideoAllocationProvisional struct {
 	layers          VideoLayers
 	muted           bool
 	bitrates        Bitrates
 	availableLayers []int32
+	maxLayers       VideoLayers
 }
+
+// -------------------------------------------------------------------
 
 type VideoTransition struct {
 	from           VideoLayers
@@ -115,9 +127,7 @@ type VideoTransition struct {
 	bandwidthDelta int64
 }
 
-const (
-	TransitionCostSpatial = 10
-)
+// -------------------------------------------------------------------
 
 type TranslationParams struct {
 	shouldDrop            bool
@@ -126,6 +136,8 @@ type TranslationParams struct {
 	rtp                   *TranslationParamsRTP
 	vp8                   *TranslationParamsVP8
 }
+
+// -------------------------------------------------------------------
 
 type VideoLayers struct {
 	spatial  int32
@@ -144,6 +156,12 @@ func (v VideoLayers) SpatialGreaterThanOrEqual(v2 VideoLayers) bool {
 	return v.spatial >= v2.spatial
 }
 
+func (v VideoLayers) IsValid() bool {
+	return v.spatial != InvalidLayerSpatial && v.temporal != InvalidLayerTemporal
+}
+
+// -------------------------------------------------------------------
+
 const (
 	InvalidLayerSpatial  = int32(-1)
 	InvalidLayerTemporal = int32(-1)
@@ -157,12 +175,9 @@ var (
 		spatial:  InvalidLayerSpatial,
 		temporal: InvalidLayerTemporal,
 	}
-
-	DefaultMaxLayers = VideoLayers{
-		spatial:  DefaultMaxLayerSpatial,
-		temporal: DefaultMaxLayerTemporal,
-	}
 )
+
+// -------------------------------------------------------------------
 
 type Forwarder struct {
 	lock   sync.RWMutex
@@ -213,7 +228,7 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
-		f.maxLayers = DefaultMaxLayers
+		f.maxLayers = VideoLayers{spatial: InvalidLayerSpatial, temporal: DefaultMaxLayerTemporal}
 	} else {
 		f.maxLayers = InvalidLayers
 	}
@@ -230,6 +245,12 @@ func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {
 	}
 
 	f.muted = val
+
+	// resync when muted so that sequence numbers do not jump on unmute
+	if val {
+		f.resyncLocked()
+	}
+
 	return true, f.maxLayers
 }
 
@@ -430,7 +451,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		targetLayers.spatial = int32(math.Min(float64(f.maxLayers.spatial), float64(f.availableLayers[len(f.availableLayers)-1])))
 		targetLayers.temporal = int32(math.Max(0, float64(f.maxLayers.temporal)))
 
-		if f.targetLayers == InvalidLayers {
+		if f.targetLayers == InvalidLayers && targetLayers.IsValid() {
 			change = VideoStreamingChangeResuming
 		}
 	default:
@@ -461,6 +482,9 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		}
 	}
 
+	if !targetLayers.IsValid() {
+		targetLayers = InvalidLayers
+	}
 	f.lastAllocation = VideoAllocation{
 		state:              state,
 		change:             change,
@@ -488,6 +512,7 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 		muted:           f.muted,
 		bitrates:        bitrates,
 		availableLayers: f.availableLayers,
+		maxLayers:       f.maxLayers,
 	}
 }
 
@@ -495,11 +520,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.provisional.muted {
-		return 0
-	}
-
-	if layers.GreaterThan(f.maxLayers) {
+	if f.provisional.muted || !f.provisional.maxLayers.IsValid() || layers.GreaterThan(f.provisional.maxLayers) {
 		return 0
 	}
 
@@ -565,8 +586,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 		// what is the highest that is available
 		maximalLayers := InvalidLayers
 		maximalBandwidthRequired := int64(0)
-		for s := f.maxLayers.spatial; s >= 0; s-- {
-			for t := f.maxLayers.temporal; t >= 0; t-- {
+		for s := f.provisional.maxLayers.spatial; s >= 0; s-- {
+			for t := f.provisional.maxLayers.temporal; t >= 0; t-- {
 				if f.provisional.bitrates[s][t] != 0 {
 					maximalLayers = VideoLayers{spatial: s, temporal: t}
 					maximalBandwidthRequired = f.provisional.bitrates[s][t]
@@ -607,8 +628,8 @@ func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition() VideoTransitio
 	// but the cooperative scheme knocks things back to minimal
 	minimalLayers := InvalidLayers
 	bandwidthRequired := int64(0)
-	for s := int32(0); s <= f.maxLayers.spatial; s++ {
-		for t := int32(0); t <= f.maxLayers.temporal; t++ {
+	for s := int32(0); s <= f.provisional.maxLayers.spatial; s++ {
+		for t := int32(0); t <= f.provisional.maxLayers.temporal; t++ {
 			if f.provisional.bitrates[s][t] != 0 {
 				minimalLayers = VideoLayers{spatial: s, temporal: t}
 				bandwidthRequired = f.provisional.bitrates[s][t]
@@ -663,8 +684,8 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 	}
 
 	maxReachableLayerTemporal := InvalidLayerTemporal
-	for t := f.maxLayers.temporal; t >= 0; t-- {
-		for s := f.maxLayers.spatial; s >= 0; s-- {
+	for t := f.provisional.maxLayers.temporal; t >= 0; t-- {
+		for s := f.provisional.maxLayers.spatial; s >= 0; s-- {
 			if f.provisional.bitrates[s][t] != 0 {
 				maxReachableLayerTemporal = t
 				break
@@ -1058,27 +1079,49 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if !f.started {
-			// start of stream
 			f.started = true
 			f.rtpMunger.SetLastSnTs(extPkt)
+			if f.vp8Munger != nil {
+				f.vp8Munger.SetLast(extPkt)
+			}
 		} else {
 			// LK-TODO-START
-			// TS offset of 1 is not accurate. It should ideally
-			// be driven by packetization of the incoming track.
-			// But, on a track switch, won't have any historic data
-			// of a new track though.
+			// The below offset calculation is not technically correct.
+			// Timestamps based on the system time of an intermediate box like
+			// SFU is not going to be accurate. Packets arrival/processing
+			// are subject to vagaries of network delays, SFU processing etc.
+			// But, the correct way is a lot harder. Will have to
+			// look at RTCP SR to get timestamps and align (and figure out alignment
+			// of layers and use that during layer switch in simulcast case).
+			// That can get tricky. Given the complexity of that approach, maybe
+			// this is just fine till it is not :-).
 			// LK-TODO-END
-			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, 1)
+
+			// Compute how much time passed between the old RTP extPkt
+			// and the current packet, and fix timestamp on source change
+			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
+			if tDiffMs < 0 {
+				tDiffMs = 0
+			}
+			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
+			if td == 0 {
+				td = 1
+			}
+			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
+			if f.vp8Munger != nil {
+				f.vp8Munger.UpdateOffsets(extPkt)
+			}
 		}
 
 		f.lastSSRC = extPkt.Packet.SSRC
 	}
 
-	tp := &TranslationParams{}
+	f.lTSCalc = extPkt.Arrival
 
+	tp := &TranslationParams{}
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
@@ -1095,6 +1138,11 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*Transl
 
 	tp.rtp = tpRTP
 	return tp, nil
+}
+
+// should be called with lock held
+func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+	return f.getTranslationParamsCommon(extPkt)
 }
 
 // should be called with lock held
@@ -1152,61 +1200,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	if f.lastSSRC != extPkt.Packet.SSRC {
-		if !f.started {
-			f.started = true
-			f.rtpMunger.SetLastSnTs(extPkt)
-			if f.vp8Munger != nil {
-				f.vp8Munger.SetLast(extPkt)
-			}
-		} else {
-			// LK-TODO-START
-			// The below offset calculation is not technically correct.
-			// Timestamps based on the system time of an intermediate box like
-			// SFU is not going to be accurate. Packets arrival/processing
-			// are subject to vagaries of network delays, SFU processing etc.
-			// But, the correct way is a lot harder. Will have to
-			// look at RTCP SR to get timestamps and figure out alignment
-			// of layers and use that during layer switch. That can
-			// get tricky. Given the complexity of that approach, maybe
-			// this is just fine till it is not :-).
-			// LK-TODO-END
-
-			// Compute how much time passed between the old RTP extPkt
-			// and the current packet, and fix timestamp on source change
-			tDiffMs := (extPkt.Arrival - f.lTSCalc) / 1e6
-			td := uint32(tDiffMs * int64(f.codec.ClockRate) / 1000)
-			if td == 0 {
-				td = 1
-			}
-			f.rtpMunger.UpdateSnTsOffsets(extPkt, 1, td)
-			if f.vp8Munger != nil {
-				f.vp8Munger.UpdateOffsets(extPkt)
-			}
-		}
-
-		f.lastSSRC = extPkt.Packet.SSRC
-	}
-
-	f.lTSCalc = extPkt.Arrival
-
-	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
-	if err != nil {
-		tp.shouldDrop = true
-		if err == ErrPaddingOnlyPacket || err == ErrDuplicatePacket || err == ErrOutOfOrderSequenceNumberCacheMiss {
-			if err == ErrOutOfOrderSequenceNumberCacheMiss {
-				tp.isDroppingRelevant = true
-			}
-			return tp, nil
-		}
-
-		tp.isDroppingRelevant = true
+	tp, err := f.getTranslationParamsCommon(extPkt)
+	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
-	}
-
-	if f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
-		tp.rtp = tpRTP
-		return tp, nil
 	}
 
 	// catch up temporal layer if necessary
@@ -1219,8 +1215,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 	}
 
-	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tpRTP.snOrdering, f.currentLayers.temporal)
+	tpVP8, err := f.vp8Munger.UpdateAndGet(extPkt, tp.rtp.snOrdering, f.currentLayers.temporal)
 	if err != nil {
+		tp.rtp = nil
 		tp.shouldDrop = true
 		if err == ErrFilteredVP8TemporalLayer || err == ErrOutOfOrderVP8PictureIdCacheMiss {
 			if err == ErrFilteredVP8TemporalLayer {
@@ -1237,7 +1234,6 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, err
 	}
 
-	tp.rtp = tpRTP
 	tp.vp8 = tpVP8
 	return tp, nil
 }

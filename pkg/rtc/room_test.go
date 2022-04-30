@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -15,6 +16,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -27,7 +29,9 @@ const (
 )
 
 func init() {
-	serverlogger.InitFromConfig(config.LoggingConfig{Level: "debug"})
+	serverlogger.InitFromConfig(config.LoggingConfig{
+		Config: logger.Config{Level: "debug"},
+	})
 }
 
 var iceServersForRoom = []*livekit.ICEServer{{Urls: []string{"stun:stun.l.google.com:19302"}}}
@@ -302,8 +306,8 @@ func TestActiveSpeakers(t *testing.T) {
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
-		p.GetAudioLevelReturns(10, true)
-		p2.GetAudioLevelReturns(20, true)
+		p.GetAudioLevelReturns(20, true)
+		p2.GetAudioLevelReturns(10, true)
 
 		speakers := rm.GetActiveSpeakers()
 		require.Len(t, speakers, 2)
@@ -357,7 +361,7 @@ func TestActiveSpeakers(t *testing.T) {
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
 		p.GetAudioLevelReturns(30, true)
-		convertedLevel := rtc.ConvertAudioLevel(30)
+		convertedLevel := float32(audio.ConvertAudioLevel(30))
 
 		testutils.WithTimeout(t, func() string {
 			updates := getActiveSpeakerUpdates(op)

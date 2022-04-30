@@ -128,7 +128,8 @@ func TestRTPStats_Update(t *testing.T) {
 	require.Equal(t, uint32(3), r.packetsOutOfOrder)
 	require.Equal(t, uint32(1), r.packetsDuplicate)
 	require.Equal(t, uint32(16), r.packetsLost)
-	require.Equal(t, uint32(16), r.numMissingSNs(uint16(r.extStartSN), uint16(r.getExtHighestSN())))
+	_, _, _, _, packetsLost, _ := r.getIntervalStats(uint16(r.extStartSN), uint16(r.getExtHighestSN()+1))
+	require.Equal(t, uint32(16), packetsLost)
 
 	r.Stop()
 }

@@ -21,7 +21,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -45,6 +44,7 @@ const (
 
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
+	flushTimeout        = 1 * time.Second
 )
 
 var (
@@ -110,13 +110,12 @@ type DownTrack struct {
 
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
+	deltaStatsSnapshotId        uint32
 
 	// Debug info
 	pktsDropped atomic.Uint32
 
 	isNACKThrottled atomic.Bool
-
-	callbacksQueue *utils.OpsQueue
 
 	// RTCP callbacks
 	onREMB                func(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -135,10 +134,10 @@ type DownTrack struct {
 	onSubscribedLayersChanged func(dt *DownTrack, layers VideoLayers)
 
 	// packet sent callback
-	onPacketSentUnsafe []func(dt *DownTrack, size int)
+	onPacketSent []func(dt *DownTrack, size int)
 
 	// padding packet sent callback
-	onPaddingSentUnsafe []func(dt *DownTrack, size int)
+	onPaddingSent []func(dt *DownTrack, size int)
 
 	// update stats
 	onStatsUpdate func(dt *DownTrack, stat *livekit.AnalyticsStat)
@@ -170,22 +169,21 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		peerID:         peerID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		codec:          c,
-		kind:           kind,
-		forwarder:      NewForwarder(c, kind, logger),
-		callbacksQueue: utils.NewOpsQueue(logger),
+		logger:        logger,
+		id:            r.TrackID(),
+		peerID:        peerID,
+		maxTrack:      mt,
+		streamID:      r.StreamID(),
+		bufferFactory: bf,
+		receiver:      r,
+		codec:         c,
+		kind:          kind,
+		forwarder:     NewForwarder(c, kind, logger),
 	}
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        kind,
-		GetTrackStats:    d.GetTrackStats,
+		GetDeltaStats:    d.getDeltaStats,
 		GetQualityParams: d.getQualityParams,
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
@@ -194,17 +192,17 @@ func NewDownTrack(
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
-			d.callbacksQueue.Enqueue(func() {
-				d.onStatsUpdate(d, stat)
-			})
+			d.onStatsUpdate(d, stat)
 		}
 	})
 
 	d.rtpStats = buffer.NewRTPStats(buffer.RTPStatsParams{
-		ClockRate: d.codec.ClockRate,
-		Logger:    d.logger,
+		ClockRate:              d.codec.ClockRate,
+		IsReceiverReportDriven: true,
+		Logger:                 d.logger,
 	})
 	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
+	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
 }
@@ -222,8 +220,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
 
-	d.callbacksQueue.Start()
-
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
 	d.writeStream = t.WriteStream()
@@ -236,10 +232,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if strings.HasPrefix(d.codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
-	if d.onBind != nil {
-		d.callbacksQueue.Enqueue(d.onBind)
-	}
+
 	d.bound.Store(true)
+	if d.onBind != nil {
+		d.onBind()
+	}
 
 	d.connectionStats.Start()
 	d.logger.Debugw("bound")
@@ -393,14 +390,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
 		pktSize := hdr.MarshalSize() + len(payload)
-		for _, f := range d.onPacketSentUnsafe {
+		for _, f := range d.onPacketSent {
 			f(d, pktSize)
 		}
 
 		if tp.isSwitchingToMaxLayer && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, layer)
-			})
+			d.onMaxLayerChanged(d, layer)
 		}
 
 		if extPkt.KeyFrame {
@@ -411,6 +406,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			if locked {
 				d.stopKeyFrameRequester()
 			}
+
+			d.logger.Debugw("forwarding key frame", "layer", layer)
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
@@ -497,7 +494,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		}
 
 		size := hdr.MarshalSize() + len(payload)
-		for _, f := range d.onPaddingSentUnsafe {
+		for _, f := range d.onPaddingSent {
 			f(d, size)
 		}
 		d.rtpStats.Update(&hdr, 0, len(payload), time.Now().UnixNano())
@@ -525,26 +522,20 @@ func (d *DownTrack) Mute(muted bool) {
 	}
 
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-		if muted {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
-			})
-		} else {
+		notifyLayer := InvalidLayerSpatial
+		if !muted {
 			//
 			// When unmuting, don't wait for layer lock as
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, maxLayers.spatial)
-			})
+			notifyLayer = maxLayers.spatial
 		}
+		d.onMaxLayerChanged(d, notifyLayer)
 	}
 
 	if d.onSubscriptionChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscriptionChanged(d)
-		})
+		d.onSubscriptionChanged(d)
 	}
 }
 
@@ -567,7 +558,18 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// display buffer and there could be a brief moment where the previous stream is displayed.
 	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
-		_ = d.writeBlankFrameRTP()
+		doneFlushing := make(chan struct{})
+		go func() {
+			defer close(doneFlushing)
+			_ = d.writeBlankFrameRTP()
+		}()
+
+		// wait a limited time to flush
+		timer := time.NewTimer(flushTimeout)
+		select {
+		case <-doneFlushing:
+		case <-timer.C:
+		}
 	}
 
 	d.closeOnce.Do(func() {
@@ -579,16 +581,13 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
 		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.callbacksQueue.Enqueue(func() {
-				d.onMaxLayerChanged(d, InvalidLayerSpatial)
-			})
+			d.onMaxLayerChanged(d, InvalidLayerSpatial)
 		}
 
 		if d.onCloseHandler != nil {
-			d.callbacksQueue.Enqueue(d.onCloseHandler)
+			d.onCloseHandler()
 		}
 
-		d.callbacksQueue.Stop()
 		d.stopKeyFrameRequester()
 	})
 }
@@ -607,15 +606,11 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
 		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
-		d.callbacksQueue.Enqueue(func() {
-			d.onMaxLayerChanged(d, maxLayers.spatial)
-		})
+		d.onMaxLayerChanged(d, maxLayers.spatial)
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscribedLayersChanged(d, maxLayers)
-		})
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -626,9 +621,7 @@ func (d *DownTrack) SetMaxTemporalLayer(temporalLayer int32) {
 	}
 
 	if d.onSubscribedLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onSubscribedLayersChanged(d, maxLayers)
-		})
+		d.onSubscribedLayersChanged(d, maxLayers)
 	}
 }
 
@@ -644,17 +637,13 @@ func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	d.forwarder.UpTrackLayersChange(availableLayers)
 
 	if d.onAvailableLayersChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onAvailableLayersChanged(d)
-		})
+		d.onAvailableLayersChanged(d)
 	}
 }
 
 func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 	if d.onBitrateAvailabilityChanged != nil {
-		d.callbacksQueue.Enqueue(func() {
-			d.onBitrateAvailabilityChanged(d)
-		})
+		d.onBitrateAvailabilityChanged(d)
 	}
 }
 
@@ -698,12 +687,12 @@ func (d *DownTrack) OnSubscribedLayersChanged(fn func(dt *DownTrack, layers Vide
 	d.onSubscribedLayersChanged = fn
 }
 
-func (d *DownTrack) OnPacketSentUnsafe(fn func(dt *DownTrack, size int)) {
-	d.onPacketSentUnsafe = append(d.onPacketSentUnsafe, fn)
+func (d *DownTrack) OnPacketSent(fn func(dt *DownTrack, size int)) {
+	d.onPacketSent = append(d.onPacketSent, fn)
 }
 
-func (d *DownTrack) OnPaddingSentUnsafe(fn func(dt *DownTrack, size int)) {
-	d.onPaddingSentUnsafe = append(d.onPaddingSentUnsafe, fn)
+func (d *DownTrack) OnPaddingSent(fn func(dt *DownTrack, size int)) {
+	d.onPaddingSent = append(d.onPaddingSent, fn)
 }
 
 func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
@@ -866,7 +855,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			return err
 		}
 
-		for _, f := range d.onPacketSentUnsafe {
+		for _, f := range d.onPacketSent {
 			f(d, pktSize)
 		}
 
@@ -935,6 +924,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
 				d.receiver.SendPLI(targetLayers.spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
@@ -960,9 +950,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if d.onREMB != nil {
-				d.callbacksQueue.Enqueue(func() {
-					d.onREMB(d, p)
-				})
+				d.onREMB(d, p)
 			}
 
 		case *rtcp.ReceiverReport:
@@ -977,15 +965,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				d.rtpStats.UpdatePacketsLost(r.TotalLost)
-
 				rtt := getRttMs(&r)
 				if rtt != d.rtpStats.GetRtt() {
 					rttToReport = rtt
 				}
-				d.rtpStats.UpdateRtt(rtt)
 
-				d.rtpStats.UpdateJitter(float64(r.Jitter))
+				d.rtpStats.UpdateFromReceiverReport(r.LastSequenceNumber, r.TotalLost, rtt, float64(r.Jitter))
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1006,9 +991,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrc && d.onTransportCCFeedback != nil {
-				d.callbacksQueue.Enqueue(func() {
-					d.onTransportCCFeedback(d, p)
-				})
+				d.onTransportCCFeedback(d, p)
 			}
 		}
 	}
@@ -1023,9 +1006,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		}
 
 		if d.onRttUpdate != nil {
-			d.callbacksQueue.Enqueue(func() {
-				d.onRttUpdate(d, rttToReport)
-			})
+			d.onRttUpdate(d, rttToReport)
 		}
 	}
 }
@@ -1067,10 +1048,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			continue
 		}
 
-		if meta.nacked > 1 {
-			numRepeatedNACKs++
-		}
-
 		if pool != nil {
 			PacketFactory.Put(pool)
 			pool = nil
@@ -1085,6 +1062,11 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			}
 			continue
 		}
+
+		if meta.nacked > 1 {
+			numRepeatedNACKs++
+		}
+
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
 			continue
@@ -1125,7 +1107,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.logger.Errorw("writing rtx packet err", err)
 		} else {
 			pktSize := pkt.Header.MarshalSize() + len(payload)
-			for _, f := range d.onPacketSentUnsafe {
+			for _, f := range d.onPacketSent {
 				f(d, pktSize)
 			}
 
@@ -1236,27 +1218,8 @@ func (d *DownTrack) GetConnectionScore() float32 {
 	return d.connectionStats.GetScore()
 }
 
-func (d *DownTrack) GetTrackStats() map[uint32]*buffer.StreamStatsWithLayers {
-	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
-
-	stats := d.rtpStats.ToProto()
-	if stats == nil {
-		return nil
-	}
-
-	layers := make(map[int]buffer.LayerStats)
-	layers[0] = buffer.LayerStats{
-		TotalPackets: stats.Packets + stats.PacketsDuplicate + stats.PacketsPadding,
-		TotalBytes:   stats.Bytes + stats.BytesDuplicate + stats.BytesPadding,
-		TotalFrames:  stats.Frames,
-	}
-
-	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
-		RTPStats: stats,
-		Layers:   layers,
-	}
-
-	return streamStats
+func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
+	return d.rtpStats.ToProto()
 }
 
 func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
@@ -1272,9 +1235,32 @@ func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
 
 	return &buffer.ConnectionQualityParams{
 		LossPercentage: lossPercentage,
-		Jitter:         float32(s.MaxJitter / 1000.0),
-		Rtt:            s.MaxRtt,
+		Jitter:         float32(s.JitterMax / 1000.0),
+		Rtt:            s.RttMax,
 	}
+}
+
+func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
+	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
+
+	deltaStats := d.rtpStats.DeltaInfo(d.deltaStatsSnapshotId)
+	if deltaStats == nil {
+		return nil
+	}
+
+	layers := make(map[int]buffer.LayerStats)
+	layers[0] = buffer.LayerStats{
+		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
+		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
+		Frames:  deltaStats.Frames,
+	}
+
+	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
+		RTPStats: deltaStats,
+		Layers:   layers,
+	}
+
+	return streamStats
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {

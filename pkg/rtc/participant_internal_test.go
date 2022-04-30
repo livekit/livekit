@@ -173,7 +173,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		msg := routing.NewMessageChannel()
+		msg := routing.NewMessageChannel(routing.DefaultMessageChannelSize)
 		p.params.Sink = msg
 		go func() {
 			for msg := range msg.ReadChan() {
@@ -221,7 +221,6 @@ func TestMuteSetting(t *testing.T) {
 }
 
 func TestConnectionQuality(t *testing.T) {
-
 	// loss based score is currently a publisher method.
 	videoScore := func(loss float32, numPublishing, numRegistered uint32) float32 {
 		var reducedQuality bool

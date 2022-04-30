@@ -124,7 +124,7 @@ func Recover() {
 		default:
 			err = errors.New("unknown panic")
 		}
-		logger.GetLogger().Error(err, "recovered panic", "panic", r)
+		logger.Errorw("recovered panic", err, "panic", r)
 	}
 }
 

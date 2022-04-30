@@ -85,6 +85,17 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	return t
 }
 
+func (t *MediaTrackReceiver) Restart() {
+	t.lock.Lock()
+	receiver := t.receiver
+	t.lock.Unlock()
+
+	if receiver != nil {
+		receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+		t.MediaTrackSubscriptions.Restart()
+	}
+}
+
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver) {
 	t.lock.Lock()
 	t.receiver = receiver
@@ -181,7 +192,6 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	receiver := t.Receiver()
-
 	if receiver == nil {
 		// cannot add, no receiver
 		return errors.New("cannot subscribe without a receiver in place")
@@ -291,6 +301,15 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	}
 
 	return quality
+}
+
+func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
+	receiver := t.Receiver()
+	if receiver == nil {
+		return 0, false
+	}
+
+	return receiver.GetAudioLevel()
 }
 
 // handles max loss for audio streams

@@ -87,6 +87,7 @@ type LocalParticipant interface {
 	Participant
 
 	GetLogger() logger.Logger
+	GetAdaptiveStream() bool
 
 	ProtocolVersion() ProtocolVersion
 
@@ -126,7 +127,7 @@ type LocalParticipant interface {
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
@@ -154,8 +155,7 @@ type LocalParticipant interface {
 	// session migration
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	SetMigrateInfo(mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
-	SetPreviousAnswer(previous *webrtc.SessionDescription)
+	SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
 	UpdateRTT(rtt uint32)
 }
@@ -193,6 +193,7 @@ type MediaTrack interface {
 	IsSimulcast() bool
 
 	Receiver() sfu.TrackReceiver
+	Restart()
 
 	// callbacks
 	AddOnClose(func())
@@ -219,7 +220,7 @@ type LocalMediaTrack interface {
 	SignalCid() string
 	SdpCid() string
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (level float64, active bool)
 	GetConnectionScore() float32
 
 	SetRTT(rtt uint32)

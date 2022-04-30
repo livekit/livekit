@@ -47,15 +47,15 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 		direction = prometheus.Outgoing
 	}
 
-	totalNACKs := uint32(0)
-	totalPLIs := uint32(0)
-	totalFIRs := uint32(0)
+	nacks := uint32(0)
+	plis := uint32(0)
+	firs := uint32(0)
 	for _, stream := range stat.Streams {
-		totalNACKs += stream.TotalNacks
-		totalPLIs += stream.TotalPlis
-		totalFIRs += stream.TotalFirs
+		nacks += stream.Nacks
+		plis += stream.Plis
+		firs += stream.Firs
 	}
-	prometheus.IncrementRTCP(direction, totalNACKs, totalPLIs, totalFIRs)
+	prometheus.IncrementRTCP(direction, nacks, plis, firs)
 
 	w := t.workers[participantID]
 	if w != nil {
@@ -74,14 +74,14 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 			direction = prometheus.Outgoing
 		}
 
-		totalPackets := uint32(0)
-		totalBytes := uint64(0)
+		packets := uint32(0)
+		bytes := uint64(0)
 		for _, stream := range stat.Streams {
-			totalPackets += stream.TotalPrimaryPackets + stream.TotalRetransmitPackets + stream.TotalPaddingPackets
-			totalBytes += stream.TotalPrimaryBytes + stream.TotalRetransmitBytes + stream.TotalPaddingBytes
+			packets += stream.PrimaryPackets + stream.RetransmitPackets + stream.PaddingPackets
+			bytes += stream.PrimaryBytes + stream.RetransmitBytes + stream.PaddingBytes
 		}
-		prometheus.IncrementPackets(direction, uint64(totalPackets))
-		prometheus.IncrementBytes(direction, totalBytes)
+		prometheus.IncrementPackets(direction, uint64(packets))
+		prometheus.IncrementBytes(direction, bytes)
 	}
 
 	t.analytics.SendStats(ctx, stats)

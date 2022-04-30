@@ -92,6 +92,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
+	adaptiveStreamParam := r.FormValue("adaptive_stream")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -130,6 +131,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
+	}
+	if adaptiveStreamParam != "" {
+		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
 	}
 
 	return roomName, pi, http.StatusOK, nil
@@ -178,13 +182,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName, ""),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, ""),
 		pi.Identity, "",
 	)
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
 		pLogger.Infow("server closing WS connection", "connID", connId)
+		resSource.Close()
 		reqSink.Close()
 		close(done)
 	}()
@@ -249,6 +254,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
+				pLogger.Infow("exit ws read loop for closed connection", "connID", connId)
 				return
 			} else {
 				pLogger.Errorw("error reading from websocket", err)

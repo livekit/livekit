@@ -243,7 +243,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 		downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
 		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
 		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
-		downTrack.OnPacketSentUnsafe(s.onPacketSent)
+		downTrack.OnPacketSent(s.onPacketSent)
 	}
 }
 
@@ -354,7 +354,11 @@ func (s *StreamAllocator) postEvent(event Event) {
 		return
 	}
 
-	s.eventCh <- event
+	select {
+	case s.eventCh <- event:
+	default:
+		s.params.Logger.Warnw("event queue full", nil)
+	}
 	s.eventChMu.RUnlock()
 }
 
@@ -1620,12 +1624,14 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 			"channel observer: estimate is trending downward",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
+			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
 		c.logger.Debugw(
 			"channel observer: high rate of repeated NACKs",
 			"name", c.params.Name,
+			"estimate", c.estimateTrend.ToString(),
 			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss

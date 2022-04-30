@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	"github.com/pion/ice/v2"
@@ -35,7 +36,6 @@ type WebRTCConfig struct {
 
 type ReceiverConfig struct {
 	PacketBufferSize int
-	maxBitrate       uint64
 }
 
 type RTPHeaderExtensionConfig struct {
@@ -65,7 +65,8 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 
-	if conf.RTC.UseExternalIP && externalIP != "" {
+	// force it to the node IPs that the user has set
+	if externalIP != "" && (conf.RTC.UseExternalIP || conf.RTC.NodeIP != "") {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
 
@@ -150,7 +151,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBGoogREMB},
 				{Type: webrtc.TypeRTCPFBTransportCC},
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},
@@ -179,6 +179,19 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	if rtcConf.UseICELite {
 		s.SetLite(true)
+	} else if !rtcConf.UseExternalIP {
+		// use STUN servers for server to support NAT
+		// when deployed in production, we expect UseExternalIP to be used, and ports accessible
+		// this is not compatible with ICE Lite
+		if len(rtcConf.STUNServers) > 0 {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(rtcConf.STUNServers)}
+		} else {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(config.DefaultStunServers)}
+		}
+	}
+
+	if !rtcConf.RejectAggressiveNomination {
+		s.SetICEAcceptAggressiveNomination(true)
 	}
 
 	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {
@@ -212,7 +225,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		SettingEngine: s,
 		Receiver: ReceiverConfig{
 			PacketBufferSize: rtcConf.PacketBufferSize,
-			maxBitrate:       rtcConf.MaxBitrate,
 		},
 		UDPMux:         udpMux,
 		UDPMuxConn:     udpMuxConn,
@@ -225,4 +237,12 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
+}
+
+func iceServerForStunServers(servers []string) webrtc.ICEServer {
+	iceServer := webrtc.ICEServer{}
+	for _, stunServer := range servers {
+		iceServer.URLs = append(iceServer.URLs, fmt.Sprintf("stun:%s", stunServer))
+	}
+	return iceServer
 }

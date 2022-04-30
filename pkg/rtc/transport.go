@@ -241,6 +241,11 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 	return t.pc
 }
 
+// IsEstablished returns true if the PeerConnection has been established
+func (t *PCTransport) IsEstablished() bool {
+	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
+}
+
 func (t *PCTransport) Close() {
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()

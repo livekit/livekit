@@ -20,6 +20,9 @@ const (
 
 const (
 	RtxGateWindow = 2000
+
+	SnOffsetCacheSize = 4096
+	SnOffsetCacheMask = SnOffsetCacheSize - 1
 )
 
 type TranslationParamsRTP struct {
@@ -41,7 +44,9 @@ type RTPMungerParams struct {
 	tsOffset          uint32
 	lastMarker        bool
 
-	missingSNs map[uint16]uint16
+	snOffsets          [SnOffsetCacheSize]uint16
+	snOffsetsWritePtr  int
+	snOffsetsOccupancy int
 
 	rtxGateSn         uint16
 	isInRtxGateRegion bool
@@ -56,9 +61,6 @@ type RTPMunger struct {
 func NewRTPMunger(logger logger.Logger) *RTPMunger {
 	return &RTPMunger{
 		logger: logger,
-		RTPMungerParams: RTPMungerParams{
-			missingSNs: make(map[uint16]uint16, 10),
-		},
 	}
 }
 
@@ -84,8 +86,9 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16,
 	r.snOffset = extPkt.Packet.SequenceNumber - r.lastSN - snAdjust
 	r.tsOffset = extPkt.Packet.Timestamp - r.lastTS - tsAdjust
 
-	// clear incoming missing sequence numbers on layer/source switch
-	r.missingSNs = make(map[uint16]uint16, 10)
+	// clear offsets cache layer/source switch
+	r.snOffsetsWritePtr = 0
+	r.snOffsetsOccupancy = 0
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
@@ -96,19 +99,24 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.snOffset += 1
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
+
+	r.snOffsetsWritePtr = (r.snOffsetsWritePtr - 1) & SnOffsetCacheMask
+	r.snOffsetsOccupancy--
+	if r.snOffsetsOccupancy < 0 {
+		r.logger.Warnw("sequence number offset cache is invalid", nil, "occupancy", r.snOffsetsOccupancy)
+	}
 }
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
-	// if out-of-order, look up missing sequence number cache
+	// if out-of-order, look up sequence number offset cache
 	if !extPkt.Head {
-		snOffset, ok := r.missingSNs[extPkt.Packet.SequenceNumber]
-		if !ok {
+		snOffset, isValid := r.getSnOffset(extPkt.Packet.SequenceNumber)
+		if !isValid {
 			return &TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
 			}, ErrOutOfOrderSequenceNumberCacheMiss
 		}
 
-		delete(r.missingSNs, extPkt.Packet.SequenceNumber)
 		return &TranslationParamsRTP{
 			snOrdering:     SequenceNumberOrderingOutOfOrder,
 			sequenceNumber: extPkt.Packet.SequenceNumber - snOffset,
@@ -118,14 +126,9 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	ordering := SequenceNumberOrderingContiguous
 
-	// if there are gaps, record it in missing sequence number cache
 	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
-
-		for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber; i++ {
-			r.missingSNs[i] = r.snOffset
-		}
 	} else {
 		// can get duplicate packet due to FEC
 		if diff == 0 {
@@ -146,6 +149,16 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 				snOrdering: SequenceNumberOrderingContiguous,
 			}, ErrPaddingOnlyPacket
 		}
+	}
+
+	// record sn offset
+	for i := r.highestIncomingSN + 1; i != extPkt.Packet.SequenceNumber+1; i++ {
+		r.snOffsets[r.snOffsetsWritePtr] = r.snOffset
+		r.snOffsetsWritePtr = (r.snOffsetsWritePtr + 1) & SnOffsetCacheMask
+		r.snOffsetsOccupancy++
+	}
+	if r.snOffsetsOccupancy > SnOffsetCacheSize {
+		r.snOffsetsOccupancy = SnOffsetCacheSize
 	}
 
 	// in-order incoming packet, may or may not be contiguous.
@@ -226,4 +239,14 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 
 func (r *RTPMunger) IsOnFrameBoundary() bool {
 	return r.lastMarker
+}
+
+func (r *RTPMunger) getSnOffset(sn uint16) (uint16, bool) {
+	diff := r.highestIncomingSN - sn
+	if int(diff) >= r.snOffsetsOccupancy {
+		return 0, false
+	}
+
+	readPtr := (r.snOffsetsWritePtr - int(diff) - 1) & SnOffsetCacheMask
+	return r.snOffsets[readPtr], true
 }

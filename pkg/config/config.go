@@ -10,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/logger"
 )
 
 var DefaultStunServers = []string{
@@ -22,6 +24,8 @@ type CongestionControlProbeMode string
 const (
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
+
+	StatsUpdateInterval = time.Second * 10
 )
 
 type Config struct {
@@ -47,22 +51,20 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	UDPPort           uint32           `yaml:"udp_port,omitempty"`
-	TCPPort           uint32           `yaml:"tcp_port,omitempty"`
-	ICEPortRangeStart uint32           `yaml:"port_range_start,omitempty"`
-	ICEPortRangeEnd   uint32           `yaml:"port_range_end,omitempty"`
-	NodeIP            string           `yaml:"node_ip,omitempty"`
-	STUNServers       []string         `yaml:"stun_servers,omitempty"`
-	TURNServers       []TURNServer     `yaml:"turn_servers,omitempty"`
-	UseExternalIP     bool             `yaml:"use_external_ip"`
-	UseICELite        bool             `yaml:"use_ice_lite,omitempty"`
-	Interfaces        InterfacesConfig `yaml:"interfaces"`
+	UDPPort                    uint32           `yaml:"udp_port,omitempty"`
+	TCPPort                    uint32           `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart          uint32           `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd            uint32           `yaml:"port_range_end,omitempty"`
+	NodeIP                     string           `yaml:"node_ip,omitempty"`
+	STUNServers                []string         `yaml:"stun_servers,omitempty"`
+	TURNServers                []TURNServer     `yaml:"turn_servers,omitempty"`
+	UseExternalIP              bool             `yaml:"use_external_ip"`
+	UseICELite                 bool             `yaml:"use_ice_lite,omitempty"`
+	Interfaces                 InterfacesConfig `yaml:"interfaces"`
+	RejectAggressiveNomination bool             `yaml:"reject_aggressive_nomination"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
-
-	// Max bitrate for REMB
-	MaxBitrate uint64 `yaml:"max_bitrate,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
 	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
@@ -141,10 +143,8 @@ type CodecSpec struct {
 }
 
 type LoggingConfig struct {
-	JSON      bool   `yaml:"json"`
-	Level     string `yaml:"level"`
-	Sample    bool   `yaml:"sample,omitempty"`
-	PionLevel string `yaml:"pion_level,omitempty"`
+	logger.Config `yaml:",inline"`
+	PionLevel     string `yaml:"pion_level,omitempty"`
 }
 
 type TURNConfig struct {
@@ -165,6 +165,7 @@ type WebHookConfig struct {
 
 type NodeSelectorConfig struct {
 	Kind         string         `yaml:"kind"`
+	SortBy       string         `yaml:"sort_by"`
 	CPULoadLimit float32        `yaml:"cpu_load_limit"`
 	SysloadLimit float32        `yaml:"sysload_limit"`
 	Regions      []RegionConfig `yaml:"regions"`
@@ -194,7 +195,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
-			MaxBitrate:        10 * 1024 * 1024, // 10 mbps
 			PacketBufferSize:  500,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
@@ -235,7 +235,8 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			Enabled: false,
 		},
 		NodeSelector: NodeSelectorConfig{
-			Kind:         "random",
+			Kind:         "any",
+			SortBy:       "random",
 			SysloadLimit: 0.9,
 			CPULoadLimit: 0.9,
 		},

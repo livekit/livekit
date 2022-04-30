@@ -10,10 +10,9 @@ import (
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/livekit"
 )
 
 const (
@@ -338,11 +337,6 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {
 	if err := EnsureAdminPermission(ctx, room); err != nil {
 		return twirpAuthError(err)
-	}
-
-	_, err := s.roomStore.LoadParticipant(ctx, room, identity)
-	if err != nil {
-		return err
 	}
 
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
