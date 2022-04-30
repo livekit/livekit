@@ -474,7 +474,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		ep.TemporalLayer = int32(vp8Packet.TID)
-		b.logger.Debugw("VP8 packet", "keyframe", vp8Packet.IsKeyFrame, "tid", vp8Packet.TID)
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 

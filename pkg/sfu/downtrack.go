@@ -1223,7 +1223,9 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	hdr.Timestamp = tpRTP.timestamp
 	hdr.SequenceNumber = tpRTP.sequenceNumber
 	hdr.SSRC = d.ssrc
-	hdr.Marker = tp.marker
+	if tp.marker {
+		hdr.Marker = tp.marker
+	}
 
 	var extension []extensionData
 	if d.dependencyDescriptorID != 0 && tp.ddExtension != nil {
