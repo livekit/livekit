@@ -30,7 +30,7 @@ func NewDependencyDescriptorParser(ddExt uint8, logger logger.Logger, onMaxLayer
 	}
 }
 
-func (r *DependencyDescriptorParser) Parse(ep *ExtPacket) {
+func (r *DependencyDescriptorParser) Parse(ep *ExtPacket) error {
 	pkt := ep.Packet
 	if ddBuf := pkt.GetExtension(r.ddExt); ddBuf != nil {
 		var ddVal dd.DependencyDescriptor
@@ -41,12 +41,12 @@ func (r *DependencyDescriptorParser) Parse(ep *ExtPacket) {
 		_, err := ext.Unmarshal(ddBuf)
 		if err != nil {
 			r.logger.Infow("failed to parse generic dependency descriptor", "err", err)
-			return
+			return err
 		}
 
 		if ddVal.AttachedStructure != nil && !ddVal.FirstPacketInFrame {
 			r.logger.Infow("ignoring non-first packet in frame with attached structure")
-			return
+			return nil
 		}
 
 		if ddVal.AttachedStructure != nil {
@@ -100,4 +100,5 @@ func (r *DependencyDescriptorParser) Parse(ep *ExtPacket) {
 		ep.SpatialLayer = int32(ddVal.FrameDependencies.SpatialId)
 		ep.TemporalLayer = int32(ddVal.FrameDependencies.TemporalId)
 	}
+	return nil
 }

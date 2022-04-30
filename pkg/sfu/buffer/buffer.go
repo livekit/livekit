@@ -169,7 +169,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 		// we only enable dd parser for av1, vp8 have dependency descritor too, but we don't rely on it
 		// in furture, we can use dependency descriptor for all codecs
-		if ext.URI == dd.ExtensionUrl && (b.mime == "video/av1" || b.mime == "video/vp9") {
+		if ext.URI == dd.ExtensionUrl {
 			b.ddExt = uint8(ext.ID)
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int) {
 				if b.maxLayerChangedCB != nil {
@@ -464,6 +464,10 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	}
 
 	ep.TemporalLayer = 0
+	if b.ddParser != nil {
+		_ = b.ddParser.Parse(ep)
+		// TODO : notify active decode target change if changed.
+	}
 	switch b.mime {
 	case "video/vp8":
 		vp8Packet := VP8{}
@@ -473,7 +477,12 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		}
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
-		ep.TemporalLayer = int32(vp8Packet.TID)
+		if ep.DependencyDescriptor == nil {
+			ep.TemporalLayer = int32(vp8Packet.TID)
+		} else {
+			vp8Packet.TID = uint8(ep.TemporalLayer)
+			ep.SpatialLayer = -1 // vp8 don't have spatial scalability, reset to -1
+		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 
@@ -482,13 +491,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	case "video/av1":
 		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
 	}
-	if b.ddParser != nil {
-		b.ddParser.Parse(ep)
-		// TODO : notify active decode target change if changed.
-		// if ep.DependencyDescriptor != nil {
-		// 	ep.TemporalLayer = int32(ep.DependencyDescriptor.FrameDependencies.TemporalId)
-		// }
-	}
+
 	if ep.KeyFrame {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
