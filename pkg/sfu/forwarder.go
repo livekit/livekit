@@ -128,6 +128,11 @@ type TranslationParams struct {
 	vp8                   *TranslationParamsVP8
 	ddExtension           *dd.DependencyDescriptorExtension
 	marker                bool
+
+	// indicates this frame has 'Switch' decode indication for target layer
+	// TODO : in theory, we need check frame chain is not broken for the target
+	// but we don't have frame queue now, so just use decode target indication
+	switchingToTargetLayer bool
 }
 
 type VideoLayers struct {
@@ -486,7 +491,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		targetLayers:       targetLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
@@ -784,7 +789,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		targetLayers:       f.provisional.layers,
 		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.layers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
@@ -850,7 +855,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
-			f.targetLayers = f.lastAllocation.targetLayers
+			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
 	}
@@ -890,7 +895,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
-			f.targetLayers = f.lastAllocation.targetLayers
+			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
 	}
@@ -993,12 +998,19 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
 
 	return f.lastAllocation
+}
+
+func (f *Forwarder) setTargetLayers(targetLayers VideoLayers) {
+	f.targetLayers = targetLayers
+	if f.layerSelector != nil {
+		f.layerSelector.SelectLayer(targetLayers)
+	}
 }
 
 func (f *Forwarder) Resync() {
@@ -1161,7 +1173,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	if f.targetLayers.spatial != f.currentLayers.spatial {
 		if f.targetLayers.spatial == layer {
-			if extPkt.KeyFrame {
+			if extPkt.KeyFrame || tp.switchingToTargetLayer {
 				// lock to target layer
 				f.logger.Debugw("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				f.currentLayers.spatial = f.targetLayers.spatial
@@ -1178,7 +1190,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 	}
 
-	if f.currentLayers.spatial != layer {
+	// if we have layer selector, let it decide whether to drop or not
+	if f.layerSelector == nil && f.currentLayers.spatial != layer {
 		tp.shouldDrop = true
 		return tp, nil
 	}

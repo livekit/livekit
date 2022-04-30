@@ -91,10 +91,12 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationPar
 	}
 
 	// TODO : if bandwidth in congest, could drop the 'Discardable' packet
-	if dtis[currentTarget] == dd.DecodeTargetNotPresent {
+	if dti := dtis[currentTarget]; dti == dd.DecodeTargetNotPresent {
 		// s.logger.Debugw(fmt.Sprintf("drop packet for decode target not present, dtis %v, currentTarget %d, s:%d, t:%d", dtis, currentTarget,
 		// expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		return false
+	} else if dti == dd.DecodeTargetSwitch {
+		tp.switchingToTargetLayer = true
 	}
 
 	// TODO : add frame to forwarded queue if entire frame is forwarded

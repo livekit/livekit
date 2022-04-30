@@ -189,7 +189,10 @@ func (w *DependencyDescriptorWriter) writeBool(val bool) error {
 }
 
 func (w *DependencyDescriptorWriter) writeBits(val uint64, bitCount int) error {
-	return w.writer.WriteBits(uint64(val), bitCount)
+	if err := w.writer.WriteBits(uint64(val), bitCount); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (w *DependencyDescriptorWriter) hasExtenedFields() bool {
@@ -411,14 +414,14 @@ func (w *DependencyDescriptorWriter) writeFrameFdiffs() error {
 		if fdiff <= (1 << 4) {
 			if err := w.writeBits(uint64(1<<4)|uint64(fdiff-1), 2+4); err != nil {
 				return err
-			} else if fdiff <= (1 << 8) {
-				if err := w.writeBits(uint64(2<<8)|uint64(fdiff-1), 2+8); err != nil {
-					return err
-				}
-			} else { // fdiff <= (1<<12)
-				if err := w.writeBits(uint64(3<<12)|uint64(fdiff-1), 2+12); err != nil {
-					return err
-				}
+			}
+		} else if fdiff <= (1 << 8) {
+			if err := w.writeBits(uint64(2<<8)|uint64(fdiff-1), 2+8); err != nil {
+				return err
+			}
+		} else { // fdiff <= (1<<12)
+			if err := w.writeBits(uint64(3<<12)|uint64(fdiff-1), 2+12); err != nil {
+				return err
 			}
 		}
 	}

@@ -167,7 +167,9 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		if ext.URI == sdp.TransportCCURI {
 			b.twccExt = uint8(ext.ID)
 		}
-		if ext.URI == dd.ExtensionUrl {
+		// we only enable dd parser for av1, vp8 have dependency descritor too, but we don't rely on it
+		// in furture, we can use dependency descriptor for all codecs
+		if ext.URI == dd.ExtensionUrl && (b.mime == "video/av1" || b.mime == "video/vp9") {
 			b.ddExt = uint8(ext.ID)
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int) {
 				if b.maxLayerChangedCB != nil {
@@ -472,6 +474,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		ep.TemporalLayer = int32(vp8Packet.TID)
+		b.logger.Debugw("VP8 packet", "keyframe", vp8Packet.IsKeyFrame, "tid", vp8Packet.TID)
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 

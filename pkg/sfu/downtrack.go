@@ -330,6 +330,7 @@ func (d *DownTrack) maybeStartKeyFrameRequester() {
 	//
 	d.stopKeyFrameRequester()
 
+	// TODO : for svc, don't need pli/lrr when layer comes down
 	locked, layer := d.forwarder.CheckSync()
 	if !locked {
 		go d.keyFrameRequester(d.keyFrameRequestGeneration.Load(), layer)
@@ -427,7 +428,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			})
 		}
 
-		if extPkt.KeyFrame {
+		if extPkt.KeyFrame || tp.switchingToTargetLayer {
 			d.isNACKThrottled.Store(false)
 			d.rtpStats.UpdateKeyFrame(1)
 
@@ -436,7 +437,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 				d.stopKeyFrameRequester()
 			}
 
-			d.logger.Debugw("forwarding key frame", "layer", layer)
+			// too much log for switching target layer, only log key frame
+			if !tp.switchingToTargetLayer {
+				d.logger.Debugw("forwarding key frame", "layer", layer)
+			}
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
