@@ -366,20 +366,6 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 	}
 }
 
-/* RAJA-REMOVE
-func (r *RTPStats) UpdateNackAndMiss(nackCount uint32, nackMissCount uint32) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if !r.endTime.IsZero() {
-		return
-	}
-
-	r.updateNackLocked(nackCount)
-	r.updateNackMissLocked(nackMissCount)
-}
-RAJA-REMOVE */
-
 func (r *RTPStats) UpdateNack(nackCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
