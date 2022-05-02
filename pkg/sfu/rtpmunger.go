@@ -92,11 +92,9 @@ func (r *RTPMunger) UpdateSnTsOffsets(extPkt *buffer.ExtPacket, snAdjust uint16,
 }
 
 func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
-	if !extPkt.Head {
+	if r.highestIncomingSN != extPkt.Packet.SequenceNumber {
 		return
 	}
-
-	r.highestIncomingSN = extPkt.Packet.SequenceNumber
 	r.snOffset += 1
 	r.lastSN = extPkt.Packet.SequenceNumber - r.snOffset
 
@@ -109,7 +107,8 @@ func (r *RTPMunger) PacketDropped(extPkt *buffer.ExtPacket) {
 
 func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationParamsRTP, error) {
 	// if out-of-order, look up sequence number offset cache
-	if !extPkt.Head {
+	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
+	if diff > (1 << 15) {
 		snOffset, isValid := r.getSnOffset(extPkt.Packet.SequenceNumber)
 		if !isValid {
 			return &TranslationParamsRTP{
@@ -126,7 +125,6 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket) (*TranslationPara
 
 	ordering := SequenceNumberOrderingContiguous
 
-	diff := extPkt.Packet.SequenceNumber - r.highestIncomingSN
 	if diff > 1 {
 		ordering = SequenceNumberOrderingGap
 	} else {
