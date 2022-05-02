@@ -31,7 +31,6 @@ type pendingPacket struct {
 }
 
 type ExtPacket struct {
-	Head          bool
 	Arrival       int64
 	Packet        *rtp.Packet
 	Payload       interface{}
@@ -364,10 +363,10 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		return
 	}
 
-	flowState := b.updateStreamState(&p, arrivalTime)
+	b.updateStreamState(&p, arrivalTime)
 	b.processHeaderExtensions(&p, arrivalTime)
 
-	ep := b.getExtPacket(pb, &p, arrivalTime, flowState.IsHighestSN)
+	ep := b.getExtPacket(pb, &p, arrivalTime)
 	if ep == nil {
 		return
 	}
@@ -378,7 +377,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.doReports(arrivalTime)
 }
 
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowState {
+func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
 	flowState := b.rtpStats.Update(&p.Header, len(p.Payload), int(p.PaddingSize), arrivalTime)
 
 	if b.nacker != nil {
@@ -390,8 +389,6 @@ func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) RTPFlowStat
 			}
 		}
 	}
-
-	return flowState
 }
 
 func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
@@ -424,9 +421,8 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64, isHighestSN bool) *ExtPacket {
+func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
 	ep := &ExtPacket{
-		Head:          isHighestSN,
 		Packet:        rtpPacket,
 		Arrival:       arrivalTime,
 		RawPacket:     rawPacket,

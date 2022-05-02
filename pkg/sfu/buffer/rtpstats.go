@@ -24,7 +24,6 @@ const (
 )
 
 type RTPFlowState struct {
-	IsHighestSN        bool
 	HasLoss            bool
 	LossStartInclusive uint16
 	LossEndExclusive   uint16
@@ -244,7 +243,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 
 	// in-order
 	default:
-		flowState.IsHighestSN = true
 		if diff > 1 {
 			flowState.HasLoss = true
 			flowState.LossStartInclusive = r.highestSN + 1

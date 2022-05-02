@@ -321,7 +321,6 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 65533,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -397,7 +396,6 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,

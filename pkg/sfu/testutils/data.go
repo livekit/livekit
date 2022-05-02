@@ -11,7 +11,6 @@ import (
 
 type TestExtPacketParams struct {
 	SetMarker      bool
-	IsHead         bool
 	IsKeyFrame     bool
 	PayloadType    uint8
 	SequenceNumber uint16
@@ -45,7 +44,6 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 	}
 
 	ep := &buffer.ExtPacket{
-		Head:      params.IsHead,
 		Arrival:   params.ArrivalTime,
 		Packet:    &packet,
 		KeyFrame:  params.IsKeyFrame,

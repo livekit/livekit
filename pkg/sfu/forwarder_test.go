@@ -791,7 +791,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -840,7 +839,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// padding only packet in order should be dropped
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23334,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -856,7 +854,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// in order packet should be forwarded
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23335,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -877,7 +874,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// padding only packet after a gap should be forwarded
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23337,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -897,7 +893,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// out-of-order should be forwarded using cache
 	params = &testutils.TestExtPacketParams{
-		IsHead:         false,
 		SequenceNumber: 23336,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -918,7 +913,6 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 
 	// switching source should lock onto the new source, but sequence number should be contiguous
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 123,
 		Timestamp:      0xfedcba,
 		SSRC:           0x87654321,
@@ -943,7 +937,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1059,7 +1052,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// padding only packet in order should be dropped
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23334,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1074,7 +1066,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// in order packet should be forwarded
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23335,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1111,7 +1102,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// temporal layer higher than target, should be dropped
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23336,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1142,7 +1132,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// RTP sequence number and VP8 picture id should be contiguous after dropping higher temporal layer picture
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23337,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1194,7 +1183,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// padding only packet after a gap should be forwarded
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23339,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1214,7 +1202,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 
 	// out-of-order should be forwarded using cache, even if it is padding only
 	params = &testutils.TestExtPacketParams{
-		IsHead:         false,
 		SequenceNumber: 23338,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1240,7 +1227,6 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 123,
 		Timestamp:      0xfedcba,
 		SSRC:           0x87654321,
@@ -1297,7 +1283,6 @@ func TestForwardGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1365,7 +1350,6 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -1436,7 +1420,6 @@ func TestForwardGetPaddingVP8(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
