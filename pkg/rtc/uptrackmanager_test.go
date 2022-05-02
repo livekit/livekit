@@ -147,7 +147,8 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, sidResolver)
+		err := um.UpdateSubscriptionPermission(subscriptionPermission, nil, sidResolver)
+		require.NoError(t, err)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -165,10 +166,11 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			return nil
 		}
 
-		err := um.UpdateSubscriptionPermission(subscriptionPermission, nil, badSidResolver)
-		require.ErrorIs(t, err, ErrParticipantIdentityMismatch)
-		require.Nil(t, um.subscriptionPermission)
-		require.Nil(t, um.subscriberPermissions)
+		err = um.UpdateSubscriptionPermission(subscriptionPermission, nil, badSidResolver)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(um.subscriberPermissions))
+		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
+		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
 	})
 }
 

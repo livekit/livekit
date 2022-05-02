@@ -12,7 +12,6 @@ import (
 
 var (
 	ErrSubscriptionPermissionNeedsId = errors.New("either participant identity or SID needed")
-	ErrParticipantIdentityMismatch   = errors.New("participant identity and SID do not match")
 )
 
 type UpTrackManagerParams struct {
@@ -345,8 +344,7 @@ func (u *UpTrackManager) parseSubscriptionPermissions(
 			if trackPerms.ParticipantSid != "" {
 				sub := resolver(livekit.ParticipantID(trackPerms.ParticipantSid))
 				if sub != nil && sub.Identity() != subscriberIdentity {
-					u.subscriberPermissions = nil
-					return ErrParticipantIdentityMismatch
+					u.params.Logger.Errorw("participant identity mismatch", nil, "expected", subscriberIdentity, "got", sub.Identity())
 				}
 				if sub == nil {
 					u.params.Logger.Warnw("could not find subscriber for permissions update", nil, "subscriberID", trackPerms.ParticipantSid)
