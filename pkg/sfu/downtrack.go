@@ -1036,8 +1036,9 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
 
-	numRepeatedNACKs := uint32(0)
+	nackAcks := uint32(0)
 	nackMisses := uint32(0)
+	numRepeatedNACKs := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
 		if meta.layer == int8(InvalidLayerSpatial) {
 			// padding packet, no RTX for those
@@ -1047,6 +1048,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		if disallowedLayers[meta.layer] {
 			continue
 		}
+
+		nackAcks++
 
 		if pool != nil {
 			PacketFactory.Put(pool)
@@ -1119,7 +1122,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.totalRepeatedNACKs += numRepeatedNACKs
 	d.statsLock.Unlock()
 
-	d.rtpStats.UpdateNackMiss(nackMisses)
+	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 }
 
 // writes RTP header extensions of track
