@@ -142,12 +142,13 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, code
 	}
 
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
-		PublisherID:       t.params.MediaTrack.PublisherID(),
-		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
-		SubscriberID:      subscriberID,
-		MediaTrack:        t.params.MediaTrack,
-		DownTrack:         downTrack,
-		AdaptiveStream:    sub.GetAdaptiveStream(),
+		PublisherID:        t.params.MediaTrack.PublisherID(),
+		PublisherIdentity:  t.params.MediaTrack.PublisherIdentity(),
+		SubscriberID:       subscriberID,
+		SubscriberIdentity: sub.Identity(),
+		MediaTrack:         t.params.MediaTrack,
+		DownTrack:          downTrack,
+		AdaptiveStream:     sub.GetAdaptiveStream(),
 	})
 
 	var transceiver *webrtc.RTPTransceiver
@@ -276,14 +277,14 @@ func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
 	}
 }
 
-func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
-	var revokedSubscriberIDs []livekit.ParticipantID
+func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
 
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	for _, subTrack := range t.getAllSubscribedTracks() {
 		found := false
-		for _, allowedID := range allowedSubscriberIDs {
-			if subTrack.SubscriberID() == allowedID {
+		for _, allowedIdentity := range allowedSubscriberIdentities {
+			if subTrack.SubscriberIdentity() == allowedIdentity {
 				found = true
 				break
 			}
@@ -291,11 +292,11 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 
 		if !found {
 			go subTrack.DownTrack().Close()
-			revokedSubscriberIDs = append(revokedSubscriberIDs, subTrack.SubscriberID())
+			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
 		}
 	}
 
-	return revokedSubscriberIDs
+	return revokedSubscriberIdentities
 }
 
 func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {

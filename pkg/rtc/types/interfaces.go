@@ -74,7 +74,11 @@ type Participant interface {
 	SubscriptionPermission() *livekit.SubscriptionPermission
 
 	// updates from remotes
-	UpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
+	UpdateSubscriptionPermission(
+		subscriptionPermission *livekit.SubscriptionPermission,
+		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
+		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
+	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
@@ -203,7 +207,7 @@ type MediaTrack interface {
 	RemoveSubscriber(participantID livekit.ParticipantID, resume bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RemoveAllSubscribers()
-	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 
 	// returns quality information that's appropriate for width & height
@@ -234,6 +238,7 @@ type SubscribedTrack interface {
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
 	SubscriberID() livekit.ParticipantID
+	SubscriberIdentity() livekit.ParticipantIdentity
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool
