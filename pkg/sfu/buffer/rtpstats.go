@@ -123,8 +123,10 @@ type RTPStats struct {
 
 	gapHistogram [GapHistogramNumBins]uint32
 
-	nacks      uint32
-	nackMisses uint32
+	nacks        uint32
+	nackAcks     uint32
+	nackMisses   uint32
+	nackRepeated uint32
 
 	plis    uint32
 	lastPli time.Time
@@ -364,6 +366,7 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 	}
 }
 
+/* RAJA-REMOVE
 func (r *RTPStats) UpdateNackAndMiss(nackCount uint32, nackMissCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -375,6 +378,7 @@ func (r *RTPStats) UpdateNackAndMiss(nackCount uint32, nackMissCount uint32) {
 	r.updateNackLocked(nackCount)
 	r.updateNackMissLocked(nackMissCount)
 }
+RAJA-REMOVE */
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
 	r.lock.Lock()
@@ -384,14 +388,10 @@ func (r *RTPStats) UpdateNack(nackCount uint32) {
 		return
 	}
 
-	r.updateNackLocked(nackCount)
-}
-
-func (r *RTPStats) updateNackLocked(nackCount uint32) {
 	r.nacks += nackCount
 }
 
-func (r *RTPStats) UpdateNackMiss(nackMissCount uint32) {
+func (r *RTPStats) UpdateNackProcessed(nackAckCount uint32, nackMissCount uint32, nackRepeatedCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -399,11 +399,9 @@ func (r *RTPStats) UpdateNackMiss(nackMissCount uint32) {
 		return
 	}
 
-	r.updateNackMissLocked(nackMissCount)
-}
-
-func (r *RTPStats) updateNackMissLocked(nackMissCount uint32) {
+	r.nackAcks += nackAckCount
 	r.nackMisses += nackMissCount
+	r.nackRepeated += nackRepeatedCount
 }
 
 func (r *RTPStats) UpdatePliAndTime(pliCount uint32) {
@@ -593,6 +591,9 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 	if r.params.IsReceiverReportDriven {
 		// should not be set for streams that need to generate reception report
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
+		if int32(packetsLost) < 0 {
+			packetsLost = 0
+		}
 	} else {
 		_, _, _, _, packetsLost, _ = r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	}
@@ -653,6 +654,9 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 	packetsLost := uint32(0)
 	if r.params.IsReceiverReportDriven {
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
+		if int32(packetsLost) < 0 {
+			packetsLost = 0
+		}
 	} else {
 		_, _, _, _, packetsLost, _ = r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	}
@@ -698,6 +702,9 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	_, bytes, packetsPadding, bytesPadding, packetsLost, frames := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	if r.params.IsReceiverReportDriven {
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
+		if int32(packetsLost) < 0 {
+			packetsLost = 0
+		}
 	}
 
 	maxJitter := then.maxJitter
@@ -775,7 +782,7 @@ func (r *RTPStats) ToString() string {
 	}
 
 	str += ", n:"
-	str += fmt.Sprintf("%d|%d", p.Nacks, p.NackMisses)
+	str += fmt.Sprintf("%d|%d|%d|%d", p.Nacks, p.NackAcks, p.NackMisses, p.NackRepeated)
 
 	str += ", pli:"
 	str += fmt.Sprintf("%d|%+v / %d|%+v",
@@ -862,7 +869,9 @@ func (r *RTPStats) ToProto() *livekit.RTPStats {
 		JitterCurrent:        jitterTime,
 		JitterMax:            maxJitterTime,
 		Nacks:                r.nacks,
+		NackAcks:             r.nackAcks,
 		NackMisses:           r.nackMisses,
+		NackRepeated:         r.nackRepeated,
 		Plis:                 r.plis,
 		LastPli:              timestamppb.New(r.lastPli),
 		LayerLockPlis:        r.layerLockPlis,
@@ -1111,7 +1120,9 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 	maxJitter := float64(0)
 	gapHistogram := make(map[int32]uint32, GapHistogramNumBins)
 	nacks := uint32(0)
+	nackAcks := uint32(0)
 	nackMisses := uint32(0)
+	nackRepeated := uint32(0)
 	plis := uint32(0)
 	lastPli := time.Time{}
 	layerLockPlis := uint32(0)
@@ -1160,7 +1171,9 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 		}
 
 		nacks += stats.Nacks
+		nackAcks += stats.NackAcks
 		nackMisses += stats.NackMisses
+		nackRepeated += stats.NackRepeated
 
 		plis += stats.Plis
 		if lastPli.IsZero() || lastPli.Before(stats.LastPli.AsTime()) {
@@ -1229,7 +1242,9 @@ func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
 		JitterMax:            maxJitter,
 		GapHistogram:         gapHistogram,
 		Nacks:                nacks,
+		NackAcks:             nackAcks,
 		NackMisses:           nackMisses,
+		NackRepeated:         nackRepeated,
 		Plis:                 plis,
 		LastPli:              timestamppb.New(lastPli),
 		LayerLockPlis:        layerLockPlis,
