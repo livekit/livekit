@@ -95,7 +95,9 @@ func (t *telemetryServiceInternal) SendAnalytics() {
 	t.workersMu.RUnlock()
 
 	for _, worker := range workers {
-		worker.Update()
+		if worker != nil {
+			worker.Update()
+		}
 	}
 }
 
