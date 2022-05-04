@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gammazero/workerpool"
 
@@ -27,7 +28,9 @@ type telemetryServiceInternal struct {
 	webhookPool *workerpool.WorkerPool
 
 	// one worker per participant
-	workers map[livekit.ParticipantID]*StatsWorker
+	workersMu  sync.RWMutex
+	workers    []*StatsWorker
+	workersIdx map[livekit.ParticipantID]int
 
 	analytics AnalyticsService
 }
@@ -36,7 +39,7 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 	return &telemetryServiceInternal{
 		notifier:    notifier,
 		webhookPool: workerpool.New(maxWebhookWorkers),
-		workers:     make(map[livekit.ParticipantID]*StatsWorker),
+		workersIdx:  make(map[livekit.ParticipantID]int),
 		analytics:   analytics,
 	}
 }
@@ -57,8 +60,7 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 	}
 	prometheus.IncrementRTCP(direction, nacks, plis, firs)
 
-	w := t.workers[participantID]
-	if w != nil {
+	if w := t.getStatsWorker(participantID); w != nil {
 		w.OnTrackStat(trackID, streamType, stat)
 	}
 }
@@ -88,7 +90,24 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 }
 
 func (t *telemetryServiceInternal) SendAnalytics() {
-	for _, worker := range t.workers {
-		worker.Update()
+	t.workersMu.RLock()
+	workers := t.workers
+	t.workersMu.RUnlock()
+
+	for _, worker := range workers {
+		if worker != nil {
+			worker.Update()
+		}
 	}
+}
+
+func (t *telemetryServiceInternal) getStatsWorker(participantID livekit.ParticipantID) *StatsWorker {
+	t.workersMu.RLock()
+	defer t.workersMu.RUnlock()
+
+	if idx, ok := t.workersIdx[participantID]; ok {
+		return t.workers[idx]
+	}
+
+	return nil
 }
