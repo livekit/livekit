@@ -101,11 +101,11 @@ func (t *telemetryServiceInternal) SendAnalytics() {
 
 func (t *telemetryServiceInternal) getStatsWorker(participantID livekit.ParticipantID) *StatsWorker {
 	t.workersMu.RLock()
-	var w *StatsWorker
-	if idx, ok := t.workersIdx[participantID]; ok {
-		w = t.workers[idx]
-	}
-	t.workersMu.RUnlock()
+	defer t.workersMu.RUnlock()
 
-	return w
+	if idx, ok := t.workersIdx[participantID]; ok {
+		return t.workers[idx]
+	}
+
+	return nil
 }
