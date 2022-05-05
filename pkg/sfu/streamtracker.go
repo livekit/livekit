@@ -64,9 +64,6 @@ type StreamTracker struct {
 	// only access within detectWorker
 	cycleCount uint32
 
-	// only access by the same goroutine as Observe
-	lastSN uint16
-
 	lastBitrateReport time.Time
 	bytesForBitrate   [4]int64
 	bitrate           [4]int64
@@ -184,7 +181,7 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.isStopped || s.paused {
+	if s.isStopped || s.paused || payloadSize == 0 {
 		return
 	}
 
@@ -192,11 +189,10 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 		// first packet
 		s.initialized = true
 
-		s.lastSN = sn
 		s.countSinceLast = 1
 
 		s.lastBitrateReport = time.Now()
-		if temporalLayer >= 0 && payloadSize > 0 {
+		if temporalLayer >= 0 {
 			s.bytesForBitrate[temporalLayer] += int64(pktSize)
 		}
 
@@ -206,14 +202,9 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 		return
 	}
 
-	// ignore out-of-order SNs
-	if (sn - s.lastSN) > uint16(1<<15) {
-		return
-	}
-	s.lastSN = sn
 	s.countSinceLast++
 
-	if temporalLayer >= 0 && payloadSize > 0 {
+	if temporalLayer >= 0 {
 		s.bytesForBitrate[temporalLayer] += int64(pktSize)
 	}
 }
