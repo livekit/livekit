@@ -2,6 +2,7 @@ package dependencydescriptor
 
 import (
 	"fmt"
+	"reflect"
 )
 
 type TemplateMatch struct {
@@ -111,25 +112,25 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 	return nil
 }
 
-func sliceEqual[T comparable](a, b []T) bool {
-	if len(a) != len(b) {
-		return false
-	}
+// func sliceEqual[T comparable](a, b []T) bool {
+// 	if len(a) != len(b) {
+// 		return false
+// 	}
 
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
+// 	for i, v := range a {
+// 		if v != b[i] {
+// 			return false
+// 		}
+// 	}
 
-	return true
-}
+// 	return true
+// }
 
 func (w *DependencyDescriptorWriter) caculateMatch(idx int, template *FrameDependencyTemplate) TemplateMatch {
 	var result TemplateMatch
 	result.TemplateIdx = idx
-	result.NeedCustomFdiffs = !sliceEqual(w.descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs)
-	result.NeedCustomDtis = !sliceEqual(w.descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications)
+	result.NeedCustomFdiffs = w.descriptor.FrameDependencies.FrameDiffs != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs)
+	result.NeedCustomDtis = w.descriptor.FrameDependencies.DecodeTargetIndications != nil && !reflect.DeepEqual(w.descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications)
 
 	for i := 0; i < w.structure.NumChains; i++ {
 		if w.activeChains&(1<<i) != 0 && w.descriptor.FrameDependencies.ChainDiffs[i] != template.ChainDiffs[i] {
