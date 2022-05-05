@@ -96,7 +96,9 @@ func (t *Responder) buildTransportCCPacket() rtcp.RawPacket {
 	sort.Slice(t.extInfo, func(i, j int) bool {
 		return t.extInfo[i].ExtTSN < t.extInfo[j].ExtTSN
 	})
-	tccPkts := make([]rtpExtInfo, 0, int(float64(len(t.extInfo))*1.2))
+	maxTccPktsLen := int(float64(len(t.extInfo)) * 1.2)
+	tccPkts := make([]rtpExtInfo, 0, maxTccPktsLen)
+	var consumedExtInfo int
 	for _, tccExtInfo := range t.extInfo {
 		if tccExtInfo.ExtTSN < t.lastExtSN {
 			continue
@@ -108,8 +110,16 @@ func (t *Responder) buildTransportCCPacket() rtcp.RawPacket {
 		}
 		t.lastExtSN = tccExtInfo.ExtTSN
 		tccPkts = append(tccPkts, tccExtInfo)
+		consumedExtInfo++
+		if len(tccPkts) >= maxTccPktsLen {
+			break
+		}
 	}
-	t.extInfo = t.extInfo[:0]
+	if consumedExtInfo == len(t.extInfo) {
+		t.extInfo = t.extInfo[:0]
+	} else {
+		t.extInfo = t.extInfo[consumedExtInfo:]
+	}
 
 	firstRecv := false
 	same := true
