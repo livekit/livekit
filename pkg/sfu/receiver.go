@@ -174,9 +174,7 @@ func NewWebRTCReceiver(
 		w.isSVC = true
 	}
 
-	// if !strings.EqualFold(w.codec.MimeType, "video/av1") {
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
-	// }
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	for _, opt := range opts {
@@ -557,16 +555,16 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		// svc packet, dispatch to correct tracker
 		spatialTracker := tracker
 		spatialLayer := layer
-		if pkt.SpatialLayer >= 0 {
-			spatialLayer = pkt.SpatialLayer
-			spatialTracker = w.streamTrackerManager.GetTracker(pkt.SpatialLayer)
+		if pkt.Spatial >= 0 {
+			spatialLayer = pkt.Spatial
+			spatialTracker = w.streamTrackerManager.GetTracker(pkt.Spatial)
 			if spatialTracker == nil {
-				spatialTracker = w.streamTrackerManager.AddTracker(pkt.SpatialLayer)
+				spatialTracker = w.streamTrackerManager.AddTracker(pkt.Spatial)
 			}
 		}
 
 		if spatialTracker != nil {
-			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket), len(pkt.Packet.Payload))
+			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
 		}
 
 		w.downTrackSpreader.Broadcast(spatialLayer, pkt)

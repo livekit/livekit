@@ -33,13 +33,14 @@ type pendingPacket struct {
 }
 
 type ExtPacket struct {
-	Arrival              int64
-	Packet               *rtp.Packet
-	Payload              interface{}
-	KeyFrame             bool
-	RawPacket            []byte
-	SpatialLayer         int32
-	TemporalLayer        int32
+	VideoLayer
+	Arrival   int64
+	Packet    *rtp.Packet
+	Payload   interface{}
+	KeyFrame  bool
+	RawPacket []byte
+	// Spatial              int32
+	// Temporal             int32
 	DependencyDescriptor *dd.DependencyDescriptor
 }
 
@@ -92,7 +93,7 @@ type Buffer struct {
 	// depencency descriptor
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
-	maxLayerChangedCB func(int, int)
+	maxLayerChangedCB func(int32, int32)
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -168,13 +169,18 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		b.codecType = webrtc.RTPCodecType(0)
 	}
 	for _, ext := range params.HeaderExtensions {
-		if ext.URI == dd.ExtensionUrl {
+		switch ext.URI {
+		case dd.ExtensionUrl:
 			b.ddExt = uint8(ext.ID)
-			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int) {
+			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
 				if b.maxLayerChangedCB != nil {
 					b.maxLayerChangedCB(spatial, temporal)
 				}
 			})
+
+		case sdp.AudioLevelURI:
+			b.audioLevelExt = uint8(ext.ID)
+			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
 		}
 	}
 
@@ -196,13 +202,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 				b.nacker = NewNACKQueue()
 				b.nacker.SetRTT(70) // default till it is updated
-			}
-		}
-	} else if b.codecType == webrtc.RTPCodecTypeAudio {
-		for _, h := range params.HeaderExtensions {
-			if h.URI == sdp.AudioLevelURI {
-				b.audioLevelExt = uint8(h.ID)
-				b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
 			}
 		}
 	}
@@ -441,11 +440,13 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 
 func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
 	ep := &ExtPacket{
-		Packet:        rtpPacket,
-		Arrival:       arrivalTime,
-		RawPacket:     rawPacket,
-		SpatialLayer:  -1,
-		TemporalLayer: -1,
+		Packet:    rtpPacket,
+		Arrival:   arrivalTime,
+		RawPacket: rawPacket,
+		VideoLayer: VideoLayer{
+			Spatial:  -1,
+			Temporal: -1,
+		},
 	}
 
 	if len(rtpPacket.Payload) == 0 {
@@ -453,10 +454,14 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		return ep
 	}
 
-	ep.TemporalLayer = 0
+	ep.Temporal = 0
 	if b.ddParser != nil {
-		_ = b.ddParser.Parse(ep)
-		// TODO : notify active decode target change if changed.
+		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
+		if err == nil && ddVal != nil {
+			ep.DependencyDescriptor = ddVal
+			ep.VideoLayer = videoLayer
+			// TODO : notify active decode target change if changed.
+		}
 	}
 	switch b.mime {
 	case "video/vp8":
@@ -468,11 +473,11 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
-			ep.TemporalLayer = int32(vp8Packet.TID)
+			ep.Temporal = int32(vp8Packet.TID)
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
-			vp8Packet.TID = uint8(ep.TemporalLayer)
-			ep.SpatialLayer = -1 // vp8 don't have spatial scalability, reset to -1
+			vp8Packet.TID = uint8(ep.Temporal)
+			ep.Spatial = -1 // vp8 don't have spatial scalability, reset to -1
 		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
@@ -656,6 +661,6 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 
 // TODO : now we rely on stream tracker for layer change, dependency still
 // work for that too. Do we keep it unchange or use both methods?
-func (b *Buffer) OnMaxLayerChanged(fn func(int, int)) {
+func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
 }

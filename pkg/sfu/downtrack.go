@@ -544,7 +544,7 @@ func (d *DownTrack) Mute(muted bool) {
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
-			notifyLayer = maxLayers.spatial
+			notifyLayer = maxLayers.Spatial
 		}
 		d.onMaxLayerChanged(d, notifyLayer)
 	}
@@ -621,7 +621,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
 		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
-		d.onMaxLayerChanged(d, maxLayers.spatial)
+		d.onMaxLayerChanged(d, maxLayers.Spatial)
 	}
 
 	if d.onSubscribedLayersChanged != nil {
@@ -939,8 +939,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
-				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
-				d.receiver.SendPLI(targetLayers.spatial)
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
+				d.receiver.SendPLI(targetLayers.Spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1247,7 +1247,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
-		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
+		"CurrentSpatialLayer": d.forwarder.CurrentLayers().Spatial,
 		"Stats":               stats,
 	}
 }

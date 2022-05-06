@@ -985,8 +985,8 @@ func (s *StreamAllocator) allocateAllTracks() {
 		for spatial := int32(0); spatial <= DefaultMaxLayerSpatial; spatial++ {
 			for temporal := int32(0); temporal <= DefaultMaxLayerTemporal; temporal++ {
 				layers := VideoLayers{
-					spatial:  spatial,
-					temporal: temporal,
+					Spatial:  spatial,
+					Temporal: temporal,
 				}
 
 				for _, track := range sorted {
@@ -1424,11 +1424,11 @@ func (t TrackSorter) Less(i, j int) bool {
 		return t[i].priority > t[j].priority
 	}
 
-	if t[i].maxLayers.spatial != t[j].maxLayers.spatial {
-		return t[i].maxLayers.spatial > t[j].maxLayers.spatial
+	if t[i].maxLayers.Spatial != t[j].maxLayers.Spatial {
+		return t[i].maxLayers.Spatial > t[j].maxLayers.Spatial
 	}
 
-	return t[i].maxLayers.temporal > t[j].maxLayers.temporal
+	return t[i].maxLayers.Temporal > t[j].maxLayers.Temporal
 }
 
 // ------------------------------------------------
