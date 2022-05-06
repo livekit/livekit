@@ -69,8 +69,6 @@ type DependencyDescriptor struct {
 	AttachedStructure          *FrameDependencyStructure
 }
 
-type bitmask *uint32
-
 func formatBitmask(b *uint32) string {
 	if b == nil {
 		return "-"
