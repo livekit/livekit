@@ -34,13 +34,11 @@ type pendingPacket struct {
 
 type ExtPacket struct {
 	VideoLayer
-	Arrival   int64
-	Packet    *rtp.Packet
-	Payload   interface{}
-	KeyFrame  bool
-	RawPacket []byte
-	// Spatial              int32
-	// Temporal             int32
+	Arrival              int64
+	Packet               *rtp.Packet
+	Payload              interface{}
+	KeyFrame             bool
+	RawPacket            []byte
 	DependencyDescriptor *dd.DependencyDescriptor
 }
 
