@@ -3,6 +3,7 @@ package sfu
 import (
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,7 @@ type WebRTCReceiver struct {
 	receiver       *webrtc.RTPReceiver
 	codec          webrtc.RTPCodecParameters
 	isSimulcast    bool
+	isSVC          bool
 	onCloseHandler func()
 	closeOnce      sync.Once
 	closed         atomic.Bool
@@ -165,7 +167,16 @@ func NewWebRTCReceiver(
 		twcc:                 twcc,
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
 	}
+	switch strings.ToLower(w.codec.MimeType) {
+	case "video/av1":
+		fallthrough
+	case "video/vp9":
+		w.isSVC = true
+	}
+
+	// if !strings.EqualFold(w.codec.MimeType, "video/av1") {
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
+	// }
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	for _, opt := range opts {
@@ -381,9 +392,8 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 }
 
 func (w *WebRTCReceiver) SendPLI(layer int32) {
-	w.bufferMu.RLock()
-	buff := w.buffers[layer]
-	w.bufferMu.RUnlock()
+	// TODO :  should send LRR (Layer Refresh Request) instead of PLI
+	buff := w.getBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -395,11 +405,23 @@ func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {
 	w.rtcpCh = ch
 }
 
-func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (w *WebRTCReceiver) getBuffer(layer int32) *buffer.Buffer {
+	// for svc codecs, use layer full quality instead.
+	// we only have buffer for full quality
+	if w.isSVC {
+		layer = int32(len(w.buffers)) - 1
+	}
 	w.bufferMu.RLock()
 	buff := w.buffers[layer]
 	w.bufferMu.RUnlock()
-	return buff.GetPacket(buf, sn)
+	if buff == nil {
+		w.logger.Warnw("getBuffer failed, buffer not found", nil, "layer", layer)
+	}
+	return buff
+}
+
+func (w *WebRTCReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+	return w.getBuffer(int32(layer)).GetPacket(buf, sn)
 }
 
 func (w *WebRTCReceiver) GetTrackStats() *livekit.RTPStats {
@@ -532,11 +554,22 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
-		if tracker != nil {
-			tracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket), len(pkt.Packet.Payload))
+		// svc packet, dispatch to correct tracker
+		spatialTracker := tracker
+		spatialLayer := layer
+		if pkt.SpatialLayer >= 0 {
+			spatialLayer = pkt.SpatialLayer
+			spatialTracker = w.streamTrackerManager.GetTracker(pkt.SpatialLayer)
+			if spatialTracker == nil {
+				spatialTracker = w.streamTrackerManager.AddTracker(pkt.SpatialLayer)
+			}
 		}
 
-		w.downTrackSpreader.Broadcast(layer, pkt)
+		if spatialTracker != nil {
+			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.TemporalLayer, len(pkt.RawPacket), len(pkt.Packet.Payload))
+		}
+
+		w.downTrackSpreader.Broadcast(spatialLayer, pkt)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 //
@@ -135,6 +136,13 @@ type TranslationParams struct {
 	isSwitchingToMaxLayer bool
 	rtp                   *TranslationParamsRTP
 	vp8                   *TranslationParamsVP8
+	ddExtension           *dd.DependencyDescriptorExtension
+	marker                bool
+
+	// indicates this frame has 'Switch' decode indication for target layer
+	// TODO : in theory, we need check frame chain is not broken for the target
+	// but we don't have frame queue now, so just use decode target indication
+	switchingToTargetLayer bool
 }
 
 // -------------------------------------------------------------------
@@ -205,6 +213,8 @@ type Forwarder struct {
 	vp8Munger *VP8Munger
 
 	isTemporalSupported bool
+
+	ddLayerSelector *DDVideoLayerSelector
 }
 
 func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
@@ -225,6 +235,12 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	if strings.ToLower(codec.MimeType) == "video/vp8" {
 		f.isTemporalSupported = true
 		f.vp8Munger = NewVP8Munger(logger)
+	}
+
+	// TODO : we only enable dd layer selector for av1 now, at future we can
+	// enable it for vp9 too
+	if strings.ToLower(codec.MimeType) == "video/av1" {
+		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -495,7 +511,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		targetLayers:       targetLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
@@ -790,7 +806,7 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		targetLayers:       f.provisional.layers,
 		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.layers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
@@ -856,7 +872,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
-			f.targetLayers = f.lastAllocation.targetLayers
+			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
 	}
@@ -896,7 +912,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
-			f.targetLayers = f.lastAllocation.targetLayers
+			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
 	}
@@ -999,12 +1015,19 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
 	}
-	f.targetLayers = f.lastAllocation.targetLayers
+	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
 	}
 
 	return f.lastAllocation
+}
+
+func (f *Forwarder) setTargetLayers(targetLayers VideoLayers) {
+	f.targetLayers = targetLayers
+	if f.ddLayerSelector != nil {
+		f.ddLayerSelector.SelectLayer(targetLayers)
+	}
 }
 
 func (f *Forwarder) Resync() {
@@ -1079,7 +1102,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 // should be called with lock held
-func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
+func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket, tp *TranslationParams) (*TranslationParams, error) {
 	if f.lastSSRC != extPkt.Packet.SSRC {
 		if !f.started {
 			f.started = true
@@ -1121,7 +1144,9 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*Trans
 
 	f.lTSCalc = extPkt.Arrival
 
-	tp := &TranslationParams{}
+	if tp == nil {
+		tp = &TranslationParams{}
+	}
 	tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt)
 	if err != nil {
 		tp.shouldDrop = true
@@ -1142,7 +1167,7 @@ func (f *Forwarder) getTranslationParamsCommon(extPkt *buffer.ExtPacket) (*Trans
 
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket) (*TranslationParams, error) {
-	return f.getTranslationParamsCommon(extPkt)
+	return f.getTranslationParamsCommon(extPkt, nil)
 }
 
 // should be called with lock held
@@ -1155,15 +1180,28 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
+	if f.ddLayerSelector != nil {
+		if selected := f.ddLayerSelector.Select(extPkt, tp); !selected {
+			tp.shouldDrop = true
+			f.rtpMunger.PacketDropped(extPkt)
+			return tp, nil
+		}
+	}
+
 	if f.targetLayers.spatial != f.currentLayers.spatial {
 		if f.targetLayers.spatial == layer {
-			if extPkt.KeyFrame {
+			if extPkt.KeyFrame || tp.switchingToTargetLayer {
 				// lock to target layer
 				f.logger.Debugw("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				f.currentLayers.spatial = f.targetLayers.spatial
 				if !f.isTemporalSupported {
 					f.currentLayers.temporal = f.targetLayers.temporal
 				}
+				// TODO : we switch to target layer immediately now since we assume all frame chain is integrity
+				//   if we have frame chain check, should switch only if target chain is not broken and decodable
+				// if f.ddLayerSelector != nil {
+				// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
+				// }
 				if f.currentLayers.spatial == f.maxLayers.spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
@@ -1171,7 +1209,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		}
 	}
 
-	if f.currentLayers.spatial != layer {
+	// if we have layer selector, let it decide whether to drop or not
+	if f.ddLayerSelector == nil && f.currentLayers.spatial != layer {
 		tp.shouldDrop = true
 		return tp, nil
 	}
@@ -1200,7 +1239,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		return tp, nil
 	}
 
-	tp, err := f.getTranslationParamsCommon(extPkt)
+	_, err := f.getTranslationParamsCommon(extPkt, tp)
 	if tp.shouldDrop || f.vp8Munger == nil || len(extPkt.Packet.Payload) == 0 {
 		return tp, err
 	}

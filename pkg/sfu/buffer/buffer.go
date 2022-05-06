@@ -19,6 +19,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 const (
@@ -31,13 +33,14 @@ type pendingPacket struct {
 }
 
 type ExtPacket struct {
-	Arrival       int64
-	Packet        *rtp.Packet
-	Payload       interface{}
-	KeyFrame      bool
-	RawPacket     []byte
-	SpatialLayer  int32
-	TemporalLayer int32
+	Arrival              int64
+	Packet               *rtp.Packet
+	Payload              interface{}
+	KeyFrame             bool
+	RawPacket            []byte
+	SpatialLayer         int32
+	TemporalLayer        int32
+	DependencyDescriptor *dd.DependencyDescriptor
 }
 
 // Buffer contains all packets
@@ -85,6 +88,11 @@ type Buffer struct {
 
 	// logger
 	logger logger.Logger
+
+	// depencency descriptor
+	ddExt             uint8
+	ddParser          *DependencyDescriptorParser
+	maxLayerChangedCB func(int, int)
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -158,6 +166,16 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		b.bucket = NewBucket(b.videoPool.Get().(*[]byte))
 	default:
 		b.codecType = webrtc.RTPCodecType(0)
+	}
+	for _, ext := range params.HeaderExtensions {
+		if ext.URI == dd.ExtensionUrl {
+			b.ddExt = uint8(ext.ID)
+			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int) {
+				if b.maxLayerChangedCB != nil {
+					b.maxLayerChangedCB(spatial, temporal)
+				}
+			})
+		}
 	}
 
 	if b.codecType == webrtc.RTPCodecTypeVideo {
@@ -436,6 +454,10 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 	}
 
 	ep.TemporalLayer = 0
+	if b.ddParser != nil {
+		_ = b.ddParser.Parse(ep)
+		// TODO : notify active decode target change if changed.
+	}
 	switch b.mime {
 	case "video/vp8":
 		vp8Packet := VP8{}
@@ -445,7 +467,13 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		}
 		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
-		ep.TemporalLayer = int32(vp8Packet.TID)
+		if ep.DependencyDescriptor == nil {
+			ep.TemporalLayer = int32(vp8Packet.TID)
+		} else {
+			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
+			vp8Packet.TID = uint8(ep.TemporalLayer)
+			ep.SpatialLayer = -1 // vp8 don't have spatial scalability, reset to -1
+		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 
@@ -624,4 +652,10 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 	}
 
 	return b.audioLevel.GetLevel()
+}
+
+// TODO : now we rely on stream tracker for layer change, dependency still
+// work for that too. Do we keep it unchange or use both methods?
+func (b *Buffer) OnMaxLayerChanged(fn func(int, int)) {
+	b.maxLayerChangedCB = fn
 }

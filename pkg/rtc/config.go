@@ -11,6 +11,8 @@ import (
 
 	"github.com/livekit/protocol/logger"
 
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -147,6 +149,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
 				frameMarking,
+				dd.ExtensionUrl,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
@@ -161,6 +164,9 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	// subscriber configuration
 	subscriberConfig := DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Video: []string{dd.ExtensionUrl},
+		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
