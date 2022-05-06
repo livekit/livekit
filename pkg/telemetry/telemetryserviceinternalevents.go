@@ -52,7 +52,7 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 	clientInfo *livekit.ClientInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
 ) {
-	w := newStatsWorker(
+	newWorker := newStatsWorker(
 		ctx,
 		t,
 		livekit.RoomID(room.Sid),
@@ -62,20 +62,20 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 	)
 	t.workersMu.Lock()
 	var free = false
-	for idx, w := range t.workers {
-		if w != nil {
+	for idx, worker := range t.workers {
+		if worker != nil {
 			continue
 		}
 
 		free = true
 		t.workersIdx[livekit.ParticipantID(participant.Sid)] = idx
-		t.workers[idx] = w
+		t.workers[idx] = newWorker
 		break
 	}
 
 	if !free {
 		t.workersIdx[livekit.ParticipantID(participant.Sid)] = len(t.workers)
-		t.workers = append(t.workers, w)
+		t.workers = append(t.workers, newWorker)
 	}
 	t.workersMu.Unlock()
 
