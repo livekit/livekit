@@ -83,17 +83,17 @@ func (s *StreamTrackerManager) OnBitrateAvailabilityChanged(f func()) {
 	s.onBitrateAvailabilityChanged = f
 }
 
-func (s *StreamTrackerManager) AddTracker(layer int32) {
+func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 	var params StreamTrackerParams
 	if s.source == livekit.TrackSource_SCREEN_SHARE {
 		if int(layer) >= len(ConfigScreenshare) {
-			return
+			return nil
 		}
 
 		params = ConfigScreenshare[layer]
 	} else {
 		if int(layer) >= len(ConfigVideo) {
-			return
+			return nil
 		}
 
 		params = ConfigVideo[layer]
@@ -129,6 +129,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 	s.lock.Unlock()
 
 	tracker.Start()
+	return tracker
 }
 
 func (s *StreamTrackerManager) RemoveTracker(layer int32) {

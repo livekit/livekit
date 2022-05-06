@@ -55,9 +55,13 @@ func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.Parti
 }
 
 func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {
+	sdp := sd.SDP
+	// enable mixed of one-byte and two-byte rtp extension
+	// TODO : should move this to pion's option
+	sdp = strings.Replace(sdp, "m=", "a=extmap-allow-mixed\r\nm=", 1)
 	return &livekit.SessionDescription{
 		Type: sd.Type.String(),
-		Sdp:  sd.SDP,
+		Sdp:  sdp,
 	}
 }
 
@@ -166,5 +170,13 @@ func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Log
 	}
 
 	lr = lr.WithValues("transport", target)
+	return logger.Logger(lr)
+}
+
+func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
+	lr := logr.Logger(l)
+	if mime != "" {
+		lr = lr.WithValues("mime", mime)
+	}
 	return logger.Logger(lr)
 }

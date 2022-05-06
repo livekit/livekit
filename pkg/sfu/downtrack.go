@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -92,6 +93,8 @@ type DownTrack struct {
 
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
+	absSendTimeID           int
+	dependencyDescriptorID  int
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
@@ -229,7 +232,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.handleRTCP(pkt)
 		})
 	}
-	if strings.HasPrefix(d.codec.MimeType, "video/") {
+	if strings.HasPrefix(codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
 
@@ -267,6 +270,14 @@ func (d *DownTrack) PeerID() livekit.ParticipantID { return d.peerID }
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
 	d.rtpHeaderExtensions = rtpHeaderExtensions
+	for _, ext := range rtpHeaderExtensions {
+		switch ext.URI {
+		case sdp.ABSSendTimeURI:
+			d.absSendTimeID = ext.ID
+		case dd.ExtensionUrl:
+			d.dependencyDescriptorID = ext.ID
+		}
+	}
 }
 
 // Kind controls if this TrackLocal is audio or video
@@ -303,6 +314,7 @@ func (d *DownTrack) maybeStartKeyFrameRequester() {
 	//
 	d.stopKeyFrameRequester()
 
+	// TODO : for svc, don't need pli/lrr when layer comes down
 	locked, layer := d.forwarder.CheckSync()
 	if !locked {
 		go d.keyFrameRequester(d.keyFrameRequestGeneration.Load(), layer)
@@ -381,7 +393,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
-	hdr, err := d.getTranslatedRTPHeader(extPkt, tp.rtp)
+	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.pktsDropped.Inc()
 		return err
@@ -398,7 +410,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			d.onMaxLayerChanged(d, layer)
 		}
 
-		if extPkt.KeyFrame {
+		if extPkt.KeyFrame || tp.switchingToTargetLayer {
 			d.isNACKThrottled.Store(false)
 			d.rtpStats.UpdateKeyFrame(1)
 
@@ -407,7 +419,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 				d.stopKeyFrameRequester()
 			}
 
-			d.logger.Debugw("forwarding key frame", "layer", layer)
+			// too much log for switching target layer, only log key frame
+			if !tp.switchingToTargetLayer {
+				d.logger.Debugw("forwarding key frame", "layer", layer)
+			}
 		}
 
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
@@ -529,7 +544,7 @@ func (d *DownTrack) Mute(muted bool) {
 			// client might need to be notified to start layers
 			// before locking can happen in the forwarder.
 			//
-			notifyLayer = maxLayers.spatial
+			notifyLayer = maxLayers.Spatial
 		}
 		d.onMaxLayerChanged(d, notifyLayer)
 	}
@@ -606,7 +621,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		//      a. is higher than previous max -> client may need to start higher layer before forwarder can lock
 		//      b. is lower than previous max -> client can stop higher layer(s)
 		//
-		d.onMaxLayerChanged(d, maxLayers.spatial)
+		d.onMaxLayerChanged(d, maxLayers.Spatial)
 	}
 
 	if d.onSubscribedLayersChanged != nil {
@@ -924,8 +939,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 		if pliOnce {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
-				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.spatial)
-				d.receiver.SendPLI(targetLayers.spatial)
+				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
+				d.receiver.SendPLI(targetLayers.Spatial)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1125,26 +1140,30 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 }
 
+type extensionData struct {
+	id      uint8
+	payload []byte
+}
+
 // writes RTP header extensions of track
-func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
+func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header, extraExtensions ...extensionData) error {
 	// clear out extensions that may have been in the forwarded header
 	hdr.Extension = false
 	hdr.ExtensionProfile = 0
 	hdr.Extensions = []rtp.Extension{}
 
-	for _, ext := range d.rtpHeaderExtensions {
-		if ext.URI != sdp.ABSSendTimeURI {
-			// supporting only abs-send-time
-			continue
-		}
+	for _, ext := range extraExtensions {
+		hdr.SetExtension(uint8(ext.id), ext.payload)
+	}
 
+	if d.absSendTimeID != 0 {
 		sendTime := rtp.NewAbsSendTimeExtension(time.Now())
 		b, err := sendTime.Marshal()
 		if err != nil {
 			return err
 		}
 
-		err = hdr.SetExtension(uint8(ext.ID), b)
+		err = hdr.SetExtension(uint8(d.absSendTimeID), b)
 		if err != nil {
 			return err
 		}
@@ -1153,14 +1172,30 @@ func (d *DownTrack) writeRTPHeaderExtensions(hdr *rtp.Header) error {
 	return nil
 }
 
-func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tpRTP *TranslationParamsRTP) (*rtp.Header, error) {
+func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) (*rtp.Header, error) {
+	tpRTP := tp.rtp
 	hdr := extPkt.Packet.Header
 	hdr.PayloadType = d.payloadType
 	hdr.Timestamp = tpRTP.timestamp
 	hdr.SequenceNumber = tpRTP.sequenceNumber
 	hdr.SSRC = d.ssrc
+	if tp.marker {
+		hdr.Marker = tp.marker
+	}
 
-	err := d.writeRTPHeaderExtensions(&hdr)
+	var extension []extensionData
+	if d.dependencyDescriptorID != 0 && tp.ddExtension != nil {
+		bytes, err := tp.ddExtension.Marshal()
+		if err != nil {
+			d.logger.Infow("marshalling dependency descriptor extension err", "err", err)
+		} else {
+			extension = append(extension, extensionData{
+				id:      uint8(d.dependencyDescriptorID),
+				payload: bytes,
+			})
+		}
+	}
+	err := d.writeRTPHeaderExtensions(&hdr, extension...)
 	if err != nil {
 		return nil, err
 	}
@@ -1212,7 +1247,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"MimeType":            d.codec.MimeType,
 		"Bound":               d.bound.Load(),
 		"Muted":               d.forwarder.IsMuted(),
-		"CurrentSpatialLayer": d.forwarder.CurrentLayers().spatial,
+		"CurrentSpatialLayer": d.forwarder.CurrentLayers().Spatial,
 		"Stats":               stats,
 	}
 }
