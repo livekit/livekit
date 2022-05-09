@@ -290,7 +290,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	layers := s.availableLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer seen", "layers", layers)
+	s.logger.Debugw("available layers changed - layer seen", "added", layer, "layers", layers)
 
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(layers)
@@ -309,7 +309,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.availableLayers = newLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer gone", "layers", newLayers)
+	s.logger.Debugw("available layers changed - layer gone", "removed", layer, "layers", newLayers)
 
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {
