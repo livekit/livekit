@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -799,11 +800,12 @@ func (r *Room) audioUpdateWorker() {
 }
 
 func (r *Room) connectionQualityWorker() {
+	ticker := time.NewTicker(connectionquality.UpdateInterval)
+	defer ticker.Stop()
+
 	// send updates to only users that are subscribed to each other
-	for {
-		if r.IsClosed() {
-			return
-		}
+	for !r.IsClosed() {
+		<-ticker.C
 
 		participants := r.GetParticipants()
 		connectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
@@ -838,8 +840,6 @@ func (r *Room) connectionQualityWorker() {
 					"participant", op.Identity())
 			}
 		}
-
-		time.Sleep(time.Second * 5)
 	}
 }
 
