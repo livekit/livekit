@@ -121,16 +121,26 @@ type FakeLocalParticipant struct {
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
 	}
-	GetAudioLevelStub        func() (uint8, bool)
+	GetAdaptiveStreamStub        func() bool
+	getAdaptiveStreamMutex       sync.RWMutex
+	getAdaptiveStreamArgsForCall []struct {
+	}
+	getAdaptiveStreamReturns struct {
+		result1 bool
+	}
+	getAdaptiveStreamReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	GetAudioLevelStub        func() (float64, bool)
 	getAudioLevelMutex       sync.RWMutex
 	getAudioLevelArgsForCall []struct {
 	}
 	getAudioLevelReturns struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}
 	getAudioLevelReturnsOnCall map[int]struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}
 	GetConnectionQualityStub        func() *livekit.ConnectionQualityInfo
@@ -593,11 +603,12 @@ type FakeLocalParticipant struct {
 	updateSubscribedTrackSettingsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	UpdateSubscriptionPermissionStub        func(*livekit.SubscriptionPermission, func(participantID livekit.ParticipantID) types.LocalParticipant) error
+	UpdateSubscriptionPermissionStub        func(*livekit.SubscriptionPermission, func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, func(participantID livekit.ParticipantID) types.LocalParticipant) error
 	updateSubscriptionPermissionMutex       sync.RWMutex
 	updateSubscriptionPermissionArgsForCall []struct {
 		arg1 *livekit.SubscriptionPermission
-		arg2 func(participantID livekit.ParticipantID) types.LocalParticipant
+		arg2 func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant
+		arg3 func(participantID livekit.ParticipantID) types.LocalParticipant
 	}
 	updateSubscriptionPermissionReturns struct {
 		result1 error
@@ -1190,7 +1201,60 @@ func (fake *FakeLocalParticipant) DebugInfoReturnsOnCall(i int, result1 map[stri
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) GetAudioLevel() (uint8, bool) {
+func (fake *FakeLocalParticipant) GetAdaptiveStream() bool {
+	fake.getAdaptiveStreamMutex.Lock()
+	ret, specificReturn := fake.getAdaptiveStreamReturnsOnCall[len(fake.getAdaptiveStreamArgsForCall)]
+	fake.getAdaptiveStreamArgsForCall = append(fake.getAdaptiveStreamArgsForCall, struct {
+	}{})
+	stub := fake.GetAdaptiveStreamStub
+	fakeReturns := fake.getAdaptiveStreamReturns
+	fake.recordInvocation("GetAdaptiveStream", []interface{}{})
+	fake.getAdaptiveStreamMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamCallCount() int {
+	fake.getAdaptiveStreamMutex.RLock()
+	defer fake.getAdaptiveStreamMutex.RUnlock()
+	return len(fake.getAdaptiveStreamArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamCalls(stub func() bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamReturns(result1 bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = nil
+	fake.getAdaptiveStreamReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAdaptiveStreamReturnsOnCall(i int, result1 bool) {
+	fake.getAdaptiveStreamMutex.Lock()
+	defer fake.getAdaptiveStreamMutex.Unlock()
+	fake.GetAdaptiveStreamStub = nil
+	if fake.getAdaptiveStreamReturnsOnCall == nil {
+		fake.getAdaptiveStreamReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getAdaptiveStreamReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAudioLevel() (float64, bool) {
 	fake.getAudioLevelMutex.Lock()
 	ret, specificReturn := fake.getAudioLevelReturnsOnCall[len(fake.getAudioLevelArgsForCall)]
 	fake.getAudioLevelArgsForCall = append(fake.getAudioLevelArgsForCall, struct {
@@ -1214,34 +1278,34 @@ func (fake *FakeLocalParticipant) GetAudioLevelCallCount() int {
 	return len(fake.getAudioLevelArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) GetAudioLevelCalls(stub func() (uint8, bool)) {
+func (fake *FakeLocalParticipant) GetAudioLevelCalls(stub func() (float64, bool)) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = stub
 }
 
-func (fake *FakeLocalParticipant) GetAudioLevelReturns(result1 uint8, result2 bool) {
+func (fake *FakeLocalParticipant) GetAudioLevelReturns(result1 float64, result2 bool) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = nil
 	fake.getAudioLevelReturns = struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}{result1, result2}
 }
 
-func (fake *FakeLocalParticipant) GetAudioLevelReturnsOnCall(i int, result1 uint8, result2 bool) {
+func (fake *FakeLocalParticipant) GetAudioLevelReturnsOnCall(i int, result1 float64, result2 bool) {
 	fake.getAudioLevelMutex.Lock()
 	defer fake.getAudioLevelMutex.Unlock()
 	fake.GetAudioLevelStub = nil
 	if fake.getAudioLevelReturnsOnCall == nil {
 		fake.getAudioLevelReturnsOnCall = make(map[int]struct {
-			result1 uint8
+			result1 float64
 			result2 bool
 		})
 	}
 	fake.getAudioLevelReturnsOnCall[i] = struct {
-		result1 uint8
+		result1 float64
 		result2 bool
 	}{result1, result2}
 }
@@ -3769,19 +3833,20 @@ func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettingsReturnsOnCall(i i
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) UpdateSubscriptionPermission(arg1 *livekit.SubscriptionPermission, arg2 func(participantID livekit.ParticipantID) types.LocalParticipant) error {
+func (fake *FakeLocalParticipant) UpdateSubscriptionPermission(arg1 *livekit.SubscriptionPermission, arg2 func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, arg3 func(participantID livekit.ParticipantID) types.LocalParticipant) error {
 	fake.updateSubscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.updateSubscriptionPermissionReturnsOnCall[len(fake.updateSubscriptionPermissionArgsForCall)]
 	fake.updateSubscriptionPermissionArgsForCall = append(fake.updateSubscriptionPermissionArgsForCall, struct {
 		arg1 *livekit.SubscriptionPermission
-		arg2 func(participantID livekit.ParticipantID) types.LocalParticipant
-	}{arg1, arg2})
+		arg2 func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant
+		arg3 func(participantID livekit.ParticipantID) types.LocalParticipant
+	}{arg1, arg2, arg3})
 	stub := fake.UpdateSubscriptionPermissionStub
 	fakeReturns := fake.updateSubscriptionPermissionReturns
-	fake.recordInvocation("UpdateSubscriptionPermission", []interface{}{arg1, arg2})
+	fake.recordInvocation("UpdateSubscriptionPermission", []interface{}{arg1, arg2, arg3})
 	fake.updateSubscriptionPermissionMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3795,17 +3860,17 @@ func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionCallCount() int {
 	return len(fake.updateSubscriptionPermissionArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionCalls(stub func(*livekit.SubscriptionPermission, func(participantID livekit.ParticipantID) types.LocalParticipant) error) {
+func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionCalls(stub func(*livekit.SubscriptionPermission, func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, func(participantID livekit.ParticipantID) types.LocalParticipant) error) {
 	fake.updateSubscriptionPermissionMutex.Lock()
 	defer fake.updateSubscriptionPermissionMutex.Unlock()
 	fake.UpdateSubscriptionPermissionStub = stub
 }
 
-func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionArgsForCall(i int) (*livekit.SubscriptionPermission, func(participantID livekit.ParticipantID) types.LocalParticipant) {
+func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionArgsForCall(i int) (*livekit.SubscriptionPermission, func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant, func(participantID livekit.ParticipantID) types.LocalParticipant) {
 	fake.updateSubscriptionPermissionMutex.RLock()
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
 	argsForCall := fake.updateSubscriptionPermissionArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscriptionPermissionReturns(result1 error) {
@@ -3917,6 +3982,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.connectedAtMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
+	fake.getAdaptiveStreamMutex.RLock()
+	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()

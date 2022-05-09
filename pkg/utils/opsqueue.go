@@ -6,22 +6,23 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const (
-	MaxOps = 50
-)
-
 type OpsQueue struct {
 	logger logger.Logger
+	name   string
+	size   int
 
 	lock      sync.RWMutex
 	ops       chan func()
+	isStarted bool
 	isStopped bool
 }
 
-func NewOpsQueue(logger logger.Logger) *OpsQueue {
+func NewOpsQueue(logger logger.Logger, name string, size int) *OpsQueue {
 	return &OpsQueue{
 		logger: logger,
-		ops:    make(chan func(), MaxOps),
+		name:   name,
+		size:   size,
+		ops:    make(chan func(), size),
 	}
 }
 
@@ -30,6 +31,15 @@ func (oq *OpsQueue) SetLogger(logger logger.Logger) {
 }
 
 func (oq *OpsQueue) Start() {
+	oq.lock.Lock()
+	if oq.isStarted {
+		oq.lock.Unlock()
+		return
+	}
+
+	oq.isStarted = true
+	oq.lock.Unlock()
+
 	go oq.process()
 }
 
@@ -45,6 +55,13 @@ func (oq *OpsQueue) Stop() {
 	oq.lock.Unlock()
 }
 
+func (oq *OpsQueue) IsStarted() bool {
+	oq.lock.RLock()
+	defer oq.lock.RUnlock()
+
+	return oq.isStarted
+}
+
 func (oq *OpsQueue) Enqueue(op func()) {
 	oq.lock.RLock()
 	if oq.isStopped {
@@ -55,7 +72,7 @@ func (oq *OpsQueue) Enqueue(op func()) {
 	select {
 	case oq.ops <- op:
 	default:
-		oq.logger.Warnw("ops queue full", nil)
+		oq.logger.Errorw("ops queue full", nil, "name", oq.name, "size", oq.size)
 	}
 	oq.lock.RUnlock()
 }

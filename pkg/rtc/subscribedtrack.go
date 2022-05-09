@@ -18,12 +18,15 @@ const (
 )
 
 type SubscribedTrackParams struct {
-	PublisherID       livekit.ParticipantID
-	PublisherIdentity livekit.ParticipantIdentity
-	SubscriberID      livekit.ParticipantID
-	MediaTrack        types.MediaTrack
-	DownTrack         *sfu.DownTrack
+	PublisherID        livekit.ParticipantID
+	PublisherIdentity  livekit.ParticipantIdentity
+	SubscriberID       livekit.ParticipantID
+	SubscriberIdentity livekit.ParticipantIdentity
+	MediaTrack         types.MediaTrack
+	DownTrack          *sfu.DownTrack
+	AdaptiveStream     bool
 }
+
 type SubscribedTrack struct {
 	params   SubscribedTrackParams
 	subMuted atomic.Bool
@@ -36,10 +39,15 @@ type SubscribedTrack struct {
 }
 
 func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
-	return &SubscribedTrack{
+	s := &SubscribedTrack{
 		params:    params,
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
+
+	if !s.params.AdaptiveStream {
+		s.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
+	return s
 }
 
 func (t *SubscribedTrack) OnBind(f func()) {
@@ -66,6 +74,10 @@ func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 
 func (t *SubscribedTrack) SubscriberID() livekit.ParticipantID {
 	return t.params.SubscriberID
+}
+
+func (t *SubscribedTrack) SubscriberIdentity() livekit.ParticipantIdentity {
+	return t.params.SubscriberIdentity
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {

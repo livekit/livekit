@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -61,7 +60,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		Room:            proto.Clone(room).(*livekit.Room),
-		Logger:          LoggerWithRoom(logger.Logger(logger.GetLogger()), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
@@ -130,7 +129,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		}
 		speakers = append(speakers, &livekit.SpeakerInfo{
 			Sid:    string(p.ID()),
-			Level:  ConvertAudioLevel(level),
+			Level:  float32(level),
 			Active: active,
 		})
 	}
@@ -334,7 +333,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnDataPacket(nil)
 
 	// close participant as well
-	r.Logger.Infow("closing participant for removal", "participantID", p.ID())
+	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true)
 
 	r.lock.RLock()
@@ -398,7 +397,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipantBySid)
+	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipant, r.GetParticipantBySid)
 }
 
 func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
@@ -761,16 +760,6 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 }
 
 func (r *Room) audioUpdateWorker() {
-	var smoothValues map[livekit.ParticipantID]float32
-	var smoothFactor float32
-	var activeThreshold float32
-	if ss := r.audioConfig.SmoothIntervals; ss > 1 {
-		smoothValues = make(map[livekit.ParticipantID]float32)
-		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
-		smoothFactor = 2 / float32(ss+1)
-		activeThreshold = ConvertAudioLevel(r.audioConfig.ActiveLevel)
-	}
-
 	lastActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo)
 	for {
 		if r.IsClosed() {
@@ -778,44 +767,6 @@ func (r *Room) audioUpdateWorker() {
 		}
 
 		activeSpeakers := r.GetActiveSpeakers()
-		if smoothValues != nil {
-			for _, speaker := range activeSpeakers {
-				sid := livekit.ParticipantID(speaker.Sid)
-				level := smoothValues[sid]
-				delete(smoothValues, sid)
-				// exponential moving average (EMA)
-				level += (speaker.Level - level) * smoothFactor
-				speaker.Level = level
-			}
-
-			// ensure that previous active speakers are also included
-			for sid, level := range smoothValues {
-				delete(smoothValues, sid)
-				level += -level * smoothFactor
-				if level > activeThreshold {
-					activeSpeakers = append(activeSpeakers, &livekit.SpeakerInfo{
-						Sid:    string(sid),
-						Level:  level,
-						Active: true,
-					})
-				}
-			}
-
-			// smoothValues map is drained, now repopulate it back
-			for _, speaker := range activeSpeakers {
-				smoothValues[livekit.ParticipantID(speaker.Sid)] = speaker.Level
-			}
-
-			sort.Slice(activeSpeakers, func(i, j int) bool {
-				return activeSpeakers[i].Level > activeSpeakers[j].Level
-			})
-		}
-
-		const invAudioLevelQuantization = 1.0 / AudioLevelQuantization
-		for _, speaker := range activeSpeakers {
-			speaker.Level = float32(math.Ceil(float64(speaker.Level*AudioLevelQuantization)) * invAudioLevelQuantization)
-		}
-
 		changedSpeakers := make([]*livekit.SpeakerInfo, 0, len(activeSpeakers))
 		nextActiveMap := make(map[livekit.ParticipantID]*livekit.SpeakerInfo, len(activeSpeakers))
 		for _, speaker := range activeSpeakers {
@@ -825,6 +776,7 @@ func (r *Room) audioUpdateWorker() {
 			}
 			nextActiveMap[livekit.ParticipantID(speaker.Sid)] = speaker
 		}
+
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
 			if nextActiveMap[sid] == nil {

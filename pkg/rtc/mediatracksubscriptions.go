@@ -79,7 +79,11 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 }
 
 func (t *MediaTrackSubscriptions) Start() {
-	t.startMaxQualityTimer()
+	t.startMaxQualityTimer(false)
+}
+
+func (t *MediaTrackSubscriptions) Restart() {
+	t.startMaxQualityTimer(true)
 }
 
 func (t *MediaTrackSubscriptions) Close() {
@@ -94,11 +98,6 @@ func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 	// update mute of all subscribed tracks
 	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
-	}
-
-	// update quality based on subscription if unmuting
-	if !muted {
-		t.UpdateQualityChange(true)
 	}
 }
 
@@ -153,11 +152,13 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
-		PublisherID:       t.params.MediaTrack.PublisherID(),
-		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
-		SubscriberID:      subscriberID,
-		MediaTrack:        t.params.MediaTrack,
-		DownTrack:         downTrack,
+		PublisherID:        t.params.MediaTrack.PublisherID(),
+		PublisherIdentity:  t.params.MediaTrack.PublisherIdentity(),
+		SubscriberID:       subscriberID,
+		SubscriberIdentity: sub.Identity(),
+		MediaTrack:         t.params.MediaTrack,
+		DownTrack:          downTrack,
+		AdaptiveStream:     sub.GetAdaptiveStream(),
 	})
 
 	var transceiver *webrtc.RTPTransceiver
@@ -222,7 +223,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), QualityForSpatialLayer(layer))
+		go t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), QualityForSpatialLayer(layer))
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
@@ -230,48 +231,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnCloseHandler(func() {
-		t.subscribedTracksMu.Lock()
-		delete(t.subscribedTracks, subscriberID)
-		delete(t.pendingClose, subscriberID)
-		t.subscribedTracksMu.Unlock()
-
-		t.maybeNotifyNoSubscribers()
-
-		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
-
-		// ignore if the subscribing sub is not connected
-		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
-			return
-		}
-
-		// if the source has been terminated, we'll need to terminate all the subscribed tracks
-		// however, if the dest sub has disconnected, then we can skip
-		if sender == nil {
-			return
-		}
-		t.params.Logger.Debugw("removing peerconnection track",
-			"subscriber", sub.Identity(),
-			"subscriberID", subscriberID,
-			"kind", t.params.MediaTrack.Kind(),
-		)
-		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
-			if err == webrtc.ErrConnectionClosed {
-				// sub closing, can skip removing subscribedtracks
-				return
-			}
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				// most of these are safe to ignore, since the track state might have already
-				// been set to Inactive
-				t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
-					"error", err,
-					"subscriber", sub.Identity(),
-					"subscriberID", subscriberID,
-				)
-			}
-		}
-
-		sub.RemoveSubscribedTrack(subTrack)
-		sub.Negotiate()
+		go t.downTrackClosed(sub, subTrack, sender)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -331,14 +291,14 @@ func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
 	}
 }
 
-func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID {
-	var revokedSubscriberIDs []livekit.ParticipantID
+func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
 
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	for _, subTrack := range t.getAllSubscribedTracks() {
 		found := false
-		for _, allowedID := range allowedSubscriberIDs {
-			if subTrack.SubscriberID() == allowedID {
+		for _, allowedIdentity := range allowedSubscriberIdentities {
+			if subTrack.SubscriberIdentity() == allowedIdentity {
 				found = true
 				break
 			}
@@ -346,11 +306,11 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 
 		if !found {
 			go subTrack.DownTrack().Close()
-			revokedSubscriberIDs = append(revokedSubscriberIDs, subTrack.SubscriberID())
+			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
 		}
 	}
 
-	return revokedSubscriberIDs
+	return revokedSubscriberIdentities
 }
 
 func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
@@ -663,7 +623,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	}
 }
 
-func (t *MediaTrackSubscriptions) startMaxQualityTimer() {
+func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
 	t.maxQualityLock.Lock()
 	defer t.maxQualityLock.Unlock()
 
@@ -673,7 +633,7 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer() {
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
-		t.UpdateQualityChange(false)
+		t.UpdateQualityChange(force)
 	})
 }
 
@@ -699,4 +659,54 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	if empty {
 		t.onNoSubscribers()
 	}
+}
+
+func (t *MediaTrackSubscriptions) downTrackClosed(
+	sub types.LocalParticipant,
+	subTrack types.SubscribedTrack,
+	sender *webrtc.RTPSender,
+) {
+	subscriberID := sub.ID()
+	t.subscribedTracksMu.Lock()
+	delete(t.subscribedTracks, subscriberID)
+	delete(t.pendingClose, subscriberID)
+	t.subscribedTracksMu.Unlock()
+
+	t.maybeNotifyNoSubscribers()
+
+	t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
+
+	// ignore if the subscribing sub is not connected
+	if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return
+	}
+
+	// if the source has been terminated, we'll need to terminate all the subscribed tracks
+	// however, if the dest sub has disconnected, then we can skip
+	if sender == nil {
+		return
+	}
+	t.params.Logger.Debugw("removing peerconnection track",
+		"subscriber", sub.Identity(),
+		"subscriberID", subscriberID,
+		"kind", t.params.MediaTrack.Kind(),
+	)
+	if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+		if err == webrtc.ErrConnectionClosed {
+			// sub closing, can skip removing subscribedtracks
+			return
+		}
+		if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+			// most of these are safe to ignore, since the track state might have already
+			// been set to Inactive
+			t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+				"error", err,
+				"subscriber", sub.Identity(),
+				"subscriberID", subscriberID,
+			)
+		}
+	}
+
+	sub.RemoveSubscribedTrack(subTrack)
+	sub.Negotiate()
 }

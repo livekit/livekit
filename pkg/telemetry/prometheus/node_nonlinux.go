@@ -4,6 +4,8 @@
 package prometheus
 
 import (
+	"runtime"
+
 	"github.com/mackerelio/go-osstat/cpu"
 )
 
@@ -21,6 +23,8 @@ func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 
 	lastCPUTotal = cpuInfo.Total
 	lastCPUIdle = cpuInfo.Idle
+
+	numCPUs = uint32(runtime.NumCPU())
 
 	return
 }

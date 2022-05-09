@@ -21,7 +21,7 @@ type ConnectionStatsParams struct {
 	UpdateInterval      time.Duration
 	CodecType           webrtc.RTPCodecType
 	MimeType            string
-	GetTrackStats       func() map[uint32]*buffer.StreamStatsWithLayers
+	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
 	Logger              logger.Logger
@@ -93,11 +93,11 @@ func (cs *ConnectionStats) updateScore() float32 {
 }
 
 func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
-	if cs.params.GetTrackStats == nil {
+	if cs.params.GetDeltaStats == nil {
 		return nil
 	}
 
-	streams := cs.params.GetTrackStats()
+	streams := cs.params.GetDeltaStats()
 	if len(streams) == 0 {
 		return nil
 	}
@@ -156,30 +156,30 @@ func (cs *ConnectionStats) updateStats() {
 	}
 }
 
-func ToAnalyticsStream(ssrc uint32, rtpStats *livekit.RTPStats) *livekit.AnalyticsStream {
+func ToAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.AnalyticsStream {
 	return &livekit.AnalyticsStream{
-		Ssrc:                   ssrc,
-		TotalPrimaryPackets:    rtpStats.Packets,
-		TotalPrimaryBytes:      rtpStats.Bytes,
-		TotalRetransmitPackets: rtpStats.PacketsDuplicate,
-		TotalRetransmitBytes:   rtpStats.BytesDuplicate,
-		TotalPaddingPackets:    rtpStats.PacketsPadding,
-		TotalPaddingBytes:      rtpStats.BytesPadding,
-		TotalPacketsLost:       rtpStats.PacketsLost,
-		TotalFrames:            rtpStats.Frames,
-		Rtt:                    rtpStats.RttMax,
-		Jitter:                 uint32(rtpStats.JitterMax),
-		TotalNacks:             rtpStats.Nacks,
-		TotalPlis:              rtpStats.Plis,
-		TotalFirs:              rtpStats.Firs,
+		Ssrc:              ssrc,
+		PrimaryPackets:    deltaStats.Packets,
+		PrimaryBytes:      deltaStats.Bytes,
+		RetransmitPackets: deltaStats.PacketsDuplicate,
+		RetransmitBytes:   deltaStats.BytesDuplicate,
+		PaddingPackets:    deltaStats.PacketsPadding,
+		PaddingBytes:      deltaStats.BytesPadding,
+		PacketsLost:       deltaStats.PacketsLost,
+		Frames:            deltaStats.Frames,
+		Rtt:               deltaStats.RttMax,
+		Jitter:            uint32(deltaStats.JitterMax),
+		Nacks:             deltaStats.Nacks,
+		Plis:              deltaStats.Plis,
+		Firs:              deltaStats.Firs,
 	}
 }
 
 func ToAnalyticsVideoLayer(layer int, layerStats *buffer.LayerStats) *livekit.AnalyticsVideoLayer {
 	return &livekit.AnalyticsVideoLayer{
-		Layer:        int32(layer),
-		TotalPackets: layerStats.TotalPackets,
-		TotalBytes:   layerStats.TotalBytes,
-		TotalFrames:  layerStats.TotalFrames,
+		Layer:   int32(layer),
+		Packets: layerStats.Packets,
+		Bytes:   layerStats.Bytes,
+		Frames:  layerStats.Frames,
 	}
 }

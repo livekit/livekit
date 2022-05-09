@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -14,24 +14,27 @@ type targetLayer struct {
 	Layer  VideoLayers
 }
 
-type VideoLayerSelector struct {
+type DDVideoLayerSelector struct {
 	logger logger.Logger
+
+	// TODO : fields for frame chain detect
 	// frameNumberWrapper Uint16Wrapper
 	// expectKeyFrame      bool
+
 	decodeTargetLayer          []targetLayer
 	layer                      VideoLayers
 	activeDecodeTargetsBitmask *uint32
 	structure                  *dd.FrameDependencyStructure
 }
 
-func NewVideoLayerSelector(logger logger.Logger) *VideoLayerSelector {
-	return &VideoLayerSelector{
+func NewDDVideoLayerSelector(logger logger.Logger) *DDVideoLayerSelector {
+	return &DDVideoLayerSelector{
 		logger: logger,
-		layer:  VideoLayers{2, 2},
+		layer:  VideoLayers{Spatial: 2, Temporal: 2},
 	}
 }
 
-func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
+func (s *DDVideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationParams) (selected bool) {
 	// return true
 	tp.marker = expPkt.Packet.Marker
 	if expPkt.DependencyDescriptor == nil {
@@ -65,7 +68,7 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationPar
 	currentTarget := -1
 	for _, dt := range s.decodeTargetLayer {
 		// find target match with selected layer
-		if dt.Layer.spatial <= s.layer.spatial && dt.Layer.temporal <= s.layer.temporal {
+		if dt.Layer.Spatial <= s.layer.Spatial && dt.Layer.Temporal <= s.layer.Temporal {
 			if activeDecodeTargets == nil || ((*activeDecodeTargets)&(1<<dt.Target) != 0) {
 				// TODO : check frame chain integrity
 				currentTarget = dt.Target
@@ -76,8 +79,8 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationPar
 	}
 
 	if currentTarget < 0 {
-		s.logger.Debugw(fmt.Sprintf("drop packet for no target found, deocdeTargets %v, selected layer %v, s:%d, t:%d",
-			s.decodeTargetLayer, s.layer, expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
+		// s.logger.Debugw(fmt.Sprintf("drop packet for no target found, deocdeTargets %v, selected layer %v, s:%d, t:%d",
+		// s.decodeTargetLayer, s.layer, expPkt.DependencyDescriptor.FrameDependencies.SpatialId, expPkt.DependencyDescriptor.FrameDependencies.TemporalId))
 		// no active decode target, forward all packets
 		return false
 	}
@@ -114,29 +117,29 @@ func (s *VideoLayerSelector) Select(expPkt *buffer.ExtPacket, tp *TranslationPar
 		// s.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
 	}
 
-	mark := expPkt.Packet.Header.Marker || (expPkt.DependencyDescriptor.LastPacketInFrame && s.layer.spatial == int32(expPkt.DependencyDescriptor.FrameDependencies.SpatialId))
+	mark := expPkt.Packet.Header.Marker || (expPkt.DependencyDescriptor.LastPacketInFrame && s.layer.Spatial == int32(expPkt.DependencyDescriptor.FrameDependencies.SpatialId))
 	tp.marker = mark
 
 	return true
 }
 
-func (s *VideoLayerSelector) SelectLayer(layer VideoLayers) {
+func (s *DDVideoLayerSelector) SelectLayer(layer VideoLayers) {
 	// layer = VideoLayers{1, 1}
 	s.layer = layer
 	activeBitMask := uint32(0)
 	var maxSpatial, maxTemporal int32
 	for _, dt := range s.decodeTargetLayer {
-		if dt.Layer.spatial > maxSpatial {
-			maxSpatial = dt.Layer.spatial
+		if dt.Layer.Spatial > maxSpatial {
+			maxSpatial = dt.Layer.Spatial
 		}
-		if dt.Layer.temporal > maxTemporal {
-			maxTemporal = dt.Layer.temporal
+		if dt.Layer.Temporal > maxTemporal {
+			maxTemporal = dt.Layer.Temporal
 		}
-		if dt.Layer.spatial <= layer.spatial && dt.Layer.temporal <= layer.temporal {
+		if dt.Layer.Spatial <= layer.Spatial && dt.Layer.Temporal <= layer.Temporal {
 			activeBitMask |= 1 << dt.Target
 		}
 	}
-	if layer.spatial == maxSpatial && layer.temporal == maxTemporal {
+	if layer.Spatial == maxSpatial && layer.Temporal == maxTemporal {
 		// all the decode targets are selected
 		s.activeDecodeTargetsBitmask = nil
 	} else {
@@ -145,19 +148,19 @@ func (s *VideoLayerSelector) SelectLayer(layer VideoLayers) {
 	s.logger.Debugw("select layer ", "layer", layer, "activeDecodeTargetsBitmask", s.activeDecodeTargetsBitmask)
 }
 
-func (s *VideoLayerSelector) updateDependencyStructure(structure *dd.FrameDependencyStructure) {
+func (s *DDVideoLayerSelector) updateDependencyStructure(structure *dd.FrameDependencyStructure) {
 	s.structure = structure
 	s.decodeTargetLayer = s.decodeTargetLayer[:0]
 
 	for target := 0; target < structure.NumDecodeTargets; target++ {
-		layer := VideoLayers{0, 0}
+		layer := VideoLayers{Spatial: 0, Temporal: 0}
 		for _, t := range structure.Templates {
 			if t.DecodeTargetIndications[target] != dd.DecodeTargetNotPresent {
-				if layer.spatial < int32(t.SpatialId) {
-					layer.spatial = int32(t.SpatialId)
+				if layer.Spatial < int32(t.SpatialId) {
+					layer.Spatial = int32(t.SpatialId)
 				}
-				if layer.temporal < int32(t.TemporalId) {
-					layer.temporal = int32(t.TemporalId)
+				if layer.Temporal < int32(t.TemporalId) {
+					layer.Temporal = int32(t.TemporalId)
 				}
 			}
 		}
@@ -166,10 +169,10 @@ func (s *VideoLayerSelector) updateDependencyStructure(structure *dd.FrameDepend
 
 	// sort decode target layer by spatial and temporal from high to low
 	sort.Slice(s.decodeTargetLayer, func(i, j int) bool {
-		if s.decodeTargetLayer[i].Layer.spatial == s.decodeTargetLayer[j].Layer.spatial {
-			return s.decodeTargetLayer[i].Layer.temporal > s.decodeTargetLayer[j].Layer.temporal
+		if s.decodeTargetLayer[i].Layer.Spatial == s.decodeTargetLayer[j].Layer.Spatial {
+			return s.decodeTargetLayer[i].Layer.Temporal > s.decodeTargetLayer[j].Layer.Temporal
 		}
-		return s.decodeTargetLayer[i].Layer.spatial > s.decodeTargetLayer[j].Layer.spatial
+		return s.decodeTargetLayer[i].Layer.Spatial > s.decodeTargetLayer[j].Layer.Spatial
 	})
 	s.logger.Debugw(fmt.Sprintf("update decode targets: %v", s.decodeTargetLayer))
 }

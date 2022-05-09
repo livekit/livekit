@@ -97,6 +97,18 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	return t
 }
 
+func (t *MediaTrackReceiver) Restart() {
+	t.lock.Lock()
+	receivers := t.receivers
+	t.lock.Unlock()
+
+	for _, receiver := range receivers {
+		receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
+
+	t.MediaTrackSubscriptions.Restart()
+}
+
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int) {
 	t.lock.Lock()
 	t.receivers = append(t.receivers, &simulcastReceiver{receiver, priority})
@@ -322,6 +334,15 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	}
 
 	return quality
+}
+
+func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
+	receiver := t.Receiver()
+	if receiver == nil {
+		return 0, false
+	}
+
+	return receiver.GetAudioLevel()
 }
 
 // handles max loss for audio streams

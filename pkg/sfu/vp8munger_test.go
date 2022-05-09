@@ -27,7 +27,7 @@ func compare(expected *VP8Munger, actual *VP8Munger) bool {
 }
 
 func newVP8Munger() *VP8Munger {
-	return NewVP8Munger(logger.Logger(logger.GetLogger()))
+	return NewVP8Munger(logger.GetDefaultLogger())
 }
 
 func TestSetLast(t *testing.T) {
@@ -321,7 +321,6 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 65533,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -397,7 +396,6 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,

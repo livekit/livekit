@@ -79,7 +79,11 @@ type Participant interface {
 	SubscriptionPermission() *livekit.SubscriptionPermission
 
 	// updates from remotes
-	UpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission, resolver func(participantID livekit.ParticipantID) LocalParticipant) error
+	UpdateSubscriptionPermission(
+		subscriptionPermission *livekit.SubscriptionPermission,
+		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
+		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
+	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
@@ -92,6 +96,7 @@ type LocalParticipant interface {
 	Participant
 
 	GetLogger() logger.Logger
+	GetAdaptiveStream() bool
 
 	ProtocolVersion() ProtocolVersion
 
@@ -131,7 +136,7 @@ type LocalParticipant interface {
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
@@ -196,7 +201,8 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	// Receiver() sfu.TrackReceiver
+	Receiver() sfu.TrackReceiver
+	Restart()
 
 	// callbacks
 	AddOnClose(func())
@@ -206,7 +212,7 @@ type MediaTrack interface {
 	RemoveSubscriber(participantID livekit.ParticipantID, resume bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
 	RemoveAllSubscribers()
-	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 
 	// returns quality information that's appropriate for width & height
@@ -223,7 +229,7 @@ type LocalMediaTrack interface {
 	SignalCid() string
 	HasSdpCid(cid string) bool
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (level float64, active bool)
 	GetConnectionScore() float32
 
 	SetRTT(rtt uint32)
@@ -237,6 +243,7 @@ type SubscribedTrack interface {
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
 	SubscriberID() livekit.ParticipantID
+	SubscriberIdentity() livekit.ParticipantIdentity
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool

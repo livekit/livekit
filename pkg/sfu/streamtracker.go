@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -67,26 +66,18 @@ type StreamTracker struct {
 	// only access within detectWorker
 	cycleCount uint32
 
-	// only access by the same goroutine as Observe
-	lastSN uint16
-
 	lastBitrateReport time.Time
 	bytesForBitrate   [4]int64
 	bitrate           [4]int64
-
-	callbacksQueue *utils.OpsQueue
 
 	isStopped bool
 }
 
 func NewStreamTracker(params StreamTrackerParams) *StreamTracker {
-	s := &StreamTracker{
-		params:         params,
-		status:         StreamStatusStopped,
-		callbacksQueue: utils.NewOpsQueue(params.Logger),
+	return &StreamTracker{
+		params: params,
+		status: StreamStatusStopped,
 	}
-	s.params.Logger.Debugw("StreamTrackerManager.NewStreamTracker", "layer", s.params.Layer)
-	return s
 }
 
 func (s *StreamTracker) OnStatusChanged(f func(status StreamStatus)) {
@@ -116,9 +107,7 @@ func (s *StreamTracker) maybeSetStatus(status StreamStatus) (StreamStatus, bool)
 
 func (s *StreamTracker) maybeNotifyStatus(status StreamStatus, changed bool) {
 	if changed && s.onStatusChanged != nil {
-		s.callbacksQueue.Enqueue(func() {
-			s.onStatusChanged(status)
-		})
+		s.onStatusChanged(status)
 	}
 }
 
@@ -133,7 +122,6 @@ func (s *StreamTracker) init() {
 }
 
 func (s *StreamTracker) Start() {
-	s.callbacksQueue.Start()
 }
 
 func (s *StreamTracker) Stop() {
@@ -144,8 +132,6 @@ func (s *StreamTracker) Stop() {
 		return
 	}
 	s.isStopped = true
-
-	s.callbacksQueue.Stop()
 
 	// bump generation to trigger exit of worker
 	s.generation.Inc()
@@ -193,11 +179,11 @@ func (s *StreamTracker) SetPaused(paused bool) {
 }
 
 // Observe a packet that's received
-func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
+func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, payloadSize int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.isStopped || s.paused {
+	if s.isStopped || s.paused || payloadSize == 0 {
 		return
 	}
 
@@ -205,7 +191,6 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
 		// first packet
 		s.initialized = true
 
-		s.lastSN = sn
 		s.countSinceLast = 1
 
 		s.lastBitrateReport = time.Now()
@@ -219,11 +204,6 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int) {
 		return
 	}
 
-	// ignore out-of-order SNs
-	if (sn - s.lastSN) > uint16(1<<15) {
-		return
-	}
-	s.lastSN = sn
 	s.countSinceLast++
 
 	if temporalLayer >= 0 {

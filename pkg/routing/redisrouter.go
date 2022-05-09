@@ -3,7 +3,6 @@ package routing
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"runtime/pprof"
 	"sync"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -26,7 +24,7 @@ const (
 	// expire participant mappings after a day
 	participantMappingTTL = 24 * time.Hour
 	statsUpdateInterval   = 2 * time.Second
-	statsMaxDelaySeconds  = 10
+	statsMaxDelaySeconds  = 30
 )
 
 // RedisRouter uses Redis pub/sub to route signaling messages across different nodes
@@ -39,6 +37,8 @@ type RedisRouter struct {
 	ctx       context.Context
 	isStarted atomic.Bool
 	statsMu   sync.Mutex
+	// previous stats for computing averages
+	prevStats *livekit.NodeStats
 
 	pubsub *redis.PubSub
 	cancel func()
@@ -156,23 +156,13 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	sink := NewRTCNodeSink(r.rc, livekit.NodeID(rtcNode.Id), pKey)
 
 	// serialize claims
-	claims, err := json.Marshal(pi.Grants)
+	ss, err := pi.ToStartSession(roomName, connectionID)
 	if err != nil {
 		return
 	}
 
 	// sends a message to start session
-	err = sink.WriteMessage(&livekit.StartSession{
-		RoomName: string(roomName),
-		Identity: string(pi.Identity),
-		Name:     string(pi.Name),
-		// connection id is to allow the RTC node to identify where to route the message back to
-		ConnectionId:  string(connectionID),
-		Reconnect:     pi.Reconnect,
-		AutoSubscribe: pi.AutoSubscribe,
-		Client:        pi.Client,
-		GrantsJson:    string(claims),
-	})
+	err = sink.WriteMessage(ss)
 	if err != nil {
 		return
 	}
@@ -250,29 +240,31 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		}
 	}
 
-	claims := &auth.ClaimGrants{}
-	if err := json.Unmarshal([]byte(ss.GrantsJson), claims); err != nil {
+	pi, err := ParticipantInitFromStartSession(ss, r.currentNode.Region)
+	if err != nil {
 		return err
-	}
-
-	pi := ParticipantInit{
-		Identity:      livekit.ParticipantIdentity(ss.Identity),
-		Name:          livekit.ParticipantName(ss.Name),
-		Reconnect:     ss.Reconnect,
-		Client:        ss.Client,
-		AutoSubscribe: ss.AutoSubscribe,
-		Grants:        claims,
 	}
 
 	reqChan := r.getOrCreateMessageChannel(r.requestChannels, string(participantKey))
 	resSink := NewSignalNodeSink(r.rc, livekit.NodeID(signalNode), livekit.ConnectionID(ss.ConnectionId))
-	r.onNewParticipant(
-		r.ctx,
-		livekit.RoomName(ss.RoomName),
-		pi,
-		reqChan,
-		resSink,
-	)
+	go func() {
+		err := r.onNewParticipant(
+			r.ctx,
+			livekit.RoomName(ss.RoomName),
+			*pi,
+			reqChan,
+			resSink,
+		)
+		if err != nil {
+			logger.Errorw("could not handle new participant", err,
+				"room", ss.RoomName,
+				"participant", ss.Identity,
+			)
+			// cleanup request channels
+			reqChan.Close()
+			resSink.Close()
+		}
+	}()
 	return nil
 }
 
@@ -479,11 +471,18 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 		}
 
 		r.statsMu.Lock()
-		updated, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats)
+		if r.prevStats == nil {
+			r.prevStats = r.currentNode.Stats
+		}
+		updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
-		} else {
-			r.currentNode.Stats = updated
+			r.statsMu.Unlock()
+			return err
+		}
+		r.currentNode.Stats = updated
+		if computedAvg {
+			r.prevStats = updated
 		}
 		r.statsMu.Unlock()
 

@@ -189,6 +189,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			return nil
 		})
 
+		mt.maxSubscribedQuality = livekit.VideoQuality_LOW
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
 		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_MEDIUM)
 

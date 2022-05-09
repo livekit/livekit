@@ -3,8 +3,6 @@ package selector
 import (
 	"math"
 
-	"github.com/thoas/go-funk"
-
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -16,9 +14,10 @@ type RegionAwareSelector struct {
 	CurrentRegion   string
 	regionDistances map[string]float64
 	regions         []config.RegionConfig
+	SortBy          string
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
@@ -27,6 +26,7 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig)
 		CurrentRegion:   currentRegion,
 		regionDistances: make(map[string]float64),
 		regions:         regions,
+		SortBy:          sortBy,
 	}
 
 	var currentRC *config.RegionConfig
@@ -80,8 +80,7 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, 
 		nodes = nearestNodes
 	}
 
-	idx := funk.RandomInt(0, len(nodes))
-	return nodes[idx], nil
+	return SelectSortedNode(nodes, s.SortBy)
 }
 
 // haversine(θ) function

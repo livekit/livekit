@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -180,11 +182,16 @@ func (r *RoomManager) Stop() {
 }
 
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
-func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomName, pi routing.ParticipantInit, requestSource routing.MessageSource, responseSink routing.MessageSink) {
+func (r *RoomManager) StartSession(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	pi routing.ParticipantInit,
+	requestSource routing.MessageSource,
+	responseSink routing.MessageSink,
+) error {
 	room, err := r.getOrCreateRoom(ctx, roomName)
 	if err != nil {
-		logger.Errorw("could not create room", err, "room", roomName)
-		return
+		return err
 	}
 	defer room.Release()
 
@@ -198,11 +205,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			if err = room.ResumeParticipant(participant, responseSink); err != nil {
-				logger.Warnw("could not resume participant", err,
-					"participant", pi.Identity)
-			}
-			return
+			return room.ResumeParticipant(participant, responseSink)
 		} else {
 			// we need to clean up the existing participant, so a new one can join
 			room.RemoveParticipant(participant.Identity())
@@ -210,17 +213,14 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
-		if err = responseSink.WriteMessage(&livekit.SignalResponse{
+		_ = responseSink.WriteMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
 				Leave: &livekit.LeaveRequest{
 					CanReconnect: true,
 				},
 			},
-		}); err != nil {
-			logger.Warnw("could not restart participant", err,
-				"participant", pi.Identity)
-		}
-		return
+		})
+		return errors.New("could not restart participant")
 	}
 
 	logger.Debugw("starting RTC session",
@@ -256,10 +256,10 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
 		Region:                  pi.Region,
+		AdaptiveStream:          pi.AdaptiveStream,
 	})
 	if err != nil {
-		logger.Errorw("could not create participant", err)
-		return
+		return err
 	}
 
 	// join room
@@ -269,7 +269,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	if err = room.Join(participant, &opts, r.iceServersForRoom(room.Room), r.currentNode.Region); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true)
-		return
+		return err
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
@@ -308,6 +308,7 @@ func (r *RoomManager) StartSession(ctx context.Context, roomName livekit.RoomNam
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)
+	return nil
 }
 
 // create the actual room object, to be used on RTC node
@@ -387,11 +388,12 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			"roomID", room.Room.Sid,
 		)
 		_ = participant.Close(true)
+		requestSource.Close()
 	}()
 	defer rtc.Recover()
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), room.Name(), room.ID()),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), room.Name(), room.ID()),
 		participant.Identity(), participant.ID(),
 	)
 
@@ -447,7 +449,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 		sid = participant.ID()
 	}
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName, room.ID()),
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, room.ID()),
 		identity,
 		sid,
 	)
