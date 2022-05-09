@@ -502,9 +502,6 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		}
 	}
 
-	if p.State() == livekit.ParticipantInfo_JOINING {
-		p.updateState(livekit.ParticipantInfo_JOINED)
-	}
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return

@@ -37,6 +37,10 @@ func (p *ParticipantImpl) SendJoinResponse(
 	iceServers []*livekit.ICEServer,
 	region string,
 ) error {
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		p.updateState(livekit.ParticipantInfo_JOINED)
+	}
+
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
