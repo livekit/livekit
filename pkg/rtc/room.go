@@ -525,7 +525,7 @@ func (r *Room) SetMetadata(metadata string) {
 func (r *Room) sendRoomUpdateLocked() {
 	// Send update to participants
 	for _, p := range r.participants {
-		if !p.IsReady() {
+		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
 		}
 
