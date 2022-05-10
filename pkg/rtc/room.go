@@ -225,6 +225,19 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
+	participant.OnSubscribedTo(func(p types.LocalParticipant, publisherID livekit.ParticipantID) {
+		// when a participant subscribed to another participant,
+		// send speaker update if the subscribed to participant is active.
+		go func() {
+			speakers := r.GetActiveSpeakers()
+			for _, speaker := range speakers {
+				if livekit.ParticipantID(speaker.Sid) == publisherID {
+					p.SendSpeakerUpdate(speakers)
+					break
+				}
+			}
+		}()
+	})
 	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -332,6 +345,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnStateChange(nil)
 	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
+	p.OnSubscribedTo(nil)
 
 	// close participant as well
 	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
