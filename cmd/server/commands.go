@@ -157,7 +157,9 @@ func listNodes(c *cli.Context) error {
 		"ID", "IP Address", "Region",
 		"CPUs", "CPU Usage", "Load",
 		"Clients", "Rooms", "Tracks In/Out",
-		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
+		"Bytes In/Out", "Packets In/Out",
+		"Nack", "Retransmits",
+		"Bps In/Out", "Pps In/Out", "Nack/Sec",
 		"Started At", "Updated At",
 	})
 	for _, node := range nodes {
@@ -177,6 +179,7 @@ func listNodes(c *cli.Context) error {
 		bytes := fmt.Sprintf("%d / %d", stats.BytesIn, stats.BytesOut)
 		packets := fmt.Sprintf("%d / %d", stats.PacketsIn, stats.PacketsOut)
 		nack := strconv.Itoa(int(stats.NackTotal))
+		retransmit := strconv.Itoa(int(stats.RetransmitPacketsOut))
 		bps := fmt.Sprintf("%.2f / %.2f", stats.BytesInPerSec, stats.BytesOutPerSec)
 		packetsPerSec := fmt.Sprintf("%.2f / %.2f", stats.PacketsInPerSec, stats.PacketsOutPerSec)
 		nackPerSec := fmt.Sprintf("%f", stats.NackPerSec)
@@ -188,7 +191,8 @@ func listNodes(c *cli.Context) error {
 			node.Id, node.Ip, node.Region,
 			cpus, cpuUsage, loadAvg,
 			clients, rooms, tracks,
-			bytes, packets, nack, bps, packetsPerSec, nackPerSec,
+			bytes, packets, nack, retransmit,
+			bps, packetsPerSec, nackPerSec,
 			startedAt, updatedAt,
 		})
 	}
