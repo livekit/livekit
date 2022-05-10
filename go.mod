@@ -12,7 +12,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.13.2-0.20220502170852-688e4f627bcf
+	github.com/livekit/protocol v0.13.3-0.20220510070341-c6730ae9bfaf
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/magefile/mage v1.11.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
@@ -43,8 +43,6 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
-
-replace github.com/livekit/protocol => ../protocol
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -84,7 +82,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/d5/tengo/v2 v2.10.1
 	github.com/google/subcommands v1.2.0 // indirect
-	github.com/rs/zerolog v1.26.1
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect
 	golang.org/x/mod v0.5.1 // indirect
