@@ -55,16 +55,32 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 	firs := uint32(0)
 	packets := uint32(0)
 	bytes := uint64(0)
+	retransmitBytes := uint64(0)
+	retransmitPackets := uint32(0)
 	for _, stream := range stat.Streams {
 		nacks += stream.Nacks
 		plis += stream.Plis
 		firs += stream.Firs
-		packets += stream.PrimaryPackets + stream.RetransmitPackets + stream.PaddingPackets
-		bytes += stream.PrimaryBytes + stream.RetransmitBytes + stream.PaddingBytes
+		packets += stream.PrimaryPackets + stream.PaddingPackets
+		bytes += stream.PrimaryBytes + stream.PaddingBytes
+		if streamType == livekit.StreamType_DOWNSTREAM {
+			retransmitPackets += stream.RetransmitPackets
+			retransmitBytes += stream.RetransmitBytes
+		} else {
+			// for upstream, we don't account for these separately for now
+			packets += stream.RetransmitPackets
+			bytes += stream.RetransmitBytes
+		}
 	}
 	prometheus.IncrementRTCP(direction, nacks, plis, firs)
-	prometheus.IncrementPackets(direction, uint64(packets))
-	prometheus.IncrementBytes(direction, bytes)
+	prometheus.IncrementPackets(direction, uint64(packets), false)
+	prometheus.IncrementBytes(direction, bytes, false)
+	if retransmitPackets != 0 {
+		prometheus.IncrementPackets(direction, uint64(retransmitPackets), true)
+	}
+	if retransmitBytes != 0 {
+		prometheus.IncrementBytes(direction, retransmitBytes, true)
+	}
 
 	if w := t.getStatsWorker(participantID); w != nil {
 		w.OnTrackStat(trackID, streamType, stat)
