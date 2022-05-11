@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/bep/debounce v1.2.0
+	github.com/dustin/go-humanize v1.0.0
 	github.com/elliotchance/orderedmap v1.4.0
 	github.com/gammazero/deque v0.1.0
 	github.com/gammazero/workerpool v1.1.2
