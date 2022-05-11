@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -19,11 +18,12 @@ type DownTrackSpreaderParams struct {
 type DownTrackSpreader struct {
 	params DownTrackSpreaderParams
 
-	downTrackMu sync.RWMutex
-	downTracks  []TrackSender
-	index       map[livekit.ParticipantID]int
-	free        map[int]struct{}
-	numProcs    int
+	downTrackMu    sync.RWMutex
+	downTracks     []TrackSender
+	index          map[livekit.ParticipantID]int
+	free           map[int]struct{}
+	numProcs       int
+	downTrackCount atomic.Int32
 }
 
 func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
@@ -66,6 +66,7 @@ func (d *DownTrackSpreader) Store(ts TrackSender) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
+	d.downTrackCount.Inc()
 	peerID := ts.PeerID()
 	for idx := range d.free {
 		d.index[peerID] = idx
@@ -90,6 +91,7 @@ func (d *DownTrackSpreader) Free(peerID livekit.ParticipantID) {
 	delete(d.index, peerID)
 	d.downTracks[idx] = nil
 	d.free[idx] = struct{}{}
+	d.downTrackCount.Dec()
 }
 
 func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
@@ -100,7 +102,7 @@ func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
 	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
+func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 	d.downTrackMu.RLock()
 	downTracks := d.downTracks
 	free := d.free
@@ -110,7 +112,7 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 		// serial - not enough down tracks for parallelization to outweigh overhead
 		for _, dt := range downTracks {
 			if dt != nil {
-				d.writeRTP(layer, dt, pkt)
+				writer(dt)
 			}
 		}
 	} else {
@@ -135,7 +137,7 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 
 					for i := n - step; i < n && i < end; i++ {
 						if dt := downTracks[i]; dt != nil {
-							d.writeRTP(layer, dt, pkt)
+							writer(dt)
 						}
 					}
 				}
@@ -145,8 +147,6 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 	}
 }
 
-func (d *DownTrackSpreader) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
-	if err := dt.WriteRTP(pkt, layer); err != nil {
-		d.params.Logger.Errorw("failed writing to down track", err)
-	}
+func (d *DownTrackSpreader) DownTrackCount() int32 {
+	return d.downTrackCount.Load()
 }

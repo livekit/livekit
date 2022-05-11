@@ -139,6 +139,13 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	}
 }
 
+func (t *MediaTrackReceiver) ClearAllReceivers() {
+	t.lock.Lock()
+	t.receivers = t.receivers[:0]
+	t.lock.Unlock()
+	t.MediaTrackSubscriptions.Close()
+}
+
 func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
 	t.onMediaLossUpdate = f
 }
@@ -337,7 +344,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 }
 
 func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
-	receiver := t.Receiver()
+	receiver := t.PrimaryReceiver()
 	if receiver == nil {
 		return 0, false
 	}

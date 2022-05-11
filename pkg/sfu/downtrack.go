@@ -20,7 +20,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	dd "github.com/livekit/livekit-server/pkg/sfu/buffer/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 )
@@ -1151,11 +1150,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.statsLock.Unlock()
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
-}
-
-type extensionData struct {
-	id      uint8
-	payload []byte
 }
 
 type extensionData struct {

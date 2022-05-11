@@ -447,6 +447,16 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.
 		return
 	}
 
+	if len(qualities) == 1 && qualities[0].CodecMime == "" {
+		// for old version msg don't have codec mime, use first mime type
+		t.maxQualityLock.RLock()
+		for mime := range t.maxSubscribedQuality {
+			qualities[0].CodecMime = mime
+			break
+		}
+		t.maxQualityLock.RUnlock()
+	}
+
 	t.maxQualityLock.Lock()
 	if len(qualities) == 0 {
 		if _, ok := t.maxSubscriberNodeQuality[nodeID]; !ok {

@@ -479,7 +479,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
-
 	case "video/vp9":
 		ep.KeyFrame = IsVp9Keyframe(rtpPacket.Payload)
 	case "video/av1":
@@ -661,9 +660,5 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 // TODO : now we rely on stream tracker for layer change, dependency still
 // work for that too. Do we keep it unchange or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
-	b.maxLayerChangedCB = fn
-}
-
-func (b *Buffer) OnMaxLayerChanged(fn func(int, int)) {
 	b.maxLayerChangedCB = fn
 }

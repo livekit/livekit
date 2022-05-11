@@ -201,7 +201,7 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	Receiver() sfu.TrackReceiver
+	// Receiver(mime string) sfu.TrackReceiver
 	Restart()
 
 	// callbacks
