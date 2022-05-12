@@ -922,7 +922,6 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 }
 
 func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
-
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
