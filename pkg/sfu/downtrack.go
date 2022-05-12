@@ -579,7 +579,7 @@ func (d *DownTrack) Mute(muted bool) {
 		d.onSubscriptionChanged(d)
 	}
 
-	if d.kind == webrtc.RTPCodecTypeAudio {
+	if d.kind == webrtc.RTPCodecTypeAudio && muted {
 		_ = d.writeBlankFrameRTP()
 	}
 }
