@@ -302,22 +302,24 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	numPadding := 10
 	clockRate := uint32(10)
 	frameRate := uint32(5)
+	tsBase := params.Timestamp
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
+			timestamp:      tsBase + (uint32(i)*clockRate)/frameRate,
 		}
 	}
 	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
 	require.NoError(t, err)
 	require.Equal(t, sntsExpected, snts)
+	tsBase = snts[len(snts)-1].timestamp
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: 23343 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      tsBase + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
 	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
