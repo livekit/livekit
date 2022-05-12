@@ -228,6 +228,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate
 	r.lastSN = vals[num-1].sequenceNumber
 	r.snOffset -= uint16(num)
 
+	r.tsOffset -= vals[num-1].timestamp - r.lastTS
 	r.lastTS = vals[num-1].timestamp
 
 	if forceMarker {

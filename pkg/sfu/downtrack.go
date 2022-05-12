@@ -427,6 +427,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
+		if d.kind == webrtc.RTPCodecTypeAudio {
+			d.logger.Debugw("RAJA forwarding", "sn", hdr.SequenceNumber, "ts", hdr.Timestamp) // REMOVE
+		}
 		pktSize := hdr.MarshalSize() + len(payload)
 		for _, f := range d.onPacketSent {
 			f(d, pktSize)
