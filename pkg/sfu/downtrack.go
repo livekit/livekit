@@ -579,6 +579,9 @@ func (d *DownTrack) Mute(muted bool) {
 		d.onSubscriptionChanged(d)
 	}
 
+	// when muting, send a few silence frames to ensure residual noise does not
+	// put the comfort noise generator on decoder side in a bad state where it
+	// generates noise that is not so comfortable.
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
 		_ = d.writeBlankFrameRTP()
 	}
