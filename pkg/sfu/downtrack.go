@@ -860,7 +860,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 		return nil
 	}
 
-	// LK-TODO: Support other video codecs
+	// LK-TODO: Support other audio/video codecs
 	if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
 		return nil
 	}
