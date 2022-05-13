@@ -55,13 +55,9 @@ func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.Parti
 }
 
 func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {
-	sdp := sd.SDP
-	// enable mixed of one-byte and two-byte rtp extension
-	// TODO : should move this to pion's option
-	sdp = strings.Replace(sdp, "m=", "a=extmap-allow-mixed\r\nm=", 1)
 	return &livekit.SessionDescription{
 		Type: sd.Type.String(),
-		Sdp:  sdp,
+		Sdp:  sd.SDP,
 	}
 }
 
