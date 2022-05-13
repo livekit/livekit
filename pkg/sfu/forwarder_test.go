@@ -1382,7 +1382,7 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
-	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames(30)
+	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames(30, RTPBlankFramesMax)
 	require.NoError(t, err)
 	require.True(t, frameEndNeeded)
 
@@ -1406,10 +1406,10 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
-	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30)
+	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, RTPBlankFramesMax)
 	require.NoError(t, err)
 	require.False(t, frameEndNeeded)
 	require.Equal(t, sntsExpected, snts)
