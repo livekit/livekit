@@ -935,7 +935,7 @@ func (d *DownTrack) writeBlankFrameRTP(stopOnUnmute bool, done chan struct{}) {
 			}
 
 			// only the first frame will need frameEndNeeded to close out the
-			// previous picture, rest are small key frames
+			// previous picture, rest are small key frames (for the video case)
 			frameEndNeeded = false
 		}
 
