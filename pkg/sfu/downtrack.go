@@ -583,7 +583,7 @@ func (d *DownTrack) Mute(muted bool) {
 	// put the comfort noise generator on decoder side in a bad state where it
 	// generates noise that is not so comfortable.
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		go d.writeBlankFrameRTP(true, make(chan struct{}))
+		d.writeBlankFrameRTP(true)
 	}
 }
 
@@ -606,8 +606,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// display buffer and there could be a brief moment where the previous stream is displayed.
 	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
-		doneFlushing := make(chan struct{})
-		go d.writeBlankFrameRTP(false, doneFlushing)
+		doneFlushing := d.writeBlankFrameRTP(false)
 
 		// wait a limited time to flush
 		timer := time.NewTimer(flushTimeout)
@@ -853,95 +852,100 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
-func (d *DownTrack) writeBlankFrameRTP(stopOnUnmute bool, done chan struct{}) {
-	// don't send if nothing has been sent
-	if !d.rtpStats.IsActive() {
-		close(done)
-		return
-	}
-
-	// LK-TODO: Support other audio/video codecs
-	if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
-		close(done)
-		return
-	}
-
-	frameRate := uint32(30)
-	if d.mime == "audio/opus" {
-		frameRate = 50
-	}
-
-	// send a number of blank frames just in case there is loss.
-	// Intentionally ignoring check for mute or bandwidth constrained mute
-	// as this is used to clear client side buffer.
-	numFrames := int(float32(frameRate) * RTPBlankFramesSeconds)
-	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
-
-	ticker := time.NewTicker(frameDuration)
-	defer ticker.Stop()
-
-	for {
-		if (stopOnUnmute && !d.forwarder.IsMuted()) || numFrames <= 0 {
+func (d *DownTrack) writeBlankFrameRTP(stopOnUnmute bool) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		// don't send if nothing has been sent
+		if !d.rtpStats.IsActive() {
 			close(done)
 			return
 		}
 
-		snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
-		if err != nil {
-			d.logger.Warnw("could not get SN/TS for blank frame", err)
+		// LK-TODO: Support other audio/video codecs
+		if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
 			close(done)
 			return
 		}
 
-		for i := 0; i < len(snts); i++ {
-			hdr := rtp.Header{
-				Version:        2,
-				Padding:        false,
-				Marker:         true,
-				PayloadType:    d.payloadType,
-				SequenceNumber: snts[i].sequenceNumber,
-				Timestamp:      snts[i].timestamp,
-				SSRC:           d.ssrc,
-				CSRC:           []uint32{},
-			}
-
-			err = d.writeRTPHeaderExtensions(&hdr)
-			if err != nil {
-				d.logger.Warnw("could not write header extension for blank frame", err)
-				close(done)
-				return
-			}
-
-			var pktSize int
-			switch d.mime {
-			case "audio/opus":
-				pktSize, err = d.writeOpusBlankFrame(&hdr, frameEndNeeded)
-			case "video/vp8":
-				pktSize, err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
-			case "video/h264":
-				pktSize, err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
-			default:
-				close(done)
-				return
-			}
-			if err != nil {
-				d.logger.Warnw("could not write blank frame", err)
-				close(done)
-				return
-			}
-
-			for _, f := range d.onPacketSent {
-				f(d, pktSize)
-			}
-
-			// only the first frame will need frameEndNeeded to close out the
-			// previous picture, rest are small key frames (for the video case)
-			frameEndNeeded = false
+		frameRate := uint32(30)
+		if d.mime == "audio/opus" {
+			frameRate = 50
 		}
 
-		numFrames--
-		<-ticker.C
-	}
+		// send a number of blank frames just in case there is loss.
+		// Intentionally ignoring check for mute or bandwidth constrained mute
+		// as this is used to clear client side buffer.
+		numFrames := int(float32(frameRate) * RTPBlankFramesSeconds)
+		frameDuration := time.Duration(1000/frameRate) * time.Millisecond
+
+		ticker := time.NewTicker(frameDuration)
+		defer ticker.Stop()
+
+		for {
+			if (stopOnUnmute && !d.forwarder.IsMuted()) || numFrames <= 0 {
+				close(done)
+				return
+			}
+
+			snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
+			if err != nil {
+				d.logger.Warnw("could not get SN/TS for blank frame", err)
+				close(done)
+				return
+			}
+
+			for i := 0; i < len(snts); i++ {
+				hdr := rtp.Header{
+					Version:        2,
+					Padding:        false,
+					Marker:         true,
+					PayloadType:    d.payloadType,
+					SequenceNumber: snts[i].sequenceNumber,
+					Timestamp:      snts[i].timestamp,
+					SSRC:           d.ssrc,
+					CSRC:           []uint32{},
+				}
+
+				err = d.writeRTPHeaderExtensions(&hdr)
+				if err != nil {
+					d.logger.Warnw("could not write header extension for blank frame", err)
+					close(done)
+					return
+				}
+
+				var pktSize int
+				switch d.mime {
+				case "audio/opus":
+					pktSize, err = d.writeOpusBlankFrame(&hdr, frameEndNeeded)
+				case "video/vp8":
+					pktSize, err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
+				case "video/h264":
+					pktSize, err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
+				default:
+					close(done)
+					return
+				}
+				if err != nil {
+					d.logger.Warnw("could not write blank frame", err)
+					close(done)
+					return
+				}
+
+				for _, f := range d.onPacketSent {
+					f(d, pktSize)
+				}
+
+				// only the first frame will need frameEndNeeded to close out the
+				// previous picture, rest are small key frames (for the video case)
+				frameEndNeeded = false
+			}
+
+			numFrames--
+			<-ticker.C
+		}
+	}()
+
+	return done
 }
 
 func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
