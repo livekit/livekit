@@ -14,10 +14,11 @@ import (
 
 func newStreamTracker(samplesRequired uint32, cyclesRequired uint32, cycleDuration time.Duration) *StreamTracker {
 	return NewStreamTracker(StreamTrackerParams{
-		SamplesRequired: samplesRequired,
-		CyclesRequired:  cyclesRequired,
-		CycleDuration:   cycleDuration,
-		Logger:          logger.GetDefaultLogger(),
+		SamplesRequired:       samplesRequired,
+		CyclesRequired:        cyclesRequired,
+		CycleDuration:         cycleDuration,
+		BitrateReportInterval: 1 * time.Second,
+		Logger:                logger.GetDefaultLogger(),
 	})
 }
 
