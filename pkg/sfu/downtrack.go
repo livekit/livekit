@@ -954,7 +954,6 @@ func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (i
 
 	_, err := d.writeStream.WriteRTP(hdr, payload)
 	if err == nil {
-		d.logger.Debugw("RAJA writing opus silence", "sn", hdr.SequenceNumber, "ts", hdr.Timestamp) // REMOVE
 		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
 	}
 	return hdr.MarshalSize() + len(payload), err
