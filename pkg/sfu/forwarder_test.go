@@ -1003,7 +1003,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			timestamp:      0xabcdef,
 		},
 		vp8: &TranslationParamsVP8{
-			header: &buffer.VP8{
+			Header: &buffer.VP8{
 				FirstByte:        25,
 				PictureIDPresent: 1,
 				PictureID:        13467,
@@ -1079,7 +1079,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			timestamp:      0xabcdef,
 		},
 		vp8: &TranslationParamsVP8{
-			header: &buffer.VP8{
+			Header: &buffer.VP8{
 				FirstByte:        25,
 				PictureIDPresent: 1,
 				PictureID:        13467,
@@ -1160,7 +1160,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			timestamp:      0xabcdef,
 		},
 		vp8: &TranslationParamsVP8{
-			header: &buffer.VP8{
+			Header: &buffer.VP8{
 				FirstByte:        25,
 				PictureIDPresent: 1,
 				PictureID:        13468,
@@ -1256,7 +1256,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			timestamp:      0xabcdf0,
 		},
 		vp8: &TranslationParamsVP8{
-			header: &buffer.VP8{
+			Header: &buffer.VP8{
 				FirstByte:        25,
 				PictureIDPresent: 1,
 				PictureID:        13469,

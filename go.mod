@@ -23,11 +23,11 @@ require (
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.9
 	github.com/pion/rtp v1.7.13
-	github.com/pion/sdp/v3 v3.0.4
+	github.com/pion/sdp/v3 v3.0.5
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.0
 	github.com/pion/turn/v2 v2.0.8
-	github.com/pion/webrtc/v3 v3.1.37
+	github.com/pion/webrtc/v3 v3.1.39
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/cors v1.8.2
@@ -83,9 +83,9 @@ require (
 	github.com/d5/tengo/v2 v2.10.1
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	golang.org/x/crypto v0.0.0-20220507011949-2cf3adece122 // indirect
+	golang.org/x/crypto v0.0.0-20220511200225-c6db032c6c88 // indirect
 	golang.org/x/mod v0.5.1 // indirect
 	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4 // indirect
-	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
+	golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
 )

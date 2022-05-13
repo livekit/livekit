@@ -12,7 +12,7 @@ import (
 // VP8 munger
 //
 type TranslationParamsVP8 struct {
-	header *buffer.VP8
+	Header *buffer.VP8
 }
 
 type VP8MungerParams struct {
@@ -139,7 +139,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
 		return &TranslationParamsVP8{
-			header: vp8Packet,
+			Header: vp8Packet,
 		}, nil
 	}
 
@@ -222,7 +222,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
 	return &TranslationParamsVP8{
-		header: vp8Packet,
+		Header: vp8Packet,
 	}, nil
 }
 
