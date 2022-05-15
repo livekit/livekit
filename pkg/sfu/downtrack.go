@@ -39,7 +39,8 @@ type TrackSender interface {
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
-	RTPBlankFramesSeconds         = float32(0.2)
+	RTPBlankFramesMuteSeconds     = float32(1.0)
+	RTPBlankFramesCloseSeconds    = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -136,6 +137,8 @@ type DownTrack struct {
 	totalRepeatedNACKs uint32
 
 	keyFrameRequestGeneration atomic.Uint32
+
+	blankFramesGeneration atomic.Uint32
 
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
@@ -582,8 +585,9 @@ func (d *DownTrack) Mute(muted bool) {
 	// when muting, send a few silence frames to ensure residual noise does not
 	// put the comfort noise generator on decoder side in a bad state where it
 	// generates noise that is not so comfortable.
+	d.blankFramesGeneration.Inc()
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		d.writeBlankFrameRTP(true)
+		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
 	}
 }
 
@@ -606,7 +610,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	// display buffer and there could be a brief moment where the previous stream is displayed.
 	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
 	if flush {
-		doneFlushing := d.writeBlankFrameRTP(false)
+		doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
 
 		// wait a limited time to flush
 		timer := time.NewTimer(flushTimeout)
@@ -615,6 +619,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		select {
 		case <-doneFlushing:
 		case <-timer.C:
+			d.blankFramesGeneration.Inc() // in case flush is still running
 		}
 	}
 
@@ -852,7 +857,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
-func (d *DownTrack) writeBlankFrameRTP(stopOnUnmute bool) chan struct{} {
+func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		// don't send if nothing has been sent
@@ -875,14 +880,14 @@ func (d *DownTrack) writeBlankFrameRTP(stopOnUnmute bool) chan struct{} {
 		// send a number of blank frames just in case there is loss.
 		// Intentionally ignoring check for mute or bandwidth constrained mute
 		// as this is used to clear client side buffer.
-		numFrames := int(float32(frameRate) * RTPBlankFramesSeconds)
+		numFrames := int(float32(frameRate) * duration)
 		frameDuration := time.Duration(1000/frameRate) * time.Millisecond
 
 		ticker := time.NewTicker(frameDuration)
 		defer ticker.Stop()
 
 		for {
-			if (stopOnUnmute && !d.forwarder.IsMuted()) || numFrames <= 0 {
+			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 {
 				close(done)
 				return
 			}
