@@ -1268,16 +1268,15 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker)
 }
 
-func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32) ([]SnTs, bool, error) {
+func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	num := RTPBlankFramesMax
 	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
 	if frameEndNeeded {
-		num++
+		numPackets++
 	}
-	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(num, f.codec.ClockRate, frameRate, frameEndNeeded)
+	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.codec.ClockRate, frameRate, frameEndNeeded)
 	return snts, frameEndNeeded, err
 }
 

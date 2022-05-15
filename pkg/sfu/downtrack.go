@@ -39,7 +39,7 @@ type TrackSender interface {
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
-	RTPBlankFramesMax             = 6
+	RTPBlankFramesSeconds         = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -583,7 +583,7 @@ func (d *DownTrack) Mute(muted bool) {
 	// put the comfort noise generator on decoder side in a bad state where it
 	// generates noise that is not so comfortable.
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		_ = d.writeBlankFrameRTP()
+		_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
 	}
 }
 
@@ -609,7 +609,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		doneFlushing := make(chan struct{})
 		go func() {
 			defer close(doneFlushing)
-			_ = d.writeBlankFrameRTP()
+			_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
 		}()
 
 		// wait a limited time to flush
@@ -854,7 +854,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
-func (d *DownTrack) writeBlankFrameRTP() error {
+func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
 	// don't send if nothing has been sent
 	if !d.rtpStats.IsActive() {
 		return nil
@@ -869,14 +869,16 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 	if d.mime == "audio/opus" {
 		frameRate = 50
 	}
-	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate)
-	if err != nil {
-		return err
-	}
 
 	// send a number of blank frames just in case there is loss.
 	// Intentionally ignoring check for mute or bandwidth constrained mute
 	// as this is used to clear client side buffer.
+	numFrames := int(float32(frameRate) * duration)
+	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, numFrames)
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < len(snts); i++ {
 		hdr := rtp.Header{
 			Version:        2,
