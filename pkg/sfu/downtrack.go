@@ -39,7 +39,7 @@ type TrackSender interface {
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
-	RTPBlankFramesMax             = 6
+	RTPBlankFramesSeconds         = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -61,13 +61,39 @@ var (
 )
 
 var (
-	VP8KeyFrame8x8 = []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x08, 0x00, 0x08, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88, 0x85, 0x84, 0x88, 0x02, 0x02, 0x00, 0x0c, 0x0d, 0x60, 0x00, 0xfe, 0xff, 0xab, 0x50, 0x80}
+	VP8KeyFrame8x8 = []byte{
+		0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x08, 0x00,
+		0x08, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88,
+		0x85, 0x84, 0x88, 0x02, 0x02, 0x00, 0x0c, 0x0d,
+		0x60, 0x00, 0xfe, 0xff, 0xab, 0x50, 0x80,
+	}
 
-	H264KeyFrame2x2SPS = []byte{0x67, 0x42, 0xc0, 0x1f, 0x0f, 0xd9, 0x1f, 0x88, 0x88, 0x84, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x60, 0xc9, 0x20}
-	H264KeyFrame2x2PPS = []byte{0x68, 0x87, 0xcb, 0x83, 0xcb, 0x20}
-	H264KeyFrame2x2IDR = []byte{0x65, 0x88, 0x84, 0x0a, 0xf2, 0x62, 0x80, 0x00, 0xa7, 0xbe}
-
+	H264KeyFrame2x2SPS = []byte{
+		0x67, 0x42, 0xc0, 0x1f, 0x0f, 0xd9, 0x1f, 0x88,
+		0x88, 0x84, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00,
+		0x00, 0x03, 0x00, 0xc8, 0x3c, 0x60, 0xc9, 0x20,
+	}
+	H264KeyFrame2x2PPS = []byte{
+		0x68, 0x87, 0xcb, 0x83, 0xcb, 0x20,
+	}
+	H264KeyFrame2x2IDR = []byte{
+		0x65, 0x88, 0x84, 0x0a, 0xf2, 0x62, 0x80, 0x00,
+		0xa7, 0xbe,
+	}
 	H264KeyFrame2x2 = [][]byte{H264KeyFrame2x2SPS, H264KeyFrame2x2PPS, H264KeyFrame2x2IDR}
+
+	OpusSilenceFrame = []byte{
+		0xf8, 0xff, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
 )
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
@@ -552,6 +578,13 @@ func (d *DownTrack) Mute(muted bool) {
 	if d.onSubscriptionChanged != nil {
 		d.onSubscriptionChanged(d)
 	}
+
+	// when muting, send a few silence frames to ensure residual noise does not
+	// put the comfort noise generator on decoder side in a bad state where it
+	// generates noise that is not so comfortable.
+	if d.kind == webrtc.RTPCodecTypeAudio && muted {
+		_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
+	}
 }
 
 func (d *DownTrack) Close() {
@@ -576,7 +609,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		doneFlushing := make(chan struct{})
 		go func() {
 			defer close(doneFlushing)
-			_ = d.writeBlankFrameRTP()
+			_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
 		}()
 
 		// wait a limited time to flush
@@ -821,25 +854,32 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
-func (d *DownTrack) writeBlankFrameRTP() error {
+func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
 	// don't send if nothing has been sent
 	if !d.rtpStats.IsActive() {
 		return nil
 	}
 
-	// LK-TODO: Support other video codecs
-	if d.kind == webrtc.RTPCodecTypeAudio || (d.mime != "video/vp8" && d.mime != "video/h264") {
+	// LK-TODO: Support other audio/video codecs
+	if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
 		return nil
 	}
 
-	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames()
-	if err != nil {
-		return err
+	frameRate := uint32(30)
+	if d.mime == "audio/opus" {
+		frameRate = 50
 	}
 
 	// send a number of blank frames just in case there is loss.
 	// Intentionally ignoring check for mute or bandwidth constrained mute
 	// as this is used to clear client side buffer.
+	numFrames := int(float32(frameRate) * duration)
+	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, numFrames)
+	if err != nil {
+		d.logger.Warnw("could not get SN/TS to write blank frames", err)
+		return err
+	}
+
 	for i := 0; i < len(snts); i++ {
 		hdr := rtp.Header{
 			Version:        2,
@@ -854,11 +894,14 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 
 		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
+			d.logger.Warnw("could not write header extensions for blank frame", err)
 			return err
 		}
 
 		var pktSize int
 		switch d.mime {
+		case "audio/opus":
+			pktSize, err = d.writeOpusBlankFrame(&hdr, frameEndNeeded)
 		case "video/vp8":
 			pktSize, err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
 		case "video/h264":
@@ -867,6 +910,7 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 			return nil
 		}
 		if err != nil {
+			d.logger.Warnw("could not write blank frame", err)
 			return err
 		}
 
@@ -882,10 +926,25 @@ func (d *DownTrack) writeBlankFrameRTP() error {
 	return nil
 }
 
+func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
+	// silence frame
+	// Used shortly after muting to ensure residual noise does not keep
+	// generating noise at the decoder after the stream is stopped
+	// i. e. comfort noise generation actually not producing something comfortable.
+	payload := make([]byte, len(OpusSilenceFrame))
+	copy(payload[0:], OpusSilenceFrame)
+
+	_, err := d.writeStream.WriteRTP(hdr, payload)
+	if err == nil {
+		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	}
+	return hdr.MarshalSize() + len(payload), err
+}
+
 func (d *DownTrack) writeVP8BlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
 	blankVP8 := d.forwarder.GetPaddingVP8(frameEndNeeded)
 
-	// 1x1 key frame
+	// 8x8 key frame
 	// Used even when closing out a previous frame. Looks like receivers
 	// do not care about content (it will probably end up being an undecodable
 	// frame, but that should be okay as there are key frames following)

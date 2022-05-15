@@ -1382,37 +1382,36 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
-	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames()
+	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames(30, 6)
 	require.NoError(t, err)
 	require.True(t, frameEndNeeded)
 
 	// there should be one more than RTPBlankFramesMax as one would have been allocated to end previous frame
-	numPadding := RTPBlankFramesMax + 1
+	numPadding := 7
 	clockRate := testutils.TestVP8Codec.ClockRate
 	frameRate := uint32(30)
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
 		}
 	}
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	// also number of padding should be RTPBlankFramesMax
-	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames()
-	require.NoError(t, err)
-	require.False(t, frameEndNeeded)
-
-	numPadding = RTPBlankFramesMax
+	numPadding = 6
 	sntsExpected = sntsExpected[:numPadding]
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23340 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
+	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, 6)
+	require.NoError(t, err)
+	require.False(t, frameEndNeeded)
 	require.Equal(t, sntsExpected, snts)
 }
 

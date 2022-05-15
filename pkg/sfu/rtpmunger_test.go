@@ -305,8 +305,8 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
 		}
 	}
 	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
@@ -316,8 +316,8 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23343 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
 	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
