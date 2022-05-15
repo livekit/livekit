@@ -876,6 +876,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
 	numFrames := int(float32(frameRate) * duration)
 	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, numFrames)
 	if err != nil {
+		d.logger.Warnw("could not get SN/TS to write blank frames", err)
 		return err
 	}
 
@@ -893,6 +894,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
 
 		err = d.writeRTPHeaderExtensions(&hdr)
 		if err != nil {
+			d.logger.Warnw("could not write header extensions for blank frame", err)
 			return err
 		}
 
@@ -908,6 +910,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
 			return nil
 		}
 		if err != nil {
+			d.logger.Warnw("could not write blank frame", err)
 			return err
 		}
 
