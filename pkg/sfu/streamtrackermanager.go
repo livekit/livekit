@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -16,38 +17,44 @@ var (
 var (
 	ConfigVideo = []StreamTrackerParams{
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  4,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       1,
+			CyclesRequired:        4,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 		{
-			SamplesRequired: 5,
-			CyclesRequired:  60,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       5,
+			CyclesRequired:        60,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 		{
-			SamplesRequired: 5,
-			CyclesRequired:  60,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       5,
+			CyclesRequired:        60,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 	}
 
 	// be very forgiving for screen share to account for cases like static screen where there could be only one packet per second
 	ConfigScreenshare = []StreamTrackerParams{
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 	}
 )
@@ -98,7 +105,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 
 		params = ConfigVideo[layer]
 	}
-	params.Logger = s.logger
+	params.Logger = logger.Logger(logr.Logger(s.logger).WithValues("layer", layer))
 	tracker := NewStreamTracker(params)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
