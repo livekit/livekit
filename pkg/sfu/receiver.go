@@ -50,6 +50,8 @@ type TrackReceiver interface {
 	DeleteDownTrack(peerID livekit.ParticipantID)
 
 	DebugInfo() map[string]interface{}
+
+	GetLayerDimension(quality int32) (uint32, uint32)
 }
 
 // WebRTCReceiver receives a media track
@@ -71,6 +73,7 @@ type WebRTCReceiver struct {
 	closeOnce      sync.Once
 	closed         atomic.Bool
 	useTrackers    bool
+	TrackInfo      *livekit.TrackInfo
 
 	rtcpCh chan []rtcp.Packet
 
@@ -152,6 +155,7 @@ func NewWebRTCReceiver(
 	source livekit.TrackSource,
 	logger logger.Logger,
 	twcc *twcc.Responder,
+	trackInfo *livekit.TrackInfo,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -166,6 +170,7 @@ func NewWebRTCReceiver(
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
+		TrackInfo:            trackInfo,
 	}
 	switch strings.ToLower(w.codec.MimeType) {
 	case "video/av1":
@@ -193,6 +198,12 @@ func NewWebRTCReceiver(
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
+		GetLayerDimension: func(quality int32) (uint32, uint32) {
+			return w.GetLayerDimension(quality)
+		},
+		GetMaxExpectedLayer: func() int32 {
+			return w.streamTrackerManager.GetMaxExpectedLayer()
+		},
 		Logger:   w.logger,
 		MimeType: w.codec.MimeType,
 	})
@@ -204,6 +215,19 @@ func NewWebRTCReceiver(
 	w.connectionStats.Start()
 
 	return w
+}
+
+func (w *WebRTCReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
+	height := uint32(0)
+	width := uint32(0)
+	for _, layer := range w.TrackInfo.Layers {
+		if layer.Quality == livekit.VideoQuality(quality) {
+			height = layer.Height
+			width = layer.Width
+			break
+		}
+	}
+	return height, width
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {

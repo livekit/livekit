@@ -217,6 +217,16 @@ func NewDownTrack(
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
+		GetLayerDimension: func(quality int32) (uint32, uint32) {
+			if d.receiver != nil {
+				return d.receiver.GetLayerDimension(quality)
+			}
+			return 0, 0
+		},
+		GetMaxExpectedLayer: func() int32 {
+			layer := d.forwarder.MaxLayers()
+			return layer.Spatial
+		},
 		Logger:   d.logger,
 		MimeType: c.MimeType,
 	})

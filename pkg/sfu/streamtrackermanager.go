@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -229,6 +230,12 @@ func (s *StreamTrackerManager) IsReducedQuality() bool {
 	defer s.lock.RUnlock()
 
 	return int32(len(s.availableLayers)) < (s.maxExpectedLayer + 1)
+}
+
+func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.maxExpectedLayer
 }
 
 func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {

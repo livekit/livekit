@@ -28,6 +28,8 @@ type ConnectionStatsParams struct {
 	MimeType            string
 	Codec               string
 	DtxDisabled         bool
+	GetLayerDimension   func(int32) (uint32, uint32)
+	GetMaxExpectedLayer func() int32
 }
 
 type ConnectionStats struct {
@@ -116,9 +118,30 @@ func (cs *ConnectionStats) updateScoreV2(streams []*livekit.AnalyticsStream) flo
 		interval = UpdateInterval
 	}
 	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
-		cs.score = AudioConnectionScoreV2(interval, streams, s, cs.params.DtxDisabled)
+		totalBytes, _, _ := cs.getBytesFramesFromStreams(streams)
+		cs.score = AudioConnectionScoreV2(interval, int64(totalBytes), s, cs.params.DtxDisabled)
 	} else {
-		cs.score = VideoConnectionScoreV2(interval, streams, s, cs.params.Codec)
+		// get tracks expected max layer and dimensions
+		expectedLayer := cs.params.GetMaxExpectedLayer()
+		if expectedLayer == int32(livekit.VideoQuality_OFF) {
+			return cs.score
+		}
+		expectedHeight, expectedWidth := cs.params.GetLayerDimension(expectedLayer)
+
+		// get bytes/frames and max later from actual stream stats
+		totalBytes, totalFrames, maxLayer := cs.getBytesFramesFromStreams(streams)
+		var actualHeight uint32
+		var actualWidth uint32
+		// if data present, but maxLayer == -1 no layer info available, set actual to expected, else fetch
+		if maxLayer == -1 && totalBytes > 0 {
+			actualHeight = expectedHeight
+			actualWidth = expectedWidth
+		} else {
+			actualHeight, actualWidth = cs.params.GetLayerDimension(maxLayer)
+		}
+
+		cs.score = VideoConnectionScoreV2(interval, int64(totalBytes), int64(totalFrames), s, cs.params.Codec,
+			int32(expectedHeight), int32(expectedWidth), int32(actualHeight), int32(actualWidth))
 	}
 
 	return cs.score
@@ -212,5 +235,62 @@ func ToAnalyticsVideoLayer(layer int, layerStats *buffer.LayerStats) *livekit.An
 		Packets: layerStats.Packets,
 		Bytes:   layerStats.Bytes,
 		Frames:  layerStats.Frames,
+	}
+}
+
+func (cs *ConnectionStats) getBytesFramesFromStreams(streams []*livekit.AnalyticsStream) (totalBytes uint64, totalFrames uint32, maxLayer int32) {
+	type stat struct {
+		TotalBytes  uint64
+		TotalFrames uint32
+	}
+	layerStats := make(map[int32]stat)
+
+	maxLayer = -1
+	hasLayers := false
+	for _, stream := range streams {
+		// get frames/bytes/packets from video layers if available. Store per layer in layerStats map
+		if len(stream.VideoLayers) > 0 {
+			hasLayers = true
+			// find max quality 0(LOW), 1(MED), 2(HIGH), 3(OFF)
+			videoQuality := int32(-1)
+			for _, layer := range stream.VideoLayers {
+				if stats, ok := layerStats[layer.Layer]; ok {
+					stats.TotalFrames += layer.GetFrames()
+					stats.TotalBytes += layer.GetBytes()
+					layerStats[layer.Layer] = stats
+				} else {
+					newStats := stat{
+						TotalBytes:  layer.GetBytes(),
+						TotalFrames: layer.GetFrames(),
+					}
+					layerStats[layer.Layer] = newStats
+				}
+
+				// if layer is off or of lower quality than processed, skip updating maxLayer
+				if (layer.Layer == int32(livekit.VideoQuality_OFF)) || (videoQuality > layer.Layer) {
+					continue
+				}
+				videoQuality = layer.Layer
+				if videoQuality > maxLayer {
+					maxLayer = videoQuality
+				}
+			}
+		} else {
+			totalFrames += stream.Frames
+			totalBytes += stream.GetPrimaryBytes() + stream.GetPaddingBytes() + stream.GetRetransmitBytes()
+		}
+	}
+
+	// if we had layers, then check for layerStats map for maxLayer stats
+	if hasLayers {
+		if maxLayer == -1 {
+			maxLayer = int32(livekit.VideoQuality_OFF)
+			return 0, 0, maxLayer
+		} else {
+			stats := layerStats[maxLayer]
+			return stats.TotalBytes, stats.TotalFrames, maxLayer
+		}
+	} else {
+		return totalBytes, totalFrames, -1
 	}
 }
