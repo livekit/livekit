@@ -217,7 +217,8 @@ func NewDownTrack(
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
-		Logger: d.logger,
+		Logger:   d.logger,
+		MimeType: c.MimeType,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {

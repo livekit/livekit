@@ -193,7 +193,8 @@ func NewWebRTCReceiver(
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
-		Logger: w.logger,
+		Logger:   w.logger,
+		MimeType: w.codec.MimeType,
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {

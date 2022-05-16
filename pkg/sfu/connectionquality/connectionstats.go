@@ -1,6 +1,7 @@
 package connectionquality
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,9 @@ type ConnectionStatsParams struct {
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
 	Logger              logger.Logger
+	MimeType            string
+	Codec               string
+	DtxDisabled         bool
 }
 
 type ConnectionStats struct {
@@ -39,6 +43,13 @@ type ConnectionStats struct {
 }
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
+	// try to get the codec from passed codec (mime header)
+	codec := ""
+	codecParsed := strings.Split(strings.ToLower(params.MimeType), "/")
+	if len(codecParsed) > 1 {
+		codec = codecParsed[1]
+	}
+	params.Codec = codec
 	return &ConnectionStats{
 		params: params,
 		score:  4.0,
@@ -91,6 +102,28 @@ func (cs *ConnectionStats) updateScore() float32 {
 	return cs.score
 }
 
+func (cs *ConnectionStats) updateScoreV2(streams []*livekit.AnalyticsStream) float32 {
+	cs.lock.Lock()
+	defer cs.lock.Unlock()
+
+	s := cs.params.GetQualityParams()
+	if s == nil {
+		return cs.score
+	}
+
+	interval := cs.params.UpdateInterval
+	if interval == 0 {
+		interval = UpdateInterval
+	}
+	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
+		cs.score = AudioConnectionScoreV2(interval, streams, s, cs.params.DtxDisabled)
+	} else {
+		cs.score = VideoConnectionScoreV2(interval, streams, s, cs.params.Codec)
+	}
+
+	return cs.score
+}
+
 func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 	if cs.params.GetDeltaStats == nil {
 		return nil
@@ -119,7 +152,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	score := cs.updateScore()
+	score := cs.updateScoreV2(analyticsStreams)
 
 	return &livekit.AnalyticsStat{
 		Score:   score,

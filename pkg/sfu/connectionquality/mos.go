@@ -1,7 +1,11 @@
 package connectionquality
 
 import (
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/rtcscore-go/pkg/rtcmos"
 )
 
 // MOS score calculation is based on webrtc-stats
@@ -73,4 +77,83 @@ func AudioConnectionScore(pctLoss float32, rtt uint32, jitter float32) float32 {
 
 func VideoConnectionScore(pctLoss float32, reducedQuality bool) float32 {
 	return loss2Score(pctLoss, reducedQuality)
+}
+func getBytesFramesFromStreams(streams []*livekit.AnalyticsStream) (totalBytes int64, totalFrames int64) {
+	for _, stream := range streams {
+		// get frames/bytes/packets from video layers if available
+		if len(stream.VideoLayers) > 0 {
+			// find max quality 0(LOW), 1(MED), 2(HIGH), 3(OFF)
+			videoQuality := -1
+			for _, layer := range stream.VideoLayers {
+				totalFrames += int64(layer.GetFrames())
+				totalBytes += int64(layer.GetBytes())
+
+				// if layer is off or of lower quality than processed, skip
+				if (layer.Layer == int32(livekit.VideoQuality_OFF)) || (int32(videoQuality) > layer.Layer) {
+					continue
+				}
+				videoQuality = int(layer.Layer)
+			}
+		} else {
+			totalFrames += int64(stream.Frames)
+			totalBytes += int64(stream.GetPrimaryBytes() + stream.GetPaddingBytes() + stream.GetRetransmitBytes())
+		}
+	}
+	return totalBytes, totalFrames
+}
+
+func getBitRate(interval float64, totalBytes int64) int32 {
+	return int32(float64(totalBytes*8) / interval)
+}
+
+func getFrameRate(interval float64, totalFrames int64) int32 {
+	return int32(float64(totalFrames) / interval)
+}
+
+func int32Ptr(x int32) *int32 {
+	return &x
+}
+
+func AudioConnectionScoreV2(interval time.Duration, streams []*livekit.AnalyticsStream,
+	qualityParam *buffer.ConnectionQualityParams, dtxDisabled bool) float32 {
+	totalBytes, _ := getBytesFramesFromStreams(streams)
+
+	stat := rtcmos.Stat{
+		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
+		PacketLoss:    qualityParam.LossPercentage,
+		RoundTripTime: int32(qualityParam.Rtt),
+		BufferDelay:   int32(qualityParam.Jitter),
+		AudioConfig:   &rtcmos.AudioConfig{},
+	}
+
+	if dtxDisabled {
+		flag := false
+		stat.AudioConfig.Dtx = &flag
+	}
+
+	scores := rtcmos.Score([]rtcmos.Stat{stat})
+	if len(scores) == 1 {
+		return float32(scores[0].AudioScore)
+	}
+	return 0
+}
+
+func VideoConnectionScoreV2(interval time.Duration, streams []*livekit.AnalyticsStream, qualityParam *buffer.ConnectionQualityParams,
+	codec string) float32 {
+	totalBytes, totalFrames := getBytesFramesFromStreams(streams)
+	stat := rtcmos.Stat{
+		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
+		PacketLoss:    qualityParam.LossPercentage,
+		RoundTripTime: int32(qualityParam.Rtt),
+		BufferDelay:   int32(qualityParam.Jitter),
+		VideoConfig: &rtcmos.VideoConfig{
+			FrameRate: int32Ptr(getFrameRate(interval.Seconds(), totalFrames)),
+			Codec:     codec,
+		},
+	}
+	scores := rtcmos.Score([]rtcmos.Stat{stat})
+	if len(scores) == 1 {
+		return float32(scores[0].VideoScore)
+	}
+	return 0
 }
