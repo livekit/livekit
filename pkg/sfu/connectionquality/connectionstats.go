@@ -82,29 +82,7 @@ func (cs *ConnectionStats) GetScore() float32 {
 	return cs.score
 }
 
-func (cs *ConnectionStats) updateScore() float32 {
-	cs.lock.Lock()
-	defer cs.lock.Unlock()
-
-	s := cs.params.GetQualityParams()
-	if s == nil {
-		return cs.score
-	}
-
-	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
-		cs.score = AudioConnectionScore(s.LossPercentage, s.Rtt, s.Jitter)
-	} else {
-		isReducedQuality := false
-		if cs.params.GetIsReducedQuality != nil {
-			isReducedQuality = cs.params.GetIsReducedQuality()
-		}
-		cs.score = VideoConnectionScore(s.LossPercentage, isReducedQuality)
-	}
-
-	return cs.score
-}
-
-func (cs *ConnectionStats) updateScoreV2(streams []*livekit.AnalyticsStream) float32 {
+func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float32 {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
@@ -119,7 +97,7 @@ func (cs *ConnectionStats) updateScoreV2(streams []*livekit.AnalyticsStream) flo
 	}
 	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
 		totalBytes, _, _ := cs.getBytesFramesFromStreams(streams)
-		cs.score = AudioConnectionScoreV2(interval, int64(totalBytes), s, cs.params.DtxDisabled)
+		cs.score = AudioConnectionScore(interval, int64(totalBytes), s, cs.params.DtxDisabled)
 	} else {
 		// get tracks expected max layer and dimensions
 		expectedLayer := cs.params.GetMaxExpectedLayer()
@@ -140,7 +118,7 @@ func (cs *ConnectionStats) updateScoreV2(streams []*livekit.AnalyticsStream) flo
 			actualHeight, actualWidth = cs.params.GetLayerDimension(maxLayer)
 		}
 
-		cs.score = VideoConnectionScoreV2(interval, int64(totalBytes), int64(totalFrames), s, cs.params.Codec,
+		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), s, cs.params.Codec,
 			int32(expectedHeight), int32(expectedWidth), int32(actualHeight), int32(actualWidth))
 	}
 
@@ -175,7 +153,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	score := cs.updateScoreV2(analyticsStreams)
+	score := cs.updateScore(analyticsStreams)
 
 	return &livekit.AnalyticsStat{
 		Score:   score,

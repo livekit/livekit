@@ -72,14 +72,6 @@ func loss2Score(pctLoss float32, reducedQuality bool) float32 {
 	return score
 }
 
-func AudioConnectionScore(pctLoss float32, rtt uint32, jitter float32) float32 {
-	return mosAudioEModel(pctLoss, rtt, jitter)
-}
-
-func VideoConnectionScore(pctLoss float32, reducedQuality bool) float32 {
-	return loss2Score(pctLoss, reducedQuality)
-}
-
 func getBitRate(interval float64, totalBytes int64) int32 {
 	return int32(float64(totalBytes*8) / interval)
 }
@@ -92,7 +84,7 @@ func int32Ptr(x int32) *int32 {
 	return &x
 }
 
-func AudioConnectionScoreV2(interval time.Duration, totalBytes int64,
+func AudioConnectionScore(interval time.Duration, totalBytes int64,
 	qualityParam *buffer.ConnectionQualityParams, dtxDisabled bool) float32 {
 
 	stat := rtcmos.Stat{
@@ -115,9 +107,9 @@ func AudioConnectionScoreV2(interval time.Duration, totalBytes int64,
 	return 0
 }
 
-func VideoConnectionScoreV2(interval time.Duration, totalBytes int64, totalFrames int64, qualityParam *buffer.ConnectionQualityParams,
+func VideoConnectionScore(interval time.Duration, totalBytes int64, totalFrames int64, qualityParam *buffer.ConnectionQualityParams,
 	codec string, expectedHeight int32, expectedWidth int32, actualHeight int32, actualWidth int32) float32 {
-	logger.Debugw("VideoConnectionScoreV2", "expectedHeight", expectedHeight, "width", expectedWidth)
+	logger.Debugw("VideoConnectionScore", "expectedHeight", expectedHeight, "width", expectedWidth)
 	stat := rtcmos.Stat{
 		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
 		PacketLoss:    qualityParam.LossPercentage,
