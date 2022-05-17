@@ -200,24 +200,30 @@ func NewWebRTCReceiver(
 		GetLayerDimension: func(quality int32) (uint32, uint32) {
 			return w.GetLayerDimension(quality)
 		},
-		GetMaxExpectedLayer: func() int32 {
+		GetMaxExpectedLayer: func() livekit.VideoLayer {
+			var expectedLayer livekit.VideoLayer
+			var maxPublishedLayer livekit.VideoLayer
 			// find min of <expected, published> layer
-			expectedLayer := w.streamTrackerManager.GetMaxExpectedLayer()
-			maxPublishedLayers := InvalidLayerSpatial
+			expectedQuality := w.streamTrackerManager.GetMaxExpectedLayer()
+			maxPublishedQuality := InvalidLayerSpatial
 			if w.TrackInfo != nil {
 				for _, layer := range w.TrackInfo.Layers {
 					if layer.Quality == livekit.VideoQuality_OFF {
 						continue
 					}
-					if int32(layer.Quality) > maxPublishedLayers {
-						maxPublishedLayers = int32(layer.Quality)
+					if expectedQuality == int32(layer.Quality) {
+						expectedLayer = *layer
+					}
+					if int32(layer.Quality) > maxPublishedQuality {
+						maxPublishedQuality = int32(layer.Quality)
+						maxPublishedLayer = *layer
 					}
 				}
 			}
-			if expectedLayer < maxPublishedLayers {
+			if expectedQuality < maxPublishedQuality {
 				return expectedLayer
 			}
-			return maxPublishedLayers
+			return maxPublishedLayer
 		},
 		Logger:    w.logger,
 		CodecName: getCodecNameFromMime(w.codec.MimeType),

@@ -223,9 +223,10 @@ func NewDownTrack(
 			}
 			return 0, 0
 		},
-		GetMaxExpectedLayer: func() int32 {
-			layer := d.forwarder.MaxLayers()
-			return layer.Spatial
+		GetMaxExpectedLayer: func() livekit.VideoLayer {
+			quality := d.forwarder.MaxLayers().Spatial
+			width, height := d.receiver.GetLayerDimension(quality)
+			return livekit.VideoLayer{Quality: livekit.VideoQuality(quality), Width: width, Height: height}
 		},
 		Logger:    d.logger,
 		CodecName: getCodecNameFromMime(c.MimeType),

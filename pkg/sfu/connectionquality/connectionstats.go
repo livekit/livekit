@@ -27,7 +27,7 @@ type ConnectionStatsParams struct {
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
 	GetLayerDimension   func(int32) (uint32, uint32)
-	GetMaxExpectedLayer func() int32
+	GetMaxExpectedLayer func() livekit.VideoLayer
 	Logger              logger.Logger
 }
 
@@ -93,10 +93,9 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float
 	} else {
 		// get tracks expected max layer and dimensions
 		expectedLayer := cs.params.GetMaxExpectedLayer()
-		if expectedLayer == buffer.InvalidLayerSpatial {
+		if int32(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
 			return cs.score
 		}
-		expectedWidth, expectedHeight := cs.params.GetLayerDimension(expectedLayer)
 
 		// get bytes/frames and max later from actual stream stats
 		totalBytes, totalFrames, maxLayer := cs.getBytesFramesFromStreams(streams)
@@ -104,16 +103,16 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float
 		var actualWidth uint32
 		// if data present, but maxLayer == -1 no layer info available, set actual to expected, else fetch
 		if maxLayer == buffer.InvalidLayerSpatial && totalBytes > 0 {
-			actualHeight = expectedHeight
-			actualWidth = expectedWidth
+			actualHeight = expectedLayer.Height
+			actualWidth = expectedLayer.Width
 		} else {
 			actualWidth, actualHeight = cs.params.GetLayerDimension(maxLayer)
 		}
 
 		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), s, cs.params.CodecName,
-			int32(expectedHeight), int32(expectedWidth), int32(actualHeight), int32(actualWidth))
-		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer, "maxLayer", maxLayer,
-		//	"expectedWidth", expectedWidth, "actualWidth", actualWidth, "expectedHeight", expectedHeight, "actualHeight", actualHeight)
+			int32(expectedLayer.Height), int32(expectedLayer.Width), int32(actualHeight), int32(actualWidth))
+		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer.Quality, "maxLayer", maxLayer,
+		//	"expectedWidth", expectedLayer.Width, "actualWidth", actualWidth, "expectedHeight", expectedLayer.Height, "actualHeight", actualHeight)
 	}
 
 	return cs.score
