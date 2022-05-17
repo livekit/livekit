@@ -227,8 +227,8 @@ func NewDownTrack(
 			layer := d.forwarder.MaxLayers()
 			return layer.Spatial
 		},
-		Logger:   d.logger,
-		MimeType: c.MimeType,
+		Logger:    d.logger,
+		CodecName: getCodecNameFromMime(c.MimeType),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {

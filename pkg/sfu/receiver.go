@@ -152,10 +152,9 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track *webrtc.TrackRemote,
 	pid livekit.ParticipantID,
-	source livekit.TrackSource,
+	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	twcc *twcc.Responder,
-	trackInfo *livekit.TrackInfo,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
@@ -169,7 +168,7 @@ func NewWebRTCReceiver(
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
-		streamTrackerManager: NewStreamTrackerManager(logger, source),
+		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo.Source),
 		TrackInfo:            trackInfo,
 	}
 	switch strings.ToLower(w.codec.MimeType) {
@@ -202,10 +201,26 @@ func NewWebRTCReceiver(
 			return w.GetLayerDimension(quality)
 		},
 		GetMaxExpectedLayer: func() int32 {
-			return w.streamTrackerManager.GetMaxExpectedLayer()
+			// find min of <expected, published> layer
+			expectedLayer := w.streamTrackerManager.GetMaxExpectedLayer()
+			maxPublishedLayers := InvalidLayerSpatial
+			if w.TrackInfo != nil {
+				for _, layer := range w.TrackInfo.Layers {
+					if layer.Quality == livekit.VideoQuality_OFF {
+						continue
+					}
+					if int32(layer.Quality) > maxPublishedLayers {
+						maxPublishedLayers = int32(layer.Quality)
+					}
+				}
+			}
+			if expectedLayer < maxPublishedLayers {
+				return expectedLayer
+			}
+			return maxPublishedLayers
 		},
-		Logger:   w.logger,
-		MimeType: w.codec.MimeType,
+		Logger:    w.logger,
+		CodecName: getCodecNameFromMime(w.codec.MimeType),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
@@ -227,7 +242,7 @@ func (w *WebRTCReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 			break
 		}
 	}
-	return height, width
+	return width, height
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
