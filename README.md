@@ -8,8 +8,7 @@ LiveKit is written in Go, using the awesome [Pion WebRTC](https://github.com/pio
 ## Features
 
 - Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
-- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, React, iOS, Android,
-  Flutter, and Mac
+- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/)
 - Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
 - Robust networking & connectivity. UDP/TCP/TURN
 - Easy to deploy - single binary, docker & kubernetes
@@ -33,18 +32,22 @@ Client SDKs:
 - [iOS & MacOS - Swift](https://github.com/livekit/client-sdk-swift) ([docs](https://docs.livekit.io/client-sdk-swift/))
 - [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
 - [Flutter](https://github.com/livekit/client-sdk-flutter) ([docs](https://docs.livekit.io/client-sdk-flutter/))
+- [Unity (WebGL)](https://github.com/livekit/client-sdk-unity-web) ([docs](https://livekit.github.io/client-sdk-unity-web/) [demo](https://unity.livekit.io))
+- [React Native](https://github.com/livekit/client-sdk-react-native)
 
 Server SDKs:
 
 - [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
 - [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
 - [Ruby](https://github.com/livekit/server-sdk-ruby)
+- [Python (community)](https://github.com/tradablebits/livekit-server-sdk-python)
 
 Tools:
 
 - [livekit-cli](https://github.com/livekit/livekit-cli): command line admin & tools
-- [chrometester](https://github.com/livekit/chrometester): load testing with headless-Chrome bots
+- [livekit-load-tester](https://github.com/livekit/livekit-cli#livekit-load-tester): load testing
 - [docker image](https://hub.docker.com/r/livekit/livekit-server)
+- [Helm charts](https://github.com/livekit/livekit-helm)
 
 ## Quickstart
 
