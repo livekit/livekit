@@ -201,7 +201,6 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	// Receiver(mime string) sfu.TrackReceiver
 	Restart()
 
 	// callbacks
@@ -220,6 +219,8 @@ type MediaTrack interface {
 
 	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualites []SubscribedCodecQuality)
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
+
+	Receivers() []sfu.TrackReceiver
 }
 
 //counterfeiter:generate . LocalMediaTrack

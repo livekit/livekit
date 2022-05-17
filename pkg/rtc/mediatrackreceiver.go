@@ -437,6 +437,17 @@ func (t *MediaTrackReceiver) Receiver(mime string) sfu.TrackReceiver {
 	return nil
 }
 
+func (t *MediaTrackReceiver) Receivers() []sfu.TrackReceiver {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	receivers := make([]sfu.TrackReceiver, 0, len(t.receivers))
+	for _, r := range t.receivers {
+		receivers = append(receivers, r.TrackReceiver)
+	}
+	return receivers
+}
+
 func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
