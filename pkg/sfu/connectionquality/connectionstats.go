@@ -12,6 +12,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -93,7 +94,7 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float
 	} else {
 		// get tracks expected max layer and dimensions
 		expectedLayer := cs.params.GetMaxExpectedLayer()
-		if int32(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
+		if utils.SpatialLayerForQuality(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
 			return cs.score
 		}
 

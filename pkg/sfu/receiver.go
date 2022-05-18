@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -211,10 +212,10 @@ func NewWebRTCReceiver(
 					if layer.Quality == livekit.VideoQuality_OFF {
 						continue
 					}
-					if expectedQuality == int32(layer.Quality) {
+					if expectedQuality == utils.SpatialLayerForQuality(layer.Quality) {
 						expectedLayer = *layer
 					}
-					if int32(layer.Quality) > maxPublishedQuality {
+					if utils.SpatialLayerForQuality(layer.Quality) > maxPublishedQuality {
 						maxPublishedQuality = int32(layer.Quality)
 						maxPublishedLayer = *layer
 					}
