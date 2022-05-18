@@ -115,7 +115,7 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 }
 
 func transmissionLabel(retransmit bool) string {
-	if retransmit {
+	if !retransmit {
 		return transmissionInitial
 	} else {
 		return transmissionRetransmit
