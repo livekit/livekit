@@ -131,8 +131,8 @@ Pre-requisites:
 Then run
 
 ```shell
-git clone https://github.com/livekit/livekit-server
-cd livekit-server
+git clone https://github.com/livekit/livekit
+cd livekit
 ./bootstrap.sh
 mage
 ```
