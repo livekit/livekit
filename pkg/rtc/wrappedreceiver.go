@@ -50,7 +50,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecCapability {
 	codecs := make([]webrtc.RTPCodecCapability, 0, len(r.receivers))
 	for _, receiver := range r.receivers {
-		codecs = append(codecs, receiver.Codec())
+		codecs = append(codecs, receiver.Codec().RTPCodecCapability)
 	}
 	return codecs
 }

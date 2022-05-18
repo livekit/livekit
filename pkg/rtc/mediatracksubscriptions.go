@@ -3,7 +3,6 @@ package rtc
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -413,6 +412,8 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 		return
 	}
 
+	t.params.Logger.Debugw("notifying subscriber max quality", "subscriberID", subscriberID, "codec", codec, "quality", quality)
+
 	t.maxQualityLock.Lock()
 	if quality == livekit.VideoQuality_OFF {
 		_, ok := t.maxSubscriberQuality[subscriberID]
@@ -493,6 +494,12 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		return
 	}
 
+	t.params.Logger.Debugw("updating quality change",
+		"force", force,
+		"maxSubscriberQuality", t.maxSubscriberQuality,
+		"maxSubscriberNodeQuality", t.maxSubscriberNodeQuality,
+		"maxSubscribedQuality", t.maxSubscribedQuality)
+
 	maxSubscribedQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
 	var changed bool
 	t.maxQualityLock.Lock()
@@ -505,7 +512,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	// call AddCodec when receiving a new codec receiver
 	for _, subQuality := range t.maxSubscriberQuality {
 		if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
-			if q == livekit.VideoQuality_OFF || subQuality.Quality > q {
+			if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
 				maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 			}
 		}
@@ -513,13 +520,14 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	for _, subQualities := range t.maxSubscriberNodeQuality {
 		for _, subQuality := range subQualities {
 			if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
-				if q == livekit.VideoQuality_OFF || subQuality.Quality > q {
+				if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
 					maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 				}
 			}
 		}
 	}
 
+	// TODO : av1 remote subscribed quality update twice and maxSubscribedQuality still high
 	comesDownQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
 	for mime, q := range maxSubscribedQuality {
 		if origin := t.maxSubscribedQuality[mime]; origin != q {
@@ -537,6 +545,9 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 			changed = true
 		}
 	}
+	t.params.Logger.Debugw("updating quality change",
+		"changed", changed,
+		"maxSubscribedQuality", maxSubscribedQuality)
 
 	if !changed && !force {
 		t.maxQualityLock.Unlock()
@@ -597,7 +608,6 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	subscribedCodec := make([]*livekit.SubscribedCodec, 0, len(t.maxSubscribedQuality))
 	maxSubscribedQualities := make([]types.SubscribedCodecQuality, 0, len(t.maxSubscribedQuality))
 	for mime, maxQuality := range t.maxSubscribedQuality {
-		mime = strings.ToLower(strings.TrimLeft(mime, "video/"))
 		maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
 			CodecMime: mime,
 			Quality:   maxQuality,
@@ -614,7 +624,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 			})
 		} else {
 			var subscribedQualities []*livekit.SubscribedQuality
-			for q := livekit.VideoQuality_LOW; q <= maxQuality; q++ {
+			for q := livekit.VideoQuality_LOW; q <= livekit.VideoQuality_HIGH; q++ {
 				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{
 					Quality: q,
 					Enabled: q <= maxQuality,
@@ -629,6 +639,9 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	t.maxQualityLock.Unlock()
 
 	if t.onSubscribedMaxQualityChange != nil {
+		t.params.Logger.Debugw("subscribedMaxQualityChange",
+			"subscribedCodec", subscribedCodec,
+			"maxSubscribedQualities", maxSubscribedQualities)
 		t.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
 	}
 }

@@ -122,12 +122,13 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return info
 }
 
-// AddReceiver adds a new RTP receiver to the track
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) {
+// AddReceiver adds a new RTP receiver to the track, return receiver represents a new codec
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) bool {
+	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		return
+		return newCodec
 	}
 
 	rtcpReader.OnPacket(func(bytes []byte) {
@@ -201,6 +202,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority)
 		wr = newWR
+		newCodec = true
 	}
 	t.lock.Unlock()
 
@@ -221,6 +223,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+	return newCodec
 }
 
 func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
@@ -240,4 +243,8 @@ func (t *MediaTrack) GetConnectionScore() float32 {
 
 func (t *MediaTrack) SetRTT(rtt uint32) {
 	t.MediaTrackReceiver.SetRTT(rtt)
+}
+
+func (t *MediaTrack) HasPendingCodec() bool {
+	return len(t.params.TrackInfo.Codecs) > len(t.Receivers())
 }

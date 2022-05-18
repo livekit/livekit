@@ -192,9 +192,8 @@ type Forwarder struct {
 	ddLayerSelector *DDVideoLayerSelector
 }
 
-func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
+func NewForwarder(kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
 	f := &Forwarder{
-		codec:  codec,
 		kind:   kind,
 		logger: logger,
 
@@ -207,17 +206,6 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 		rtpMunger: NewRTPMunger(logger),
 	}
 
-	if strings.ToLower(codec.MimeType) == "video/vp8" {
-		f.isTemporalSupported = true
-		f.vp8Munger = NewVP8Munger(logger)
-	}
-
-	// TODO : we only enable dd layer selector for av1 now, at future we can
-	// enable it for vp9 too
-	if strings.ToLower(codec.MimeType) == "video/av1" {
-		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
-	}
-
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.maxLayers = VideoLayers{Spatial: InvalidLayerSpatial, Temporal: DefaultMaxLayerTemporal}
 	} else {
@@ -225,6 +213,23 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	}
 
 	return f
+}
+
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
+	if f.codec.MimeType != "" {
+		return
+	}
+	f.codec = codec
+
+	switch strings.ToLower(codec.MimeType) {
+	case "video/vp8":
+		f.isTemporalSupported = true
+		f.vp8Munger = NewVP8Munger(f.logger)
+	case "video/av1":
+		// TODO : we only enable dd layer selector for av1 now, at future we can
+		// enable it for vp9 too
+		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
+	}
 }
 
 func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {

@@ -101,6 +101,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 	params.Logger = s.logger
 	params.Layer = layer
 	tracker := NewStreamTracker(params)
+	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		s.logger.Debugw("StreamTrackerManager.OnStatusChanged", "layer", layer, "status", status)
 		if status == StreamStatusStopped {

@@ -34,7 +34,8 @@ type Bitrates [DefaultMaxLayerSpatial + 1][DefaultMaxLayerTemporal + 1]int64
 type TrackReceiver interface {
 	TrackID() livekit.TrackID
 	StreamID() string
-	Codec() webrtc.RTPCodecCapability
+	Codec() webrtc.RTPCodecParameters
+	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	GetBitrateTemporalCumulative() Bitrates
@@ -106,6 +107,16 @@ func RidToLayer(rid string) int32 {
 	}
 }
 
+func IsSvcCodec(mime string) bool {
+	switch strings.ToLower(mime) {
+	case "video/av1":
+		fallthrough
+	case "video/vp9":
+		return true
+	}
+	return false
+}
+
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottleConfig indicates minimum time(ms) between sending PLIs
@@ -166,16 +177,10 @@ func NewWebRTCReceiver(
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
 		streamTrackerManager: NewStreamTrackerManager(logger, source),
-	}
-	switch strings.ToLower(w.codec.MimeType) {
-	case "video/av1":
-		fallthrough
-	case "video/vp9":
-		w.isSVC = true
+		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
-	// }
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
 	for _, opt := range opts {
@@ -257,8 +262,12 @@ func (w *WebRTCReceiver) SSRC(layer int) uint32 {
 	return 0
 }
 
-func (w *WebRTCReceiver) Codec() webrtc.RTPCodecCapability {
-	return w.codec.RTPCodecCapability
+func (w *WebRTCReceiver) Codec() webrtc.RTPCodecParameters {
+	return w.codec
+}
+
+func (w *WebRTCReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
+	return w.receiver.GetParameters().HeaderExtensions
 }
 
 func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {

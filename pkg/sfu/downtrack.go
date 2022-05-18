@@ -32,7 +32,6 @@ type TrackSender interface {
 	Close()
 	// ID is the globally unique identifier for this Track.
 	ID() string
-	Codec() webrtc.RTPCodecCapability
 	PeerID() livekit.ParticipantID
 }
 
@@ -183,6 +182,7 @@ func NewDownTrack(
 		upstreamCodecs: codecs,
 		kind:           kind,
 	}
+	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        kind,
@@ -245,7 +245,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
 	d.codec = codec.RTPCodecCapability
-	d.forwarder = NewForwarder(d.codec, d.kind, d.logger)
+	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
 		d.onBind()
 	}

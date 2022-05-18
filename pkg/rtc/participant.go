@@ -1005,7 +1005,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"rid", track.RID(),
 			"SSRC", track.SSRC())
 	}
-	if !isNewTrack && publishedTrack != nil && p.IsReady() && p.onTrackUpdated != nil {
+	if !isNewTrack && publishedTrack != nil && !publishedTrack.HasPendingCodec() && p.IsReady() && p.onTrackUpdated != nil {
 		p.onTrackUpdated(p, publishedTrack)
 	}
 }
@@ -1289,6 +1289,11 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		return nil
 	}
 
+	// normalize the codec name
+	for _, subscribedQuality := range subscribedQualities {
+		subscribedQuality.Codec = strings.ToLower(strings.TrimLeft(subscribedQuality.Codec, "video/"))
+	}
+
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
 		TrackSid:            string(trackID),
 		SubscribedQualities: subscribedQualities[0].Qualities, // for compatible with old client
@@ -1456,7 +1461,7 @@ func (p *ParticipantImpl) getDTX() bool {
 	return false
 }
 
-func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (types.MediaTrack, bool) {
+func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
@@ -1510,6 +1515,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 		p.UpTrackManager.AddPublishedTrack(mt)
 		delete(p.pendingTracks, signalCid)
 
+		// TODO : not fire track published until all codecs are received
 		newTrack = true
 	}
 
@@ -1522,9 +1528,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	mt.AddReceiver(rtpReceiver, track, p.twcc)
-
-	if newTrack {
+	if mt.AddReceiver(rtpReceiver, track, p.twcc) && !mt.HasPendingCodec() {
 		p.handleTrackPublished(mt)
 	}
 
