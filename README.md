@@ -44,9 +44,10 @@ Server SDKs:
 
 Tools:
 
+- [Egress](https://github.com/livekit/egress): export and record your rooms
 - [livekit-cli](https://github.com/livekit/livekit-cli): command line admin & tools
 - [livekit-load-tester](https://github.com/livekit/livekit-cli#livekit-load-tester): load testing
-- [docker image](https://hub.docker.com/r/livekit/livekit-server)
+- [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 
 ## Quickstart
