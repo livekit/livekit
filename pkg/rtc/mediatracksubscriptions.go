@@ -529,6 +529,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 
 	// TODO : av1 remote subscribed quality update twice and maxSubscribedQuality still high
 	comesDownQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
+	noChangeCnt := 0
 	for mime, q := range maxSubscribedQuality {
 		if origin := t.maxSubscribedQuality[mime]; origin != q {
 			if q == livekit.VideoQuality_OFF || (origin != livekit.VideoQuality_OFF && origin > q) {
@@ -543,25 +544,29 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 				t.maxSubscribedQuality[mime] = q
 			}
 			changed = true
+		} else {
+			noChangeCnt++
 		}
 	}
 	t.params.Logger.Debugw("updating quality change",
 		"changed", changed,
-		"maxSubscribedQuality", maxSubscribedQuality)
+		"maxSubscribedQuality", maxSubscribedQuality,
+		"t.maxSubscribedQuality", t.maxSubscribedQuality,
+		"comesDownQuality", comesDownQuality)
 
 	if !changed && !force {
 		t.maxQualityLock.Unlock()
 		return
 	}
 
-	// if quality comes down(or become OFF), delay notify to publisher
+	// if quality comes down(or become OFF), delay notify to publisher if needed
 	if len(comesDownQuality) > 0 && !force {
 		t.maxSubscribedQualityDebounce(func() {
 			t.UpdateQualityChange(true)
 		})
 
 		// no quality comes up
-		if len(comesDownQuality) == len(t.maxSubscribedQuality) {
+		if len(comesDownQuality)+noChangeCnt == len(t.maxSubscribedQuality) {
 			t.maxQualityLock.Unlock()
 			return
 		}
