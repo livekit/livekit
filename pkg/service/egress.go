@@ -244,7 +244,9 @@ func (s *EgressService) updateListener() {
 			case livekit.EgressStatus_EGRESS_ACTIVE, livekit.EgressStatus_EGRESS_ENDING:
 				// save updated info to store
 				err = s.store.UpdateEgress(context.Background(), res)
-
+				if err != nil {
+					logger.Errorw("could not update egress", err)
+				}
 			case livekit.EgressStatus_EGRESS_COMPLETE:
 				// delete from store
 				err = s.store.DeleteEgress(context.Background(), res)

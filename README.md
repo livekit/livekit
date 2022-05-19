@@ -140,7 +140,7 @@ mage
 ## Contributing
 
 We welcome your contributions to make LiveKit better! Please join
-us [on Slack](https://join.slack.com/t/livekit-users/shared_invite/zt-rrdy5abr-5pZ1wW8pXEkiQxBzFiXPUg) to discuss your
+us [on Slack](https://join.slack.com/t/livekit-users/shared_invite/zt-rrdy5abr-EN6PmvoOA0LX_IIyebfPEA) to discuss your
 ideas and/or submit PRs.
 
 ## License
