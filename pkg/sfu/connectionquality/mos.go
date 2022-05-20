@@ -37,8 +37,8 @@ func AudioConnectionScore(interval time.Duration, totalBytes int64,
 	stat := rtcmos.Stat{
 		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
 		PacketLoss:    qualityParam.LossPercentage,
-		RoundTripTime: int32(qualityParam.Rtt),
-		BufferDelay:   int32(qualityParam.Jitter),
+		RoundTripTime: int32Ptr(int32(qualityParam.Rtt)),
+		BufferDelay:   int32Ptr(int32(qualityParam.Jitter)),
 		AudioConfig:   &rtcmos.AudioConfig{},
 	}
 
@@ -59,8 +59,8 @@ func VideoConnectionScore(interval time.Duration, totalBytes int64, totalFrames 
 	stat := rtcmos.Stat{
 		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
 		PacketLoss:    qualityParam.LossPercentage,
-		RoundTripTime: int32(qualityParam.Rtt),
-		BufferDelay:   int32(qualityParam.Jitter),
+		RoundTripTime: int32Ptr(int32(qualityParam.Rtt)),
+		BufferDelay:   int32Ptr(int32(qualityParam.Jitter)),
 		VideoConfig: &rtcmos.VideoConfig{
 			FrameRate:      int32Ptr(getFrameRate(interval.Seconds(), totalFrames)),
 			Codec:          codec,

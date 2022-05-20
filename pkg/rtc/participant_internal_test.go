@@ -294,7 +294,7 @@ func TestConnectionQuality(t *testing.T) {
 	})
 	t.Run("audio bad publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{LossPercentage: 15}, false)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{LossPercentage: 20}, false)
 
 		require.Equal(t, livekit.ConnectionQuality_POOR, p.GetConnectionQuality().GetQuality())
 	})
