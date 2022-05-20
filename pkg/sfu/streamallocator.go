@@ -83,15 +83,10 @@ func (s State) String() string {
 type Signal int
 
 const (
-	SignalAddTrack Signal = iota
-	SignalRemoveTrack
-	SignalSetTrackPriority
+	SignalAllocateTrack = iota
+	SignalAllocateAllTracks
+	SignalAdjustState
 	SignalEstimate
-	SignalTargetBitrate
-	SignalAvailableLayersChange
-	SignalBitrateAvailabilityChange
-	SignalSubscriptionChange
-	SignalSubscribedLayersChange
 	SignalPeriodicPing
 	SignalSendProbe
 	SignalProbeClusterDone
@@ -99,24 +94,14 @@ const (
 
 func (s Signal) String() string {
 	switch s {
-	case SignalAddTrack:
-		return "ADD_TRACK"
-	case SignalRemoveTrack:
-		return "REMOVE_TRACK"
-	case SignalSetTrackPriority:
-		return "SET_TRACK_PRIORITY"
+	case SignalAllocateTrack:
+		return "ALLOCATE_TRACK"
+	case SignalAllocateAllTracks:
+		return "ALLOCATE_ALL_TRACKS"
+	case SignalAdjustState:
+		return "ADJUST_STATE"
 	case SignalEstimate:
 		return "ESTIMATE"
-	case SignalTargetBitrate:
-		return "TARGET_BITRATE"
-	case SignalAvailableLayersChange:
-		return "AVAILABLE_LAYERS_CHANGE"
-	case SignalBitrateAvailabilityChange:
-		return "BITRATE_AVAILABILITY_CHANGE"
-	case SignalSubscriptionChange:
-		return "SUBSCRIPTION_CHANGE"
-	case SignalSubscribedLayersChange:
-		return "SUBSCRIBED_LAYERS_CHANGE"
 	case SignalPeriodicPing:
 		return "PERIODIC_PING"
 	case SignalSendProbe:
@@ -129,13 +114,13 @@ func (s Signal) String() string {
 }
 
 type Event struct {
-	Signal    Signal
-	DownTrack *DownTrack
-	Data      interface{}
+	Signal  Signal
+	TrackID livekit.TrackID
+	Data    interface{}
 }
 
 func (e Event) String() string {
-	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %+v}", e.Signal, e.Data)
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, trackID: %s, data: %+v}", e.Signal, e.TrackID, e.Data)
 }
 
 type StreamAllocatorParams struct {
@@ -147,8 +132,6 @@ type StreamAllocator struct {
 	params StreamAllocatorParams
 
 	onStreamStateChange func(update *StreamStateUpdate) error
-
-	rembTrackingSSRC uint32
 
 	bwe cc.BandwidthEstimator
 
@@ -167,7 +150,10 @@ type StreamAllocator struct {
 
 	channelObserver *ChannelObserver
 
-	videoTracks map[livekit.TrackID]*Track
+	videoTracksMu        sync.RWMutex
+	videoTracks          map[livekit.TrackID]*Track
+	isAllocateAllPending bool
+	rembTrackingSSRC     uint32
 
 	state State
 
@@ -184,7 +170,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 			Logger: params.Logger,
 		}),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventCh:     make(chan Event, 20),
+		eventCh:     make(chan Event, 200),
 	}
 
 	s.resetState()
@@ -230,36 +216,52 @@ type AddTrackParams struct {
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) {
-	s.postEvent(Event{
-		Signal:    SignalAddTrack,
-		DownTrack: downTrack,
-		Data:      params,
-	})
-
-	if downTrack.Kind() == webrtc.RTPCodecTypeVideo {
-		downTrack.OnREMB(s.onREMB)
-		downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
-		downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
-		downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
-		downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
-		downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
-		downTrack.OnPacketSent(s.onPacketSent)
+	if downTrack.Kind() != webrtc.RTPCodecTypeVideo {
+		return
 	}
+
+	track := newTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
+	track.SetPriority(params.Priority)
+
+	s.videoTracksMu.Lock()
+	s.videoTracks[livekit.TrackID(downTrack.ID())] = track
+	s.videoTracksMu.Unlock()
+
+	downTrack.OnREMB(s.onREMB)
+	downTrack.OnTransportCCFeedback(s.onTransportCCFeedback)
+	downTrack.OnAvailableLayersChanged(s.onAvailableLayersChanged)
+	downTrack.OnBitrateAvailabilityChanged(s.onBitrateAvailabilityChanged)
+	downTrack.OnSubscriptionChanged(s.onSubscriptionChanged)
+	downTrack.OnSubscribedLayersChanged(s.onSubscribedLayersChanged)
+	downTrack.OnPacketSent(s.onPacketSent)
+
+	s.maybePostEventAllocateTrack(downTrack)
 }
 
 func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
+	s.videoTracksMu.Lock()
+	delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+	s.videoTracksMu.Unlock()
+
+	// LK-TODO: use any saved bandwidth to re-distribute
 	s.postEvent(Event{
-		Signal:    SignalRemoveTrack,
-		DownTrack: downTrack,
+		Signal: SignalAdjustState,
 	})
 }
 
 func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8) {
-	s.postEvent(Event{
-		Signal:    SignalSetTrackPriority,
-		DownTrack: downTrack,
-		Data:      priority,
-	})
+	s.videoTracksMu.Lock()
+	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
+		changed := track.SetPriority(priority)
+		if changed && !s.isAllocateAllPending {
+			// do a full allocation on a track priority change to keep it simple
+			s.isAllocateAllPending = true
+			s.postEvent(Event{
+				Signal: SignalAllocateAllTracks,
+			})
+		}
+	}
+	s.videoTracksMu.Unlock()
 }
 
 func (s *StreamAllocator) resetState() {
@@ -269,12 +271,83 @@ func (s *StreamAllocator) resetState() {
 	s.state = StateStable
 }
 
-// called when a new REMB is received
+// called when a new REMB is received (receive side bandwidth estimation)
 func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate) {
+	//
+	// Channel capacity is estimated at a peer connection level. All down tracks
+	// in the peer connection will end up calling this for a REMB report with
+	// the same estimated channel capacity. Use a tracking SSRC to lock onto to
+	// one report. As SSRCs can be dropped over time, update tracking SSRC as needed
+	//
+	// A couple of things to keep in mind
+	//   - REMB reports could be sent gratuitously as a way of providing
+	//     periodic feedback, i.e. even if the estimated capacity does not
+	//     change, there could be REMB packets on the wire. Those gratuitous
+	//     REMBs should not trigger anything bad.
+	//   - As each down track will issue this callback for the same REMB packet
+	//     from the wire, theoretically it is possible that one down track's
+	//     callback from previous REMB comes after another down track's callback
+	//     from the new REMB. REMBs could fire very quickly especially when
+	//     the network is entering congestion.
+	// LK-TODO-START
+	// Need to check if the same SSRC reports can somehow race, i.e. does pion send
+	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
+	// should prevent racing
+	// LK-TODO-END
+	//
+
+	// if there are no video tracks, ignore any straggler REMB
+	s.videoTracksMu.Lock()
+	if len(s.videoTracks) == 0 {
+		s.videoTracksMu.Unlock()
+		return
+	}
+
+	track := s.videoTracks[livekit.TrackID(downTrack.ID())]
+	downTrackSSRC := uint32(0)
+	if track != nil {
+		downTrackSSRC = track.DownTrack().SSRC()
+	}
+
+	found := false
+	for _, ssrc := range remb.SSRCs {
+		if ssrc == s.rembTrackingSSRC {
+			found = true
+			break
+		}
+	}
+	if !found {
+		if len(remb.SSRCs) == 0 {
+			s.params.Logger.Warnw("no SSRC to track REMB", nil)
+			s.videoTracksMu.Unlock()
+			return
+		}
+
+		// try to lock to track which is sending this update
+		if downTrackSSRC != 0 {
+			for _, ssrc := range remb.SSRCs {
+				if ssrc == downTrackSSRC {
+					s.rembTrackingSSRC = downTrackSSRC
+					found = true
+					break
+				}
+			}
+		}
+
+		if !found {
+			s.rembTrackingSSRC = remb.SSRCs[0]
+		}
+	}
+
+	if s.rembTrackingSSRC == 0 || s.rembTrackingSSRC != downTrackSSRC {
+		s.videoTracksMu.Unlock()
+		return
+	}
+	s.videoTracksMu.Unlock()
+
 	s.postEvent(Event{
-		Signal:    SignalEstimate,
-		DownTrack: downTrack,
-		Data:      remb,
+		Signal: SignalEstimate,
+		Data:   remb.Bitrate,
 	})
 }
 
@@ -285,45 +358,46 @@ func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.T
 	}
 }
 
-// called when target bitrate changes
+// called when target bitrate changes (send side bandwidth estimation)
 func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 	s.postEvent(Event{
-		Signal: SignalTargetBitrate,
+		Signal: SignalEstimate,
 		Data:   bitrate,
 	})
 }
 
 // called when feeding track's layer availability changes
 func (s *StreamAllocator) onAvailableLayersChanged(downTrack *DownTrack) {
-	s.postEvent(Event{
-		Signal:    SignalAvailableLayersChange,
-		DownTrack: downTrack,
-	})
+	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when feeding track's bitrate measurement of any layer is available
 func (s *StreamAllocator) onBitrateAvailabilityChanged(downTrack *DownTrack) {
-	s.postEvent(Event{
-		Signal:    SignalBitrateAvailabilityChange,
-		DownTrack: downTrack,
-	})
+	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscription settings changes (muting/unmuting of track)
 func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
-	s.postEvent(Event{
-		Signal:    SignalSubscriptionChange,
-		DownTrack: downTrack,
-	})
+	s.maybePostEventAllocateTrack(downTrack)
 }
 
 // called when subscribed layers changes (limiting max layers)
 func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
-	s.postEvent(Event{
-		Signal:    SignalSubscribedLayersChange,
-		DownTrack: downTrack,
-		Data:      layers,
-	})
+	shouldPost := false
+	s.videoTracksMu.Lock()
+	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
+		if track.SetMaxLayers(layers) && track.SetDirty(true) {
+			shouldPost = true
+		}
+	}
+	s.videoTracksMu.Unlock()
+
+	if shouldPost {
+		s.postEvent(Event{
+			Signal:  SignalAllocateTrack,
+			TrackID: livekit.TrackID(downTrack.ID()),
+		})
+	}
 }
 
 // called when a video DownTrack sends a packet
@@ -345,6 +419,24 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 		Signal: SignalProbeClusterDone,
 		Data:   info,
 	})
+}
+
+func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
+	shouldPost := false
+	s.videoTracksMu.Lock()
+	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
+		if track.SetDirty(true) {
+			shouldPost = true
+		}
+	}
+	s.videoTracksMu.Unlock()
+
+	if shouldPost {
+		s.postEvent(Event{
+			Signal:  SignalAllocateTrack,
+			TrackID: livekit.TrackID(downTrack.ID()),
+		})
+	}
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
@@ -386,24 +478,14 @@ func (s *StreamAllocator) ping() {
 
 func (s *StreamAllocator) handleEvent(event *Event) {
 	switch event.Signal {
-	case SignalAddTrack:
-		s.handleSignalAddTrack(event)
-	case SignalRemoveTrack:
-		s.handleSignalRemoveTrack(event)
-	case SignalSetTrackPriority:
-		s.handleSignalSetTrackPriority(event)
+	case SignalAllocateTrack:
+		s.handleSignalAllocateTrack(event)
+	case SignalAllocateAllTracks:
+		s.handleSignalAllocateAllTracks(event)
+	case SignalAdjustState:
+		s.handleSignalAdjustState(event)
 	case SignalEstimate:
 		s.handleSignalEstimate(event)
-	case SignalTargetBitrate:
-		s.handleSignalTargetBitrate(event)
-	case SignalAvailableLayersChange:
-		s.handleSignalAvailableLayersChange(event)
-	case SignalBitrateAvailabilityChange:
-		s.handleSignalBitrateAvailabilityChange(event)
-	case SignalSubscriptionChange:
-		s.handleSignalSubscriptionChange(event)
-	case SignalSubscribedLayersChange:
-		s.handleSignalSubscribedLayersChange(event)
 	case SignalPeriodicPing:
 		s.handleSignalPeriodicPing(event)
 	case SignalSendProbe:
@@ -413,167 +495,43 @@ func (s *StreamAllocator) handleEvent(event *Event) {
 	}
 }
 
-func (s *StreamAllocator) handleSignalAddTrack(event *Event) {
-	if event.DownTrack.Kind() != webrtc.RTPCodecTypeVideo {
-		return
+func (s *StreamAllocator) handleSignalAllocateTrack(event *Event) {
+	s.videoTracksMu.Lock()
+	track := s.videoTracks[event.TrackID]
+	if track != nil {
+		track.SetDirty(false)
 	}
+	s.videoTracksMu.Unlock()
 
-	params, _ := event.Data.(AddTrackParams)
-	track := newTrack(event.DownTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
-	track.SetPriority(params.Priority)
-
-	trackID := livekit.TrackID(event.DownTrack.ID())
-	s.videoTracks[trackID] = track
-
-	s.allocateTrack(track)
+	if track != nil {
+		s.allocateTrack(track)
+	}
 }
 
-func (s *StreamAllocator) handleSignalRemoveTrack(event *Event) {
-	if event.DownTrack.Kind() != webrtc.RTPCodecTypeVideo {
-		return
+func (s *StreamAllocator) handleSignalAllocateAllTracks(event *Event) {
+	s.videoTracksMu.Lock()
+	s.isAllocateAllPending = false
+	s.videoTracksMu.Unlock()
+
+	if s.state == StateDeficient {
+		s.allocateAllTracks()
 	}
+}
 
-	trackID := livekit.TrackID(event.DownTrack.ID())
-	delete(s.videoTracks, trackID)
-
-	// re-initialize estimate if all managed tracks are removed, let it get a fresh start
-	if len(s.getSorted()) == 0 {
-		s.resetState()
-		return
-	}
-
-	// LK-TODO: use any saved bandwidth to re-distribute
+func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) handleSignalSetTrackPriority(event *Event) {
-	trackID := livekit.TrackID(event.DownTrack.ID())
-	track, ok := s.videoTracks[trackID]
-	if !ok {
-		return
-	}
-
-	priority, _ := event.Data.(uint8)
-	changed := track.SetPriority(priority)
-	if changed && s.state == StateDeficient {
-		// do a full allocation on a track priority change to keep it simple
-		// LK-TODO-START
-		// When in a large room, subscriber could be adjusting priority of
-		// a lot of tracks in quick succession. That could trigger allocation burst.
-		// Find ways to avoid it.
-		// LK-TODO-END
-		s.allocateAllTracks()
-	}
-
-}
-
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
-	//
-	// Channel capacity is estimated at a peer connection level. All down tracks
-	// in the peer connection will end up calling this for a REMB report with
-	// the same estimated channel capacity. Use a tracking SSRC to lock onto to
-	// one report. As SSRCs can be dropped over time, update tracking SSRC as needed
-	//
-	// A couple of things to keep in mind
-	//   - REMB reports could be sent gratuitously as a way of providing
-	//     periodic feedback, i.e. even if the estimated capacity does not
-	//     change, there could be REMB packets on the wire. Those gratuitous
-	//     REMBs should not trigger anything bad.
-	//   - As each down track will issue this callback for the same REMB packet
-	//     from the wire, theoretically it is possible that one down track's
-	//     callback from previous REMB comes after another down track's callback
-	//     from the new REMB. REMBs could fire very quickly especially when
-	//     the network is entering congestion.
-	// LK-TODO-START
-	// Need to check if the same SSRC reports can somehow race, i.e. does pion send
-	// RTCP dispatch for same SSRC on different threads? If not, the tracking SSRC
-	// should prevent racing
-	// LK-TODO-END
-	//
-
-	// if there are no video tracks, ignore any straggler REMB
-	if len(s.videoTracks) == 0 {
-		return
-	}
-
-	remb, _ := event.Data.(*rtcp.ReceiverEstimatedMaximumBitrate)
-
-	found := false
-	for _, ssrc := range remb.SSRCs {
-		if ssrc == s.rembTrackingSSRC {
-			found = true
-			break
-		}
-	}
-	if !found {
-		if len(remb.SSRCs) == 0 {
-			s.params.Logger.Warnw("no SSRC to track REMB", nil)
-			return
-		}
-
-		// try to lock to track which is sending this update
-		for _, ssrc := range remb.SSRCs {
-			if ssrc == event.DownTrack.SSRC() {
-				s.rembTrackingSSRC = event.DownTrack.SSRC()
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			s.rembTrackingSSRC = remb.SSRCs[0]
-		}
-	}
-
-	if s.rembTrackingSSRC != event.DownTrack.SSRC() {
-		return
-	}
-
-	s.handleNewEstimate(int64(remb.Bitrate))
-}
-
-func (s *StreamAllocator) handleSignalTargetBitrate(event *Event) {
 	receivedEstimate, _ := event.Data.(int)
-	s.handleNewEstimate(int64(receivedEstimate))
-}
+	s.lastReceivedEstimate = int64(receivedEstimate)
 
-func (s *StreamAllocator) handleSignalAvailableLayersChange(event *Event) {
-	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
-	if !ok {
-		return
+	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
+	if s.isInProbe() {
+		s.handleNewEstimateInProbe()
+	} else {
+		s.handleNewEstimateInNonProbe()
 	}
-
-	s.allocateTrack(track)
-}
-
-func (s *StreamAllocator) handleSignalBitrateAvailabilityChange(event *Event) {
-	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
-	if !ok {
-		return
-	}
-
-	s.allocateTrack(track)
-}
-
-func (s *StreamAllocator) handleSignalSubscriptionChange(event *Event) {
-	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
-	if !ok {
-		return
-	}
-
-	s.allocateTrack(track)
-}
-
-func (s *StreamAllocator) handleSignalSubscribedLayersChange(event *Event) {
-	track, ok := s.videoTracks[livekit.TrackID(event.DownTrack.ID())]
-	if !ok {
-		return
-	}
-
-	layers := event.Data.(VideoLayers)
-	track.UpdateMaxLayers(layers)
-
-	s.allocateTrack(track)
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
@@ -595,7 +553,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event *Event) {
 	}
 
 	bytesSent := 0
-	for _, track := range s.videoTracks {
+	for _, track := range s.getTracks() {
 		sent := track.WritePaddingRTP(bytesToSend)
 		bytesSent += sent
 		bytesToSend -= sent
@@ -646,7 +604,7 @@ func (s *StreamAllocator) setState(state State) {
 }
 
 func (s *StreamAllocator) adjustState() {
-	for _, track := range s.videoTracks {
+	for _, track := range s.getTracks() {
 		if track.IsDeficient() {
 			s.setState(StateDeficient)
 			return
@@ -654,17 +612,6 @@ func (s *StreamAllocator) adjustState() {
 	}
 
 	s.setState(StateStable)
-}
-
-func (s *StreamAllocator) handleNewEstimate(receivedEstimate int64) {
-	s.lastReceivedEstimate = receivedEstimate
-
-	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
-	if s.isInProbe() {
-		s.handleNewEstimateInProbe()
-	} else {
-		s.handleNewEstimateInNonProbe()
-	}
 }
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
@@ -948,10 +895,11 @@ func (s *StreamAllocator) allocateAllTracks() {
 	}
 
 	//
-	// This pass is find out if there is any leftover channel capacity after allocating exempt tracks.
+	// This pass is to find out if there is any leftover channel capacity after allocating exempt tracks.
 	// Infinite channel capacity is given so that exempt tracks do not stall
 	//
-	for _, track := range s.videoTracks {
+	videoTracks := s.getTracks()
+	for _, track := range videoTracks {
 		if track.IsManaged() {
 			continue
 		}
@@ -968,7 +916,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	}
 	if availableChannelCapacity == 0 && s.params.Config.AllowPause {
 		// nothing left for managed tracks, pause them all
-		for _, track := range s.videoTracks {
+		for _, track := range videoTracks {
 			if !track.IsManaged() {
 				continue
 			}
@@ -1026,7 +974,7 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 
 func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	expected := int64(0)
-	for _, track := range s.videoTracks {
+	for _, track := range s.getTracks() {
 		expected += track.BandwidthRequested()
 	}
 
@@ -1036,7 +984,7 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 	aggPacketDelta := uint32(0)
 	aggRepeatedNackDelta := uint32(0)
-	for _, track := range s.videoTracks {
+	for _, track := range s.getTracks() {
 		packetDelta, nackDelta := track.GetNackDelta()
 		aggPacketDelta += packetDelta
 		aggRepeatedNackDelta += nackDelta
@@ -1172,7 +1120,19 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 	}
 }
 
+func (s *StreamAllocator) getTracks() []*Track {
+	s.videoTracksMu.RLock()
+	var tracks []*Track
+	for _, track := range s.videoTracks {
+		tracks = append(tracks, track)
+	}
+	s.videoTracksMu.RUnlock()
+
+	return tracks
+}
+
 func (s *StreamAllocator) getSorted() TrackSorter {
+	s.videoTracksMu.RLock()
 	var trackSorter TrackSorter
 	for _, track := range s.videoTracks {
 		if !track.IsManaged() {
@@ -1181,6 +1141,7 @@ func (s *StreamAllocator) getSorted() TrackSorter {
 
 		trackSorter = append(trackSorter, track)
 	}
+	s.videoTracksMu.RUnlock()
 
 	sort.Sort(trackSorter)
 
@@ -1188,6 +1149,7 @@ func (s *StreamAllocator) getSorted() TrackSorter {
 }
 
 func (s *StreamAllocator) getMinDistanceSorted(exclude *Track) MinDistanceSorter {
+	s.videoTracksMu.RLock()
 	var minDistanceSorter MinDistanceSorter
 	for _, track := range s.videoTracks {
 		if !track.IsManaged() || track == exclude {
@@ -1196,6 +1158,7 @@ func (s *StreamAllocator) getMinDistanceSorted(exclude *Track) MinDistanceSorter
 
 		minDistanceSorter = append(minDistanceSorter, track)
 	}
+	s.videoTracksMu.RUnlock()
 
 	sort.Sort(minDistanceSorter)
 
@@ -1203,6 +1166,7 @@ func (s *StreamAllocator) getMinDistanceSorted(exclude *Track) MinDistanceSorter
 }
 
 func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
+	s.videoTracksMu.RLock()
 	var maxDistanceSorter MaxDistanceSorter
 	for _, track := range s.videoTracks {
 		if !track.IsManaged() || !track.IsDeficient() {
@@ -1211,6 +1175,7 @@ func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
 
 		maxDistanceSorter = append(maxDistanceSorter, track)
 	}
+	s.videoTracksMu.RUnlock()
 
 	sort.Sort(maxDistanceSorter)
 
@@ -1275,6 +1240,8 @@ type Track struct {
 
 	totalPackets       uint32
 	totalRepeatedNacks uint32
+
+	isDirty bool
 }
 
 func newTrack(
@@ -1292,9 +1259,18 @@ func newTrack(
 		logger:      logger,
 	}
 	t.SetPriority(0)
-	t.UpdateMaxLayers(downTrack.MaxLayers())
+	t.SetMaxLayers(downTrack.MaxLayers())
 
 	return t
+}
+
+func (t *Track) SetDirty(isDirty bool) bool {
+	if t.isDirty == isDirty {
+		return false
+	}
+
+	t.isDirty = isDirty
+	return true
 }
 
 func (t *Track) SetPriority(priority uint8) bool {
@@ -1335,8 +1311,13 @@ func (t *Track) PublisherID() livekit.ParticipantID {
 	return t.publisherID
 }
 
-func (t *Track) UpdateMaxLayers(layers VideoLayers) {
+func (t *Track) SetMaxLayers(layers VideoLayers) bool {
+	if t.maxLayers == layers {
+		return false
+	}
+
 	t.maxLayers = layers
+	return true
 }
 
 func (t *Track) WritePaddingRTP(bytesToSend int) int {
