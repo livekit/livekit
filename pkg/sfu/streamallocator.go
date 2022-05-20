@@ -150,10 +150,10 @@ type StreamAllocator struct {
 
 	channelObserver *ChannelObserver
 
-	videoTracksMu      sync.RWMutex
-	videoTracks        map[livekit.TrackID]*Track
-	allocateAllPending bool
-	rembTrackingSSRC   uint32
+	videoTracksMu        sync.RWMutex
+	videoTracks          map[livekit.TrackID]*Track
+	isAllocateAllPending bool
+	rembTrackingSSRC     uint32
 
 	state State
 
@@ -253,9 +253,9 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8)
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
 		changed := track.SetPriority(priority)
-		if changed && !s.allocateAllPending {
+		if changed && !s.isAllocateAllPending {
 			// do a full allocation on a track priority change to keep it simple
-			s.allocateAllPending = true
+			s.isAllocateAllPending = true
 			s.postEvent(Event{
 				Signal: SignalAllocateAllTracks,
 			})
@@ -500,7 +500,7 @@ func (s *StreamAllocator) handleSignalAllocateTrack(event *Event) {
 
 func (s *StreamAllocator) handleSignalAllocateAllTracks(event *Event) {
 	s.videoTracksMu.Lock()
-	s.allocateAllPending = false
+	s.isAllocateAllPending = false
 	s.videoTracksMu.Unlock()
 
 	if s.state == StateDeficient {
