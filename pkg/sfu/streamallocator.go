@@ -383,16 +383,21 @@ func (s *StreamAllocator) onSubscriptionChanged(downTrack *DownTrack) {
 
 // called when subscribed layers changes (limiting max layers)
 func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers VideoLayers) {
+	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
 		if track.SetMaxLayers(layers) && track.SetDirty(true) {
-			s.postEvent(Event{
-				Signal:  SignalAllocateTrack,
-				TrackID: livekit.TrackID(downTrack.ID()),
-			})
+			shouldPost = true
 		}
 	}
 	s.videoTracksMu.Unlock()
+
+	if shouldPost {
+		s.postEvent(Event{
+			Signal:  SignalAllocateTrack,
+			TrackID: livekit.TrackID(downTrack.ID()),
+		})
+	}
 }
 
 // called when a video DownTrack sends a packet
@@ -417,16 +422,21 @@ func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 }
 
 func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
+	shouldPost := false
 	s.videoTracksMu.Lock()
 	if track := s.videoTracks[livekit.TrackID(downTrack.ID())]; track != nil {
 		if track.SetDirty(true) {
-			s.postEvent(Event{
-				Signal:  SignalAllocateTrack,
-				TrackID: livekit.TrackID(downTrack.ID()),
-			})
+			shouldPost = true
 		}
 	}
 	s.videoTracksMu.Unlock()
+
+	if shouldPost {
+		s.postEvent(Event{
+			Signal:  SignalAllocateTrack,
+			TrackID: livekit.TrackID(downTrack.ID()),
+		})
+	}
 }
 
 func (s *StreamAllocator) postEvent(event Event) {
