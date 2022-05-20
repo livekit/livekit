@@ -211,18 +211,24 @@ func ToAnalyticsVideoLayer(layer int, layerStats *buffer.LayerStats) *livekit.An
 }
 
 func (cs *ConnectionStats) getBytesFramesFromStreams(streams []*livekit.AnalyticsStream) (totalBytes uint64, totalFrames uint32, maxLayer int32) {
+	layerStats := make(map[int32]buffer.LayerStats)
+	hasLayers := false
 	maxLayer = buffer.InvalidLayerSpatial
 	for _, stream := range streams {
 		// get frames/bytes/packets from video layers if available. Store per layer in layerStats map
 		if len(stream.VideoLayers) > 0 {
+			hasLayers = true
+
 			layers := stream.VideoLayers
 			// find max quality 0(LOW), 1(MED), 2(HIGH) . sort on layer.Layer desc
 			sort.Slice(layers, func(i, j int) bool {
 				return layers[i].Layer > layers[j].Layer
 			})
 
-			totalFrames += layers[0].GetFrames()
-			totalBytes += layers[0].GetBytes()
+			layerStats[layers[0].Layer] = buffer.LayerStats{
+				Bytes:  layers[0].GetBytes(),
+				Frames: layers[0].GetFrames(),
+			}
 			if layers[0].Layer > maxLayer {
 				maxLayer = layers[0].Layer
 			}
@@ -231,5 +237,13 @@ func (cs *ConnectionStats) getBytesFramesFromStreams(streams []*livekit.Analytic
 			totalBytes += stream.GetPrimaryBytes()
 		}
 	}
+	if hasLayers {
+		if stats, ok := layerStats[maxLayer]; ok {
+			return stats.Bytes, stats.Frames, maxLayer
+		} else {
+			return 0, 0, buffer.InvalidLayerSpatial
+		}
+	}
 	return totalBytes, totalFrames, maxLayer
+
 }
