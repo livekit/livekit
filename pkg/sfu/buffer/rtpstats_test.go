@@ -71,7 +71,6 @@ func TestRTPStats_Update(t *testing.T) {
 	timestamp := uint32(rand.Float64() * float64(1<<32))
 	packet := getPacket(sequenceNumber, timestamp, 1000)
 	flowState := r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.True(t, flowState.IsHighestSN)
 	require.False(t, flowState.HasLoss)
 	require.True(t, r.initialized)
 	require.Equal(t, sequenceNumber, r.highestSN)
@@ -82,7 +81,6 @@ func TestRTPStats_Update(t *testing.T) {
 	timestamp += 3000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.True(t, flowState.IsHighestSN)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
@@ -90,7 +88,6 @@ func TestRTPStats_Update(t *testing.T) {
 	// out-of-order
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.False(t, flowState.IsHighestSN)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
@@ -100,7 +97,6 @@ func TestRTPStats_Update(t *testing.T) {
 	// duplicate
 	packet = getPacket(sequenceNumber-10, timestamp-30000, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.False(t, flowState.IsHighestSN)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)
@@ -112,7 +108,6 @@ func TestRTPStats_Update(t *testing.T) {
 	timestamp += 30000
 	packet = getPacket(sequenceNumber, timestamp, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.True(t, flowState.IsHighestSN)
 	require.True(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber-9, flowState.LossStartInclusive)
 	require.Equal(t, sequenceNumber, flowState.LossEndExclusive)
@@ -121,7 +116,6 @@ func TestRTPStats_Update(t *testing.T) {
 	// out-of-order should decrement number of lost packets
 	packet = getPacket(sequenceNumber-15, timestamp-45000, 1000)
 	flowState = r.Update(&packet.Header, len(packet.Payload), 0, time.Now().UnixNano())
-	require.False(t, flowState.IsHighestSN)
 	require.False(t, flowState.HasLoss)
 	require.Equal(t, sequenceNumber, r.highestSN)
 	require.Equal(t, timestamp, r.highestTS)

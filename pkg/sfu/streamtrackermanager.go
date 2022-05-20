@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -16,38 +17,44 @@ var (
 var (
 	ConfigVideo = []StreamTrackerParams{
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  4,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       1,
+			CyclesRequired:        4,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 		{
-			SamplesRequired: 5,
-			CyclesRequired:  60,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       5,
+			CyclesRequired:        60,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 		{
-			SamplesRequired: 5,
-			CyclesRequired:  60,
-			CycleDuration:   500 * time.Millisecond,
+			SamplesRequired:       5,
+			CyclesRequired:        60,
+			CycleDuration:         500 * time.Millisecond,
+			BitrateReportInterval: 1 * time.Second,
 		},
 	}
 
 	// be very forgiving for screen share to account for cases like static screen where there could be only one packet per second
 	ConfigScreenshare = []StreamTrackerParams{
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 		{
-			SamplesRequired: 1,
-			CyclesRequired:  1,
-			CycleDuration:   2 * time.Second,
+			SamplesRequired:       1,
+			CyclesRequired:        1,
+			CycleDuration:         2 * time.Second,
+			BitrateReportInterval: 4 * time.Second,
 		},
 	}
 )
@@ -83,22 +90,22 @@ func (s *StreamTrackerManager) OnBitrateAvailabilityChanged(f func()) {
 	s.onBitrateAvailabilityChanged = f
 }
 
-func (s *StreamTrackerManager) AddTracker(layer int32) {
+func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 	var params StreamTrackerParams
 	if s.source == livekit.TrackSource_SCREEN_SHARE {
 		if int(layer) >= len(ConfigScreenshare) {
-			return
+			return nil
 		}
 
 		params = ConfigScreenshare[layer]
 	} else {
 		if int(layer) >= len(ConfigVideo) {
-			return
+			return nil
 		}
 
 		params = ConfigVideo[layer]
 	}
-	params.Logger = s.logger
+	params.Logger = logger.Logger(logr.Logger(s.logger).WithValues("layer", layer))
 	tracker := NewStreamTracker(params)
 	tracker.OnStatusChanged(func(status StreamStatus) {
 		if status == StreamStatusStopped {
@@ -129,6 +136,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) {
 	s.lock.Unlock()
 
 	tracker.Start()
+	return tracker
 }
 
 func (s *StreamTrackerManager) RemoveTracker(layer int32) {
@@ -289,7 +297,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	layers := s.availableLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer seen", "layers", layers)
+	s.logger.Debugw("available layers changed - layer seen", "added", layer, "layers", layers)
 
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(layers)
@@ -308,7 +316,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	s.availableLayers = newLayers
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer gone", "layers", newLayers)
+	s.logger.Debugw("available layers changed - layer gone", "removed", layer, "layers", newLayers)
 
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {

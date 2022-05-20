@@ -45,9 +45,14 @@ func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.
 	})
 }
 
-func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *livekit.Room,
-	participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta) {
-	t.workers[livekit.ParticipantID(participant.Sid)] = newStatsWorker(
+func (t *telemetryServiceInternal) ParticipantJoined(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	clientInfo *livekit.ClientInfo,
+	clientMeta *livekit.AnalyticsClientMeta,
+) {
+	newWorker := newStatsWorker(
 		ctx,
 		t,
 		livekit.RoomID(room.Sid),
@@ -55,6 +60,24 @@ func (t *telemetryServiceInternal) ParticipantJoined(ctx context.Context, room *
 		livekit.ParticipantID(participant.Sid),
 		livekit.ParticipantIdentity(participant.Identity),
 	)
+	t.workersMu.Lock()
+	var free = false
+	for idx, worker := range t.workers {
+		if worker != nil {
+			continue
+		}
+
+		free = true
+		t.workersIdx[livekit.ParticipantID(participant.Sid)] = idx
+		t.workers[idx] = newWorker
+		break
+	}
+
+	if !free {
+		t.workersIdx[livekit.ParticipantID(participant.Sid)] = len(t.workers)
+		t.workers = append(t.workers, newWorker)
+	}
+	t.workersMu.Unlock()
 
 	prometheus.AddParticipant()
 
@@ -89,10 +112,17 @@ func (t *telemetryServiceInternal) ParticipantActive(ctx context.Context, room *
 }
 
 func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	if w := t.workers[livekit.ParticipantID(participant.Sid)]; w != nil {
+	w := t.getStatsWorker(livekit.ParticipantID(participant.Sid))
+	if w != nil {
 		w.Close()
-		delete(t.workers, livekit.ParticipantID(participant.Sid))
 	}
+
+	t.workersMu.Lock()
+	if idx, ok := t.workersIdx[livekit.ParticipantID(participant.Sid)]; ok {
+		delete(t.workersIdx, livekit.ParticipantID(participant.Sid))
+		t.workers[idx] = nil
+	}
+	t.workersMu.Unlock()
 
 	prometheus.SubParticipant()
 
@@ -169,7 +199,7 @@ func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Co
 func (t *telemetryServiceInternal) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, ssrc uint32) {
 	roomID := livekit.RoomID("")
 	roomName := livekit.RoomName("")
-	w := t.workers[participantID]
+	w := t.getStatsWorker(participantID)
 	if w != nil {
 		roomID = w.roomID
 		roomName = w.roomName
@@ -259,8 +289,7 @@ func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livek
 }
 
 func (t *telemetryServiceInternal) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
-	w := t.workers[participantID]
-	if w != nil {
+	if w := t.getStatsWorker(participantID); w != nil {
 		return w.roomID, w.roomName
 	}
 	return "", ""

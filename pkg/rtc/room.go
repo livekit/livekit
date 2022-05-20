@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -224,6 +225,19 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
+	participant.OnSubscribedTo(func(p types.LocalParticipant, publisherID livekit.ParticipantID) {
+		// when a participant subscribed to another participant,
+		// send speaker update if the subscribed to participant is active.
+		go func() {
+			speakers := r.GetActiveSpeakers()
+			for _, speaker := range speakers {
+				if livekit.ParticipantID(speaker.Sid) == publisherID {
+					p.SendSpeakerUpdate(speakers)
+					break
+				}
+			}
+		}()
+	})
 	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -331,6 +345,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnStateChange(nil)
 	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
+	p.OnSubscribedTo(nil)
 
 	// close participant as well
 	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
@@ -397,7 +412,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipantBySid)
+	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipant, r.GetParticipantBySid)
 }
 
 func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
@@ -799,11 +814,12 @@ func (r *Room) audioUpdateWorker() {
 }
 
 func (r *Room) connectionQualityWorker() {
+	ticker := time.NewTicker(connectionquality.UpdateInterval)
+	defer ticker.Stop()
+
 	// send updates to only users that are subscribed to each other
-	for {
-		if r.IsClosed() {
-			return
-		}
+	for !r.IsClosed() {
+		<-ticker.C
 
 		participants := r.GetParticipants()
 		connectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
@@ -838,8 +854,6 @@ func (r *Room) connectionQualityWorker() {
 					"participant", op.Identity())
 			}
 		}
-
-		time.Sleep(time.Second * 5)
 	}
 }
 

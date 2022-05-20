@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gammazero/workerpool"
 
@@ -27,7 +28,9 @@ type telemetryServiceInternal struct {
 	webhookPool *workerpool.WorkerPool
 
 	// one worker per participant
-	workers map[livekit.ParticipantID]*StatsWorker
+	workersMu  sync.RWMutex
+	workers    []*StatsWorker
+	workersIdx map[livekit.ParticipantID]int
 
 	analytics AnalyticsService
 }
@@ -36,7 +39,7 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 	return &telemetryServiceInternal{
 		notifier:    notifier,
 		webhookPool: workerpool.New(maxWebhookWorkers),
-		workers:     make(map[livekit.ParticipantID]*StatsWorker),
+		workersIdx:  make(map[livekit.ParticipantID]int),
 		analytics:   analytics,
 	}
 }
@@ -50,45 +53,63 @@ func (t *telemetryServiceInternal) TrackStats(streamType livekit.StreamType, par
 	nacks := uint32(0)
 	plis := uint32(0)
 	firs := uint32(0)
+	packets := uint32(0)
+	bytes := uint64(0)
+	retransmitBytes := uint64(0)
+	retransmitPackets := uint32(0)
 	for _, stream := range stat.Streams {
 		nacks += stream.Nacks
 		plis += stream.Plis
 		firs += stream.Firs
+		packets += stream.PrimaryPackets + stream.PaddingPackets
+		bytes += stream.PrimaryBytes + stream.PaddingBytes
+		if streamType == livekit.StreamType_DOWNSTREAM {
+			retransmitPackets += stream.RetransmitPackets
+			retransmitBytes += stream.RetransmitBytes
+		} else {
+			// for upstream, we don't account for these separately for now
+			packets += stream.RetransmitPackets
+			bytes += stream.RetransmitBytes
+		}
 	}
 	prometheus.IncrementRTCP(direction, nacks, plis, firs)
+	prometheus.IncrementPackets(direction, uint64(packets), false)
+	prometheus.IncrementBytes(direction, bytes, false)
+	if retransmitPackets != 0 {
+		prometheus.IncrementPackets(direction, uint64(retransmitPackets), true)
+	}
+	if retransmitBytes != 0 {
+		prometheus.IncrementBytes(direction, retransmitBytes, true)
+	}
 
-	w := t.workers[participantID]
-	if w != nil {
+	if w := t.getStatsWorker(participantID); w != nil {
 		w.OnTrackStat(trackID, streamType, stat)
 	}
 }
 
 func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.AnalyticsStat) {
-	for _, stat := range stats {
-		if len(stat.Streams) == 0 {
-			continue
-		}
-
-		direction := prometheus.Incoming
-		if stat.Kind == livekit.StreamType_DOWNSTREAM {
-			direction = prometheus.Outgoing
-		}
-
-		packets := uint32(0)
-		bytes := uint64(0)
-		for _, stream := range stat.Streams {
-			packets += stream.PrimaryPackets + stream.RetransmitPackets + stream.PaddingPackets
-			bytes += stream.PrimaryBytes + stream.RetransmitBytes + stream.PaddingBytes
-		}
-		prometheus.IncrementPackets(direction, uint64(packets))
-		prometheus.IncrementBytes(direction, bytes)
-	}
-
 	t.analytics.SendStats(ctx, stats)
 }
 
 func (t *telemetryServiceInternal) SendAnalytics() {
-	for _, worker := range t.workers {
-		worker.Update()
+	t.workersMu.RLock()
+	workers := t.workers
+	t.workersMu.RUnlock()
+
+	for _, worker := range workers {
+		if worker != nil {
+			worker.Update()
+		}
 	}
+}
+
+func (t *telemetryServiceInternal) getStatsWorker(participantID livekit.ParticipantID) *StatsWorker {
+	t.workersMu.RLock()
+	defer t.workersMu.RUnlock()
+
+	if idx, ok := t.workersIdx[participantID]; ok {
+		return t.workers[idx]
+	}
+
+	return nil
 }

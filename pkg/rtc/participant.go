@@ -126,6 +126,7 @@ type ParticipantImpl struct {
 	onStateChange       func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)
 	onParticipantUpdate func(types.LocalParticipant)
 	onDataPacket        func(types.LocalParticipant, *livekit.DataPacket)
+	onSubscribedTo      func(types.LocalParticipant, livekit.ParticipantID)
 
 	migrateState        atomic.Value // types.MigrateState
 	pendingOffer        *webrtc.SessionDescription
@@ -440,6 +441,10 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *li
 	p.onDataPacket = callback
 }
 
+func (p *ParticipantImpl) OnSubscribedTo(callback func(types.LocalParticipant, livekit.ParticipantID)) {
+	p.onSubscribedTo = callback
+}
+
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)) {
 	p.onClose = callback
 }
@@ -502,9 +507,6 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		}
 	}
 
-	if p.State() == livekit.ParticipantInfo_JOINING {
-		p.updateState(livekit.ParticipantInfo_JOINED)
-	}
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	return
@@ -818,7 +820,12 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 		subTrack.UpdateSubscriberSettings(settings)
 	}
 
-	p.subscribedTo.Store(subTrack.PublisherID(), struct{}{})
+	publisherID := subTrack.PublisherID()
+	isAlreadySubscribed := p.isSubscribedTo(publisherID)
+	p.subscribedTo.Store(publisherID, struct{}{})
+	if !isAlreadySubscribed && p.onSubscribedTo != nil {
+		p.onSubscribedTo(p, publisherID)
+	}
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list

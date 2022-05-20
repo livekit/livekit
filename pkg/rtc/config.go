@@ -9,11 +9,11 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
-	"github.com/livekit/protocol/logger"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -147,6 +147,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
 				frameMarking,
+				dd.ExtensionUrl,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
@@ -161,6 +162,9 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	// subscriber configuration
 	subscriberConfig := DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Video: []string{dd.ExtensionUrl},
+		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
@@ -188,10 +192,6 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		} else {
 			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(config.DefaultStunServers)}
 		}
-	}
-
-	if !rtcConf.RejectAggressiveNomination {
-		s.SetICEAcceptAggressiveNomination(true)
 	}
 
 	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {

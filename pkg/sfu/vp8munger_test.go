@@ -197,7 +197,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	tpExpected := TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13469,
@@ -236,7 +236,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
 	tpExpected = TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13468,
@@ -321,7 +321,6 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 65533,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -346,7 +345,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	v.SetLast(extPkt)
 
 	tpExpected := TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13467,
@@ -368,7 +367,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
 	tpExpected = TranslationParamsVP8{
-		header: &buffer.VP8{
+		Header: &buffer.VP8{
 			FirstByte:        25,
 			PictureIDPresent: 1,
 			PictureID:        13467,
@@ -397,7 +396,6 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	v := newVP8Munger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,

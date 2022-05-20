@@ -187,16 +187,16 @@ type FakeLocalMediaTrack struct {
 	restartMutex       sync.RWMutex
 	restartArgsForCall []struct {
 	}
-	RevokeDisallowedSubscribersStub        func([]livekit.ParticipantID) []livekit.ParticipantID
+	RevokeDisallowedSubscribersStub        func([]livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	revokeDisallowedSubscribersMutex       sync.RWMutex
 	revokeDisallowedSubscribersArgsForCall []struct {
-		arg1 []livekit.ParticipantID
+		arg1 []livekit.ParticipantIdentity
 	}
 	revokeDisallowedSubscribersReturns struct {
-		result1 []livekit.ParticipantID
+		result1 []livekit.ParticipantIdentity
 	}
 	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
-		result1 []livekit.ParticipantID
+		result1 []livekit.ParticipantIdentity
 	}
 	SdpCidStub        func() string
 	sdpCidMutex       sync.RWMutex
@@ -1206,16 +1206,16 @@ func (fake *FakeLocalMediaTrack) RestartCalls(stub func()) {
 	fake.RestartStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribers(arg1 []livekit.ParticipantID) []livekit.ParticipantID {
-	var arg1Copy []livekit.ParticipantID
+func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribers(arg1 []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var arg1Copy []livekit.ParticipantIdentity
 	if arg1 != nil {
-		arg1Copy = make([]livekit.ParticipantID, len(arg1))
+		arg1Copy = make([]livekit.ParticipantIdentity, len(arg1))
 		copy(arg1Copy, arg1)
 	}
 	fake.revokeDisallowedSubscribersMutex.Lock()
 	ret, specificReturn := fake.revokeDisallowedSubscribersReturnsOnCall[len(fake.revokeDisallowedSubscribersArgsForCall)]
 	fake.revokeDisallowedSubscribersArgsForCall = append(fake.revokeDisallowedSubscribersArgsForCall, struct {
-		arg1 []livekit.ParticipantID
+		arg1 []livekit.ParticipantIdentity
 	}{arg1Copy})
 	stub := fake.RevokeDisallowedSubscribersStub
 	fakeReturns := fake.revokeDisallowedSubscribersReturns
@@ -1236,39 +1236,39 @@ func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersCallCount() int {
 	return len(fake.revokeDisallowedSubscribersArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersCalls(stub func([]livekit.ParticipantID) []livekit.ParticipantID) {
+func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersCalls(stub func([]livekit.ParticipantIdentity) []livekit.ParticipantIdentity) {
 	fake.revokeDisallowedSubscribersMutex.Lock()
 	defer fake.revokeDisallowedSubscribersMutex.Unlock()
 	fake.RevokeDisallowedSubscribersStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersArgsForCall(i int) []livekit.ParticipantID {
+func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersArgsForCall(i int) []livekit.ParticipantIdentity {
 	fake.revokeDisallowedSubscribersMutex.RLock()
 	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
 	argsForCall := fake.revokeDisallowedSubscribersArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturns(result1 []livekit.ParticipantID) {
+func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturns(result1 []livekit.ParticipantIdentity) {
 	fake.revokeDisallowedSubscribersMutex.Lock()
 	defer fake.revokeDisallowedSubscribersMutex.Unlock()
 	fake.RevokeDisallowedSubscribersStub = nil
 	fake.revokeDisallowedSubscribersReturns = struct {
-		result1 []livekit.ParticipantID
+		result1 []livekit.ParticipantIdentity
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantID) {
+func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantIdentity) {
 	fake.revokeDisallowedSubscribersMutex.Lock()
 	defer fake.revokeDisallowedSubscribersMutex.Unlock()
 	fake.RevokeDisallowedSubscribersStub = nil
 	if fake.revokeDisallowedSubscribersReturnsOnCall == nil {
 		fake.revokeDisallowedSubscribersReturnsOnCall = make(map[int]struct {
-			result1 []livekit.ParticipantID
+			result1 []livekit.ParticipantIdentity
 		})
 	}
 	fake.revokeDisallowedSubscribersReturnsOnCall[i] = struct {
-		result1 []livekit.ParticipantID
+		result1 []livekit.ParticipantIdentity
 	}{result1}
 }
 

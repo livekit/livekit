@@ -168,3 +168,11 @@ func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Log
 	lr = lr.WithValues("transport", target)
 	return logger.Logger(lr)
 }
+
+func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
+	lr := logr.Logger(l)
+	if mime != "" {
+		lr = lr.WithValues("mime", mime)
+	}
+	return logger.Logger(lr)
+}

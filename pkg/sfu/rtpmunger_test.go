@@ -105,14 +105,13 @@ func TestPacketDropped(t *testing.T) {
 
 	// drop a head packet and check offset increases
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 44444,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
+	r.highestIncomingSN = 44444
 	r.PacketDropped(extPkt)
-	require.Equal(t, r.highestIncomingSN, uint16(44444))
 	require.Equal(t, r.lastSN, uint16(44443))
 	require.Equal(t, uint16(1), r.snOffset)
 }
@@ -124,15 +123,18 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    10,
 	}
 	extPkt, _ := testutils.GetTestExtPacket(params)
 	r.SetLastSnTs(extPkt)
+	r.UpdateAndGetSnTs(extPkt)
 
 	// out-of-order sequence number not in the missing sequence number cache
 	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23332,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
+		PayloadSize:    10,
 	}
 	extPkt, _ = testutils.GetTestExtPacket(params)
 
@@ -164,7 +166,6 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -190,7 +191,6 @@ func TestPaddingOnlyPacket(t *testing.T) {
 	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -213,7 +213,6 @@ func TestPaddingOnlyPacket(t *testing.T) {
 
 	// padding only packet with a gap should not report an error
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23335,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -238,7 +237,6 @@ func TestGapInSequenceNumber(t *testing.T) {
 	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 65533,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -252,7 +250,6 @@ func TestGapInSequenceNumber(t *testing.T) {
 
 	// three lost packets
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 1,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -287,7 +284,6 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -309,8 +305,8 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	var sntsExpected = make([]SnTs, numPadding)
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23333 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i)*clockRate)/frameRate,
 		}
 	}
 	snts, err := r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, true)
@@ -320,8 +316,8 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
-			sequenceNumber: 23343 + uint16(i) + 1,
-			timestamp:      0xabcdef + (uint32(i+1)*clockRate)/frameRate,
+			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
+			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
 	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)
@@ -333,7 +329,6 @@ func TestIsOnFrameBoundary(t *testing.T) {
 	r := newRTPMunger()
 
 	params := &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
@@ -349,7 +344,6 @@ func TestIsOnFrameBoundary(t *testing.T) {
 
 	// packet with RTP marker
 	params = &testutils.TestExtPacketParams{
-		IsHead:         true,
 		SetMarker:      true,
 		SequenceNumber: 23334,
 		Timestamp:      0xabcdef,

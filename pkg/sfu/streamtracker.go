@@ -27,10 +27,6 @@ const (
 	StreamStatusActive  StreamStatus = 1
 )
 
-const (
-	bitrateReportInterval = 1 * time.Second
-)
-
 type StreamTrackerParams struct {
 	// number of samples needed per cycle
 	SamplesRequired uint32
@@ -39,6 +35,8 @@ type StreamTrackerParams struct {
 	CyclesRequired uint32
 
 	CycleDuration time.Duration
+
+	BitrateReportInterval time.Duration
 
 	Logger logger.Logger
 }
@@ -63,9 +61,6 @@ type StreamTracker struct {
 
 	// only access within detectWorker
 	cycleCount uint32
-
-	// only access by the same goroutine as Observe
-	lastSN uint16
 
 	lastBitrateReport time.Time
 	bytesForBitrate   [4]int64
@@ -184,7 +179,7 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.isStopped || s.paused {
+	if s.isStopped || s.paused || payloadSize == 0 {
 		return
 	}
 
@@ -192,11 +187,10 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 		// first packet
 		s.initialized = true
 
-		s.lastSN = sn
 		s.countSinceLast = 1
 
 		s.lastBitrateReport = time.Now()
-		if temporalLayer >= 0 && payloadSize > 0 {
+		if temporalLayer >= 0 {
 			s.bytesForBitrate[temporalLayer] += int64(pktSize)
 		}
 
@@ -206,14 +200,9 @@ func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, pay
 		return
 	}
 
-	// ignore out-of-order SNs
-	if (sn - s.lastSN) > uint16(1<<15) {
-		return
-	}
-	s.lastSN = sn
 	s.countSinceLast++
 
-	if temporalLayer >= 0 && payloadSize > 0 {
+	if temporalLayer >= 0 {
 		s.bytesForBitrate[temporalLayer] += int64(pktSize)
 	}
 }
@@ -244,7 +233,7 @@ func (s *StreamTracker) detectWorker(generation uint32) {
 	ticker := time.NewTicker(s.params.CycleDuration)
 	defer ticker.Stop()
 
-	tickerBitrate := time.NewTicker(bitrateReportInterval / 2)
+	tickerBitrate := time.NewTicker(s.params.BitrateReportInterval)
 	defer tickerBitrate.Stop()
 
 	for {
@@ -291,26 +280,22 @@ func (s *StreamTracker) detectChanges() {
 func (s *StreamTracker) bitrateReport() {
 	// run this even if paused to drain out bitrate if there are no packets coming in
 	s.lock.Lock()
-	if time.Since(s.lastBitrateReport) < bitrateReportInterval {
-		s.lock.Unlock()
-		return
-	}
-
 	now := time.Now()
 	diff := now.Sub(s.lastBitrateReport)
 	s.lastBitrateReport = now
 
-	aggLast := int64(0)
-	aggNow := int64(0)
+	bitrateAvailabilityChanged := false
 	for i := 0; i < len(s.bytesForBitrate); i++ {
-		aggLast += s.bitrate[i]
-		s.bitrate[i] = int64(float64(s.bytesForBitrate[i]*8) / diff.Seconds())
-		aggNow += s.bitrate[i]
+		bitrate := int64(float64(s.bytesForBitrate[i]*8) / diff.Seconds())
+		if (s.bitrate[i] == 0 && bitrate > 0) || (s.bitrate[i] > 0 && bitrate == 0) {
+			bitrateAvailabilityChanged = true
+		}
+		s.bitrate[i] = bitrate
 		s.bytesForBitrate[i] = 0
 	}
 	s.lock.Unlock()
 
-	if aggLast == 0 && aggNow > 0 && s.onBitrateAvailable != nil {
+	if bitrateAvailabilityChanged && s.onBitrateAvailable != nil {
 		s.onBitrateAvailable()
 	}
 }
