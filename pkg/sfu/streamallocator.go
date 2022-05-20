@@ -184,7 +184,7 @@ func NewStreamAllocator(params StreamAllocatorParams) *StreamAllocator {
 			Logger: params.Logger,
 		}),
 		videoTracks: make(map[livekit.TrackID]*Track),
-		eventCh:     make(chan Event, 20),
+		eventCh:     make(chan Event, 200),
 	}
 
 	s.resetState()
