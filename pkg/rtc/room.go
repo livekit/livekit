@@ -734,16 +734,15 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 	pi := p.ToProto()
 	updates := []*livekit.ParticipantInfo{pi}
 
-	if !opts.skipSource {
-		// send update only to hidden participant
-		err := p.SendParticipantUpdate(updates)
-		if err != nil {
-			r.Logger.Errorw("could not send update to participant", err,
-				"participant", p.Identity(), "pID", p.ID())
-		}
-	}
-
 	if p.Hidden() {
+		if !opts.skipSource {
+			// send update only to hidden participant
+			err := p.SendParticipantUpdate(updates)
+			if err != nil {
+				r.Logger.Errorw("could not send update to participant", err,
+					"participant", p.Identity(), "pID", p.ID())
+			}
+		}
 		return
 	}
 
