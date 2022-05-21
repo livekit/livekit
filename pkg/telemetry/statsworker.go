@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -19,6 +20,7 @@ type StatsWorker struct {
 	participantID       livekit.ParticipantID
 	participantIdentity livekit.ParticipantIdentity
 
+	lock             sync.Mutex
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 }
@@ -38,52 +40,53 @@ func newStatsWorker(
 		roomName:            roomName,
 		participantID:       participantID,
 		participantIdentity: identity,
-
-		outgoingPerTrack: make(map[livekit.TrackID][]*livekit.AnalyticsStat),
-		incomingPerTrack: make(map[livekit.TrackID][]*livekit.AnalyticsStat),
+		outgoingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
+		incomingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 	}
 	return s
 }
 
 func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.StreamType, stat *livekit.AnalyticsStat) {
+	s.lock.Lock()
 	if direction == livekit.StreamType_DOWNSTREAM {
 		s.outgoingPerTrack[trackID] = append(s.outgoingPerTrack[trackID], stat)
 	} else {
 		s.incomingPerTrack[trackID] = append(s.incomingPerTrack[trackID], stat)
 	}
+	s.lock.Unlock()
 }
 
 func (s *StatsWorker) Update() {
 	ts := timestamppb.Now()
 
+	s.lock.Lock()
 	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
-	stats = s.collectUpstreamStats(ts, stats)
-	stats = s.collectDownstreamStats(ts, stats)
+
+	incomingPerTrack := s.incomingPerTrack
+	s.incomingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+
+	outgoingPerTrack := s.outgoingPerTrack
+	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+	s.lock.Unlock()
+
+	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
+	stats = s.collectStats(ts, livekit.StreamType_DOWNSTREAM, outgoingPerTrack, stats)
 	if len(stats) > 0 {
 		s.t.Report(s.ctx, stats)
 	}
 }
 
-func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
-	for trackID, analyticsStats := range s.outgoingPerTrack {
-		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, livekit.StreamType_DOWNSTREAM)
+func (s *StatsWorker) collectStats(
+	ts *timestamppb.Timestamp,
+	streamType livekit.StreamType,
+	perTrack map[livekit.TrackID][]*livekit.AnalyticsStat,
+	stats []*livekit.AnalyticsStat,
+) []*livekit.AnalyticsStat {
+	for trackID, analyticsStats := range perTrack {
+		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, streamType)
 		if analyticsStat != nil {
 			stats = append(stats, analyticsStat)
 		}
-		// clear the queue
-		delete(s.outgoingPerTrack, trackID)
-	}
-	return stats
-}
-
-func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
-	for trackID, analyticsStats := range s.incomingPerTrack {
-		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, livekit.StreamType_UPSTREAM)
-		if analyticsStat != nil {
-			stats = append(stats, analyticsStat)
-		}
-		// clear the queue
-		delete(s.incomingPerTrack, trackID)
 	}
 	return stats
 }
