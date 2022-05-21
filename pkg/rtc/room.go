@@ -25,7 +25,13 @@ const (
 	DefaultEmptyTimeout       = 5 * 60 // 5m
 	DefaultRoomDepartureGrace = 20
 	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
+	subscriberUpdateInterval  = 3 * time.Second
 )
+
+type broadcastOptions struct {
+	skipSource bool
+	immediate  bool
+}
 
 type Room struct {
 	lock sync.RWMutex
@@ -41,6 +47,10 @@ type Room struct {
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
 	participantOpts map[livekit.ParticipantIdentity]*ParticipantOptions
 	bufferFactory   *buffer.Factory
+
+	// batch update participant info for non-publishers
+	batchedUpdates   map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
+	batchedUpdatesMu sync.Mutex
 
 	// time the first participant joined the room
 	joinedAt atomic.Int64
@@ -68,6 +78,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize),
+		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:          make(chan struct{}),
 	}
 	if r.Room.EmptyTimeout == 0 {
@@ -79,6 +90,7 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
+	go r.subscriberBroadcastWorker()
 
 	return r
 }
@@ -206,7 +218,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(participant)
 		}
-		r.broadcastParticipantState(p, true)
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
 		state := p.State()
 		if state == livekit.ParticipantInfo_ACTIVE {
@@ -361,7 +373,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(p)
 		}
-		r.broadcastParticipantState(p, true)
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 	}
 }
 
@@ -605,7 +617,7 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it
 func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
 	// publish participant update, since track state is changed
-	r.broadcastParticipantState(participant, true)
+	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
 	r.lock.RLock()
 	defer r.lock.RUnlock()
@@ -643,14 +655,15 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 	// send track updates to everyone, especially if track was updated by admin
-	r.broadcastParticipantState(p, false)
+	r.broadcastParticipantState(p, broadcastOptions{})
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
 }
 
 func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
-	r.broadcastParticipantState(p, false)
+	// immediately notify when permissions or metadata changed
+	r.broadcastParticipantState(p, broadcastOptions{immediate: true})
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(p)
 	}
@@ -717,32 +730,44 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 }
 
 // broadcast an update about participant p
-func (r *Room) broadcastParticipantState(p types.LocalParticipant, skipSource bool) {
-	updates := ToProtoParticipants([]types.LocalParticipant{p})
+func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
+	pi := p.ToProto()
+	updates := []*livekit.ParticipantInfo{pi}
+
+	if !opts.skipSource {
+		// send update only to hidden participant
+		err := p.SendParticipantUpdate(updates)
+		if err != nil {
+			r.Logger.Errorw("could not send update to participant", err,
+				"participant", p.Identity(), "pID", p.ID())
+		}
+	}
 
 	if p.Hidden() {
-		if !skipSource {
-			// send update only to hidden participant
-			err := p.SendParticipantUpdate(updates)
-			if err != nil {
-				r.Logger.Errorw("could not send update to participant", err,
-					"participant", p.Identity(), "pID", p.ID())
-			}
-		}
 		return
 	}
 
-	participants := r.GetParticipants()
-	for _, op := range participants {
-		// skip itself && closed participants
-		if (skipSource && p.ID() == op.ID()) || op.State() == livekit.ParticipantInfo_DISCONNECTED {
+	if !pi.IsPublisher && !opts.immediate {
+		r.enqueueParticipantUpdate(pi)
+		return
+	} else {
+		r.clearParticipantUpdate(p.Identity())
+	}
+
+	r.sendParticipantUpdates(updates)
+}
+
+func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
+	for _, op := range r.GetParticipants() {
+		// skip closed participants
+		if op.State() == livekit.ParticipantInfo_DISCONNECTED {
 			continue
 		}
 
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
 			r.Logger.Errorw("could not send update to participant", err,
-				"participant", p.Identity(), "pID", p.ID())
+				"participant", op.Identity(), "pID", op.ID())
 		}
 	}
 }
@@ -770,6 +795,52 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().SupportsSpeakerChanged() {
 			_ = p.SendSpeakerUpdate(speakers)
+		}
+	}
+}
+
+func (r *Room) enqueueParticipantUpdate(pi *livekit.ParticipantInfo) {
+	r.batchedUpdatesMu.Lock()
+	defer r.batchedUpdatesMu.Unlock()
+
+	identity := livekit.ParticipantIdentity(pi.Identity)
+	existing := r.batchedUpdates[identity]
+	if existing != nil && pi.Sid == existing.Sid && existing.Version > pi.Version {
+		return
+	}
+
+	r.batchedUpdates[identity] = pi
+}
+
+func (r *Room) clearParticipantUpdate(identity livekit.ParticipantIdentity) {
+	r.batchedUpdatesMu.Lock()
+	delete(r.batchedUpdates, identity)
+	r.batchedUpdatesMu.Unlock()
+}
+
+func (r *Room) subscriberBroadcastWorker() {
+	ticker := time.NewTicker(subscriberUpdateInterval)
+	defer ticker.Stop()
+
+	for !r.IsClosed() {
+		select {
+		case <-r.closed:
+			return
+		case <-ticker.C:
+			r.batchedUpdatesMu.Lock()
+			updatesMap := r.batchedUpdates
+			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
+			r.batchedUpdatesMu.Unlock()
+
+			if len(updatesMap) == 0 {
+				continue
+			}
+
+			updates := make([]*livekit.ParticipantInfo, 0, len(updatesMap))
+			for _, pi := range updatesMap {
+				updates = append(updates, pi)
+			}
+			r.sendParticipantUpdates(updates)
 		}
 	}
 }
