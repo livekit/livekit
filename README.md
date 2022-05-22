@@ -100,7 +100,7 @@ docker run --rm -e LIVEKIT_KEYS="<api-key>: <api-secret>" \
 
 ## Deploying to server
 
-Deployment Docs: https://docs.livekit.io/guides/deploy
+Deployment Docs: https://docs.livekit.io/deploy/
 
 ### Single node server
 

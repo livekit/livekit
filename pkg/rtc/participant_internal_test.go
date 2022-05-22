@@ -328,6 +328,7 @@ func TestSubscriberAsPrimary(t *testing.T) {
 type participantOpts struct {
 	permissions     *livekit.ParticipantPermission
 	protocolVersion types.ProtocolVersion
+	publisher       bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -362,6 +363,8 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		PLIThrottleConfig: conf.RTC.PLIThrottle,
 		Grants:            grants,
 	})
+	p.isPublisher.Store(opts.publisher)
+
 	return p
 }
 
