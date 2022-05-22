@@ -93,6 +93,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/", s.healthCheck)
 	mux.HandleFunc("/internal/token", s.internalToken)
 	mux.HandleFunc("/internal/tracks", s.internalTracks)
+	mux.HandleFunc("/internal/players", s.internalPlayers)
 	if conf.Development {
 		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
 		mux.HandleFunc("/debug/rooms", s.debugInfo)
