@@ -116,7 +116,12 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 					break
 				}
 			}
-			if !exempt || layer > s.maxExpectedLayer {
+
+			s.lock.RLock()
+			maxExpectedLayer := s.maxExpectedLayer
+			s.lock.RUnlock()
+
+			if !exempt || layer > maxExpectedLayer {
 				s.removeAvailableLayer(layer)
 			} else {
 				s.logger.Debugw("not removing exempt layer", "layer", layer)
@@ -294,7 +299,9 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 
 	s.availableLayers = append(s.availableLayers, layer)
 	sort.Slice(s.availableLayers, func(i, j int) bool { return s.availableLayers[i] < s.availableLayers[j] })
-	layers := s.availableLayers
+
+	var layers []int32
+	layers = append(layers, s.availableLayers...)
 	s.lock.Unlock()
 
 	s.logger.Debugw("available layers changed - layer seen", "added", layer, "layers", layers)

@@ -865,9 +865,10 @@ func (r *Room) audioUpdateWorker() {
 		// changedSpeakers need to include previous speakers that are no longer speaking
 		for sid, speaker := range lastActiveMap {
 			if nextActiveMap[sid] == nil {
-				speaker.Level = 0
-				speaker.Active = false
-				changedSpeakers = append(changedSpeakers, speaker)
+				inactiveSpeaker := proto.Clone(speaker).(*livekit.SpeakerInfo)
+				inactiveSpeaker.Level = 0
+				inactiveSpeaker.Active = false
+				changedSpeakers = append(changedSpeakers, inactiveSpeaker)
 			}
 		}
 
