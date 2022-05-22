@@ -98,6 +98,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
 	mux.HandleFunc("/internal/token", s.internalToken)
+	mux.HandleFunc("/internal/tracks", s.internalTracks)
 	if conf.Development {
 		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
 		mux.HandleFunc("/debug/rooms", s.debugInfo)
@@ -306,56 +307,6 @@ func (s *LivekitServer) backgroundWorker() {
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
 		}
-	}
-}
-
-type RequestInternalToken struct {
-	Method       string `json:"kind,omitempty"`
-	CallKey      string `json:"call_key,omitempty"`
-	NameCalled   string `json:"name_called,omitempty"`
-	NameIdentity string `json:"name_identity,omitempty"`
-
-	InternalKey    string `json:"key"`
-	InternalSecret string `json:"secret"`
-}
-
-type ResultInternalToken struct {
-	Location string `json:"location,omitempty"`
-	Token    string `json:"token,omitempty"`
-}
-
-func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	var req RequestInternalToken
-	if err := decoder.Decode(&req); nil != err {
-		w.WriteHeader(http.StatusNotAcceptable)
-		return
-	}
-	grant := auth.VideoGrant{}
-	grant.Room = req.CallKey
-	grant.RoomJoin = true
-	at := auth.NewAccessToken(req.InternalKey, req.InternalSecret)
-	switch req.Method {
-	case "start":
-		grant.RoomCreate = true
-	case "invite":
-	}
-	at.AddGrant(&grant).SetIdentity(req.NameIdentity).SetName(req.NameCalled).SetMetadata("metadata" + req.NameIdentity).SetValidFor(time.Hour)
-	t, err := at.ToJWT()
-	if err != nil {
-		w.WriteHeader(http.StatusNotAcceptable)
-		return
-	}
-	result := ResultInternalToken{}
-	result.Location = "wss"
-	result.Token = t
-	if bytes, err := json.Marshal(result); nil != err {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	} else {
-		w.WriteHeader(http.StatusOK)
-		w.Header().Add("Content-Type", "application/json")
-		_, _ = w.Write(bytes)
 	}
 }
 
