@@ -55,7 +55,7 @@ func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
         return
     } else {
         w.WriteHeader(http.StatusOK)
-        w.Header().Add("Content-Type", "application/json")
+        w.Header().Set("Content-Type", "application/json")
         _, _ = w.Write(bytes)
     }
 }
@@ -95,7 +95,7 @@ func (s *LivekitServer) internalTracks(w http.ResponseWriter, r *http.Request) {
         return
     } else {
         w.WriteHeader(http.StatusOK)
-        w.Header().Add("Content-Type", "application/json")
+        w.Header().Set("Content-Type", "application/json")
         _, _ = w.Write(bytes)
     }
 }
@@ -133,7 +133,7 @@ func (s *LivekitServer) internalPlayers(w http.ResponseWriter, r *http.Request) 
         return
     } else {
         w.WriteHeader(http.StatusOK)
-        w.Header().Add("Content-Type", "application/json")
+        w.Header().Set("Content-Type", "application/json")
         _, _ = w.Write(bytes)
     }
 }
