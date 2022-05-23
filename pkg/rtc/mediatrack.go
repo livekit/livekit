@@ -7,6 +7,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -96,15 +97,17 @@ func (t *MediaTrack) SdpCid() string {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	info := t.MediaTrackReceiver.TrackInfo()
+	info := proto.Clone(t.MediaTrackReceiver.TrackInfo()).(*livekit.TrackInfo)
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.IsSimulcast()
 	layers := t.MediaTrackReceiver.GetVideoLayers()
+	t.lock.RLock()
 	for _, layer := range layers {
 		if int(layer.Quality) < len(t.layerSSRCs) {
 			layer.Ssrc = t.layerSSRCs[layer.Quality]
 		}
 	}
+	t.lock.RUnlock()
 	info.Layers = layers
 
 	return info
@@ -135,8 +138,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		}
 	})
 
+	isNew := false
 	t.lock.Lock()
 	if t.Receiver() == nil {
+		isNew = true
+
 		wr := sfu.NewWebRTCReceiver(
 			receiver,
 			track,
@@ -165,12 +171,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
-		t.params.Telemetry.TrackPublished(
-			context.Background(),
-			t.PublisherID(),
-			t.PublisherIdentity(),
-			t.ToProto(),
-		)
 
 		t.buffer = buff
 
@@ -188,15 +188,29 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	if t.IsSimulcast() {
 		layer := sfu.RidToLayer(track.RID())
+		t.lock.Lock()
 		if int(layer) < len(t.layerSSRCs) {
 			t.layerSSRCs[layer] = uint32(track.SSRC())
 		}
+		t.lock.Unlock()
+	}
+
+	if isNew {
+		t.params.Telemetry.TrackPublished(
+			context.Background(),
+			t.PublisherID(),
+			t.PublisherIdentity(),
+			t.ToProto(),
+		)
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
 }
 
 func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	if int(layer) < len(t.layerSSRCs) && t.layerSSRCs[layer] == 0 {
 		t.layerSSRCs[layer] = ssrc
 	}

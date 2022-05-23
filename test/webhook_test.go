@@ -111,7 +111,6 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhoo
 	}
 	conf.WebHook.URLs = []string{"http://localhost:7890"}
 	conf.WebHook.APIKey = testApiKey
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	testServer = newTestServer(":7890")
