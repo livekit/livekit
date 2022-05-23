@@ -157,7 +157,7 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 
 	availableLayers = []int32{}
 	f.UpTrackLayersChange(availableLayers)
-	require.Equal(t, availableLayers, f.availableLayers)
+	require.Nil(t, f.availableLayers)
 }
 
 func TestForwarderAllocate(t *testing.T) {
