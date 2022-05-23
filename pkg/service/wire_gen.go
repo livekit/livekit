@@ -24,6 +24,10 @@ import (
 	"os"
 )
 
+import (
+	_ "net/http/pprof"
+)
+
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
