@@ -103,10 +103,10 @@ func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
 func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 	d.downTrackMu.RLock()
 	downTracks := d.downTracks
-	free := d.free
+	numFree := len(d.free)
 	d.downTrackMu.RUnlock()
 
-	if d.params.Threshold == 0 || len(downTracks)-len(free) < d.params.Threshold {
+	if d.params.Threshold == 0 || (len(downTracks)-numFree) < d.params.Threshold {
 		// serial - not enough down tracks for parallelization to outweigh overhead
 		for _, dt := range downTracks {
 			if dt != nil {
