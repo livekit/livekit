@@ -322,7 +322,12 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.availableLayers = availableLayers
+	if len(availableLayers) > 0 {
+		f.availableLayers = make([]int32, len(availableLayers))
+		copy(f.availableLayers, availableLayers)
+	} else {
+		f.availableLayers = nil
+	}
 }
 
 func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
@@ -481,11 +486,15 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		change:             change,
 		bandwidthRequested: bandwidthRequested,
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.availableLayers,
 		bitrates:           brs,
 		targetLayers:       targetLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
@@ -499,11 +508,14 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 	defer f.lock.Unlock()
 
 	f.provisional = &VideoAllocationProvisional{
-		layers:          InvalidLayers,
-		muted:           f.muted,
-		bitrates:        bitrates,
-		availableLayers: f.availableLayers,
-		maxLayers:       f.maxLayers,
+		layers:    InvalidLayers,
+		muted:     f.muted,
+		bitrates:  bitrates,
+		maxLayers: f.maxLayers,
+	}
+	if len(f.availableLayers) > 0 {
+		f.provisional.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.provisional.availableLayers, f.availableLayers)
 	}
 }
 
@@ -776,11 +788,15 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		change:             change,
 		bandwidthRequested: bandwidthRequested,
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.provisional.availableLayers,
 		bitrates:           f.provisional.bitrates,
 		targetLayers:       f.provisional.layers,
 		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.layers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.provisional.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
@@ -842,11 +858,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				change:             VideoStreamingChangeNone,
 				bandwidthRequested: bandwidthRequested,
 				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
-				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
+			if len(f.availableLayers) > 0 {
+				f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+				copy(f.lastAllocation.availableLayers, f.availableLayers)
+			}
+
 			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
@@ -882,11 +902,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				change:             change,
 				bandwidthRequested: bandwidthRequested,
 				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
-				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
+			if len(f.availableLayers) > 0 {
+				f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+				copy(f.lastAllocation.availableLayers, f.availableLayers)
+			}
+
 			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
@@ -985,11 +1009,15 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		change:             change,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.availableLayers,
 		bitrates:           brs,
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
