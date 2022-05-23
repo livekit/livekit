@@ -9,6 +9,7 @@ import (
 
 	"github.com/pion/rtcp"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -27,7 +28,8 @@ const (
 
 type simulcastReceiver struct {
 	sfu.TrackReceiver
-	priority int
+	priority   int
+	layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
 }
 
 func (r *simulcastReceiver) Priority() int {
@@ -39,11 +41,9 @@ type MediaTrackReceiver struct {
 	muted       atomic.Bool
 	simulcasted atomic.Bool
 
-	lock      sync.RWMutex
-	receivers []*simulcastReceiver // MimeType -> TrackReceiver
-	// receiver  sfu.TrackReceiver
-	// altReceiver     sfu.TrackReceiver
-	layerDimensions sync.Map // livekit.VideoQuality => *livekit.VideoLayer
+	lock            sync.RWMutex
+	receivers       []*simulcastReceiver // MimeType -> TrackReceiver
+	layerDimensions sync.Map             // livekit.VideoQuality => *livekit.VideoLayer
 
 	// track audio fraction lost
 	downFracLostLock   sync.Mutex
@@ -109,17 +109,45 @@ func (t *MediaTrackReceiver) Restart() {
 	t.MediaTrackSubscriptions.Restart()
 }
 
-func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int) {
+func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
-	t.receivers = append(t.receivers, &simulcastReceiver{receiver, priority})
+	t.receivers = append(t.receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
 	sort.Slice(t.receivers, func(i, j int) bool {
 		return t.receivers[i].Priority() < t.receivers[j].Priority()
 	})
+
+	if mid != "" {
+		if priority == 0 {
+			t.params.TrackInfo.MimeType = receiver.Codec().MimeType
+			t.params.TrackInfo.Mid = mid
+		}
+
+		for i, ci := range t.params.TrackInfo.Codecs {
+			if i == priority {
+				ci.Mid = mid
+				ci.MimeType = receiver.Codec().MimeType
+			}
+		}
+	}
+
 	t.lock.Unlock()
 	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receivers)
 	t.MediaTrackSubscriptions.AddCodec(receiver.Codec().MimeType)
 
 	t.MediaTrackSubscriptions.Start()
+}
+
+func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	layer := sfu.RidToLayer(rid)
+	for _, receiver := range t.receivers {
+		if strings.EqualFold(receiver.Codec().MimeType, mime) && int(layer) < len(receiver.layerSSRCs) {
+			receiver.layerSSRCs[layer] = ssrc
+			return
+		}
+	}
 }
 
 func (t *MediaTrackReceiver) ClearReceiver(mime string) {
@@ -270,7 +298,41 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
-	return t.params.TrackInfo
+	ti := proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
+	layers := make([]*livekit.VideoLayer, 0)
+	t.layerDimensions.Range(func(q, val interface{}) bool {
+		if layer, ok := val.(*livekit.VideoLayer); ok {
+			layers = append(layers, layer)
+		}
+		return true
+	})
+
+	// set video layer ssrc info
+	for i, ci := range ti.Codecs {
+		for _, receiver := range t.receivers {
+			if receiver.priority == i {
+				originLayers := ci.Layers
+				ci.Layers = []*livekit.VideoLayer{}
+				for layerIdx, layer := range layers {
+					ci.Layers = append(ci.Layers, proto.Clone(layer).(*livekit.VideoLayer))
+
+					// if origin layer is has ssrc, don't override it
+					if layerIdx < len(originLayers) && originLayers[layerIdx].Ssrc != 0 {
+						ci.Layers[layerIdx].Ssrc = originLayers[layerIdx].Ssrc
+					} else if int(layer.Quality) < len(receiver.layerSSRCs) {
+						ci.Layers[layerIdx].Ssrc = receiver.layerSSRCs[layer.Quality]
+					}
+				}
+
+				if i == 0 {
+					ti.Layers = ci.Layers
+				}
+				break
+			}
+		}
+	}
+
+	return ti
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
@@ -286,17 +348,17 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
 }
 
-func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
-	layers := make([]*livekit.VideoLayer, 0)
-	t.layerDimensions.Range(func(q, val interface{}) bool {
-		if layer, ok := val.(*livekit.VideoLayer); ok {
-			layers = append(layers, layer)
-		}
-		return true
-	})
+// func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
+// 	layers := make([]*livekit.VideoLayer, 0)
+// 	t.layerDimensions.Range(func(q, val interface{}) bool {
+// 		if layer, ok := val.(*livekit.VideoLayer); ok {
+// 			layers = append(layers, layer)
+// 		}
+// 		return true
+// 	})
 
-	return layers
-}
+// 	return layers
+// }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions
 // affords a 20% tolerance on dimension

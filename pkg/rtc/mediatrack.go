@@ -26,7 +26,7 @@ type MediaTrack struct {
 	numUpTracks atomic.Uint32
 	buffer      *buffer.Buffer
 
-	layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
+	// layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
 
 	*MediaTrackReceiver
 
@@ -49,6 +49,7 @@ type MediaTrackParams struct {
 	VideoConfig       config.VideoConfig
 	Telemetry         telemetry.TelemetryService
 	Logger            logger.Logger
+	SimTracks         map[uint32]SimulcastTrackInfo
 }
 
 func NewMediaTrack(params MediaTrackParams) *MediaTrack {
@@ -111,19 +112,20 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.MediaTrackReceiver.TrackInfo()
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.IsSimulcast()
-	layers := t.MediaTrackReceiver.GetVideoLayers()
-	for _, layer := range layers {
-		if int(layer.Quality) < len(t.layerSSRCs) {
-			layer.Ssrc = t.layerSSRCs[layer.Quality]
-		}
-	}
-	info.Layers = layers
+
+	// layers := t.MediaTrackReceiver.GetVideoLayers()
+	// for _, layer := range layers {
+	// 	if int(layer.Quality) < len(t.layerSSRCs) {
+	// 		layer.Ssrc = t.layerSSRCs[layer.Quality]
+	// 	}
+	// }
+	// info.Layers = layers
 
 	return info
 }
 
 // AddReceiver adds a new RTP receiver to the track, return receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
@@ -200,7 +202,13 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 		t.buffer = buff
 
-		t.MediaTrackReceiver.SetupReceiver(newWR, priority)
+		t.MediaTrackReceiver.SetupReceiver(newWR, priority, mid)
+
+		for ssrc, info := range t.params.SimTracks {
+			if info.Mid == mid {
+				t.MediaTrackReceiver.SetLayerSsrc(mime, info.Rid, ssrc)
+			}
+		}
 		wr = newWR
 		newCodec = true
 	}
@@ -215,21 +223,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	if t.IsSimulcast() {
+		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
 		// TODO : seprate svc layers from one track
-		layer := sfu.RidToLayer(track.RID())
-		if int(layer) < len(t.layerSSRCs) {
-			t.layerSSRCs[layer] = uint32(track.SSRC())
-		}
+		// layer := sfu.RidToLayer(track.RID())
+		// if int(layer) < len(t.layerSSRCs) {
+		// 	t.layerSSRCs[layer] = uint32(track.SSRC())
+		// }
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
 	return newCodec
-}
-
-func (t *MediaTrack) TrySetSimulcastSSRC(layer uint8, ssrc uint32) {
-	if int(layer) < len(t.layerSSRCs) && t.layerSSRCs[layer] == 0 {
-		t.layerSSRCs[layer] = ssrc
-	}
 }
 
 func (t *MediaTrack) GetConnectionScore() float32 {

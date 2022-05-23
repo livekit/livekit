@@ -1466,6 +1466,13 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	newTrack := false
 
 	p.params.Logger.Debugw("media track received", "track", track.ID(), "kind", track.Kind())
+	var mid string
+	for _, tr := range p.publisher.pc.GetTransceivers() {
+		if tr.Receiver() == rtpReceiver {
+			mid = tr.Mid()
+			break
+		}
+	}
 	// use existing media track to handle simulcast
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
@@ -1475,16 +1482,16 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			return nil, false
 		}
 
-		ti.MimeType = track.Codec().MimeType
+		// ti.MimeType = track.Codec().MimeType
 
-		var mid string
-		for _, tr := range p.publisher.pc.GetTransceivers() {
-			if tr.Receiver() == rtpReceiver {
-				mid = tr.Mid()
-				break
-			}
-		}
-		ti.Mid = mid
+		// var mid string
+		// for _, tr := range p.publisher.pc.GetTransceivers() {
+		// 	if tr.Receiver() == rtpReceiver {
+		// 		mid = tr.Mid()
+		// 		break
+		// 	}
+		// }
+		// ti.Mid = mid
 
 		mt = NewMediaTrack(MediaTrackParams{
 			TrackInfo:           ti,
@@ -1501,13 +1508,14 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
 			SubscriberConfig:    p.params.Config.Subscriber,
 			PLIThrottleConfig:   p.params.PLIThrottleConfig,
+			SimTracks:           p.params.SimTracks,
 		})
 
-		for ssrc, info := range p.params.SimTracks {
-			if info.Mid == mid {
-				mt.TrySetSimulcastSSRC(uint8(sfu.RidToLayer(info.Rid)), ssrc)
-			}
-		}
+		// for ssrc, info := range p.params.SimTracks {
+		// 	if info.Mid == mid {
+		// 		mt.SetLayerSsrc(uint8(sfu.RidToLayer(info.Rid)), ssrc)
+		// 	}
+		// }
 
 		mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
@@ -1528,7 +1536,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc) && !mt.HasPendingCodec() {
+	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) && !mt.HasPendingCodec() {
 		p.handleTrackPublished(mt)
 	}
 
