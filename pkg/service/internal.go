@@ -66,8 +66,8 @@ type RequestInternalTracks struct {
 }
 
 type ResultInternalTrack struct {
-    Kind      string `json:"kind,omitempty"`
-    TrackName string `json:"track_name,omitempty"`
+    Kind     string `json:"kind,omitempty"`
+    TrackKey string `json:"track_key,omitempty"`
 }
 
 type ResultInternalTracks struct {
@@ -88,7 +88,7 @@ func (s *LivekitServer) internalTracks(w http.ResponseWriter, r *http.Request) {
     }
     result := ResultInternalTracks{}
     for _, x := range participant.Tracks {
-        result.Tracks = append(result.Tracks, ResultInternalTrack{TrackName: x.Sid, Kind: x.Type.String()})
+        result.Tracks = append(result.Tracks, ResultInternalTrack{TrackKey: x.Sid, Kind: x.Type.String()})
     }
     if bytes, err := json.Marshal(result); nil != err {
         w.WriteHeader(http.StatusInternalServerError)
