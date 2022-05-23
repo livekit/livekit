@@ -102,9 +102,7 @@ func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
 
 func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 	d.downTrackMu.RLock()
-	var downTracks []TrackSender
-	downTracks = append(downTracks, d.downTracks...)
-
+	downTracks := d.downTracks
 	numFree := len(d.free)
 	d.downTrackMu.RUnlock()
 
