@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 
@@ -1299,6 +1300,12 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	// NOTE: not using diff of current time and previous packet time (lTSCalc) as this
+	// driven by a timer, there might be slight differences compared to the frame rate.
+	// As the differences are going to be small (and also not to update RTP time stamp
+	// by those small differences), not doing the diff.
+	f.lTSCalc = time.Now().UnixNano()
 
 	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
 	if frameEndNeeded {
