@@ -167,25 +167,13 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
-	if err != nil {
-		return nil, err
-	}
-	// find the track
-	t := funk.Find(participant.Tracks, func(t *livekit.TrackInfo) bool {
-		return t.Sid == req.TrackSid
-	})
-	if t == nil {
-		return nil, twirp.NotFoundError(ErrTrackNotFound.Error())
-	}
-
 	err = s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_MuteTrack{
 			MuteTrack: req,
 		},
 	})
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	var track *livekit.TrackInfo
@@ -215,7 +203,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	res = &livekit.MuteRoomTrackResponse{
 		Track: track,
 	}
-	return
+	return res, nil
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
