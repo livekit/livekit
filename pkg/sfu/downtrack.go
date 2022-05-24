@@ -575,6 +575,9 @@ func (d *DownTrack) Close() {
 // 2. in case of session migration, participant migrate from other node, video track should
 //    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
+	if !d.bound.Load() {
+		return
+	}
 	if d.forwarder != nil {
 		d.forwarder.Mute(true)
 	}

@@ -98,7 +98,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		return true
 	}
 
-	info := t.MediaTrackReceiver.TrackInfo()
+	info := t.MediaTrackReceiver.TrackInfo(false)
 	t.params.Logger.Debugw("MediaTrack.HasSdpCid", "cid", cid, "trackInfo", info.String())
 	for _, c := range info.Codecs {
 		if c.Cid == cid {
@@ -109,7 +109,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
-	info := t.MediaTrackReceiver.TrackInfo()
+	info := t.MediaTrackReceiver.TrackInfo(true)
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.IsSimulcast()
 
@@ -224,11 +224,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 	if t.IsSimulcast() {
 		t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
-		// TODO : seprate svc layers from one track
-		// layer := sfu.RidToLayer(track.RID())
-		// if int(layer) < len(t.layerSSRCs) {
-		// 	t.layerSSRCs[layer] = uint32(track.SSRC())
-		// }
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)

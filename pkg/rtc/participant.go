@@ -1369,7 +1369,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 	pendingInfo := &pendingTrackInfo{TrackInfo: ti}
 	for _, codec := range req.SimulcastCodecs {
-		// mime := livekit.CodecMimeFromClientCodec(codec.Codec, req.Type)
 		mime := codec.Codec
 		if req.Type == livekit.TrackType_VIDEO && !strings.HasPrefix(mime, "video/") {
 			mime = "video/" + mime
@@ -1380,12 +1379,8 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			MimeType: string(mime),
 			Cid:      codec.Cid,
 		})
-		// pendingInfo.codecs = append(pendingInfo.codecs, pendingCodec{
-		// 	mime:     codec.Codec,
-		// 	cid:      codec.Cid,
-		// 	priority: idx,
-		// })
 	}
+
 	p.pendingTracks[req.Cid] = pendingInfo
 	p.params.Logger.Debugw("pending track added", "track", ti.String(), "request", req.String())
 
@@ -1482,17 +1477,6 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			return nil, false
 		}
 
-		// ti.MimeType = track.Codec().MimeType
-
-		// var mid string
-		// for _, tr := range p.publisher.pc.GetTransceivers() {
-		// 	if tr.Receiver() == rtpReceiver {
-		// 		mid = tr.Mid()
-		// 		break
-		// 	}
-		// }
-		// ti.Mid = mid
-
 		mt = NewMediaTrack(MediaTrackParams{
 			TrackInfo:           ti,
 			SignalCid:           signalCid,
@@ -1511,19 +1495,12 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			SimTracks:           p.params.SimTracks,
 		})
 
-		// for ssrc, info := range p.params.SimTracks {
-		// 	if info.Mid == mid {
-		// 		mt.SetLayerSsrc(uint8(sfu.RidToLayer(info.Rid)), ssrc)
-		// 	}
-		// }
-
 		mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 
 		// add to published and clean up pending
 		p.UpTrackManager.AddPublishedTrack(mt)
 		delete(p.pendingTracks, signalCid)
 
-		// TODO : not fire track published until all codecs are received
 		newTrack = true
 	}
 

@@ -120,6 +120,11 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		if priority == 0 {
 			t.params.TrackInfo.MimeType = receiver.Codec().MimeType
 			t.params.TrackInfo.Mid = mid
+
+			// for clients don't have simulcast codecs (old version or single codec), add the primary codec
+			if len(t.params.TrackInfo.Codecs) == 0 && t.Kind() == livekit.TrackType_VIDEO {
+				t.params.TrackInfo.Codecs = append(t.params.TrackInfo.Codecs, &livekit.SimulcastCodecInfo{})
+			}
 		}
 
 		for i, ci := range t.params.TrackInfo.Codecs {
@@ -297,8 +302,11 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	}
 }
 
-func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
+func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	ti := proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
+	if !generateLayer {
+		return ti
+	}
 	layers := make([]*livekit.VideoLayer, 0)
 	t.layerDimensions.Range(func(q, val interface{}) bool {
 		if layer, ok := val.(*livekit.VideoLayer); ok {
@@ -316,7 +324,7 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 				for layerIdx, layer := range layers {
 					ci.Layers = append(ci.Layers, proto.Clone(layer).(*livekit.VideoLayer))
 
-					// if origin layer is has ssrc, don't override it
+					// if origin layer has ssrc, don't override it
 					if layerIdx < len(originLayers) && originLayers[layerIdx].Ssrc != 0 {
 						ci.Layers[layerIdx].Ssrc = originLayers[layerIdx].Ssrc
 					} else if int(layer.Quality) < len(receiver.layerSSRCs) {
@@ -328,6 +336,23 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 					ti.Layers = ci.Layers
 				}
 				break
+			}
+		}
+	}
+
+	// for client don't use simulcast codecs (old client version or single codec)
+	if len(ti.Codecs) == 0 && len(t.receivers) > 0 {
+		receiver := t.receivers[0]
+		originLayers := ti.Layers
+		ti.Layers = []*livekit.VideoLayer{}
+		for layerIdx, layer := range layers {
+			ti.Layers = append(ti.Layers, proto.Clone(layer).(*livekit.VideoLayer))
+
+			// if origin layer has ssrc, don't override it
+			if layerIdx < len(originLayers) && originLayers[layerIdx].Ssrc != 0 {
+				ti.Layers[layerIdx].Ssrc = originLayers[layerIdx].Ssrc
+			} else if int(layer.Quality) < len(receiver.layerSSRCs) {
+				ti.Layers[layerIdx].Ssrc = receiver.layerSSRCs[layer.Quality]
 			}
 		}
 	}
