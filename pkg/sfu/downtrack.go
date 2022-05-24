@@ -151,7 +151,7 @@ type DownTrack struct {
 	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
 
 	// simulcast layer availability change callback
-	onAvailableLayersChanged func(dt *DownTrack)
+	onAvailableLayersChanged atomic.Value // func(dt *DownTrack)
 
 	// layer bitrate availability change callback
 	onBitrateAvailabilityChanged func(dt *DownTrack)
@@ -684,8 +684,8 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	d.forwarder.UpTrackLayersChange(availableLayers)
 
-	if d.onAvailableLayersChanged != nil {
-		d.onAvailableLayersChanged(d)
+	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
+		onAvailableLayersChanged(d)
 	}
 }
 
@@ -720,7 +720,7 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 }
 
 func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack)) {
-	d.onAvailableLayersChanged = fn
+	d.onAvailableLayersChanged.Store(fn)
 }
 
 func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
