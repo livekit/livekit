@@ -37,7 +37,7 @@ type Room struct {
 	lock sync.RWMutex
 
 	protoRoom *livekit.Room
-	logger    logger.Logger
+	Logger    logger.Logger
 
 	config      WebRTCConfig
 	audioConfig *config.AudioConfig
@@ -71,7 +71,7 @@ type ParticipantOptions struct {
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
-		logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
+		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
@@ -93,10 +93,6 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	go r.subscriberBroadcastWorker()
 
 	return r
-}
-
-func (r *Room) Logger() logger.Logger {
-	return r.logger
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -221,7 +217,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnStateChange(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State) {
-		r.logger.Debugw("participant state changed",
+		r.Logger.Debugw("participant state changed",
 			"state", p.State(),
 			"participant", p.Identity(),
 			"pID", p.ID(),
@@ -261,7 +257,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			}
 		}()
 	})
-	r.logger.Infow("new participant joined",
+	r.Logger.Infow("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"protocol", participant.ProtocolVersion(),
@@ -371,7 +367,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 	p.OnSubscribedTo(nil)
 
 	// close participant as well
-	r.logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
+	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
 	_ = p.Close(true)
 
 	r.lock.RLock()
@@ -524,7 +520,7 @@ func (r *Room) Close() {
 	}
 	close(r.closed)
 	r.lock.Unlock()
-	r.logger.Infow("closing room")
+	r.Logger.Infow("closing room")
 	if r.onClose != nil {
 		r.onClose()
 	}
@@ -571,7 +567,7 @@ func (r *Room) sendRoomUpdateLocked() {
 
 		err := p.SendRoomUpdate(r.protoRoom)
 		if err != nil {
-			r.logger.Warnw("failed to send room update", err, "participant", p.Identity())
+			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
 	}
 }
@@ -583,7 +579,7 @@ func (r *Room) OnMetadataUpdate(f func(metadata string)) {
 func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
 	switch scenario := simulateScenario.Scenario.(type) {
 	case *livekit.SimulateScenario_SpeakerUpdate:
-		r.logger.Infow("simulating speaker update", "participant", participant.Identity())
+		r.Logger.Infow("simulating speaker update", "participant", participant.Identity())
 		go func() {
 			<-time.After(time.Duration(scenario.SpeakerUpdate) * time.Second)
 			r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
@@ -599,13 +595,13 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 		}})
 	case *livekit.SimulateScenario_Migration:
 	case *livekit.SimulateScenario_NodeFailure:
-		r.logger.Infow("simulating node failure", "participant", participant.Identity())
+		r.Logger.Infow("simulating node failure", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
 		if err := participant.Close(false); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_ServerLeave:
-		r.logger.Infow("simulating server leave", "participant", participant.Identity())
+		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
 		if err := participant.Close(true); err != nil {
 			return err
 		}
@@ -649,12 +645,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			continue
 		}
 
-		r.logger.Debugw("subscribing to new track",
+		r.Logger.Debugw("subscribing to new track",
 			"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 			"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
 			"trackID", track.ID())
 		if _, err := participant.AddSubscriber(existingParticipant, types.AddSubscriberParams{TrackIDs: []livekit.TrackID{track.ID()}}); err != nil {
-			r.logger.Errorw("could not subscribe to remoteTrack", err,
+			r.Logger.Errorw("could not subscribe to remoteTrack", err,
 				"participants", []livekit.ParticipantIdentity{participant.Identity(), existingParticipant.Identity()},
 				"pIDs", []livekit.ParticipantID{participant.ID(), existingParticipant.ID()},
 				"trackID", track.ID())
@@ -706,7 +702,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 		}
 		err := op.SendDataPacket(dp)
 		if err != nil {
-			r.logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
 		}
 	}
 }
@@ -730,14 +726,14 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 		n, err := op.AddSubscriber(p, types.AddSubscriberParams{AllTracks: true})
 		if err != nil {
 			// TODO: log error? or disconnect?
-			r.logger.Errorw("could not subscribe to participant", err,
+			r.Logger.Errorw("could not subscribe to participant", err,
 				"participants", []livekit.ParticipantIdentity{op.Identity(), p.Identity()},
 				"pIDs", []livekit.ParticipantID{op.ID(), p.ID()})
 		}
 		tracksAdded += n
 	}
 	if tracksAdded > 0 {
-		r.logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
+		r.Logger.Debugw("subscribed participants to existing tracks", "tracks", tracksAdded)
 	}
 	return tracksAdded
 }
@@ -752,7 +748,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 			// send update only to hidden participant
 			err := p.SendParticipantUpdate(updates)
 			if err != nil {
-				r.logger.Errorw("could not send update to participant", err,
+				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
 			}
 		}
@@ -778,7 +774,7 @@ func (r *Room) sendParticipantUpdates(updates []*livekit.ParticipantInfo) {
 
 		err := op.SendParticipantUpdate(updates)
 		if err != nil {
-			r.logger.Errorw("could not send update to participant", err,
+			r.Logger.Errorw("could not send update to participant", err,
 				"participant", op.Identity(), "pID", op.ID())
 		}
 	}
@@ -934,7 +930,7 @@ func (r *Room) connectionQualityWorker() {
 				}
 			}
 			if err := op.SendConnectionQualityUpdate(update); err != nil {
-				r.logger.Warnw("could not send connection quality update", err,
+				r.Logger.Warnw("could not send connection quality update", err,
 					"participant", op.Identity())
 			}
 		}

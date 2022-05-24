@@ -238,7 +238,7 @@ func (r *RoomManager) StartSession(
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
-	pLogger := rtc.LoggerWithParticipant(room.Logger(), pi.Identity, sid)
+	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
 	protoRoom := room.ToProto()
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
@@ -490,7 +490,7 @@ func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomN
 			}
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
-		room.Logger().Infow("deleting room")
+		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
 			_ = p.Close(true)
 		}
