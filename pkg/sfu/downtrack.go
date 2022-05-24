@@ -866,8 +866,15 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			return
 		}
 
-		// LK-TODO: Support other audio/video codecs
-		if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
+		var writeBlankFrame func(*rtp.Header, bool) (int, error)
+		switch d.mime {
+		case "audio/opus":
+			writeBlankFrame = d.writeOpusBlankFrame
+		case "video/vp8":
+			writeBlankFrame = d.writeVP8BlankFrame
+		case "video/h264":
+			writeBlankFrame = d.writeH264BlankFrame
+		default:
 			close(done)
 			return
 		}
@@ -918,18 +925,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 					return
 				}
 
-				var pktSize int
-				switch d.mime {
-				case "audio/opus":
-					pktSize, err = d.writeOpusBlankFrame(&hdr, frameEndNeeded)
-				case "video/vp8":
-					pktSize, err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
-				case "video/h264":
-					pktSize, err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
-				default:
-					close(done)
-					return
-				}
+				pktSize, err := writeBlankFrame(&hdr, frameEndNeeded)
 				if err != nil {
 					d.logger.Warnw("could not write blank frame", err)
 					close(done)
