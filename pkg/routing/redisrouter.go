@@ -36,7 +36,7 @@ type RedisRouter struct {
 	rc        *redis.Client
 	ctx       context.Context
 	isStarted atomic.Bool
-	statsMu   sync.Mutex
+	nodeMu    sync.RWMutex
 	// previous stats for computing averages
 	prevStats *livekit.NodeStats
 
@@ -54,7 +54,9 @@ func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
 }
 
 func (r *RedisRouter) RegisterNode() error {
+	r.nodeMu.RLock()
 	data, err := proto.Marshal((*livekit.Node)(r.currentNode))
+	r.nodeMu.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -287,7 +289,9 @@ func (r *RedisRouter) Start() error {
 }
 
 func (r *RedisRouter) Drain() {
+	r.nodeMu.Lock()
 	r.currentNode.State = livekit.NodeState_SHUTTING_DOWN
+	r.nodeMu.Unlock()
 	if err := r.RegisterNode(); err != nil {
 		logger.Errorw("failed to mark as draining", err, "nodeID", r.currentNode.Id)
 	}
@@ -344,9 +348,9 @@ func (r *RedisRouter) statsWorker() {
 			_ = r.WriteNodeRTC(context.Background(), r.currentNode.Id, &livekit.RTCNodeMessage{
 				Message: &livekit.RTCNodeMessage_KeepAlive{},
 			})
-			r.statsMu.Lock()
+			r.nodeMu.RLock()
 			stats := r.currentNode.Stats
-			r.statsMu.Unlock()
+			r.nodeMu.RUnlock()
 
 			delaySeconds := time.Now().Unix() - stats.UpdatedAt
 			if delaySeconds > statsMaxDelaySeconds {
@@ -470,21 +474,21 @@ func (r *RedisRouter) handleRTCMessage(rm *livekit.RTCNodeMessage) error {
 			break
 		}
 
-		r.statsMu.Lock()
+		r.nodeMu.Lock()
 		if r.prevStats == nil {
 			r.prevStats = r.currentNode.Stats
 		}
 		updated, computedAvg, err := prometheus.GetUpdatedNodeStats(r.currentNode.Stats, r.prevStats)
 		if err != nil {
 			logger.Errorw("could not update node stats", err)
-			r.statsMu.Unlock()
+			r.nodeMu.Unlock()
 			return err
 		}
 		r.currentNode.Stats = updated
 		if computedAvg {
 			r.prevStats = updated
 		}
-		r.statsMu.Unlock()
+		r.nodeMu.Unlock()
 
 		// TODO: check stats against config.Limit values
 		if err := r.RegisterNode(); err != nil {

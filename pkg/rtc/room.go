@@ -239,7 +239,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			// start the workers once connectivity is established
 			p.Start()
 
-			r.telemetry.ParticipantActive(context.Background(), r.protoRoom, p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
+			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity())
@@ -549,7 +549,9 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 }
 
 func (r *Room) SetMetadata(metadata string) {
+	r.lock.Lock()
 	r.protoRoom.Metadata = metadata
+	r.lock.Unlock()
 
 	r.lock.RLock()
 	r.sendRoomUpdateLocked()
