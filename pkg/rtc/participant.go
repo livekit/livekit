@@ -347,7 +347,7 @@ func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.grants
+	return p.grants.Clone()
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) bool {
@@ -374,8 +374,6 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	video.Recorder = permission.Recorder
 
 	canPublish := video.GetCanPublish()
-
-	p.grants.Video = video
 	p.lock.Unlock()
 
 	// publish permission has been revoked then remove all published tracks
