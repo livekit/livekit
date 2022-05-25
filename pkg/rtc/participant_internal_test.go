@@ -312,7 +312,7 @@ func TestConnectionQuality(t *testing.T) {
 		p := newParticipantForTest("test")
 
 		// 1Mbps, 15fps,  expected = 1280x720, actual = 640 x 480
-		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(25000, 15, &buffer.ConnectionQualityParams{},
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(100000, 15, &buffer.ConnectionQualityParams{},
 			"", 720, 1280, 480, 640)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
