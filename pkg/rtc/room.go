@@ -36,8 +36,8 @@ type broadcastOptions struct {
 type Room struct {
 	lock sync.RWMutex
 
-	Room   *livekit.Room
-	Logger logger.Logger
+	protoRoom *livekit.Room
+	Logger    logger.Logger
 
 	config      WebRTCConfig
 	audioConfig *config.AudioConfig
@@ -70,7 +70,7 @@ type ParticipantOptions struct {
 
 func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
 	r := &Room{
-		Room:            proto.Clone(room).(*livekit.Room),
+		protoRoom:       proto.Clone(room).(*livekit.Room),
 		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
@@ -81,11 +81,11 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 		batchedUpdates:  make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		closed:          make(chan struct{}),
 	}
-	if r.Room.EmptyTimeout == 0 {
-		r.Room.EmptyTimeout = DefaultEmptyTimeout
+	if r.protoRoom.EmptyTimeout == 0 {
+		r.protoRoom.EmptyTimeout = DefaultEmptyTimeout
 	}
-	if r.Room.CreationTime == 0 {
-		r.Room.CreationTime = time.Now().Unix()
+	if r.protoRoom.CreationTime == 0 {
+		r.protoRoom.CreationTime = time.Now().Unix()
 	}
 
 	go r.audioUpdateWorker()
@@ -95,12 +95,19 @@ func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioC
 	return r
 }
 
+func (r *Room) ToProto() *livekit.Room {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return proto.Clone(r.protoRoom).(*livekit.Room)
+}
+
 func (r *Room) Name() livekit.RoomName {
-	return livekit.RoomName(r.Room.Name)
+	return livekit.RoomName(r.protoRoom.Name)
 }
 
 func (r *Room) ID() livekit.RoomID {
-	return livekit.RoomID(r.Room.Sid)
+	return livekit.RoomID(r.protoRoom.Sid)
 }
 
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalParticipant {
@@ -195,7 +202,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		return ErrAlreadyJoined
 	}
 
-	if r.Room.MaxParticipants > 0 && len(r.participants) >= int(r.Room.MaxParticipants) {
+	if r.protoRoom.MaxParticipants > 0 && len(r.participants) >= int(r.protoRoom.MaxParticipants) {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "max_exceeded").Add(1)
 		return ErrMaxParticipantsExceeded
 	}
@@ -204,7 +211,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		r.joinedAt.Store(time.Now().Unix())
 	}
 	if !participant.Hidden() {
-		r.Room.NumParticipants++
+		r.protoRoom.NumParticipants++
 	}
 
 	// it's important to set this before connection, we don't want to miss out on any publishedTracks
@@ -228,7 +235,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			// start the workers once connectivity is established
 			p.Start()
 
-			r.telemetry.ParticipantActive(context.Background(), r.Room, p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
+			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity())
@@ -256,8 +263,8 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		"protocol", participant.ProtocolVersion(),
 		"options", opts)
 
-	if participant.IsRecorder() && !r.Room.ActiveRecording {
-		r.Room.ActiveRecording = true
+	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
+		r.protoRoom.ActiveRecording = true
 		r.sendRoomUpdateLocked()
 	}
 
@@ -283,7 +290,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.Room, otherParticipants, iceServers, region); err != nil {
+	if err := participant.SendJoinResponse(r.protoRoom, otherParticipants, iceServers, region); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
@@ -325,12 +332,12 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 		delete(r.participants, identity)
 		delete(r.participantOpts, identity)
 		if !p.Hidden() {
-			r.Room.NumParticipants--
+			r.protoRoom.NumParticipants--
 		}
 	}
 
 	activeRecording := false
-	if (p != nil && p.IsRecorder()) || p == nil && r.Room.ActiveRecording {
+	if (p != nil && p.IsRecorder()) || p == nil && r.protoRoom.ActiveRecording {
 		for _, op := range r.participants {
 			if op.IsRecorder() {
 				activeRecording = true
@@ -339,8 +346,8 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 		}
 	}
 
-	if r.Room.ActiveRecording != activeRecording {
-		r.Room.ActiveRecording = activeRecording
+	if r.protoRoom.ActiveRecording != activeRecording {
+		r.protoRoom.ActiveRecording = activeRecording
 		r.sendRoomUpdateLocked()
 	}
 	r.lock.Unlock()
@@ -484,7 +491,7 @@ func (r *Room) CloseIfEmpty() {
 		}
 	}
 
-	timeout := r.Room.EmptyTimeout
+	timeout := r.protoRoom.EmptyTimeout
 	var elapsed int64
 	if r.FirstJoinedAt() > 0 {
 		// exit 20s after
@@ -493,7 +500,7 @@ func (r *Room) CloseIfEmpty() {
 			timeout = DefaultRoomDepartureGrace
 		}
 	} else {
-		elapsed = time.Now().Unix() - r.Room.CreationTime
+		elapsed = time.Now().Unix() - r.protoRoom.CreationTime
 	}
 	r.lock.Unlock()
 
@@ -538,7 +545,9 @@ func (r *Room) SendDataPacket(up *livekit.UserPacket, kind livekit.DataPacket_Ki
 }
 
 func (r *Room) SetMetadata(metadata string) {
-	r.Room.Metadata = metadata
+	r.lock.Lock()
+	r.protoRoom.Metadata = metadata
+	r.lock.Unlock()
 
 	r.lock.RLock()
 	r.sendRoomUpdateLocked()
@@ -556,7 +565,7 @@ func (r *Room) sendRoomUpdateLocked() {
 			continue
 		}
 
-		err := p.SendRoomUpdate(r.Room)
+		err := p.SendRoomUpdate(r.protoRoom)
 		if err != nil {
 			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
@@ -930,9 +939,9 @@ func (r *Room) connectionQualityWorker() {
 
 func (r *Room) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
-		"Name":      r.Room.Name,
-		"Sid":       r.Room.Sid,
-		"CreatedAt": r.Room.CreationTime,
+		"Name":      r.protoRoom.Name,
+		"Sid":       r.protoRoom.Sid,
+		"CreatedAt": r.protoRoom.CreationTime,
 	}
 
 	participants := r.GetParticipants()
