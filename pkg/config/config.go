@@ -51,17 +51,16 @@ type Config struct {
 }
 
 type RTCConfig struct {
-	UDPPort                    uint32           `yaml:"udp_port,omitempty"`
-	TCPPort                    uint32           `yaml:"tcp_port,omitempty"`
-	ICEPortRangeStart          uint32           `yaml:"port_range_start,omitempty"`
-	ICEPortRangeEnd            uint32           `yaml:"port_range_end,omitempty"`
-	NodeIP                     string           `yaml:"node_ip,omitempty"`
-	STUNServers                []string         `yaml:"stun_servers,omitempty"`
-	TURNServers                []TURNServer     `yaml:"turn_servers,omitempty"`
-	UseExternalIP              bool             `yaml:"use_external_ip"`
-	UseICELite                 bool             `yaml:"use_ice_lite,omitempty"`
-	Interfaces                 InterfacesConfig `yaml:"interfaces"`
-	RejectAggressiveNomination bool             `yaml:"reject_aggressive_nomination"`
+	UDPPort           uint32           `yaml:"udp_port,omitempty"`
+	TCPPort           uint32           `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart uint32           `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd   uint32           `yaml:"port_range_end,omitempty"`
+	NodeIP            string           `yaml:"node_ip,omitempty"`
+	STUNServers       []string         `yaml:"stun_servers,omitempty"`
+	TURNServers       []TURNServer     `yaml:"turn_servers,omitempty"`
+	UseExternalIP     bool             `yaml:"use_external_ip"`
+	UseICELite        bool             `yaml:"use_ice_lite,omitempty"`
+	Interfaces        InterfacesConfig `yaml:"interfaces"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`

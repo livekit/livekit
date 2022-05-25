@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	connectionQualityUpdateInterval = 5 * time.Second
+	UpdateInterval = 2 * time.Second
 )
 
 type ConnectionStatsParams struct {
@@ -48,7 +48,7 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 }
 
 func (cs *ConnectionStats) Start() {
-	go cs.updateStats()
+	go cs.updateStatsWorker()
 }
 
 func (cs *ConnectionStats) Close() {
@@ -129,10 +129,10 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 	}
 }
 
-func (cs *ConnectionStats) updateStats() {
+func (cs *ConnectionStats) updateStatsWorker() {
 	interval := cs.params.UpdateInterval
 	if interval == 0 {
-		interval = connectionQualityUpdateInterval
+		interval = UpdateInterval
 	}
 
 	tk := time.NewTicker(interval)

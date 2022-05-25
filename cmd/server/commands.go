@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
@@ -153,43 +155,59 @@ func listNodes(c *cli.Context) error {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
-		"CPUs", "CPU Usage", "Load",
-		"Clients", "Rooms", "Tracks In/Out",
-		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
-		"Started At", "Updated At",
+		"CPUs", "CPU Usage /\nLoad Avg",
+		"Rooms", "Clients /\nTracks In/Out",
+		"Bytes/s In/Out /\nBytes Total", "Packets/s In/Out /\nPackets Total",
+		"Nack/s /\nNack Total", "Retrans/s /\nRetrans Total",
+		"Started At /\nUpdated At",
 	})
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_CENTER,
+	})
+
 	for _, node := range nodes {
 		stats := node.Stats
 
+		// Id and state
+		idAndState := fmt.Sprintf("%s\n(%s)", node.Id, node.State.Enum().String())
+
 		// System stats
 		cpus := strconv.Itoa(int(stats.NumCpus))
-		cpuUsage := fmt.Sprintf("%.2f %%", stats.CpuLoad*100)
-		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
+		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
+			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
 
 		// Room stats
-		clients := strconv.Itoa(int(stats.NumClients))
 		rooms := strconv.Itoa(int(stats.NumRooms))
-		tracks := fmt.Sprintf("%d / %d", stats.NumTracksIn, stats.NumTracksOut)
+		clientsAndTracks := fmt.Sprintf("%d\n%d / %d", stats.NumClients, stats.NumTracksIn, stats.NumTracksOut)
 
 		// Packet stats
-		bytes := fmt.Sprintf("%d / %d", stats.BytesIn, stats.BytesOut)
-		packets := fmt.Sprintf("%d / %d", stats.PacketsIn, stats.PacketsOut)
-		nack := strconv.Itoa(int(stats.NackTotal))
-		bps := fmt.Sprintf("%.2f / %.2f", stats.BytesInPerSec, stats.BytesOutPerSec)
-		packetsPerSec := fmt.Sprintf("%.2f / %.2f", stats.PacketsInPerSec, stats.PacketsOutPerSec)
-		nackPerSec := fmt.Sprintf("%f", stats.NackPerSec)
+		bytes := fmt.Sprintf("%sps / %sps\n%s / %s", humanize.Bytes(uint64(stats.BytesInPerSec)), humanize.Bytes(uint64(stats.BytesOutPerSec)),
+			humanize.Bytes(stats.BytesIn), humanize.Bytes(stats.BytesOut))
+		packets := fmt.Sprintf("%s / %s\n%s / %s", humanize.Comma(int64(stats.PacketsInPerSec)), humanize.Comma(int64(stats.PacketsOutPerSec)),
+			strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsIn), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsOut), 2, "")))
+		nacks := fmt.Sprintf("%.2f\n%s", stats.NackPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.NackTotal), 2, "")))
+		retransmit := fmt.Sprintf("%.2f\n%s", stats.RetransmitPacketsOutPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.RetransmitPacketsOut), 2, "")))
 
-		startedAt := time.Unix(stats.StartedAt, 0).String()
-		updatedAt := time.Unix(stats.UpdatedAt, 0).String()
+		// Date
+		startedAndUpdated := fmt.Sprintf("%s\n%s", time.Unix(stats.StartedAt, 0).UTC().UTC().Format("2006-01-02 15:04:05"),
+			time.Unix(stats.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05"))
 
 		table.Append([]string{
-			node.Id, node.Ip, node.Region,
-			cpus, cpuUsage, loadAvg,
-			clients, rooms, tracks,
-			bytes, packets, nack, bps, packetsPerSec, nackPerSec,
-			startedAt, updatedAt,
+			idAndState, node.Ip, node.Region,
+			cpus, cpuUsageAndLoadAvg,
+			rooms, clientsAndTracks,
+			bytes, packets,
+			nacks, retransmit,
+			startedAndUpdated,
 		})
 	}
 	table.Render()

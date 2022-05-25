@@ -65,6 +65,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	packetsInNow := packetsIn.Load()
 	packetsOutNow := packetsOut.Load()
 	nackTotalNow := nackTotal.Load()
+	retransmitBytesNow := retransmitBytes.Load()
+	retransmitPacketsNow := retransmitPackets.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -73,32 +75,38 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	if bytesInNow != prevAverage.BytesIn ||
 		bytesOutNow != prevAverage.BytesOut ||
 		packetsInNow != prevAverage.PacketsIn ||
-		packetsOutNow != prevAverage.PacketsOut {
+		packetsOutNow != prevAverage.PacketsOut ||
+		retransmitBytesNow != prevAverage.RetransmitBytesOut ||
+		retransmitPacketsNow != prevAverage.RetransmitPacketsOut {
 		computeAverage = true
 	}
 
 	stats := &livekit.NodeStats{
-		StartedAt:        prev.StartedAt,
-		UpdatedAt:        updatedAt,
-		NumRooms:         roomTotal.Load(),
-		NumClients:       participantTotal.Load(),
-		NumTracksIn:      trackPublishedTotal.Load(),
-		NumTracksOut:     trackSubscribedTotal.Load(),
-		BytesIn:          bytesInNow,
-		BytesOut:         bytesOutNow,
-		PacketsIn:        packetsInNow,
-		PacketsOut:       packetsOutNow,
-		NackTotal:        nackTotalNow,
-		BytesInPerSec:    prevAverage.BytesInPerSec,
-		BytesOutPerSec:   prevAverage.BytesOutPerSec,
-		PacketsInPerSec:  prevAverage.PacketsInPerSec,
-		PacketsOutPerSec: prevAverage.PacketsOutPerSec,
-		NackPerSec:       prevAverage.NackPerSec,
-		NumCpus:          numCPUs,
-		CpuLoad:          cpuLoad,
-		LoadAvgLast1Min:  float32(loadAvg.Loadavg1),
-		LoadAvgLast5Min:  float32(loadAvg.Loadavg5),
-		LoadAvgLast15Min: float32(loadAvg.Loadavg15),
+		StartedAt:                  prev.StartedAt,
+		UpdatedAt:                  updatedAt,
+		NumRooms:                   roomTotal.Load(),
+		NumClients:                 participantTotal.Load(),
+		NumTracksIn:                trackPublishedTotal.Load(),
+		NumTracksOut:               trackSubscribedTotal.Load(),
+		BytesIn:                    bytesInNow,
+		BytesOut:                   bytesOutNow,
+		PacketsIn:                  packetsInNow,
+		PacketsOut:                 packetsOutNow,
+		RetransmitBytesOut:         retransmitBytesNow,
+		RetransmitPacketsOut:       retransmitPacketsNow,
+		NackTotal:                  nackTotalNow,
+		BytesInPerSec:              prevAverage.BytesInPerSec,
+		BytesOutPerSec:             prevAverage.BytesOutPerSec,
+		PacketsInPerSec:            prevAverage.PacketsInPerSec,
+		PacketsOutPerSec:           prevAverage.PacketsOutPerSec,
+		RetransmitBytesOutPerSec:   prevAverage.RetransmitBytesOutPerSec,
+		RetransmitPacketsOutPerSec: prevAverage.RetransmitPacketsOutPerSec,
+		NackPerSec:                 prevAverage.NackPerSec,
+		NumCpus:                    numCPUs,
+		CpuLoad:                    cpuLoad,
+		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
+		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
+		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
 	}
 
 	// update stats
@@ -107,6 +115,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.BytesOutPerSec = perSec(prevAverage.BytesOut, bytesOutNow, elapsed)
 		stats.PacketsInPerSec = perSec(prevAverage.PacketsIn, packetsInNow, elapsed)
 		stats.PacketsOutPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
+		stats.RetransmitBytesOutPerSec = perSec(prevAverage.RetransmitBytesOut, retransmitBytesNow, elapsed)
+		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 	}
 

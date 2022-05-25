@@ -42,8 +42,8 @@ type MediaTrackReceiver struct {
 	simulcasted atomic.Bool
 
 	lock            sync.RWMutex
-	receivers       []*simulcastReceiver // MimeType -> TrackReceiver
-	layerDimensions sync.Map             // livekit.VideoQuality => *livekit.VideoLayer
+	receivers       []*simulcastReceiver
+	layerDimensions map[livekit.VideoQuality]*livekit.VideoLayer
 
 	// track audio fraction lost
 	downFracLostLock   sync.Mutex
@@ -72,7 +72,8 @@ type MediaTrackReceiverParams struct {
 
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
-		params: params,
+		params:          params,
+		layerDimensions: make(map[livekit.VideoQuality]*livekit.VideoLayer),
 	}
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
@@ -307,13 +308,7 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	if !generateLayer {
 		return ti
 	}
-	layers := make([]*livekit.VideoLayer, 0)
-	t.layerDimensions.Range(func(q, val interface{}) bool {
-		if layer, ok := val.(*livekit.VideoLayer); ok {
-			layers = append(layers, layer)
-		}
-		return true
-	})
+	layers := t.GetVideoLayers()
 
 	// set video layer ssrc info
 	for i, ci := range ti.Codecs {
@@ -361,9 +356,11 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
+	t.lock.Lock()
 	for _, layer := range layers {
-		t.layerDimensions.Store(layer.Quality, layer)
+		t.layerDimensions[layer.Quality] = layer
 	}
+	t.lock.Unlock()
 
 	t.MediaTrackSubscriptions.UpdateVideoLayers()
 	if t.onVideoLayerUpdate != nil {
@@ -373,17 +370,16 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 	// TODO: this might need to trigger a participant update for clients to pick up dimension change
 }
 
-// func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
-// 	layers := make([]*livekit.VideoLayer, 0)
-// 	t.layerDimensions.Range(func(q, val interface{}) bool {
-// 		if layer, ok := val.(*livekit.VideoLayer); ok {
-// 			layers = append(layers, layer)
-// 		}
-// 		return true
-// 	})
+func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
+	layers := make([]*livekit.VideoLayer, 0)
+	t.lock.RLock()
+	for _, layer := range t.layerDimensions {
+		layers = append(layers, proto.Clone(layer).(*livekit.VideoLayer))
+	}
+	t.lock.RUnlock()
 
-// 	return layers
-// }
+	return layers
+}
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions
 // affords a 20% tolerance on dimension
@@ -403,12 +399,11 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
-	t.layerDimensions.Range(func(_, val interface{}) bool {
-		if layer, ok := val.(*livekit.VideoLayer); ok {
-			providedSizes = append(providedSizes, layer.Height)
-		}
-		return true
-	})
+	t.lock.RLock()
+	for _, layer := range t.layerDimensions {
+		providedSizes = append(providedSizes, layer.Height)
+	}
+	t.lock.RUnlock()
 	if len(providedSizes) > 0 {
 		layerSizes = providedSizes
 		// comparing height always

@@ -112,15 +112,6 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	info := t.MediaTrackReceiver.TrackInfo(true)
 	info.Muted = t.IsMuted()
 	info.Simulcast = t.IsSimulcast()
-
-	// layers := t.MediaTrackReceiver.GetVideoLayers()
-	// for _, layer := range layers {
-	// 	if int(layer.Quality) < len(t.layerSSRCs) {
-	// 		layer.Ssrc = t.layerSSRCs[layer.Quality]
-	// 	}
-	// }
-	// info.Layers = layers
-
 	return info
 }
 

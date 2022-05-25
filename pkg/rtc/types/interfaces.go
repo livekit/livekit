@@ -158,6 +158,7 @@ type LocalParticipant interface {
 	// OnParticipantUpdate - metadata or permission is updated
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
 	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(_callback func(LocalParticipant))
 
@@ -174,6 +175,7 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
+	RemoveParticipant(identity livekit.ParticipantIdentity)
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
