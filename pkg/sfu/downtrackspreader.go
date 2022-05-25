@@ -52,7 +52,7 @@ func (d *DownTrackSpreader) ResetAndGetDownTracks() []TrackSender {
 
 	downTracks := d.downTracksShadow
 
-	d.downTracks = make(map[livekit.ParticipantID]TrackSender, 0)
+	d.downTracks = make(map[livekit.ParticipantID]TrackSender)
 	d.downTracksShadow = nil
 
 	return downTracks
