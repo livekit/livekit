@@ -392,17 +392,13 @@ func (w *WebRTCReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 
 func (w *WebRTCReceiver) downTrackLayerChange(layers []int32) {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
-		if dt != nil {
-			dt.UpTrackLayersChange(layers)
-		}
+		dt.UpTrackLayersChange(layers)
 	}
 }
 
 func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
 	for _, dt := range w.downTrackSpreader.GetDownTracks() {
-		if dt != nil {
-			dt.UpTrackBitrateAvailabilityChange()
-		}
+		dt.UpTrackBitrateAvailabilityChange()
 	}
 }
 
@@ -623,9 +619,7 @@ func (w *WebRTCReceiver) closeTracks() {
 	w.connectionStats.Close()
 
 	for _, dt := range w.downTrackSpreader.ResetAndGetDownTracks() {
-		if dt != nil {
-			dt.Close()
-		}
+		dt.Close()
 	}
 
 	if w.onCloseHandler != nil {

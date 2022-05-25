@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,18 +55,26 @@ func TestStreamTracker(t *testing.T) {
 		tracker.Start()
 		require.Equal(t, StreamStatusStopped, tracker.Status())
 
-		tracker.Observe(1, 0, 20, 10)
-		testutils.WithTimeout(t, func() string {
-			if tracker.Status() == StreamStatusActive {
-				return ""
-			} else {
-				return "first packet did not activate stream"
-			}
+		callbackStatusMu := sync.RWMutex{}
+		callbackStatusMu.Lock()
+		callbackStatus := StreamStatusStopped
+		callbackStatusMu.Unlock()
+		tracker.OnStatusChanged(func(status StreamStatus) {
+			callbackStatusMu.Lock()
+			callbackStatus = status
+			callbackStatusMu.Unlock()
 		})
 
-		callbackCalled := atomic.NewBool(false)
-		tracker.OnStatusChanged(func(status StreamStatus) {
-			callbackCalled.Store(true)
+		tracker.Observe(1, 0, 20, 10)
+		testutils.WithTimeout(t, func() string {
+			callbackStatusMu.RLock()
+			defer callbackStatusMu.RUnlock()
+
+			if callbackStatus == StreamStatusActive {
+				return ""
+			}
+
+			return "first packet did not activate stream"
 		})
 		require.Equal(t, StreamStatusActive, tracker.Status())
 
@@ -73,14 +82,17 @@ func TestStreamTracker(t *testing.T) {
 		tracker.detectChanges()
 
 		testutils.WithTimeout(t, func() string {
-			if callbackCalled.Load() {
+			callbackStatusMu.RLock()
+			defer callbackStatusMu.RUnlock()
+
+			if callbackStatus == StreamStatusStopped {
 				return ""
-			} else {
-				return "inactive cycle did not declare stream stopped"
 			}
+
+			return "inactive cycle did not declare stream stopped"
 		})
 		require.Equal(t, StreamStatusStopped, tracker.Status())
-		require.True(t, callbackCalled.Load())
+		require.Equal(t, StreamStatusStopped, callbackStatus)
 
 		tracker.Stop()
 	})

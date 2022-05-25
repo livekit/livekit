@@ -210,8 +210,8 @@ func (p *Prober) ProbeSent(size int) {
 }
 
 func (p *Prober) getFrontCluster() *Cluster {
-	p.clustersMu.RLock()
-	defer p.clustersMu.RUnlock()
+	p.clustersMu.Lock()
+	defer p.clustersMu.Unlock()
 
 	if p.activeCluster != nil {
 		return p.activeCluster

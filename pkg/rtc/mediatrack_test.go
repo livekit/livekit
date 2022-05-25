@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -181,11 +182,16 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			},
 		})
 
+		lock := sync.RWMutex{}
+		lock.Lock()
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
+		lock.Unlock()
 		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
+			lock.Lock()
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
+			lock.Unlock()
 			return nil
 		})
 
@@ -198,8 +204,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: true},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// "s1" dropping to MEDIUM should disable HIGH layer
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_MEDIUM)
@@ -212,8 +220,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// "s1" and "s1" dropping to LOW should disable HIGH & MEDIUM
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
@@ -227,8 +237,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// muting "s2" only should not disable all qualities
 		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_OFF)
@@ -238,8 +250,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// muting "s1" also should disable all qualities
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
@@ -250,8 +264,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// unmuting "s1" should enable previously set max quality
 		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
@@ -262,8 +278,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 
 		// a higher quality from a different node should trigger that quality
 		mt.NotifySubscriberNodeMaxQuality("n1", livekit.VideoQuality_HIGH)
@@ -273,7 +291,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
 			{Quality: livekit.VideoQuality_HIGH, Enabled: true},
 		}
+		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		lock.RUnlock()
 	})
 }

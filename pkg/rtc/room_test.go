@@ -1,4 +1,4 @@
-package rtc_test
+package rtc
 
 import (
 	"fmt"
@@ -13,7 +13,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
@@ -69,13 +68,13 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := newMockParticipant("new", types.DefaultProtocol, false)
+		pNew := newMockParticipant("new", types.DefaultProtocol, false, false)
 
 		_ = rm.Join(pNew, nil, iceServersForRoom, "test")
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers, _ := pNew.SendJoinResponseArgsForCall(0)
-		require.Equal(t, info.Sid, rm.Room.Sid)
+		require.Equal(t, livekit.RoomID(info.Sid), rm.ID())
 		require.Len(t, participants, numParticipants)
 		require.Len(t, rm.GetParticipants(), numParticipants+1)
 		require.NotEmpty(t, iceServers)
@@ -84,9 +83,9 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := newMockParticipant("new", types.DefaultProtocol, false)
+		p := newMockParticipant("new", types.DefaultProtocol, false, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -139,11 +138,11 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		rm.Room.MaxParticipants = 1
-		p := newMockParticipant("second", types.ProtocolVersion(0), false)
+		rm.protoRoom.MaxParticipants = 1
+		p := newMockParticipant("second", types.ProtocolVersion(0), false, false)
 
 		err := rm.Join(p, nil, iceServersForRoom, "")
-		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
+		require.Equal(t, ErrMaxParticipantsExceeded, err)
 	})
 }
 
@@ -214,7 +213,7 @@ func TestRoomClosure(t *testing.T) {
 		})
 		p := rm.GetParticipants()[0]
 		// allows immediate close after
-		rm.Room.EmptyTimeout = 0
+		rm.protoRoom.EmptyTimeout = 0
 		rm.RemoveParticipant(p.Identity())
 
 		time.Sleep(defaultDelay)
@@ -223,7 +222,7 @@ func TestRoomClosure(t *testing.T) {
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
 
-		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil, iceServersForRoom, ""))
+		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, iceServersForRoom, ""))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -232,7 +231,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		require.NotZero(t, rm.Room.EmptyTimeout)
+		require.NotZero(t, rm.protoRoom.EmptyTimeout)
 		rm.CloseIfEmpty()
 		require.False(t, isClosed)
 	})
@@ -243,7 +242,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		rm.Room.EmptyTimeout = 1
+		rm.protoRoom.EmptyTimeout = 1
 
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()
@@ -502,12 +501,12 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		defer rm.Close()
 
-		pNew := newMockParticipant("new", types.DefaultProtocol, false)
+		pNew := newMockParticipant("new", types.DefaultProtocol, false, false)
 		rm.Join(pNew, nil, iceServersForRoom, "testregion")
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers, region := pNew.SendJoinResponseArgsForCall(0)
-		require.Equal(t, info.Sid, rm.Room.Sid)
+		require.Equal(t, livekit.RoomID(info.Sid), rm.ID())
 		require.Len(t, participants, 2)
 		require.Len(t, rm.GetParticipants(), 4)
 		require.NotEmpty(t, iceServers)
@@ -516,9 +515,9 @@ func TestHiddenParticipants(t *testing.T) {
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		p := newMockParticipant("new", types.DefaultProtocol, false)
+		p := newMockParticipant("new", types.DefaultProtocol, false, true)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -562,10 +561,10 @@ type testRoomOpts struct {
 	audioSmoothIntervals uint32
 }
 
-func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
-	rm := rtc.NewRoom(
+func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
+	rm := NewRoom(
 		&livekit.Room{Name: "room"},
-		rtc.WebRTCConfig{},
+		WebRTCConfig{},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
@@ -574,11 +573,11 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
-		participant := newMockParticipant(identity, opts.protocol, i >= opts.num)
-		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		participant := newMockParticipant(identity, opts.protocol, i >= opts.num, true)
+		err := rm.Join(participant, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)
-		require.NoError(t, err)
 	}
 	return rm
 }
