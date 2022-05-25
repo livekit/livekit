@@ -9,11 +9,11 @@ import (
 )
 
 func Score2Rating(score float32) livekit.ConnectionQuality {
-	if score > 3.9 {
+	if score > 4.0 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 2.5 {
+	if score > 3.0 {
 		return livekit.ConnectionQuality_GOOD
 	}
 	return livekit.ConnectionQuality_POOR
