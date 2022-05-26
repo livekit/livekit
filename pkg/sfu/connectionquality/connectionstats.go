@@ -37,8 +37,9 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock  sync.RWMutex
-	score float32
+	lock        sync.RWMutex
+	score       float32
+	IgnoreScore bool
 
 	done     chan struct{}
 	isClosed atomic.Bool
@@ -46,9 +47,10 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params: params,
-		score:  4.0,
-		done:   make(chan struct{}),
+		params:      params,
+		score:       4.0,
+		done:        make(chan struct{}),
+		IgnoreScore: true,
 	}
 }
 
@@ -72,6 +74,10 @@ func (cs *ConnectionStats) GetScore() float32 {
 	cs.lock.RLock()
 	defer cs.lock.RUnlock()
 
+	// Do not send score on init, delay sending scores
+	if cs.IgnoreScore {
+		return 0.0
+	}
 	return cs.score
 }
 
@@ -164,6 +170,8 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
+	// Delay sending scores until 2nd cycle, as 1st will be partial.
+	counter := uint64(0)
 	for {
 		select {
 		case <-cs.done:
@@ -178,6 +186,14 @@ func (cs *ConnectionStats) updateStatsWorker() {
 			if cs.onStatsUpdate != nil {
 				cs.onStatsUpdate(cs, stat)
 			}
+			// Allow score transmission post as 1st cycle data can be partial for the interval
+			if counter == 1 {
+				cs.lock.Lock()
+				cs.IgnoreScore = false
+				cs.lock.Unlock()
+			}
+			counter++
+
 		}
 	}
 }

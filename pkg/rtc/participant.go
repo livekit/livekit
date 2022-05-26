@@ -732,7 +732,13 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
-		totalScore += subTrack.DownTrack().GetConnectionScore()
+		score := subTrack.DownTrack().GetConnectionScore()
+		// First few scores on track init will be 0. Valid scores are in range of 1-5
+		if score == 0 {
+			continue
+		}
+		totalScore += score
+
 		numTracks++
 	}
 	p.lock.RUnlock()
@@ -1414,7 +1420,12 @@ func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float32, n
 		if pt.IsMuted() {
 			continue
 		}
-		totalScore += pt.(types.LocalMediaTrack).GetConnectionScore()
+		score := pt.(types.LocalMediaTrack).GetConnectionScore()
+		// First few scores on track init will be 0. Valid scores are in range of 1-5
+		if score == 0 {
+			continue
+		}
+		totalScore += score
 		numTracks++
 	}
 
