@@ -340,6 +340,18 @@ func TestSingleNodeJoinAfterClose(t *testing.T) {
 	scenarioJoinClosedRoom(t)
 }
 
+func TestSingleNodeCloseNonRTCRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("closeNonRTCRoom")
+	defer finish()
+
+	closeNonRTCRoom(t)
+}
+
 func TestAutoCreate(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()

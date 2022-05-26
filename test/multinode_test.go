@@ -153,6 +153,18 @@ func TestMultiNodeJoinAfterClose(t *testing.T) {
 	scenarioJoinClosedRoom(t)
 }
 
+func TestMultiNodeCloseNonRTCRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("closeNonRTCRoom")
+	defer finish()
+
+	closeNonRTCRoom(t)
+}
+
 // ensure that token accurately reflects out of band updates
 func TestMultiNodeRefreshToken(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
