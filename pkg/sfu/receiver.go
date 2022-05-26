@@ -318,16 +318,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
 		w.streamTrackerManager.AddTracker(layer)
 	}
-	// if strings.EqualFold(w.codec.MimeType, "video/av1") {
-	// 	buff.OnMaxLayerChanged(func(spatial, _ int) {
-	// 		layers := make([]int32, 0, spatial)
-	// 		for i := 0; i <= spatial; i++ {
-	// 			layers = append(layers, int32(i))
-	// 		}
-	// 		w.downTrackLayerChange(layers)
 
-	// 	})
-	// }
 	go w.forwardRTP(layer)
 }
 

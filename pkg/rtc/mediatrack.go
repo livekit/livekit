@@ -26,8 +26,6 @@ type MediaTrack struct {
 	numUpTracks atomic.Uint32
 	buffer      *buffer.Buffer
 
-	// layerSSRCs [livekit.VideoQuality_HIGH + 1]uint32
-
 	*MediaTrackReceiver
 
 	lock sync.RWMutex
