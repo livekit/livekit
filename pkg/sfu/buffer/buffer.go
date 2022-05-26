@@ -559,6 +559,9 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
+	b.Lock()
+	defer b.Unlock()
+
 	b.lastFractionLostToReport = lost
 }
 
