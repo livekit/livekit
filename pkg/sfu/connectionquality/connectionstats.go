@@ -1,6 +1,7 @@
 package connectionquality
 
 import (
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -87,8 +88,17 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float
 	defer cs.lock.Unlock()
 
 	s := cs.params.GetQualityParams()
+	var qualityParam buffer.ConnectionQualityParams
 	if s == nil {
 		return cs.score
+	} else {
+		qualityParam = *s
+		if math.IsInf(float64(qualityParam.Jitter), 0) {
+			qualityParam.Jitter = 0
+		}
+		if math.IsInf(float64(qualityParam.LossPercentage), 0) {
+			qualityParam.LossPercentage = 0
+		}
 	}
 
 	interval := cs.params.UpdateInterval
@@ -117,10 +127,11 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream) float
 			actualWidth, actualHeight = cs.params.GetLayerDimension(maxLayer)
 		}
 
-		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), s, cs.params.CodecName,
+		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), &qualityParam, cs.params.CodecName,
 			int32(expectedLayer.Height), int32(expectedLayer.Width), int32(actualHeight), int32(actualWidth))
 		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer.Quality, "maxLayer", maxLayer,
 		//	"expectedWidth", expectedLayer.Width, "actualWidth", actualWidth, "expectedHeight", expectedLayer.Height, "actualHeight", actualHeight)
+
 	}
 
 	return cs.score
