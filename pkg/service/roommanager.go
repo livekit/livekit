@@ -435,14 +435,24 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 }
 
 // handles RTC messages resulted from Room API calls
-func (r *RoomManager) handleRTCMessage(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
+func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) {
 	r.lock.RLock()
 	room := r.rooms[roomName]
 	r.lock.RUnlock()
 
 	if room == nil {
-		logger.Warnw("Could not find room", nil, "room", roomName)
-		return
+		if _, ok := msg.Message.(*livekit.RTCNodeMessage_DeleteRoom); ok {
+			// special case of a non-RTC room e.g. room created but no participants joined
+			logger.Debugw("Deleting non-rtc room, loading from roomstore")
+			err := r.roomStore.DeleteRoom(ctx, roomName)
+			if err != nil {
+				logger.Debugw("Error deleting non-rtc room", "err", err)
+			}
+			return
+		} else {
+			logger.Warnw("Could not find room", nil, "room", roomName)
+			return
+		}
 	}
 
 	participant := room.GetParticipant(identity)

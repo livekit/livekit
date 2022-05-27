@@ -502,6 +502,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		return
 	}
 
+	t.maxQualityLock.Lock()
 	t.params.Logger.Debugw("updating quality change",
 		"force", force,
 		"maxSubscriberQuality", t.maxSubscriberQuality,
@@ -510,7 +511,6 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 
 	maxSubscribedQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
 	var changed bool
-	t.maxQualityLock.Lock()
 	// reset maxSubscribedQuality
 	for mime := range t.maxSubscribedQuality {
 		maxSubscribedQuality[mime] = livekit.VideoQuality_OFF
