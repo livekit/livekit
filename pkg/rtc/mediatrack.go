@@ -113,7 +113,7 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return info
 }
 
-// AddReceiver adds a new RTP receiver to the track, return receiver represents a new codec
+// AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
