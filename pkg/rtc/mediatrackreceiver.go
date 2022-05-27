@@ -269,10 +269,11 @@ func (t *MediaTrackReceiver) SetMuted(muted bool) {
 	t.muted.Store(muted)
 
 	t.lock.RLock()
-	for _, receiver := range t.receiversShadow {
+	receivers := t.receiversShadow
+	t.lock.RUnlock()
+	for _, receiver := range receivers {
 		receiver.SetUpTrackPaused(muted)
 	}
-	t.lock.RUnlock()
 
 	t.MediaTrackSubscriptions.SetMuted(muted)
 }
@@ -322,7 +323,6 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	t.lock.Lock()
-	t.params.TrackInfo = ti
 	t.trackInfo = proto.Clone(ti).(*livekit.TrackInfo)
 	t.lock.Unlock()
 
@@ -334,16 +334,15 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	t.lock.RLock()
 	ti := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
-	receivers := t.receiversShadow
-	t.lock.RUnlock()
 	if !generateLayer {
+		t.lock.RUnlock()
 		return ti
 	}
-	layers := t.GetVideoLayers()
+	layers := t.getVideoLayersLocked()
 
 	// set video layer ssrc info
 	for i, ci := range ti.Codecs {
-		for _, receiver := range receivers {
+		for _, receiver := range t.receiversShadow {
 			if receiver.priority == i {
 				originLayers := ci.Layers
 				ci.Layers = []*livekit.VideoLayer{}
@@ -367,8 +366,8 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	}
 
 	// for client don't use simulcast codecs (old client version or single codec)
-	if len(ti.Codecs) == 0 && len(receivers) > 0 {
-		receiver := receivers[0]
+	if len(ti.Codecs) == 0 && len(t.receiversShadow) > 0 {
+		receiver := t.receiversShadow[0]
 		originLayers := ti.Layers
 		ti.Layers = []*livekit.VideoLayer{}
 		for layerIdx, layer := range layers {
@@ -382,6 +381,7 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 			}
 		}
 	}
+	t.lock.RUnlock()
 
 	return ti
 }
@@ -402,12 +402,17 @@ func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
 }
 
 func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
-	layers := make([]*livekit.VideoLayer, 0)
 	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.getVideoLayersLocked()
+}
+
+func (t *MediaTrackReceiver) getVideoLayersLocked() []*livekit.VideoLayer {
+	layers := make([]*livekit.VideoLayer, 0)
 	for _, layer := range t.layerDimensions {
 		layers = append(layers, proto.Clone(layer).(*livekit.VideoLayer))
 	}
-	t.lock.RUnlock()
 
 	return layers
 }
@@ -526,10 +531,12 @@ func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
 	info["DownTracks"] = t.MediaTrackSubscriptions.DebugInfo()
 
 	t.lock.RLock()
-	for _, receiver := range t.receiversShadow {
+	receivers := t.receiversShadow
+	t.lock.RUnlock()
+	for _, receiver := range receivers {
 		info[receiver.Codec().MimeType] = receiver.DebugInfo()
 	}
-	t.lock.RUnlock()
+
 	return info
 }
 
@@ -568,9 +575,10 @@ func (t *MediaTrackReceiver) Receivers() []sfu.TrackReceiver {
 
 func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	t.lock.Lock()
-	defer t.lock.Unlock()
+	receivers := t.receiversShadow
+	t.lock.Unlock()
 
-	for _, r := range t.receiversShadow {
+	for _, r := range receivers {
 		r.TrackReceiver.(*sfu.WebRTCReceiver).SetRTT(rtt)
 	}
 }
