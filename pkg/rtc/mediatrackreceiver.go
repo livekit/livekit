@@ -304,11 +304,9 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
-	t.lock.RLock()
 	for _, layer := range t.layerDimensions {
 		providedSizes = append(providedSizes, layer.Height)
 	}
-	t.lock.RUnlock()
 	if len(providedSizes) > 0 {
 		layerSizes = providedSizes
 		// comparing height always
