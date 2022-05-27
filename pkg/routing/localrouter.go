@@ -139,10 +139,12 @@ func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomNam
 }
 
 func (r *LocalRouter) WriteNodeRTC(_ context.Context, _ string, msg *livekit.RTCNodeMessage) error {
+	r.lock.Lock()
 	if r.rtcMessageChan.IsClosed() {
 		// create a new one
 		r.rtcMessageChan = NewMessageChannel(localRTCChannelSize)
 	}
+	r.lock.Unlock()
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
@@ -206,13 +208,19 @@ func (r *LocalRouter) rtcMessageWorker() {
 		go r.rtcMessageWorker()
 	}()
 
-	if r.rtcMessageChan.IsClosed() {
+	r.lock.RLock()
+	isClosed := r.rtcMessageChan.IsClosed()
+	r.lock.RUnlock()
+	if isClosed {
 		// sleep and retry
 		time.Sleep(time.Second)
 	}
 
+	r.lock.RLock()
+	msgChan := r.rtcMessageChan.ReadChan()
+	r.lock.RUnlock()
 	// consume messages from
-	for msg := range r.rtcMessageChan.ReadChan() {
+	for msg := range msgChan {
 		if rtcMsg, ok := msg.(*livekit.RTCNodeMessage); ok {
 			room, identity, err := parseParticipantKey(livekit.ParticipantKey(rtcMsg.ParticipantKey))
 			if err != nil {
