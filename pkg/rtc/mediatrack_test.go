@@ -142,20 +142,22 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		})
+		var lock sync.Mutex
+		actualTrackID := livekit.TrackID("")
+		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) error {
+			lock.Lock()
+			actualTrackID = trackID
+			actualSubscribedQualities = subscribedQualities
+			lock.Unlock()
+			return nil
+		})
 
 		mt.AddCodec(webrtc.MimeTypeVP8)
 		mt.AddCodec(webrtc.MimeTypeAV1)
 
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_HIGH)
 		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_HIGH)
-
-		actualTrackID := livekit.TrackID("")
-		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) error {
-			actualTrackID = trackID
-			actualSubscribedQualities = subscribedQualities
-			return nil
-		})
 
 		// mute all subscribers of vp8
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
@@ -179,8 +181,10 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			},
 		}
 		time.Sleep(10 * time.Millisecond)
+		lock.Lock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
+		lock.Unlock()
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
