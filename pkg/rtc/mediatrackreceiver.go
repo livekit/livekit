@@ -322,7 +322,9 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 }
 
 func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
+	t.lock.RLock()
 	ti := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
+	t.lock.RUnlock()
 	if !generateLayer {
 		return ti
 	}
