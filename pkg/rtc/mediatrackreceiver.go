@@ -19,6 +19,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -107,7 +108,7 @@ func (t *MediaTrackReceiver) Restart() {
 	t.lock.Unlock()
 
 	for _, receiver := range receivers {
-		receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+		receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(livekit.VideoQuality_HIGH))
 	}
 
 	t.MediaTrackSubscriptions.Restart()
@@ -592,28 +593,13 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 		for _, q := range maxSubscribedQualities {
 			receiver := t.Receiver(q.CodecMime)
 			if receiver != nil {
-				receiver.SetMaxExpectedSpatialLayer(SpatialLayerForQuality(q.Quality))
+				receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(q.Quality))
 			}
 		}
 	})
 }
 
 // ---------------------------
-
-func SpatialLayerForQuality(quality livekit.VideoQuality) int32 {
-	switch quality {
-	case livekit.VideoQuality_LOW:
-		return 0
-	case livekit.VideoQuality_MEDIUM:
-		return 1
-	case livekit.VideoQuality_HIGH:
-		return 2
-	case livekit.VideoQuality_OFF:
-		return -1
-	default:
-		return -1
-	}
-}
 
 func QualityForSpatialLayer(layer int32) livekit.VideoQuality {
 	switch layer {

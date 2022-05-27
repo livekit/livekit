@@ -220,7 +220,19 @@ func NewDownTrack(
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
-		Logger: d.logger,
+		GetLayerDimension: func(quality int32) (uint32, uint32) {
+			if d.receiver != nil {
+				return d.receiver.GetLayerDimension(quality)
+			}
+			return 0, 0
+		},
+		GetMaxExpectedLayer: func() livekit.VideoLayer {
+			quality := d.forwarder.MaxLayers().Spatial
+			width, height := d.receiver.GetLayerDimension(quality)
+			return livekit.VideoLayer{Quality: livekit.VideoQuality(quality), Width: width, Height: height}
+		},
+		Logger:    d.logger,
+		CodecName: getCodecNameFromMime(codecs[0].MimeType),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {

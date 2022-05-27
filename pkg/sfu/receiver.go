@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -51,6 +52,8 @@ type TrackReceiver interface {
 	DeleteDownTrack(peerID livekit.ParticipantID)
 
 	DebugInfo() map[string]interface{}
+
+	GetLayerDimension(quality int32) (uint32, uint32)
 }
 
 // WebRTCReceiver receives a media track
@@ -72,6 +75,7 @@ type WebRTCReceiver struct {
 	closeOnce      sync.Once
 	closed         atomic.Bool
 	useTrackers    bool
+	TrackInfo      *livekit.TrackInfo
 
 	rtcpCh chan []rtcp.Packet
 
@@ -160,7 +164,7 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track *webrtc.TrackRemote,
 	pid livekit.ParticipantID,
-	source livekit.TrackSource,
+	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	twcc *twcc.Responder,
 	opts ...ReceiverOpts,
@@ -176,7 +180,8 @@ func NewWebRTCReceiver(
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
-		streamTrackerManager: NewStreamTrackerManager(logger, source),
+		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo.Source),
+		TrackInfo:            trackInfo,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
@@ -199,7 +204,36 @@ func NewWebRTCReceiver(
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
-		Logger: w.logger,
+		GetLayerDimension: func(quality int32) (uint32, uint32) {
+			return w.GetLayerDimension(quality)
+		},
+		GetMaxExpectedLayer: func() livekit.VideoLayer {
+			var expectedLayer livekit.VideoLayer
+			var maxPublishedLayer livekit.VideoLayer
+			// find min of <expected, published> layer
+			expectedQuality := w.streamTrackerManager.GetMaxExpectedLayer()
+			maxPublishedQuality := InvalidLayerSpatial
+			if w.TrackInfo != nil {
+				for _, layer := range w.TrackInfo.Layers {
+					if layer.Quality == livekit.VideoQuality_OFF {
+						continue
+					}
+					if expectedQuality == utils.SpatialLayerForQuality(layer.Quality) {
+						expectedLayer = *layer
+					}
+					if utils.SpatialLayerForQuality(layer.Quality) > maxPublishedQuality {
+						maxPublishedQuality = int32(layer.Quality)
+						maxPublishedLayer = *layer
+					}
+				}
+			}
+			if expectedQuality < maxPublishedQuality {
+				return expectedLayer
+			}
+			return maxPublishedLayer
+		},
+		Logger:    w.logger,
+		CodecName: getCodecNameFromMime(w.codec.MimeType),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
@@ -209,6 +243,19 @@ func NewWebRTCReceiver(
 	w.connectionStats.Start()
 
 	return w
+}
+
+func (w *WebRTCReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
+	height := uint32(0)
+	width := uint32(0)
+	for _, layer := range w.TrackInfo.Layers {
+		if layer.Quality == livekit.VideoQuality(quality) {
+			height = layer.Height
+			width = layer.Width
+			break
+		}
+	}
+	return width, height
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
