@@ -24,6 +24,7 @@ type ConnectionStatsParams struct {
 	CodecType           webrtc.RTPCodecType
 	CodecName           string
 	DtxDisabled         bool
+	MimeType            string
 	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
@@ -158,6 +159,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 	return &livekit.AnalyticsStat{
 		Score:   score,
 		Streams: analyticsStreams,
+		Mime:    cs.params.MimeType,
 	}
 }
 

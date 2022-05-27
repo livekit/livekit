@@ -32,7 +32,6 @@ type TrackSender interface {
 	Close()
 	// ID is the globally unique identifier for this Track.
 	ID() string
-	Codec() webrtc.RTPCodecCapability
 	PeerID() livekit.ParticipantID
 }
 
@@ -118,6 +117,7 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
+	upstreamCodecs          []webrtc.RTPCodecCapability
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	absSendTimeID           int
@@ -183,7 +183,7 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(
-	c webrtc.RTPCodecCapability,
+	codecs []webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
 	peerID livekit.ParticipantID,
@@ -192,26 +192,26 @@ func NewDownTrack(
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
-	case strings.HasPrefix(c.MimeType, "audio/"):
+	case strings.HasPrefix(codecs[0].MimeType, "audio/"):
 		kind = webrtc.RTPCodecTypeAudio
-	case strings.HasPrefix(c.MimeType, "video/"):
+	case strings.HasPrefix(codecs[0].MimeType, "video/"):
 		kind = webrtc.RTPCodecTypeVideo
 	default:
 		kind = webrtc.RTPCodecType(0)
 	}
 
 	d := &DownTrack{
-		logger:        logger,
-		id:            r.TrackID(),
-		peerID:        peerID,
-		maxTrack:      mt,
-		streamID:      r.StreamID(),
-		bufferFactory: bf,
-		receiver:      r,
-		codec:         c,
-		kind:          kind,
-		forwarder:     NewForwarder(c, kind, logger),
+		logger:         logger,
+		id:             r.TrackID(),
+		peerID:         peerID,
+		maxTrack:       mt,
+		streamID:       r.StreamID(),
+		bufferFactory:  bf,
+		receiver:       r,
+		upstreamCodecs: codecs,
+		kind:           kind,
 	}
+	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        kind,
@@ -232,7 +232,7 @@ func NewDownTrack(
 			return livekit.VideoLayer{Quality: livekit.VideoQuality(quality), Width: width, Height: height}
 		},
 		Logger:    d.logger,
-		CodecName: getCodecNameFromMime(c.MimeType),
+		CodecName: getCodecNameFromMime(codecs[0].MimeType),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -258,11 +258,20 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if d.bound.Load() {
 		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
 	}
-	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
-	codec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
-	if err != nil {
+	var codec webrtc.RTPCodecParameters
+	for _, c := range d.upstreamCodecs {
+		parameters := webrtc.RTPCodecParameters{RTPCodecCapability: c}
+		matchCodec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
+		if err == nil {
+			codec = matchCodec
+			break
+		}
+	}
+
+	if codec.MimeType == "" {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
+	d.logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec)
 
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
@@ -276,11 +285,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if strings.HasPrefix(codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
-
-	d.bound.Store(true)
+	d.codec = codec.RTPCodecCapability
+	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
 		d.onBind()
 	}
+	d.bound.Store(true)
 
 	d.connectionStats.Start()
 	d.logger.Debugw("bound")
@@ -614,7 +624,12 @@ func (d *DownTrack) Close() {
 // 2. in case of session migration, participant migrate from other node, video track should
 //    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
-	d.forwarder.Mute(true)
+	if !d.bound.Load() {
+		return
+	}
+	if d.forwarder != nil {
+		d.forwarder.Mute(true)
+	}
 
 	// write blank frames after disabling so that other frames do not interfere.
 	// Idea here is to send blank key frames to flush the decoder buffer at the remote end.

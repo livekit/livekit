@@ -19,8 +19,9 @@ func disable(f *Forwarder) {
 }
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
-	return NewForwarder(codec, kind, logger.GetDefaultLogger())
-
+	f := NewForwarder(kind, logger.GetDefaultLogger())
+	f.DetermineCodec(codec)
+	return f
 }
 
 func TestForwarderMute(t *testing.T) {
