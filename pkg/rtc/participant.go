@@ -431,6 +431,8 @@ func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant,
 }
 
 func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	p.onStateChange = callback
 }
 
