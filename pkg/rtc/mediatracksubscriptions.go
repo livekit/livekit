@@ -34,9 +34,10 @@ const (
 type MediaTrackSubscriptions struct {
 	params MediaTrackSubscriptionsParams
 
-	subscribedTracksMu sync.RWMutex
-	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
-	pendingClose       map[livekit.ParticipantID]types.SubscribedTrack
+	subscribedTracksMu     sync.RWMutex
+	subscribedTracks       map[livekit.ParticipantID]types.SubscribedTrack
+	pendingSubscribeTracks sync.Map // livekit.ParticipantID -> bool
+	pendingClose           map[livekit.ParticipantID]types.SubscribedTrack
 
 	onNoSubscribers func()
 
@@ -118,6 +119,12 @@ func (t *MediaTrackSubscriptions) AddCodec(mime string) {
 func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) (*sfu.DownTrack, error) {
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
+
+	if _, pending := t.pendingSubscribeTracks.LoadOrStore(subscriberID, true); pending {
+		return nil, nil
+	} else {
+		defer t.pendingSubscribeTracks.Delete(subscriberID)
+	}
 
 	// don't subscribe to the same track multiple times
 	t.subscribedTracksMu.Lock()

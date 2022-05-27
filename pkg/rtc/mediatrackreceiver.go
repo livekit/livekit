@@ -43,6 +43,7 @@ type MediaTrackReceiver struct {
 
 	lock            sync.RWMutex
 	receivers       []*simulcastReceiver
+	trackInfo       *livekit.TrackInfo
 	layerDimensions map[livekit.VideoQuality]*livekit.VideoLayer
 
 	// track audio fraction lost
@@ -73,6 +74,7 @@ type MediaTrackReceiverParams struct {
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
 		params:          params,
+		trackInfo:       proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
 		layerDimensions: make(map[livekit.VideoQuality]*livekit.VideoLayer),
 	}
 
@@ -86,12 +88,12 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		Logger:           params.Logger,
 	})
 
-	if params.TrackInfo.Muted {
+	if t.trackInfo.Muted {
 		t.SetMuted(true)
 	}
 
-	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
-		t.UpdateVideoLayers(params.TrackInfo.Layers)
+	if t.trackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
+		t.UpdateVideoLayers(t.trackInfo.Layers)
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
 
@@ -119,16 +121,16 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 	if mid != "" {
 		if priority == 0 {
-			t.params.TrackInfo.MimeType = receiver.Codec().MimeType
-			t.params.TrackInfo.Mid = mid
+			t.trackInfo.MimeType = receiver.Codec().MimeType
+			t.trackInfo.Mid = mid
 
 			// for clients don't have simulcast codecs (old version or single codec), add the primary codec
-			if len(t.params.TrackInfo.Codecs) == 0 && t.Kind() == livekit.TrackType_VIDEO {
-				t.params.TrackInfo.Codecs = append(t.params.TrackInfo.Codecs, &livekit.SimulcastCodecInfo{})
+			if len(t.trackInfo.Codecs) == 0 && t.Kind() == livekit.TrackType_VIDEO {
+				t.trackInfo.Codecs = append(t.trackInfo.Codecs, &livekit.SimulcastCodecInfo{})
 			}
 		}
 
-		for i, ci := range t.params.TrackInfo.Codecs {
+		for i, ci := range t.trackInfo.Codecs {
 			if i == priority {
 				ci.Mid = mid
 				ci.MimeType = receiver.Codec().MimeType
@@ -206,15 +208,24 @@ func (t *MediaTrackReceiver) TryClose() bool {
 }
 
 func (t *MediaTrackReceiver) ID() livekit.TrackID {
-	return livekit.TrackID(t.params.TrackInfo.Sid)
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return livekit.TrackID(t.trackInfo.Sid)
 }
 
 func (t *MediaTrackReceiver) Kind() livekit.TrackType {
-	return t.params.TrackInfo.Type
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Type
 }
 
 func (t *MediaTrackReceiver) Source() livekit.TrackSource {
-	return t.params.TrackInfo.Source
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Source
 }
 
 func (t *MediaTrackReceiver) PublisherID() livekit.ParticipantID {
@@ -234,7 +245,10 @@ func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
 }
 
 func (t *MediaTrackReceiver) Name() string {
-	return t.params.TrackInfo.Name
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Name
 }
 
 func (t *MediaTrackReceiver) IsMuted() bool {
@@ -297,14 +311,18 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	t.lock.Lock()
 	t.params.TrackInfo = ti
+	t.trackInfo = proto.Clone(ti).(*livekit.TrackInfo)
+	t.lock.Unlock()
+
 	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
 		t.UpdateVideoLayers(ti.Layers)
 	}
 }
 
 func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
-	ti := proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
+	ti := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
 	if !generateLayer {
 		return ti
 	}
@@ -385,25 +403,30 @@ func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
 // affords a 20% tolerance on dimension
 func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
 	quality := livekit.VideoQuality_HIGH
-	if t.Kind() == livekit.TrackType_AUDIO || t.params.TrackInfo.Height == 0 {
+	if t.Kind() == livekit.TrackType_AUDIO {
 		return quality
 	}
-	origSize := t.params.TrackInfo.Height
+
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if t.trackInfo.Height == 0 {
+		return quality
+	}
+	origSize := t.trackInfo.Height
 	requestedSize := height
-	if t.params.TrackInfo.Width < t.params.TrackInfo.Height {
+	if t.trackInfo.Width < t.trackInfo.Height {
 		// for portrait videos
-		origSize = t.params.TrackInfo.Width
+		origSize = t.trackInfo.Width
 		requestedSize = width
 	}
 
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
-	t.lock.RLock()
 	for _, layer := range t.layerDimensions {
 		providedSizes = append(providedSizes, layer.Height)
 	}
-	t.lock.RUnlock()
 	if len(providedSizes) > 0 {
 		layerSizes = providedSizes
 		// comparing height always
