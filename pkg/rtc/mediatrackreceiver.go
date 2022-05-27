@@ -125,7 +125,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 			t.trackInfo.Mid = mid
 
 			// for clients don't have simulcast codecs (old version or single codec), add the primary codec
-			if len(t.trackInfo.Codecs) == 0 && t.Kind() == livekit.TrackType_VIDEO {
+			if len(t.trackInfo.Codecs) == 0 && t.trackInfo.Type == livekit.TrackType_VIDEO {
 				t.trackInfo.Codecs = append(t.trackInfo.Codecs, &livekit.SimulcastCodecInfo{})
 			}
 		}
