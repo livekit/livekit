@@ -343,6 +343,9 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("redis-sentinel-password") {
 		conf.Redis.SentinelPassword = c.String("redis-sentinel-password")
 	}
+	if c.IsSet("turn-domain") {
+		conf.TURN.Domain = c.String("turn-domain")
+	}
 	if c.IsSet("turn-cert") {
 		conf.TURN.CertFile = c.String("turn-cert")
 	}

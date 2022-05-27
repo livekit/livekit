@@ -118,6 +118,12 @@ func main() {
 				Hidden:  true,
 			},
 			&cli.StringFlag{
+				Name:    "turn-domain",
+				Usage:   "domain to use for the TURN server",
+				EnvVars: []string{"LIVEKIT_TURN_DOMAIN"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
 				Name:    "turn-cert",
 				Usage:   "tls cert file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_CERT"},
