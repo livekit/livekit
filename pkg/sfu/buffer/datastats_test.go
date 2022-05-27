@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDataStats(t *testing.T) {
@@ -18,7 +20,7 @@ func TestDataStats(t *testing.T) {
 	r.StartTime = nil
 	r.EndTime = nil
 	r.Duration = 0
-	require.Zero(t, *r)
+	require.True(t, proto.Equal(r, &livekit.RTPStats{}))
 
 	stats.Update(100, time.Now().UnixNano())
 	r = stats.ToProtoActive()
@@ -28,7 +30,7 @@ func TestDataStats(t *testing.T) {
 	// wait for window duration
 	time.Sleep(time.Second)
 	r = stats.ToProtoActive()
-	require.Zero(t, *r)
+	require.True(t, proto.Equal(r, &livekit.RTPStats{}))
 	stats.Stop()
 	r = stats.ToProtoAggregateOnly()
 	require.EqualValues(t, 100, r.Bytes)
