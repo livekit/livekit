@@ -284,13 +284,15 @@ func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
 // GetQualityForDimension finds the closest quality to use for desired dimensions
 // affords a 20% tolerance on dimension
 func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
-	kind := t.Kind()
+	quality := livekit.VideoQuality_HIGH
+	if t.Kind() == livekit.TrackType_AUDIO {
+		return quality
+	}
 
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	quality := livekit.VideoQuality_HIGH
-	if kind == livekit.TrackType_AUDIO || t.trackInfo.Height == 0 {
+	if t.trackInfo.Height == 0 {
 		return quality
 	}
 	origSize := t.trackInfo.Height
