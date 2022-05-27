@@ -31,6 +31,7 @@ type MediaTrackReceiver struct {
 	simulcasted atomic.Bool
 
 	lock            sync.RWMutex
+	trackInfo       *livekit.TrackInfo
 	receiver        sfu.TrackReceiver
 	layerDimensions map[livekit.VideoQuality]*livekit.VideoLayer
 
@@ -62,6 +63,7 @@ type MediaTrackReceiverParams struct {
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
 		params:          params,
+		trackInfo:       proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
 		layerDimensions: make(map[livekit.VideoQuality]*livekit.VideoLayer),
 	}
 
@@ -75,12 +77,12 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		Logger:           params.Logger,
 	})
 
-	if params.TrackInfo.Muted {
+	if t.trackInfo.Muted {
 		t.SetMuted(true)
 	}
 
-	if params.TrackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
-		t.UpdateVideoLayers(params.TrackInfo.Layers)
+	if t.trackInfo != nil && t.Kind() == livekit.TrackType_VIDEO {
+		t.UpdateVideoLayers(t.trackInfo.Layers)
 		// LK-TODO: maybe use this or simulcast flag in TrackInfo to set simulcasted here
 	}
 
@@ -135,15 +137,24 @@ func (t *MediaTrackReceiver) Close() {
 }
 
 func (t *MediaTrackReceiver) ID() livekit.TrackID {
-	return livekit.TrackID(t.params.TrackInfo.Sid)
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return livekit.TrackID(t.trackInfo.Sid)
 }
 
 func (t *MediaTrackReceiver) Kind() livekit.TrackType {
-	return t.params.TrackInfo.Type
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Type
 }
 
 func (t *MediaTrackReceiver) Source() livekit.TrackSource {
-	return t.params.TrackInfo.Source
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Source
 }
 
 func (t *MediaTrackReceiver) PublisherID() livekit.ParticipantID {
@@ -163,7 +174,10 @@ func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
 }
 
 func (t *MediaTrackReceiver) Name() string {
-	return t.params.TrackInfo.Name
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.trackInfo.Name
 }
 
 func (t *MediaTrackReceiver) IsMuted() bool {
@@ -225,14 +239,20 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	t.lock.Lock()
 	t.params.TrackInfo = ti
+	t.lock.Unlock()
+
 	if ti != nil && t.Kind() == livekit.TrackType_VIDEO {
 		t.UpdateVideoLayers(ti.Layers)
 	}
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
-	return t.params.TrackInfo
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
 }
 
 func (t *MediaTrackReceiver) UpdateVideoLayers(layers []*livekit.VideoLayer) {
@@ -264,15 +284,18 @@ func (t *MediaTrackReceiver) GetVideoLayers() []*livekit.VideoLayer {
 // GetQualityForDimension finds the closest quality to use for desired dimensions
 // affords a 20% tolerance on dimension
 func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
 	quality := livekit.VideoQuality_HIGH
-	if t.Kind() == livekit.TrackType_AUDIO || t.params.TrackInfo.Height == 0 {
+	if t.Kind() == livekit.TrackType_AUDIO || t.trackInfo.Height == 0 {
 		return quality
 	}
-	origSize := t.params.TrackInfo.Height
+	origSize := t.trackInfo.Height
 	requestedSize := height
-	if t.params.TrackInfo.Width < t.params.TrackInfo.Height {
+	if t.trackInfo.Width < t.trackInfo.Height {
 		// for portrait videos
-		origSize = t.params.TrackInfo.Width
+		origSize = t.trackInfo.Width
 		requestedSize = width
 	}
 
