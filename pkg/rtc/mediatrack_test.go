@@ -1,15 +1,18 @@
 package rtc
 
 import (
+	"sort"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 func TestTrackInfo(t *testing.T) {
@@ -105,51 +108,79 @@ func TestGetQualityForDimension(t *testing.T) {
 }
 
 func TestSubscribedMaxQuality(t *testing.T) {
+	subscribedCodecsAsString := func(c1 []*livekit.SubscribedCodec) string {
+		sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
+		var s1 string
+		for _, c := range c1 {
+			s1 += c.String()
+		}
+		return s1
+	}
 	t.Run("subscribers muted", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{TrackInfo: &livekit.TrackInfo{
-			Sid:    "v1",
-			Type:   livekit.TrackType_VIDEO,
-			Width:  1080,
-			Height: 720,
-			Layers: []*livekit.VideoLayer{
-				{
-					Quality: livekit.VideoQuality_LOW,
-					Width:   480,
-					Height:  270,
-				},
-				{
-					Quality: livekit.VideoQuality_MEDIUM,
-					Width:   960,
-					Height:  540,
-				},
-				{
-					Quality: livekit.VideoQuality_HIGH,
-					Width:   1080,
-					Height:  720,
+		mt := NewMediaTrack(MediaTrackParams{
+			TrackInfo: &livekit.TrackInfo{
+				Sid:    "v1",
+				Type:   livekit.TrackType_VIDEO,
+				Width:  1080,
+				Height: 720,
+				Layers: []*livekit.VideoLayer{
+					{
+						Quality: livekit.VideoQuality_LOW,
+						Width:   480,
+						Height:  270,
+					},
+					{
+						Quality: livekit.VideoQuality_MEDIUM,
+						Width:   960,
+						Height:  540,
+					},
+					{
+						Quality: livekit.VideoQuality_HIGH,
+						Width:   1080,
+						Height:  720,
+					},
 				},
 			},
-		}})
+		})
 
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
+		mt.AddCodec(webrtc.MimeTypeVP8)
+		mt.AddCodec(webrtc.MimeTypeAV1)
+
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_HIGH)
+		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_HIGH)
 
 		actualTrackID := livekit.TrackID("")
-		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
-		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
+		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) error {
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
 			return nil
 		})
 
-		// mute all subscribers
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
+		// mute all subscribers of vp8
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
 
-		expectedSubscribedQualities := []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: false},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedQualities := []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+				},
+			},
 		}
+		time.Sleep(10 * time.Millisecond)
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
@@ -182,12 +213,15 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			},
 		})
 
+		mt.AddCodec(webrtc.MimeTypeVP8)
+		mt.AddCodec(webrtc.MimeTypeAV1)
+
 		lock := sync.RWMutex{}
 		lock.Lock()
 		actualTrackID := livekit.TrackID("")
-		actualSubscribedQualities := make([]*livekit.SubscribedQuality, 0)
+		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
 		lock.Unlock()
-		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, _maxSubscribedQuality livekit.VideoQuality) error {
+		mt.OnSubscribedMaxQualityChange(func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) error {
 			lock.Lock()
 			actualTrackID = trackID
 			actualSubscribedQualities = subscribedQualities
@@ -195,105 +229,187 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			return nil
 		})
 
-		mt.maxSubscribedQuality = livekit.VideoQuality_LOW
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_HIGH)
-		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_MEDIUM)
+		mt.maxSubscribedQuality = map[string]livekit.VideoQuality{
+			webrtc.MimeTypeVP8: livekit.VideoQuality_LOW,
+			webrtc.MimeTypeAV1: livekit.VideoQuality_LOW,
+		}
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_HIGH)
+		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_MEDIUM)
+		mt.notifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_MEDIUM)
 
-		expectedSubscribedQualities := []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+		expectedSubscribedQualities := []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
 		// "s1" dropping to MEDIUM should disable HIGH layer
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_MEDIUM)
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_MEDIUM)
 
 		// wait for throttle to kick in
 		time.Sleep(110 * time.Millisecond)
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
-		// "s1" and "s1" dropping to LOW should disable HIGH & MEDIUM
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
-		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_LOW)
+		// "s1" , "s2" , "s3" dropping to LOW should disable HIGH & MEDIUM
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
+		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
+		mt.notifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_LOW)
 
 		// wait for throttle to kick in
 		time.Sleep(110 * time.Millisecond)
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
-		// muting "s2" only should not disable all qualities
-		mt.notifySubscriberMaxQuality("s2", livekit.VideoQuality_OFF)
+		// muting "s2" only should not disable all qualities of vp8, no change of expected qualities
+		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
-		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
-		// muting "s1" also should disable all qualities
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_OFF)
+		// muting "s1" and s3 also should disable all qualities
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
+		mt.notifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_OFF)
 		time.Sleep(110 * time.Millisecond)
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: false},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
-		// unmuting "s1" should enable previously set max quality
-		mt.notifySubscriberMaxQuality("s1", livekit.VideoQuality_LOW)
+		// unmuting "s1" should enable vp8 previously set max quality
+		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
 		time.Sleep(110 * time.Millisecond)
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 
 		// a higher quality from a different node should trigger that quality
-		mt.NotifySubscriberNodeMaxQuality("n1", livekit.VideoQuality_HIGH)
+		mt.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
+			{CodecMime: webrtc.MimeTypeVP8, Quality: livekit.VideoQuality_HIGH},
+			{CodecMime: webrtc.MimeTypeAV1, Quality: livekit.VideoQuality_MEDIUM},
+		})
 
-		expectedSubscribedQualities = []*livekit.SubscribedQuality{
-			{Quality: livekit.VideoQuality_LOW, Enabled: true},
-			{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-			{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: webrtc.MimeTypeVP8,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+				},
+			},
+			{
+				Codec: webrtc.MimeTypeAV1,
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
 		}
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, expectedSubscribedQualities, actualSubscribedQualities)
+		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
 		lock.RUnlock()
 	})
 }

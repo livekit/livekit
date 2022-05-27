@@ -40,12 +40,6 @@ const (
 	disconnectCleanupDuration = 15 * time.Second
 )
 
-type pendingCodec struct {
-	mime     string
-	priority int // lower is higher priority
-	cid      string
-}
-
 type pendingTrackInfo struct {
 	*livekit.TrackInfo
 	migrated bool
