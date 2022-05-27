@@ -25,11 +25,6 @@ const (
 	initialQualityUpdateWait = 10 * time.Second
 )
 
-// type SubscribeQualityInfo struct {
-// 	Quality   livekit.VideoQuality
-// 	CodecMime string
-// }
-
 // MediaTrackSubscriptions manages subscriptions of a media track
 type MediaTrackSubscriptions struct {
 	params MediaTrackSubscriptionsParams
@@ -540,44 +535,44 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		}
 	}
 
-	comesDownQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
-	noChangeCnt := 0
+	qualityDowngrades := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
+	noChangeCount := 0
 	for mime, q := range maxSubscribedQuality {
 		if origin := t.maxSubscribedQuality[mime]; origin != q {
 			if q == livekit.VideoQuality_OFF || (origin != livekit.VideoQuality_OFF && origin > q) {
-				// quality comes down (or become off), delay notify to publisher
-				comesDownQuality[mime] = origin
+				// quality downgrade (or become off), delay notify to publisher
+				qualityDowngrades[mime] = origin
 				if force {
 					t.maxSubscribedQuality[mime] = q
 				}
 			} else {
-				// quality comes up, update immediately
+				// quality upgrade, update immediately
 				t.maxSubscribedQuality[mime] = q
 			}
 			changed = true
 		} else {
-			noChangeCnt++
+			noChangeCount++
 		}
 	}
 	t.params.Logger.Debugw("updating quality change",
 		"changed", changed,
 		"maxSubscribedQuality", maxSubscribedQuality,
 		"t.maxSubscribedQuality", t.maxSubscribedQuality,
-		"comesDownQuality", comesDownQuality)
+		"comesDownQuality", qualityDowngrades)
 
 	if !changed && !force {
 		t.maxQualityLock.Unlock()
 		return
 	}
 
-	// if quality comes down(or become OFF), delay notify to publisher if needed
-	if len(comesDownQuality) > 0 && !force {
+	// if quality downgrade (or become OFF), delay notify to publisher if needed
+	if len(qualityDowngrades) > 0 && !force {
 		t.maxSubscribedQualityDebounce(func() {
 			t.UpdateQualityChange(true)
 		})
 
-		// no quality comes up
-		if len(comesDownQuality)+noChangeCnt == len(t.maxSubscribedQuality) {
+		// no quality upgrades
+		if len(qualityDowngrades)+noChangeCount == len(t.maxSubscribedQuality) {
 			t.maxQualityLock.Unlock()
 			return
 		}

@@ -973,7 +973,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		return
 	}
 	p.state.Store(state)
-	p.params.Logger.Warnw("updating participant state", nil, "state", state.String())
+	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.lock.RLock()
 	onStateChange := p.onStateChange
 	p.lock.RUnlock()

@@ -121,7 +121,7 @@ func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 func (d *DownTrackSpreader) DownTrackCount() int {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
-	return len(d.downTracks)
+	return len(d.downTracksShadow)
 }
 
 func (d *DownTrackSpreader) shadowDownTracks() {

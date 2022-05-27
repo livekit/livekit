@@ -39,8 +39,6 @@ type StreamTrackerParams struct {
 	BitrateReportInterval time.Duration
 
 	Logger logger.Logger
-
-	Layer int32
 }
 
 // StreamTracker keeps track of packet flow and ensures a particular up track is consistently producing
