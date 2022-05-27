@@ -166,6 +166,20 @@ func scenarioJoinClosedRoom(t *testing.T) {
 	stopClients(c2)
 }
 
+// close a room that has been created, but no participant has joined
+func closeNonRTCRoom(t *testing.T) {
+	createCtx := contextWithToken(createRoomToken())
+	_, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+		Name: testRoom,
+	})
+	require.NoError(t, err)
+
+	_, err = roomClient.DeleteRoom(createCtx, &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
+}
+
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
 	var writers []*testclient.TrackWriter
