@@ -736,10 +736,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 			continue
 		}
 		score := subTrack.DownTrack().GetConnectionScore()
-		// First few scores on track init will be 0. Valid scores are in range of 1-5
-		if score == 0 {
-			continue
-		}
+
 		totalScore += score
 
 		numTracks++
@@ -1454,10 +1451,7 @@ func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float32, n
 			continue
 		}
 		score := pt.(types.LocalMediaTrack).GetConnectionScore()
-		// First few scores on track init will be 0. Valid scores are in range of 1-5
-		if score == 0 {
-			continue
-		}
+
 		totalScore += score
 		numTracks++
 	}
