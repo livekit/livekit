@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -82,12 +81,12 @@ func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
 	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
+func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 	downTracks := d.GetDownTracks()
 	if d.params.Threshold == 0 || (len(downTracks)) < d.params.Threshold {
 		// serial - not enough down tracks for parallelization to outweigh overhead
 		for _, dt := range downTracks {
-			d.writeRTP(layer, dt, pkt)
+			writer(dt)
 		}
 	} else {
 		// parallel - enables much more efficient multi-core utilization
@@ -110,7 +109,7 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 					}
 
 					for i := n - step; i < n && i < end; i++ {
-						d.writeRTP(layer, downTracks[i], pkt)
+						writer(downTracks[i])
 					}
 				}
 			}()
@@ -119,10 +118,10 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 	}
 }
 
-func (d *DownTrackSpreader) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
-	if err := dt.WriteRTP(pkt, layer); err != nil {
-		d.params.Logger.Errorw("failed writing to down track", err)
-	}
+func (d *DownTrackSpreader) DownTrackCount() int {
+	d.downTrackMu.RLock()
+	defer d.downTrackMu.RUnlock()
+	return len(d.downTracksShadow)
 }
 
 func (d *DownTrackSpreader) shadowDownTracks() {

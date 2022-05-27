@@ -44,9 +44,6 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 
-	if !s.params.AdaptiveStream {
-		s.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
-	}
 	return s
 }
 
@@ -55,6 +52,9 @@ func (t *SubscribedTrack) OnBind(f func()) {
 }
 
 func (t *SubscribedTrack) Bound() {
+	if !t.params.AdaptiveStream {
+		t.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
 	if t.onBind != nil {
 		t.onBind()
 	}

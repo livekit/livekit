@@ -20,6 +20,7 @@ const (
 type ConnectionStatsParams struct {
 	UpdateInterval      time.Duration
 	CodecType           webrtc.RTPCodecType
+	MimeType            string
 	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
@@ -124,6 +125,7 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 	return &livekit.AnalyticsStat{
 		Score:   score,
 		Streams: analyticsStreams,
+		Mime:    cs.params.MimeType,
 	}
 }
 
