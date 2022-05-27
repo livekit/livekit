@@ -333,11 +333,13 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 
 func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 	t.lock.RLock()
+	defer t.lock.RUnlock()
+
 	ti := proto.Clone(t.trackInfo).(*livekit.TrackInfo)
 	if !generateLayer {
-		t.lock.RUnlock()
 		return ti
 	}
+
 	layers := t.getVideoLayersLocked()
 
 	// set video layer ssrc info
@@ -381,7 +383,6 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 			}
 		}
 	}
-	t.lock.RUnlock()
 
 	return ti
 }
