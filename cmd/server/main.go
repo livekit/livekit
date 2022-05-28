@@ -71,9 +71,51 @@ func main() {
 				EnvVars: []string{"REDIS_HOST"},
 			},
 			&cli.StringFlag{
+				Name:    "redis-username",
+				Usage:   "username for redis",
+				EnvVars: []string{"REDIS_USERNAME"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
 				Name:    "redis-password",
 				Usage:   "password to redis",
 				EnvVars: []string{"REDIS_PASSWORD"},
+			},
+			&cli.StringFlag{
+				Name:    "redis-db",
+				Usage:   "redis database to use",
+				EnvVars: []string{"REDIS_DB"},
+				Hidden:  true,
+			},
+			&cli.BoolFlag{
+				Name:  "redis-use-tls",
+				Usage: "sets redis to use TLS",
+				EnvVars: []string{"REDIS_USE_TLS"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
+				Name:    "redis-sentinel-master",
+				Usage:   "master name to use with redis sentinel",
+				EnvVars: []string{"REDIS_SENTINEL_MASTER"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
+				Name:    "redis-sentinel-addresses",
+				Usage:   "comma separated addresses to use with redis sentinel (\"livekit-redis-node-0.livekit-redis-headless:26379,livekit-redis-node-1.livekit-redis-headless:26379\")",
+				EnvVars: []string{"REDIS_SENTINEL_ADDRESSES"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
+				Name:    "redis-sentinel-username",
+				Usage:   "username to use with redis sentinel",
+				EnvVars: []string{"REDIS_SENTINEL_USERNAME"},
+				Hidden:  true,
+			},
+			&cli.StringFlag{
+				Name:    "redis-sentinel-password",
+				Usage:   "password to use with redis sentinel",
+				EnvVars: []string{"REDIS_SENTINEL_PASSWORD"},
+				Hidden:  true,
 			},
 			&cli.StringFlag{
 				Name:    "turn-cert",

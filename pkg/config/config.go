@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -318,8 +319,29 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("redis-host") {
 		conf.Redis.Address = c.String("redis-host")
 	}
+	if c.IsSet("redis-username") {
+		conf.Redis.Username = c.String("redis-username")
+	}
 	if c.IsSet("redis-password") {
 		conf.Redis.Password = c.String("redis-password")
+	}
+	if c.IsSet("redis-db") {
+		conf.Redis.DB = c.Int("redis-db")
+	}
+	if c.IsSet("redis-use-tls") {
+		conf.Redis.UseTLS = c.Bool("redis-use-tls")
+	}
+	if c.IsSet("redis-sentinel-master") {
+		conf.Redis.MasterName = c.String("redis-sentinel-master")
+	}
+	if c.IsSet("redis-sentinel-addresses") {
+		conf.Redis.SentinelAddresses = strings.Split(c.String("redis-sentinel-addresses"), ",")
+	}
+	if c.IsSet("redis-sentinel-username") {
+		conf.Redis.SentinelUsername = c.String("redis-sentinel-username")
+	}
+	if c.IsSet("redis-sentinel-password") {
+		conf.Redis.SentinelPassword = c.String("redis-sentinel-password")
 	}
 	if c.IsSet("turn-cert") {
 		conf.TURN.CertFile = c.String("turn-cert")
