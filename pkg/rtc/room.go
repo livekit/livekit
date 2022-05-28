@@ -290,7 +290,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.protoRoom, otherParticipants, iceServers, region); err != nil {
+	if err := participant.SendJoinResponse(proto.Clone(r.protoRoom).(*livekit.Room), otherParticipants, iceServers, region); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
@@ -741,12 +741,11 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) int {
 // broadcast an update about participant p
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
 	pi := p.ToProto()
-	updates := []*livekit.ParticipantInfo{pi}
 
 	if p.Hidden() {
 		if !opts.skipSource {
 			// send update only to hidden participant
-			err := p.SendParticipantUpdate(updates)
+			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
 			if err != nil {
 				r.Logger.Errorw("could not send update to participant", err,
 					"participant", p.Identity(), "pID", p.ID())
@@ -755,13 +754,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
-	if !pi.IsPublisher && !opts.immediate {
-		r.enqueueParticipantUpdate(pi)
-		return
-	} else {
-		r.clearParticipantUpdate(p.Identity())
-	}
-
+	updates := r.pushAndDequeueUpdates(pi, opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
 
@@ -807,23 +800,41 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 	}
 }
 
-func (r *Room) enqueueParticipantUpdate(pi *livekit.ParticipantInfo) {
+// push a participant update for batched broadcast, optionally returning immediate updates to broadcast.
+// it handles the following scenarios
+// * subscriber-only updates will be queued for batch updates
+// * publisher & immediate updates will be returned without queuing
+// * when the SID changes, it will return both updates, with the earlier participant set to disconnected
+func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bool) []*livekit.ParticipantInfo {
 	r.batchedUpdatesMu.Lock()
 	defer r.batchedUpdatesMu.Unlock()
 
+	var updates []*livekit.ParticipantInfo
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := r.batchedUpdates[identity]
-	if existing != nil && pi.Sid == existing.Sid && existing.Version > pi.Version {
-		return
+
+	if existing != nil {
+		if pi.Sid != existing.Sid {
+			// session change, need to send immediately
+			isImmediate = true
+			existing.State = livekit.ParticipantInfo_DISCONNECTED
+			updates = append(updates, existing)
+		} else if pi.Version < existing.Version {
+			// out of order update
+			return nil
+		}
 	}
 
-	r.batchedUpdates[identity] = pi
-}
+	if isImmediate || pi.IsPublisher {
+		// include any queued update, and return
+		delete(r.batchedUpdates, identity)
+		updates = append(updates, pi)
+	} else {
+		// enqueue for batch
+		r.batchedUpdates[identity] = pi
+	}
 
-func (r *Room) clearParticipantUpdate(identity livekit.ParticipantIdentity) {
-	r.batchedUpdatesMu.Lock()
-	delete(r.batchedUpdates, identity)
-	r.batchedUpdatesMu.Unlock()
+	return updates
 }
 
 func (r *Room) subscriberBroadcastWorker() {
