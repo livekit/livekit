@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"context"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ const (
 	DefaultEmptyTimeout       = 5 * 60 // 5m
 	DefaultRoomDepartureGrace = 20
 	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
+	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
 )
 
@@ -157,6 +159,12 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	sort.Slice(speakers, func(i, j int) bool {
 		return speakers[i].Level > speakers[j].Level
 	})
+
+	// quantize to smooth out small changes
+	for _, speaker := range speakers {
+		speaker.Level = float32(math.Ceil(float64(speaker.Level*AudioLevelQuantization)) * invAudioLevelQuantization)
+	}
+
 	return speakers
 }
 
