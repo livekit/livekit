@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -199,6 +200,123 @@ func TestParticipantUpdate(t *testing.T) {
 				}
 				fp := p.(*typesfakes.FakeLocalParticipant)
 				require.Equal(t, expected, fp.SendParticipantUpdateCallCount())
+			}
+		})
+	}
+}
+
+func TestPushAndDequeueUpdates(t *testing.T) {
+	identity := "test_user"
+	publisher1v1 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "1",
+		IsPublisher: true,
+		Version:     1,
+	}
+	publisher1v2 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "1",
+		IsPublisher: true,
+		Version:     2,
+	}
+	publisher2 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "2",
+		IsPublisher: true,
+		Version:     1,
+	}
+	subscriber1v1 := &livekit.ParticipantInfo{
+		Identity: identity,
+		Sid:      "1",
+		Version:  1,
+	}
+	subscriber1v2 := &livekit.ParticipantInfo{
+		Identity: identity,
+		Sid:      "1",
+		Version:  2,
+	}
+
+	requirePIEquals := func(t *testing.T, a, b *livekit.ParticipantInfo) {
+		require.Equal(t, a.Sid, b.Sid)
+		require.Equal(t, a.Identity, b.Identity)
+		require.Equal(t, a.Version, b.Version)
+	}
+	testCases := []struct {
+		name      string
+		pi        *livekit.ParticipantInfo
+		immediate bool
+		existing  *livekit.ParticipantInfo
+		expected  []*livekit.ParticipantInfo
+		validate  func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo)
+	}{
+		{
+			name:     "publisher updates are immediate",
+			pi:       publisher1v1,
+			expected: []*livekit.ParticipantInfo{publisher1v1},
+		},
+		{
+			name: "subscriber updates are queued",
+			pi:   subscriber1v1,
+		},
+		{
+			name:     "last version is enqueued",
+			pi:       subscriber1v2,
+			existing: subscriber1v1,
+			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
+				require.NotNil(t, queued)
+				requirePIEquals(t, subscriber1v2, queued)
+			},
+		},
+		{
+			name:     "out of order updates are rejected",
+			pi:       subscriber1v1,
+			existing: subscriber1v2,
+			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
+				requirePIEquals(t, subscriber1v2, queued)
+			},
+		},
+		{
+			name:     "sid change is broadcasted immediately",
+			pi:       publisher2,
+			existing: subscriber1v2,
+			expected: []*livekit.ParticipantInfo{
+				{
+					Identity: identity,
+					Sid:      "1",
+					Version:  2,
+					State:    livekit.ParticipantInfo_DISCONNECTED,
+				},
+				publisher2,
+			},
+		},
+		{
+			name:     "when switching to publisher, queue is cleared",
+			pi:       publisher1v2,
+			existing: subscriber1v1,
+			expected: []*livekit.ParticipantInfo{publisher1v2},
+			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+				require.Empty(t, rm.batchedUpdates)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+			if tc.existing != nil {
+				// clone the existing value since it can be modified when setting to disconnected
+				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.Identity)] = proto.Clone(tc.existing).(*livekit.ParticipantInfo)
+			}
+			updates := rm.pushAndDequeueUpdates(tc.pi, tc.immediate)
+			require.Equal(t, len(tc.expected), len(updates))
+			for i, item := range tc.expected {
+				requirePIEquals(t, item, updates[i])
+			}
+
+			if tc.validate != nil {
+				tc.validate(t, rm, updates)
 			}
 		})
 	}
