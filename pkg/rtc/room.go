@@ -290,7 +290,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(r.protoRoom, otherParticipants, iceServers, region); err != nil {
+	if err := participant.SendJoinResponse(proto.Clone(r.protoRoom).(*livekit.Room), otherParticipants, iceServers, region); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
