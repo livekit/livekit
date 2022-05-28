@@ -61,7 +61,7 @@ func (d *DownTrackSpreader) Store(ts TrackSender) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	d.downTracks[ts.PeerID()] = ts
+	d.downTracks[ts.SubscriberID()] = ts
 	d.shadowDownTracks()
 }
 

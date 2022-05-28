@@ -381,7 +381,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		return ErrReceiverClosed
 	}
 
-	if w.downTrackSpreader.HasDownTrack(track.PeerID()) {
+	if w.downTrackSpreader.HasDownTrack(track.SubscriberID()) {
 		return ErrDownTrackAlreadyExist
 	}
 

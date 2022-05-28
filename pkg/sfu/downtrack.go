@@ -3,7 +3,6 @@ package sfu
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -30,9 +29,11 @@ type TrackSender interface {
 	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
+	IsClosed() bool
 	// ID is the globally unique identifier for this Track.
 	ID() string
-	PeerID() livekit.ParticipantID
+	SubscriberID() livekit.ParticipantID
+	SubscriberIdentity() livekit.ParticipantIdentity
 }
 
 const (
@@ -57,7 +58,8 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
-	ErrTrackAlreadyBind                  = errors.New("already bind")
+	ErrDownTrackAlreadyBound             = errors.New("already bound")
+	ErrDownTrackClosed                   = errors.New("downtrack closed")
 )
 
 var (
@@ -101,19 +103,25 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // DownTrack implements TrackLocal, is the track used to write packets
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
+// A DownTrack has the following lifecycle
+// - new
+// - bound / unbound
+// - closed
+// once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	logger        logger.Logger
-	id            livekit.TrackID
-	peerID        livekit.ParticipantID
-	bound         atomic.Bool
-	kind          webrtc.RTPCodecType
-	mime          string
-	ssrc          uint32
-	streamID      string
-	maxTrack      int
-	payloadType   uint8
-	sequencer     *sequencer
-	bufferFactory *buffer.Factory
+	logger             logger.Logger
+	id                 livekit.TrackID
+	subscriberIdentity livekit.ParticipantIdentity
+	subscriberID       livekit.ParticipantID
+	bound              atomic.Bool
+	kind               webrtc.RTPCodecType
+	mime               string
+	ssrc               uint32
+	streamID           string
+	maxTrack           int
+	payloadType        uint8
+	sequencer          *sequencer
+	bufferFactory      *buffer.Factory
 
 	forwarder *Forwarder
 
@@ -129,7 +137,7 @@ type DownTrack struct {
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
-	closeOnce               sync.Once
+	isClosed                atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -186,7 +194,8 @@ func NewDownTrack(
 	codecs []webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
-	peerID livekit.ParticipantID,
+	subIdentity livekit.ParticipantIdentity,
+	subID livekit.ParticipantID,
 	mt int,
 	logger logger.Logger,
 ) (*DownTrack, error) {
@@ -201,15 +210,16 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:         logger,
-		id:             r.TrackID(),
-		peerID:         peerID,
-		maxTrack:       mt,
-		streamID:       r.StreamID(),
-		bufferFactory:  bf,
-		receiver:       r,
-		upstreamCodecs: codecs,
-		kind:           kind,
+		logger:             logger,
+		id:                 r.TrackID(),
+		subscriberIdentity: subIdentity,
+		subscriberID:       subID,
+		maxTrack:           mt,
+		streamID:           r.StreamID(),
+		bufferFactory:      bf,
+		receiver:           r,
+		upstreamCodecs:     codecs,
+		kind:               kind,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
@@ -255,8 +265,11 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
+	if d.IsClosed() {
+		return webrtc.RTPCodecParameters{}, ErrDownTrackClosed
+	}
 	if d.bound.Load() {
-		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
+		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
@@ -316,7 +329,9 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
 
-func (d *DownTrack) PeerID() livekit.ParticipantID { return d.peerID }
+func (d *DownTrack) SubscriberIdentity() livekit.ParticipantIdentity { return d.subscriberIdentity }
+
+func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.subscriberID }
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
@@ -349,7 +364,7 @@ func (d *DownTrack) Stop() error {
 	if d.transceiver != nil {
 		return d.transceiver.Stop()
 	}
-	return fmt.Errorf("d.transceiver not exists")
+	return errors.New("downtrack transceiver does not exist")
 }
 
 func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
@@ -613,6 +628,10 @@ func (d *DownTrack) Mute(muted bool) {
 	}
 }
 
+func (d *DownTrack) IsClosed() bool {
+	return d.isClosed.Load()
+}
+
 func (d *DownTrack) Close() {
 	d.CloseWithFlush(true)
 }
@@ -624,50 +643,52 @@ func (d *DownTrack) Close() {
 // 2. in case of session migration, participant migrate from other node, video track should
 //    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
-	if !d.bound.Load() {
+	if d.isClosed.Swap(true) {
+		// already closed
 		return
 	}
-	if d.forwarder != nil {
-		d.forwarder.Mute(true)
+
+	d.logger.Infow("close down track", "flushBlankFrame", flush)
+	if d.bound.Load() {
+		if d.forwarder != nil {
+			d.forwarder.Mute(true)
+		}
+		// write blank frames after disabling so that other frames do not interfere.
+		// Idea here is to send blank key frames to flush the decoder buffer at the remote end.
+		// Otherwise, with transceiver re-use last frame from previous stream is held in the
+		// display buffer and there could be a brief moment where the previous stream is displayed.
+		if flush {
+			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
+
+			// wait a limited time to flush
+			timer := time.NewTimer(flushTimeout)
+			defer timer.Stop()
+
+			select {
+			case <-doneFlushing:
+			case <-timer.C:
+				d.blankFramesGeneration.Inc() // in case flush is still running
+			}
+		}
+
+		d.bound.Store(false)
+		d.logger.Debugw("closing sender", "kind", d.kind)
+		d.receiver.DeleteDownTrack(d.subscriberID)
 	}
 
-	// write blank frames after disabling so that other frames do not interfere.
-	// Idea here is to send blank key frames to flush the decoder buffer at the remote end.
-	// Otherwise, with transceiver re-use last frame from previous stream is held in the
-	// display buffer and there could be a brief moment where the previous stream is displayed.
-	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
-	if flush {
-		doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
+	d.connectionStats.Close()
+	d.rtpStats.Stop()
+	d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
 
-		// wait a limited time to flush
-		timer := time.NewTimer(flushTimeout)
-		defer timer.Stop()
-
-		select {
-		case <-doneFlushing:
-		case <-timer.C:
-			d.blankFramesGeneration.Inc() // in case flush is still running
-		}
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		d.onMaxLayerChanged(d, InvalidLayerSpatial)
 	}
 
-	d.closeOnce.Do(func() {
-		d.logger.Debugw("closing sender", "peerID", d.peerID, "trackID", d.id, "kind", d.kind)
-		d.receiver.DeleteDownTrack(d.peerID)
+	if d.onCloseHandler != nil {
+		d.onCloseHandler()
+	}
 
-		d.connectionStats.Close()
-		d.rtpStats.Stop()
-		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
-
-		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxLayerChanged(d, InvalidLayerSpatial)
-		}
-
-		if d.onCloseHandler != nil {
-			d.onCloseHandler()
-		}
-
-		d.stopKeyFrameRequester()
-	})
+	d.stopKeyFrameRequester()
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -1349,7 +1370,8 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"PeerID":              d.peerID,
+		"SubscriberID":        d.subscriberID,
+		"Subscriber":          d.subscriberIdentity,
 		"TrackID":             d.id,
 		"StreamID":            d.streamID,
 		"SSRC":                d.ssrc,
