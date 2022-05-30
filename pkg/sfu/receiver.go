@@ -49,7 +49,7 @@ type TrackReceiver interface {
 	SetMaxExpectedSpatialLayer(layer int32)
 
 	AddDownTrack(track TrackSender) error
-	DeleteDownTrack(peerID livekit.ParticipantID)
+	DeleteDownTrack(participantID livekit.ParticipantID)
 
 	DebugInfo() map[string]interface{}
 
@@ -63,7 +63,6 @@ type WebRTCReceiver struct {
 	pliThrottleConfig config.PLIThrottleConfig
 	audioConfig       config.AudioConfig
 
-	peerID         livekit.ParticipantID
 	trackID        livekit.TrackID
 	streamID       string
 	kind           webrtc.RTPCodecType
@@ -163,7 +162,6 @@ func WithLoadBalanceThreshold(downTracks int) ReceiverOpts {
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track *webrtc.TrackRemote,
-	pid livekit.ParticipantID,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	twcc *twcc.Responder,
@@ -171,7 +169,6 @@ func NewWebRTCReceiver(
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
 		logger:   logger,
-		peerID:   pid,
 		receiver: receiver,
 		trackID:  livekit.TrackID(track.ID()),
 		streamID: track.StreamID(),
@@ -381,7 +378,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		return ErrReceiverClosed
 	}
 
-	if w.downTrackSpreader.HasDownTrack(track.PeerID()) {
+	if w.downTrackSpreader.HasDownTrack(track.SubscriberID()) {
 		return ErrDownTrackAlreadyExist
 	}
 
@@ -423,12 +420,12 @@ func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 }
 
 // DeleteDownTrack removes a DownTrack from a Receiver
-func (w *WebRTCReceiver) DeleteDownTrack(peerID livekit.ParticipantID) {
+func (w *WebRTCReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	if w.closed.Load() {
 		return
 	}
 
-	w.downTrackSpreader.Free(peerID)
+	w.downTrackSpreader.Free(subscriberID)
 }
 
 func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {

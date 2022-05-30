@@ -144,6 +144,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		codecs,
 		wr,
 		t.params.BufferFactory,
+		sub.Identity(),
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
 		LoggerWithTrack(sub.GetLogger(), trackID),
@@ -309,6 +310,10 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 		}
 
 		if !found {
+			t.params.Logger.Infow("revoking subscription",
+				"subscriber", subTrack.SubscriberIdentity(),
+				"subscriberID", subTrack.SubscriberID(),
+			)
 			go subTrack.DownTrack().Close()
 			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
 		}

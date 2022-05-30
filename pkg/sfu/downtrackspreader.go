@@ -61,23 +61,23 @@ func (d *DownTrackSpreader) Store(ts TrackSender) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	d.downTracks[ts.PeerID()] = ts
+	d.downTracks[ts.SubscriberID()] = ts
 	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) Free(peerID livekit.ParticipantID) {
+func (d *DownTrackSpreader) Free(subscriberID livekit.ParticipantID) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	delete(d.downTracks, peerID)
+	delete(d.downTracks, subscriberID)
 	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
+func (d *DownTrackSpreader) HasDownTrack(subscriberID livekit.ParticipantID) bool {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 
-	_, ok := d.downTracks[peerID]
+	_, ok := d.downTracks[subscriberID]
 	return ok
 }
 
