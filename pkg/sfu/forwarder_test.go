@@ -232,6 +232,35 @@ func TestForwarderAllocate(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 
 	// allocate using bitrates, allocation should choose optimal
+	f.UpTrackLayersChange([]int32{0, 1, 2})
+	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
+	expectedTargetLayers = VideoLayers{
+		Spatial:  1,
+		Temporal: 3,
+	}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: bitrates[1][3],
+		bandwidthDelta:     bitrates[1][3],
+		availableLayers:    []int32{0, 1, 2},
+		bitrates:           bitrates,
+		targetLayers:       expectedTargetLayers,
+		distanceToDesired:  0,
+	}
+	result = f.AllocateOptimal(bitrates)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, InvalidLayers, f.CurrentLayers())
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+
+	// allocate using bitrates above maximum layer
+	f.UpTrackLayersChange([]int32{2})
+	sparseBitrates := Bitrates{
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+		{0, 7, 0, 0},
+	}
 	expectedTargetLayers = VideoLayers{
 		Spatial:  2,
 		Temporal: 1,
@@ -239,14 +268,14 @@ func TestForwarderAllocate(t *testing.T) {
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateOptimal,
 		change:             VideoStreamingChangeNone,
-		bandwidthRequested: bitrates[2][1],
-		bandwidthDelta:     bitrates[2][1],
-		availableLayers:    []int32{0},
-		bitrates:           bitrates,
+		bandwidthRequested: sparseBitrates[2][1],
+		bandwidthDelta:     sparseBitrates[2][1] - bitrates[1][3],
+		availableLayers:    []int32{2},
+		bitrates:           sparseBitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
 	}
-	result = f.AllocateOptimal(bitrates)
+	result = f.AllocateOptimal(sparseBitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
