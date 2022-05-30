@@ -108,19 +108,18 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	logger             logger.Logger
-	id                 livekit.TrackID
-	subscriberIdentity livekit.ParticipantIdentity
-	subscriberID       livekit.ParticipantID
-	bound              atomic.Bool
-	kind               webrtc.RTPCodecType
-	mime               string
-	ssrc               uint32
-	streamID           string
-	maxTrack           int
-	payloadType        uint8
-	sequencer          *sequencer
-	bufferFactory      *buffer.Factory
+	logger        logger.Logger
+	id            livekit.TrackID
+	subscriberID  livekit.ParticipantID
+	bound         atomic.Bool
+	kind          webrtc.RTPCodecType
+	mime          string
+	ssrc          uint32
+	streamID      string
+	maxTrack      int
+	payloadType   uint8
+	sequencer     *sequencer
+	bufferFactory *buffer.Factory
 
 	forwarder *Forwarder
 
