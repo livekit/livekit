@@ -482,6 +482,40 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 				break
 			}
 		}
+
+		if bandwidthRequested == 0 {
+			// if we cannot allocate anything below max layer,
+			// look for a layer above. It is okay to overshoot
+			// in optimal allocation (i. e. no bandwidth restricstions).
+			// It is possible that clients send only a higher layer.
+			// To accommodate cases like that, try finding a layer
+			// above the requested maximum to ensure streaming
+			for s := DefaultMaxLayerSpatial; s >= 0; s-- {
+				for t := DefaultMaxLayerTemporal; t >= 0; t-- {
+					if brs[s][t] == 0 {
+						continue
+					}
+
+					targetLayers = VideoLayers{
+						Spatial:  s,
+						Temporal: t,
+					}
+
+					bandwidthRequested = brs[s][t]
+					state = VideoAllocationStateOptimal
+
+					if f.targetLayers == InvalidLayers {
+						change = VideoStreamingChangeResuming
+					}
+					f.logger.Infow("allowing overshoot", "maxLayer", f.maxLayers, "targetLayers", targetLayers)
+					break
+				}
+
+				if bandwidthRequested != 0 {
+					break
+				}
+			}
+		}
 	}
 
 	if !targetLayers.IsValid() {
