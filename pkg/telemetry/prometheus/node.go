@@ -67,6 +67,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	nackTotalNow := nackTotal.Load()
 	retransmitBytesNow := retransmitBytes.Load()
 	retransmitPacketsNow := retransmitPackets.Load()
+	participantJoinNow := participantJoin.Load()
 
 	updatedAt := time.Now().Unix()
 	elapsed := updatedAt - prevAverage.UpdatedAt
@@ -77,7 +78,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		packetsInNow != prevAverage.PacketsIn ||
 		packetsOutNow != prevAverage.PacketsOut ||
 		retransmitBytesNow != prevAverage.RetransmitBytesOut ||
-		retransmitPacketsNow != prevAverage.RetransmitPacketsOut {
+		retransmitPacketsNow != prevAverage.RetransmitPacketsOut ||
+		participantJoinNow != prevAverage.ParticipantJoin {
 		computeAverage = true
 	}
 
@@ -95,6 +97,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitBytesOut:         retransmitBytesNow,
 		RetransmitPacketsOut:       retransmitPacketsNow,
 		NackTotal:                  nackTotalNow,
+		ParticipantJoin:            participantJoinNow,
 		BytesInPerSec:              prevAverage.BytesInPerSec,
 		BytesOutPerSec:             prevAverage.BytesOutPerSec,
 		PacketsInPerSec:            prevAverage.PacketsInPerSec,
@@ -102,6 +105,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		RetransmitBytesOutPerSec:   prevAverage.RetransmitBytesOutPerSec,
 		RetransmitPacketsOutPerSec: prevAverage.RetransmitPacketsOutPerSec,
 		NackPerSec:                 prevAverage.NackPerSec,
+		ParticipantJoinPerSec:      prevAverage.ParticipantJoinPerSec,
 		NumCpus:                    numCPUs,
 		CpuLoad:                    cpuLoad,
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
@@ -118,6 +122,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitBytesOutPerSec = perSec(prevAverage.RetransmitBytesOut, retransmitBytesNow, elapsed)
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
+		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
 	}
 
 	return stats, computeAverage, nil
