@@ -144,7 +144,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		codecs,
 		wr,
 		t.params.BufferFactory,
-		sub.Identity(),
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
 		LoggerWithTrack(sub.GetLogger(), trackID),

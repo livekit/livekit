@@ -33,7 +33,6 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SubscriberID() livekit.ParticipantID
-	SubscriberIdentity() livekit.ParticipantIdentity
 }
 
 const (
@@ -194,7 +193,6 @@ func NewDownTrack(
 	codecs []webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
-	subIdentity livekit.ParticipantIdentity,
 	subID livekit.ParticipantID,
 	mt int,
 	logger logger.Logger,
@@ -210,16 +208,15 @@ func NewDownTrack(
 	}
 
 	d := &DownTrack{
-		logger:             logger,
-		id:                 r.TrackID(),
-		subscriberIdentity: subIdentity,
-		subscriberID:       subID,
-		maxTrack:           mt,
-		streamID:           r.StreamID(),
-		bufferFactory:      bf,
-		receiver:           r,
-		upstreamCodecs:     codecs,
-		kind:               kind,
+		logger:         logger,
+		id:             r.TrackID(),
+		subscriberID:   subID,
+		maxTrack:       mt,
+		streamID:       r.StreamID(),
+		bufferFactory:  bf,
+		receiver:       r,
+		upstreamCodecs: codecs,
+		kind:           kind,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
@@ -328,8 +325,6 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
-
-func (d *DownTrack) SubscriberIdentity() livekit.ParticipantIdentity { return d.subscriberIdentity }
 
 func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.subscriberID }
 
@@ -1371,7 +1366,6 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 
 	return map[string]interface{}{
 		"SubscriberID":        d.subscriberID,
-		"Subscriber":          d.subscriberIdentity,
 		"TrackID":             d.id,
 		"StreamID":            d.streamID,
 		"SSRC":                d.ssrc,
