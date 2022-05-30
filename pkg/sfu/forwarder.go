@@ -507,6 +507,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 					if f.targetLayers == InvalidLayers {
 						change = VideoStreamingChangeResuming
 					}
+					f.logger.Infow("allowing overshoot", "maxLayer", f.maxLayers, "targetLayers", targetLayers)
 					break
 				}
 
