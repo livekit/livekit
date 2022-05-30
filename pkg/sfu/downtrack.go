@@ -216,6 +216,7 @@ func NewDownTrack(
 		receiver:       r,
 		upstreamCodecs: codecs,
 		kind:           kind,
+		codec:          codecs[0],
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
