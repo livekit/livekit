@@ -307,7 +307,13 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
-		participant.Negotiate()
+		var needNegotiation bool
+		if participant.ProtocolVersion().SupportFastStart() {
+			needNegotiation = r.subscribeToExistingTracks(participant) == 0
+		}
+		if needNegotiation {
+			participant.Negotiate()
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
