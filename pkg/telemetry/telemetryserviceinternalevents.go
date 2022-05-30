@@ -52,6 +52,8 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 	clientInfo *livekit.ClientInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
 ) {
+	prometheus.IncrementParticipantJoin(1)
+
 	newWorker := newStatsWorker(
 		ctx,
 		t,

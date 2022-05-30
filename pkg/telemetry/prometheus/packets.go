@@ -22,14 +22,16 @@ var (
 	nackTotal         atomic.Uint64
 	retransmitBytes   atomic.Uint64
 	retransmitPackets atomic.Uint64
+	participantJoin   atomic.Uint64
 
-	promPacketLabels = []string{"direction", "transmission"}
-	promPacketTotal  *prometheus.CounterVec
-	promPacketBytes  *prometheus.CounterVec
-	promRTCPLabels   = []string{"direction"}
-	promNackTotal    *prometheus.CounterVec
-	promPliTotal     *prometheus.CounterVec
-	promFirTotal     *prometheus.CounterVec
+	promPacketLabels    = []string{"direction", "transmission"}
+	promPacketTotal     *prometheus.CounterVec
+	promPacketBytes     *prometheus.CounterVec
+	promRTCPLabels      = []string{"direction"}
+	promNackTotal       *prometheus.CounterVec
+	promPliTotal        *prometheus.CounterVec
+	promFirTotal        *prometheus.CounterVec
+	promParticipantJoin *prometheus.CounterVec
 )
 
 func initPacketStats(nodeID string) {
@@ -63,12 +65,19 @@ func initPacketStats(nodeID string) {
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	}, promRTCPLabels)
+	promParticipantJoin = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "participant_join",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, nil)
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
+	prometheus.MustRegister(promParticipantJoin)
 }
 
 func IncrementPackets(direction Direction, count uint64, retransmit bool) {
@@ -111,6 +120,13 @@ func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	}
 	if fir > 0 {
 		promFirTotal.WithLabelValues(string(direction)).Add(float64(fir))
+	}
+}
+
+func IncrementParticipantJoin(join uint32) {
+	if join > 0 {
+		promParticipantJoin.WithLabelValues().Add(float64(join))
+		participantJoin.Add(uint64(join))
 	}
 }
 
