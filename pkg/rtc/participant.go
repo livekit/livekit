@@ -855,12 +855,12 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	onSubscribedTo := p.onSubscribedTo
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	settings := p.subscribedTracksSettings[subTrack.ID()]
-	if p.firstConnected.Load() {
-		subTrack.DownTrack().SetConnected()
-	}
 	p.lock.Unlock()
 
 	subTrack.OnBind(func() {
+		if p.firstConnected.Load() {
+			subTrack.DownTrack().SetConnected()
+		}
 		p.subscriber.AddTrack(subTrack)
 	})
 

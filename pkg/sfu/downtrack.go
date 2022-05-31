@@ -1154,12 +1154,10 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 }
 
 func (d *DownTrack) SetConnected() {
-	if d.bound.Load() {
-		if !d.connected.Swap(true) {
-			targetLayers := d.forwarder.TargetLayers()
-			if targetLayers != InvalidLayers {
-				d.receiver.SendPLI(targetLayers.Spatial, true)
-			}
+	if !d.connected.Swap(true) && d.bound.Load() {
+		targetLayers := d.forwarder.TargetLayers()
+		if targetLayers != InvalidLayers {
+			d.receiver.SendPLI(targetLayers.Spatial, true)
 		}
 	}
 }
