@@ -78,8 +78,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		packetsInNow != prevAverage.PacketsIn ||
 		packetsOutNow != prevAverage.PacketsOut ||
 		retransmitBytesNow != prevAverage.RetransmitBytesOut ||
-		retransmitPacketsNow != prevAverage.RetransmitPacketsOut ||
-		participantJoinNow != prevAverage.ParticipantJoin {
+		retransmitPacketsNow != prevAverage.RetransmitPacketsOut {
 		computeAverage = true
 	}
 
