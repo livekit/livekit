@@ -136,6 +136,7 @@ type DownTrack struct {
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
+	firstDownstreamPLISent  bool
 
 	rtpStats *buffer.RTPStats
 
@@ -398,7 +399,7 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	defer ticker.Stop()
 	for {
 		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
-		d.receiver.SendPLI(layer)
+		d.receiver.SendPLI(layer, false)
 		d.rtpStats.UpdateLayerLockPliAndTime(1)
 
 		<-ticker.C
@@ -480,7 +481,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 				d.stopKeyFrameRequester()
 			}
 
-			// too much log for switching target layer, only log key frame
 			if !tp.switchingToTargetLayer {
 				d.logger.Debugw("forwarding key frame", "layer", layer)
 			}
@@ -1065,7 +1065,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial)
+				d.receiver.SendPLI(targetLayers.Spatial, !d.firstDownstreamPLISent)
+				d.firstDownstreamPLISent = true
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false

@@ -312,9 +312,9 @@ func (b *Buffer) SetPLIThrottle(duration int64) {
 	b.pliThrottle = duration
 }
 
-func (b *Buffer) SendPLI() {
+func (b *Buffer) SendPLI(force bool) {
 	b.RLock()
-	if b.rtpStats == nil || b.rtpStats.TimeSinceLastPli() < b.pliThrottle {
+	if (b.rtpStats == nil || b.rtpStats.TimeSinceLastPli() < b.pliThrottle) && !force {
 		b.RUnlock()
 		return
 	}
@@ -322,7 +322,7 @@ func (b *Buffer) SendPLI() {
 	b.rtpStats.UpdatePliAndTime(1)
 	b.RUnlock()
 
-	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC)
+	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC, "force", force)
 	pli := []rtcp.Packet{
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}
