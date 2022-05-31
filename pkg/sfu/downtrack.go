@@ -136,7 +136,7 @@ type DownTrack struct {
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
-	firstDownstreamPLISent  bool
+	// firstDownstreamPLISent  bool
 
 	rtpStats *buffer.RTPStats
 
@@ -1065,8 +1065,8 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial, !d.firstDownstreamPLISent)
-				d.firstDownstreamPLISent = true
+				d.receiver.SendPLI(targetLayers.Spatial, false)
+				// d.firstDownstreamPLISent = true
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1148,6 +1148,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		if d.onRttUpdate != nil {
 			d.onRttUpdate(d, rttToReport)
+		}
+	}
+}
+
+func (d *DownTrack) ForcePLI() {
+	if d.bound.Load() {
+		targetLayers := d.forwarder.TargetLayers()
+		if targetLayers != InvalidLayers {
+			d.receiver.SendPLI(targetLayers.Spatial, true)
 		}
 	}
 }
