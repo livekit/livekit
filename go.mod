@@ -33,6 +33,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rs/cors v1.8.2
+	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
 	github.com/stretchr/testify v1.7.1
 	github.com/thoas/go-funk v0.8.0
@@ -45,6 +46,8 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0
 )
+
+require github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

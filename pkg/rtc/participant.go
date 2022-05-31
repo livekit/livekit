@@ -672,9 +672,9 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 	return nil
 }
 
-func (p *ParticipantImpl) Negotiate() {
+func (p *ParticipantImpl) Negotiate(force bool) {
 	if p.MigrateState() != types.MigrateStateInit {
-		p.subscriber.Negotiate()
+		p.subscriber.Negotiate(force)
 	}
 }
 

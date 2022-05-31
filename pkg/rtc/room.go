@@ -14,6 +14,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -36,7 +38,7 @@ type broadcastOptions struct {
 }
 
 type Room struct {
-	lock sync.RWMutex
+	lock deadlock.RWMutex
 
 	protoRoom *livekit.Room
 	Logger    logger.Logger
@@ -307,12 +309,13 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
-		var needNegotiation bool
 		if participant.ProtocolVersion().SupportFastStart() {
-			needNegotiation = r.subscribeToExistingTracks(participant) == 0
-		}
-		if needNegotiation {
-			participant.Negotiate()
+			go func() {
+				r.subscribeToExistingTracks(participant)
+				participant.Negotiate(true)
+			}()
+		} else {
+			participant.Negotiate(true)
 		}
 	}
 
@@ -468,7 +471,7 @@ func (r *Room) SetParticipantPermission(participant types.LocalParticipant, perm
 			if r.subscribeToExistingTracks(participant) == 0 {
 				// start negotiating even if there are other media tracks to subscribe
 				// we'll need to set the participant up to receive data
-				participant.Negotiate()
+				participant.Negotiate(false)
 			}
 		}
 	}
