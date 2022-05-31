@@ -28,9 +28,9 @@ type telemetryServiceInternal struct {
 	webhookPool *workerpool.WorkerPool
 
 	// one worker per participant
-	workersMu  sync.RWMutex
-	workers    []*StatsWorker
-	workersIdx map[livekit.ParticipantID]int
+	workersMu     sync.RWMutex
+	workers       map[livekit.ParticipantID]*StatsWorker
+	workersShadow map[livekit.ParticipantID]*StatsWorker
 
 	analytics AnalyticsService
 }
@@ -39,7 +39,7 @@ func NewTelemetryServiceInternal(notifier webhook.Notifier, analytics AnalyticsS
 	return &telemetryServiceInternal{
 		notifier:    notifier,
 		webhookPool: workerpool.New(maxWebhookWorkers),
-		workersIdx:  make(map[livekit.ParticipantID]int),
+		workers:     make(map[livekit.ParticipantID]*StatsWorker),
 		analytics:   analytics,
 	}
 }
@@ -93,13 +93,11 @@ func (t *telemetryServiceInternal) Report(ctx context.Context, stats []*livekit.
 
 func (t *telemetryServiceInternal) SendAnalytics() {
 	t.workersMu.RLock()
-	workers := t.workers
+	workers := t.workersShadow
 	t.workersMu.RUnlock()
 
 	for _, worker := range workers {
-		if worker != nil {
-			worker.Update()
-		}
+		worker.Update()
 	}
 }
 
@@ -107,8 +105,8 @@ func (t *telemetryServiceInternal) getStatsWorker(participantID livekit.Particip
 	t.workersMu.RLock()
 	defer t.workersMu.RUnlock()
 
-	if idx, ok := t.workersIdx[participantID]; ok {
-		return t.workers[idx]
+	if worker, ok := t.workersShadow[participantID]; ok {
+		return worker
 	}
 
 	return nil
