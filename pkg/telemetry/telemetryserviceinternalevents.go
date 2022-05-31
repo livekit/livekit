@@ -54,30 +54,19 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 ) {
 	prometheus.IncrementParticipantJoin(1)
 
-	newWorker := newStatsWorker(
-		ctx,
-		t,
-		livekit.RoomID(room.Sid),
-		livekit.RoomName(room.Name),
-		livekit.ParticipantID(participant.Sid),
-		livekit.ParticipantIdentity(participant.Identity),
-	)
 	t.workersMu.Lock()
-	var free = false
-	for idx, worker := range t.workers {
-		if worker != nil {
-			continue
-		}
+	if _, ok := t.workers[livekit.ParticipantID(participant.Sid)]; !ok {
+		newWorker := newStatsWorker(
+			ctx,
+			t,
+			livekit.RoomID(room.Sid),
+			livekit.RoomName(room.Name),
+			livekit.ParticipantID(participant.Sid),
+			livekit.ParticipantIdentity(participant.Identity),
+		)
+		t.workers[livekit.ParticipantID(participant.Sid)] = newWorker
 
-		free = true
-		t.workersIdx[livekit.ParticipantID(participant.Sid)] = idx
-		t.workers[idx] = newWorker
-		break
-	}
-
-	if !free {
-		t.workersIdx[livekit.ParticipantID(participant.Sid)] = len(t.workers)
-		t.workers = append(t.workers, newWorker)
+		t.shadowWorkersLocked()
 	}
 	t.workersMu.Unlock()
 
@@ -120,9 +109,10 @@ func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *li
 	}
 
 	t.workersMu.Lock()
-	if idx, ok := t.workersIdx[livekit.ParticipantID(participant.Sid)]; ok {
-		delete(t.workersIdx, livekit.ParticipantID(participant.Sid))
-		t.workers[idx] = nil
+	if _, ok := t.workers[livekit.ParticipantID(participant.Sid)]; ok {
+		delete(t.workers, livekit.ParticipantID(participant.Sid))
+
+		t.shadowWorkersLocked()
 	}
 	t.workersMu.Unlock()
 
@@ -339,4 +329,11 @@ func (t *telemetryServiceInternal) EgressEnded(ctx context.Context, info *liveki
 		EgressId:  info.EgressId,
 		RoomId:    info.RoomId,
 	})
+}
+
+func (t *telemetryServiceInternal) shadowWorkersLocked() {
+	t.workersShadow = make(map[livekit.ParticipantID]*StatsWorker, len(t.workers))
+	for pID, worker := range t.workers {
+		t.workersShadow[pID] = worker
+	}
 }
