@@ -1355,15 +1355,31 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		SubscribedQualities: subscribedQualities[0].Qualities, // for compatible with old client
 		SubscribedCodecs:    subscribedQualities,
 	}
+	// get track's layer dimensions
+	track := p.UpTrackManager.GetPublishedTrack(trackID)
+	var layerInfo map[livekit.VideoQuality]*livekit.VideoLayer
+	if track != nil {
+		layers := track.ToProto().Layers
+		layerInfo = make(map[livekit.VideoQuality]*livekit.VideoLayer, len(layers))
+		for _, layer := range layers {
+			layerInfo[layer.Quality] = layer
+		}
+	}
 
 	for _, maxSubscribedQuality := range maxSubscribedQualites {
+		ti := &livekit.TrackInfo{
+			Sid:  string(trackID),
+			Type: livekit.TrackType_VIDEO,
+		}
+		if info, ok := layerInfo[maxSubscribedQuality.Quality]; ok {
+			ti.Width = info.Width
+			ti.Height = info.Height
+		}
+
 		p.params.Telemetry.TrackMaxSubscribedVideoQuality(
 			context.Background(),
 			p.ID(),
-			&livekit.TrackInfo{
-				Sid:  string(trackID),
-				Type: livekit.TrackType_VIDEO,
-			},
+			ti,
 			maxSubscribedQuality.CodecMime,
 			maxSubscribedQuality.Quality,
 		)
