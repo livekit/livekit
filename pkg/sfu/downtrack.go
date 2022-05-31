@@ -136,7 +136,7 @@ type DownTrack struct {
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
-	// firstDownstreamPLISent  bool
+	connected               atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -398,9 +398,11 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
-		d.receiver.SendPLI(layer, false)
-		d.rtpStats.UpdateLayerLockPliAndTime(1)
+		if d.connected.Load() {
+			d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
+			d.receiver.SendPLI(layer, false)
+			d.rtpStats.UpdateLayerLockPliAndTime(1)
+		}
 
 		<-ticker.C
 
@@ -1066,7 +1068,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
 				d.receiver.SendPLI(targetLayers.Spatial, false)
-				// d.firstDownstreamPLISent = true
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1152,11 +1153,13 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	}
 }
 
-func (d *DownTrack) ForcePLI() {
+func (d *DownTrack) SetConnected() {
 	if d.bound.Load() {
-		targetLayers := d.forwarder.TargetLayers()
-		if targetLayers != InvalidLayers {
-			d.receiver.SendPLI(targetLayers.Spatial, true)
+		if !d.connected.Swap(true) {
+			targetLayers := d.forwarder.TargetLayers()
+			if targetLayers != InvalidLayers {
+				d.receiver.SendPLI(targetLayers.Spatial, true)
+			}
 		}
 	}
 }

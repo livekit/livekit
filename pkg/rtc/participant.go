@@ -855,6 +855,9 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	onSubscribedTo := p.onSubscribedTo
 	p.subscribedTracks[subTrack.ID()] = subTrack
 	settings := p.subscribedTracksSettings[subTrack.ID()]
+	if p.firstConnected.Load() {
+		subTrack.DownTrack().SetConnected()
+	}
 	p.lock.Unlock()
 
 	subTrack.OnBind(func() {
@@ -1793,7 +1796,7 @@ func (p *ParticipantImpl) forcePliForSubscribedTracks() {
 
 	for _, t := range p.subscribedTracks {
 		if dt := t.DownTrack(); dt != nil && dt.Kind() == webrtc.RTPCodecTypeVideo {
-			dt.ForcePLI()
+			dt.SetConnected()
 		}
 	}
 }
