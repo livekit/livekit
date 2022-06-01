@@ -1119,7 +1119,7 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
 		if !p.firstConnected.Swap(true) {
-			p.forcePliForSubscribedTracks()
+			p.setDowntracksConnected()
 		}
 		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
@@ -1790,7 +1790,7 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 	}
 }
 
-func (p *ParticipantImpl) forcePliForSubscribedTracks() {
+func (p *ParticipantImpl) setDowntracksConnected() {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
