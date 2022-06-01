@@ -1795,7 +1795,7 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 	defer p.lock.RUnlock()
 
 	for _, t := range p.subscribedTracks {
-		if dt := t.DownTrack(); dt != nil && dt.Kind() == webrtc.RTPCodecTypeVideo {
+		if dt := t.DownTrack(); dt != nil {
 			dt.SetConnected()
 		}
 	}

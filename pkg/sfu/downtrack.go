@@ -1154,7 +1154,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 }
 
 func (d *DownTrack) SetConnected() {
-	if !d.connected.Swap(true) && d.bound.Load() {
+	if !d.connected.Swap(true) && d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo {
 		targetLayers := d.forwarder.TargetLayers()
 		if targetLayers != InvalidLayers {
 			d.receiver.SendPLI(targetLayers.Spatial, true)
