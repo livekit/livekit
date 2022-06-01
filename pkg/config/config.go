@@ -193,6 +193,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		Port: 7880,
 		RTC: RTCConfig{
 			UseExternalIP:     false,
+			UseICELite:        true,
 			TCPPort:           7881,
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
