@@ -126,9 +126,6 @@ type LocalParticipant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
-
-	// Negotiate subscriber SDP with client, if force is true, will cencel pending
-	// negotiate task and negotiate immediately
 	Negotiate(force bool)
 	ICERestart() error
 	AddSubscribedTrack(st SubscribedTrack)

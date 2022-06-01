@@ -673,6 +673,8 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 	return nil
 }
 
+// Negotiate subscriber SDP with client, if force is true, will cencel pending
+// negotiate task and negotiate immediately
 func (p *ParticipantImpl) Negotiate(force bool) {
 	if p.MigrateState() != types.MigrateStateInit {
 		p.subscriber.Negotiate(force)
