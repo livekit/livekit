@@ -188,6 +188,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			)
 		}
 
+		newWR.OnMaxLayerChange(t.OnMaxLayerChange)
+
 		t.buffer = buff
 
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority, mid)
@@ -233,4 +235,18 @@ func (t *MediaTrack) SetRTT(rtt uint32) {
 
 func (t *MediaTrack) HasPendingCodec() bool {
 	return len(t.params.TrackInfo.Codecs) > len(t.Receivers())
+}
+
+func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {
+	ti := &livekit.TrackInfo{
+		Sid:  t.trackInfo.Sid,
+		Type: t.trackInfo.Type,
+	}
+
+	if layer, ok := t.MediaTrackReceiver.layerDimensions[livekit.VideoQuality(maxLayer)]; ok {
+		ti.Layers = []*livekit.VideoLayer{{Quality: livekit.VideoQuality(maxLayer), Width: layer.Width, Height: layer.Height}}
+	} else if maxLayer == -1 {
+		ti.Layers = []*livekit.VideoLayer{{Quality: livekit.VideoQuality_OFF}}
+	}
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
 }
