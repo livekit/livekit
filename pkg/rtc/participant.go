@@ -528,7 +528,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		p.isPublisher.Store(p.CanPublish())
 		// trigger update as well if participant is already fully connected
 		if p.State() == livekit.ParticipantInfo_ACTIVE && onParticipantUpdate != nil {
-			go onParticipantUpdate(p)
+			onParticipantUpdate(p)
 		}
 	}
 
@@ -1062,7 +1062,7 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		onTrackUpdated := p.onTrackUpdated
 		p.lock.RUnlock()
 		if onTrackUpdated != nil {
-			go onTrackUpdated(p, publishedTrack)
+			onTrackUpdated(p, publishedTrack)
 		}
 	}
 }
@@ -1590,8 +1590,8 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 
-	if onTrackPublished := p.onTrackPublished; onTrackPublished != nil {
-		go onTrackPublished(p, track)
+	if p.onTrackPublished != nil {
+		p.onTrackPublished(p, track)
 	}
 }
 
