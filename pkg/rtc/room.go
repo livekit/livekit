@@ -14,8 +14,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/sasha-s/go-deadlock"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -38,7 +36,7 @@ type broadcastOptions struct {
 }
 
 type Room struct {
-	lock deadlock.RWMutex
+	lock sync.RWMutex
 
 	protoRoom *livekit.Room
 	Logger    logger.Logger
