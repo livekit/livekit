@@ -97,6 +97,9 @@ type WebRTCReceiver struct {
 
 	// update stats
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
+
+	// update layer info
+	onMaxLayerChange func(maxLayer int32)
 }
 
 func RidToLayer(rid string) int32 {
@@ -182,6 +185,7 @@ func NewWebRTCReceiver(
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
+	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
@@ -257,6 +261,10 @@ func (w *WebRTCReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
 	w.onStatsUpdate = fn
+}
+
+func (w *WebRTCReceiver) OnMaxLayerChange(fn func(maxLayer int32)) {
+	w.streamTrackerManager.OnMaxLayerChanged(fn)
 }
 
 func (w *WebRTCReceiver) GetConnectionScore() float32 {
