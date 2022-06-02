@@ -43,7 +43,7 @@ type TrackReceiver interface {
 
 	GetAudioLevel() (float64, bool)
 
-	SendPLI(layer int32)
+	SendPLI(layer int32, force bool)
 
 	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
@@ -440,14 +440,14 @@ func (w *WebRTCReceiver) sendRTCP(packets []rtcp.Packet) {
 	}
 }
 
-func (w *WebRTCReceiver) SendPLI(layer int32) {
+func (w *WebRTCReceiver) SendPLI(layer int32, force bool) {
 	// TODO :  should send LRR (Layer Refresh Request) instead of PLI
 	buff := w.getBuffer(layer)
 	if buff == nil {
 		return
 	}
 
-	buff.SendPLI()
+	buff.SendPLI(force)
 }
 
 func (w *WebRTCReceiver) SetRTCPCh(ch chan []rtcp.Packet) {

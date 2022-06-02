@@ -134,7 +134,8 @@ type ParticipantImpl struct {
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
 
-	activeCounter atomic.Int32
+	activeCounter  atomic.Int32
+	firstConnected atomic.Bool
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -672,9 +673,11 @@ func (p *ParticipantImpl) Close(sendLeave bool) error {
 	return nil
 }
 
-func (p *ParticipantImpl) Negotiate() {
+// Negotiate subscriber SDP with client, if force is true, will cencel pending
+// negotiate task and negotiate immediately
+func (p *ParticipantImpl) Negotiate(force bool) {
 	if p.MigrateState() != types.MigrateStateInit {
-		p.subscriber.Negotiate()
+		p.subscriber.Negotiate(force)
 	}
 }
 
@@ -857,6 +860,9 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.lock.Unlock()
 
 	subTrack.OnBind(func() {
+		if p.firstConnected.Load() {
+			subTrack.DownTrack().SetConnected()
+		}
 		p.subscriber.AddTrack(subTrack)
 	})
 
@@ -1114,6 +1120,9 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
+		if !p.firstConnected.Swap(true) {
+			p.setDowntracksConnected()
+		}
 		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
 		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
 			p.SetMigrateState(types.MigrateStateComplete)
@@ -1796,5 +1805,16 @@ func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 	case p.rtcpCh <- pkts:
 	default:
 		p.params.Logger.Warnw("rtcp channel full", nil)
+	}
+}
+
+func (p *ParticipantImpl) setDowntracksConnected() {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	for _, t := range p.subscribedTracks {
+		if dt := t.DownTrack(); dt != nil {
+			dt.SetConnected()
+		}
 	}
 }

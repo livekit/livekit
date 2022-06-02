@@ -307,7 +307,14 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 	if participant.SubscriberAsPrimary() {
 		// initiates sub connection as primary
-		participant.Negotiate()
+		if participant.ProtocolVersion().SupportFastStart() {
+			go func() {
+				r.subscribeToExistingTracks(participant)
+				participant.Negotiate(true)
+			}()
+		} else {
+			participant.Negotiate(true)
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
@@ -462,7 +469,7 @@ func (r *Room) SetParticipantPermission(participant types.LocalParticipant, perm
 			if r.subscribeToExistingTracks(participant) == 0 {
 				// start negotiating even if there are other media tracks to subscribe
 				// we'll need to set the participant up to receive data
-				participant.Negotiate()
+				participant.Negotiate(false)
 			}
 		}
 	}

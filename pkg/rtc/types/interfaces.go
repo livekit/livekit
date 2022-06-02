@@ -126,7 +126,7 @@ type LocalParticipant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
-	Negotiate()
+	Negotiate(force bool)
 	ICERestart() error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)

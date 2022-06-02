@@ -281,7 +281,7 @@ func (c *RTCClient) Run() error {
 			// if publish only, negotiate
 			if !msg.Join.SubscriberPrimary {
 				c.publisherNegotiated.Store(true)
-				c.publisher.Negotiate()
+				c.publisher.Negotiate(false)
 			}
 
 			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
@@ -342,7 +342,7 @@ func (c *RTCClient) Run() error {
 				if err := c.publisher.PeerConnection().RemoveTrack(sender); err != nil {
 					logger.Errorw("Could not unpublish track", err)
 				}
-				c.publisher.Negotiate()
+				c.publisher.Negotiate(false)
 			}
 			delete(c.trackSenders, sid)
 			delete(c.localTracks, sid)
@@ -502,7 +502,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	}
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
-	c.publisher.Negotiate()
+	c.publisher.Negotiate(false)
 	writer = NewTrackWriter(c.ctx, track, path)
 
 	// write tracks only after ICE connectivity
@@ -604,7 +604,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 
 	if c.publisher.PeerConnection().ConnectionState() == webrtc.PeerConnectionStateNew {
 		// start negotiating
-		c.publisher.Negotiate()
+		c.publisher.Negotiate(false)
 	}
 
 	dcOpen := atomic.NewBool(false)

@@ -245,7 +245,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
 		sub.AddSubscribedTrack(subTrack)
-		sub.Negotiate()
+		sub.Negotiate(false)
 	}()
 
 	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto(),
@@ -708,5 +708,5 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	}
 
 	sub.RemoveSubscribedTrack(subTrack)
-	sub.Negotiate()
+	sub.Negotiate(false)
 }

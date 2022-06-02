@@ -136,6 +136,7 @@ type DownTrack struct {
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
 	isClosed                atomic.Bool
+	connected               atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -397,9 +398,11 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
-		d.receiver.SendPLI(layer)
-		d.rtpStats.UpdateLayerLockPliAndTime(1)
+		if d.connected.Load() {
+			d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
+			d.receiver.SendPLI(layer, false)
+			d.rtpStats.UpdateLayerLockPliAndTime(1)
+		}
 
 		<-ticker.C
 
@@ -480,7 +483,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 				d.stopKeyFrameRequester()
 			}
 
-			// too much log for switching target layer, only log key frame
 			if !tp.switchingToTargetLayer {
 				d.logger.Debugw("forwarding key frame", "layer", layer)
 			}
@@ -1065,7 +1067,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial)
+				d.receiver.SendPLI(targetLayers.Spatial, false)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1147,6 +1149,17 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		if d.onRttUpdate != nil {
 			d.onRttUpdate(d, rttToReport)
+		}
+	}
+}
+
+func (d *DownTrack) SetConnected() {
+	if !d.connected.Swap(true) {
+		if d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo {
+			targetLayers := d.forwarder.TargetLayers()
+			if targetLayers != InvalidLayers {
+				d.receiver.SendPLI(targetLayers.Spatial, true)
+			}
 		}
 	}
 }

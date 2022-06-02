@@ -288,12 +288,21 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
 }
 
-func (t *PCTransport) Negotiate() {
-	t.debouncedNegotiate(func() {
+func (t *PCTransport) Negotiate(force bool) {
+	if force {
+		t.debouncedNegotiate(func() {
+			// no op to cancel pending negotiation
+		})
 		if err := t.CreateAndSendOffer(nil); err != nil {
 			t.logger.Errorw("could not negotiate", err)
 		}
-	})
+	} else {
+		t.debouncedNegotiate(func() {
+			if err := t.CreateAndSendOffer(nil); err != nil {
+				t.logger.Errorw("could not negotiate", err)
+			}
+		})
+	}
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {

@@ -308,9 +308,10 @@ type FakeLocalParticipant struct {
 	migrateStateReturnsOnCall map[int]struct {
 		result1 types.MigrateState
 	}
-	NegotiateStub        func()
+	NegotiateStub        func(bool)
 	negotiateMutex       sync.RWMutex
 	negotiateArgsForCall []struct {
+		arg1 bool
 	}
 	OnClaimsChangedStub        func(func(types.LocalParticipant))
 	onClaimsChangedMutex       sync.RWMutex
@@ -2190,15 +2191,16 @@ func (fake *FakeLocalParticipant) MigrateStateReturnsOnCall(i int, result1 types
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) Negotiate() {
+func (fake *FakeLocalParticipant) Negotiate(arg1 bool) {
 	fake.negotiateMutex.Lock()
 	fake.negotiateArgsForCall = append(fake.negotiateArgsForCall, struct {
-	}{})
+		arg1 bool
+	}{arg1})
 	stub := fake.NegotiateStub
-	fake.recordInvocation("Negotiate", []interface{}{})
+	fake.recordInvocation("Negotiate", []interface{}{arg1})
 	fake.negotiateMutex.Unlock()
 	if stub != nil {
-		fake.NegotiateStub()
+		fake.NegotiateStub(arg1)
 	}
 }
 
@@ -2208,10 +2210,17 @@ func (fake *FakeLocalParticipant) NegotiateCallCount() int {
 	return len(fake.negotiateArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) NegotiateCalls(stub func()) {
+func (fake *FakeLocalParticipant) NegotiateCalls(stub func(bool)) {
 	fake.negotiateMutex.Lock()
 	defer fake.negotiateMutex.Unlock()
 	fake.NegotiateStub = stub
+}
+
+func (fake *FakeLocalParticipant) NegotiateArgsForCall(i int) bool {
+	fake.negotiateMutex.RLock()
+	defer fake.negotiateMutex.RUnlock()
+	argsForCall := fake.negotiateArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) OnClaimsChanged(arg1 func(types.LocalParticipant)) {
