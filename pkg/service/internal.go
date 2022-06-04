@@ -16,8 +16,8 @@ type RequestInternalToken struct {
     KIdentity string `json:"k_identity,omitempty"`
     KnownAs   string `json:"known_as,omitempty"`
 
-    InternalKey    string `json:"key"`
-    InternalSecret string `json:"secret"`
+    InternalKey    string `json:"key,omitempty"`
+    InternalSecret string `json:"secret,omitempty"`
 }
 
 type ResultInternalToken struct {
@@ -71,7 +71,7 @@ type ResultInternalTrack struct {
 }
 
 type ResultInternalTracks struct {
-    Tracks []ResultInternalTrack `json:"tracks"`
+    Tracks []ResultInternalTrack `json:"tracks,omitempty"`
 }
 
 func (s *LivekitServer) internalTracks(w http.ResponseWriter, r *http.Request) {
