@@ -11,10 +11,10 @@ import (
 )
 
 type RequestInternalToken struct {
-    Method       string `json:"kind,omitempty"`
-    CallKey      string `json:"call_key,omitempty"`
-    NameCalled   string `json:"name_called,omitempty"`
-    NameIdentity string `json:"name_identity,omitempty"`
+    Method    string `json:"kind,omitempty"`
+    KCall     string `json:"k_call,omitempty"`
+    KIdentity string `json:"k_identity,omitempty"`
+    KnownAs   string `json:"known_as,omitempty"`
 
     InternalKey    string `json:"key"`
     InternalSecret string `json:"secret"`
@@ -33,7 +33,7 @@ func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
         return
     }
     grant := auth.VideoGrant{}
-    grant.Room = req.CallKey
+    grant.Room = req.KCall
     grant.RoomJoin = true
     at := auth.NewAccessToken(req.InternalKey, req.InternalSecret)
     switch req.Method {
@@ -41,7 +41,7 @@ func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
         grant.RoomCreate = true
     case "invite":
     }
-    at.AddGrant(&grant).SetIdentity(req.NameIdentity).SetName(req.NameCalled).SetMetadata("metadata" + req.NameIdentity).SetValidFor(time.Hour)
+    at.AddGrant(&grant).SetIdentity(req.KIdentity).SetName(req.KnownAs).SetMetadata("metadata" + req.KIdentity).SetValidFor(time.Hour)
     t, err := at.ToJWT()
     if err != nil {
         w.WriteHeader(http.StatusNotAcceptable)
@@ -61,8 +61,8 @@ func (s *LivekitServer) internalToken(w http.ResponseWriter, r *http.Request) {
 }
 
 type RequestInternalTracks struct {
-    CallKey      livekit.RoomName            `json:"call_key,omitempty"`
-    NameIdentity livekit.ParticipantIdentity `json:"name_identity,omitempty"`
+    KCall     livekit.RoomName            `json:"k_call,omitempty"`
+    KIdentity livekit.ParticipantIdentity `json:"k_identity,omitempty"`
 }
 
 type ResultInternalTrack struct {
@@ -81,7 +81,7 @@ func (s *LivekitServer) internalTracks(w http.ResponseWriter, r *http.Request) {
         w.WriteHeader(http.StatusNotAcceptable)
         return
     }
-    participant, err := s.roomManager.roomStore.LoadParticipant(context.Background(), req.CallKey, req.NameIdentity)
+    participant, err := s.roomManager.roomStore.LoadParticipant(context.Background(), req.KCall, req.KIdentity)
     if err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         return
@@ -101,12 +101,12 @@ func (s *LivekitServer) internalTracks(w http.ResponseWriter, r *http.Request) {
 }
 
 type RequestInternalPlayers struct {
-    CallKey livekit.RoomName `json:"call_key,omitempty"`
+    KCall livekit.RoomName `json:"k_call,omitempty"`
 }
 
 type ResultInternalPlayer struct {
-    NameIdentity string `json:"name_identity,omitempty"`
-    NameCalled   string `json:"name_called,omitempty"`
+    KIdentity string `json:"k_identity,omitempty"`
+    KnownAs   string `json:"known_as,omitempty"`
 }
 
 type ResultInternalPlayers struct {
@@ -120,13 +120,13 @@ func (s *LivekitServer) internalPlayers(w http.ResponseWriter, r *http.Request) 
         w.WriteHeader(http.StatusNotAcceptable)
         return
     }
-    participants, err := s.roomManager.roomStore.ListParticipants(context.Background(), req.CallKey)
+    participants, err := s.roomManager.roomStore.ListParticipants(context.Background(), req.KCall)
     if err != nil {
         return
     }
     result := ResultInternalPlayers{}
     for _, x := range participants {
-        result.Players = append(result.Players, ResultInternalPlayer{NameIdentity: x.Identity, NameCalled: x.Name})
+        result.Players = append(result.Players, ResultInternalPlayer{KIdentity: x.Identity, KnownAs: x.Name})
     }
     if bytes, err := json.Marshal(result); nil != err {
         w.WriteHeader(http.StatusInternalServerError)
