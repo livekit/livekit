@@ -3,7 +3,6 @@ package sfu
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -30,16 +29,17 @@ type TrackSender interface {
 	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
+	IsClosed() bool
 	// ID is the globally unique identifier for this Track.
 	ID() string
-	Codec() webrtc.RTPCodecCapability
-	PeerID() livekit.ParticipantID
+	SubscriberID() livekit.ParticipantID
 }
 
 const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
-	RTPBlankFramesSeconds         = float32(0.2)
+	RTPBlankFramesMuteSeconds     = float32(1.0)
+	RTPBlankFramesCloseSeconds    = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -57,7 +57,8 @@ var (
 	ErrNotVP8                            = errors.New("not VP8")
 	ErrOutOfOrderVP8PictureIdCacheMiss   = errors.New("out-of-order VP8 picture id not found in cache")
 	ErrFilteredVP8TemporalLayer          = errors.New("filtered VP8 temporal layer")
-	ErrTrackAlreadyBind                  = errors.New("already bind")
+	ErrDownTrackAlreadyBound             = errors.New("already bound")
+	ErrDownTrackClosed                   = errors.New("downtrack closed")
 )
 
 var (
@@ -101,10 +102,15 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // DownTrack implements TrackLocal, is the track used to write packets
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
+// A DownTrack has the following lifecycle
+// - new
+// - bound / unbound
+// - closed
+// once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
 	logger        logger.Logger
 	id            livekit.TrackID
-	peerID        livekit.ParticipantID
+	subscriberID  livekit.ParticipantID
 	bound         atomic.Bool
 	kind          webrtc.RTPCodecType
 	mime          string
@@ -117,6 +123,7 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
+	upstreamCodecs          []webrtc.RTPCodecCapability
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	absSendTimeID           int
@@ -128,7 +135,8 @@ type DownTrack struct {
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
-	closeOnce               sync.Once
+	isClosed                atomic.Bool
+	connected               atomic.Bool
 
 	rtpStats *buffer.RTPStats
 
@@ -136,6 +144,8 @@ type DownTrack struct {
 	totalRepeatedNACKs uint32
 
 	keyFrameRequestGeneration atomic.Uint32
+
+	blankFramesGeneration atomic.Uint32
 
 	connectionStats             *connectionquality.ConnectionStats
 	connectionQualitySnapshotId uint32
@@ -151,7 +161,7 @@ type DownTrack struct {
 	onTransportCCFeedback func(dt *DownTrack, cc *rtcp.TransportLayerCC)
 
 	// simulcast layer availability change callback
-	onAvailableLayersChanged func(dt *DownTrack)
+	onAvailableLayersChanged atomic.Value // func(dt *DownTrack)
 
 	// layer bitrate availability change callback
 	onBitrateAvailabilityChanged func(dt *DownTrack)
@@ -180,35 +190,36 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(
-	c webrtc.RTPCodecCapability,
+	codecs []webrtc.RTPCodecCapability,
 	r TrackReceiver,
 	bf *buffer.Factory,
-	peerID livekit.ParticipantID,
+	subID livekit.ParticipantID,
 	mt int,
 	logger logger.Logger,
 ) (*DownTrack, error) {
 	var kind webrtc.RTPCodecType
 	switch {
-	case strings.HasPrefix(c.MimeType, "audio/"):
+	case strings.HasPrefix(codecs[0].MimeType, "audio/"):
 		kind = webrtc.RTPCodecTypeAudio
-	case strings.HasPrefix(c.MimeType, "video/"):
+	case strings.HasPrefix(codecs[0].MimeType, "video/"):
 		kind = webrtc.RTPCodecTypeVideo
 	default:
 		kind = webrtc.RTPCodecType(0)
 	}
 
 	d := &DownTrack{
-		logger:        logger,
-		id:            r.TrackID(),
-		peerID:        peerID,
-		maxTrack:      mt,
-		streamID:      r.StreamID(),
-		bufferFactory: bf,
-		receiver:      r,
-		codec:         c,
-		kind:          kind,
-		forwarder:     NewForwarder(c, kind, logger),
+		logger:         logger,
+		id:             r.TrackID(),
+		subscriberID:   subID,
+		maxTrack:       mt,
+		streamID:       r.StreamID(),
+		bufferFactory:  bf,
+		receiver:       r,
+		upstreamCodecs: codecs,
+		kind:           kind,
+		codec:          codecs[0],
 	}
+	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:        kind,
@@ -217,7 +228,19 @@ func NewDownTrack(
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
-		Logger: d.logger,
+		GetLayerDimension: func(quality int32) (uint32, uint32) {
+			if d.receiver != nil {
+				return d.receiver.GetLayerDimension(quality)
+			}
+			return 0, 0
+		},
+		GetMaxExpectedLayer: func() livekit.VideoLayer {
+			quality := d.forwarder.MaxLayers().Spatial
+			width, height := d.receiver.GetLayerDimension(quality)
+			return livekit.VideoLayer{Quality: livekit.VideoQuality(quality), Width: width, Height: height}
+		},
+		Logger:    d.logger,
+		CodecName: getCodecNameFromMime(codecs[0].MimeType),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -240,14 +263,26 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
-	if d.bound.Load() {
-		return webrtc.RTPCodecParameters{}, ErrTrackAlreadyBind
+	if d.IsClosed() {
+		return webrtc.RTPCodecParameters{}, ErrDownTrackClosed
 	}
-	parameters := webrtc.RTPCodecParameters{RTPCodecCapability: d.codec}
-	codec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
-	if err != nil {
+	if d.bound.Load() {
+		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
+	}
+	var codec webrtc.RTPCodecParameters
+	for _, c := range d.upstreamCodecs {
+		parameters := webrtc.RTPCodecParameters{RTPCodecCapability: c}
+		matchCodec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
+		if err == nil {
+			codec = matchCodec
+			break
+		}
+	}
+
+	if codec.MimeType == "" {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
+	d.logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec)
 
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
@@ -261,11 +296,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if strings.HasPrefix(codec.MimeType, "video/") {
 		d.sequencer = newSequencer(d.maxTrack, d.logger)
 	}
-
-	d.bound.Store(true)
+	d.codec = codec.RTPCodecCapability
+	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
 		d.onBind()
 	}
+	d.bound.Store(true)
 
 	d.connectionStats.Start()
 	d.logger.Debugw("bound")
@@ -291,7 +327,7 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability { return d.codec }
 // StreamID is the group this track belongs too. This must be unique
 func (d *DownTrack) StreamID() string { return d.streamID }
 
-func (d *DownTrack) PeerID() livekit.ParticipantID { return d.peerID }
+func (d *DownTrack) SubscriberID() livekit.ParticipantID { return d.subscriberID }
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
@@ -324,7 +360,7 @@ func (d *DownTrack) Stop() error {
 	if d.transceiver != nil {
 		return d.transceiver.Stop()
 	}
-	return fmt.Errorf("d.transceiver not exists")
+	return errors.New("downtrack transceiver does not exist")
 }
 
 func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
@@ -362,9 +398,11 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
-		d.receiver.SendPLI(layer)
-		d.rtpStats.UpdateLayerLockPliAndTime(1)
+		if d.connected.Load() {
+			d.logger.Debugw("sending PLI for layer lock", "generation", generation, "layer", layer)
+			d.receiver.SendPLI(layer, false)
+			d.rtpStats.UpdateLayerLockPliAndTime(1)
+		}
 
 		<-ticker.C
 
@@ -445,7 +483,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 				d.stopKeyFrameRequester()
 			}
 
-			// too much log for switching target layer, only log key frame
 			if !tp.switchingToTargetLayer {
 				d.logger.Debugw("forwarding key frame", "layer", layer)
 			}
@@ -582,9 +619,14 @@ func (d *DownTrack) Mute(muted bool) {
 	// when muting, send a few silence frames to ensure residual noise does not
 	// put the comfort noise generator on decoder side in a bad state where it
 	// generates noise that is not so comfortable.
+	d.blankFramesGeneration.Inc()
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
+		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
 	}
+}
+
+func (d *DownTrack) IsClosed() bool {
+	return d.isClosed.Load()
 }
 
 func (d *DownTrack) Close() {
@@ -598,46 +640,52 @@ func (d *DownTrack) Close() {
 // 2. in case of session migration, participant migrate from other node, video track should
 //    be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
-	d.forwarder.Mute(true)
-
-	// write blank frames after disabling so that other frames do not interfere.
-	// Idea here is to send blank 1x1 key frames to flush the decoder buffer at the remote end.
-	// Otherwise, with transceiver re-use last frame from previous stream is held in the
-	// display buffer and there could be a brief moment where the previous stream is displayed.
-	d.logger.Infow("close down track", "peerID", d.peerID, "trackID", d.id, "flushBlankFrame", flush)
-	if flush {
-		doneFlushing := make(chan struct{})
-		go func() {
-			defer close(doneFlushing)
-			_ = d.writeBlankFrameRTP(RTPBlankFramesSeconds)
-		}()
-
-		// wait a limited time to flush
-		timer := time.NewTimer(flushTimeout)
-		select {
-		case <-doneFlushing:
-		case <-timer.C:
-		}
+	if d.isClosed.Swap(true) {
+		// already closed
+		return
 	}
 
-	d.closeOnce.Do(func() {
-		d.logger.Debugw("closing sender", "peerID", d.peerID, "trackID", d.id, "kind", d.kind)
-		d.receiver.DeleteDownTrack(d.peerID)
+	d.logger.Infow("close down track", "flushBlankFrame", flush)
+	if d.bound.Load() {
+		if d.forwarder != nil {
+			d.forwarder.Mute(true)
+		}
+		// write blank frames after disabling so that other frames do not interfere.
+		// Idea here is to send blank key frames to flush the decoder buffer at the remote end.
+		// Otherwise, with transceiver re-use last frame from previous stream is held in the
+		// display buffer and there could be a brief moment where the previous stream is displayed.
+		if flush {
+			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
 
-		d.connectionStats.Close()
-		d.rtpStats.Stop()
-		d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
+			// wait a limited time to flush
+			timer := time.NewTimer(flushTimeout)
+			defer timer.Stop()
 
-		if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxLayerChanged(d, InvalidLayerSpatial)
+			select {
+			case <-doneFlushing:
+			case <-timer.C:
+				d.blankFramesGeneration.Inc() // in case flush is still running
+			}
 		}
 
-		if d.onCloseHandler != nil {
-			d.onCloseHandler()
-		}
+		d.bound.Store(false)
+		d.logger.Debugw("closing sender", "kind", d.kind)
+		d.receiver.DeleteDownTrack(d.subscriberID)
+	}
 
-		d.stopKeyFrameRequester()
-	})
+	d.connectionStats.Close()
+	d.rtpStats.Stop()
+	d.logger.Debugw("rtp stats", "stats", d.rtpStats.ToString())
+
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		d.onMaxLayerChanged(d, InvalidLayerSpatial)
+	}
+
+	if d.onCloseHandler != nil {
+		d.onCloseHandler()
+	}
+
+	d.stopKeyFrameRequester()
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -684,8 +732,8 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
 	d.forwarder.UpTrackLayersChange(availableLayers)
 
-	if d.onAvailableLayersChanged != nil {
-		d.onAvailableLayersChanged(d)
+	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
+		onAvailableLayersChanged(d)
 	}
 }
 
@@ -720,7 +768,7 @@ func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 }
 
 func (d *DownTrack) OnAvailableLayersChanged(fn func(dt *DownTrack)) {
-	d.onAvailableLayersChanged = fn
+	d.onAvailableLayersChanged.Store(fn)
 }
 
 func (d *DownTrack) OnBitrateAvailabilityChanged(fn func(dt *DownTrack)) {
@@ -854,76 +902,96 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc)
 }
 
-func (d *DownTrack) writeBlankFrameRTP(duration float32) error {
-	// don't send if nothing has been sent
-	if !d.rtpStats.IsActive() {
-		return nil
-	}
-
-	// LK-TODO: Support other audio/video codecs
-	if d.mime != "audio/opus" && d.mime != "video/vp8" && d.mime != "video/h264" {
-		return nil
-	}
-
-	frameRate := uint32(30)
-	if d.mime == "audio/opus" {
-		frameRate = 50
-	}
-
-	// send a number of blank frames just in case there is loss.
-	// Intentionally ignoring check for mute or bandwidth constrained mute
-	// as this is used to clear client side buffer.
-	numFrames := int(float32(frameRate) * duration)
-	snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, numFrames)
-	if err != nil {
-		d.logger.Warnw("could not get SN/TS to write blank frames", err)
-		return err
-	}
-
-	for i := 0; i < len(snts); i++ {
-		hdr := rtp.Header{
-			Version:        2,
-			Padding:        false,
-			Marker:         true,
-			PayloadType:    d.payloadType,
-			SequenceNumber: snts[i].sequenceNumber,
-			Timestamp:      snts[i].timestamp,
-			SSRC:           d.ssrc,
-			CSRC:           []uint32{},
+func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		// don't send if nothing has been sent
+		if !d.rtpStats.IsActive() {
+			close(done)
+			return
 		}
 
-		err = d.writeRTPHeaderExtensions(&hdr)
-		if err != nil {
-			d.logger.Warnw("could not write header extensions for blank frame", err)
-			return err
-		}
-
-		var pktSize int
+		var writeBlankFrame func(*rtp.Header, bool) (int, error)
 		switch d.mime {
 		case "audio/opus":
-			pktSize, err = d.writeOpusBlankFrame(&hdr, frameEndNeeded)
+			writeBlankFrame = d.writeOpusBlankFrame
 		case "video/vp8":
-			pktSize, err = d.writeVP8BlankFrame(&hdr, frameEndNeeded)
+			writeBlankFrame = d.writeVP8BlankFrame
 		case "video/h264":
-			pktSize, err = d.writeH264BlankFrame(&hdr, frameEndNeeded)
+			writeBlankFrame = d.writeH264BlankFrame
 		default:
-			return nil
-		}
-		if err != nil {
-			d.logger.Warnw("could not write blank frame", err)
-			return err
+			close(done)
+			return
 		}
 
-		for _, f := range d.onPacketSent {
-			f(d, pktSize)
+		frameRate := uint32(30)
+		if d.mime == "audio/opus" {
+			frameRate = 50
 		}
 
-		// only the first frame will need frameEndNeeded to close out the
-		// previous picture, rest are small key frames
-		frameEndNeeded = false
-	}
+		// send a number of blank frames just in case there is loss.
+		// Intentionally ignoring check for mute or bandwidth constrained mute
+		// as this is used to clear client side buffer.
+		numFrames := int(float32(frameRate) * duration)
+		frameDuration := time.Duration(1000/frameRate) * time.Millisecond
 
-	return nil
+		ticker := time.NewTicker(frameDuration)
+		defer ticker.Stop()
+
+		for {
+			if generation != d.blankFramesGeneration.Load() || numFrames <= 0 {
+				close(done)
+				return
+			}
+
+			snts, frameEndNeeded, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
+			if err != nil {
+				d.logger.Warnw("could not get SN/TS for blank frame", err)
+				close(done)
+				return
+			}
+
+			for i := 0; i < len(snts); i++ {
+				hdr := rtp.Header{
+					Version:        2,
+					Padding:        false,
+					Marker:         true,
+					PayloadType:    d.payloadType,
+					SequenceNumber: snts[i].sequenceNumber,
+					Timestamp:      snts[i].timestamp,
+					SSRC:           d.ssrc,
+					CSRC:           []uint32{},
+				}
+
+				err = d.writeRTPHeaderExtensions(&hdr)
+				if err != nil {
+					d.logger.Warnw("could not write header extension for blank frame", err)
+					close(done)
+					return
+				}
+
+				pktSize, err := writeBlankFrame(&hdr, frameEndNeeded)
+				if err != nil {
+					d.logger.Warnw("could not write blank frame", err)
+					close(done)
+					return
+				}
+
+				for _, f := range d.onPacketSent {
+					f(d, pktSize)
+				}
+
+				// only the first frame will need frameEndNeeded to close out the
+				// previous picture, rest are small key frames (for the video case)
+				frameEndNeeded = false
+			}
+
+			numFrames--
+			<-ticker.C
+		}
+	}()
+
+	return done
 }
 
 func (d *DownTrack) writeOpusBlankFrame(hdr *rtp.Header, frameEndNeeded bool) (int, error) {
@@ -999,7 +1067,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			targetLayers := d.forwarder.TargetLayers()
 			if targetLayers != InvalidLayers {
 				d.logger.Debugw("sending PLI RTCP", "layer", targetLayers.Spatial)
-				d.receiver.SendPLI(targetLayers.Spatial)
+				d.receiver.SendPLI(targetLayers.Spatial, false)
 				d.isNACKThrottled.Store(true)
 				d.rtpStats.UpdatePliTime()
 				pliOnce = false
@@ -1081,6 +1149,17 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		if d.onRttUpdate != nil {
 			d.onRttUpdate(d, rttToReport)
+		}
+	}
+}
+
+func (d *DownTrack) SetConnected() {
+	if !d.connected.Swap(true) {
+		if d.bound.Load() && d.kind == webrtc.RTPCodecTypeVideo {
+			targetLayers := d.forwarder.TargetLayers()
+			if targetLayers != InvalidLayers {
+				d.receiver.SendPLI(targetLayers.Spatial, true)
+			}
 		}
 	}
 }
@@ -1299,7 +1378,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"PeerID":              d.peerID,
+		"SubscriberID":        d.subscriberID,
 		"TrackID":             d.id,
 		"StreamID":            d.streamID,
 		"SSRC":                d.ssrc,

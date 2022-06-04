@@ -62,7 +62,6 @@ func (s *DataStats) ToProtoActive() *livekit.RTPStats {
 		Bytes:     uint64(s.windowBytes),
 		Bitrate:   float64(s.windowBytes) * 8 / float64(duration) / 1e9,
 	}
-
 }
 
 func (s *DataStats) Stop() {

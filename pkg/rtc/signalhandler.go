@@ -38,7 +38,8 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
 		var err error
-		if participant.CanSubscribe() {
+		// always allow unsubscribe
+		if participant.CanSubscribe() || !msg.Subscription.Subscribe {
 			updateErr := room.UpdateSubscriptions(
 				participant,
 				livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
@@ -75,7 +76,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 	case *livekit.SignalRequest_Leave:
 		pLogger.Infow("client leaving room")
-		_ = participant.Close(true)
+		room.RemoveParticipant(participant.Identity())
 	case *livekit.SignalRequest_SubscriptionPermission:
 		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
 		if err != nil {

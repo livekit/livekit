@@ -19,8 +19,9 @@ func disable(f *Forwarder) {
 }
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
-	return NewForwarder(codec, kind, logger.GetDefaultLogger())
-
+	f := NewForwarder(kind, logger.GetDefaultLogger())
+	f.DetermineCodec(codec)
+	return f
 }
 
 func TestForwarderMute(t *testing.T) {
@@ -157,7 +158,7 @@ func TestForwarderUpTrackLayersChange(t *testing.T) {
 
 	availableLayers = []int32{}
 	f.UpTrackLayersChange(availableLayers)
-	require.Equal(t, availableLayers, f.availableLayers)
+	require.Nil(t, f.availableLayers)
 }
 
 func TestForwarderAllocate(t *testing.T) {
@@ -232,6 +233,35 @@ func TestForwarderAllocate(t *testing.T) {
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
 
 	// allocate using bitrates, allocation should choose optimal
+	f.UpTrackLayersChange([]int32{0, 1, 2})
+	f.maxLayers = VideoLayers{Spatial: 1, Temporal: 3}
+	expectedTargetLayers = VideoLayers{
+		Spatial:  1,
+		Temporal: 3,
+	}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: bitrates[1][3],
+		bandwidthDelta:     bitrates[1][3],
+		availableLayers:    []int32{0, 1, 2},
+		bitrates:           bitrates,
+		targetLayers:       expectedTargetLayers,
+		distanceToDesired:  0,
+	}
+	result = f.AllocateOptimal(bitrates)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, InvalidLayers, f.CurrentLayers())
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+
+	// allocate using bitrates above maximum layer
+	f.UpTrackLayersChange([]int32{2})
+	sparseBitrates := Bitrates{
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+		{0, 7, 0, 0},
+	}
 	expectedTargetLayers = VideoLayers{
 		Spatial:  2,
 		Temporal: 1,
@@ -239,14 +269,14 @@ func TestForwarderAllocate(t *testing.T) {
 	expectedResult = VideoAllocation{
 		state:              VideoAllocationStateOptimal,
 		change:             VideoStreamingChangeNone,
-		bandwidthRequested: bitrates[2][1],
-		bandwidthDelta:     bitrates[2][1],
-		availableLayers:    []int32{0},
-		bitrates:           bitrates,
+		bandwidthRequested: sparseBitrates[2][1],
+		bandwidthDelta:     sparseBitrates[2][1] - bitrates[1][3],
+		availableLayers:    []int32{2},
+		bitrates:           sparseBitrates,
 		targetLayers:       expectedTargetLayers,
 		distanceToDesired:  0,
 	}
-	result = f.AllocateOptimal(bitrates)
+	result = f.AllocateOptimal(sparseBitrates)
 	require.Equal(t, expectedResult, result)
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, InvalidLayers, f.CurrentLayers())
@@ -1382,12 +1412,13 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 	_, _ = f.GetTranslationParams(extPkt, 0)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
-	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames(30, 6)
+	numBlankFrames := 6
+	snts, frameEndNeeded, err := f.GetSnTsForBlankFrames(30, numBlankFrames)
 	require.NoError(t, err)
 	require.True(t, frameEndNeeded)
 
 	// there should be one more than RTPBlankFramesMax as one would have been allocated to end previous frame
-	numPadding := 7
+	numPadding := numBlankFrames + 1
 	clockRate := testutils.TestVP8Codec.ClockRate
 	frameRate := uint32(30)
 	var sntsExpected = make([]SnTs, numPadding)
@@ -1401,15 +1432,15 @@ func TestForwardGetSnTsForBlankFrames(t *testing.T) {
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
 	// also number of padding should be RTPBlankFramesMax
-	numPadding = 6
+	numPadding = numBlankFrames
 	sntsExpected = sntsExpected[:numPadding]
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
-	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, 6)
+	snts, frameEndNeeded, err = f.GetSnTsForBlankFrames(30, numBlankFrames)
 	require.NoError(t, err)
 	require.False(t, frameEndNeeded)
 	require.Equal(t, sntsExpected, snts)

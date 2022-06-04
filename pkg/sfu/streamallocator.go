@@ -347,7 +347,7 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 
 	s.postEvent(Event{
 		Signal: SignalEstimate,
-		Data:   remb.Bitrate,
+		Data:   int64(remb.Bitrate),
 	})
 }
 
@@ -362,7 +362,7 @@ func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.T
 func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 	s.postEvent(Event{
 		Signal: SignalEstimate,
-		Data:   bitrate,
+		Data:   int64(bitrate),
 	})
 }
 
@@ -523,8 +523,8 @@ func (s *StreamAllocator) handleSignalAdjustState(event *Event) {
 }
 
 func (s *StreamAllocator) handleSignalEstimate(event *Event) {
-	receivedEstimate, _ := event.Data.(int)
-	s.lastReceivedEstimate = int64(receivedEstimate)
+	receivedEstimate, _ := event.Data.(int64)
+	s.lastReceivedEstimate = receivedEstimate
 
 	// while probing, maintain estimate separately to enable keeping current committed estimate if probe fails
 	if s.isInProbe() {

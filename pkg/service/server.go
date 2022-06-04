@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"runtime/pprof"
 	"time"
 
@@ -16,13 +17,12 @@ import (
 	"github.com/urfave/negroni"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 type LivekitServer struct {
@@ -85,6 +85,12 @@ func NewLivekitServer(conf *config.Config,
 	recServer := livekit.NewRecordingServiceServer(recService)
 
 	mux := http.NewServeMux()
+	if conf.Development {
+		// pprof handlers are registered onto DefaultServeMux
+		mux = http.DefaultServeMux
+		mux.HandleFunc("/debug/goroutine", s.debugGoroutines)
+		mux.HandleFunc("/debug/rooms", s.debugInfo)
+	}
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(recServer.PathPrefix(), recServer)

@@ -1,4 +1,4 @@
-package rtc_test
+package rtc
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
@@ -75,7 +75,7 @@ func TestRoomJoin(t *testing.T) {
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers, _ := pNew.SendJoinResponseArgsForCall(0)
-		require.Equal(t, info.Sid, rm.Room.Sid)
+		require.Equal(t, livekit.RoomID(info.Sid), rm.ID())
 		require.Len(t, participants, numParticipants)
 		require.Len(t, rm.GetParticipants(), numParticipants+1)
 		require.NotEmpty(t, iceServers)
@@ -86,7 +86,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := newMockParticipant("new", types.DefaultProtocol, false, false)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -139,11 +139,11 @@ func TestRoomJoin(t *testing.T) {
 
 	t.Run("cannot exceed max participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		rm.Room.MaxParticipants = 1
+		rm.protoRoom.MaxParticipants = 1
 		p := newMockParticipant("second", types.ProtocolVersion(0), false, false)
 
 		err := rm.Join(p, nil, iceServersForRoom, "")
-		require.Equal(t, rtc.ErrMaxParticipantsExceeded, err)
+		require.Equal(t, ErrMaxParticipantsExceeded, err)
 	})
 }
 
@@ -205,6 +205,123 @@ func TestParticipantUpdate(t *testing.T) {
 	}
 }
 
+func TestPushAndDequeueUpdates(t *testing.T) {
+	identity := "test_user"
+	publisher1v1 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "1",
+		IsPublisher: true,
+		Version:     1,
+	}
+	publisher1v2 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "1",
+		IsPublisher: true,
+		Version:     2,
+	}
+	publisher2 := &livekit.ParticipantInfo{
+		Identity:    identity,
+		Sid:         "2",
+		IsPublisher: true,
+		Version:     1,
+	}
+	subscriber1v1 := &livekit.ParticipantInfo{
+		Identity: identity,
+		Sid:      "1",
+		Version:  1,
+	}
+	subscriber1v2 := &livekit.ParticipantInfo{
+		Identity: identity,
+		Sid:      "1",
+		Version:  2,
+	}
+
+	requirePIEquals := func(t *testing.T, a, b *livekit.ParticipantInfo) {
+		require.Equal(t, a.Sid, b.Sid)
+		require.Equal(t, a.Identity, b.Identity)
+		require.Equal(t, a.Version, b.Version)
+	}
+	testCases := []struct {
+		name      string
+		pi        *livekit.ParticipantInfo
+		immediate bool
+		existing  *livekit.ParticipantInfo
+		expected  []*livekit.ParticipantInfo
+		validate  func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo)
+	}{
+		{
+			name:     "publisher updates are immediate",
+			pi:       publisher1v1,
+			expected: []*livekit.ParticipantInfo{publisher1v1},
+		},
+		{
+			name: "subscriber updates are queued",
+			pi:   subscriber1v1,
+		},
+		{
+			name:     "last version is enqueued",
+			pi:       subscriber1v2,
+			existing: subscriber1v1,
+			validate: func(t *testing.T, rm *Room, _ []*livekit.ParticipantInfo) {
+				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
+				require.NotNil(t, queued)
+				requirePIEquals(t, subscriber1v2, queued)
+			},
+		},
+		{
+			name:     "out of order updates are rejected",
+			pi:       subscriber1v1,
+			existing: subscriber1v2,
+			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
+				requirePIEquals(t, subscriber1v2, queued)
+			},
+		},
+		{
+			name:     "sid change is broadcasted immediately",
+			pi:       publisher2,
+			existing: subscriber1v2,
+			expected: []*livekit.ParticipantInfo{
+				{
+					Identity: identity,
+					Sid:      "1",
+					Version:  2,
+					State:    livekit.ParticipantInfo_DISCONNECTED,
+				},
+				publisher2,
+			},
+		},
+		{
+			name:     "when switching to publisher, queue is cleared",
+			pi:       publisher1v2,
+			existing: subscriber1v1,
+			expected: []*livekit.ParticipantInfo{publisher1v2},
+			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
+				require.Empty(t, rm.batchedUpdates)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+			if tc.existing != nil {
+				// clone the existing value since it can be modified when setting to disconnected
+				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.Identity)] = proto.Clone(tc.existing).(*livekit.ParticipantInfo)
+			}
+			updates := rm.pushAndDequeueUpdates(tc.pi, tc.immediate)
+			require.Equal(t, len(tc.expected), len(updates))
+			for i, item := range tc.expected {
+				requirePIEquals(t, item, updates[i])
+			}
+
+			if tc.validate != nil {
+				tc.validate(t, rm, updates)
+			}
+		})
+	}
+}
+
 func TestRoomClosure(t *testing.T) {
 	t.Run("room closes after participant leaves", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
@@ -214,7 +331,7 @@ func TestRoomClosure(t *testing.T) {
 		})
 		p := rm.GetParticipants()[0]
 		// allows immediate close after
-		rm.Room.EmptyTimeout = 0
+		rm.protoRoom.EmptyTimeout = 0
 		rm.RemoveParticipant(p.Identity())
 
 		time.Sleep(defaultDelay)
@@ -223,7 +340,7 @@ func TestRoomClosure(t *testing.T) {
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
 
-		require.Equal(t, rtc.ErrRoomClosed, rm.Join(p, nil, iceServersForRoom, ""))
+		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, iceServersForRoom, ""))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -232,7 +349,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		require.NotZero(t, rm.Room.EmptyTimeout)
+		require.NotZero(t, rm.protoRoom.EmptyTimeout)
 		rm.CloseIfEmpty()
 		require.False(t, isClosed)
 	})
@@ -243,7 +360,7 @@ func TestRoomClosure(t *testing.T) {
 		rm.OnClose(func() {
 			isClosed = true
 		})
-		rm.Room.EmptyTimeout = 1
+		rm.protoRoom.EmptyTimeout = 1
 
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()
@@ -507,7 +624,7 @@ func TestHiddenParticipants(t *testing.T) {
 
 		// expect new participant to get a JoinReply
 		info, participants, iceServers, region := pNew.SendJoinResponseArgsForCall(0)
-		require.Equal(t, info.Sid, rm.Room.Sid)
+		require.Equal(t, livekit.RoomID(info.Sid), rm.ID())
 		require.Len(t, participants, 2)
 		require.Len(t, rm.GetParticipants(), 4)
 		require.NotEmpty(t, iceServers)
@@ -518,7 +635,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		p := newMockParticipant("new", types.DefaultProtocol, false, true)
 
-		err := rm.Join(p, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -562,10 +679,10 @@ type testRoomOpts struct {
 	audioSmoothIntervals uint32
 }
 
-func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
-	rm := rtc.NewRoom(
+func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
+	rm := NewRoom(
 		&livekit.Room{Name: "room"},
-		rtc.WebRTCConfig{},
+		WebRTCConfig{},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,
 			SmoothIntervals: opts.audioSmoothIntervals,
@@ -575,7 +692,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *rtc.Room {
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := newMockParticipant(identity, opts.protocol, i >= opts.num, true)
-		err := rm.Join(participant, &rtc.ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
+		err := rm.Join(participant, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)

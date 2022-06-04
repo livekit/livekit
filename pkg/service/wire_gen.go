@@ -24,6 +24,10 @@ import (
 	"os"
 )
 
+import (
+	_ "net/http/pprof"
+)
+
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -129,25 +133,40 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	if !conf.HasRedis() {
 		return nil, nil
 	}
-	logger.Infow("using multi-node routing via redis", "addr", conf.Redis.Address)
-	rcOptions := &redis.Options{
-		Addr:     conf.Redis.Address,
-		Username: conf.Redis.Username,
-		Password: conf.Redis.Password,
-		DB:       conf.Redis.DB,
-	}
+
+	var rc *redis.Client
+	var tlsConfig *tls.Config
+
 	if conf.Redis.UseTLS {
-		rcOptions = &redis.Options{
-			Addr:     conf.Redis.Address,
-			Username: conf.Redis.Username,
-			Password: conf.Redis.Password,
-			DB:       conf.Redis.DB,
-			TLSConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
 		}
 	}
-	rc := redis.NewClient(rcOptions)
+
+	if conf.UseSentinel() {
+		logger.Infow("using multi-node routing via redis", "sentinel", true, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		rcOptions := &redis.FailoverOptions{
+			SentinelAddrs:    conf.Redis.SentinelAddresses,
+			SentinelUsername: conf.Redis.SentinelUsername,
+			SentinelPassword: conf.Redis.SentinelPassword,
+			MasterName:       conf.Redis.MasterName,
+			Username:         conf.Redis.Username,
+			Password:         conf.Redis.Password,
+			DB:               conf.Redis.DB,
+			TLSConfig:        tlsConfig,
+		}
+		rc = redis.NewFailoverClient(rcOptions)
+	} else {
+		logger.Infow("using multi-node routing via redis", "sentinel", false, "addr", conf.Redis.Address)
+		rcOptions := &redis.Options{
+			Addr:      conf.Redis.Address,
+			Username:  conf.Redis.Username,
+			Password:  conf.Redis.Password,
+			DB:        conf.Redis.DB,
+			TLSConfig: tlsConfig,
+		}
+		rc = redis.NewClient(rcOptions)
+	}
 
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")

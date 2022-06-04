@@ -27,7 +27,9 @@ func NewDependencyDescriptorReader(buf []byte, structure *FrameDependencyStructu
 }
 
 func (r *DependencyDescriptorReader) Parse() (int, error) {
-	r.readMandatoryFields()
+	if err := r.readMandatoryFields(); err != nil {
+		return 0, err
+	}
 	if len(r.buffer.buf) > 3 {
 		err := r.readExtendedFields()
 		if err != nil {

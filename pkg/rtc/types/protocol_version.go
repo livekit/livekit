@@ -47,3 +47,9 @@ func (v ProtocolVersion) SupportsICELite() bool {
 func (v ProtocolVersion) SupportsUnpublish() bool {
 	return v > 6
 }
+
+// SupportFastStart - if client supports fast start, server side will send media streams
+// in the first offer
+func (v ProtocolVersion) SupportFastStart() bool {
+	return v > 7
+}

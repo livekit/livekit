@@ -317,7 +317,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	for i := 0; i < numPadding; i++ {
 		sntsExpected[i] = SnTs{
 			sequenceNumber: params.SequenceNumber + uint16(len(snts)) + uint16(i) + 1,
-			timestamp:      params.Timestamp + (uint32(i+1)*clockRate)/frameRate,
+			timestamp:      snts[len(snts)-1].timestamp + (uint32(i+1)*clockRate)/frameRate,
 		}
 	}
 	snts, err = r.UpdateAndGetPaddingSnTs(numPadding, clockRate, frameRate, false)

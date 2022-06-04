@@ -1,6 +1,8 @@
 package connectionquality
 
 import (
+	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -20,9 +23,14 @@ const (
 type ConnectionStatsParams struct {
 	UpdateInterval      time.Duration
 	CodecType           webrtc.RTPCodecType
+	CodecName           string
+	DtxDisabled         bool
+	MimeType            string
 	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
+	GetLayerDimension   func(int32) (uint32, uint32)
+	GetMaxExpectedLayer func() livekit.VideoLayer
 	Logger              logger.Logger
 }
 
@@ -41,7 +49,7 @@ type ConnectionStats struct {
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params: params,
-		score:  4.0,
+		score:  5.0,
 		done:   make(chan struct{}),
 	}
 }
@@ -69,29 +77,67 @@ func (cs *ConnectionStats) GetScore() float32 {
 	return cs.score
 }
 
-func (cs *ConnectionStats) updateScore() float32 {
+func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream, iteration uint64) float32 {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
-	s := cs.params.GetQualityParams()
-	if s == nil {
+	// Initial interval will have partial data
+	if iteration < 2 {
+		cs.score = 5
 		return cs.score
 	}
 
-	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
-		cs.score = AudioConnectionScore(s.LossPercentage, s.Rtt, s.Jitter)
+	s := cs.params.GetQualityParams()
+	var qualityParam buffer.ConnectionQualityParams
+	if s == nil {
+		return cs.score
 	} else {
-		isReducedQuality := false
-		if cs.params.GetIsReducedQuality != nil {
-			isReducedQuality = cs.params.GetIsReducedQuality()
+		qualityParam = *s
+		if math.IsInf(float64(qualityParam.Jitter), 0) {
+			qualityParam.Jitter = 0
 		}
-		cs.score = VideoConnectionScore(s.LossPercentage, isReducedQuality)
+		if math.IsInf(float64(qualityParam.LossPercentage), 0) {
+			qualityParam.LossPercentage = 0
+		}
+	}
+
+	interval := cs.params.UpdateInterval
+	if interval == 0 {
+		interval = UpdateInterval
+	}
+	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
+		totalBytes, _, _ := cs.getBytesFramesFromStreams(streams)
+		cs.score = AudioConnectionScore(interval, int64(totalBytes), s, cs.params.DtxDisabled)
+	} else {
+		// get tracks expected max layer and dimensions
+		expectedLayer := cs.params.GetMaxExpectedLayer()
+		if utils.SpatialLayerForQuality(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
+			return cs.score
+		}
+
+		// get bytes/frames and max later from actual stream stats
+		totalBytes, totalFrames, maxLayer := cs.getBytesFramesFromStreams(streams)
+		var actualHeight uint32
+		var actualWidth uint32
+		// if data present, but maxLayer == -1 no layer info available, set actual to expected, else fetch
+		if maxLayer == buffer.InvalidLayerSpatial && totalBytes > 0 {
+			actualHeight = expectedLayer.Height
+			actualWidth = expectedLayer.Width
+		} else {
+			actualWidth, actualHeight = cs.params.GetLayerDimension(maxLayer)
+		}
+
+		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), &qualityParam, cs.params.CodecName,
+			int32(expectedLayer.Height), int32(expectedLayer.Width), int32(actualHeight), int32(actualWidth))
+		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer.Quality, "maxLayer", maxLayer,
+		//	"expectedWidth", expectedLayer.Width, "actualWidth", actualWidth, "expectedHeight", expectedLayer.Height, "actualHeight", actualHeight)
+
 	}
 
 	return cs.score
 }
 
-func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
+func (cs *ConnectionStats) getStat(iteration uint64) *livekit.AnalyticsStat {
 	if cs.params.GetDeltaStats == nil {
 		return nil
 	}
@@ -119,11 +165,12 @@ func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	score := cs.updateScore()
+	score := cs.updateScore(analyticsStreams, iteration)
 
 	return &livekit.AnalyticsStat{
 		Score:   score,
 		Streams: analyticsStreams,
+		Mime:    cs.params.MimeType,
 	}
 }
 
@@ -136,13 +183,16 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
+	// Delay sending scores until 2nd cycle, as 1st will be partial.
+	counter := uint64(0)
+
 	for {
 		select {
 		case <-cs.done:
 			return
 
 		case <-tk.C:
-			stat := cs.getStat()
+			stat := cs.getStat(counter)
 			if stat == nil {
 				continue
 			}
@@ -150,6 +200,9 @@ func (cs *ConnectionStats) updateStatsWorker() {
 			if cs.onStatsUpdate != nil {
 				cs.onStatsUpdate(cs, stat)
 			}
+
+			counter++
+
 		}
 	}
 }
@@ -180,4 +233,42 @@ func ToAnalyticsVideoLayer(layer int, layerStats *buffer.LayerStats) *livekit.An
 		Bytes:   layerStats.Bytes,
 		Frames:  layerStats.Frames,
 	}
+}
+
+func (cs *ConnectionStats) getBytesFramesFromStreams(streams []*livekit.AnalyticsStream) (totalBytes uint64, totalFrames uint32, maxLayer int32) {
+	layerStats := make(map[int32]buffer.LayerStats)
+	hasLayers := false
+	maxLayer = buffer.InvalidLayerSpatial
+	for _, stream := range streams {
+		// get frames/bytes/packets from video layers if available. Store per layer in layerStats map
+		if len(stream.VideoLayers) > 0 {
+			hasLayers = true
+
+			layers := stream.VideoLayers
+			// find max quality 0(LOW), 1(MED), 2(HIGH) . sort on layer.Layer desc
+			sort.Slice(layers, func(i, j int) bool {
+				return layers[i].Layer > layers[j].Layer
+			})
+
+			layerStats[layers[0].Layer] = buffer.LayerStats{
+				Bytes:  layers[0].GetBytes(),
+				Frames: layers[0].GetFrames(),
+			}
+			if layers[0].Layer > maxLayer {
+				maxLayer = layers[0].Layer
+			}
+		} else {
+			totalFrames += stream.GetFrames()
+			totalBytes += stream.GetPrimaryBytes()
+		}
+	}
+	if hasLayers {
+		if stats, ok := layerStats[maxLayer]; ok {
+			return stats.Bytes, stats.Frames, maxLayer
+		} else {
+			return 0, 0, buffer.InvalidLayerSpatial
+		}
+	}
+	return totalBytes, totalFrames, maxLayer
+
 }

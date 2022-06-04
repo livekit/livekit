@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 
@@ -192,9 +193,8 @@ type Forwarder struct {
 	ddLayerSelector *DDVideoLayerSelector
 }
 
-func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
+func NewForwarder(kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
 	f := &Forwarder{
-		codec:  codec,
 		kind:   kind,
 		logger: logger,
 
@@ -207,17 +207,6 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 		rtpMunger: NewRTPMunger(logger),
 	}
 
-	if strings.ToLower(codec.MimeType) == "video/vp8" {
-		f.isTemporalSupported = true
-		f.vp8Munger = NewVP8Munger(logger)
-	}
-
-	// TODO : we only enable dd layer selector for av1 now, at future we can
-	// enable it for vp9 too
-	if strings.ToLower(codec.MimeType) == "video/av1" {
-		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
-	}
-
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.maxLayers = VideoLayers{Spatial: InvalidLayerSpatial, Temporal: DefaultMaxLayerTemporal}
 	} else {
@@ -225,6 +214,23 @@ func NewForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType, log
 	}
 
 	return f
+}
+
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
+	if f.codec.MimeType != "" {
+		return
+	}
+	f.codec = codec
+
+	switch strings.ToLower(codec.MimeType) {
+	case "video/vp8":
+		f.isTemporalSupported = true
+		f.vp8Munger = NewVP8Munger(f.logger)
+	case "video/av1":
+		// TODO : we only enable dd layer selector for av1 now, at future we can
+		// enable it for vp9 too
+		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
+	}
 }
 
 func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {
@@ -322,7 +328,12 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.availableLayers = availableLayers
+	if len(availableLayers) > 0 {
+		f.availableLayers = make([]int32, len(availableLayers))
+		copy(f.availableLayers, availableLayers)
+	} else {
+		f.availableLayers = nil
+	}
 }
 
 func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
@@ -471,6 +482,40 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 				break
 			}
 		}
+
+		if bandwidthRequested == 0 {
+			// if we cannot allocate anything below max layer,
+			// look for a layer above. It is okay to overshoot
+			// in optimal allocation (i. e. no bandwidth restricstions).
+			// It is possible that clients send only a higher layer.
+			// To accommodate cases like that, try finding a layer
+			// above the requested maximum to ensure streaming
+			for s := DefaultMaxLayerSpatial; s >= 0; s-- {
+				for t := DefaultMaxLayerTemporal; t >= 0; t-- {
+					if brs[s][t] == 0 {
+						continue
+					}
+
+					targetLayers = VideoLayers{
+						Spatial:  s,
+						Temporal: t,
+					}
+
+					bandwidthRequested = brs[s][t]
+					state = VideoAllocationStateOptimal
+
+					if f.targetLayers == InvalidLayers {
+						change = VideoStreamingChangeResuming
+					}
+					f.logger.Infow("allowing overshoot", "maxLayer", f.maxLayers, "targetLayers", targetLayers)
+					break
+				}
+
+				if bandwidthRequested != 0 {
+					break
+				}
+			}
+		}
 	}
 
 	if !targetLayers.IsValid() {
@@ -481,11 +526,15 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		change:             change,
 		bandwidthRequested: bandwidthRequested,
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.availableLayers,
 		bitrates:           brs,
 		targetLayers:       targetLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
@@ -499,11 +548,14 @@ func (f *Forwarder) ProvisionalAllocatePrepare(bitrates Bitrates) {
 	defer f.lock.Unlock()
 
 	f.provisional = &VideoAllocationProvisional{
-		layers:          InvalidLayers,
-		muted:           f.muted,
-		bitrates:        bitrates,
-		availableLayers: f.availableLayers,
-		maxLayers:       f.maxLayers,
+		layers:    InvalidLayers,
+		muted:     f.muted,
+		bitrates:  bitrates,
+		maxLayers: f.maxLayers,
+	}
+	if len(f.availableLayers) > 0 {
+		f.provisional.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.provisional.availableLayers, f.availableLayers)
 	}
 }
 
@@ -776,11 +828,15 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		change:             change,
 		bandwidthRequested: bandwidthRequested,
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.provisional.availableLayers,
 		bitrates:           f.provisional.bitrates,
 		targetLayers:       f.provisional.layers,
 		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.layers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.provisional.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
@@ -842,11 +898,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				change:             VideoStreamingChangeNone,
 				bandwidthRequested: bandwidthRequested,
 				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
-				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
+			if len(f.availableLayers) > 0 {
+				f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+				copy(f.lastAllocation.availableLayers, f.availableLayers)
+			}
+
 			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
@@ -882,11 +942,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 				change:             change,
 				bandwidthRequested: bandwidthRequested,
 				bandwidthDelta:     bandwidthRequested - alreadyAllocated,
-				availableLayers:    f.availableLayers,
 				bitrates:           brs,
 				targetLayers:       targetLayers,
 				distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
 			}
+			if len(f.availableLayers) > 0 {
+				f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+				copy(f.lastAllocation.availableLayers, f.availableLayers)
+			}
+
 			f.setTargetLayers(f.lastAllocation.targetLayers)
 			return f.lastAllocation, true
 		}
@@ -985,11 +1049,15 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		change:             change,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
-		availableLayers:    f.availableLayers,
 		bitrates:           brs,
 		targetLayers:       InvalidLayers,
 		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
 	}
+	if len(f.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+		copy(f.lastAllocation.availableLayers, f.availableLayers)
+	}
+
 	f.setTargetLayers(f.lastAllocation.targetLayers)
 	if f.targetLayers == InvalidLayers {
 		f.resyncLocked()
@@ -1271,6 +1339,12 @@ func (f *Forwarder) GetSnTsForPadding(num int) ([]SnTs, error) {
 func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	// NOTE: not using diff of current time and previous packet time (lTSCalc) as this
+	// driven by a timer, there might be slight differences compared to the frame rate.
+	// As the differences are going to be small (and also not to update RTP time stamp
+	// by those small differences), not doing the diff.
+	f.lTSCalc = time.Now().UnixNano()
 
 	frameEndNeeded := !f.rtpMunger.IsOnFrameBoundary()
 	if frameEndNeeded {

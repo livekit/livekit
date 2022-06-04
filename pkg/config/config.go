@@ -119,11 +119,15 @@ type VideoConfig struct {
 }
 
 type RedisConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-	UseTLS   bool   `yaml:"use_tls"`
+	Address           string   `yaml:"address"`
+	Username          string   `yaml:"username"`
+	Password          string   `yaml:"password"`
+	DB                int      `yaml:"db"`
+	UseTLS            bool     `yaml:"use_tls"`
+	MasterName        string   `yaml:"sentinel_master_name"`
+	SentinelUsername  string   `yaml:"sentinel_username"`
+	SentinelPassword  string   `yaml:"sentinel_password"`
+	SentinelAddresses []string `yaml:"sentinel_addresses"`
 }
 
 type RoomConfig struct {
@@ -189,6 +193,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		Port: 7880,
 		RTC: RTCConfig{
 			UseExternalIP:     false,
+			UseICELite:        true,
 			TCPPort:           7881,
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
@@ -289,7 +294,11 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 }
 
 func (conf *Config) HasRedis() bool {
-	return conf.Redis.Address != ""
+	return conf.Redis.Address != "" || conf.Redis.SentinelAddresses != nil
+}
+
+func (conf *Config) UseSentinel() bool {
+	return conf.Redis.SentinelAddresses != nil
 }
 
 func (conf *Config) updateFromCLI(c *cli.Context) error {

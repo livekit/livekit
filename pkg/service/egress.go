@@ -181,6 +181,9 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if req.RoomName != "" {
 		room, err := s.store.LoadRoom(ctx, livekit.RoomName(req.RoomName))
 		if err != nil {
+			if err == ErrRoomNotFound {
+				return &livekit.ListEgressResponse{}, nil
+			}
 			return nil, err
 		}
 		roomID = livekit.RoomID(room.Sid)

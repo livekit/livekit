@@ -1,4 +1,4 @@
-package rtc_test
+package rtc
 
 import (
 	"github.com/livekit/protocol/livekit"

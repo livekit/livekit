@@ -87,16 +87,12 @@ func main() {
 			},
 			// debugging flags
 			&cli.StringFlag{
-				Name:  "cpuprofile",
-				Usage: "write cpu profile to `file`",
-			},
-			&cli.StringFlag{
 				Name:  "memprofile",
 				Usage: "write memory profile to `file`",
 			},
 			&cli.BoolFlag{
 				Name:  "dev",
-				Usage: "sets log-level to debug, and console formatter",
+				Usage: "sets log-level to debug, console formatter, and /debug/pprof",
 			},
 		},
 		Action: startServer,
@@ -159,7 +155,6 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 func startServer(c *cli.Context) error {
 	rand.Seed(time.Now().UnixNano())
 
-	cpuProfile := c.String("cpuprofile")
 	memProfile := c.String("memprofile")
 
 	conf, err := getConfig(c)
@@ -168,18 +163,6 @@ func startServer(c *cli.Context) error {
 	}
 
 	serverlogger.InitFromConfig(conf.Logging)
-
-	if cpuProfile != "" {
-		if f, err := os.Create(cpuProfile); err != nil {
-			return err
-		} else {
-			defer f.Close()
-			if err := pprof.StartCPUProfile(f); err != nil {
-				return err
-			}
-			defer pprof.StopCPUProfile()
-		}
-	}
 
 	if memProfile != "" {
 		if f, err := os.Create(memProfile); err != nil {

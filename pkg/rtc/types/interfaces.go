@@ -36,6 +36,11 @@ const (
 	MigrateStateComplete
 )
 
+type SubscribedCodecQuality struct {
+	CodecMime string
+	Quality   livekit.VideoQuality
+}
+
 func (m MigrateState) String() string {
 	switch m {
 	case MigrateStateInit:
@@ -80,7 +85,7 @@ type Participant interface {
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
@@ -121,7 +126,7 @@ type LocalParticipant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
-	Negotiate()
+	Negotiate(force bool)
 	ICERestart() error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
@@ -170,6 +175,7 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
+	RemoveParticipant(identity livekit.ParticipantIdentity)
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
@@ -197,7 +203,6 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	Receiver() sfu.TrackReceiver
 	Restart()
 
 	// callbacks
@@ -214,8 +219,10 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality)
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualites []SubscribedCodecQuality)
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
+
+	Receivers() []sfu.TrackReceiver
 }
 
 //counterfeiter:generate . LocalMediaTrack
@@ -223,7 +230,7 @@ type LocalMediaTrack interface {
 	MediaTrack
 
 	SignalCid() string
-	SdpCid() string
+	HasSdpCid(cid string) bool
 
 	GetAudioLevel() (level float64, active bool)
 	GetConnectionScore() float32

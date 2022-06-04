@@ -198,21 +198,21 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
-	// store as is for use when migrating
-	u.subscriptionPermission = subscriptionPermission
 	if subscriptionPermission == nil {
+		// store as is for use when migrating
+		u.subscriptionPermission = subscriptionPermission
 		// possible to get a nil when migrating
 		return nil
 	}
 
 	if err := u.parseSubscriptionPermissions(subscriptionPermission, resolverBySid); err != nil {
-		// do not accept permissions if parse fails
-		u.subscriptionPermission = nil
+		// when failed, do not override previous permissions
 		return err
 	}
 
+	// store as is for use when migrating
+	u.subscriptionPermission = subscriptionPermission
 	u.processPendingSubscriptions(resolverByIdentity)
-
 	u.maybeRevokeSubscriptions(resolverByIdentity)
 
 	return nil
@@ -240,14 +240,14 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UpTrackManager) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error {
+func (u *UpTrackManager) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
 	track := u.GetPublishedTrack(trackID)
 	if track == nil {
 		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
 		return errors.New("could not find published track")
 	}
 
-	track.NotifySubscriberNodeMaxQuality(nodeID, maxQuality)
+	track.NotifySubscriberNodeMaxQuality(nodeID, maxQualities)
 	return nil
 }
 
@@ -268,6 +268,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 		u.publishedTracks[track.ID()] = track
 	}
 	u.lock.Unlock()
+	u.params.Logger.Debugw("added published track", "trackID", track.ID(), "trackInfo", track.ToProto().String())
 
 	track.AddOnClose(func() {
 		notifyClose := false
@@ -321,19 +322,15 @@ func (u *UpTrackManager) parseSubscriptionPermissions(
 	}
 
 	// per participant permissions
-	u.subscriberPermissions = make(map[livekit.ParticipantIdentity]*livekit.TrackPermission)
+	subscriberPermissions := make(map[livekit.ParticipantIdentity]*livekit.TrackPermission)
 	for _, trackPerms := range subscriptionPermission.TrackPermissions {
 		subscriberIdentity := livekit.ParticipantIdentity(trackPerms.ParticipantIdentity)
 		if subscriberIdentity == "" {
 			if trackPerms.ParticipantSid == "" {
-				u.subscriberPermissions = nil
 				return ErrSubscriptionPermissionNeedsId
 			}
 
-			var sub types.LocalParticipant
-			if resolver != nil {
-				sub = resolver(livekit.ParticipantID(trackPerms.ParticipantSid))
-			}
+			sub := resolver(livekit.ParticipantID(trackPerms.ParticipantSid))
 			if sub == nil {
 				u.params.Logger.Warnw("could not find subscriber for permissions update", nil, "subscriberID", trackPerms.ParticipantSid)
 				continue
@@ -352,8 +349,10 @@ func (u *UpTrackManager) parseSubscriptionPermissions(
 			}
 		}
 
-		u.subscriberPermissions[subscriberIdentity] = trackPerms
+		subscriberPermissions[subscriberIdentity] = trackPerms
 	}
+
+	u.subscriberPermissions = subscriberPermissions
 
 	return nil
 }
@@ -436,11 +435,13 @@ func (u *UpTrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID,
 	}
 }
 
+// creates subscriptions for tracks if permissions have been granted
 func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant) {
 	updatedPendingSubscriptions := make(map[livekit.TrackID][]livekit.ParticipantIdentity)
 	for trackID, pending := range u.pendingSubscriptions {
 		track := u.getPublishedTrack(trackID)
 		if track == nil {
+			// published track is gone
 			continue
 		}
 
@@ -487,11 +488,9 @@ func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantIdent
 
 		revokedSubscribers := track.RevokeDisallowedSubscribers(allowed)
 		for _, subIdentity := range revokedSubscribers {
-			var sub types.LocalParticipant
-			if resolver != nil {
-				sub = resolver(subIdentity)
-			}
+			sub := resolver(subIdentity)
 			if sub == nil {
+				// participant may have disconnected
 				continue
 			}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -44,9 +45,6 @@ func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
 
-	if !s.params.AdaptiveStream {
-		s.params.DownTrack.SetMaxSpatialLayer(SpatialLayerForQuality(livekit.VideoQuality_HIGH))
-	}
 	return s
 }
 
@@ -55,6 +53,9 @@ func (t *SubscribedTrack) OnBind(f func()) {
 }
 
 func (t *SubscribedTrack) Bound() {
+	if !t.params.AdaptiveStream {
+		t.params.DownTrack.SetMaxSpatialLayer(utils.SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
 	if t.onBind != nil {
 		t.onBind()
 	}
@@ -124,7 +125,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if settings.Width > 0 {
 		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
-	t.DownTrack().SetMaxSpatialLayer(SpatialLayerForQuality(quality))
+	t.DownTrack().SetMaxSpatialLayer(utils.SpatialLayerForQuality(quality))
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {

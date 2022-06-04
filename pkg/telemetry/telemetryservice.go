@@ -26,7 +26,7 @@ type TelemetryService interface {
 	TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo)
 	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
-	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality)
+	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
 	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
 	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
@@ -153,9 +153,9 @@ func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participant
 	})
 }
 
-func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, maxQuality livekit.VideoQuality) {
+func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality) {
 	t.enqueue(func() {
-		t.internalService.TrackMaxSubscribedVideoQuality(ctx, participantID, track, maxQuality)
+		t.internalService.TrackMaxSubscribedVideoQuality(ctx, participantID, track, mime, maxQuality)
 	})
 }
 

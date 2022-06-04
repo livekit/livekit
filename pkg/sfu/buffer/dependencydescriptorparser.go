@@ -19,7 +19,7 @@ type DependencyDescriptorParser struct {
 }
 
 func NewDependencyDescriptorParser(ddExt uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
-	logger.Infow("creating video stream receiver", "ddExt", ddExt)
+	logger.Infow("creating dependency descriptor parse", "ddExt", ddExt)
 	return &DependencyDescriptorParser{
 		ddExt:             ddExt,
 		logger:            logger,
@@ -37,7 +37,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 		}
 		_, err := ext.Unmarshal(ddBuf)
 		if err != nil {
-			r.logger.Infow("failed to parse generic dependency descriptor", "err", err)
+			// r.logger.Debugw("failed to parse generic dependency descriptor", "err", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 			return nil, videoLayer, err
 		}
 
@@ -45,7 +45,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*dd.DependencyDescr
 			videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 		}
 		if ddVal.AttachedStructure != nil && !ddVal.FirstPacketInFrame {
-			r.logger.Infow("ignoring non-first packet in frame with attached structure")
+			// r.logger.Debugw("ignoring non-first packet in frame with attached structure")
 			return nil, videoLayer, nil
 		}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
@@ -136,7 +137,7 @@ func TestTrackPublishing(t *testing.T) {
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		track := &typesfakes.FakeLocalMediaTrack{}
-		track.SdpCidReturns("cid")
+		track.HasSdpCidCalls(func(s string) bool { return s == "cid" })
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
 
@@ -221,31 +222,28 @@ func TestMuteSetting(t *testing.T) {
 }
 
 func TestConnectionQuality(t *testing.T) {
-	// loss based score is currently a publisher method.
-	videoScore := func(loss float32, numPublishing, numRegistered uint32) float32 {
-		var reducedQuality bool
-		if numRegistered > 0 && numPublishing != numRegistered {
-			reducedQuality = true
-		}
-		return connectionquality.VideoConnectionScore(loss, reducedQuality)
+
+	videoScore := func(totalBytes int64, totalFrames int64, qualityParam *buffer.ConnectionQualityParams,
+		codec string, expectedHeight int32, expectedWidth int32, actualHeight int32, actualWidth int32) float32 {
+		return connectionquality.VideoConnectionScore(1*time.Second, totalBytes, totalFrames, qualityParam, codec,
+			expectedHeight, expectedWidth, actualHeight, actualWidth)
 	}
 
-	testPublishedVideoTrack := func(loss float32, numPublishing, numRegistered uint32) *typesfakes.FakeLocalMediaTrack {
+	testPublishedVideoTrack := func(totalBytes int64, totalFrames int64, qualityParam *buffer.ConnectionQualityParams,
+		codec string, expectedHeight int32, expectedWidth int32, actualHeight int32, actualWidth int32) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
-		score := videoScore(loss, numPublishing, numRegistered)
+		score := videoScore(totalBytes, totalFrames, qualityParam, codec, expectedHeight, expectedWidth,
+			actualHeight, actualWidth)
 		t.Log("video score: ", score)
 		tr.GetConnectionScoreReturns(score)
 		return tr
 	}
 
-	testPublishedAudioTrack := func(totalPackets, packetsLost uint32) *typesfakes.FakeLocalMediaTrack {
+	testPublishedAudioTrack := func(totalBytes int64, qualityParam *buffer.ConnectionQualityParams,
+		dtxDisabled bool) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
 
-		pctLoss := float32(0.0)
-		if totalPackets > 0 {
-			pctLoss = (float32(packetsLost) / float32(totalPackets)) * 100.0
-		}
-		score := connectionquality.AudioConnectionScore(pctLoss, 0, 0.0)
+		score := connectionquality.AudioConnectionScore(1*time.Second, totalBytes, qualityParam, dtxDisabled)
 		t.Log("audio score: ", score)
 		tr.GetConnectionScoreReturns(score)
 		return tr
@@ -256,32 +254,77 @@ func TestConnectionQuality(t *testing.T) {
 
 	t.Run("smooth sailing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(2, 3, 3)
-		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 0)
+
+		// >2Mbps, 30fps,  expected/actual video size = 1280x720
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(290000, 30, &buffer.ConnectionQualityParams{},
+			"", 720, 1280, 720, 1280)
+
+		// no packet loss
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{}, false)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(3, 2, 3)
-		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+
+		// 1Mbps, 15fps,  expected = 1280x720, actual = 640 x 480
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(25000, 15, &buffer.ConnectionQualityParams{},
+			"", 720, 1280, 480, 640)
+
+		// packet loss of 10%
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{LossPercentage: 5}, false)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio smooth publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 10)
+		// no packet loss
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{}, false)
 
 		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
 	})
 
 	t.Run("audio reduced publishing", func(t *testing.T) {
 		p := newParticipantForTest("test")
-		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, 100)
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{LossPercentage: 5}, false)
 
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
+	})
+	t.Run("audio bad publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.UpTrackManager.publishedTracks["audio"] = testPublishedAudioTrack(1000, &buffer.ConnectionQualityParams{LossPercentage: 20}, false)
+
+		require.Equal(t, livekit.ConnectionQuality_POOR, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("video smooth publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// >2Mbps, 30fps,  expected/actual video size = 1280x720
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(290000, 30, &buffer.ConnectionQualityParams{},
+			"", 720, 1280, 720, 1280)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
+	})
+	t.Run("video reduced publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 1Mbps, 15fps,  expected = 1280x720, actual = 640 x 480
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(100000, 15, &buffer.ConnectionQualityParams{},
+			"", 720, 1280, 480, 640)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
+	})
+	t.Run("video poor publishing", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 20kbps, 8fps,  expected = 1280x720, actual = 640 x 480
+		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(2500, 8, &buffer.ConnectionQualityParams{},
+			"", 720, 1280, 426, 240)
+
+		require.Equal(t, livekit.ConnectionQuality_POOR, p.GetConnectionQuality().GetQuality())
 	})
 }
 

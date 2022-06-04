@@ -52,6 +52,8 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 	clientInfo *livekit.ClientInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
 ) {
+	prometheus.IncrementParticipantJoin(1)
+
 	newWorker := newStatsWorker(
 		ctx,
 		t,
@@ -182,7 +184,7 @@ func (t *telemetryServiceInternal) TrackPublishedUpdate(ctx context.Context, par
 }
 
 func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo,
-	maxQuality livekit.VideoQuality) {
+	mime string, maxQuality livekit.VideoQuality) {
 
 	roomID, roomName := t.getRoomDetails(participantID)
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
@@ -193,6 +195,7 @@ func (t *telemetryServiceInternal) TrackMaxSubscribedVideoQuality(ctx context.Co
 		Track:                     track,
 		Room:                      &livekit.Room{Name: string(roomName)},
 		MaxSubscribedVideoQuality: maxQuality,
+		Mime:                      mime,
 	})
 }
 

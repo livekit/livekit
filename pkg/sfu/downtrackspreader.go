@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -19,19 +18,16 @@ type DownTrackSpreaderParams struct {
 type DownTrackSpreader struct {
 	params DownTrackSpreaderParams
 
-	downTrackMu sync.RWMutex
-	downTracks  []TrackSender
-	index       map[livekit.ParticipantID]int
-	free        map[int]struct{}
-	numProcs    int
+	downTrackMu      sync.RWMutex
+	downTracks       map[livekit.ParticipantID]TrackSender
+	downTracksShadow []TrackSender
+	numProcs         int
 }
 
 func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
 	d := &DownTrackSpreader{
 		params:     params,
-		downTracks: make([]TrackSender, 0),
-		index:      make(map[livekit.ParticipantID]int),
-		free:       make(map[int]struct{}),
+		downTracks: make(map[livekit.ParticipantID]TrackSender),
 		numProcs:   runtime.NumCPU(),
 	}
 
@@ -46,18 +42,17 @@ func (d *DownTrackSpreader) GetDownTracks() []TrackSender {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 
-	return d.downTracks
+	return d.downTracksShadow
 }
 
 func (d *DownTrackSpreader) ResetAndGetDownTracks() []TrackSender {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	downTracks := d.downTracks
+	downTracks := d.downTracksShadow
 
-	d.index = make(map[livekit.ParticipantID]int)
-	d.free = make(map[int]struct{})
-	d.downTracks = make([]TrackSender, 0)
+	d.downTracks = make(map[livekit.ParticipantID]TrackSender)
+	d.downTracksShadow = nil
 
 	return downTracks
 }
@@ -66,52 +61,32 @@ func (d *DownTrackSpreader) Store(ts TrackSender) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	peerID := ts.PeerID()
-	for idx := range d.free {
-		d.index[peerID] = idx
-		delete(d.free, idx)
-		d.downTracks[idx] = ts
-		return
-	}
-
-	d.index[peerID] = len(d.downTracks)
-	d.downTracks = append(d.downTracks, ts)
+	d.downTracks[ts.SubscriberID()] = ts
+	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) Free(peerID livekit.ParticipantID) {
+func (d *DownTrackSpreader) Free(subscriberID livekit.ParticipantID) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	idx, ok := d.index[peerID]
-	if !ok {
-		return
-	}
-
-	delete(d.index, peerID)
-	d.downTracks[idx] = nil
-	d.free[idx] = struct{}{}
+	delete(d.downTracks, subscriberID)
+	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) HasDownTrack(peerID livekit.ParticipantID) bool {
+func (d *DownTrackSpreader) HasDownTrack(subscriberID livekit.ParticipantID) bool {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 
-	_, ok := d.index[peerID]
+	_, ok := d.downTracks[subscriberID]
 	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
-	d.downTrackMu.RLock()
-	downTracks := d.downTracks
-	free := d.free
-	d.downTrackMu.RUnlock()
-
-	if d.params.Threshold == 0 || len(downTracks)-len(free) < d.params.Threshold {
+func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
+	downTracks := d.GetDownTracks()
+	if d.params.Threshold == 0 || (len(downTracks)) < d.params.Threshold {
 		// serial - not enough down tracks for parallelization to outweigh overhead
 		for _, dt := range downTracks {
-			if dt != nil {
-				d.writeRTP(layer, dt, pkt)
-			}
+			writer(dt)
 		}
 	} else {
 		// parallel - enables much more efficient multi-core utilization
@@ -134,9 +109,7 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 					}
 
 					for i := n - step; i < n && i < end; i++ {
-						if dt := downTracks[i]; dt != nil {
-							d.writeRTP(layer, dt, pkt)
-						}
+						writer(downTracks[i])
 					}
 				}
 			}()
@@ -145,8 +118,15 @@ func (d *DownTrackSpreader) Broadcast(layer int32, pkt *buffer.ExtPacket) {
 	}
 }
 
-func (d *DownTrackSpreader) writeRTP(layer int32, dt TrackSender, pkt *buffer.ExtPacket) {
-	if err := dt.WriteRTP(pkt, layer); err != nil {
-		d.params.Logger.Errorw("failed writing to down track", err)
+func (d *DownTrackSpreader) DownTrackCount() int {
+	d.downTrackMu.RLock()
+	defer d.downTrackMu.RUnlock()
+	return len(d.downTracksShadow)
+}
+
+func (d *DownTrackSpreader) shadowDownTracks() {
+	d.downTracksShadow = make([]TrackSender, 0, len(d.downTracks))
+	for _, dt := range d.downTracks {
+		d.downTracksShadow = append(d.downTracksShadow, dt)
 	}
 }

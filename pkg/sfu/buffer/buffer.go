@@ -312,9 +312,9 @@ func (b *Buffer) SetPLIThrottle(duration int64) {
 	b.pliThrottle = duration
 }
 
-func (b *Buffer) SendPLI() {
+func (b *Buffer) SendPLI(force bool) {
 	b.RLock()
-	if b.rtpStats == nil || b.rtpStats.TimeSinceLastPli() < b.pliThrottle {
+	if (b.rtpStats == nil || b.rtpStats.TimeSinceLastPli() < b.pliThrottle) && !force {
 		b.RUnlock()
 		return
 	}
@@ -322,7 +322,7 @@ func (b *Buffer) SendPLI() {
 	b.rtpStats.UpdatePliAndTime(1)
 	b.RUnlock()
 
-	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC)
+	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC, "force", force)
 	pli := []rtcp.Packet{
 		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
 	}
@@ -479,12 +479,12 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
-
 	case "video/vp9":
 		ep.KeyFrame = IsVp9Keyframe(rtpPacket.Payload)
 	case "video/av1":
 		ep.KeyFrame = IsAV1Keyframe(rtpPacket.Payload)
 	}
+
 	if ep.KeyFrame {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
@@ -559,6 +559,9 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
+	b.Lock()
+	defer b.Unlock()
+
 	b.lastFractionLostToReport = lost
 }
 

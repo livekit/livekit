@@ -2,6 +2,18 @@
 
 Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2022-05-27
+### Changed
+- Fixed edge cases where streams were not allocated (#701)
+- Fixed panic caused by concurrent modifications to stats worker map (#702 #704)
+- Batched subscriber updates to reduce noise in large rooms (#703 #729)
+- Fixed potential data race conditions (#706 #709 #711 #713 #715 #716 #717 #724 #727
+- /debug/pprof endpoint when running in development mode (#708)
+- When audio tracks are muted, send blank frames to induce silence (#710)
+- Fixed stream allocator not upgrading streams after downgrading (#719)
+- Fixed repeated AddSubscriber potentially ignored (#723)
+- Fixed ListEgress API sometimes returning not found (#722)
+
 ## [1.0.1] - 2022-05-19
 ### Changed
 - Update Egress details when changed, fixed Egress APIs (#694)
