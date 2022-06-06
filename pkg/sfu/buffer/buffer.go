@@ -291,7 +291,7 @@ func (b *Buffer) Close() error {
 
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
-			b.logger.Debugw("rtp stats", "stats", b.rtpStats.ToString())
+			b.logger.Infow("rtp stats", "stats", b.rtpStats.ToString())
 		}
 
 		if b.onClose != nil {
