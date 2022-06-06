@@ -222,7 +222,6 @@ func TestMuteSetting(t *testing.T) {
 }
 
 func TestConnectionQuality(t *testing.T) {
-
 	videoScore := func(totalBytes int64, totalFrames int64, qualityParam *buffer.ConnectionQualityParams,
 		codec string, expectedHeight int32, expectedWidth int32, actualHeight int32, actualWidth int32) float32 {
 		return connectionquality.VideoConnectionScore(1*time.Second, totalBytes, totalFrames, qualityParam, codec,
@@ -366,6 +365,75 @@ func TestSubscriberAsPrimary(t *testing.T) {
 		})
 		require.False(t, p.SubscriberAsPrimary())
 	})
+}
+
+func TestSetStableTrackID(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		trackInfo            *livekit.TrackInfo
+		unpublished          []*livekit.TrackInfo
+		prefix               string
+		remainingUnpublished int
+	}{
+		{
+			name: "first track, generates new ID",
+			trackInfo: &livekit.TrackInfo{
+				Type:   livekit.TrackType_VIDEO,
+				Source: livekit.TrackSource_CAMERA,
+			},
+			prefix: "TR_VC",
+		},
+		{
+			name: "re-using existing ID",
+			trackInfo: &livekit.TrackInfo{
+				Type:   livekit.TrackType_VIDEO,
+				Source: livekit.TrackSource_CAMERA,
+			},
+			unpublished: []*livekit.TrackInfo{
+				{
+					Type:   livekit.TrackType_VIDEO,
+					Source: livekit.TrackSource_SCREEN_SHARE,
+					Sid:    "TR_VC1234",
+				},
+				{
+					Type:   livekit.TrackType_VIDEO,
+					Source: livekit.TrackSource_CAMERA,
+					Sid:    "TR_VC1235",
+				},
+			},
+			prefix:               "TR_VC1235",
+			remainingUnpublished: 1,
+		},
+		{
+			name: "mismatch name for reuse",
+			trackInfo: &livekit.TrackInfo{
+				Type:   livekit.TrackType_VIDEO,
+				Source: livekit.TrackSource_CAMERA,
+				Name:   "new_name",
+			},
+			unpublished: []*livekit.TrackInfo{
+				{
+					Type:   livekit.TrackType_VIDEO,
+					Source: livekit.TrackSource_CAMERA,
+					Sid:    "TR_NotUsed",
+				},
+			},
+			prefix:               "TR_VC",
+			remainingUnpublished: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newParticipantForTest("test")
+			p.unpublishedTracks = tc.unpublished
+
+			ti := tc.trackInfo
+			p.setStableTrackID(ti)
+			require.Contains(t, ti.Sid, tc.prefix)
+			require.Len(t, p.unpublishedTracks, tc.remainingUnpublished)
+		})
+	}
 }
 
 type participantOpts struct {
