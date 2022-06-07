@@ -179,6 +179,22 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
+	var filterOut bool
+	p.lock.RLock()
+	if target == livekit.SignalTarget_SUBSCRIBER {
+		if p.iceConfig.PreferSubTcp && c.Protocol != webrtc.ICEProtocolTCP {
+			filterOut = true
+		}
+	} else if target == livekit.SignalTarget_PUBLISHER {
+		if p.iceConfig.PreferPubTcp && c.Protocol != webrtc.ICEProtocolTCP {
+			filterOut = true
+		}
+	}
+	p.lock.RUnlock()
+	if filterOut {
+		return
+	}
+
 	ci := c.ToJSON()
 
 	// write candidate
