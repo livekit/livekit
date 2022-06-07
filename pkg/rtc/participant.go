@@ -136,6 +136,7 @@ type ParticipantImpl struct {
 
 	activeCounter  atomic.Int32
 	firstConnected atomic.Bool
+	iceConfig      types.IceConfig
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -597,6 +598,22 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 
 // AddICECandidate adds candidates for remote peer
 func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
+	var filterOut bool
+	p.lock.RLock()
+	if target == livekit.SignalTarget_SUBSCRIBER {
+		if p.iceConfig.PreferSubTcp && !strings.Contains(candidate.Candidate, "tcp") {
+			filterOut = true
+		}
+	} else if target == livekit.SignalTarget_PUBLISHER {
+		if p.iceConfig.PreferPubTcp && !strings.Contains(candidate.Candidate, "tcp") {
+			filterOut = true
+		}
+	}
+	p.lock.RUnlock()
+	if filterOut {
+		return nil
+	}
+
 	var err error
 	if target == livekit.SignalTarget_PUBLISHER {
 		err = p.publisher.AddICECandidate(candidate)
@@ -712,7 +729,13 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart() error {
+func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
+	if iceConfig != nil {
+		p.lock.Lock()
+		p.iceConfig = *iceConfig
+		p.lock.Unlock()
+	}
+
 	if p.subscriber.pc.RemoteDescription() == nil {
 		// not connected, skip
 		return nil

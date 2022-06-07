@@ -248,9 +248,10 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func() error
+	ICERestartStub        func(*types.IceConfig) error
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
+		arg1 *types.IceConfig
 	}
 	iCERestartReturns struct {
 		result1 error
@@ -1873,17 +1874,18 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart() error {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *types.IceConfig) error {
 	fake.iCERestartMutex.Lock()
 	ret, specificReturn := fake.iCERestartReturnsOnCall[len(fake.iCERestartArgsForCall)]
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
-	}{})
+		arg1 *types.IceConfig
+	}{arg1})
 	stub := fake.ICERestartStub
 	fakeReturns := fake.iCERestartReturns
-	fake.recordInvocation("ICERestart", []interface{}{})
+	fake.recordInvocation("ICERestart", []interface{}{arg1})
 	fake.iCERestartMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1897,10 +1899,17 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func() error) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*types.IceConfig) error) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
+}
+
+func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *types.IceConfig {
+	fake.iCERestartMutex.RLock()
+	defer fake.iCERestartMutex.RUnlock()
+	argsForCall := fake.iCERestartArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) ICERestartReturns(result1 error) {

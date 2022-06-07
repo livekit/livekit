@@ -91,6 +91,11 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
+type IceConfig struct {
+	PreferSubTcp bool
+	PreferPubTcp bool
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
@@ -127,7 +132,7 @@ type LocalParticipant interface {
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	Negotiate(force bool)
-	ICERestart() error
+	ICERestart(iceConfig *IceConfig) error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error

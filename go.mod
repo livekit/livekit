@@ -16,7 +16,7 @@ require (
 	github.com/livekit/protocol v0.13.3-0.20220530102138-51a8116f88b2
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a
 	github.com/mackerelio/go-osstat v0.2.1
-	github.com/magefile/mage v1.11.0
+	github.com/magefile/mage v1.13.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
@@ -88,3 +88,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/livekit/protocol => ../protocol

@@ -334,7 +334,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
-	if err := p.ICERestart(); err != nil {
+	if err := p.ICERestart(nil); err != nil {
 		return err
 	}
 	return nil
@@ -618,6 +618,15 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	case *livekit.SimulateScenario_ServerLeave:
 		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
 		if err := participant.Close(true); err != nil {
+			return err
+		}
+
+	case *livekit.SimulateScenario_SwitchCandidateProtocol:
+		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
+		if err := participant.ICERestart(&types.IceConfig{
+			PreferSubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
+			PreferPubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
+		}); err != nil {
 			return err
 		}
 	}
