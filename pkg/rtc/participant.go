@@ -170,6 +170,22 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if p.updateCache, err = lru.New(32); err != nil {
 		return nil, err
 	}
+
+	enabledCodecs := make([]*livekit.Codec, 0, len(p.params.EnabledCodecs))
+	for _, c := range p.params.EnabledCodecs {
+		var disabled bool
+		for _, disableCodec := range p.params.ClientConf.GetDisabledCodecs().GetCodecs() {
+			// disable codec's fmtp is empty means disable this codec entirely
+			if strings.EqualFold(c.Mime, disableCodec.Mime) && (disableCodec.FmtpLine == "" || disableCodec.FmtpLine == c.FmtpLine) {
+				disabled = true
+				break
+			}
+		}
+		if !disabled {
+			enabledCodecs = append(enabledCodecs, c)
+		}
+	}
+
 	p.publisher, err = NewPCTransport(TransportParams{
 		ParticipantID:           p.params.SID,
 		ParticipantIdentity:     p.params.Identity,
@@ -178,7 +194,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Config:                  params.Config,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               p.params.Telemetry,
-		EnabledCodecs:           p.params.EnabledCodecs,
+		EnabledCodecs:           enabledCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
 	})
