@@ -1,9 +1,11 @@
 package rtc
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -436,10 +438,55 @@ func TestSetStableTrackID(t *testing.T) {
 	}
 }
 
+func TestDisableCodecs(t *testing.T) {
+	participant := newParticipantForTestWithOpts(livekit.ParticipantIdentity("123"), &participantOpts{
+		publisher: false,
+		clientConf: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Codecs: []*livekit.Codec{
+					{Mime: "video/h264"},
+				},
+			},
+		},
+	})
+
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	transceiver, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+	require.NoError(t, err)
+	sdp, err := pc.CreateOffer(nil)
+	require.NoError(t, err)
+	pc.SetLocalDescription(sdp)
+	codecs := transceiver.Receiver().GetParameters().Codecs
+	var found264 bool
+	for _, c := range codecs {
+		if strings.EqualFold(c.MimeType, "video/h264") {
+			found264 = true
+		}
+	}
+	require.True(t, found264)
+
+	// negotiated codec should not contain h264
+	anwser, err := participant.HandleOffer(sdp)
+	require.NoError(t, err)
+	require.NoError(t, pc.SetRemoteDescription(anwser), anwser.SDP, sdp.SDP)
+	codecs = transceiver.Receiver().GetParameters().Codecs
+	found264 = false
+	for _, c := range codecs {
+		if strings.EqualFold(c.MimeType, "video/h264") {
+			found264 = true
+		}
+	}
+	require.False(t, found264)
+}
+
 type participantOpts struct {
 	permissions     *livekit.ParticipantPermission
 	protocolVersion types.ProtocolVersion
 	publisher       bool
+	clientConf      *livekit.ClientConfiguration
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -465,6 +512,14 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		grants.Video.SetCanPublishData(opts.permissions.CanPublishData)
 		grants.Video.SetCanSubscribe(opts.permissions.CanSubscribe)
 	}
+
+	enabledCodecs := make([]*livekit.Codec, 0, len(conf.Room.EnabledCodecs))
+	for _, c := range conf.Room.EnabledCodecs {
+		enabledCodecs = append(enabledCodecs, &livekit.Codec{
+			Mime:     c.Mime,
+			FmtpLine: c.FmtpLine,
+		})
+	}
 	p, _ := NewParticipant(ParticipantParams{
 		SID:               livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)),
 		Identity:          identity,
@@ -473,6 +528,8 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ProtocolVersion:   opts.protocolVersion,
 		PLIThrottleConfig: conf.RTC.PLIThrottle,
 		Grants:            grants,
+		EnabledCodecs:     enabledCodecs,
+		ClientConf:        opts.clientConf,
 	})
 	p.isPublisher.Store(opts.publisher)
 
