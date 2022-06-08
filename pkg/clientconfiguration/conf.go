@@ -8,8 +8,10 @@ var StaticConfigurations = []ConfigurationItem{
 	// 	Merge:         false,
 	// },
 	// {
-	// 	Match:         &ScriptMatch{Expr: `c.browser == "safari" && c.os == "ios"`},
-	// 	Configuration: &livekit.ClientConfiguration{DisabledCodecs: &livekit.DisabledCodecs{Codecs: []string{"video/vp9"}}},
-	// 	Merge:         false,
+	// 	Match: &ScriptMatch{Expr: `c.browser == "safari" && c.os == "ios"`},
+	// 	Configuration: &livekit.ClientConfiguration{DisabledCodecs: &livekit.DisabledCodecs{Codecs: []*livekit.Codec{
+	// 		&livekit.Codec{Mime: "video/vp9"},
+	// 	}}},
+	// 	Merge: false,
 	// },
 }
