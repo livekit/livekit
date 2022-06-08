@@ -30,7 +30,7 @@ type ConnectionStatsParams struct {
 	GetQualityParams    func() *buffer.ConnectionQualityParams
 	GetIsReducedQuality func() bool
 	GetLayerDimension   func(int32) (uint32, uint32)
-	GetMaxExpectedLayer func() livekit.VideoLayer
+	GetMaxExpectedLayer func() *livekit.VideoLayer
 	Logger              logger.Logger
 }
 
@@ -111,7 +111,7 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream, itera
 	} else {
 		// get tracks expected max layer and dimensions
 		expectedLayer := cs.params.GetMaxExpectedLayer()
-		if utils.SpatialLayerForQuality(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
+		if expectedLayer == nil || utils.SpatialLayerForQuality(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
 			return cs.score
 		}
 
@@ -129,9 +129,6 @@ func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream, itera
 
 		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), &qualityParam, cs.params.CodecName,
 			int32(expectedLayer.Height), int32(expectedLayer.Width), int32(actualHeight), int32(actualWidth))
-		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer.Quality, "maxLayer", maxLayer,
-		//	"expectedWidth", expectedLayer.Width, "actualWidth", actualWidth, "expectedHeight", expectedLayer.Height, "actualHeight", actualHeight)
-
 	}
 
 	return cs.score
