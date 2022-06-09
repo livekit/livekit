@@ -11,6 +11,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -208,9 +209,9 @@ func NewWebRTCReceiver(
 		GetLayerDimension: func(quality int32) (uint32, uint32) {
 			return w.GetLayerDimension(quality)
 		},
-		GetMaxExpectedLayer: func() livekit.VideoLayer {
-			var expectedLayer livekit.VideoLayer
-			var maxPublishedLayer livekit.VideoLayer
+		GetMaxExpectedLayer: func() *livekit.VideoLayer {
+			var expectedLayer *livekit.VideoLayer
+			var maxPublishedLayer *livekit.VideoLayer
 			// find min of <expected, published> layer
 			expectedQuality := w.streamTrackerManager.GetMaxExpectedLayer()
 			maxPublishedQuality := InvalidLayerSpatial
@@ -220,11 +221,11 @@ func NewWebRTCReceiver(
 						continue
 					}
 					if expectedQuality == utils.SpatialLayerForQuality(layer.Quality) {
-						expectedLayer = *layer
+						expectedLayer = proto.Clone(layer).(*livekit.VideoLayer)
 					}
 					if utils.SpatialLayerForQuality(layer.Quality) > maxPublishedQuality {
 						maxPublishedQuality = int32(layer.Quality)
-						maxPublishedLayer = *layer
+						maxPublishedLayer = proto.Clone(layer).(*livekit.VideoLayer)
 					}
 				}
 			}
