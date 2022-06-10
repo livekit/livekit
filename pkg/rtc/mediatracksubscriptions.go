@@ -224,9 +224,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		if dt.Codec().MimeType == "" {
-			t.params.Logger.Errorw("codec mime type is empty", nil)
-		}
 		go t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), QualityForSpatialLayer(layer))
 	})
 
@@ -438,10 +435,11 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 	} else {
 		maxQuality, ok := t.maxSubscriberQuality[subscriberID]
 		if ok {
-			if maxQuality.Quality == quality {
+			if maxQuality.Quality == quality && maxQuality.CodecMime == codec.MimeType {
 				t.maxQualityLock.Unlock()
 				return
 			}
+			maxQuality.CodecMime = codec.MimeType
 			maxQuality.Quality = quality
 		} else {
 			t.maxSubscriberQuality[subscriberID] = &types.SubscribedCodecQuality{
