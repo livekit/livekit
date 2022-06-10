@@ -209,7 +209,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Config:                  params.Config,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               p.params.Telemetry,
-		EnabledCodecs:           p.params.EnabledCodecs,
+		EnabledCodecs:           enabledCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 	})
 	if err != nil {
