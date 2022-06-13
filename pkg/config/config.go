@@ -151,13 +151,15 @@ type LoggingConfig struct {
 }
 
 type TURNConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Domain      string `yaml:"domain"`
-	CertFile    string `yaml:"cert_file"`
-	KeyFile     string `yaml:"key_file"`
-	TLSPort     int    `yaml:"tls_port"`
-	UDPPort     int    `yaml:"udp_port"`
-	ExternalTLS bool   `yaml:"external_tls"`
+	Enabled             bool   `yaml:"enabled"`
+	Domain              string `yaml:"domain"`
+	CertFile            string `yaml:"cert_file"`
+	KeyFile             string `yaml:"key_file"`
+	TLSPort             int    `yaml:"tls_port"`
+	UDPPort             int    `yaml:"udp_port"`
+	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
+	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
+	ExternalTLS         bool   `yaml:"external_tls"`
 }
 
 type WebHookConfig struct {
@@ -273,6 +275,18 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		} else {
 			conf.RTC.ICEPortRangeStart = 50000
 			conf.RTC.ICEPortRangeEnd = 60000
+		}
+	}
+
+	// set defaults for Turn relay if none are set
+	if conf.TURN.RelayPortRangeStart == 0 || conf.TURN.RelayPortRangeEnd == 0 {
+		// to make it easier to run in dev mode/docker, default to two ports
+		if conf.Development {
+			conf.TURN.RelayPortRangeStart = 30000
+			conf.TURN.RelayPortRangeEnd = 30002
+		} else {
+			conf.TURN.RelayPortRangeStart = 30000
+			conf.TURN.RelayPortRangeEnd = 40000
 		}
 	}
 

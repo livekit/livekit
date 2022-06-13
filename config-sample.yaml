@@ -161,6 +161,9 @@ keys:
 #   udp_port: 3478
 #   # defaults to 5349 - if not using a load balancer, this must be set to 443
 #   tls_port: 5349
+#   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
+#   relay_range_start: 1024
+#   relay_range_end: 30000
 #   # set external_tl to true if using a L4 load balancer to terminate TLS. when enabled,
 #   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
 #   external_tls: true
