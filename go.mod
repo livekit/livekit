@@ -13,7 +13,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.13.3-0.20220608063907-5e0777215366
+	github.com/livekit/protocol v0.13.3-0.20220613165243-ed1c24edb15a
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/magefile/mage v1.13.0

@@ -16,6 +16,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
@@ -46,7 +48,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	messageBus := createMessageBus(client)
+	nodeID := getNodeID(currentNode)
+	rpcClient := egress.NewRedisRPCClient(nodeID, client)
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -57,7 +60,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	egressService := NewEgressService(messageBus, objectStore, roomService, telemetryService)
+	egressService := NewEgressService(rpcClient, objectStore, roomService, telemetryService)
+	messageBus := createMessageBus(client)
 	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
@@ -87,6 +91,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 }
 
 // wire.go:
+
+func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
+	return livekit.NodeID(currentNode.Id)
+}
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 
