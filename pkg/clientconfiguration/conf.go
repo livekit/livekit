@@ -8,9 +8,9 @@ var StaticConfigurations = []ConfigurationItem{
 	// 	Merge:         false,
 	// },
 	// {
-	// 	Match: &ScriptMatch{Expr: `c.browser == "safari" && c.os == "ios"`},
+	// 	Match: &ScriptMatch{Expr: `c.browser == "Firefox"`},
 	// 	Configuration: &livekit.ClientConfiguration{DisabledCodecs: &livekit.DisabledCodecs{Codecs: []*livekit.Codec{
-	// 		&livekit.Codec{Mime: "video/vp9"},
+	// 		{Mime: "video/vp8"},
 	// 	}}},
 	// 	Merge: false,
 	// },

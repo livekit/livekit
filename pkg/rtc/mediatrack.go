@@ -8,6 +8,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -96,7 +97,7 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		return true
 	}
 
-	info := t.MediaTrackReceiver.TrackInfo(false)
+	info := t.params.TrackInfo
 	t.params.Logger.Debugw("MediaTrack.HasSdpCid", "cid", cid, "trackInfo", info.String())
 	for _, c := range info.Codecs {
 		if c.Cid == cid {
@@ -113,8 +114,23 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return info
 }
 
+func (t *MediaTrack) SetPendingCodecSid(codecs []*livekit.SimulcastCodec) {
+	ti := proto.Clone(t.params.TrackInfo).(*livekit.TrackInfo)
+	for _, c := range codecs {
+		for _, origin := range ti.Codecs {
+			if strings.Contains(origin.MimeType, c.Codec) {
+				origin.Cid = c.Cid
+				break
+			}
+		}
+	}
+	t.params.TrackInfo = ti
+	return
+}
+
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.TrackRemote, twcc *twcc.Responder, mid string) bool {
+
 	var newCodec bool
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(uint32(track.SSRC()))
 	if buff == nil || rtcpReader == nil {
@@ -180,6 +196,24 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
 		if t.PrimaryReceiver() == nil {
+			// primary codec published, set potential codecs
+			potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(t.params.TrackInfo.Codecs))
+			parameters := receiver.GetParameters()
+			for _, c := range t.params.TrackInfo.Codecs {
+				for _, nc := range parameters.Codecs {
+					if strings.EqualFold(nc.MimeType, c.MimeType) {
+						potentialCodecs = append(potentialCodecs, nc)
+						break
+					}
+				}
+			}
+			// old client don't have codecs info
+			if len(potentialCodecs) == 0 {
+				potentialCodecs = append(potentialCodecs, parameters.Codecs[0])
+			}
+
+			t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs, "trackinfo", t.params.TrackInfo, "parameters", parameters)
+			t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			t.params.Telemetry.TrackPublished(
 				context.Background(),
 				t.PublisherID(),
@@ -234,7 +268,7 @@ func (t *MediaTrack) SetRTT(rtt uint32) {
 }
 
 func (t *MediaTrack) HasPendingCodec() bool {
-	return len(t.params.TrackInfo.Codecs) > len(t.Receivers())
+	return t.MediaTrackReceiver.PrimaryReceiver() == nil
 }
 
 func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {

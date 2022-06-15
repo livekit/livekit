@@ -1459,6 +1459,17 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
+	if req.Sid != "" {
+		track := p.getPublishedTrack(livekit.TrackID(req.Sid))
+		if track != nil {
+			return nil
+		}
+
+		track.(*MediaTrack).SetPendingCodecSid(req.SimulcastCodecs)
+		ti := track.ToProto()
+		return ti
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:       req.Type,
 		Name:       req.Name,

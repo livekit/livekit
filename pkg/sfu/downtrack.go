@@ -123,7 +123,7 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs          []webrtc.RTPCodecCapability
+	upstreamCodecs          []webrtc.RTPCodecParameters
 	codec                   webrtc.RTPCodecCapability
 	rtpHeaderExtensions     []webrtc.RTPHeaderExtensionParameter
 	absSendTimeID           int
@@ -190,7 +190,7 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(
-	codecs []webrtc.RTPCodecCapability,
+	codecs []webrtc.RTPCodecParameters,
 	r TrackReceiver,
 	bf *buffer.Factory,
 	subID livekit.ParticipantID,
@@ -217,7 +217,7 @@ func NewDownTrack(
 		receiver:       r,
 		upstreamCodecs: codecs,
 		kind:           kind,
-		codec:          codecs[0],
+		codec:          codecs[0].RTPCodecCapability,
 	}
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
@@ -271,8 +271,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		parameters := webrtc.RTPCodecParameters{RTPCodecCapability: c}
-		matchCodec, err := codecParametersFuzzySearch(parameters, t.CodecParameters())
+		matchCodec, err := codecParametersFuzzySearch(c, t.CodecParameters())
 		if err == nil {
 			codec = matchCodec
 			break
