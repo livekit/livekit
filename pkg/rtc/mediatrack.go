@@ -210,7 +210,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				potentialCodecs = append(potentialCodecs, parameters.Codecs[0])
 			}
 
-			t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs, "trackinfo", t.params.TrackInfo, "parameters", parameters)
+			t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 			t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			t.params.Telemetry.TrackPublished(
 				context.Background(),

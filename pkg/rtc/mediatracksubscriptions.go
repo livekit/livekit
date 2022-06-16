@@ -518,8 +518,6 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		maxSubscribedQuality[mime] = livekit.VideoQuality_OFF
 	}
 
-	// every codec mime type should be in maxSubscribedQuality since we
-	// call AddCodec when receiving a new codec receiver
 	for _, subQuality := range t.maxSubscriberQuality {
 		if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
 			if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
