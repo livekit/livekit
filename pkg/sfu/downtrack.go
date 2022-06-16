@@ -436,13 +436,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	payload := extPkt.Packet.Payload
 	if tp.vp8 != nil {
 		incomingVP8, _ := extPkt.Payload.(buffer.VP8)
-
-		outbuf := &payload
-		if incomingVP8.HeaderSize != tp.vp8.Header.HeaderSize {
-			pool = PacketFactory.Get().(*[]byte)
-			outbuf = pool
-		}
-		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.Header, outbuf)
+		pool = PacketFactory.Get().(*[]byte)
+		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.Header, pool)
 		if err != nil {
 			d.pktsDropped.Inc()
 			return err
@@ -1240,13 +1235,9 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 				continue
 			}
 
-			outbuf := &payload
 			translatedVP8 := meta.unpackVP8()
-			if incomingVP8.HeaderSize != translatedVP8.HeaderSize {
-				pool = PacketFactory.Get().(*[]byte)
-				outbuf = pool
-			}
-			payload, err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, outbuf)
+			pool = PacketFactory.Get().(*[]byte)
+			payload, err = d.translateVP8PacketTo(&pkt, &incomingVP8, translatedVP8, pool)
 			if err != nil {
 				d.logger.Errorw("translating VP8 packet err", err)
 				continue
@@ -1342,16 +1333,10 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 }
 
 func (d *DownTrack) translateVP8PacketTo(pkt *rtp.Packet, incomingVP8 *buffer.VP8, translatedVP8 *buffer.VP8, outbuf *[]byte) ([]byte, error) {
-	var buf []byte
-	if outbuf == &pkt.Payload {
-		buf = pkt.Payload
-	} else {
-		buf = (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
-
-		srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
-		dstPayload := buf[translatedVP8.HeaderSize:]
-		copy(dstPayload, srcPayload)
-	}
+	buf := (*outbuf)[:len(pkt.Payload)+translatedVP8.HeaderSize-incomingVP8.HeaderSize]
+	srcPayload := pkt.Payload[incomingVP8.HeaderSize:]
+	dstPayload := buf[translatedVP8.HeaderSize:]
+	copy(dstPayload, srcPayload)
 
 	err := translatedVP8.MarshalTo(buf[:translatedVP8.HeaderSize])
 	return buf, err
