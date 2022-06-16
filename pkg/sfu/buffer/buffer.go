@@ -3,7 +3,6 @@ package buffer
 import (
 	"encoding/binary"
 	"io"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -324,7 +323,7 @@ func (b *Buffer) SendPLI(force bool) {
 
 	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC, "force", force)
 	pli := []rtcp.Packet{
-		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
+		&rtcp.PictureLossIndication{SenderSSRC: b.mediaSSRC, MediaSSRC: b.mediaSSRC},
 	}
 
 	if b.onRtcpFeedback != nil {
@@ -529,8 +528,9 @@ func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
-				MediaSSRC: b.mediaSSRC,
-				Nacks:     nacks,
+				SenderSSRC: b.mediaSSRC,
+				MediaSSRC:  b.mediaSSRC,
+				Nacks:      nacks,
 			}}
 		}
 
@@ -571,6 +571,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	rr := b.buildReceptionReport()
 	if rr != nil {
 		pkts = append(pkts, &rtcp.ReceiverReport{
+			SSRC:    b.mediaSSRC,
 			Reports: []rtcp.ReceptionReport{*rr},
 		})
 	}

@@ -25,13 +25,13 @@ var (
 		},
 		{
 			SamplesRequired:       5,
-			CyclesRequired:        60,
+			CyclesRequired:        20,
 			CycleDuration:         500 * time.Millisecond,
 			BitrateReportInterval: 1 * time.Second,
 		},
 		{
 			SamplesRequired:       5,
-			CyclesRequired:        60,
+			CyclesRequired:        20,
 			CycleDuration:         500 * time.Millisecond,
 			BitrateReportInterval: 1 * time.Second,
 		},
