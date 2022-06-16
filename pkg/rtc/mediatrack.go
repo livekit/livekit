@@ -98,7 +98,6 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 	}
 
 	info := t.params.TrackInfo
-	t.params.Logger.Debugw("MediaTrack.HasSdpCid", "cid", cid, "trackInfo", info.String())
 	for _, c := range info.Codecs {
 		if c.Cid == cid {
 			return true
@@ -125,7 +124,6 @@ func (t *MediaTrack) SetPendingCodecSid(codecs []*livekit.SimulcastCodec) {
 		}
 	}
 	t.params.TrackInfo = ti
-	return
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec

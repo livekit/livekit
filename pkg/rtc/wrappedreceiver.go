@@ -81,6 +81,11 @@ func NewDumbReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPC
 	}
 }
 
+func (d *DumbReceiver) Receiver() sfu.TrackReceiver {
+	r, _ := d.receiver.Load().(sfu.TrackReceiver)
+	return r
+}
+
 func (d *DumbReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()

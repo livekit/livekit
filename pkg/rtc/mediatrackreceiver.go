@@ -349,6 +349,20 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 		return errors.New("cannot subscribe without a receiver in place")
 	}
 
+	for _, receiver := range receivers {
+		codec := receiver.Codec()
+		var found bool
+		for _, pc := range potentialCodecs {
+			if codec.MimeType == pc.MimeType {
+				found = true
+				break
+			}
+		}
+		if !found {
+			potentialCodecs = append(potentialCodecs, codec)
+		}
+	}
+
 	// using DownTrack from ion-sfu
 	streamId := string(t.PublisherID())
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
@@ -598,8 +612,8 @@ func (t *MediaTrackReceiver) PrimaryReceiver() sfu.TrackReceiver {
 	if len(t.receiversShadow) == 0 {
 		return nil
 	}
-	if _, ok := t.receiversShadow[0].TrackReceiver.(*DumbReceiver); ok {
-		return nil
+	if dr, ok := t.receiversShadow[0].TrackReceiver.(*DumbReceiver); ok {
+		return dr.Receiver()
 	}
 	return t.receiversShadow[0].TrackReceiver
 }
@@ -610,9 +624,10 @@ func (t *MediaTrackReceiver) Receiver(mime string) sfu.TrackReceiver {
 
 	for _, r := range t.receiversShadow {
 		if strings.EqualFold(r.Codec().MimeType, mime) {
-			if _, ok := r.TrackReceiver.(*DumbReceiver); !ok {
-				return r.TrackReceiver
+			if dr, ok := r.TrackReceiver.(*DumbReceiver); ok {
+				return dr.Receiver()
 			}
+			return r.TrackReceiver
 		}
 	}
 	return nil
