@@ -518,13 +518,13 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 		maxSubscribedQuality[mime] = livekit.VideoQuality_OFF
 	}
 
-	// every codec mime type should be in maxSubscribedQuality since we
-	// call AddCodec when receiving a new codec receiver
 	for _, subQuality := range t.maxSubscriberQuality {
 		if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
 			if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
 				maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 			}
+		} else {
+			maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 		}
 	}
 	for _, subQualities := range t.maxSubscriberNodeQuality {
@@ -533,6 +533,8 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 				if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
 					maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 				}
+			} else {
+				maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
 			}
 		}
 	}
@@ -540,7 +542,11 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	qualityDowngrades := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
 	noChangeCount := 0
 	for mime, q := range maxSubscribedQuality {
-		if origin := t.maxSubscribedQuality[mime]; origin != q {
+		origin, ok := t.maxSubscribedQuality[mime]
+		if !ok {
+			origin = livekit.VideoQuality_OFF
+		}
+		if origin != q {
 			if q == livekit.VideoQuality_OFF || (origin != livekit.VideoQuality_OFF && origin > q) {
 				// quality downgrade (or become off), delay notify to publisher
 				qualityDowngrades[mime] = origin

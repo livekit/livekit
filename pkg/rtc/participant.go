@@ -1459,6 +1459,18 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
+	if req.Sid != "" {
+		track := p.getPublishedTrack(livekit.TrackID(req.Sid))
+		if track == nil {
+			p.params.Logger.Infow("track not found for new codec publish", "trackID", req.Sid)
+			return nil
+		}
+
+		track.(*MediaTrack).SetPendingCodecSid(req.SimulcastCodecs)
+		ti := track.ToProto()
+		return ti
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:       req.Type,
 		Name:       req.Name,
@@ -1625,7 +1637,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 	p.pendingTracksLock.Unlock()
 
-	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) && !mt.HasPendingCodec() {
+	if mt.AddReceiver(rtpReceiver, track, p.twcc, mid) && newTrack {
 		p.handleTrackPublished(mt)
 	}
 
