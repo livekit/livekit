@@ -205,13 +205,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 					}
 				}
 			}
-			// old client don't have codecs info
-			if len(potentialCodecs) == 0 {
-				potentialCodecs = append(potentialCodecs, parameters.Codecs[0])
-			}
 
 			t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
-			t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
+			if len(potentialCodecs) > 0 {
+				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
+			}
 			t.params.Telemetry.TrackPublished(
 				context.Background(),
 				t.PublisherID(),
