@@ -158,7 +158,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		}
 	}
 
-	t.shadowReceivers()
+	t.shadowReceiversLocked()
 
 	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow)
 	t.lock.Unlock()
@@ -189,11 +189,11 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	sort.Slice(t.receivers, func(i, j int) bool {
 		return t.receivers[i].Priority() < t.receivers[j].Priority()
 	})
-	t.shadowReceivers()
+	t.shadowReceiversLocked()
 	t.lock.Unlock()
 }
 
-func (t *MediaTrackReceiver) shadowReceivers() {
+func (t *MediaTrackReceiver) shadowReceiversLocked() {
 	t.receiversShadow = make([]*simulcastReceiver, len(t.receivers))
 	copy(t.receiversShadow, t.receivers)
 }
