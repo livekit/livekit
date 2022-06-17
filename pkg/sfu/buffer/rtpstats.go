@@ -563,7 +563,7 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > NumSequenceNumbers {
-		logger.Warnw(
+		r.logger.Warnw(
 			"too many packets expected in receiver report",
 			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
@@ -627,7 +627,7 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > NumSequenceNumbers {
-		logger.Warnw(
+		r.logger.Warnw(
 			"too many packets expected in snapshot",
 			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
@@ -675,7 +675,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 
 	packetsExpected := now.extStartSN - then.extStartSN
 	if packetsExpected > NumSequenceNumbers {
-		logger.Warnw(
+		r.logger.Warnw(
 			"too many packets expected in delta",
 			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
 		)
@@ -1006,7 +1006,7 @@ func (r *RTPStats) getIntervalStats(startInclusive uint16, endExclusive uint16) 
 	}
 
 	if packetsNotFound != 0 {
-		r.params.Logger.Warnw(
+		r.logger.Warnw(
 			"could not find some packets", nil,
 			"start", startInclusive,
 			"end", endExclusive,
