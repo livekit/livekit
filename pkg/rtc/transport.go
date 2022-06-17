@@ -393,10 +393,6 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 		return err
 	}
 
-	// for pion generate unmatched sdp, it always appends data channel to last m-lines,
-	// that is not consistent with our subscribe offer which data channel is first m-lines,
-	// so use a dumb pc to negotiate sdp with only data channel then the data channel will
-	// sticky to first m-lines(subsequent sdp negotiation will keep m-lines' sequence)
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
 		return err
@@ -413,6 +409,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	se.SetAnsweringDTLSRole(extractDTLSRole(parsed))
 	api := webrtc.NewAPI(
 		webrtc.WithSettingEngine(se),
+		webrtc.WithMediaEngine(t.me),
 	)
 	pc2, err := api.NewPeerConnection(webrtc.Configuration{
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
@@ -457,10 +454,6 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 }
 
 func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
-	if err := t.preparePC(previousAnswer); err != nil {
-		return err
-	}
-
 	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
 		return err
@@ -472,6 +465,16 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			codecType = webrtc.RTPCodecTypeVideo
 		case "audio":
 			codecType = webrtc.RTPCodecTypeAudio
+		case "application":
+			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
+			// that not consistent with our previous answer that data channel might at middle-line
+			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
+			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
+			if err := t.preparePC(previousAnswer); err != nil {
+				t.logger.Errorw("prepare pc for migration failed", err)
+				return err
+			}
+			continue
 		default:
 			continue
 		}
@@ -522,7 +525,9 @@ func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 	defer t.lock.Unlock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
-		t.initPCWithPreviousAnswer(*t.previousAnswer)
+		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+			t.logger.Errorw("initPCWithPreviousAnswer failed", err)
+		}
 	}
 }
 
