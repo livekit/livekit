@@ -163,7 +163,6 @@ func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
 }
 
 func (p *ParticipantImpl) SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error {
-	p.params.Logger.Debugw("sending cq update", "update", update) // REMOVE
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_ConnectionQuality{
 			ConnectionQuality: update,
