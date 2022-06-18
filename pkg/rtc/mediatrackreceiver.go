@@ -671,29 +671,3 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 }
 
 // ---------------------------
-
-func QualityForSpatialLayer(layer int32) livekit.VideoQuality {
-	switch layer {
-	case 0:
-		return livekit.VideoQuality_LOW
-	case 1:
-		return livekit.VideoQuality_MEDIUM
-	case 2:
-		return livekit.VideoQuality_HIGH
-	case sfu.InvalidLayerSpatial:
-		return livekit.VideoQuality_OFF
-	default:
-		return livekit.VideoQuality_OFF
-	}
-}
-
-func VideoQualityToRID(q livekit.VideoQuality) string {
-	switch q {
-	case livekit.VideoQuality_HIGH:
-		return sfu.FullResolution
-	case livekit.VideoQuality_MEDIUM:
-		return sfu.HalfResolution
-	default:
-		return sfu.QuarterResolution
-	}
-}

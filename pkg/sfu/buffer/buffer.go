@@ -637,16 +637,20 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 		return nil
 	}
 
+	/* RAJA-REMOVE
 	layers := make(map[int]LayerStats)
 	layers[0] = LayerStats{
 		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
 		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
 		Frames:  deltaStats.Frames,
 	}
-
+	RAJA-REMOVE */
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		Layers:   layers,
+		// RAJA-REMOVE Layers:   layers,
+		Layers: map[int32]*RTPDeltaInfo{
+			0: deltaStats,
+		},
 	}
 }
 

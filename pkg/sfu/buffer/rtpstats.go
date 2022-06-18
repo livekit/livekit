@@ -15,8 +15,6 @@ import (
 
 const (
 	GapHistogramNumBins = 101
-	SequenceNumberMin   = uint16(0)
-	SequenceNumberMax   = uint16(65535)
 	NumSequenceNumbers  = 65536
 	FirstSnapshotId     = 1
 	SnInfoSize          = 2048
@@ -29,9 +27,14 @@ type RTPFlowState struct {
 	LossEndExclusive   uint16
 }
 
+// RAJA-REMOVE maybe get rid of this completely?
 type RTPSnapshotInfo struct {
 	PacketsExpected uint32
 	PacketsLost     uint32
+	Bytes           uint64
+	PacketsPadding  uint32 // RAJA-REMOVE maybe?
+	BytesPadding    uint64 // RAJA-REMOVE maybe?
+	Frames          uint32
 	JitterMax       float64
 	RttMax          uint32
 }
@@ -637,14 +640,12 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 		return nil
 	}
 
-	packetsLost := uint32(0)
+	_, bytes, packetsPadding, bytesPadding, packetsLost, frames := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	if r.params.IsReceiverReportDriven {
 		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
 		if int32(packetsLost) < 0 {
 			packetsLost = 0
 		}
-	} else {
-		_, _, _, _, packetsLost, _ = r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
 	}
 
 	maxJitter := then.maxJitter
@@ -656,6 +657,10 @@ func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
 	return &RTPSnapshotInfo{
 		PacketsExpected: packetsExpected,
 		PacketsLost:     packetsLost,
+		Bytes:           bytes,
+		PacketsPadding:  packetsPadding,
+		BytesPadding:    bytesPadding,
+		Frames:          frames,
 		JitterMax:       maxJitterTime,
 		RttMax:          then.maxRtt,
 	}

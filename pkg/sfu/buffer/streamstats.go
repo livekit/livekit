@@ -1,5 +1,6 @@
 package buffer
 
+// RAJA-REMOVE
 type LayerStats struct {
 	Packets uint32
 	Bytes   uint64
@@ -8,9 +9,11 @@ type LayerStats struct {
 
 type StreamStatsWithLayers struct {
 	RTPStats *RTPDeltaInfo
-	Layers   map[int]LayerStats
+	// RAJA-REMOVE Layers   map[int]LayerStats
+	Layers map[int32]*RTPDeltaInfo
 }
 
+// RAJA-REMOVE
 type ConnectionQualityParams struct {
 	LossPercentage float32
 	Jitter         float32

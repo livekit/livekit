@@ -54,7 +54,7 @@ type TrackReceiver interface {
 
 	DebugInfo() map[string]interface{}
 
-	GetLayerDimension(quality int32) (uint32, uint32)
+	GetLayerDimension(layer int32) (uint32, uint32)
 }
 
 // WebRTCReceiver receives a media track
@@ -64,18 +64,19 @@ type WebRTCReceiver struct {
 	pliThrottleConfig config.PLIThrottleConfig
 	audioConfig       config.AudioConfig
 
-	trackID        livekit.TrackID
-	streamID       string
-	kind           webrtc.RTPCodecType
-	receiver       *webrtc.RTPReceiver
-	codec          webrtc.RTPCodecParameters
-	isSimulcast    bool
-	isSVC          bool
-	onCloseHandler func()
-	closeOnce      sync.Once
-	closed         atomic.Bool
-	useTrackers    bool
-	TrackInfo      *livekit.TrackInfo
+	trackID           livekit.TrackID
+	streamID          string
+	kind              webrtc.RTPCodecType
+	receiver          *webrtc.RTPReceiver
+	codec             webrtc.RTPCodecParameters
+	isSimulcast       bool
+	isSVC             bool
+	onCloseHandler    func()
+	closeOnce         sync.Once
+	closed            atomic.Bool
+	useTrackers       bool
+	trackInfo         *livekit.TrackInfo
+	maxPublishedLayer int32
 
 	rtcpCh chan []rtcp.Packet
 
@@ -182,10 +183,21 @@ func NewWebRTCReceiver(
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
 		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo.Source),
-		TrackInfo:            trackInfo,
+		trackInfo:            trackInfo,
+		maxPublishedLayer:    InvalidLayerSpatial,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
+	if w.trackInfo != nil {
+		for _, layer := range w.trackInfo.Layers {
+			spatialLayer := utils.SpatialLayerForQuality(layer.Quality)
+			if spatialLayer > w.maxPublishedLayer {
+				w.maxPublishedLayer = spatialLayer
+			}
+		}
+	}
+
+	w.streamTrackerManager.SetMaxExpectedSpatialLayer(w.maxPublishedLayer)
 	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
@@ -203,36 +215,29 @@ func NewWebRTCReceiver(
 		CodecType:        w.kind,
 		GetDeltaStats:    w.getDeltaStats,
 		GetQualityParams: w.getQualityParams,
+		/* RAJA-REMOVE
 		GetIsReducedQuality: func() bool {
 			return w.streamTrackerManager.IsReducedQuality()
 		},
-		GetLayerDimension: func(quality int32) (uint32, uint32) {
-			return w.GetLayerDimension(quality)
+		*/
+		GetLayerDimension: func(layer int32) (uint32, uint32) {
+			return w.GetLayerDimension(layer)
 		},
 		GetMaxExpectedLayer: func() *livekit.VideoLayer {
-			var expectedLayer *livekit.VideoLayer
-			var maxPublishedLayer *livekit.VideoLayer
 			// find min of <expected, published> layer
-			expectedQuality := w.streamTrackerManager.GetMaxExpectedLayer()
-			maxPublishedQuality := InvalidLayerSpatial
-			if w.TrackInfo != nil {
-				for _, layer := range w.TrackInfo.Layers {
-					if layer.Quality == livekit.VideoQuality_OFF {
-						continue
-					}
-					if expectedQuality == utils.SpatialLayerForQuality(layer.Quality) {
-						expectedLayer = proto.Clone(layer).(*livekit.VideoLayer)
-					}
-					if utils.SpatialLayerForQuality(layer.Quality) > maxPublishedQuality {
-						maxPublishedQuality = int32(layer.Quality)
-						maxPublishedLayer = proto.Clone(layer).(*livekit.VideoLayer)
+			maxExpectedSpatialLayer := w.streamTrackerManager.GetMaxExpectedSpatialLayer()
+			if maxExpectedSpatialLayer > w.maxPublishedLayer {
+				maxExpectedSpatialLayer = w.maxPublishedLayer
+			}
+			if w.trackInfo != nil {
+				for _, layer := range w.trackInfo.Layers {
+					if maxExpectedSpatialLayer == utils.SpatialLayerForQuality(layer.Quality) {
+						return proto.Clone(layer).(*livekit.VideoLayer)
 					}
 				}
 			}
-			if expectedQuality < maxPublishedQuality {
-				return expectedLayer
-			}
-			return maxPublishedLayer
+
+			return nil
 		},
 		Logger:    w.logger,
 		CodecName: getCodecNameFromMime(w.codec.MimeType),
@@ -247,11 +252,12 @@ func NewWebRTCReceiver(
 	return w
 }
 
-func (w *WebRTCReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
+func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {
 	height := uint32(0)
 	width := uint32(0)
-	for _, layer := range w.TrackInfo.Layers {
-		if layer.Quality == livekit.VideoQuality(quality) {
+	quality := utils.QualityForSpatialLayer(layer)
+	for _, layer := range w.trackInfo.Layers {
+		if layer.Quality == quality {
 			height = layer.Height
 			width = layer.Width
 			break
@@ -580,8 +586,11 @@ func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 
 		// if simulcast, patch buffer stats with correct layer
 		if w.isSimulcast {
+			/* RAJA-REMOVE
 			patched := make(map[int]buffer.LayerStats, 1)
-			patched[layer] = sswl.Layers[0]
+			*/
+			patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
+			patched[int32(layer)] = sswl.Layers[0]
 			sswl.Layers = patched
 		}
 

@@ -31,9 +31,7 @@ func int32Ptr(x int32) *int32 {
 	return &x
 }
 
-func AudioConnectionScore(interval time.Duration, totalBytes int64,
-	qualityParam *buffer.ConnectionQualityParams, dtxDisabled bool) float32 {
-
+func AudioConnectionScore(interval time.Duration, totalBytes int64, qualityParam *buffer.ConnectionQualityParams, dtxDisabled bool) float32 {
 	stat := rtcmos.Stat{
 		Bitrate:       getBitRate(interval.Seconds(), totalBytes),
 		PacketLoss:    qualityParam.LossPercentage,

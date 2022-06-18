@@ -137,6 +137,8 @@ type ParticipantImpl struct {
 	activeCounter  atomic.Int32
 	firstConnected atomic.Bool
 	iceConfig      types.IceConfig
+
+	connectionQuality livekit.ConnectionQuality
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -158,6 +160,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
+		connectionQuality:        livekit.ConnectionQuality_POOR,
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -808,6 +811,14 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	rating := connectionquality.Score2Rating(avgScore)
+
+	p.lock.Lock()
+	if rating == p.connectionQuality {
+		p.lock.Unlock()
+		return nil
+	}
+	p.connectionQuality = rating
+	p.lock.Unlock()
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
