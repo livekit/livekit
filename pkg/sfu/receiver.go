@@ -190,12 +190,10 @@ func NewWebRTCReceiver(
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
-	if w.trackInfo != nil {
-		for _, layer := range w.trackInfo.Layers {
-			spatialLayer := utils.SpatialLayerForQuality(layer.Quality)
-			if spatialLayer > w.maxPublishedLayer {
-				w.maxPublishedLayer = spatialLayer
-			}
+	for _, layer := range w.trackInfo.Layers {
+		spatialLayer := utils.SpatialLayerForQuality(layer.Quality)
+		if spatialLayer > w.maxPublishedLayer {
+			w.maxPublishedLayer = spatialLayer
 		}
 	}
 
@@ -225,11 +223,9 @@ func NewWebRTCReceiver(
 			if maxExpectedSpatialLayer > w.maxPublishedLayer {
 				maxExpectedSpatialLayer = w.maxPublishedLayer
 			}
-			if w.trackInfo != nil {
-				for _, layer := range w.trackInfo.Layers {
-					if maxExpectedSpatialLayer == utils.SpatialLayerForQuality(layer.Quality) {
-						return proto.Clone(layer).(*livekit.VideoLayer)
-					}
+			for _, layer := range w.trackInfo.Layers {
+				if maxExpectedSpatialLayer == utils.SpatialLayerForQuality(layer.Quality) {
+					return proto.Clone(layer).(*livekit.VideoLayer)
 				}
 			}
 
@@ -251,13 +247,18 @@ func NewWebRTCReceiver(
 func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {
 	height := uint32(0)
 	width := uint32(0)
-	quality := utils.QualityForSpatialLayer(layer)
-	for _, layer := range w.trackInfo.Layers {
-		if layer.Quality == quality {
-			height = layer.Height
-			width = layer.Width
-			break
+	if len(w.trackInfo.Layers) > 0 {
+		quality := utils.QualityForSpatialLayer(layer)
+		for _, layer := range w.trackInfo.Layers {
+			if layer.Quality == quality {
+				height = layer.Height
+				width = layer.Width
+				break
+			}
 		}
+	} else {
+		width = w.trackInfo.Width
+		height = w.trackInfo.Height
 	}
 	return width, height
 }
@@ -337,7 +338,7 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	layer := RidToLayer(track.RID())
 	if layer == InvalidLayerSpatial {
 		// check if there is only one layer and if so, assign it to that
-		if w.trackInfo != nil && w.trackInfo.Layers != nil && len(w.trackInfo.Layers) == 1 {
+		if len(w.trackInfo.Layers) == 1 {
 			layer = utils.SpatialLayerForQuality(w.trackInfo.Layers[0].Quality)
 		} else {
 			layer = 0
