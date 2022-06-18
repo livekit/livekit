@@ -28,6 +28,7 @@ type RTPFlowState struct {
 }
 
 type RTPDeltaInfo struct {
+	Duration         time.Duration
 	Packets          uint32
 	Bytes            uint64
 	PacketsDuplicate uint32
@@ -44,6 +45,7 @@ type RTPDeltaInfo struct {
 }
 
 type Snapshot struct {
+	startTime             time.Time
 	extStartSN            uint32
 	packetsDuplicate      uint32
 	bytesDuplicate        uint64
@@ -168,7 +170,7 @@ func (r *RTPStats) NewSnapshotId() uint32 {
 
 	id := r.nextSnapshotId
 	if r.initialized {
-		r.snapshots[id] = &Snapshot{extStartSN: r.extStartSN}
+		r.snapshots[id] = &Snapshot{startTime: time.Now(), extStartSN: r.extStartSN}
 	}
 
 	r.nextSnapshotId++
@@ -643,6 +645,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
 
 	return &RTPDeltaInfo{
+		Duration:         now.startTime.Sub(then.startTime),
 		Packets:          packetsExpected - packetsPadding,
 		Bytes:            bytes,
 		PacketsDuplicate: now.packetsDuplicate - then.packetsDuplicate,
@@ -1011,6 +1014,7 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 
 	// snapshot now
 	r.snapshots[snapshotId] = &Snapshot{
+		startTime:             time.Now(),
 		extStartSN:            r.getExtHighestSNAdjusted() + 1,
 		packetsDuplicate:      r.packetsDuplicate,
 		bytesDuplicate:        r.bytesDuplicate,

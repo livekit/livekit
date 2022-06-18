@@ -85,41 +85,27 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		return cs.score
 	}
 
+	cs.lastUpdate = time.Now()
 	// RAJA-TODO - take mute into account
 	// RAJA-TODO - maybe a probation period at the start, coming out of mute?
 	// RAJA-TODO - maybe a probation period when a layer starts/stops?
 	// RAJA-TODO - maybe layer changes should be notified here directly rather than pulling
 	// RAJA-TODO - maybe track info should be set here and this can know max published without having to pull every time
-
-	interval := time.Since(cs.lastUpdate)
-	cs.lastUpdate = time.Now()
-
-	var bytes uint64
-	var frames uint32
-	var packetsExpected, packetsLost uint32
-	var jitter float64
-	var rtt uint32
-	maxAvailableSpatialLayer, maxAvailableSpatialLayerStats := cs.getMaxAvailableLayerStats(streams)
-	if maxAvailableSpatialLayerStats != nil {
-		bytes = maxAvailableSpatialLayerStats.Bytes
-		frames = maxAvailableSpatialLayerStats.Frames
-
-		packetsExpected = maxAvailableSpatialLayerStats.Packets + maxAvailableSpatialLayerStats.PacketsPadding
-		packetsLost = maxAvailableSpatialLayerStats.PacketsLost
-
-		jitter = maxAvailableSpatialLayerStats.JitterMax
-		rtt = maxAvailableSpatialLayerStats.RttMax
+	maxAvailableLayer, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams)
+	if maxAvailableLayerStats == nil {
+		// retain old score as stats will not be available when muted
+		return cs.score
 	}
 
 	params := TrackScoreParams{
-		Duration:        interval, // RAJA-TODO - get duration from RTPDeltaInfo
+		Duration:        maxAvailableLayerStats.Duration,
 		Codec:           cs.params.CodecName,
-		PacketsExpected: packetsExpected,
-		PacketsLost:     packetsLost,
-		Bytes:           bytes,
-		Frames:          frames,
-		Jitter:          jitter,
-		Rtt:             rtt,
+		PacketsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
+		PacketsLost:     maxAvailableLayerStats.PacketsLost,
+		Bytes:           maxAvailableLayerStats.Bytes,
+		Frames:          maxAvailableLayerStats.Frames,
+		Jitter:          maxAvailableLayerStats.JitterMax,
+		Rtt:             maxAvailableLayerStats.RttMax,
 	}
 
 	switch cs.params.CodecType {
@@ -134,13 +120,10 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			return cs.score
 		}
 
-		var actualWidth, actualHeight uint32
-		if maxAvailableSpatialLayerStats != nil {
-			actualWidth, actualHeight = cs.params.GetLayerDimension(maxAvailableSpatialLayer)
+		if maxAvailableLayerStats != nil {
+			params.ActualWidth, params.ActualHeight = cs.params.GetLayerDimension(maxAvailableLayer)
 		}
 
-		params.ActualWidth = actualWidth
-		params.ActualHeight = actualHeight
 		params.ExpectedWidth = maxExpectedLayer.Width
 		params.ExpectedHeight = maxExpectedLayer.Height
 		cs.score = VideoTrackScore(params)
