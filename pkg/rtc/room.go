@@ -932,19 +932,51 @@ func (r *Room) connectionQualityWorker() {
 	ticker := time.NewTicker(connectionquality.UpdateInterval)
 	defer ticker.Stop()
 
+	prevConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)
 	// send updates to only users that are subscribed to each other
 	for !r.IsClosed() {
 		<-ticker.C
 
 		participants := r.GetParticipants()
-		connectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
+		nowConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
 
 		for _, p := range participants {
 			if p.State() != livekit.ParticipantInfo_ACTIVE {
 				continue
 			}
 
-			connectionInfos[p.ID()] = p.GetConnectionQuality()
+			nowConnectionInfos[p.ID()] = p.GetConnectionQuality()
+		}
+
+		// send an update if there is a change
+		//   - new participant
+		//   - quality change
+		// NOTE: participant leaving is explicitly omitted as `leave` signal notifies that a participant is not in the room anymore
+		sendUpdate := false
+		for _, p := range participants {
+			pID := p.ID()
+			prevInfo, prevOk := prevConnectionInfos[pID]
+			nowInfo, nowOk := nowConnectionInfos[pID]
+			if !nowOk {
+				// participant is not ACTIVE any more
+				continue
+			}
+			if !prevOk || nowInfo.Quality != prevInfo.Quality {
+				// new entrant OR change in quality
+				sendUpdate = true
+				break
+			}
+		}
+
+		if !sendUpdate {
+			prevConnectionInfos = nowConnectionInfos
+			continue
+		}
+
+		maybeAddToUpdate := func(pID livekit.ParticipantID, update *livekit.ConnectionQualityUpdate) {
+			if nowInfo, nowOk := nowConnectionInfos[pID]; nowOk {
+				update.Updates = append(update.Updates, nowInfo)
+			}
 		}
 
 		for _, op := range participants {
@@ -954,21 +986,23 @@ func (r *Room) connectionQualityWorker() {
 			update := &livekit.ConnectionQualityUpdate{}
 
 			// send to user itself
-			if info, ok := connectionInfos[op.ID()]; ok {
-				update.Updates = append(update.Updates, info)
-			}
+			maybeAddToUpdate(op.ID(), update)
 
 			// add connection quality of other participants its subscribed to
 			for _, sid := range op.GetSubscribedParticipants() {
-				if info, ok := connectionInfos[sid]; ok {
-					update.Updates = append(update.Updates, info)
-				}
+				maybeAddToUpdate(sid, update)
+			}
+			if len(update.Updates) == 0 {
+				// no change
+				continue
 			}
 			if err := op.SendConnectionQualityUpdate(update); err != nil {
 				r.Logger.Warnw("could not send connection quality update", err,
 					"participant", op.Identity())
 			}
 		}
+
+		prevConnectionInfos = nowConnectionInfos
 	}
 }
 
