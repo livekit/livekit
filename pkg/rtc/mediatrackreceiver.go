@@ -203,6 +203,10 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	defer t.lock.Unlock()
 
 	layer := sfu.RidToLayer(rid)
+	if layer == sfu.InvalidLayerSpatial {
+		// non-simulcast case will not have `rid`
+		layer = 0
+	}
 	for _, receiver := range t.receiversShadow {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) && int(layer) < len(receiver.layerSSRCs) {
 			receiver.layerSSRCs[layer] = ssrc
