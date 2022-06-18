@@ -944,10 +944,7 @@ func (r *Room) connectionQualityWorker() {
 				continue
 			}
 
-			info := p.GetConnectionQuality()
-			if info != nil {
-				connectionInfos[p.ID()] = info
-			}
+			connectionInfos[p.ID()] = p.GetConnectionQuality()
 		}
 
 		for _, op := range participants {
