@@ -110,8 +110,10 @@ func RidToLayer(rid string) int32 {
 		return 2
 	case HalfResolution:
 		return 1
-	default:
+	case QuarterResolution:
 		return 0
+	default:
+		return InvalidLayerSpatial
 	}
 }
 
@@ -184,7 +186,7 @@ func NewWebRTCReceiver(
 		twcc:                 twcc,
 		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo.Source),
 		trackInfo:            trackInfo,
-		maxPublishedLayer:    InvalidLayerSpatial,
+		maxPublishedLayer:    0,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
@@ -333,6 +335,14 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	}
 
 	layer := RidToLayer(track.RID())
+	if layer == InvalidLayerSpatial {
+		// check if there is only one layer and if so, assign it to that
+		if w.trackInfo != nil && w.trackInfo.Layers != nil && len(w.trackInfo.Layers) == 1 {
+			layer = utils.SpatialLayerForQuality(w.trackInfo.Layers[0].Quality)
+		} else {
+			layer = 0
+		}
+	}
 	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
 	buff.SetTWCC(w.twcc)
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
@@ -538,12 +548,10 @@ func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 			continue
 		}
 
-		// if simulcast, patch buffer stats with correct layer
-		if w.isSimulcast {
-			patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
-			patched[int32(layer)] = sswl.Layers[0]
-			sswl.Layers = patched
-		}
+		// patch buffer stats with correct layer
+		patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
+		patched[int32(layer)] = sswl.Layers[0]
+		sswl.Layers = patched
 
 		deltaStats[w.SSRC(layer)] = sswl
 	}
