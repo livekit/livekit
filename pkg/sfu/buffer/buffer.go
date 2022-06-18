@@ -73,10 +73,9 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats                    *RTPStats
-	rrSnapshotId                uint32
-	connectionQualitySnapshotId uint32
-	deltaStatsSnapshotId        uint32
+	rtpStats             *RTPStats
+	rrSnapshotId         uint32
+	deltaStatsSnapshotId uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -148,7 +147,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		Logger:    b.logger,
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
-	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
@@ -613,17 +611,6 @@ func (b *Buffer) GetStats() *livekit.RTPStats {
 	return b.rtpStats.ToProto()
 }
 
-func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
-	b.RLock()
-	defer b.RUnlock()
-
-	if b.rtpStats == nil {
-		return nil
-	}
-
-	return b.rtpStats.SnapshotInfo(b.connectionQualitySnapshotId)
-}
-
 func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	b.RLock()
 	defer b.RUnlock()
@@ -637,17 +624,8 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 		return nil
 	}
 
-	/* RAJA-REMOVE
-	layers := make(map[int]LayerStats)
-	layers[0] = LayerStats{
-		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
-		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
-		Frames:  deltaStats.Frames,
-	}
-	RAJA-REMOVE */
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		// RAJA-REMOVE Layers:   layers,
 		Layers: map[int32]*RTPDeltaInfo{
 			0: deltaStats,
 		},

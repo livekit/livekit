@@ -212,14 +212,8 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:        w.kind,
-		GetDeltaStats:    w.getDeltaStats,
-		GetQualityParams: w.getQualityParams,
-		/* RAJA-REMOVE
-		GetIsReducedQuality: func() bool {
-			return w.streamTrackerManager.IsReducedQuality()
-		},
-		*/
+		CodecType:     w.kind,
+		GetDeltaStats: w.getDeltaStats,
 		GetLayerDimension: func(layer int32) (uint32, uint32) {
 			return w.GetLayerDimension(layer)
 		},
@@ -528,46 +522,6 @@ func (w *WebRTCReceiver) GetAudioLevel() (float64, bool) {
 	return 0, false
 }
 
-func (w *WebRTCReceiver) getQualityParams() *buffer.ConnectionQualityParams {
-	w.bufferMu.RLock()
-	defer w.bufferMu.RUnlock()
-
-	packetsExpected := uint32(0)
-	packetsLost := uint32(0)
-	maxJitter := 0.0
-	maxRtt := uint32(0)
-	for _, buff := range w.buffers {
-		if buff == nil {
-			continue
-		}
-
-		q := buff.GetQualityInfo()
-		if q == nil {
-			continue
-		}
-
-		packetsExpected += q.PacketsExpected
-		packetsLost += q.PacketsLost
-		if q.JitterMax > maxJitter {
-			maxJitter = q.JitterMax
-		}
-		if q.RttMax > maxRtt {
-			maxRtt = q.RttMax
-		}
-	}
-
-	lossPercentage := float32(0.0)
-	if packetsExpected != 0 {
-		lossPercentage = float32(packetsLost) * 100.0 / float32(packetsExpected)
-	}
-
-	return &buffer.ConnectionQualityParams{
-		LossPercentage: lossPercentage,
-		Jitter:         float32(maxJitter / 1000.0),
-		Rtt:            maxRtt,
-	}
-}
-
 func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 	w.bufferMu.RLock()
 	defer w.bufferMu.RUnlock()
@@ -586,9 +540,6 @@ func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 
 		// if simulcast, patch buffer stats with correct layer
 		if w.isSimulcast {
-			/* RAJA-REMOVE
-			patched := make(map[int]buffer.LayerStats, 1)
-			*/
 			patched := make(map[int32]*buffer.RTPDeltaInfo, 1)
 			patched[int32(layer)] = sswl.Layers[0]
 			sswl.Layers = patched

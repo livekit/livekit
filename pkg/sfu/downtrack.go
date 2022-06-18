@@ -148,9 +148,8 @@ type DownTrack struct {
 
 	blankFramesGeneration atomic.Uint32
 
-	connectionStats             *connectionquality.ConnectionStats
-	connectionQualitySnapshotId uint32
-	deltaStatsSnapshotId        uint32
+	connectionStats      *connectionquality.ConnectionStats
+	deltaStatsSnapshotId uint32
 
 	// Debug info
 	pktsDropped atomic.Uint32
@@ -223,14 +222,8 @@ func NewDownTrack(
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:        kind,
-		GetDeltaStats:    d.getDeltaStats,
-		GetQualityParams: d.getQualityParams,
-		/* RAJA-REMOVE
-		GetIsReducedQuality: func() bool {
-			return d.GetForwardingStatus() != ForwardingStatusOptimal
-		},
-		*/
+		CodecType:     kind,
+		GetDeltaStats: d.getDeltaStats,
 		GetLayerDimension: func(layer int32) (uint32, uint32) {
 			if d.receiver != nil {
 				return d.receiver.GetLayerDimension(layer)
@@ -258,7 +251,6 @@ func NewDownTrack(
 		IsReceiverReportDriven: true,
 		Logger:                 d.logger,
 	})
-	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
 	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
@@ -1388,24 +1380,6 @@ func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return d.rtpStats.ToProto()
 }
 
-func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
-	s := d.rtpStats.SnapshotInfo(d.connectionQualitySnapshotId)
-	if s == nil {
-		return nil
-	}
-
-	lossPercentage := float32(0.0)
-	if s.PacketsExpected != 0 {
-		lossPercentage = float32(s.PacketsLost) * 100.0 / float32(s.PacketsExpected)
-	}
-
-	return &buffer.ConnectionQualityParams{
-		LossPercentage: lossPercentage,
-		Jitter:         float32(s.JitterMax / 1000.0),
-		Rtt:            s.RttMax,
-	}
-}
-
 func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 
@@ -1414,18 +1388,8 @@ func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 		return nil
 	}
 
-	/* RAJA-REMOVE
-	layers := make(map[int]buffer.LayerStats)
-	layers[0] = buffer.LayerStats{
-		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
-		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
-		Frames:  deltaStats.Frames,
-	}
-	*/
-
 	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		// RAJA-REMOVE Layers:   layers,
 		Layers: map[int32]*buffer.RTPDeltaInfo{
 			0: deltaStats,
 		},

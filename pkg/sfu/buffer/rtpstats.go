@@ -27,18 +27,6 @@ type RTPFlowState struct {
 	LossEndExclusive   uint16
 }
 
-// RAJA-REMOVE maybe get rid of this completely?
-type RTPSnapshotInfo struct {
-	PacketsExpected uint32
-	PacketsLost     uint32
-	Bytes           uint64
-	PacketsPadding  uint32 // RAJA-REMOVE maybe?
-	BytesPadding    uint64 // RAJA-REMOVE maybe?
-	Frames          uint32
-	JitterMax       float64
-	RttMax          uint32
-}
-
 type RTPDeltaInfo struct {
 	Packets          uint32
 	Bytes            uint64
@@ -613,56 +601,6 @@ func (r *RTPStats) SnapshotRtcpReceptionReport(ssrc uint32, proxyFracLost uint8,
 		Jitter:             uint32(jitter),
 		LastSenderReport:   uint32(r.ntpSR >> 16),
 		Delay:              dlsr,
-	}
-}
-
-func (r *RTPStats) SnapshotInfo(snapshotId uint32) *RTPSnapshotInfo {
-	r.lock.Lock()
-	then, now := r.getAndResetSnapshot(snapshotId)
-	r.lock.Unlock()
-
-	if now == nil || then == nil {
-		return nil
-	}
-
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	packetsExpected := now.extStartSN - then.extStartSN
-	if packetsExpected > NumSequenceNumbers {
-		r.logger.Warnw(
-			"too many packets expected in snapshot",
-			fmt.Errorf("start: %d, end: %d, expected: %d", then.extStartSN, now.extStartSN, packetsExpected),
-		)
-		return nil
-	}
-	if packetsExpected == 0 {
-		return nil
-	}
-
-	_, bytes, packetsPadding, bytesPadding, packetsLost, frames := r.getIntervalStats(uint16(then.extStartSN), uint16(now.extStartSN))
-	if r.params.IsReceiverReportDriven {
-		packetsLost = now.packetsLostOverridden - then.packetsLostOverridden
-		if int32(packetsLost) < 0 {
-			packetsLost = 0
-		}
-	}
-
-	maxJitter := then.maxJitter
-	if r.params.IsReceiverReportDriven {
-		maxJitter = then.maxJitterOverridden
-	}
-	maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
-
-	return &RTPSnapshotInfo{
-		PacketsExpected: packetsExpected,
-		PacketsLost:     packetsLost,
-		Bytes:           bytes,
-		PacketsPadding:  packetsPadding,
-		BytesPadding:    bytesPadding,
-		Frames:          frames,
-		JitterMax:       maxJitterTime,
-		RttMax:          then.maxRtt,
 	}
 }
 
