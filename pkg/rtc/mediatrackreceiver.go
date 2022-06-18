@@ -203,6 +203,10 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	defer t.lock.Unlock()
 
 	layer := sfu.RidToLayer(rid)
+	if layer == sfu.InvalidLayerSpatial {
+		// non-simulcast case will not have `rid`
+		layer = 0
+	}
 	for _, receiver := range t.receiversShadow {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) && int(layer) < len(receiver.layerSSRCs) {
 			receiver.layerSSRCs[layer] = ssrc
@@ -671,29 +675,3 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 }
 
 // ---------------------------
-
-func QualityForSpatialLayer(layer int32) livekit.VideoQuality {
-	switch layer {
-	case 0:
-		return livekit.VideoQuality_LOW
-	case 1:
-		return livekit.VideoQuality_MEDIUM
-	case 2:
-		return livekit.VideoQuality_HIGH
-	case sfu.InvalidLayerSpatial:
-		return livekit.VideoQuality_OFF
-	default:
-		return livekit.VideoQuality_OFF
-	}
-}
-
-func VideoQualityToRID(q livekit.VideoQuality) string {
-	switch q {
-	case livekit.VideoQuality_HIGH:
-		return sfu.FullResolution
-	case livekit.VideoQuality_MEDIUM:
-		return sfu.HalfResolution
-	default:
-		return sfu.QuarterResolution
-	}
-}

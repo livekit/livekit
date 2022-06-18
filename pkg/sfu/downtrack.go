@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -147,9 +148,8 @@ type DownTrack struct {
 
 	blankFramesGeneration atomic.Uint32
 
-	connectionStats             *connectionquality.ConnectionStats
-	connectionQualitySnapshotId uint32
-	deltaStatsSnapshotId        uint32
+	connectionStats      *connectionquality.ConnectionStats
+	deltaStatsSnapshotId uint32
 
 	// Debug info
 	pktsDropped atomic.Uint32
@@ -222,22 +222,20 @@ func NewDownTrack(
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:        kind,
-		GetDeltaStats:    d.getDeltaStats,
-		GetQualityParams: d.getQualityParams,
-		GetIsReducedQuality: func() bool {
-			return d.GetForwardingStatus() != ForwardingStatusOptimal
-		},
-		GetLayerDimension: func(quality int32) (uint32, uint32) {
+		CodecType:     kind,
+		GetDeltaStats: d.getDeltaStats,
+		GetLayerDimension: func(layer int32) (uint32, uint32) {
 			if d.receiver != nil {
-				return d.receiver.GetLayerDimension(quality)
+				return d.receiver.GetLayerDimension(layer)
 			}
 			return 0, 0
 		},
+		// RAJA-TODO: Check muted, test quality when muted
+		// RAJA-TODO: this one needs more work as layers are muxed into one layer, maybe need to maitain RTP stats separately for each layer
 		GetMaxExpectedLayer: func() *livekit.VideoLayer {
-			quality := d.forwarder.MaxLayers().Spatial
-			width, height := d.receiver.GetLayerDimension(quality)
-			return &livekit.VideoLayer{Quality: livekit.VideoQuality(quality), Width: width, Height: height}
+			maxLayer := d.forwarder.MaxLayers().Spatial
+			width, height := d.receiver.GetLayerDimension(maxLayer)
+			return &livekit.VideoLayer{Quality: utils.QualityForSpatialLayer(maxLayer), Width: width, Height: height}
 		},
 		Logger:    d.logger,
 		CodecName: getCodecNameFromMime(codecs[0].MimeType),
@@ -253,7 +251,6 @@ func NewDownTrack(
 		IsReceiverReportDriven: true,
 		Logger:                 d.logger,
 	})
-	d.connectionQualitySnapshotId = d.rtpStats.NewSnapshotId()
 	d.deltaStatsSnapshotId = d.rtpStats.NewSnapshotId()
 
 	return d, nil
@@ -1383,24 +1380,6 @@ func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return d.rtpStats.ToProto()
 }
 
-func (d *DownTrack) getQualityParams() *buffer.ConnectionQualityParams {
-	s := d.rtpStats.SnapshotInfo(d.connectionQualitySnapshotId)
-	if s == nil {
-		return nil
-	}
-
-	lossPercentage := float32(0.0)
-	if s.PacketsExpected != 0 {
-		lossPercentage = float32(s.PacketsLost) * 100.0 / float32(s.PacketsExpected)
-	}
-
-	return &buffer.ConnectionQualityParams{
-		LossPercentage: lossPercentage,
-		Jitter:         float32(s.JitterMax / 1000.0),
-		Rtt:            s.RttMax,
-	}
-}
-
 func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 
@@ -1409,16 +1388,11 @@ func (d *DownTrack) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayers {
 		return nil
 	}
 
-	layers := make(map[int]buffer.LayerStats)
-	layers[0] = buffer.LayerStats{
-		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
-		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
-		Frames:  deltaStats.Frames,
-	}
-
 	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		Layers:   layers,
+		Layers: map[int32]*buffer.RTPDeltaInfo{
+			0: deltaStats,
+		},
 	}
 
 	return streamStats
