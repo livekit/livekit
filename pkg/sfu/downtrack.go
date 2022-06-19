@@ -222,14 +222,10 @@ func NewDownTrack(
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:     kind,
-		GetDeltaStats: d.getDeltaStats,
-		GetLayerDimension: func(layer int32) (uint32, uint32) {
-			if d.receiver != nil {
-				return d.receiver.GetLayerDimension(layer)
-			}
-			return 0, 0
-		},
+		CodecType:         kind,
+		GetDeltaStats:     d.getDeltaStats,
+		IsDtxDisabled:     d.receiver.IsDtxDisabled,
+		GetLayerDimension: d.receiver.GetLayerDimension,
 		// RAJA-TODO: Check muted, test quality when muted
 		// RAJA-TODO: this one needs more work as layers are muxed into one layer, maybe need to maitain RTP stats separately for each layer
 		GetMaxExpectedLayer: func() *livekit.VideoLayer {

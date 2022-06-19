@@ -55,6 +55,7 @@ type TrackReceiver interface {
 	DebugInfo() map[string]interface{}
 
 	GetLayerDimension(layer int32) (uint32, uint32)
+	IsDtxDisabled() bool
 }
 
 // WebRTCReceiver receives a media track
@@ -214,6 +215,7 @@ func NewWebRTCReceiver(
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:     w.kind,
 		GetDeltaStats: w.getDeltaStats,
+		IsDtxDisabled: w.IsDtxDisabled,
 		GetLayerDimension: func(layer int32) (uint32, uint32) {
 			return w.GetLayerDimension(layer)
 		},
@@ -261,6 +263,10 @@ func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {
 		height = w.trackInfo.Height
 	}
 	return width, height
+}
+
+func (w *WebRTCReceiver) IsDtxDisabled() bool {
+	return w.trackInfo.DisableDtx
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
