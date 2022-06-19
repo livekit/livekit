@@ -191,3 +191,10 @@ func (d *DumbReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 	}
 	return 0, 0
 }
+
+func (d *DumbReceiver) IsDtxDisabled() bool {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.IsDtxDisabled()
+	}
+	return false
+}

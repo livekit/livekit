@@ -11,7 +11,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -55,6 +54,7 @@ type TrackReceiver interface {
 	DebugInfo() map[string]interface{}
 
 	GetLayerDimension(layer int32) (uint32, uint32)
+	IsDtxDisabled() bool
 }
 
 // WebRTCReceiver receives a media track
@@ -64,19 +64,18 @@ type WebRTCReceiver struct {
 	pliThrottleConfig config.PLIThrottleConfig
 	audioConfig       config.AudioConfig
 
-	trackID           livekit.TrackID
-	streamID          string
-	kind              webrtc.RTPCodecType
-	receiver          *webrtc.RTPReceiver
-	codec             webrtc.RTPCodecParameters
-	isSimulcast       bool
-	isSVC             bool
-	onCloseHandler    func()
-	closeOnce         sync.Once
-	closed            atomic.Bool
-	useTrackers       bool
-	trackInfo         *livekit.TrackInfo
-	maxPublishedLayer int32
+	trackID        livekit.TrackID
+	streamID       string
+	kind           webrtc.RTPCodecType
+	receiver       *webrtc.RTPReceiver
+	codec          webrtc.RTPCodecParameters
+	isSimulcast    bool
+	isSVC          bool
+	onCloseHandler func()
+	closeOnce      sync.Once
+	closed         atomic.Bool
+	useTrackers    bool
+	trackInfo      *livekit.TrackInfo
 
 	rtcpCh chan []rtcp.Packet
 
@@ -184,20 +183,11 @@ func NewWebRTCReceiver(
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
 		isSimulcast:          len(track.RID()) > 0,
 		twcc:                 twcc,
-		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo.Source),
+		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo),
 		trackInfo:            trackInfo,
-		maxPublishedLayer:    0,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
 	}
 
-	for _, layer := range w.trackInfo.Layers {
-		spatialLayer := utils.SpatialLayerForQuality(layer.Quality)
-		if spatialLayer > w.maxPublishedLayer {
-			w.maxPublishedLayer = spatialLayer
-		}
-	}
-
-	w.streamTrackerManager.SetMaxExpectedSpatialLayer(w.maxPublishedLayer)
 	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
@@ -212,27 +202,13 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:     w.kind,
-		GetDeltaStats: w.getDeltaStats,
-		GetLayerDimension: func(layer int32) (uint32, uint32) {
-			return w.GetLayerDimension(layer)
-		},
-		GetMaxExpectedLayer: func() *livekit.VideoLayer {
-			// find min of <expected, published> layer
-			maxExpectedSpatialLayer := w.streamTrackerManager.GetMaxExpectedSpatialLayer()
-			if maxExpectedSpatialLayer > w.maxPublishedLayer {
-				maxExpectedSpatialLayer = w.maxPublishedLayer
-			}
-			for _, layer := range w.trackInfo.Layers {
-				if maxExpectedSpatialLayer == utils.SpatialLayerForQuality(layer.Quality) {
-					return proto.Clone(layer).(*livekit.VideoLayer)
-				}
-			}
-
-			return nil
-		},
-		Logger:    w.logger,
-		CodecName: getCodecNameFromMime(w.codec.MimeType),
+		CodecType:           w.kind,
+		GetDeltaStats:       w.getDeltaStats,
+		IsDtxDisabled:       w.IsDtxDisabled,
+		GetLayerDimension:   w.GetLayerDimension,
+		GetMaxExpectedLayer: w.getMaxExpectedLayer,
+		Logger:              w.logger,
+		CodecName:           getCodecNameFromMime(w.codec.MimeType),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
@@ -244,23 +220,16 @@ func NewWebRTCReceiver(
 	return w
 }
 
+func (w *WebRTCReceiver) IsDtxDisabled() bool {
+	return w.trackInfo.DisableDtx
+}
+
 func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {
-	height := uint32(0)
-	width := uint32(0)
-	if len(w.trackInfo.Layers) > 0 {
-		quality := utils.QualityForSpatialLayer(layer)
-		for _, layer := range w.trackInfo.Layers {
-			if layer.Quality == quality {
-				height = layer.Height
-				width = layer.Width
-				break
-			}
-		}
-	} else {
-		width = w.trackInfo.Width
-		height = w.trackInfo.Height
-	}
-	return width, height
+	return w.streamTrackerManager.GetLayerDimension(layer)
+}
+
+func (w *WebRTCReceiver) getMaxExpectedLayer() *livekit.VideoLayer {
+	return w.streamTrackerManager.GetMaxExpectedLayer()
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {

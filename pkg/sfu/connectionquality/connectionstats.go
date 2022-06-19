@@ -22,9 +22,9 @@ type ConnectionStatsParams struct {
 	UpdateInterval      time.Duration
 	CodecType           webrtc.RTPCodecType
 	CodecName           string
-	DtxDisabled         bool // RAJA-TODO - fix this
 	MimeType            string
 	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
+	IsDtxDisabled       func() bool
 	GetLayerDimension   func(int32) (uint32, uint32)
 	GetMaxExpectedLayer func() *livekit.VideoLayer
 	Logger              logger.Logger
@@ -110,7 +110,9 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 
 	switch cs.params.CodecType {
 	case webrtc.RTPCodecTypeAudio:
-		// RAJA-TODO - need to set DTX in params
+		if cs.params.IsDtxDisabled != nil {
+			params.DtxDisabled = cs.params.IsDtxDisabled()
+		}
 		cs.score = AudioTrackScore(params)
 
 	case webrtc.RTPCodecTypeVideo:
