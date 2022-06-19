@@ -254,7 +254,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnSubscribedTo(func(p types.LocalParticipant, publisherID livekit.ParticipantID) {
 		go func() {
-			// when a participant subscribed to another participant,
+			// when a participant subscribes to another participant,
 			// send speaker update if the subscribed to participant is active.
 			speakers := r.GetActiveSpeakers()
 			for _, speaker := range speakers {
@@ -264,7 +264,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 				}
 			}
 
-			// send connection quality
+			// send connection quality of subscribed to participant
 			pub := r.GetParticipantBySid(publisherID)
 			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
 				update := &livekit.ConnectionQualityUpdate{}
