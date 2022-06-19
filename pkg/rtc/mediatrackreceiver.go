@@ -675,3 +675,14 @@ func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit
 }
 
 // ---------------------------
+
+func VideoQualityToRID(q livekit.VideoQuality) string {
+	switch q {
+	case livekit.VideoQuality_HIGH:
+		return sfu.FullResolution
+	case livekit.VideoQuality_MEDIUM:
+		return sfu.HalfResolution
+	default:
+		return sfu.QuarterResolution
+	}
+}
