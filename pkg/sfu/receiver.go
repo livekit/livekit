@@ -53,6 +53,7 @@ type TrackReceiver interface {
 
 	DebugInfo() map[string]interface{}
 
+	TrackSource() livekit.TrackSource
 	GetLayerDimension(layer int32) (uint32, uint32)
 	IsDtxDisabled() bool
 }
@@ -203,13 +204,16 @@ func NewWebRTCReceiver(
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:           w.kind,
+		CodecName:           getCodecNameFromMime(w.codec.MimeType),
+		MimeType:            w.codec.MimeType,
 		GetDeltaStats:       w.getDeltaStats,
 		IsDtxDisabled:       w.IsDtxDisabled,
 		GetLayerDimension:   w.GetLayerDimension,
-		GetMaxExpectedLayer: w.getMaxExpectedLayer,
+		GetMaxExpectedLayer: w.streamTrackerManager.GetMaxExpectedLayer,
+		GetIsReducedQuality: w.streamTrackerManager.IsReducedQuality,
 		Logger:              w.logger,
-		CodecName:           getCodecNameFromMime(w.codec.MimeType),
 	})
+	w.connectionStats.SetTrackSource(w.trackInfo.Source)
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
 			w.onStatsUpdate(w, stat)
@@ -220,16 +224,16 @@ func NewWebRTCReceiver(
 	return w
 }
 
+func (w *WebRTCReceiver) TrackSource() livekit.TrackSource {
+	return w.trackInfo.Source
+}
+
 func (w *WebRTCReceiver) IsDtxDisabled() bool {
 	return w.trackInfo.DisableDtx
 }
 
 func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {
 	return w.streamTrackerManager.GetLayerDimension(layer)
-}
-
-func (w *WebRTCReceiver) getMaxExpectedLayer() *livekit.VideoLayer {
-	return w.streamTrackerManager.GetMaxExpectedLayer()
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {

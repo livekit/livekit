@@ -239,6 +239,14 @@ func TestConnectionQuality(t *testing.T) {
 		return tr
 	}
 
+	testPublishedScreenshareTrack := func(params connectionquality.TrackScoreParams) *typesfakes.FakeLocalMediaTrack {
+		tr := &typesfakes.FakeLocalMediaTrack{}
+		score := connectionquality.ScreenshareTrackScore(params)
+		t.Log("screen share score: ", score)
+		tr.GetConnectionScoreReturns(score)
+		return tr
+	}
+
 	// TODO: this test is rather limited since we cannot mock DownTrack's Target & Max spatial layers
 	// to improve this after split
 
@@ -428,6 +436,71 @@ func TestConnectionQuality(t *testing.T) {
 		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(params)
 
 		require.Equal(t, livekit.ConnectionQuality_POOR, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("screen share no loss, not reduced quality, should be excellent", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 20kbps, 2fps
+		params := connectionquality.TrackScoreParams{
+			Duration:        1 * time.Second,
+			PacketsExpected: 100,
+			PacketsLost:     0,
+			Bytes:           2500,
+			Frames:          2,
+		}
+		p.UpTrackManager.publishedTracks["ss"] = testPublishedScreenshareTrack(params)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("screen share low loss, not reduced quality, should be excellent", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 20kbps, 2fps
+		params := connectionquality.TrackScoreParams{
+			Duration:        1 * time.Second,
+			PacketsExpected: 100,
+			PacketsLost:     1,
+			Bytes:           2500,
+			Frames:          2,
+		}
+		p.UpTrackManager.publishedTracks["ss"] = testPublishedScreenshareTrack(params)
+
+		require.Equal(t, livekit.ConnectionQuality_EXCELLENT, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("screen share high loss, not reduced quality, should be poor", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 20kbps, 2fps
+		params := connectionquality.TrackScoreParams{
+			Duration:        1 * time.Second,
+			PacketsExpected: 100,
+			PacketsLost:     5,
+			Bytes:           2500,
+			Frames:          2,
+		}
+		p.UpTrackManager.publishedTracks["ss"] = testPublishedScreenshareTrack(params)
+
+		require.Equal(t, livekit.ConnectionQuality_POOR, p.GetConnectionQuality().GetQuality())
+	})
+
+	t.Run("screen share no loss, but reduced quality, should be good", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		// 20kbps, 2fps
+		params := connectionquality.TrackScoreParams{
+			Duration:         1 * time.Second,
+			PacketsExpected:  100,
+			PacketsLost:      0,
+			Bytes:            2500,
+			Frames:           2,
+			IsReducedQuality: true,
+		}
+		p.UpTrackManager.publishedTracks["ss"] = testPublishedScreenshareTrack(params)
+
+		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 }
 

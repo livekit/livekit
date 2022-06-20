@@ -198,3 +198,11 @@ func (d *DumbReceiver) IsDtxDisabled() bool {
 	}
 	return false
 }
+
+func (d *DumbReceiver) TrackSource() livekit.TrackSource {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.TrackSource()
+	}
+
+	return livekit.TrackSource_UNKNOWN
+}
