@@ -39,19 +39,20 @@ func int32Ptr(x int32) *int32 {
 }
 
 type TrackScoreParams struct {
-	Duration        time.Duration
-	Codec           string
-	PacketsExpected uint32
-	PacketsLost     uint32
-	Bytes           uint64
-	Frames          uint32
-	Jitter          float64
-	Rtt             uint32
-	DtxDisabled     bool
-	ActualWidth     uint32
-	ActualHeight    uint32
-	ExpectedWidth   uint32
-	ExpectedHeight  uint32
+	Duration         time.Duration
+	Codec            string
+	PacketsExpected  uint32
+	PacketsLost      uint32
+	Bytes            uint64
+	Frames           uint32
+	Jitter           float64
+	Rtt              uint32
+	DtxDisabled      bool
+	ActualWidth      uint32
+	ActualHeight     uint32
+	ExpectedWidth    uint32
+	ExpectedHeight   uint32
+	IsReducedQuality bool
 }
 
 func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
@@ -94,4 +95,28 @@ func VideoTrackScore(params TrackScoreParams) float32 {
 		return float32(scores[0].VideoScore)
 	}
 	return 0
+}
+
+//
+// rtcmos gives lower score when screen share content is static.
+// Even though the frame rate is low, the bit rate is also low and
+// the resolution is high. Till rtcmos model can be adapted to that
+// scenario, use loss based scoring.
+//
+func ScreenshareTrackScore(params TrackScoreParams) float32 {
+	pctLoss := getLossPercentage(params.PacketsExpected, params.PacketsLost)
+	// No Loss, excellent
+	if pctLoss == 0.0 && !params.IsReducedQuality {
+		return 5.0
+	}
+	// default when loss is minimal, but reducedQuality
+	score := float32(3.5)
+	// loss is bad
+	if pctLoss >= 4.0 {
+		score = 2.0
+	} else if pctLoss <= 2.0 && !params.IsReducedQuality {
+		// loss is acceptable and at reduced quality
+		score = 4.5
+	}
+	return score
 }

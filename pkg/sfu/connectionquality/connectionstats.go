@@ -27,11 +27,13 @@ type ConnectionStatsParams struct {
 	IsDtxDisabled       func() bool
 	GetLayerDimension   func(int32) (uint32, uint32)
 	GetMaxExpectedLayer func() *livekit.VideoLayer
+	GetIsReducedQuality func() bool
 	Logger              logger.Logger
 }
 
 type ConnectionStats struct {
-	params ConnectionStatsParams
+	params      ConnectionStatsParams
+	trackSource livekit.TrackSource
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
@@ -45,9 +47,10 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params: params,
-		score:  5.0,
-		done:   make(chan struct{}),
+		params:      params,
+		trackSource: livekit.TrackSource_UNKNOWN,
+		score:       5.0,
+		done:        make(chan struct{}),
 	}
 }
 
@@ -61,6 +64,10 @@ func (cs *ConnectionStats) Close() {
 	}
 
 	close(cs.done)
+}
+
+func (cs *ConnectionStats) SetTrackSource(trackSource livekit.TrackSource) {
+	cs.trackSource = trackSource
 }
 
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
@@ -86,11 +93,6 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	}
 
 	cs.lastUpdate = time.Now()
-	// RAJA-TODO - take mute into account
-	// RAJA-TODO - maybe a probation period at the start, coming out of mute?
-	// RAJA-TODO - maybe a probation period when a layer starts/stops?
-	// RAJA-TODO - maybe layer changes should be notified here directly rather than pulling
-	// RAJA-TODO - maybe track info should be set here and this can know max published without having to pull every time
 	maxAvailableLayer, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams)
 	if maxAvailableLayerStats == nil {
 		// retain old score as stats will not be available when muted
@@ -108,14 +110,19 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		Rtt:             maxAvailableLayerStats.RttMax,
 	}
 
-	switch cs.params.CodecType {
-	case webrtc.RTPCodecTypeAudio:
+	switch {
+	case cs.trackSource == livekit.TrackSource_SCREEN_SHARE:
+		if cs.params.GetIsReducedQuality != nil {
+			params.IsReducedQuality = cs.params.GetIsReducedQuality()
+		}
+		cs.score = ScreenshareTrackScore(params)
+	case cs.params.CodecType == webrtc.RTPCodecTypeAudio:
 		if cs.params.IsDtxDisabled != nil {
 			params.DtxDisabled = cs.params.IsDtxDisabled()
 		}
 		cs.score = AudioTrackScore(params)
 
-	case webrtc.RTPCodecTypeVideo:
+	case cs.params.CodecType == webrtc.RTPCodecTypeVideo:
 		// get tracks expected max layer and dimensions
 		maxExpectedLayer := cs.params.GetMaxExpectedLayer()
 		if maxExpectedLayer == nil || utils.SpatialLayerForQuality(maxExpectedLayer.Quality) == buffer.InvalidLayerSpatial {

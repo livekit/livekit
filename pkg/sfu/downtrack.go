@@ -223,18 +223,20 @@ func NewDownTrack(
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:         kind,
+		CodecName:         getCodecNameFromMime(codecs[0].MimeType), // LK-TODO: have to notify on codec change
+		MimeType:          codecs[0].MimeType,                       // LK-TODO have to notify on codec change
 		GetDeltaStats:     d.getDeltaStats,
 		IsDtxDisabled:     d.receiver.IsDtxDisabled,
 		GetLayerDimension: d.receiver.GetLayerDimension,
-		// RAJA-TODO: Check muted, test quality when muted
-		// RAJA-TODO: this one needs more work as layers are muxed into one layer, maybe need to maitain RTP stats separately for each layer
 		GetMaxExpectedLayer: func() *livekit.VideoLayer {
 			maxLayer := d.forwarder.MaxLayers().Spatial
 			width, height := d.receiver.GetLayerDimension(maxLayer)
 			return &livekit.VideoLayer{Quality: utils.QualityForSpatialLayer(maxLayer), Width: width, Height: height}
 		},
-		Logger:    d.logger,
-		CodecName: getCodecNameFromMime(codecs[0].MimeType),
+		GetIsReducedQuality: func() bool {
+			return d.GetForwardingStatus() != ForwardingStatusOptimal
+		},
+		Logger: d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -295,6 +297,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 	d.bound.Store(true)
 
+	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
 	d.connectionStats.Start()
 	d.logger.Debugw("bound")
 
