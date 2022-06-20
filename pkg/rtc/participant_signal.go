@@ -103,7 +103,7 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) err
 	var scopedSpeakers []*livekit.SpeakerInfo
 	for _, s := range speakers {
 		participantID := livekit.ParticipantID(s.Sid)
-		if p.isSubscribedTo(participantID) || participantID == p.ID() {
+		if p.IsSubscribedTo(participantID) || participantID == p.ID() {
 			scopedSpeakers = append(scopedSpeakers, s)
 		}
 	}
