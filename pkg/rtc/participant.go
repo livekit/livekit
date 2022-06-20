@@ -435,7 +435,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 		Permission:  p.grants.Video.ToPermission(),
 		Metadata:    p.grants.Metadata,
 		Region:      p.params.Region,
-		IsPublisher: p.isPublisher.Load(),
+		IsPublisher: p.IsPublisher(),
 	}
 	p.lock.RUnlock()
 	info.Tracks = p.UpTrackManager.ToProto()
@@ -826,6 +826,18 @@ func (p *ParticipantImpl) GetSubscribedParticipants() []livekit.ParticipantID {
 		participantIDs = append(participantIDs, pID)
 	}
 	return participantIDs
+}
+
+func (p *ParticipantImpl) IsSubscribedTo(participantID livekit.ParticipantID) bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	_, ok := p.subscribedTo[participantID]
+	return ok
+}
+
+func (p *ParticipantImpl) IsPublisher() bool {
+	return p.isPublisher.Load()
 }
 
 func (p *ParticipantImpl) CanPublish() bool {
@@ -1360,14 +1372,6 @@ func (p *ParticipantImpl) configureReceiverDTX() {
 			p.params.Logger.Warnw("failed to SetCodecPreferences", err)
 		}
 	}
-}
-
-func (p *ParticipantImpl) isSubscribedTo(participantID livekit.ParticipantID) bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	_, ok := p.subscribedTo[participantID]
-	return ok
 }
 
 func (p *ParticipantImpl) onStreamStateChange(update *sfu.StreamStateUpdate) error {

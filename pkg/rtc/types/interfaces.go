@@ -140,6 +140,8 @@ type LocalParticipant interface {
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
+	IsSubscribedTo(sid livekit.ParticipantID) bool
+	IsPublisher() bool
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
