@@ -93,11 +93,6 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	}
 
 	cs.lastUpdate = time.Now()
-	// RAJA-TODO - take mute into account
-	// RAJA-TODO - maybe a probation period at the start, coming out of mute?
-	// RAJA-TODO - maybe a probation period when a layer starts/stops?
-	// RAJA-TODO - maybe layer changes should be notified here directly rather than pulling
-	// RAJA-TODO - maybe track info should be set here and this can know max published without having to pull every time
 	maxAvailableLayer, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams)
 	if maxAvailableLayerStats == nil {
 		// retain old score as stats will not be available when muted

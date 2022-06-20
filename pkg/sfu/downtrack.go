@@ -223,28 +223,11 @@ func NewDownTrack(
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		CodecType:         kind,
-		GetDeltaStats:     d.getDeltaStats,
-		IsDtxDisabled:     d.receiver.IsDtxDisabled,
-		GetLayerDimension: d.receiver.GetLayerDimension,
-		// RAJA-TODO: Check muted, test quality when muted
-		// RAJA-TODO: this one needs more work as layers are muxed into one layer, maybe need to maitain RTP stats separately for each layer
-		GetMaxExpectedLayer: func() *livekit.VideoLayer {
-			maxLayer := d.forwarder.MaxLayers().Spatial
-			width, height := d.receiver.GetLayerDimension(maxLayer)
-			return &livekit.VideoLayer{Quality: utils.QualityForSpatialLayer(maxLayer), Width: width, Height: height}
-		},
-		Logger:    d.logger,
-		CodecName: getCodecNameFromMime(codecs[0].MimeType),
-	})
-	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:         kind,
 		CodecName:         getCodecNameFromMime(codecs[0].MimeType), // LK-TODO: have to notify on codec change
 		MimeType:          codecs[0].MimeType,                       // LK-TODO have to notify on codec change
 		GetDeltaStats:     d.getDeltaStats,
 		IsDtxDisabled:     d.receiver.IsDtxDisabled,
 		GetLayerDimension: d.receiver.GetLayerDimension,
-		// RAJA-TODO: Check muted, test quality when muted
-		// RAJA-TODO: this one needs more work as layers are muxed into one layer, maybe need to maitain RTP stats separately for each layer
 		GetMaxExpectedLayer: func() *livekit.VideoLayer {
 			maxLayer := d.forwarder.MaxLayers().Spatial
 			width, height := d.receiver.GetLayerDimension(maxLayer)
