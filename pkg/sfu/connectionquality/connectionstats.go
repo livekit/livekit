@@ -19,16 +19,17 @@ const (
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval      time.Duration
-	CodecType           webrtc.RTPCodecType
-	CodecName           string
-	MimeType            string
-	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
-	IsDtxDisabled       func() bool
-	GetLayerDimension   func(int32) (uint32, uint32)
-	GetMaxExpectedLayer func() *livekit.VideoLayer
-	GetIsReducedQuality func() bool
-	Logger              logger.Logger
+	UpdateInterval         time.Duration
+	CodecType              webrtc.RTPCodecType
+	CodecName              string
+	MimeType               string
+	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
+	IsDtxDisabled          func() bool
+	GetLayerDimension      func(int32) (uint32, uint32)
+	GetMaxExpectedLayer    func() *livekit.VideoLayer
+	GetCurrentLayerSpatial func() int32
+	GetIsReducedQuality    func() bool
+	Logger                 logger.Logger
 }
 
 type ConnectionStats struct {
@@ -130,6 +131,15 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		}
 
 		if maxAvailableLayerStats != nil {
+			// for muxed tracks, i. e. simulcast publisher muxed into a single track,
+			// use the current spatial layer.
+			// NOTE: This is still not perfect as muxing means layers could have changed
+			// in the analysis window. Needs a more complex design to keep track of all layer
+			// switches to be able to do precise calculations. As the window is small,
+			// using the current and maximum is a reasonable approximation.
+			if cs.params.GetCurrentLayerSpatial != nil {
+				maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
+			}
 			params.ActualWidth, params.ActualHeight = cs.params.GetLayerDimension(maxAvailableLayer)
 		}
 

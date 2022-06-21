@@ -233,6 +233,9 @@ func NewDownTrack(
 			width, height := d.receiver.GetLayerDimension(maxLayer)
 			return &livekit.VideoLayer{Quality: utils.QualityForSpatialLayer(maxLayer), Width: width, Height: height}
 		},
+		GetCurrentLayerSpatial: func() int32 {
+			return d.forwarder.CurrentLayers().Spatial
+		},
 		GetIsReducedQuality: func() bool {
 			return d.GetForwardingStatus() != ForwardingStatusOptimal
 		},
