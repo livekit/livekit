@@ -11,7 +11,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -26,7 +25,7 @@ type ConnectionStatsParams struct {
 	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
 	IsDtxDisabled          func() bool
 	GetLayerDimension      func(int32) (uint32, uint32)
-	GetMaxExpectedLayer    func() *livekit.VideoLayer
+	GetMaxExpectedLayer    func() (int32, uint32, uint32)
 	GetCurrentLayerSpatial func() int32
 	GetIsReducedQuality    func() bool
 	Logger                 logger.Logger
@@ -38,9 +37,10 @@ type ConnectionStats struct {
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock       sync.RWMutex
-	score      float32
-	lastUpdate time.Time
+	lock             sync.RWMutex
+	score            float32
+	lastUpdate       time.Time
+	maxExpectedLayer int32
 
 	done     chan struct{}
 	isClosed atomic.Bool
@@ -48,10 +48,11 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params:      params,
-		trackSource: livekit.TrackSource_UNKNOWN,
-		score:       5.0,
-		done:        make(chan struct{}),
+		params:           params,
+		trackSource:      livekit.TrackSource_UNKNOWN,
+		score:            5.0,
+		maxExpectedLayer: buffer.InvalidLayerSpatial,
+		done:             make(chan struct{}),
 	}
 }
 
@@ -124,12 +125,19 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		cs.score = AudioTrackScore(params)
 
 	case cs.params.CodecType == webrtc.RTPCodecTypeVideo:
-		// get tracks expected max layer and dimensions
-		maxExpectedLayer := cs.params.GetMaxExpectedLayer()
-		if maxExpectedLayer == nil || utils.SpatialLayerForQuality(maxExpectedLayer.Quality) == buffer.InvalidLayerSpatial {
+		// See note below about muxed tracks quality calculation challenged.
+		// A sub-optimal solution is to measure only in windows where the max layer is stable.
+		// With adaptive stream, it is possible that subscription changes max layer.
+		// When expected layer changes from low -> high, the stats in that window
+		// (when the change happens) will correspond to lower layer at least partially.
+		// Using that to calculate against expected higher layer could result in lower score.
+		maxExpectedLayer, expectedWidth, expectedHeight := cs.params.GetMaxExpectedLayer()
+		if maxExpectedLayer == buffer.InvalidLayerSpatial || expectedWidth == 0 || expectedHeight == 0 || maxExpectedLayer != cs.maxExpectedLayer {
+			cs.maxExpectedLayer = maxExpectedLayer
 			return cs.score
 		}
 
+		cs.maxExpectedLayer = maxExpectedLayer
 		if maxAvailableLayerStats != nil {
 			// for muxed tracks, i. e. simulcast publisher muxed into a single track,
 			// use the current spatial layer.
@@ -143,8 +151,8 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			params.ActualWidth, params.ActualHeight = cs.params.GetLayerDimension(maxAvailableLayer)
 		}
 
-		params.ExpectedWidth = maxExpectedLayer.Width
-		params.ExpectedHeight = maxExpectedLayer.Height
+		params.ExpectedWidth = expectedWidth
+		params.ExpectedHeight = expectedHeight
 		cs.score = VideoTrackScore(params)
 	}
 

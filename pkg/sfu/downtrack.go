@@ -21,7 +21,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 // TrackSender defines an interface send media to remote peer
@@ -228,10 +227,10 @@ func NewDownTrack(
 		GetDeltaStats:     d.getDeltaStats,
 		IsDtxDisabled:     d.receiver.IsDtxDisabled,
 		GetLayerDimension: d.receiver.GetLayerDimension,
-		GetMaxExpectedLayer: func() *livekit.VideoLayer {
+		GetMaxExpectedLayer: func() (int32, uint32, uint32) {
 			maxLayer := d.forwarder.MaxLayers().Spatial
 			width, height := d.receiver.GetLayerDimension(maxLayer)
-			return &livekit.VideoLayer{Quality: utils.QualityForSpatialLayer(maxLayer), Width: width, Height: height}
+			return maxLayer, width, height
 		},
 		GetCurrentLayerSpatial: func() int32 {
 			return d.forwarder.CurrentLayers().Spatial
