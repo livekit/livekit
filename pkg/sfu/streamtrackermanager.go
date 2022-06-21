@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
@@ -276,7 +275,7 @@ func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
 	return width, height
 }
 
-func (s *StreamTrackerManager) GetMaxExpectedLayer() *livekit.VideoLayer {
+func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32, height uint32) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -287,11 +286,11 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() *livekit.VideoLayer {
 	}
 	for _, layer := range s.trackInfo.Layers {
 		if maxExpectedLayer == utils.SpatialLayerForQuality(layer.Quality) {
-			return proto.Clone(layer).(*livekit.VideoLayer)
+			return maxExpectedLayer, layer.Width, layer.Height
 		}
 	}
 
-	return nil
+	return maxExpectedLayer, 0, 0
 }
 
 func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {
