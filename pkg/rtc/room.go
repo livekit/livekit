@@ -849,6 +849,7 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 	var updates []*livekit.ParticipantInfo
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := r.batchedUpdates[identity]
+	shouldSend := isImmediate || pi.IsPublisher
 
 	if existing != nil {
 		if pi.Sid != existing.Sid {
@@ -859,10 +860,12 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 		} else if pi.Version < existing.Version {
 			// out of order update
 			return nil
+		} else if shouldSend {
+			updates = append(updates, existing)
 		}
 	}
 
-	if isImmediate || pi.IsPublisher {
+	if shouldSend {
 		// include any queued update, and return
 		delete(r.batchedUpdates, identity)
 		updates = append(updates, pi)
