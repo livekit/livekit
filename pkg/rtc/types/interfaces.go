@@ -65,12 +65,16 @@ type ParticipantCloseReason int
 const (
 	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
 	ParticipantCloseReasonRoomManagerStop
+	ParticipantCloseReasonRoomClose
+	ParticipantCloseReasonVerifyFailed
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
 	ParticipantCloseReasonRTCSessionFinish
 	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
+	ParticipantCloseReasonMigrationComplete
+	ParticipantCloseReasonStale
 	ParticipantCloseReasonServiceRequestRemoveParticipant
 	ParticipantCloseReasonServiceRequestDeleteRoom
 	ParticipantCloseReasonSimulateMigration
@@ -84,6 +88,10 @@ func (p ParticipantCloseReason) String() string {
 		return "CLIENT_REQUEST_LEAVE"
 	case ParticipantCloseReasonRoomManagerStop:
 		return "ROOM_MANAGER_STOP"
+	case ParticipantCloseReasonRoomClose:
+		return "ROOM_CLOSE"
+	case ParticipantCloseReasonVerifyFailed:
+		return "VERIFY_FAILED"
 	case ParticipantCloseReasonJoinFailed:
 		return "JOIN_FAILED"
 	case ParticipantCloseReasonJoinTimeout:
@@ -96,6 +104,10 @@ func (p ParticipantCloseReason) String() string {
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonDuplicateIdentity:
 		return "DUPLICATE_IDENTITY"
+	case ParticipantCloseReasonMigrationComplete:
+		return "MIGRATION_COMPLETE"
+	case ParticipantCloseReasonStale:
+		return "STALE"
 	case ParticipantCloseReasonServiceRequestRemoveParticipant:
 		return "SERVICE_REQUEST_REMOVE_PARTICIPANT"
 	case ParticipantCloseReasonServiceRequestDeleteRoom:
