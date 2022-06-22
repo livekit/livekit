@@ -28,6 +28,8 @@ type AddSubscriberParams struct {
 	TrackIDs  []livekit.TrackID
 }
 
+// ---------------------------------------------
+
 type MigrateState int32
 
 const (
@@ -35,11 +37,6 @@ const (
 	MigrateStateSync
 	MigrateStateComplete
 )
-
-type SubscribedCodecQuality struct {
-	CodecMime string
-	Quality   livekit.VideoQuality
-}
 
 func (m MigrateState) String() string {
 	switch m {
@@ -53,6 +50,68 @@ func (m MigrateState) String() string {
 		return fmt.Sprintf("%d", int(m))
 	}
 }
+
+// ---------------------------------------------
+
+type SubscribedCodecQuality struct {
+	CodecMime string
+	Quality   livekit.VideoQuality
+}
+
+// ---------------------------------------------
+
+type ParticipantCloseReason int
+
+const (
+	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonRoomManagerStop
+	ParticipantCloseReasonJoinFailed
+	ParticipantCloseReasonJoinTimeout
+	ParticipantCloseReasonRTCSessionFinish
+	ParticipantCloseReasonStateDisconnected
+	ParticipantCloseReasonPeerConnectionDisconnected
+	ParticipantCloseReasonDuplicateIdentity
+	ParticipantCloseReasonServiceRequestRemoveParticipant
+	ParticipantCloseReasonServiceRequestDeleteRoom
+	ParticipantCloseReasonSimulateMigration
+	ParticipantCloseReasonSimulateNodeFailure
+	ParticipantCloseReasonSimulateServerLeave
+)
+
+func (p ParticipantCloseReason) String() string {
+	switch p {
+	case ParticipantCloseReasonClientRequestLeave:
+		return "CLIENT_REQUEST_LEAVE"
+	case ParticipantCloseReasonRoomManagerStop:
+		return "ROOM_MANAGER_STOP"
+	case ParticipantCloseReasonJoinFailed:
+		return "JOIN_FAILED"
+	case ParticipantCloseReasonJoinTimeout:
+		return "JOIN_TIMEOUT"
+	case ParticipantCloseReasonRTCSessionFinish:
+		return "RTC_SESSION_FINISH"
+	case ParticipantCloseReasonStateDisconnected:
+		return "STATE_DISCONNECTED"
+	case ParticipantCloseReasonPeerConnectionDisconnected:
+		return "PEER_CONNECTION_DISCONNECTED"
+	case ParticipantCloseReasonDuplicateIdentity:
+		return "DUPLICATE_IDENTITY"
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return "SERVICE_REQUEST_REMOVE_PARTICIPANT"
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return "SERVICE_REQUEST_DELETE_ROOM"
+	case ParticipantCloseReasonSimulateMigration:
+		return "SIMULATE_MIGRATION"
+	case ParticipantCloseReasonSimulateNodeFailure:
+		return "SIMULATE_NODE_FAILURE"
+	case ParticipantCloseReasonSimulateServerLeave:
+		return "SIMULATE_SERVER_LEAVE"
+	default:
+		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+// ---------------------------------------------
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -74,7 +133,7 @@ type Participant interface {
 	IsRecorder() bool
 
 	Start()
-	Close(sendLeave bool) error
+	Close(sendLeave bool, reason ParticipantCloseReason) error
 
 	SubscriptionPermission() *livekit.SubscriptionPermission
 
@@ -182,7 +241,7 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
-	RemoveParticipant(identity livekit.ParticipantIdentity)
+	RemoveParticipant(identity livekit.ParticipantIdentity, reason ParticipantCloseReason)
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
