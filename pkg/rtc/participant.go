@@ -648,13 +648,13 @@ func (p *ParticipantImpl) Start() {
 	})
 }
 
-func (p *ParticipantImpl) Close(sendLeave bool) error {
+func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}
 
-	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave)
+	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave, "reason", reason)
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{
@@ -1207,7 +1207,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 				}
 				if primaryPC.ConnectionState() != webrtc.PeerConnectionStateConnected {
 					p.params.Logger.Infow("closing disconnected participant")
-					p.Close(true)
+					p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
 				}
 			})
 			p.lock.Unlock()

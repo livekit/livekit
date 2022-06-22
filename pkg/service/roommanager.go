@@ -166,7 +166,7 @@ func (r *RoomManager) Stop() {
 
 	for _, room := range rooms {
 		for _, p := range room.GetParticipants() {
-			_ = p.Close(true)
+			_ = p.Close(true, types.ParticipantCloseReasonRoomManagerStop)
 		}
 		room.Close()
 	}
@@ -207,8 +207,9 @@ func (r *RoomManager) StartSession(
 			)
 			return room.ResumeParticipant(participant, responseSink)
 		} else {
+			participant.GetLogger().Infow("removing duplicate participant")
 			// we need to clean up the existing participant, so a new one can join
-			room.RemoveParticipant(participant.Identity())
+			room.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonDuplicateIdentity)
 		}
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
@@ -269,7 +270,7 @@ func (r *RoomManager) StartSession(
 	}
 	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom), r.currentNode.Region); err != nil {
 		pLogger.Errorw("could not join room", err)
-		_ = participant.Close(true)
+		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
 	}
 	if err = r.roomStore.StoreParticipant(ctx, roomName, participant.ToProto()); err != nil {
@@ -389,7 +390,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			"room", room.Name(),
 			"roomID", room.ID(),
 		)
-		_ = participant.Close(true)
+		_ = participant.Close(true, types.ParticipantCloseReasonRTCSessionFinish)
 		requestSource.Close()
 	}()
 	defer rtc.Recover()
@@ -472,7 +473,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			return
 		}
 		pLogger.Infow("removing participant")
-		room.RemoveParticipant(identity)
+		room.RemoveParticipant(identity, types.ParticipantCloseReasonServiceRequest)
 	case *livekit.RTCNodeMessage_MuteTrack:
 		if participant == nil {
 			return
@@ -502,7 +503,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
-			_ = p.Close(true)
+			_ = p.Close(true, types.ParticipantCloseReasonDeleteRoom)
 		}
 		room.Close()
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:
