@@ -295,7 +295,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
 			existing: subscriber1v1,
-			expected: []*livekit.ParticipantInfo{publisher1v2},
+			expected: []*livekit.ParticipantInfo{subscriber1v1, publisher1v2},
 			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
 				require.Empty(t, rm.batchedUpdates)
 			},
