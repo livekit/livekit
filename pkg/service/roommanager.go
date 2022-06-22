@@ -473,7 +473,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 			return
 		}
 		pLogger.Infow("removing participant")
-		room.RemoveParticipant(identity, types.ParticipantCloseReasonServiceRequest)
+		room.RemoveParticipant(identity, types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	case *livekit.RTCNodeMessage_MuteTrack:
 		if participant == nil {
 			return
@@ -503,7 +503,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {
-			_ = p.Close(true, types.ParticipantCloseReasonDeleteRoom)
+			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
 		}
 		room.Close()
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:

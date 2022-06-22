@@ -68,11 +68,11 @@ const (
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
 	ParticipantCloseReasonRTCSessionFinish
-	ParticipantCloseReasonDeleteRoom
 	ParticipantCloseReasonDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
-	ParticipantCloseReasonServiceRequest
+	ParticipantCloseReasonServiceRequestRemoveParticipant
+	ParticipantCloseReasonServiceRequestDeleteRoom
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
@@ -90,16 +90,16 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_TIMEOUT"
 	case ParticipantCloseReasonRTCSessionFinish:
 		return "RTC_SESSION_FINISH"
-	case ParticipantCloseReasonDeleteRoom:
-		return "DELETE_ROOM"
 	case ParticipantCloseReasonDisconnected:
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonDuplicateIdentity:
 		return "DUPLICATE_IDENTITY"
-	case ParticipantCloseReasonServiceRequest:
-		return "SERVICE_REQUEST"
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return "SERVICE_REQUEST_REMOVE_PARTICIPANT"
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return "SERVICE_REQUEST_DELETE_ROOM"
 	case ParticipantCloseReasonSimulateMigration:
 		return "SIMULATE_MIGRATION"
 	case ParticipantCloseReasonSimulateNodeFailure:
