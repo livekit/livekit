@@ -246,7 +246,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonDisconnected)
+			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)

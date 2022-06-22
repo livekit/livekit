@@ -63,12 +63,12 @@ type SubscribedCodecQuality struct {
 type ParticipantCloseReason int
 
 const (
-	ParticipantCloseReasonSignalRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
 	ParticipantCloseReasonRoomManagerStop
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
 	ParticipantCloseReasonRTCSessionFinish
-	ParticipantCloseReasonDisconnected
+	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
 	ParticipantCloseReasonServiceRequestRemoveParticipant
@@ -80,8 +80,8 @@ const (
 
 func (p ParticipantCloseReason) String() string {
 	switch p {
-	case ParticipantCloseReasonSignalRequestLeave:
-		return "SIGNAL_REQUEST_LEAVE"
+	case ParticipantCloseReasonClientRequestLeave:
+		return "CLIENT_REQUEST_LEAVE"
 	case ParticipantCloseReasonRoomManagerStop:
 		return "ROOM_MANAGER_STOP"
 	case ParticipantCloseReasonJoinFailed:
@@ -90,8 +90,8 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_TIMEOUT"
 	case ParticipantCloseReasonRTCSessionFinish:
 		return "RTC_SESSION_FINISH"
-	case ParticipantCloseReasonDisconnected:
-		return "PEER_CONNECTION_DISCONNECTED"
+	case ParticipantCloseReasonStateDisconnected:
+		return "STATE_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
 		return "PEER_CONNECTION_DISCONNECTED"
 	case ParticipantCloseReasonDuplicateIdentity:
