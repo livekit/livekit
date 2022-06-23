@@ -228,11 +228,11 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	t.receiversShadow = make([]*simulcastReceiver, len(t.receivers))
 	copy(t.receiversShadow, t.receivers)
 
-	closeSubscription := len(t.receiversShadow) == 0
+	stopSubscription := len(t.receiversShadow) == 0
 	t.lock.Unlock()
 
-	if closeSubscription {
-		t.MediaTrackSubscriptions.Close()
+	if stopSubscription {
+		t.MediaTrackSubscriptions.Stop()
 	}
 }
 
@@ -241,7 +241,7 @@ func (t *MediaTrackReceiver) ClearAllReceivers() {
 	t.receivers = t.receivers[:0]
 	t.receiversShadow = nil
 	t.lock.Unlock()
-	t.MediaTrackSubscriptions.Close()
+	t.MediaTrackSubscriptions.Stop()
 }
 
 func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
@@ -253,20 +253,26 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 }
 
 func (t *MediaTrackReceiver) TryClose() bool {
-	t.lock.Lock()
+	t.lock.RLock()
 	if len(t.receiversShadow) > 0 {
 		t.lock.Unlock()
 		return false
 	}
+	t.lock.RUnlock()
+	t.Close()
+
+	return true
+}
+
+func (t *MediaTrackReceiver) Close() {
+	t.lock.RLock()
 	onclose := t.onClose
-	t.lock.Unlock()
+	t.lock.RUnlock()
 
 	t.MediaTrackSubscriptions.Close()
-
 	for _, f := range onclose {
 		f()
 	}
-	return true
 }
 
 func (t *MediaTrackReceiver) ID() livekit.TrackID {

@@ -142,6 +142,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		})
+		mt.Start()
 		var lock sync.Mutex
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
@@ -216,6 +217,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				DynacastPauseDelay: 100 * time.Millisecond,
 			},
 		})
+		mt.Start()
 
 		mt.AddCodec(webrtc.MimeTypeVP8)
 		mt.AddCodec(webrtc.MimeTypeAV1)
@@ -259,6 +261,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
+		time.Sleep(10 * time.Millisecond)
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
@@ -327,6 +330,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		// muting "s2" only should not disable all qualities of vp8, no change of expected qualities
 		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
 
+		time.Sleep(10 * time.Millisecond)
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
@@ -411,6 +415,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
+		time.Sleep(10 * time.Millisecond)
 		lock.RLock()
 		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
 		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))

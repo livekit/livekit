@@ -45,6 +45,8 @@ type MediaTrackSubscriptions struct {
 	maxSubscribedQualityDebounce func(func())
 	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)
 	maxQualityTimer              *time.Timer
+
+	qualityNotifyOpQueue *utils.OpsQueue
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -69,12 +71,14 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 		maxSubscriberNodeQuality:     make(map[livekit.NodeID][]types.SubscribedCodecQuality),
 		maxSubscribedQuality:         make(map[string]livekit.VideoQuality),
 		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.DynacastPauseDelay),
+		qualityNotifyOpQueue:         utils.NewOpsQueue(params.Logger, "quality-notify", 100),
 	}
 
 	return t
 }
 
 func (t *MediaTrackSubscriptions) Start() {
+	t.qualityNotifyOpQueue.Start()
 	t.startMaxQualityTimer(false)
 }
 
@@ -82,8 +86,12 @@ func (t *MediaTrackSubscriptions) Restart() {
 	t.startMaxQualityTimer(true)
 }
 
-func (t *MediaTrackSubscriptions) Close() {
+func (t *MediaTrackSubscriptions) Stop() {
 	t.stopMaxQualityTimer()
+}
+
+func (t *MediaTrackSubscriptions) Close() {
+	t.qualityNotifyOpQueue.Stop()
 }
 
 func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
@@ -618,14 +626,15 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 			})
 		}
 	}
-	t.maxQualityLock.Unlock()
-
 	if t.onSubscribedMaxQualityChange != nil {
 		t.params.Logger.Debugw("subscribedMaxQualityChange",
 			"subscribedCodec", subscribedCodec,
 			"maxSubscribedQualities", maxSubscribedQualities)
-		t.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
+		t.qualityNotifyOpQueue.Enqueue(func() {
+			t.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
+		})
 	}
+	t.maxQualityLock.Unlock()
 }
 
 func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
