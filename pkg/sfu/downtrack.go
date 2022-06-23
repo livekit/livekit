@@ -131,7 +131,7 @@ type DownTrack struct {
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
-	onCloseHandler          func()
+	onCloseHandler          func(willBeResumed bool)
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
 	listenerLock            sync.RWMutex
@@ -674,7 +674,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	if d.onCloseHandler != nil {
-		d.onCloseHandler()
+		d.onCloseHandler(!flush)
 	}
 
 	d.stopKeyFrameRequester()
@@ -737,7 +737,7 @@ func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 }
 
 // OnCloseHandler method to be called on remote tracked removed
-func (d *DownTrack) OnCloseHandler(fn func()) {
+func (d *DownTrack) OnCloseHandler(fn func(willBeResumed bool)) {
 	d.onCloseHandler = fn
 }
 

@@ -240,8 +240,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		go sub.UpdateRTT(rtt)
 	})
 
-	downTrack.OnCloseHandler(func() {
-		go t.downTrackClosed(sub, subTrack, sender)
+	downTrack.OnCloseHandler(func(willBeResumed bool) {
+		go t.downTrackClosed(sub, subTrack, willBeResumed, sender)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -261,7 +261,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID, resume bool) {
+func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool) {
 	subTrack := t.getSubscribedTrack(participantID)
 
 	t.subscribedTracksMu.Lock()
@@ -272,11 +272,11 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	t.subscribedTracksMu.Unlock()
 
 	if subTrack != nil {
-		subTrack.DownTrack().CloseWithFlush(!resume)
+		subTrack.DownTrack().CloseWithFlush(!willBeResumed)
 	}
 }
 
-func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
+func (t *MediaTrackSubscriptions) RemoveAllSubscribers(willBeResumed bool) {
 	t.params.Logger.Debugw("removing all subscribers")
 
 	t.subscribedTracksMu.Lock()
@@ -289,7 +289,7 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers() {
 	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
-		subTrack.DownTrack().Close()
+		subTrack.DownTrack().CloseWithFlush(!willBeResumed)
 	}
 }
 
@@ -678,6 +678,7 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 func (t *MediaTrackSubscriptions) downTrackClosed(
 	sub types.LocalParticipant,
 	subTrack types.SubscribedTrack,
+	willBeResumed bool,
 	sender *webrtc.RTPSender,
 ) {
 	subscriberID := sub.ID()
@@ -688,39 +689,43 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 
 	t.maybeNotifyNoSubscribers()
 
-	t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
+	if !willBeResumed {
+		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
-	// ignore if the subscribing sub is not connected
-	if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
-		return
-	}
-
-	// if the source has been terminated, we'll need to terminate all the subscribed tracks
-	// however, if the dest sub has disconnected, then we can skip
-	if sender == nil {
-		return
-	}
-	t.params.Logger.Debugw("removing peerconnection track",
-		"subscriber", sub.Identity(),
-		"subscriberID", subscriberID,
-		"kind", t.params.MediaTrack.Kind(),
-	)
-	if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
-		if err == webrtc.ErrConnectionClosed {
-			// sub closing, can skip removing subscribedtracks
+		// ignore if the subscribing sub is not connected
+		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
 			return
 		}
-		if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-			// most of these are safe to ignore, since the track state might have already
-			// been set to Inactive
-			t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
-				"error", err,
-				"subscriber", sub.Identity(),
-				"subscriberID", subscriberID,
-			)
+
+		// if the source has been terminated, we'll need to terminate all the subscribed tracks
+		// however, if the dest sub has disconnected, then we can skip
+		if sender == nil {
+			return
+		}
+		t.params.Logger.Debugw("removing peerconnection track",
+			"subscriber", sub.Identity(),
+			"subscriberID", subscriberID,
+			"kind", t.params.MediaTrack.Kind(),
+		)
+		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+			if err == webrtc.ErrConnectionClosed {
+				// sub closing, can skip removing subscribedtracks
+				return
+			}
+			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+				// most of these are safe to ignore, since the track state might have already
+				// been set to Inactive
+				t.params.Logger.Debugw("could not remove remoteTrack from forwarder",
+					"error", err,
+					"subscriber", sub.Identity(),
+					"subscriberID", subscriberID,
+				)
+			}
 		}
 	}
 
 	sub.RemoveSubscribedTrack(subTrack)
-	sub.Negotiate(false)
+	if !willBeResumed {
+		sub.Negotiate(false)
+	}
 }
