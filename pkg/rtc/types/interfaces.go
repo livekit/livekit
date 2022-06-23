@@ -288,9 +288,9 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant LocalParticipant) error
-	RemoveSubscriber(participantID livekit.ParticipantID, resume bool)
+	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
-	RemoveAllSubscribers()
+	RemoveAllSubscribers(willBeResumed bool)
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 

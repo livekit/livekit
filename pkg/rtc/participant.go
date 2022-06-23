@@ -664,7 +664,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		})
 	}
 
-	p.UpTrackManager.Close()
+	p.UpTrackManager.Close(!sendLeave)
 
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
