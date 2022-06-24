@@ -123,7 +123,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	var upgradeReceiver bool
 	for _, r := range t.receivers {
 		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
-			if d, ok := r.TrackReceiver.(*DumbReceiver); ok {
+			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
 				d.Upgrade(receiver)
 				upgradeReceiver = true
 				break
@@ -181,7 +181,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 		}
 		if !exist {
 			t.receivers = append(t.receivers, &simulcastReceiver{
-				TrackReceiver: NewDumbReceiver(livekit.TrackID(t.trackInfo.Sid), string(t.PublisherID()), c, headers),
+				TrackReceiver: NewDummyReceiver(livekit.TrackID(t.trackInfo.Sid), string(t.PublisherID()), c, headers),
 				priority:      i,
 			})
 		}
@@ -622,7 +622,7 @@ func (t *MediaTrackReceiver) PrimaryReceiver() sfu.TrackReceiver {
 	if len(t.receiversShadow) == 0 {
 		return nil
 	}
-	if dr, ok := t.receiversShadow[0].TrackReceiver.(*DumbReceiver); ok {
+	if dr, ok := t.receiversShadow[0].TrackReceiver.(*DummyReceiver); ok {
 		return dr.Receiver()
 	}
 	return t.receiversShadow[0].TrackReceiver
@@ -634,7 +634,7 @@ func (t *MediaTrackReceiver) Receiver(mime string) sfu.TrackReceiver {
 
 	for _, r := range t.receiversShadow {
 		if strings.EqualFold(r.Codec().MimeType, mime) {
-			if dr, ok := r.TrackReceiver.(*DumbReceiver); ok {
+			if dr, ok := r.TrackReceiver.(*DummyReceiver); ok {
 				return dr.Receiver()
 			}
 			return r.TrackReceiver
