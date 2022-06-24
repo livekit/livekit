@@ -33,7 +33,7 @@ type SubscribedTrack struct {
 	pubMuted atomic.Bool
 	settings atomic.Value // *livekit.UpdateTrackSettings
 
-	onBind atomic.Value // fucn()
+	onBind atomic.Value // func()
 	bound  atomic.Bool
 
 	debouncer func(func())
