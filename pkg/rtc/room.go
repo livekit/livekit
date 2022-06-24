@@ -508,7 +508,7 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	for _, p := range r.participants {
-		if !p.Hidden() {
+		if !p.IsRecorder() {
 			r.lock.Unlock()
 			return
 		}
@@ -544,6 +544,9 @@ func (r *Room) Close() {
 	close(r.closed)
 	r.lock.Unlock()
 	r.Logger.Infow("closing room")
+	for _, p := range r.GetParticipants() {
+		_ = p.Close(true, types.ParticipantCloseReasonRoomClose)
+	}
 	if r.onClose != nil {
 		r.onClose()
 	}
