@@ -137,6 +137,8 @@ type ParticipantImpl struct {
 	activeCounter  atomic.Int32
 	firstConnected atomic.Bool
 	iceConfig      types.IceConfig
+
+	cachedRTPTransceivers map[livekit.TrackID]*webrtc.RTPTransceiver
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -159,6 +161,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscribedTo:             make(map[livekit.ParticipantID]struct{}),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
+		cachedRTPTransceivers:    make(map[livekit.TrackID]*webrtc.RTPTransceiver),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -1907,4 +1910,31 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 			dt.SetConnected()
 		}
 	}
+}
+
+func (p *ParticipantImpl) CacheRTPTransceiver(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver) {
+	p.lock.Lock()
+	if existing := p.cachedRTPTransceivers[trackID]; existing != nil && existing != rtpTransceiver {
+		p.params.Logger.Infow("cached transceiver change", "trackID", trackID)
+	}
+	p.cachedRTPTransceivers[trackID] = rtpTransceiver
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) UncacheRTPTransceiver(rtpTransceiver *webrtc.RTPTransceiver) {
+	p.lock.Lock()
+	for trackID, tr := range p.cachedRTPTransceivers {
+		if tr == rtpTransceiver {
+			delete(p.cachedRTPTransceivers, trackID)
+			break
+		}
+	}
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) GetCachedRTPTransceiver(trackID livekit.TrackID) *webrtc.RTPTransceiver {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.cachedRTPTransceivers[trackID]
 }

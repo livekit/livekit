@@ -162,71 +162,109 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
-		PublisherID:        t.params.MediaTrack.PublisherID(),
-		PublisherIdentity:  t.params.MediaTrack.PublisherIdentity(),
-		SubscriberID:       subscriberID,
-		SubscriberIdentity: sub.Identity(),
-		MediaTrack:         t.params.MediaTrack,
-		DownTrack:          downTrack,
-		AdaptiveStream:     sub.GetAdaptiveStream(),
+		PublisherID:       t.params.MediaTrack.PublisherID(),
+		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
+		Subscriber:        sub,
+		MediaTrack:        t.params.MediaTrack,
+		DownTrack:         downTrack,
+		AdaptiveStream:    sub.GetAdaptiveStream(),
+	})
+
+	// Bind callback can happen from replaceTrack, so set it up early
+	downTrack.OnBind(func() {
+		wr.DetermineReceiver(downTrack.Codec())
+		if err = wr.AddDownTrack(downTrack); err != nil {
+			t.params.Logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
+		}
+
+		go subTrack.Bound()
+
+		// when down track is bound, start loop to send reports
+		go t.sendDownTrackBindingReports(sub)
+
+		// initialize to default layer
+		t.notifySubscriberMaxQuality(subscriberID, downTrack.Codec(), livekit.VideoQuality_HIGH)
+		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
-	if sub.ProtocolVersion().SupportsTransceiverReuse() {
-		//
-		// AddTrack will create a new transceiver or re-use an unused one
-		// if the attributes match. This prevents SDP from bloating
-		// because of dormant transceivers building up.
-		//
-		sender, err = sub.SubscriberPC().AddTrack(downTrack)
-		if err != nil {
-			return nil, err
-		}
 
-		// as there is no way to get transceiver from sender, search
-		for _, tr := range sub.SubscriberPC().GetTransceivers() {
-			if tr.Sender() == sender {
-				transceiver = tr
-				break
+	// try cached RTP senders for a chance to replace track
+	replacedTrack := false
+	existingTransceiver := sub.GetCachedRTPTransceiver(trackID)
+	if existingTransceiver != nil {
+		rtpSender := existingTransceiver.Sender()
+		if rtpSender != nil {
+			err := rtpSender.ReplaceTrack(downTrack)
+			if err == nil {
+				sender = rtpSender
+				transceiver = existingTransceiver
+				replacedTrack = true
 			}
 		}
-		if transceiver == nil {
-			// cannot add, no transceiver
-			return nil, errors.New("cannot subscribe without a transceiver in place")
-		}
-	} else {
-		transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionSendonly,
-		})
-		if err != nil {
-			return nil, err
-		}
 
-		sender = transceiver.Sender()
-		if sender == nil {
-			// cannot add, no sender
-			return nil, errors.New("cannot subscribe without a sender in place")
+		if !replacedTrack {
+			// Could not re-use cached transceiver for this track.
+			// Stop the transceiver so that it is at least not active.
+			// It is not usable once stopped,
+			//
+			// Adding down track will create a new transceiver (or re-use
+			// an inactive existing one). In either case, a renegotiation
+			// will happen and that will notify remote of this stopped
+			// transceiver
+			existingTransceiver.Stop()
 		}
 	}
+
+	// if cannot replace, find an unused transceiver or add new one
+	if transceiver == nil {
+		if sub.ProtocolVersion().SupportsTransceiverReuse() {
+			//
+			// AddTrack will create a new transceiver or re-use an unused one
+			// if the attributes match. This prevents SDP from bloating
+			// because of dormant transceivers building up.
+			//
+			sender, err = sub.SubscriberPC().AddTrack(downTrack)
+			if err != nil {
+				return nil, err
+			}
+
+			// as there is no way to get transceiver from sender, search
+			for _, tr := range sub.SubscriberPC().GetTransceivers() {
+				if tr.Sender() == sender {
+					transceiver = tr
+					break
+				}
+			}
+		} else {
+			transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendonly,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			sender = transceiver.Sender()
+		}
+	}
+	if transceiver == nil {
+		// cannot add, no transceiver
+		return nil, errors.New("cannot subscribe without a transceiver in place")
+	}
+	if sender == nil {
+		// cannot add, no sender
+		return nil, errors.New("cannot subscribe without a sender in place")
+	}
+
+	// wthether re-using or stopping remove transceiver from cache
+	// NOTE: safety net, if somehow a cached transceiver is re-used by a different track
+	sub.UncacheRTPTransceiver(transceiver)
 
 	sendParameters := sender.GetParameters()
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
 
 	downTrack.SetTransceiver(transceiver)
-
-	// when out track is bound, start loop to send reports
-	downTrack.OnBind(func() {
-		wr.DetermineReceiver(downTrack.Codec())
-		if err = wr.AddDownTrack(downTrack); err != nil {
-			logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
-		}
-		go subTrack.Bound()
-		go t.sendDownTrackBindingReports(sub)
-		// initialize to default layer
-		t.notifySubscriberMaxQuality(subscriberID, downTrack.Codec(), livekit.VideoQuality_HIGH)
-		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
-	})
 
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
 		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
@@ -251,7 +289,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// since sub will lock, run it in a goroutine to avoid deadlocks
 	go func() {
 		sub.AddSubscribedTrack(subTrack)
-		sub.Negotiate(false)
+		if !replacedTrack {
+			sub.Negotiate(false)
+		}
 	}()
 
 	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto(),
@@ -272,7 +312,7 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	t.subscribedTracksMu.Unlock()
 
 	if subTrack != nil {
-		subTrack.DownTrack().CloseWithFlush(!willBeResumed)
+		t.closeSubscribedTrack(subTrack, willBeResumed)
 	}
 }
 
@@ -289,8 +329,25 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers(willBeResumed bool) {
 	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
-		subTrack.DownTrack().CloseWithFlush(!willBeResumed)
+		t.closeSubscribedTrack(subTrack, willBeResumed)
 	}
+}
+
+func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.SubscribedTrack, willBeResumed bool) {
+	dt := subTrack.DownTrack()
+	if dt == nil {
+		return
+	}
+
+	if willBeResumed {
+		tr := dt.GetTransceiver()
+		if tr != nil {
+			sub := subTrack.Subscriber()
+			sub.CacheRTPTransceiver(subTrack.ID(), tr)
+		}
+	}
+
+	dt.CloseWithFlush(!willBeResumed)
 }
 
 func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {

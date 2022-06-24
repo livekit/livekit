@@ -67,8 +67,15 @@ type DummyReceiver struct {
 	streamId         string
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
-	downtrackLock    sync.Mutex
-	downtracks       map[livekit.ParticipantID]sfu.TrackSender
+
+	downtrackLock sync.Mutex
+	downtracks    map[livekit.ParticipantID]sfu.TrackSender
+
+	settingsLock          sync.Mutex
+	maxExpectedLayerValid bool
+	maxExpectedLayer      int32
+	pausedValid           bool
+	paused                bool
 }
 
 func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DummyReceiver {
@@ -87,13 +94,25 @@ func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 }
 
 func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
-	d.downtrackLock.Lock()
-	defer d.downtrackLock.Unlock()
 	d.receiver.CompareAndSwap(nil, receiver)
+
+	d.downtrackLock.Lock()
 	for _, t := range d.downtracks {
 		receiver.AddDownTrack(t)
 	}
 	d.downtracks = make(map[livekit.ParticipantID]sfu.TrackSender)
+	d.downtrackLock.Unlock()
+
+	d.settingsLock.Lock()
+	if d.maxExpectedLayerValid {
+		receiver.SetMaxExpectedSpatialLayer(d.maxExpectedLayer)
+	}
+	d.maxExpectedLayerValid = false
+	if d.pausedValid {
+		receiver.SetUpTrackPaused(d.paused)
+	}
+	d.pausedValid = false
+	d.settingsLock.Unlock()
 }
 
 func (d *DummyReceiver) TrackID() livekit.TrackID {
@@ -148,12 +167,22 @@ func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.SetUpTrackPaused(paused)
+	} else {
+		d.settingsLock.Lock()
+		d.pausedValid = true
+		d.paused = paused
+		d.settingsLock.Unlock()
 	}
 }
 
 func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.SetMaxExpectedSpatialLayer(layer)
+	} else {
+		d.settingsLock.Lock()
+		d.maxExpectedLayerValid = true
+		d.maxExpectedLayer = layer
+		d.settingsLock.Unlock()
 	}
 }
 

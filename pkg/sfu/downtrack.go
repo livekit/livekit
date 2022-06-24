@@ -364,6 +364,10 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver = transceiver
 }
 
+func (d *DownTrack) GetTransceiver() *webrtc.RTPTransceiver {
+	return d.transceiver
+}
+
 func (d *DownTrack) maybeStartKeyFrameRequester() {
 	//
 	// Always move to next generation to abandon any running key frame requester

@@ -240,7 +240,9 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 
 func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 	s.videoTracksMu.Lock()
-	delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+	if existing := s.videoTracks[livekit.TrackID(downTrack.ID())]; existing != nil && existing.DownTrack() == downTrack {
+		delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+	}
 	s.videoTracksMu.Unlock()
 
 	// LK-TODO: use any saved bandwidth to re-distribute
