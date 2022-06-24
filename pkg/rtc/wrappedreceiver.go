@@ -61,7 +61,7 @@ func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
 	return codecs
 }
 
-type DumbReceiver struct {
+type DummyReceiver struct {
 	receiver         atomic.Value
 	trackID          livekit.TrackID
 	streamId         string
@@ -71,8 +71,8 @@ type DumbReceiver struct {
 	downtracks       map[livekit.ParticipantID]sfu.TrackSender
 }
 
-func NewDumbReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DumbReceiver {
-	return &DumbReceiver{
+func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DummyReceiver {
+	return &DummyReceiver{
 		trackID:          trackID,
 		streamId:         streamId,
 		codec:            codec,
@@ -81,12 +81,12 @@ func NewDumbReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPC
 	}
 }
 
-func (d *DumbReceiver) Receiver() sfu.TrackReceiver {
+func (d *DummyReceiver) Receiver() sfu.TrackReceiver {
 	r, _ := d.receiver.Load().(sfu.TrackReceiver)
 	return r
 }
 
-func (d *DumbReceiver) Upgrade(receiver sfu.TrackReceiver) {
+func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
 	d.receiver.CompareAndSwap(nil, receiver)
@@ -96,68 +96,68 @@ func (d *DumbReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downtracks = make(map[livekit.ParticipantID]sfu.TrackSender)
 }
 
-func (d *DumbReceiver) TrackID() livekit.TrackID {
+func (d *DummyReceiver) TrackID() livekit.TrackID {
 	return d.trackID
 }
 
-func (d *DumbReceiver) StreamID() string {
+func (d *DummyReceiver) StreamID() string {
 	return d.streamId
 }
 
-func (d *DumbReceiver) Codec() webrtc.RTPCodecParameters {
+func (d *DummyReceiver) Codec() webrtc.RTPCodecParameters {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.Codec()
 	}
 	return d.codec
 }
 
-func (d *DumbReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
+func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.HeaderExtensions()
 	}
 	return d.headerExtensions
 }
 
-func (d *DumbReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
+func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.ReadRTP(buf, layer, sn)
 	}
 	return 0, errors.New("no receiver")
 }
 
-func (d *DumbReceiver) GetBitrateTemporalCumulative() sfu.Bitrates {
+func (d *DummyReceiver) GetBitrateTemporalCumulative() sfu.Bitrates {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetBitrateTemporalCumulative()
 	}
 	return sfu.Bitrates{}
 }
 
-func (d *DumbReceiver) GetAudioLevel() (float64, bool) {
+func (d *DummyReceiver) GetAudioLevel() (float64, bool) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetAudioLevel()
 	}
 	return 0, false
 }
 
-func (d *DumbReceiver) SendPLI(layer int32, force bool) {
+func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.SendPLI(layer, force)
 	}
 }
 
-func (d *DumbReceiver) SetUpTrackPaused(paused bool) {
+func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.SetUpTrackPaused(paused)
 	}
 }
 
-func (d *DumbReceiver) SetMaxExpectedSpatialLayer(layer int32) {
+func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		r.SetMaxExpectedSpatialLayer(layer)
 	}
 }
 
-func (d *DumbReceiver) AddDownTrack(track sfu.TrackSender) error {
+func (d *DummyReceiver) AddDownTrack(track sfu.TrackSender) error {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
@@ -168,7 +168,7 @@ func (d *DumbReceiver) AddDownTrack(track sfu.TrackSender) error {
 	return nil
 }
 
-func (d *DumbReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
+func (d *DummyReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 	d.downtrackLock.Lock()
 	defer d.downtrackLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
@@ -178,28 +178,28 @@ func (d *DumbReceiver) DeleteDownTrack(participantID livekit.ParticipantID) {
 	}
 }
 
-func (d *DumbReceiver) DebugInfo() map[string]interface{} {
+func (d *DummyReceiver) DebugInfo() map[string]interface{} {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.DebugInfo()
 	}
 	return nil
 }
 
-func (d *DumbReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
+func (d *DummyReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetLayerDimension(quality)
 	}
 	return 0, 0
 }
 
-func (d *DumbReceiver) IsDtxDisabled() bool {
+func (d *DummyReceiver) IsDtxDisabled() bool {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.IsDtxDisabled()
 	}
 	return false
 }
 
-func (d *DumbReceiver) TrackSource() livekit.TrackSource {
+func (d *DummyReceiver) TrackSource() livekit.TrackSource {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.TrackSource()
 	}
