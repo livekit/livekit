@@ -64,7 +64,7 @@ func (t *SubscribedTrack) Bound() {
 
 func (t *SubscribedTrack) maybeOnBind() {
 	if onBind := t.onBind.Load(); onBind != nil && t.bound.Load() {
-		onBind.(func())()
+		go onBind.(func())()
 	}
 }
 
