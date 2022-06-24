@@ -42,11 +42,14 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 		Address:      "0.0.0.0",
-		MinPort:      turnMinPort,
-		MaxPort:      turnMaxPort,
+		MinPort:      turnConf.RelayPortRangeStart,
+		MaxPort:      turnConf.RelayPortRangeEnd,
 		MaxRetries:   allocateRetries,
 	}
 	var logValues []interface{}
+
+	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
+	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 
 	if turnConf.TLSPort > 0 {
 		if turnConf.Domain == "" {

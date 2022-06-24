@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -25,13 +26,13 @@ var (
 		},
 		{
 			SamplesRequired:       5,
-			CyclesRequired:        60,
+			CyclesRequired:        20,
 			CycleDuration:         500 * time.Millisecond,
 			BitrateReportInterval: 1 * time.Second,
 		},
 		{
 			SamplesRequired:       5,
-			CyclesRequired:        60,
+			CyclesRequired:        20,
 			CycleDuration:         500 * time.Millisecond,
 			BitrateReportInterval: 1 * time.Second,
 		},
@@ -61,8 +62,9 @@ var (
 )
 
 type StreamTrackerManager struct {
-	logger logger.Logger
-	source livekit.TrackSource
+	logger            logger.Logger
+	trackInfo         *livekit.TrackInfo
+	maxPublishedLayer int32
 
 	lock sync.RWMutex
 
@@ -76,12 +78,22 @@ type StreamTrackerManager struct {
 	onMaxLayerChanged            func(maxLayer int32)
 }
 
-func NewStreamTrackerManager(logger logger.Logger, source livekit.TrackSource) *StreamTrackerManager {
-	return &StreamTrackerManager{
-		logger:           logger,
-		source:           source,
-		maxExpectedLayer: DefaultMaxLayerSpatial,
+func NewStreamTrackerManager(logger logger.Logger, trackInfo *livekit.TrackInfo) *StreamTrackerManager {
+	s := &StreamTrackerManager{
+		logger:            logger,
+		trackInfo:         trackInfo,
+		maxPublishedLayer: 0,
 	}
+
+	for _, layer := range s.trackInfo.Layers {
+		spatialLayer := utils.SpatialLayerForQuality(layer.Quality)
+		if spatialLayer > s.maxPublishedLayer {
+			s.maxPublishedLayer = spatialLayer
+		}
+	}
+	s.maxExpectedLayer = s.maxPublishedLayer
+
+	return s
 }
 
 func (s *StreamTrackerManager) OnAvailableLayersChanged(f func(availableLayers []int32)) {
@@ -98,7 +110,7 @@ func (s *StreamTrackerManager) OnMaxLayerChanged(f func(maxLayer int32)) {
 
 func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 	var params StreamTrackerParams
-	if s.source == livekit.TrackSource_SCREEN_SHARE {
+	if s.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
 		if int(layer) >= len(ConfigScreenshare) {
 			return nil
 		}
@@ -244,10 +256,41 @@ func (s *StreamTrackerManager) IsReducedQuality() bool {
 	return int32(len(s.availableLayers)) < (s.maxExpectedLayer + 1)
 }
 
-func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
+func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
+	height := uint32(0)
+	width := uint32(0)
+	if len(s.trackInfo.Layers) > 0 {
+		quality := utils.QualityForSpatialLayer(layer)
+		for _, layer := range s.trackInfo.Layers {
+			if layer.Quality == quality {
+				height = layer.Height
+				width = layer.Width
+				break
+			}
+		}
+	} else {
+		width = s.trackInfo.Width
+		height = s.trackInfo.Height
+	}
+	return width, height
+}
+
+func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32, height uint32) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	return s.maxExpectedLayer
+
+	// find min of <expected, published> layer
+	maxExpectedLayer := s.maxExpectedLayer
+	if maxExpectedLayer > s.maxPublishedLayer {
+		maxExpectedLayer = s.maxPublishedLayer
+	}
+	for _, layer := range s.trackInfo.Layers {
+		if maxExpectedLayer == utils.SpatialLayerForQuality(layer.Quality) {
+			return maxExpectedLayer, layer.Width, layer.Height
+		}
+	}
+
+	return maxExpectedLayer, 0, 0
 }
 
 func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {

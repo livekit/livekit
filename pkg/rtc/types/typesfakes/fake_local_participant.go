@@ -90,10 +90,11 @@ type FakeLocalParticipant struct {
 	claimGrantsReturnsOnCall map[int]struct {
 		result1 *auth.ClaimGrants
 	}
-	CloseStub        func(bool) error
+	CloseStub        func(bool, types.ParticipantCloseReason) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 		arg1 bool
+		arg2 types.ParticipantCloseReason
 	}
 	closeReturns struct {
 		result1 error
@@ -248,9 +249,10 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func() error
+	ICERestartStub        func(*types.IceConfig) error
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
+		arg1 *types.IceConfig
 	}
 	iCERestartReturns struct {
 		result1 error
@@ -278,6 +280,16 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	IsPublisherStub        func() bool
+	isPublisherMutex       sync.RWMutex
+	isPublisherArgsForCall []struct {
+	}
+	isPublisherReturns struct {
+		result1 bool
+	}
+	isPublisherReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsReadyStub        func() bool
 	isReadyMutex       sync.RWMutex
 	isReadyArgsForCall []struct {
@@ -296,6 +308,17 @@ type FakeLocalParticipant struct {
 		result1 bool
 	}
 	isRecorderReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	IsSubscribedToStub        func(livekit.ParticipantID) bool
+	isSubscribedToMutex       sync.RWMutex
+	isSubscribedToArgsForCall []struct {
+		arg1 livekit.ParticipantID
+	}
+	isSubscribedToReturns struct {
+		result1 bool
+	}
+	isSubscribedToReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	MigrateStateStub        func() types.MigrateState
@@ -1040,18 +1063,19 @@ func (fake *FakeLocalParticipant) ClaimGrantsReturnsOnCall(i int, result1 *auth.
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) Close(arg1 bool) error {
+func (fake *FakeLocalParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason) error {
 	fake.closeMutex.Lock()
 	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
 		arg1 bool
-	}{arg1})
+		arg2 types.ParticipantCloseReason
+	}{arg1, arg2})
 	stub := fake.CloseStub
 	fakeReturns := fake.closeReturns
-	fake.recordInvocation("Close", []interface{}{arg1})
+	fake.recordInvocation("Close", []interface{}{arg1, arg2})
 	fake.closeMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1065,17 +1089,17 @@ func (fake *FakeLocalParticipant) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) CloseCalls(stub func(bool) error) {
+func (fake *FakeLocalParticipant) CloseCalls(stub func(bool, types.ParticipantCloseReason) error) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
 }
 
-func (fake *FakeLocalParticipant) CloseArgsForCall(i int) bool {
+func (fake *FakeLocalParticipant) CloseArgsForCall(i int) (bool, types.ParticipantCloseReason) {
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	argsForCall := fake.closeArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) CloseReturns(result1 error) {
@@ -1873,17 +1897,18 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart() error {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *types.IceConfig) error {
 	fake.iCERestartMutex.Lock()
 	ret, specificReturn := fake.iCERestartReturnsOnCall[len(fake.iCERestartArgsForCall)]
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
-	}{})
+		arg1 *types.IceConfig
+	}{arg1})
 	stub := fake.ICERestartStub
 	fakeReturns := fake.iCERestartReturns
-	fake.recordInvocation("ICERestart", []interface{}{})
+	fake.recordInvocation("ICERestart", []interface{}{arg1})
 	fake.iCERestartMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -1897,10 +1922,17 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func() error) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*types.IceConfig) error) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
+}
+
+func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *types.IceConfig {
+	fake.iCERestartMutex.RLock()
+	defer fake.iCERestartMutex.RUnlock()
+	argsForCall := fake.iCERestartArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) ICERestartReturns(result1 error) {
@@ -2032,6 +2064,59 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IsPublisher() bool {
+	fake.isPublisherMutex.Lock()
+	ret, specificReturn := fake.isPublisherReturnsOnCall[len(fake.isPublisherArgsForCall)]
+	fake.isPublisherArgsForCall = append(fake.isPublisherArgsForCall, struct {
+	}{})
+	stub := fake.IsPublisherStub
+	fakeReturns := fake.isPublisherReturns
+	fake.recordInvocation("IsPublisher", []interface{}{})
+	fake.isPublisherMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsPublisherCallCount() int {
+	fake.isPublisherMutex.RLock()
+	defer fake.isPublisherMutex.RUnlock()
+	return len(fake.isPublisherArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsPublisherCalls(stub func() bool) {
+	fake.isPublisherMutex.Lock()
+	defer fake.isPublisherMutex.Unlock()
+	fake.IsPublisherStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsPublisherReturns(result1 bool) {
+	fake.isPublisherMutex.Lock()
+	defer fake.isPublisherMutex.Unlock()
+	fake.IsPublisherStub = nil
+	fake.isPublisherReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsPublisherReturnsOnCall(i int, result1 bool) {
+	fake.isPublisherMutex.Lock()
+	defer fake.isPublisherMutex.Unlock()
+	fake.IsPublisherStub = nil
+	if fake.isPublisherReturnsOnCall == nil {
+		fake.isPublisherReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isPublisherReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) IsReady() bool {
 	fake.isReadyMutex.Lock()
 	ret, specificReturn := fake.isReadyReturnsOnCall[len(fake.isReadyArgsForCall)]
@@ -2134,6 +2219,67 @@ func (fake *FakeLocalParticipant) IsRecorderReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isRecorderReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedTo(arg1 livekit.ParticipantID) bool {
+	fake.isSubscribedToMutex.Lock()
+	ret, specificReturn := fake.isSubscribedToReturnsOnCall[len(fake.isSubscribedToArgsForCall)]
+	fake.isSubscribedToArgsForCall = append(fake.isSubscribedToArgsForCall, struct {
+		arg1 livekit.ParticipantID
+	}{arg1})
+	stub := fake.IsSubscribedToStub
+	fakeReturns := fake.isSubscribedToReturns
+	fake.recordInvocation("IsSubscribedTo", []interface{}{arg1})
+	fake.isSubscribedToMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedToCallCount() int {
+	fake.isSubscribedToMutex.RLock()
+	defer fake.isSubscribedToMutex.RUnlock()
+	return len(fake.isSubscribedToArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedToCalls(stub func(livekit.ParticipantID) bool) {
+	fake.isSubscribedToMutex.Lock()
+	defer fake.isSubscribedToMutex.Unlock()
+	fake.IsSubscribedToStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedToArgsForCall(i int) livekit.ParticipantID {
+	fake.isSubscribedToMutex.RLock()
+	defer fake.isSubscribedToMutex.RUnlock()
+	argsForCall := fake.isSubscribedToArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedToReturns(result1 bool) {
+	fake.isSubscribedToMutex.Lock()
+	defer fake.isSubscribedToMutex.Unlock()
+	fake.IsSubscribedToStub = nil
+	fake.isSubscribedToReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsSubscribedToReturnsOnCall(i int, result1 bool) {
+	fake.isSubscribedToMutex.Lock()
+	defer fake.isSubscribedToMutex.Unlock()
+	fake.IsSubscribedToStub = nil
+	if fake.isSubscribedToReturnsOnCall == nil {
+		fake.isSubscribedToReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isSubscribedToReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -4063,10 +4209,14 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
+	fake.isPublisherMutex.RLock()
+	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()
 	defer fake.isReadyMutex.RUnlock()
 	fake.isRecorderMutex.RLock()
 	defer fake.isRecorderMutex.RUnlock()
+	fake.isSubscribedToMutex.RLock()
+	defer fake.isSubscribedToMutex.RUnlock()
 	fake.migrateStateMutex.RLock()
 	defer fake.migrateStateMutex.RUnlock()
 	fake.negotiateMutex.RLock()

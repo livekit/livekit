@@ -28,6 +28,8 @@ type AddSubscriberParams struct {
 	TrackIDs  []livekit.TrackID
 }
 
+// ---------------------------------------------
+
 type MigrateState int32
 
 const (
@@ -35,11 +37,6 @@ const (
 	MigrateStateSync
 	MigrateStateComplete
 )
-
-type SubscribedCodecQuality struct {
-	CodecMime string
-	Quality   livekit.VideoQuality
-}
 
 func (m MigrateState) String() string {
 	switch m {
@@ -53,6 +50,80 @@ func (m MigrateState) String() string {
 		return fmt.Sprintf("%d", int(m))
 	}
 }
+
+// ---------------------------------------------
+
+type SubscribedCodecQuality struct {
+	CodecMime string
+	Quality   livekit.VideoQuality
+}
+
+// ---------------------------------------------
+
+type ParticipantCloseReason int
+
+const (
+	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonRoomManagerStop
+	ParticipantCloseReasonRoomClose
+	ParticipantCloseReasonVerifyFailed
+	ParticipantCloseReasonJoinFailed
+	ParticipantCloseReasonJoinTimeout
+	ParticipantCloseReasonRTCSessionFinish
+	ParticipantCloseReasonStateDisconnected
+	ParticipantCloseReasonPeerConnectionDisconnected
+	ParticipantCloseReasonDuplicateIdentity
+	ParticipantCloseReasonMigrationComplete
+	ParticipantCloseReasonStale
+	ParticipantCloseReasonServiceRequestRemoveParticipant
+	ParticipantCloseReasonServiceRequestDeleteRoom
+	ParticipantCloseReasonSimulateMigration
+	ParticipantCloseReasonSimulateNodeFailure
+	ParticipantCloseReasonSimulateServerLeave
+)
+
+func (p ParticipantCloseReason) String() string {
+	switch p {
+	case ParticipantCloseReasonClientRequestLeave:
+		return "CLIENT_REQUEST_LEAVE"
+	case ParticipantCloseReasonRoomManagerStop:
+		return "ROOM_MANAGER_STOP"
+	case ParticipantCloseReasonRoomClose:
+		return "ROOM_CLOSE"
+	case ParticipantCloseReasonVerifyFailed:
+		return "VERIFY_FAILED"
+	case ParticipantCloseReasonJoinFailed:
+		return "JOIN_FAILED"
+	case ParticipantCloseReasonJoinTimeout:
+		return "JOIN_TIMEOUT"
+	case ParticipantCloseReasonRTCSessionFinish:
+		return "RTC_SESSION_FINISH"
+	case ParticipantCloseReasonStateDisconnected:
+		return "STATE_DISCONNECTED"
+	case ParticipantCloseReasonPeerConnectionDisconnected:
+		return "PEER_CONNECTION_DISCONNECTED"
+	case ParticipantCloseReasonDuplicateIdentity:
+		return "DUPLICATE_IDENTITY"
+	case ParticipantCloseReasonMigrationComplete:
+		return "MIGRATION_COMPLETE"
+	case ParticipantCloseReasonStale:
+		return "STALE"
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return "SERVICE_REQUEST_REMOVE_PARTICIPANT"
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return "SERVICE_REQUEST_DELETE_ROOM"
+	case ParticipantCloseReasonSimulateMigration:
+		return "SIMULATE_MIGRATION"
+	case ParticipantCloseReasonSimulateNodeFailure:
+		return "SIMULATE_NODE_FAILURE"
+	case ParticipantCloseReasonSimulateServerLeave:
+		return "SIMULATE_SERVER_LEAVE"
+	default:
+		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+// ---------------------------------------------
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -74,7 +145,7 @@ type Participant interface {
 	IsRecorder() bool
 
 	Start()
-	Close(sendLeave bool) error
+	Close(sendLeave bool, reason ParticipantCloseReason) error
 
 	SubscriptionPermission() *livekit.SubscriptionPermission
 
@@ -89,6 +160,11 @@ type Participant interface {
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
+}
+
+type IceConfig struct {
+	PreferSubTcp bool
+	PreferPubTcp bool
 }
 
 //counterfeiter:generate . LocalParticipant
@@ -127,7 +203,7 @@ type LocalParticipant interface {
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	Negotiate(force bool)
-	ICERestart() error
+	ICERestart(iceConfig *IceConfig) error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
@@ -135,6 +211,8 @@ type LocalParticipant interface {
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
+	IsSubscribedTo(sid livekit.ParticipantID) bool
+	IsPublisher() bool
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
@@ -175,7 +253,7 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
-	RemoveParticipant(identity livekit.ParticipantIdentity)
+	RemoveParticipant(identity livekit.ParticipantIdentity, reason ParticipantCloseReason)
 	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
@@ -210,9 +288,9 @@ type MediaTrack interface {
 
 	// subscribers
 	AddSubscriber(participant LocalParticipant) error
-	RemoveSubscriber(participantID livekit.ParticipantID, resume bool)
+	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
-	RemoveAllSubscribers()
+	RemoveAllSubscribers(willBeResumed bool)
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 

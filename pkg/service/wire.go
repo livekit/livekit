@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -28,6 +29,7 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
+		getNodeID,
 		createRedisClient,
 		createMessageBus,
 		createStore,
@@ -41,6 +43,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
+		egress.NewRedisRPCClient,
 		NewEgressService,
 		NewRecordingService,
 		NewRoomAllocator,
@@ -61,6 +64,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	)
 
 	return nil, nil
+}
+
+func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
+	return livekit.NodeID(currentNode.Id)
 }
 
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {

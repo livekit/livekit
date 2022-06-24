@@ -350,7 +350,7 @@ func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
 	return 0
 }
 
-func (f *Forwarder) bitrateAvailable(brs Bitrates, availableLayers []int32) bool {
+func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 	neededLayers := 0
 	var bitrateAvailableLayers []int32
 	for _, layer := range f.availableLayers {
@@ -442,7 +442,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 	case len(f.availableLayers) == 0:
 		// feed is dry
 		state = VideoAllocationStateFeedDry
-	case !f.bitrateAvailable(brs, f.availableLayers):
+	case !f.bitrateAvailable(brs):
 		// feed bitrate not yet calculated for all available layers
 		state = VideoAllocationStateAwaitingMeasurement
 
@@ -483,7 +483,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 			}
 		}
 
-		if bandwidthRequested == 0 {
+		if bandwidthRequested == 0 && f.maxLayers.IsValid() {
 			// if we cannot allocate anything below max layer,
 			// look for a layer above. It is okay to overshoot
 			// in optimal allocation (i. e. no bandwidth restricstions).

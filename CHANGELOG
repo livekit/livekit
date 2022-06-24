@@ -2,6 +2,28 @@
 
 Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2022-06-21
+### Added
+- Add support for Redis Sentinel (#707)
+- Track participant join total + rate in node stats (#741)
+- Protocol 8 - fast connection support (#747)
+- Simulate switch candidate for network connectivity with poor UDP performance (#754)
+- Allow server to disable codec for certain devices (#755)
+- Support for on-demand multi-codec publishing (#762)
+
+### Fixed
+- Fixed unclean DownTrack close when removed before bound. (#736)
+- Do not munge VP8 header in place - fixes video corruption (#763)
+
+### Changed
+- Reintroduce audio-level quantization to dampen small changes (#732)
+- Allow overshooting maximum when there are no bandwidth constraints. (#739)
+- Improvements to upcoming multi-codec simulcast (#740)
+- Send layer dimensions when max subscribed layers change (#746)
+- Use stable TrackID after unpublishing & republishing (#751)
+- Update egress RPC handler (#759)
+- Improved connection quality metrics (#766 #767 #770 #771 #773 #774 #775)
+
 ## [1.0.2] - 2022-05-27
 ### Changed
 - Fixed edge cases where streams were not allocated (#701)

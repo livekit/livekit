@@ -3,7 +3,6 @@ package buffer
 import (
 	"encoding/binary"
 	"io"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -74,10 +73,9 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats                    *RTPStats
-	rrSnapshotId                uint32
-	connectionQualitySnapshotId uint32
-	deltaStatsSnapshotId        uint32
+	rtpStats             *RTPStats
+	rrSnapshotId         uint32
+	deltaStatsSnapshotId uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -149,7 +147,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		Logger:    b.logger,
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
-	b.connectionQualitySnapshotId = b.rtpStats.NewSnapshotId()
 	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
@@ -291,7 +288,7 @@ func (b *Buffer) Close() error {
 
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
-			b.logger.Debugw("rtp stats", "stats", b.rtpStats.ToString())
+			b.logger.Infow("rtp stats", "stats", b.rtpStats.ToString())
 		}
 
 		if b.onClose != nil {
@@ -324,7 +321,7 @@ func (b *Buffer) SendPLI(force bool) {
 
 	b.logger.Debugw("send pli", "ssrc", b.mediaSSRC, "force", force)
 	pli := []rtcp.Packet{
-		&rtcp.PictureLossIndication{SenderSSRC: rand.Uint32(), MediaSSRC: b.mediaSSRC},
+		&rtcp.PictureLossIndication{SenderSSRC: b.mediaSSRC, MediaSSRC: b.mediaSSRC},
 	}
 
 	if b.onRtcpFeedback != nil {
@@ -529,8 +526,9 @@ func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
 		var pkts []rtcp.Packet
 		if len(nacks) > 0 {
 			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
-				MediaSSRC: b.mediaSSRC,
-				Nacks:     nacks,
+				SenderSSRC: b.mediaSSRC,
+				MediaSSRC:  b.mediaSSRC,
+				Nacks:      nacks,
 			}}
 		}
 
@@ -571,6 +569,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	rr := b.buildReceptionReport()
 	if rr != nil {
 		pkts = append(pkts, &rtcp.ReceiverReport{
+			SSRC:    b.mediaSSRC,
 			Reports: []rtcp.ReceptionReport{*rr},
 		})
 	}
@@ -612,17 +611,6 @@ func (b *Buffer) GetStats() *livekit.RTPStats {
 	return b.rtpStats.ToProto()
 }
 
-func (b *Buffer) GetQualityInfo() *RTPSnapshotInfo {
-	b.RLock()
-	defer b.RUnlock()
-
-	if b.rtpStats == nil {
-		return nil
-	}
-
-	return b.rtpStats.SnapshotInfo(b.connectionQualitySnapshotId)
-}
-
 func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 	b.RLock()
 	defer b.RUnlock()
@@ -636,16 +624,11 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 		return nil
 	}
 
-	layers := make(map[int]LayerStats)
-	layers[0] = LayerStats{
-		Packets: deltaStats.Packets + deltaStats.PacketsDuplicate + deltaStats.PacketsPadding,
-		Bytes:   deltaStats.Bytes + deltaStats.BytesDuplicate + deltaStats.BytesPadding,
-		Frames:  deltaStats.Frames,
-	}
-
 	return &StreamStatsWithLayers{
 		RTPStats: deltaStats,
-		Layers:   layers,
+		Layers: map[int32]*RTPDeltaInfo{
+			0: deltaStats,
+		},
 	}
 }
 

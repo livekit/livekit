@@ -1,8 +1,6 @@
 package connectionquality
 
 import (
-	"math"
-	"sort"
 	"sync"
 	"time"
 
@@ -13,7 +11,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -21,26 +18,29 @@ const (
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval      time.Duration
-	CodecType           webrtc.RTPCodecType
-	CodecName           string
-	DtxDisabled         bool
-	MimeType            string
-	GetDeltaStats       func() map[uint32]*buffer.StreamStatsWithLayers
-	GetQualityParams    func() *buffer.ConnectionQualityParams
-	GetIsReducedQuality func() bool
-	GetLayerDimension   func(int32) (uint32, uint32)
-	GetMaxExpectedLayer func() livekit.VideoLayer
-	Logger              logger.Logger
+	UpdateInterval         time.Duration
+	CodecType              webrtc.RTPCodecType
+	CodecName              string
+	MimeType               string
+	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
+	IsDtxDisabled          func() bool
+	GetLayerDimension      func(int32) (uint32, uint32)
+	GetMaxExpectedLayer    func() (int32, uint32, uint32)
+	GetCurrentLayerSpatial func() int32
+	GetIsReducedQuality    func() bool
+	Logger                 logger.Logger
 }
 
 type ConnectionStats struct {
-	params ConnectionStatsParams
+	params      ConnectionStatsParams
+	trackSource livekit.TrackSource
 
 	onStatsUpdate func(cs *ConnectionStats, stat *livekit.AnalyticsStat)
 
-	lock  sync.RWMutex
-	score float32
+	lock             sync.RWMutex
+	score            float32
+	lastUpdate       time.Time
+	maxExpectedLayer int32
 
 	done     chan struct{}
 	isClosed atomic.Bool
@@ -48,9 +48,11 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params: params,
-		score:  5.0,
-		done:   make(chan struct{}),
+		params:           params,
+		trackSource:      livekit.TrackSource_UNKNOWN,
+		score:            5.0,
+		maxExpectedLayer: buffer.InvalidLayerSpatial,
+		done:             make(chan struct{}),
 	}
 }
 
@@ -66,6 +68,10 @@ func (cs *ConnectionStats) Close() {
 	close(cs.done)
 }
 
+func (cs *ConnectionStats) SetTrackSource(trackSource livekit.TrackSource) {
+	cs.trackSource = trackSource
+}
+
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
 	cs.onStatsUpdate = fn
 }
@@ -77,67 +83,83 @@ func (cs *ConnectionStats) GetScore() float32 {
 	return cs.score
 }
 
-func (cs *ConnectionStats) updateScore(streams []*livekit.AnalyticsStream, iteration uint64) float32 {
+func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers) float32 {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
 	// Initial interval will have partial data
-	if iteration < 2 {
+	if cs.lastUpdate.IsZero() {
+		cs.lastUpdate = time.Now()
 		cs.score = 5
 		return cs.score
 	}
 
-	s := cs.params.GetQualityParams()
-	var qualityParam buffer.ConnectionQualityParams
-	if s == nil {
+	cs.lastUpdate = time.Now()
+	maxAvailableLayer, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams)
+	if maxAvailableLayerStats == nil {
+		// retain old score as stats will not be available when muted
 		return cs.score
-	} else {
-		qualityParam = *s
-		if math.IsInf(float64(qualityParam.Jitter), 0) {
-			qualityParam.Jitter = 0
-		}
-		if math.IsInf(float64(qualityParam.LossPercentage), 0) {
-			qualityParam.LossPercentage = 0
-		}
 	}
 
-	interval := cs.params.UpdateInterval
-	if interval == 0 {
-		interval = UpdateInterval
+	params := TrackScoreParams{
+		Duration:        maxAvailableLayerStats.Duration,
+		Codec:           cs.params.CodecName,
+		PacketsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
+		PacketsLost:     maxAvailableLayerStats.PacketsLost,
+		Bytes:           maxAvailableLayerStats.Bytes,
+		Frames:          maxAvailableLayerStats.Frames,
+		Jitter:          maxAvailableLayerStats.JitterMax,
+		Rtt:             maxAvailableLayerStats.RttMax,
 	}
-	if cs.params.CodecType == webrtc.RTPCodecTypeAudio {
-		totalBytes, _, _ := cs.getBytesFramesFromStreams(streams)
-		cs.score = AudioConnectionScore(interval, int64(totalBytes), s, cs.params.DtxDisabled)
-	} else {
-		// get tracks expected max layer and dimensions
-		expectedLayer := cs.params.GetMaxExpectedLayer()
-		if utils.SpatialLayerForQuality(expectedLayer.Quality) == buffer.InvalidLayerSpatial {
+
+	switch {
+	case cs.trackSource == livekit.TrackSource_SCREEN_SHARE:
+		if cs.params.GetIsReducedQuality != nil {
+			params.IsReducedQuality = cs.params.GetIsReducedQuality()
+		}
+		cs.score = ScreenshareTrackScore(params)
+	case cs.params.CodecType == webrtc.RTPCodecTypeAudio:
+		if cs.params.IsDtxDisabled != nil {
+			params.DtxDisabled = cs.params.IsDtxDisabled()
+		}
+		cs.score = AudioTrackScore(params)
+
+	case cs.params.CodecType == webrtc.RTPCodecTypeVideo:
+		// See note below about muxed tracks quality calculation challenged.
+		// A sub-optimal solution is to measure only in windows where the max layer is stable.
+		// With adaptive stream, it is possible that subscription changes max layer.
+		// When expected layer changes from low -> high, the stats in that window
+		// (when the change happens) will correspond to lower layer at least partially.
+		// Using that to calculate against expected higher layer could result in lower score.
+		maxExpectedLayer, expectedWidth, expectedHeight := cs.params.GetMaxExpectedLayer()
+		if maxExpectedLayer == buffer.InvalidLayerSpatial || expectedWidth == 0 || expectedHeight == 0 || maxExpectedLayer != cs.maxExpectedLayer {
+			cs.maxExpectedLayer = maxExpectedLayer
 			return cs.score
 		}
 
-		// get bytes/frames and max later from actual stream stats
-		totalBytes, totalFrames, maxLayer := cs.getBytesFramesFromStreams(streams)
-		var actualHeight uint32
-		var actualWidth uint32
-		// if data present, but maxLayer == -1 no layer info available, set actual to expected, else fetch
-		if maxLayer == buffer.InvalidLayerSpatial && totalBytes > 0 {
-			actualHeight = expectedLayer.Height
-			actualWidth = expectedLayer.Width
-		} else {
-			actualWidth, actualHeight = cs.params.GetLayerDimension(maxLayer)
+		cs.maxExpectedLayer = maxExpectedLayer
+		if maxAvailableLayerStats != nil {
+			// for muxed tracks, i. e. simulcast publisher muxed into a single track,
+			// use the current spatial layer.
+			// NOTE: This is still not perfect as muxing means layers could have changed
+			// in the analysis window. Needs a more complex design to keep track of all layer
+			// switches to be able to do precise calculations. As the window is small,
+			// using the current and maximum is a reasonable approximation.
+			if cs.params.GetCurrentLayerSpatial != nil {
+				maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
+			}
+			params.ActualWidth, params.ActualHeight = cs.params.GetLayerDimension(maxAvailableLayer)
 		}
 
-		cs.score = VideoConnectionScore(interval, int64(totalBytes), int64(totalFrames), &qualityParam, cs.params.CodecName,
-			int32(expectedLayer.Height), int32(expectedLayer.Width), int32(actualHeight), int32(actualWidth))
-		//logger.Infow("VideoScoreScore", "score", cs.score, "expectedLayer", expectedLayer.Quality, "maxLayer", maxLayer,
-		//	"expectedWidth", expectedLayer.Width, "actualWidth", actualWidth, "expectedHeight", expectedLayer.Height, "actualHeight", actualHeight)
-
+		params.ExpectedWidth = expectedWidth
+		params.ExpectedHeight = expectedHeight
+		cs.score = VideoTrackScore(params)
 	}
 
 	return cs.score
 }
 
-func (cs *ConnectionStats) getStat(iteration uint64) *livekit.AnalyticsStat {
+func (cs *ConnectionStats) getStat() *livekit.AnalyticsStat {
 	if cs.params.GetDeltaStats == nil {
 		return nil
 	}
@@ -158,14 +180,14 @@ func (cs *ConnectionStats) getStat(iteration uint64) *livekit.AnalyticsStat {
 		//
 		if cs.params.CodecType == webrtc.RTPCodecTypeVideo && (len(streams) > 1 || len(stream.Layers) > 1) {
 			for layer, layerStats := range stream.Layers {
-				as.VideoLayers = append(as.VideoLayers, ToAnalyticsVideoLayer(layer, &layerStats))
+				as.VideoLayers = append(as.VideoLayers, ToAnalyticsVideoLayer(layer, layerStats))
 			}
 		}
 
 		analyticsStreams = append(analyticsStreams, as)
 	}
 
-	score := cs.updateScore(analyticsStreams, iteration)
+	score := cs.updateScore(streams)
 
 	return &livekit.AnalyticsStat{
 		Score:   score,
@@ -183,16 +205,13 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	tk := time.NewTicker(interval)
 	defer tk.Stop()
 
-	// Delay sending scores until 2nd cycle, as 1st will be partial.
-	counter := uint64(0)
-
 	for {
 		select {
 		case <-cs.done:
 			return
 
 		case <-tk.C:
-			stat := cs.getStat(counter)
+			stat := cs.getStat()
 			if stat == nil {
 				continue
 			}
@@ -200,9 +219,6 @@ func (cs *ConnectionStats) updateStatsWorker() {
 			if cs.onStatsUpdate != nil {
 				cs.onStatsUpdate(cs, stat)
 			}
-
-			counter++
-
 		}
 	}
 }
@@ -226,49 +242,26 @@ func ToAnalyticsStream(ssrc uint32, deltaStats *buffer.RTPDeltaInfo) *livekit.An
 	}
 }
 
-func ToAnalyticsVideoLayer(layer int, layerStats *buffer.LayerStats) *livekit.AnalyticsVideoLayer {
+func ToAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *livekit.AnalyticsVideoLayer {
 	return &livekit.AnalyticsVideoLayer{
-		Layer:   int32(layer),
-		Packets: layerStats.Packets,
-		Bytes:   layerStats.Bytes,
+		Layer:   layer,
+		Packets: layerStats.Packets + layerStats.PacketsDuplicate + layerStats.PacketsPadding,
+		Bytes:   layerStats.Bytes + layerStats.BytesDuplicate + layerStats.BytesPadding,
 		Frames:  layerStats.Frames,
 	}
 }
 
-func (cs *ConnectionStats) getBytesFramesFromStreams(streams []*livekit.AnalyticsStream) (totalBytes uint64, totalFrames uint32, maxLayer int32) {
-	layerStats := make(map[int32]buffer.LayerStats)
-	hasLayers := false
-	maxLayer = buffer.InvalidLayerSpatial
+func (cs *ConnectionStats) getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers) (int32, *buffer.RTPDeltaInfo) {
+	maxAvailableLayer := buffer.InvalidLayerSpatial
+	var maxAvailableLayerStats *buffer.RTPDeltaInfo
 	for _, stream := range streams {
-		// get frames/bytes/packets from video layers if available. Store per layer in layerStats map
-		if len(stream.VideoLayers) > 0 {
-			hasLayers = true
-
-			layers := stream.VideoLayers
-			// find max quality 0(LOW), 1(MED), 2(HIGH) . sort on layer.Layer desc
-			sort.Slice(layers, func(i, j int) bool {
-				return layers[i].Layer > layers[j].Layer
-			})
-
-			layerStats[layers[0].Layer] = buffer.LayerStats{
-				Bytes:  layers[0].GetBytes(),
-				Frames: layers[0].GetFrames(),
+		for layer, layerStats := range stream.Layers {
+			if int32(layer) > maxAvailableLayer {
+				maxAvailableLayer = int32(layer)
+				maxAvailableLayerStats = layerStats
 			}
-			if layers[0].Layer > maxLayer {
-				maxLayer = layers[0].Layer
-			}
-		} else {
-			totalFrames += stream.GetFrames()
-			totalBytes += stream.GetPrimaryBytes()
 		}
 	}
-	if hasLayers {
-		if stats, ok := layerStats[maxLayer]; ok {
-			return stats.Bytes, stats.Frames, maxLayer
-		} else {
-			return 0, 0, buffer.InvalidLayerSpatial
-		}
-	}
-	return totalBytes, totalFrames, maxLayer
 
+	return maxAvailableLayer, maxAvailableLayerStats
 }

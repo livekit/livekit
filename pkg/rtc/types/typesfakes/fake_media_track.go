@@ -151,9 +151,10 @@ type FakeMediaTrack struct {
 	receiversReturnsOnCall map[int]struct {
 		result1 []sfu.TrackReceiver
 	}
-	RemoveAllSubscribersStub        func()
+	RemoveAllSubscribersStub        func(bool)
 	removeAllSubscribersMutex       sync.RWMutex
 	removeAllSubscribersArgsForCall []struct {
+		arg1 bool
 	}
 	RemoveSubscriberStub        func(livekit.ParticipantID, bool)
 	removeSubscriberMutex       sync.RWMutex
@@ -974,15 +975,16 @@ func (fake *FakeMediaTrack) ReceiversReturnsOnCall(i int, result1 []sfu.TrackRec
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) RemoveAllSubscribers() {
+func (fake *FakeMediaTrack) RemoveAllSubscribers(arg1 bool) {
 	fake.removeAllSubscribersMutex.Lock()
 	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
-	}{})
+		arg1 bool
+	}{arg1})
 	stub := fake.RemoveAllSubscribersStub
-	fake.recordInvocation("RemoveAllSubscribers", []interface{}{})
+	fake.recordInvocation("RemoveAllSubscribers", []interface{}{arg1})
 	fake.removeAllSubscribersMutex.Unlock()
 	if stub != nil {
-		fake.RemoveAllSubscribersStub()
+		fake.RemoveAllSubscribersStub(arg1)
 	}
 }
 
@@ -992,10 +994,17 @@ func (fake *FakeMediaTrack) RemoveAllSubscribersCallCount() int {
 	return len(fake.removeAllSubscribersArgsForCall)
 }
 
-func (fake *FakeMediaTrack) RemoveAllSubscribersCalls(stub func()) {
+func (fake *FakeMediaTrack) RemoveAllSubscribersCalls(stub func(bool)) {
 	fake.removeAllSubscribersMutex.Lock()
 	defer fake.removeAllSubscribersMutex.Unlock()
 	fake.RemoveAllSubscribersStub = stub
+}
+
+func (fake *FakeMediaTrack) RemoveAllSubscribersArgsForCall(i int) bool {
+	fake.removeAllSubscribersMutex.RLock()
+	defer fake.removeAllSubscribersMutex.RUnlock()
+	argsForCall := fake.removeAllSubscribersArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID, arg2 bool) {

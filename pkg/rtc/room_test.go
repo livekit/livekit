@@ -54,14 +54,14 @@ func TestJoinedState(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		p0 := rm.GetParticipants()[0]
 		s := time.Now().Unix()
-		rm.RemoveParticipant(p0.Identity())
+		rm.RemoveParticipant(p0.Identity(), types.ParticipantCloseReasonClientRequestLeave)
 		require.Equal(t, s, rm.LastLeftAt())
 	})
 
 	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		p0 := rm.GetParticipants()[0]
-		rm.RemoveParticipant(p0.Identity())
+		rm.RemoveParticipant(p0.Identity(), types.ParticipantCloseReasonClientRequestLeave)
 		require.EqualValues(t, 0, rm.LastLeftAt())
 	})
 }
@@ -119,7 +119,7 @@ func TestRoomJoin(t *testing.T) {
 		disconnectedParticipant := participants[1].(*typesfakes.FakeLocalParticipant)
 		disconnectedParticipant.StateReturns(livekit.ParticipantInfo_DISCONNECTED)
 
-		rm.RemoveParticipant(p.Identity())
+		rm.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
 		time.Sleep(defaultDelay)
 
 		require.Equal(t, p, changedParticipant)
@@ -295,7 +295,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
 			existing: subscriber1v1,
-			expected: []*livekit.ParticipantInfo{publisher1v2},
+			expected: []*livekit.ParticipantInfo{subscriber1v1, publisher1v2},
 			validate: func(t *testing.T, rm *Room, updates []*livekit.ParticipantInfo) {
 				require.Empty(t, rm.batchedUpdates)
 			},
@@ -332,7 +332,7 @@ func TestRoomClosure(t *testing.T) {
 		p := rm.GetParticipants()[0]
 		// allows immediate close after
 		rm.protoRoom.EmptyTimeout = 0
-		rm.RemoveParticipant(p.Identity())
+		rm.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonClientRequestLeave)
 
 		time.Sleep(defaultDelay)
 

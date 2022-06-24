@@ -10,22 +10,27 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 type EgressService struct {
-	bus         utils.MessageBus
+	rpcClient   egress.RPCClient
 	store       ServiceStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	shutdown    chan struct{}
 }
 
-func NewEgressService(bus utils.MessageBus, store ServiceStore, rs livekit.RoomService, ts telemetry.TelemetryService) *EgressService {
+func NewEgressService(
+	rpcClient egress.RPCClient,
+	store ServiceStore,
+	rs livekit.RoomService,
+	ts telemetry.TelemetryService,
+) *EgressService {
+
 	return &EgressService{
-		bus:         bus,
+		rpcClient:   rpcClient,
 		store:       store,
 		roomService: rs,
 		telemetry:   ts,
@@ -34,8 +39,8 @@ func NewEgressService(bus utils.MessageBus, store ServiceStore, rs livekit.RoomS
 }
 
 func (s *EgressService) Start() {
-	if s.bus != nil {
-		go s.updateListener()
+	if s.rpcClient != nil {
+		go s.updateWorker()
 	}
 }
 
@@ -71,7 +76,7 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.bus == nil {
+	if s.rpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -81,7 +86,7 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 	}
 	req.RoomId = room.Sid
 
-	info, err := egress.SendRequest(ctx, s.bus, req)
+	info, err := s.rpcClient.SendRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +109,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.bus == nil {
+	if s.rpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -146,11 +151,11 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.bus == nil {
+	if s.rpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	info, err := egress.SendRequest(ctx, s.bus, &livekit.EgressRequest{
+	info, err := s.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
 		EgressId: req.EgressId,
 		Request: &livekit.EgressRequest_UpdateStream{
 			UpdateStream: req,
@@ -173,7 +178,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.bus == nil {
+	if s.rpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -201,11 +206,11 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if s.bus == nil {
+	if s.rpcClient == nil {
 		return nil, ErrEgressNotConnected
 	}
 
-	info, err := egress.SendRequest(ctx, s.bus, &livekit.EgressRequest{
+	info, err := s.rpcClient.SendRequest(ctx, &livekit.EgressRequest{
 		EgressId: req.EgressId,
 		Request: &livekit.EgressRequest_Stop{
 			Stop: req,
@@ -224,8 +229,8 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	return info, nil
 }
 
-func (s *EgressService) updateListener() {
-	sub, err := s.bus.SubscribeQueue(context.Background(), egress.ResultsChannel)
+func (s *EgressService) updateWorker() {
+	sub, err := s.rpcClient.GetUpdateChannel(context.Background())
 	if err != nil {
 		logger.Errorw("failed to subscribe to results channel", err)
 		return
@@ -244,13 +249,19 @@ func (s *EgressService) updateListener() {
 			}
 
 			switch res.Status {
-			case livekit.EgressStatus_EGRESS_ACTIVE, livekit.EgressStatus_EGRESS_ENDING:
+			case livekit.EgressStatus_EGRESS_ACTIVE,
+				livekit.EgressStatus_EGRESS_ENDING:
+
 				// save updated info to store
 				err = s.store.UpdateEgress(context.Background(), res)
 				if err != nil {
 					logger.Errorw("could not update egress", err)
 				}
-			case livekit.EgressStatus_EGRESS_COMPLETE:
+
+			case livekit.EgressStatus_EGRESS_COMPLETE,
+				livekit.EgressStatus_EGRESS_FAILED,
+				livekit.EgressStatus_EGRESS_ABORTED:
+
 				// delete from store
 				err = s.store.DeleteEgress(context.Background(), res)
 				if err != nil {
@@ -266,6 +277,7 @@ func (s *EgressService) updateListener() {
 
 				s.telemetry.EgressEnded(context.Background(), res)
 			}
+
 		case <-s.shutdown:
 			_ = sub.Close()
 			return

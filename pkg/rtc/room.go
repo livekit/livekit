@@ -246,22 +246,30 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.RemoveParticipant(p.Identity())
+			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
 		}
 	})
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnSubscribedTo(func(p types.LocalParticipant, publisherID livekit.ParticipantID) {
-		// when a participant subscribed to another participant,
-		// send speaker update if the subscribed to participant is active.
 		go func() {
+			// when a participant subscribes to another participant,
+			// send speaker update if the subscribed to participant is active.
 			speakers := r.GetActiveSpeakers()
 			for _, speaker := range speakers {
 				if livekit.ParticipantID(speaker.Sid) == publisherID {
 					p.SendSpeakerUpdate(speakers)
 					break
 				}
+			}
+
+			// send connection quality of subscribed to participant
+			pub := r.GetParticipantBySid(publisherID)
+			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
+				update := &livekit.ConnectionQualityUpdate{}
+				update.Updates = append(update.Updates, pub.GetConnectionQuality())
+				p.SendConnectionQualityUpdate(update)
 			}
 		}()
 	})
@@ -294,7 +302,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	time.AfterFunc(time.Minute, func() {
 		state := participant.State()
 		if state == livekit.ParticipantInfo_JOINING || state == livekit.ParticipantInfo_JOINED {
-			r.RemoveParticipant(participant.Identity())
+			r.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonJoinTimeout)
 		}
 	})
 
@@ -334,13 +342,13 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
-	if err := p.ICERestart(); err != nil {
+	if err := p.ICERestart(nil); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
+func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, reason types.ParticipantCloseReason) {
 	r.lock.Lock()
 	p, ok := r.participants[identity]
 	if ok {
@@ -383,7 +391,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity) {
 
 	// close participant as well
 	r.Logger.Infow("closing participant for removal", "pID", p.ID(), "participant", p.Identity())
-	_ = p.Close(true)
+	_ = p.Close(true, reason)
 
 	r.lock.RLock()
 	if len(r.participants) == 0 {
@@ -609,15 +617,29 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 			Level:  0.9,
 		}})
 	case *livekit.SimulateScenario_Migration:
+		r.Logger.Infow("simulating migration", "participant", participant.Identity())
+		// drop participant without necessarily cleaning up
+		if err := participant.Close(false, types.ParticipantCloseReasonSimulateMigration); err != nil {
+			return err
+		}
 	case *livekit.SimulateScenario_NodeFailure:
 		r.Logger.Infow("simulating node failure", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
-		if err := participant.Close(false); err != nil {
+		if err := participant.Close(false, types.ParticipantCloseReasonSimulateNodeFailure); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_ServerLeave:
 		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
-		if err := participant.Close(true); err != nil {
+		if err := participant.Close(true, types.ParticipantCloseReasonSimulateServerLeave); err != nil {
+			return err
+		}
+
+	case *livekit.SimulateScenario_SwitchCandidateProtocol:
+		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
+		if err := participant.ICERestart(&types.IceConfig{
+			PreferSubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
+			PreferPubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
+		}); err != nil {
 			return err
 		}
 	}
@@ -827,6 +849,7 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 	var updates []*livekit.ParticipantInfo
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := r.batchedUpdates[identity]
+	shouldSend := isImmediate || pi.IsPublisher
 
 	if existing != nil {
 		if pi.Sid != existing.Sid {
@@ -837,10 +860,12 @@ func (r *Room) pushAndDequeueUpdates(pi *livekit.ParticipantInfo, isImmediate bo
 		} else if pi.Version < existing.Version {
 			// out of order update
 			return nil
+		} else if shouldSend {
+			updates = append(updates, existing)
 		}
 	}
 
-	if isImmediate || pi.IsPublisher {
+	if shouldSend {
 		// include any queued update, and return
 		delete(r.batchedUpdates, identity)
 		updates = append(updates, pi)
@@ -923,19 +948,51 @@ func (r *Room) connectionQualityWorker() {
 	ticker := time.NewTicker(connectionquality.UpdateInterval)
 	defer ticker.Stop()
 
+	prevConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)
 	// send updates to only users that are subscribed to each other
 	for !r.IsClosed() {
 		<-ticker.C
 
 		participants := r.GetParticipants()
-		connectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
+		nowConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo, len(participants))
 
 		for _, p := range participants {
 			if p.State() != livekit.ParticipantInfo_ACTIVE {
 				continue
 			}
 
-			connectionInfos[p.ID()] = p.GetConnectionQuality()
+			nowConnectionInfos[p.ID()] = p.GetConnectionQuality()
+		}
+
+		// send an update if there is a change
+		//   - new participant
+		//   - quality change
+		// NOTE: participant leaving is explicitly omitted as `leave` signal notifies that a participant is not in the room anymore
+		sendUpdate := false
+		for _, p := range participants {
+			pID := p.ID()
+			prevInfo, prevOk := prevConnectionInfos[pID]
+			nowInfo, nowOk := nowConnectionInfos[pID]
+			if !nowOk {
+				// participant is not ACTIVE any more
+				continue
+			}
+			if !prevOk || nowInfo.Quality != prevInfo.Quality {
+				// new entrant OR change in quality
+				sendUpdate = true
+				break
+			}
+		}
+
+		if !sendUpdate {
+			prevConnectionInfos = nowConnectionInfos
+			continue
+		}
+
+		maybeAddToUpdate := func(pID livekit.ParticipantID, update *livekit.ConnectionQualityUpdate) {
+			if nowInfo, nowOk := nowConnectionInfos[pID]; nowOk {
+				update.Updates = append(update.Updates, nowInfo)
+			}
 		}
 
 		for _, op := range participants {
@@ -945,21 +1002,23 @@ func (r *Room) connectionQualityWorker() {
 			update := &livekit.ConnectionQualityUpdate{}
 
 			// send to user itself
-			if info, ok := connectionInfos[op.ID()]; ok {
-				update.Updates = append(update.Updates, info)
-			}
+			maybeAddToUpdate(op.ID(), update)
 
 			// add connection quality of other participants its subscribed to
 			for _, sid := range op.GetSubscribedParticipants() {
-				if info, ok := connectionInfos[sid]; ok {
-					update.Updates = append(update.Updates, info)
-				}
+				maybeAddToUpdate(sid, update)
+			}
+			if len(update.Updates) == 0 {
+				// no change
+				continue
 			}
 			if err := op.SendConnectionQualityUpdate(update); err != nil {
 				r.Logger.Warnw("could not send connection quality update", err,
 					"participant", op.Identity())
 			}
 		}
+
+		prevConnectionInfos = nowConnectionInfos
 	}
 }
 
