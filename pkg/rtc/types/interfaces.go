@@ -248,7 +248,7 @@ type LocalParticipant interface {
 	UpdateRTT(rtt uint32)
 
 	CacheRTPTransceiver(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver)
-	UncacheRTPTransceiver(trackID livekit.TrackID)
+	UncacheRTPTransceiver(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedRTPTransceiver(trackID livekit.TrackID) *webrtc.RTPTransceiver
 }
 

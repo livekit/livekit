@@ -216,8 +216,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			existingTransceiver.Stop()
 		}
 	}
-	// wthether re-using or stopping, remove transceiver from cache
-	sub.UncacheRTPTransceiver(trackID)
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
@@ -258,6 +256,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		// cannot add, no sender
 		return nil, errors.New("cannot subscribe without a sender in place")
 	}
+
+	// wthether re-using or stopping remove transceiver from cache
+	// NOTE: safety net, if somehow a cached transceiver is re-used by a different track
+	sub.UncacheRTPTransceiver(transceiver)
 
 	sendParameters := sender.GetParameters()
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
@@ -310,18 +312,7 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 	t.subscribedTracksMu.Unlock()
 
 	if subTrack != nil {
-		dt := subTrack.DownTrack()
-		if dt != nil {
-			if willBeResumed {
-				tr := dt.GetTransceiver()
-				if tr != nil {
-					sub := subTrack.Subscriber()
-					sub.CacheRTPTransceiver(subTrack.ID(), tr)
-				}
-			}
-
-			dt.CloseWithFlush(!willBeResumed)
-		}
+		t.closeSubscribedTrack(subTrack, willBeResumed)
 	}
 }
 
@@ -338,19 +329,25 @@ func (t *MediaTrackSubscriptions) RemoveAllSubscribers(willBeResumed bool) {
 	t.subscribedTracksMu.Unlock()
 
 	for _, subTrack := range subscribedTracks {
-		dt := subTrack.DownTrack()
-		if dt != nil {
-			if willBeResumed {
-				tr := dt.GetTransceiver()
-				if tr != nil {
-					sub := subTrack.Subscriber()
-					sub.CacheRTPTransceiver(subTrack.ID(), tr)
-				}
-			}
+		t.closeSubscribedTrack(subTrack, willBeResumed)
+	}
+}
 
-			dt.CloseWithFlush(!willBeResumed)
+func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.SubscribedTrack, willBeResumed bool) {
+	dt := subTrack.DownTrack()
+	if dt == nil {
+		return
+	}
+
+	if willBeResumed {
+		tr := dt.GetTransceiver()
+		if tr != nil {
+			sub := subTrack.Subscriber()
+			sub.CacheRTPTransceiver(subTrack.ID(), tr)
 		}
 	}
+
+	dt.CloseWithFlush(!willBeResumed)
 }
 
 func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {

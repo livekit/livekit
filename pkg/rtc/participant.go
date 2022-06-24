@@ -1921,9 +1921,14 @@ func (p *ParticipantImpl) CacheRTPTransceiver(trackID livekit.TrackID, rtpTransc
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) UncacheRTPTransceiver(trackID livekit.TrackID) {
+func (p *ParticipantImpl) UncacheRTPTransceiver(rtpTransceiver *webrtc.RTPTransceiver) {
 	p.lock.Lock()
-	delete(p.cachedRTPTransceivers, trackID)
+	for trackID, tr := range p.cachedRTPTransceivers {
+		if tr == rtpTransceiver {
+			delete(p.cachedRTPTransceivers, trackID)
+			break
+		}
+	}
 	p.lock.Unlock()
 }
 
