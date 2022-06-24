@@ -163,6 +163,14 @@ var (
 
 // -------------------------------------------------------------------
 
+type ForwarderState struct {
+	LastTSCalc int64
+	RTP        RTPMungerState
+	VP8        VP8MungerState
+}
+
+// -------------------------------------------------------------------
+
 type Forwarder struct {
 	lock   sync.RWMutex
 	codec  webrtc.RTPCodecCapability
@@ -217,6 +225,9 @@ func NewForwarder(kind webrtc.RTPCodecType, logger logger.Logger) *Forwarder {
 }
 
 func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
 	if f.codec.MimeType != "" {
 		return
 	}
@@ -231,6 +242,35 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability) {
 		// enable it for vp9 too
 		f.ddLayerSelector = NewDDVideoLayerSelector(f.logger)
 	}
+}
+
+func (f *Forwarder) GetState() ForwarderState {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	state := ForwarderState{
+		LastTSCalc: f.lTSCalc,
+		RTP:        f.rtpMunger.GetLast(),
+	}
+
+	if f.vp8Munger != nil {
+		state.VP8 = f.vp8Munger.GetLast()
+	}
+
+	return state
+}
+
+func (f *Forwarder) SeedState(state ForwarderState) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.lTSCalc = state.LastTSCalc
+	f.rtpMunger.SeedLast(state.RTP)
+	if f.vp8Munger != nil {
+		f.vp8Munger.SeedLast(state.VP8)
+	}
+
+	f.started = true
 }
 
 func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {

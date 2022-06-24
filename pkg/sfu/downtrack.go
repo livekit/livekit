@@ -722,6 +722,14 @@ func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
 }
 
+func (d *DownTrack) GetForwarderState() ForwarderState {
+	return d.forwarder.GetState()
+}
+
+func (d *DownTrack) SeedForwarderState(state ForwarderState) {
+	d.forwarder.SeedState(state)
+}
+
 func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }

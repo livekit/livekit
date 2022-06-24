@@ -247,9 +247,9 @@ type LocalParticipant interface {
 
 	UpdateRTT(rtt uint32)
 
-	CacheRTPTransceiver(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver)
-	UncacheRTPTransceiver(rtpTransceiver *webrtc.RTPTransceiver)
-	GetCachedRTPTransceiver(trackID livekit.TrackID) *webrtc.RTPTransceiver
+	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
+	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
+	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
 }
 
 // Room is a container of participants, and can provide room-level actions

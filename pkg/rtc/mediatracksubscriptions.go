@@ -10,6 +10,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -171,8 +172,13 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	// Bind callback can happen from replaceTrack, so set it up early
+	var reusingTransceiver atomic.Bool
+	var forwarderState sfu.ForwarderState
 	downTrack.OnBind(func() {
 		wr.DetermineReceiver(downTrack.Codec())
+		if reusingTransceiver.Load() {
+			downTrack.SeedForwarderState(forwarderState)
+		}
 		if err = wr.AddDownTrack(downTrack); err != nil {
 			t.params.Logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
 		}
@@ -191,9 +197,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	var sender *webrtc.RTPSender
 
 	// try cached RTP senders for a chance to replace track
+	var existingTransceiver *webrtc.RTPTransceiver
 	replacedTrack := false
-	existingTransceiver := sub.GetCachedRTPTransceiver(trackID)
+	existingTransceiver, forwarderState = sub.GetCachedDownTrack(trackID)
 	if existingTransceiver != nil {
+		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
 		if rtpSender != nil {
 			err := rtpSender.ReplaceTrack(downTrack)
@@ -216,6 +224,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			existingTransceiver.Stop()
 		}
 	}
+	reusingTransceiver.Store(false)
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
@@ -259,7 +268,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// wthether re-using or stopping remove transceiver from cache
 	// NOTE: safety net, if somehow a cached transceiver is re-used by a different track
-	sub.UncacheRTPTransceiver(transceiver)
+	sub.UncacheDownTrack(transceiver)
 
 	sendParameters := sender.GetParameters()
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
@@ -339,15 +348,15 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 		return
 	}
 
+	dt.CloseWithFlush(!willBeResumed)
+
 	if willBeResumed {
 		tr := dt.GetTransceiver()
 		if tr != nil {
 			sub := subTrack.Subscriber()
-			sub.CacheRTPTransceiver(subTrack.ID(), tr)
+			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetForwarderState())
 		}
 	}
-
-	dt.CloseWithFlush(!willBeResumed)
 }
 
 func (t *MediaTrackSubscriptions) ResyncAllSubscribers() {
