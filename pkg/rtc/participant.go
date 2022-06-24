@@ -44,6 +44,11 @@ type pendingTrackInfo struct {
 	migrated bool
 }
 
+type downTrackState struct {
+	transceiver *webrtc.RTPTransceiver
+	forwarder   sfu.ForwarderState
+}
+
 type ParticipantParams struct {
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName
@@ -138,7 +143,7 @@ type ParticipantImpl struct {
 	firstConnected atomic.Bool
 	iceConfig      types.IceConfig
 
-	cachedRTPTransceivers map[livekit.TrackID]*webrtc.RTPTransceiver
+	cachedDownTracks map[livekit.TrackID]*downTrackState
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -161,7 +166,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscribedTo:             make(map[livekit.ParticipantID]struct{}),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
-		cachedRTPTransceivers:    make(map[livekit.TrackID]*webrtc.RTPTransceiver),
+		cachedDownTracks:         make(map[livekit.TrackID]*downTrackState),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -1912,29 +1917,34 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 	}
 }
 
-func (p *ParticipantImpl) CacheRTPTransceiver(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver) {
+func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState) {
 	p.lock.Lock()
-	if existing := p.cachedRTPTransceivers[trackID]; existing != nil && existing != rtpTransceiver {
+	if existing := p.cachedDownTracks[trackID]; existing != nil && existing.transceiver != rtpTransceiver {
 		p.params.Logger.Infow("cached transceiver change", "trackID", trackID)
 	}
-	p.cachedRTPTransceivers[trackID] = rtpTransceiver
+	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, forwarder: forwarderState}
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) UncacheRTPTransceiver(rtpTransceiver *webrtc.RTPTransceiver) {
+func (p *ParticipantImpl) UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver) {
 	p.lock.Lock()
-	for trackID, tr := range p.cachedRTPTransceivers {
-		if tr == rtpTransceiver {
-			delete(p.cachedRTPTransceivers, trackID)
+	for trackID, dts := range p.cachedDownTracks {
+		if dts.transceiver == rtpTransceiver {
+			delete(p.cachedDownTracks, trackID)
 			break
 		}
 	}
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) GetCachedRTPTransceiver(trackID livekit.TrackID) *webrtc.RTPTransceiver {
+func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.cachedRTPTransceivers[trackID]
+	dts := p.cachedDownTracks[trackID]
+	if dts != nil {
+		return dts.transceiver, dts.forwarder
+	}
+
+	return nil, sfu.ForwarderState{}
 }

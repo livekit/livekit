@@ -36,6 +36,11 @@ type SnTs struct {
 	timestamp      uint32
 }
 
+type RTPMungerState struct {
+	LastSN uint16
+	LastTS uint32
+}
+
 type RTPMungerParams struct {
 	highestIncomingSN uint16
 	lastSN            uint16
@@ -73,6 +78,18 @@ func (r *RTPMunger) GetParams() RTPMungerParams {
 		tsOffset:          r.tsOffset,
 		lastMarker:        r.lastMarker,
 	}
+}
+
+func (r *RTPMunger) GetLast() RTPMungerState {
+	return RTPMungerState{
+		LastSN: r.lastSN,
+		LastTS: r.lastTS,
+	}
+}
+
+func (r *RTPMunger) SeedLast(state RTPMungerState) {
+	r.lastSN = state.LastSN
+	r.lastTS = state.LastTS
 }
 
 func (r *RTPMunger) SetLastSnTs(extPkt *buffer.ExtPacket) {
