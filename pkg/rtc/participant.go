@@ -143,11 +143,7 @@ type ParticipantImpl struct {
 	firstConnected atomic.Bool
 	iceConfig      types.IceConfig
 
-<<<<<<< HEAD
 	cachedDownTracks map[livekit.TrackID]*downTrackState
-=======
-	cachedRTPTransceivers map[livekit.TrackID]*webrtc.RTPTransceiver
->>>>>>> origin/master
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -170,11 +166,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscribedTo:             make(map[livekit.ParticipantID]struct{}),
 		connectedAt:              time.Now(),
 		rttUpdatedAt:             time.Now(),
-<<<<<<< HEAD
 		cachedDownTracks:         make(map[livekit.TrackID]*downTrackState),
-=======
-		cachedRTPTransceivers:    make(map[livekit.TrackID]*webrtc.RTPTransceiver),
->>>>>>> origin/master
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
