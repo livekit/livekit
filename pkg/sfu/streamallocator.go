@@ -219,6 +219,7 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 	if downTrack.Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
+	s.params.Logger.Debugw("RAJA adding track", "id", downTrack.ID()) // REMOVE
 
 	track := newTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
 	track.SetPriority(params.Priority)
@@ -239,8 +240,11 @@ func (s *StreamAllocator) AddTrack(downTrack *DownTrack, params AddTrackParams) 
 }
 
 func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
+	s.params.Logger.Debugw("RAJA deleting track", "id", downTrack.ID()) // REMOVE
 	s.videoTracksMu.Lock()
-	delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+	if existing := s.videoTracks[livekit.TrackID(downTrack.ID())]; existing != nil && existing.DownTrack() == downTrack {
+		delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+	}
 	s.videoTracksMu.Unlock()
 
 	// LK-TODO: use any saved bandwidth to re-distribute

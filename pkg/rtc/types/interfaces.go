@@ -246,6 +246,10 @@ type LocalParticipant interface {
 	SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
 	UpdateRTT(rtt uint32)
+
+	CacheRTPTransceiver(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver)
+	UncacheRTPTransceiver(trackID livekit.TrackID)
+	GetCachedRTPTransceiver(trackID livekit.TrackID) *webrtc.RTPTransceiver
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -325,6 +329,7 @@ type SubscribedTrack interface {
 	PublisherIdentity() livekit.ParticipantIdentity
 	SubscriberID() livekit.ParticipantID
 	SubscriberIdentity() livekit.ParticipantIdentity
+	Subscriber() LocalParticipant
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool

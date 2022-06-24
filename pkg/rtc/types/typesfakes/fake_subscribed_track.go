@@ -80,6 +80,16 @@ type FakeSubscribedTrack struct {
 	setPublisherMutedArgsForCall []struct {
 		arg1 bool
 	}
+	SubscriberStub        func() types.LocalParticipant
+	subscriberMutex       sync.RWMutex
+	subscriberArgsForCall []struct {
+	}
+	subscriberReturns struct {
+		result1 types.LocalParticipant
+	}
+	subscriberReturnsOnCall map[int]struct {
+		result1 types.LocalParticipant
+	}
 	SubscriberIDStub        func() livekit.ParticipantID
 	subscriberIDMutex       sync.RWMutex
 	subscriberIDArgsForCall []struct {
@@ -495,6 +505,59 @@ func (fake *FakeSubscribedTrack) SetPublisherMutedArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
+func (fake *FakeSubscribedTrack) Subscriber() types.LocalParticipant {
+	fake.subscriberMutex.Lock()
+	ret, specificReturn := fake.subscriberReturnsOnCall[len(fake.subscriberArgsForCall)]
+	fake.subscriberArgsForCall = append(fake.subscriberArgsForCall, struct {
+	}{})
+	stub := fake.SubscriberStub
+	fakeReturns := fake.subscriberReturns
+	fake.recordInvocation("Subscriber", []interface{}{})
+	fake.subscriberMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) SubscriberCallCount() int {
+	fake.subscriberMutex.RLock()
+	defer fake.subscriberMutex.RUnlock()
+	return len(fake.subscriberArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) SubscriberCalls(stub func() types.LocalParticipant) {
+	fake.subscriberMutex.Lock()
+	defer fake.subscriberMutex.Unlock()
+	fake.SubscriberStub = stub
+}
+
+func (fake *FakeSubscribedTrack) SubscriberReturns(result1 types.LocalParticipant) {
+	fake.subscriberMutex.Lock()
+	defer fake.subscriberMutex.Unlock()
+	fake.SubscriberStub = nil
+	fake.subscriberReturns = struct {
+		result1 types.LocalParticipant
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) SubscriberReturnsOnCall(i int, result1 types.LocalParticipant) {
+	fake.subscriberMutex.Lock()
+	defer fake.subscriberMutex.Unlock()
+	fake.SubscriberStub = nil
+	if fake.subscriberReturnsOnCall == nil {
+		fake.subscriberReturnsOnCall = make(map[int]struct {
+			result1 types.LocalParticipant
+		})
+	}
+	fake.subscriberReturnsOnCall[i] = struct {
+		result1 types.LocalParticipant
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) SubscriberID() livekit.ParticipantID {
 	fake.subscriberIDMutex.Lock()
 	ret, specificReturn := fake.subscriberIDReturnsOnCall[len(fake.subscriberIDArgsForCall)]
@@ -676,6 +739,8 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherIdentityMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
+	fake.subscriberMutex.RLock()
+	defer fake.subscriberMutex.RUnlock()
 	fake.subscriberIDMutex.RLock()
 	defer fake.subscriberIDMutex.RUnlock()
 	fake.subscriberIdentityMutex.RLock()
