@@ -161,23 +161,17 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		return nil, err
 	}
 
-	t.params.Logger.Debugw("RAJA add new subscribed track") // REMOVE
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
 		PublisherID:       t.params.MediaTrack.PublisherID(),
 		PublisherIdentity: t.params.MediaTrack.PublisherIdentity(),
-		/* RAJA-REMOVE
-		SubscriberID:       subscriberID,
-		SubscriberIdentity: sub.Identity(),
-		*/
-		Subscriber:     sub,
-		MediaTrack:     t.params.MediaTrack,
-		DownTrack:      downTrack,
-		AdaptiveStream: sub.GetAdaptiveStream(),
+		Subscriber:        sub,
+		MediaTrack:        t.params.MediaTrack,
+		DownTrack:         downTrack,
+		AdaptiveStream:    sub.GetAdaptiveStream(),
 	})
 
 	// Bind callback can happen from replaceTrack, so set it up early
 	downTrack.OnBind(func() {
-		t.params.Logger.Debugw("RAJA onBind happend", "codec", downTrack.Codec()) // REMOVE
 		wr.DetermineReceiver(downTrack.Codec())
 		if err = wr.AddDownTrack(downTrack); err != nil {
 			t.params.Logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
@@ -233,7 +227,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			// if the attributes match. This prevents SDP from bloating
 			// because of dormant transceivers building up.
 			//
-			t.params.Logger.Debugw("RAJA adding track") // REMOVE
 			sender, err = sub.SubscriberPC().AddTrack(downTrack)
 			if err != nil {
 				return nil, err
@@ -295,10 +288,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	go func() {
 		sub.AddSubscribedTrack(subTrack)
 		if !replacedTrack {
-			t.params.Logger.Debugw("RAJA re-neg sub") // REMOVE
 			sub.Negotiate(false)
-		} else {
-			t.params.Logger.Debugw("RAJA skipping re-neg sub because of replaced track") // REMOVE
 		}
 	}()
 
@@ -751,7 +741,6 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	willBeResumed bool,
 	sender *webrtc.RTPSender,
 ) {
-	t.params.Logger.Debugw("RAJA DT closed", "willBeResumed", willBeResumed) // REMOVE
 	subscriberID := sub.ID()
 	t.subscribedTracksMu.Lock()
 	delete(t.subscribedTracks, subscriberID)
@@ -797,9 +786,6 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 
 	sub.RemoveSubscribedTrack(subTrack)
 	if !willBeResumed {
-		t.params.Logger.Debugw("RAJA re-neg on track removal") // REMOVE
 		sub.Negotiate(false)
-	} else {
-		t.params.Logger.Debugw("RAJA skipping re-neg on track removal") // REMOVE
 	}
 }

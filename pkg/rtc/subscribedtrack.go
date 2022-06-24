@@ -21,14 +21,10 @@ const (
 type SubscribedTrackParams struct {
 	PublisherID       livekit.ParticipantID
 	PublisherIdentity livekit.ParticipantIdentity
-	/*
-		SubscriberID       livekit.ParticipantID
-		SubscriberIdentity livekit.ParticipantIdentity
-	*/
-	Subscriber     types.LocalParticipant
-	MediaTrack     types.MediaTrack
-	DownTrack      *sfu.DownTrack
-	AdaptiveStream bool
+	Subscriber        types.LocalParticipant
+	MediaTrack        types.MediaTrack
+	DownTrack         *sfu.DownTrack
+	AdaptiveStream    bool
 }
 
 type SubscribedTrack struct {

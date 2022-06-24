@@ -415,7 +415,6 @@ func (d *DownTrack) keyFrameRequester(generation uint32, layer int32) {
 
 // WriteRTP writes an RTP Packet to the DownTrack
 func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
-	//d.logger.Debugw("RAJA writing", "layer", layer) // REMOVE
 	var pool *[]byte
 	defer func() {
 		if pool != nil {
