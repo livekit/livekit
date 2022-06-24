@@ -51,12 +51,20 @@ type FakeLocalParticipant struct {
 	addTrackArgsForCall []struct {
 		arg1 *livekit.AddTrackRequest
 	}
+<<<<<<< HEAD
 	CacheDownTrackStub        func(livekit.TrackID, *webrtc.RTPTransceiver, sfu.ForwarderState)
 	cacheDownTrackMutex       sync.RWMutex
 	cacheDownTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 		arg2 *webrtc.RTPTransceiver
 		arg3 sfu.ForwarderState
+=======
+	CacheRTPTransceiverStub        func(livekit.TrackID, *webrtc.RTPTransceiver)
+	cacheRTPTransceiverMutex       sync.RWMutex
+	cacheRTPTransceiverArgsForCall []struct {
+		arg1 livekit.TrackID
+		arg2 *webrtc.RTPTransceiver
+>>>>>>> origin/master
 	}
 	CanPublishStub        func() bool
 	canPublishMutex       sync.RWMutex
@@ -152,6 +160,7 @@ type FakeLocalParticipant struct {
 		result1 float64
 		result2 bool
 	}
+<<<<<<< HEAD
 	GetCachedDownTrackStub        func(livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
 	getCachedDownTrackMutex       sync.RWMutex
 	getCachedDownTrackArgsForCall []struct {
@@ -164,6 +173,18 @@ type FakeLocalParticipant struct {
 	getCachedDownTrackReturnsOnCall map[int]struct {
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.ForwarderState
+=======
+	GetCachedRTPTransceiverStub        func(livekit.TrackID) *webrtc.RTPTransceiver
+	getCachedRTPTransceiverMutex       sync.RWMutex
+	getCachedRTPTransceiverArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
+	getCachedRTPTransceiverReturns struct {
+		result1 *webrtc.RTPTransceiver
+	}
+	getCachedRTPTransceiverReturnsOnCall map[int]struct {
+		result1 *webrtc.RTPTransceiver
+>>>>>>> origin/master
 	}
 	GetConnectionQualityStub        func() *livekit.ConnectionQualityInfo
 	getConnectionQualityMutex       sync.RWMutex
@@ -610,9 +631,15 @@ type FakeLocalParticipant struct {
 	toProtoReturnsOnCall map[int]struct {
 		result1 *livekit.ParticipantInfo
 	}
+<<<<<<< HEAD
 	UncacheDownTrackStub        func(*webrtc.RTPTransceiver)
 	uncacheDownTrackMutex       sync.RWMutex
 	uncacheDownTrackArgsForCall []struct {
+=======
+	UncacheRTPTransceiverStub        func(*webrtc.RTPTransceiver)
+	uncacheRTPTransceiverMutex       sync.RWMutex
+	uncacheRTPTransceiverArgsForCall []struct {
+>>>>>>> origin/master
 		arg1 *webrtc.RTPTransceiver
 	}
 	UpdateMediaLossStub        func(livekit.NodeID, livekit.TrackID, uint32) error
@@ -877,6 +904,7 @@ func (fake *FakeLocalParticipant) AddTrackArgsForCall(i int) *livekit.AddTrackRe
 	return argsForCall.arg1
 }
 
+<<<<<<< HEAD
 func (fake *FakeLocalParticipant) CacheDownTrack(arg1 livekit.TrackID, arg2 *webrtc.RTPTransceiver, arg3 sfu.ForwarderState) {
 	fake.cacheDownTrackMutex.Lock()
 	fake.cacheDownTrackArgsForCall = append(fake.cacheDownTrackArgsForCall, struct {
@@ -909,6 +937,39 @@ func (fake *FakeLocalParticipant) CacheDownTrackArgsForCall(i int) (livekit.Trac
 	defer fake.cacheDownTrackMutex.RUnlock()
 	argsForCall := fake.cacheDownTrackArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+=======
+func (fake *FakeLocalParticipant) CacheRTPTransceiver(arg1 livekit.TrackID, arg2 *webrtc.RTPTransceiver) {
+	fake.cacheRTPTransceiverMutex.Lock()
+	fake.cacheRTPTransceiverArgsForCall = append(fake.cacheRTPTransceiverArgsForCall, struct {
+		arg1 livekit.TrackID
+		arg2 *webrtc.RTPTransceiver
+	}{arg1, arg2})
+	stub := fake.CacheRTPTransceiverStub
+	fake.recordInvocation("CacheRTPTransceiver", []interface{}{arg1, arg2})
+	fake.cacheRTPTransceiverMutex.Unlock()
+	if stub != nil {
+		fake.CacheRTPTransceiverStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) CacheRTPTransceiverCallCount() int {
+	fake.cacheRTPTransceiverMutex.RLock()
+	defer fake.cacheRTPTransceiverMutex.RUnlock()
+	return len(fake.cacheRTPTransceiverArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CacheRTPTransceiverCalls(stub func(livekit.TrackID, *webrtc.RTPTransceiver)) {
+	fake.cacheRTPTransceiverMutex.Lock()
+	defer fake.cacheRTPTransceiverMutex.Unlock()
+	fake.CacheRTPTransceiverStub = stub
+}
+
+func (fake *FakeLocalParticipant) CacheRTPTransceiverArgsForCall(i int) (livekit.TrackID, *webrtc.RTPTransceiver) {
+	fake.cacheRTPTransceiverMutex.RLock()
+	defer fake.cacheRTPTransceiverMutex.RUnlock()
+	argsForCall := fake.cacheRTPTransceiverArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+>>>>>>> origin/master
 }
 
 func (fake *FakeLocalParticipant) CanPublish() bool {
@@ -1400,6 +1461,7 @@ func (fake *FakeLocalParticipant) GetAudioLevelReturnsOnCall(i int, result1 floa
 	}{result1, result2}
 }
 
+<<<<<<< HEAD
 func (fake *FakeLocalParticipant) GetCachedDownTrack(arg1 livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState) {
 	fake.getCachedDownTrackMutex.Lock()
 	ret, specificReturn := fake.getCachedDownTrackReturnsOnCall[len(fake.getCachedDownTrackArgsForCall)]
@@ -1410,10 +1472,23 @@ func (fake *FakeLocalParticipant) GetCachedDownTrack(arg1 livekit.TrackID) (*web
 	fakeReturns := fake.getCachedDownTrackReturns
 	fake.recordInvocation("GetCachedDownTrack", []interface{}{arg1})
 	fake.getCachedDownTrackMutex.Unlock()
+=======
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiver(arg1 livekit.TrackID) *webrtc.RTPTransceiver {
+	fake.getCachedRTPTransceiverMutex.Lock()
+	ret, specificReturn := fake.getCachedRTPTransceiverReturnsOnCall[len(fake.getCachedRTPTransceiverArgsForCall)]
+	fake.getCachedRTPTransceiverArgsForCall = append(fake.getCachedRTPTransceiverArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.GetCachedRTPTransceiverStub
+	fakeReturns := fake.getCachedRTPTransceiverReturns
+	fake.recordInvocation("GetCachedRTPTransceiver", []interface{}{arg1})
+	fake.getCachedRTPTransceiverMutex.Unlock()
+>>>>>>> origin/master
 	if stub != nil {
 		return stub(arg1)
 	}
 	if specificReturn {
+<<<<<<< HEAD
 		return ret.result1, ret.result2
 	}
 	return fakeReturns.result1, fakeReturns.result2
@@ -1462,6 +1537,53 @@ func (fake *FakeLocalParticipant) GetCachedDownTrackReturnsOnCall(i int, result1
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.ForwarderState
 	}{result1, result2}
+=======
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiverCallCount() int {
+	fake.getCachedRTPTransceiverMutex.RLock()
+	defer fake.getCachedRTPTransceiverMutex.RUnlock()
+	return len(fake.getCachedRTPTransceiverArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiverCalls(stub func(livekit.TrackID) *webrtc.RTPTransceiver) {
+	fake.getCachedRTPTransceiverMutex.Lock()
+	defer fake.getCachedRTPTransceiverMutex.Unlock()
+	fake.GetCachedRTPTransceiverStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiverArgsForCall(i int) livekit.TrackID {
+	fake.getCachedRTPTransceiverMutex.RLock()
+	defer fake.getCachedRTPTransceiverMutex.RUnlock()
+	argsForCall := fake.getCachedRTPTransceiverArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiverReturns(result1 *webrtc.RTPTransceiver) {
+	fake.getCachedRTPTransceiverMutex.Lock()
+	defer fake.getCachedRTPTransceiverMutex.Unlock()
+	fake.GetCachedRTPTransceiverStub = nil
+	fake.getCachedRTPTransceiverReturns = struct {
+		result1 *webrtc.RTPTransceiver
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetCachedRTPTransceiverReturnsOnCall(i int, result1 *webrtc.RTPTransceiver) {
+	fake.getCachedRTPTransceiverMutex.Lock()
+	defer fake.getCachedRTPTransceiverMutex.Unlock()
+	fake.GetCachedRTPTransceiverStub = nil
+	if fake.getCachedRTPTransceiverReturnsOnCall == nil {
+		fake.getCachedRTPTransceiverReturnsOnCall = make(map[int]struct {
+			result1 *webrtc.RTPTransceiver
+		})
+	}
+	fake.getCachedRTPTransceiverReturnsOnCall[i] = struct {
+		result1 *webrtc.RTPTransceiver
+	}{result1}
+>>>>>>> origin/master
 }
 
 func (fake *FakeLocalParticipant) GetConnectionQuality() *livekit.ConnectionQualityInfo {
@@ -3929,6 +4051,7 @@ func (fake *FakeLocalParticipant) ToProtoReturnsOnCall(i int, result1 *livekit.P
 	}{result1}
 }
 
+<<<<<<< HEAD
 func (fake *FakeLocalParticipant) UncacheDownTrack(arg1 *webrtc.RTPTransceiver) {
 	fake.uncacheDownTrackMutex.Lock()
 	fake.uncacheDownTrackArgsForCall = append(fake.uncacheDownTrackArgsForCall, struct {
@@ -3958,6 +4081,37 @@ func (fake *FakeLocalParticipant) UncacheDownTrackArgsForCall(i int) *webrtc.RTP
 	fake.uncacheDownTrackMutex.RLock()
 	defer fake.uncacheDownTrackMutex.RUnlock()
 	argsForCall := fake.uncacheDownTrackArgsForCall[i]
+=======
+func (fake *FakeLocalParticipant) UncacheRTPTransceiver(arg1 *webrtc.RTPTransceiver) {
+	fake.uncacheRTPTransceiverMutex.Lock()
+	fake.uncacheRTPTransceiverArgsForCall = append(fake.uncacheRTPTransceiverArgsForCall, struct {
+		arg1 *webrtc.RTPTransceiver
+	}{arg1})
+	stub := fake.UncacheRTPTransceiverStub
+	fake.recordInvocation("UncacheRTPTransceiver", []interface{}{arg1})
+	fake.uncacheRTPTransceiverMutex.Unlock()
+	if stub != nil {
+		fake.UncacheRTPTransceiverStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) UncacheRTPTransceiverCallCount() int {
+	fake.uncacheRTPTransceiverMutex.RLock()
+	defer fake.uncacheRTPTransceiverMutex.RUnlock()
+	return len(fake.uncacheRTPTransceiverArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UncacheRTPTransceiverCalls(stub func(*webrtc.RTPTransceiver)) {
+	fake.uncacheRTPTransceiverMutex.Lock()
+	defer fake.uncacheRTPTransceiverMutex.Unlock()
+	fake.UncacheRTPTransceiverStub = stub
+}
+
+func (fake *FakeLocalParticipant) UncacheRTPTransceiverArgsForCall(i int) *webrtc.RTPTransceiver {
+	fake.uncacheRTPTransceiverMutex.RLock()
+	defer fake.uncacheRTPTransceiverMutex.RUnlock()
+	argsForCall := fake.uncacheRTPTransceiverArgsForCall[i]
+>>>>>>> origin/master
 	return argsForCall.arg1
 }
 
@@ -4321,8 +4475,13 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.addTrackMutex.RLock()
 	defer fake.addTrackMutex.RUnlock()
+<<<<<<< HEAD
 	fake.cacheDownTrackMutex.RLock()
 	defer fake.cacheDownTrackMutex.RUnlock()
+=======
+	fake.cacheRTPTransceiverMutex.RLock()
+	defer fake.cacheRTPTransceiverMutex.RUnlock()
+>>>>>>> origin/master
 	fake.canPublishMutex.RLock()
 	defer fake.canPublishMutex.RUnlock()
 	fake.canPublishDataMutex.RLock()
@@ -4341,8 +4500,13 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
+<<<<<<< HEAD
 	fake.getCachedDownTrackMutex.RLock()
 	defer fake.getCachedDownTrackMutex.RUnlock()
+=======
+	fake.getCachedRTPTransceiverMutex.RLock()
+	defer fake.getCachedRTPTransceiverMutex.RUnlock()
+>>>>>>> origin/master
 	fake.getConnectionQualityMutex.RLock()
 	defer fake.getConnectionQualityMutex.RUnlock()
 	fake.getLoggerMutex.RLock()
@@ -4445,8 +4609,13 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
 	fake.toProtoMutex.RLock()
 	defer fake.toProtoMutex.RUnlock()
+<<<<<<< HEAD
 	fake.uncacheDownTrackMutex.RLock()
 	defer fake.uncacheDownTrackMutex.RUnlock()
+=======
+	fake.uncacheRTPTransceiverMutex.RLock()
+	defer fake.uncacheRTPTransceiverMutex.RUnlock()
+>>>>>>> origin/master
 	fake.updateMediaLossMutex.RLock()
 	defer fake.updateMediaLossMutex.RUnlock()
 	fake.updateRTTMutex.RLock()
