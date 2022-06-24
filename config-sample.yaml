@@ -35,8 +35,8 @@ rtc:
   # this is useful for cloud environments such as AWS & Google where hosts have an internal IP
   # that maps to an external one
   use_external_ip: true
-  # when set to true, pion will use a lite ice agent, that will speed up ice connection, but 
-  # might cause connect issue if server running behind nats.
+  # when set to true, server will use a lite ice agent, that will speed up ice connection, but 
+  # might cause connect issue if server running behind NAT.
   # use_ice_lite: true
   # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
   # a single port. This simplifies deployment, but mux will become an overhead for
