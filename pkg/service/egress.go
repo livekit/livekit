@@ -135,6 +135,10 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 		return nil, err
 	}
 
+	grants := GetGrants(ctx)
+	grants.Video.Room = roomName
+	grants.Video.RoomAdmin = true
+
 	_, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
 		Room:     roomName,
 		Identity: info.EgressId,
