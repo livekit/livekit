@@ -5,8 +5,7 @@ on:
   push:
     # only publish on version tags
     tags:
-      - 'dz*.*.*'
-    branches: [ devex ]
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -34,10 +33,8 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
         with:
-          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
           version: latest
-          args: release --snapshot --rm-dist
+          args: release --rm-dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
