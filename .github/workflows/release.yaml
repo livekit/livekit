@@ -5,6 +5,8 @@ on:
     # only publish on version tags
     tags:
       - 'dz*.*.*'
+    push:
+      branches: [ devex ]
 
 permissions:
   contents: write
