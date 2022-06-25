@@ -155,17 +155,22 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	}
 	serverlogger.InitFromConfig(conf.Logging)
 
-	if c.String("config") == "" && c.String("config-body") == "" && len(conf.Keys) == 0 {
-		logger.Infow("no config file provided, starting in dev mode with placeholder keys",
-			"API Key", "devkey",
-			"API Secret", "secret",
-		)
+	if c.String("config") == "" && c.String("config-body") == "" {
+		// without config, use single port UDP
 		conf.Development = true
 		conf.RTC.UDPPort = 7882
 		conf.RTC.ICEPortRangeStart = 0
 		conf.RTC.ICEPortRangeEnd = 0
-		conf.Keys = map[string]string{
-			"devkey": "secret",
+		logger.Infow("staring in development mode")
+
+		if len(conf.Keys) == 0 {
+			logger.Infow("no keys provided, using placeholder keys",
+				"API Key", "devkey",
+				"API Secret", "secret",
+			)
+			conf.Keys = map[string]string{
+				"devkey": "secret",
+			}
 		}
 	}
 	return conf, nil

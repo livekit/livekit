@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.18
+          go-version: 1.17
 
       - name: Set up gotestfmt
         run: go install github.com/haveyoudebuggedit/gotestfmt/v2/cmd/gotestfmt@latest
@@ -50,9 +50,9 @@ jobs:
           args: build
 
       - name: Static Check
-        uses: dominikh/staticcheck-action@v1.1.0
+        uses: dominikh/staticcheck-action@v1.2.0
         with:
-          version: "2021.1.1"
+          version: "2022.1"
 
       - name: Test
         run: |
