@@ -2,11 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+  push:
     # only publish on version tags
     tags:
       - 'dz*.*.*'
-    push:
-      branches: [ devex ]
+    branches: [ devex ]
 
 permissions:
   contents: write
