@@ -161,7 +161,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		conf.RTC.UDPPort = 7882
 		conf.RTC.ICEPortRangeStart = 0
 		conf.RTC.ICEPortRangeEnd = 0
-		logger.Infow("staring in development mode")
+		logger.Infow("starting in development mode")
 
 		if len(conf.Keys) == 0 {
 			logger.Infow("no keys provided, using placeholder keys",
