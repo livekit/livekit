@@ -141,10 +141,10 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 	return n, nil
 }
 
-func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID, resume bool) {
+func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID, willBeResumed bool) {
 	track := u.GetPublishedTrack(trackID)
 	if track != nil {
-		track.RemoveSubscriber(sub.ID(), resume)
+		track.RemoveSubscriber(sub.ID(), willBeResumed)
 	}
 
 	u.lock.Lock()
@@ -296,8 +296,8 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack) {
-	track.RemoveAllSubscribers(false)
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
+	track.RemoveAllSubscribers(willBeResumed)
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()
