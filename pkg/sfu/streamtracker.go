@@ -214,9 +214,7 @@ func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 
 	// copy and process
 	brs := make([]int64, len(s.bitrate))
-	for i := 0; i < len(s.bitrate); i++ {
-		brs[i] = s.bitrate[i]
-	}
+	copy(brs, s.bitrate[:])
 
 	for i := len(brs) - 1; i >= 1; i-- {
 		if brs[i] != 0 {

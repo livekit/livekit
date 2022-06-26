@@ -13,10 +13,10 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
@@ -92,7 +92,7 @@ func main() {
 			},
 			&cli.BoolFlag{
 				Name:  "dev",
-				Usage: "sets log-level to debug, console formatter, and /debug/pprof",
+				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production.",
 			},
 		},
 		Action: startServer,
@@ -149,7 +149,31 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	return config.NewConfig(confString, c)
+	conf, err := config.NewConfig(confString, c)
+	if err != nil {
+		return nil, err
+	}
+	serverlogger.InitFromConfig(conf.Logging)
+
+	if c.String("config") == "" && c.String("config-body") == "" {
+		// without config, use single port UDP
+		conf.Development = true
+		conf.RTC.UDPPort = 7882
+		conf.RTC.ICEPortRangeStart = 0
+		conf.RTC.ICEPortRangeEnd = 0
+		logger.Infow("starting in development mode")
+
+		if len(conf.Keys) == 0 {
+			logger.Infow("no keys provided, using placeholder keys",
+				"API Key", "devkey",
+				"API Secret", "secret",
+			)
+			conf.Keys = map[string]string{
+				"devkey": "secret",
+			}
+		}
+	}
+	return conf, nil
 }
 
 func startServer(c *cli.Context) error {
@@ -161,8 +185,6 @@ func startServer(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	serverlogger.InitFromConfig(conf.Logging)
 
 	if memProfile != "" {
 		if f, err := os.Create(memProfile); err != nil {

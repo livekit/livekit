@@ -1,0 +1,72 @@
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+builds:
+  # darwin build requires CGO, declaring it separately
+  - id: darwin
+    env:
+      - CGO_ENABLED=1
+    main: ./cmd/server
+    binary: livekit-server
+    goarch:
+      - amd64
+      - arm64
+    goos:
+      - darwin
+  - id: livekit
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/server
+    binary: livekit-server
+    goarm:
+      - "7"
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goos:
+      - linux
+      - windows
+archives:
+  - format_overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: mac
+    files:
+      - LICENSE
+nfpms:
+  - package_name: livekit
+    vendor: LiveKit
+    homepage: https://livekit.io
+    description: |-
+      LiveKit is a high-performance WebRTC server. It provides software components for building multi-user, real-time, media applications.
+    license: Apache 2.0
+
+    formats:
+      - deb
+      - rpm
+
+    recommends:
+      - redis-server
+release:
+  github:
+    owner: livekit
+    name: livekit
+  draft: true
+  prerelease: auto
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+gomod:
+  proxy: true
+  mod: mod
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
