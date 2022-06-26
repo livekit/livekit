@@ -86,7 +86,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	case *livekit.SignalRequest_SyncState:
 		err := room.SyncState(participant, msg.SyncState)
 		if err != nil {
-			pLogger.Warnw("could not sync subscribe state", err,
+			pLogger.Warnw("could not sync state", err,
 				"state", msg.SyncState)
 		}
 	case *livekit.SignalRequest_Simulate:
