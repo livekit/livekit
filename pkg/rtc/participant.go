@@ -795,18 +795,23 @@ func (p *ParticipantImpl) GetAudioLevel() (level float64, active bool) {
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	// avg loss across all tracks, weigh published the same as subscribed
-	totalScore, numTracks := p.getPublisherConnectionQuality()
+	publisherScores := p.getPublisherConnectionQuality()
+
+	numTracks := len(publisherScores)
+	totalScore := float32(0.0)
+	for _, score := range publisherScores {
+		totalScore += score
+	}
 
 	p.lock.RLock()
+	subscriberScores := make(map[livekit.TrackID]float32, len(p.subscribedTracks))
 	for _, subTrack := range p.subscribedTracks {
 		if subTrack.IsMuted() || subTrack.MediaTrack().IsMuted() {
 			continue
 		}
 		score := subTrack.DownTrack().GetConnectionScore()
-
+		subscriberScores[subTrack.ID()] = score
 		totalScore += score
-
 		numTracks++
 	}
 	p.lock.RUnlock()
@@ -817,6 +822,15 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	rating := connectionquality.Score2Rating(avgScore)
+	if rating != livekit.ConnectionQuality_EXCELLENT {
+		p.params.Logger.Infow("connection quality not optimal",
+			"totalScore", totalScore,
+			"numTracks", numTracks,
+			"rating", rating,
+			"publisherScores", publisherScores,
+			"subscriberScores", subscriberScores,
+		)
+	}
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
@@ -1553,18 +1567,17 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
 	}
 }
 
-func (p *ParticipantImpl) getPublisherConnectionQuality() (totalScore float32, numTracks int) {
-	for _, pt := range p.GetPublishedTracks() {
+func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]float32 {
+	publishedTracks := p.GetPublishedTracks()
+	scores := make(map[livekit.TrackID]float32, len(publishedTracks))
+	for _, pt := range publishedTracks {
 		if pt.IsMuted() {
 			continue
 		}
-		score := pt.(types.LocalMediaTrack).GetConnectionScore()
-
-		totalScore += score
-		numTracks++
+		scores[pt.ID()] = pt.(types.LocalMediaTrack).GetConnectionScore()
 	}
 
-	return
+	return scores
 }
 
 func (p *ParticipantImpl) getDTX() bool {
