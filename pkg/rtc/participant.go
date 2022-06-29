@@ -560,7 +560,27 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
+	go p.handleMigrateMutedTrack()
+
 	return
+}
+
+func (p *ParticipantImpl) handleMigrateMutedTrack() {
+	// muted track won't send rtp packet, so we add mediatrack manually
+	var addedTrack []*MediaTrack
+	p.pendingTracksLock.Lock()
+	for cid, t := range p.pendingTracks {
+		if t.migrated && t.Muted && t.Type == livekit.TrackType_VIDEO {
+			addedTrack = append(addedTrack, p.addMigrateMutedTrack(cid, t.TrackInfo))
+		}
+	}
+	p.pendingTracksLock.Unlock()
+
+	for _, t := range addedTrack {
+		if t != nil {
+			p.handleTrackPublished(t)
+		}
+	}
 }
 
 // AddTrack is called when client intends to publish track.
@@ -1661,6 +1681,74 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	}
 
 	return mt, newTrack
+}
+
+func (p *ParticipantImpl) addMigrateMutedTrack(cid string, t *livekit.TrackInfo) *MediaTrack {
+	p.params.Logger.Debugw("add migrate muted track", "cid", cid, "track", t.String())
+	var rtpReceiver *webrtc.RTPReceiver
+	for _, tr := range p.publisher.pc.GetTransceivers() {
+		if tr.Mid() == t.Mid {
+			rtpReceiver = tr.Receiver()
+			break
+		}
+	}
+	if rtpReceiver == nil {
+		p.params.Logger.Errorw("could not find receiver for migrated track", nil, "track", t.Sid)
+		return nil
+	}
+
+	mt := NewMediaTrack(MediaTrackParams{
+		TrackInfo:           proto.Clone(t).(*livekit.TrackInfo),
+		SignalCid:           cid,
+		SdpCid:              cid,
+		ParticipantID:       p.params.SID,
+		ParticipantIdentity: p.params.Identity,
+		RTCPChan:            p.rtcpCh,
+		BufferFactory:       p.params.Config.BufferFactory,
+		ReceiverConfig:      p.params.Config.Receiver,
+		AudioConfig:         p.params.AudioConfig,
+		VideoConfig:         p.params.VideoConfig,
+		Telemetry:           p.params.Telemetry,
+		Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(t.Sid)),
+		SubscriberConfig:    p.params.Config.Subscriber,
+		PLIThrottleConfig:   p.params.PLIThrottleConfig,
+		SimTracks:           p.params.SimTracks,
+	})
+
+	// add to published and clean up pending
+	p.UpTrackManager.AddPublishedTrack(mt)
+	delete(p.pendingTracks, cid)
+
+	mt.AddOnClose(func() {
+		// re-use track
+		p.lock.Lock()
+		p.unpublishedTracks = append(p.unpublishedTracks, t)
+		p.lock.Unlock()
+	})
+
+	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(t.Codecs))
+	parameters := rtpReceiver.GetParameters()
+	for _, c := range t.Codecs {
+		for _, nc := range parameters.Codecs {
+			if strings.EqualFold(nc.MimeType, c.MimeType) {
+				potentialCodecs = append(potentialCodecs, nc)
+				break
+			}
+		}
+	}
+	mt.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
+
+	for _, codec := range t.Codecs {
+		for ssrc, info := range p.params.SimTracks {
+			if info.Mid == codec.Mid {
+				mt.MediaTrackReceiver.SetLayerSsrc(codec.MimeType, info.Rid, ssrc)
+			}
+		}
+	}
+	mt.SetSimulcast(t.Simulcast)
+	mt.SetMuted(true)
+
+	return mt
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {

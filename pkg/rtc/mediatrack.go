@@ -252,11 +252,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 func (t *MediaTrack) GetConnectionScore() float32 {
 	receiver := t.PrimaryReceiver()
-	if receiver == nil {
-		return 0.0
+	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
+		return rtcReceiver.GetConnectionScore()
 	}
-
-	return receiver.(*sfu.WebRTCReceiver).GetConnectionScore()
+	return 0.0
 }
 
 func (t *MediaTrack) SetRTT(rtt uint32) {
