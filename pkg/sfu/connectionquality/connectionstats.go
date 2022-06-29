@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	UpdateInterval = 2 * time.Second
+	UpdateInterval           = 2 * time.Second
 	audioPacketRateThreshold = float64(25.0)
 )
 
@@ -124,7 +124,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		packetRate := float64(params.PacketsExpected) / maxAvailableLayerStats.Duration.Seconds()
 		if packetRate > audioPacketRateThreshold {
 			// With DTX, it is possible to have fewer packets per second.
-			// A loss with reduced packet rate has amplified effect on uality.
+			// A loss with reduced packet rate has amplified negative effect on quality.
 			// Opus uses 20 ms packetisation (50 pps). Calculate score only if packet rate is at least half of that.
 			if cs.params.IsDtxDisabled != nil {
 				params.DtxDisabled = cs.params.IsDtxDisabled()
