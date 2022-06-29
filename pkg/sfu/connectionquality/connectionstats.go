@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	UpdateInterval = 2 * time.Second
+	UpdateInterval           = 2 * time.Second
+	audioPacketRateThreshold = float64(25.0)
 )
 
 type ConnectionStatsParams struct {
@@ -118,11 +119,18 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			params.IsReducedQuality = cs.params.GetIsReducedQuality()
 		}
 		cs.score = ScreenshareTrackScore(params)
+
 	case cs.params.CodecType == webrtc.RTPCodecTypeAudio:
-		if cs.params.IsDtxDisabled != nil {
-			params.DtxDisabled = cs.params.IsDtxDisabled()
+		packetRate := float64(params.PacketsExpected) / maxAvailableLayerStats.Duration.Seconds()
+		if packetRate > audioPacketRateThreshold {
+			// With DTX, it is possible to have fewer packets per second.
+			// A loss with reduced packet rate has amplified negative effect on quality.
+			// Opus uses 20 ms packetisation (50 pps). Calculate score only if packet rate is at least half of that.
+			if cs.params.IsDtxDisabled != nil {
+				params.DtxDisabled = cs.params.IsDtxDisabled()
+			}
+			cs.score = AudioTrackScore(params)
 		}
-		cs.score = AudioTrackScore(params)
 
 	case cs.params.CodecType == webrtc.RTPCodecTypeVideo:
 		// See note below about muxed tracks quality calculation challenged.
@@ -154,6 +162,10 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		params.ExpectedWidth = expectedWidth
 		params.ExpectedHeight = expectedHeight
 		cs.score = VideoTrackScore(params)
+	}
+
+	if cs.score < 4.0 {
+		cs.params.Logger.Infow("low score", "score", cs.score, "params", params)
 	}
 
 	return cs.score
