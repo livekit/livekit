@@ -560,7 +560,9 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
-	go p.handleMigrateMutedTrack()
+	if p.MigrateState() == types.MigrateStateSync {
+		go p.handleMigrateMutedTrack()
+	}
 
 	return
 }
@@ -1715,6 +1717,7 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, t *livekit.TrackInfo)
 		SimTracks:           p.params.SimTracks,
 	})
 
+	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
 	// add to published and clean up pending
 	p.UpTrackManager.AddPublishedTrack(mt)
 	delete(p.pendingTracks, cid)
