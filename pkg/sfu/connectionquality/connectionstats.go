@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	UpdateInterval           = 2 * time.Second
+	UpdateInterval           = 5 * time.Second
 	audioPacketRateThreshold = float64(25.0)
 )
 
