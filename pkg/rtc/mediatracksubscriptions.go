@@ -27,14 +27,32 @@ const (
 	initialQualityUpdateWait = 10 * time.Second
 )
 
+var (
+	errAlreadySubscribed = errors.New("already subscribed")
+)
+
+type SubscribeRequestType int
+
+const (
+	SubscribeRequestTypeRemove SubscribeRequestType = iota
+	SubscribeRequestTypeAdd
+)
+
+type SubscribeRequest struct {
+	requestType   SubscribeRequestType
+	sub           types.LocalParticipant
+	wr            *WrappedReceiver
+	willBeResumed bool
+}
+
 // MediaTrackSubscriptions manages subscriptions of a media track
 type MediaTrackSubscriptions struct {
 	params MediaTrackSubscriptionsParams
 
-	subscribedTracksMu     sync.RWMutex
-	subscribedTracks       map[livekit.ParticipantID]types.SubscribedTrack
-	pendingSubscribeTracks sync.Map // livekit.ParticipantID -> bool
-	pendingClose           map[livekit.ParticipantID]types.SubscribedTrack
+	subscribedTracksMu sync.RWMutex
+	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
+	inProgress         map[livekit.ParticipantID]bool
+	requestsQueue      map[livekit.ParticipantID][]SubscribeRequest
 
 	onNoSubscribers func()
 
@@ -48,6 +66,8 @@ type MediaTrackSubscriptions struct {
 	maxQualityTimer              *time.Timer
 
 	qualityNotifyOpQueue *utils.OpsQueue
+
+	onDownTrackCreated func(downTrack *sfu.DownTrack)
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -67,7 +87,8 @@ func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrac
 	t := &MediaTrackSubscriptions{
 		params:                       params,
 		subscribedTracks:             make(map[livekit.ParticipantID]types.SubscribedTrack),
-		pendingClose:                 make(map[livekit.ParticipantID]types.SubscribedTrack),
+		inProgress:                   make(map[livekit.ParticipantID]bool),
+		requestsQueue:                make(map[livekit.ParticipantID][]SubscribeRequest),
 		maxSubscriberQuality:         make(map[livekit.ParticipantID]*types.SubscribedCodecQuality),
 		maxSubscriberNodeQuality:     make(map[livekit.NodeID][]types.SubscribedCodecQuality),
 		maxSubscribedQuality:         make(map[string]livekit.VideoQuality),
@@ -99,6 +120,10 @@ func (t *MediaTrackSubscriptions) OnNoSubscribers(f func()) {
 	t.onNoSubscribers = f
 }
 
+func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownTrack)) {
+	t.onDownTrackCreated = f
+}
+
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 	// update mute of all subscribed tracks
 	for _, st := range t.getAllSubscribedTracks() {
@@ -120,22 +145,66 @@ func (t *MediaTrackSubscriptions) AddCodec(mime string) {
 	t.subscribedTracksMu.Unlock()
 }
 
+func (t *MediaTrackSubscriptions) processRequestsQueue(subscriberID livekit.ParticipantID) {
+	t.subscribedTracksMu.Lock()
+	if t.inProgress[subscriberID] || len(t.requestsQueue[subscriberID]) == 0 {
+		t.subscribedTracksMu.Unlock()
+		return
+	}
+
+	request := t.requestsQueue[subscriberID][0]
+	t.requestsQueue[subscriberID] = t.requestsQueue[subscriberID][1:]
+	if len(t.requestsQueue[subscriberID]) == 0 {
+		delete(t.requestsQueue, subscriberID)
+	}
+
+	t.inProgress[subscriberID] = true
+	t.subscribedTracksMu.Unlock()
+
+	switch request.requestType {
+	case SubscribeRequestTypeAdd:
+		err := t.addSubscriber(request.sub, request.wr)
+		if err != nil {
+			if err != errAlreadySubscribed {
+				t.params.Logger.Errorw("error adding subscriber", err, "subscriberID", subscriberID)
+			}
+
+			// process pending request even if adding errors out
+			go t.clearInProgressAndProcessRequestsQueue(subscriberID)
+		}
+
+	case SubscribeRequestTypeRemove:
+		t.removeSubscriber(subscriberID, request.willBeResumed)
+
+	default:
+		t.params.Logger.Warnw("unknown request type", nil)
+	}
+}
+
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) (*sfu.DownTrack, error) {
+func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) error {
+	subscriberID := sub.ID()
+	t.subscribedTracksMu.Lock()
+	t.requestsQueue[subscriberID] = append(t.requestsQueue[subscriberID], SubscribeRequest{
+		requestType: SubscribeRequestTypeAdd,
+		sub:         sub,
+		wr:          wr,
+	})
+	t.subscribedTracksMu.Unlock()
+
+	t.processRequestsQueue(subscriberID)
+	return nil
+}
+
+func (t *MediaTrackSubscriptions) addSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) error {
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
-
-	if _, pending := t.pendingSubscribeTracks.LoadOrStore(subscriberID, true); pending {
-		return nil, nil
-	} else {
-		defer t.pendingSubscribeTracks.Delete(subscriberID)
-	}
 
 	// don't subscribe to the same track multiple times
 	t.subscribedTracksMu.Lock()
 	if _, ok := t.subscribedTracks[subscriberID]; ok {
 		t.subscribedTracksMu.Unlock()
-		return nil, nil
+		return errAlreadySubscribed
 	}
 	t.subscribedTracksMu.Unlock()
 
@@ -159,7 +228,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		LoggerWithTrack(sub.GetLogger(), trackID),
 	)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	if t.onDownTrackCreated != nil {
+		t.onDownTrackCreated(downTrack)
 	}
 
 	subTrack := NewSubscribedTrack(SubscribedTrackParams{
@@ -236,7 +309,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			//
 			sender, err = sub.SubscriberPC().AddTrack(downTrack)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			// as there is no way to get transceiver from sender, search
@@ -251,7 +324,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 				Direction: webrtc.RTPTransceiverDirectionSendonly,
 			})
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			sender = transceiver.Sender()
@@ -259,11 +332,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	}
 	if transceiver == nil {
 		// cannot add, no transceiver
-		return nil, errors.New("cannot subscribe without a transceiver in place")
+		return errors.New("cannot subscribe without a transceiver in place")
 	}
 	if sender == nil {
 		// cannot add, no sender
-		return nil, errors.New("cannot subscribe without a sender in place")
+		return errors.New("cannot subscribe without a sender in place")
 	}
 
 	// wthether re-using or stopping remove transceiver from cache
@@ -301,25 +374,38 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		if !replacedTrack {
 			sub.Negotiate(false)
 		}
+
+		t.clearInProgressAndProcessRequestsQueue(subscriberID)
 	}()
 
-	t.params.Telemetry.TrackSubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto(),
-		&livekit.ParticipantInfo{Sid: string(t.params.MediaTrack.PublisherID()), Identity: string(t.params.MediaTrack.PublisherIdentity())})
-	return downTrack, nil
+	t.params.Telemetry.TrackSubscribed(
+		context.Background(),
+		subscriberID,
+		t.params.MediaTrack.ToProto(),
+		&livekit.ParticipantInfo{
+			Sid:      string(t.params.MediaTrack.PublisherID()),
+			Identity: string(t.params.MediaTrack.PublisherIdentity()),
+		},
+	)
+	return nil
 }
 
 // RemoveSubscriber removes participant from subscription
 // stop all forwarders to the client
-func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool) {
-	subTrack := t.getSubscribedTrack(participantID)
-
+func (t *MediaTrackSubscriptions) RemoveSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) {
 	t.subscribedTracksMu.Lock()
-	delete(t.subscribedTracks, participantID)
-	if subTrack != nil {
-		t.pendingClose[participantID] = subTrack
-	}
+	t.requestsQueue[subscriberID] = append(t.requestsQueue[subscriberID], SubscribeRequest{
+		requestType:   SubscribeRequestTypeRemove,
+		willBeResumed: willBeResumed,
+	})
 	t.subscribedTracksMu.Unlock()
 
+	t.processRequestsQueue(subscriberID)
+}
+
+func (t *MediaTrackSubscriptions) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) {
+	t.params.Logger.Debugw("removing subscriber", "subscriberID", subscriberID, "willBeResumed", willBeResumed)
+	subTrack := t.getSubscribedTrack(subscriberID)
 	if subTrack != nil {
 		t.closeSubscribedTrack(subTrack, willBeResumed)
 	}
@@ -328,18 +414,24 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(participantID livekit.Partici
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers(willBeResumed bool) {
 	t.params.Logger.Debugw("removing all subscribers")
 
+	var subIDs []livekit.ParticipantID
 	t.subscribedTracksMu.Lock()
-	subscribedTracks := t.getAllSubscribedTracksLocked()
-	t.subscribedTracks = make(map[livekit.ParticipantID]types.SubscribedTrack)
+	for _, subTrack := range t.getAllSubscribedTracksLocked() {
+		subscriberID := subTrack.SubscriberID()
+		t.requestsQueue[subscriberID] = append(t.requestsQueue[subscriberID], SubscribeRequest{
+			requestType:   SubscribeRequestTypeRemove,
+			willBeResumed: willBeResumed,
+		})
 
-	for _, subTrack := range subscribedTracks {
-		t.pendingClose[subTrack.SubscriberID()] = subTrack
+		subIDs = append(subIDs, subscriberID)
 	}
 	t.subscribedTracksMu.Unlock()
 
-	for _, subTrack := range subscribedTracks {
-		t.closeSubscribedTrack(subTrack, willBeResumed)
+	for _, subID := range subIDs {
+		t.processRequestsQueue(subID)
 	}
+
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.SubscribedTrack, willBeResumed bool) {
@@ -489,10 +581,10 @@ func (t *MediaTrackSubscriptions) OnSubscribedMaxQualityChange(f func(subscribed
 }
 
 func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, quality livekit.VideoQuality) {
-	t.params.Logger.Debugw("notifying subscriber max quality", "subscriberID", subscriberID, "codec", codec, "quality", quality)
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
+	t.params.Logger.Debugw("notifying subscriber max quality", "subscriberID", subscriberID, "codec", codec, "quality", quality)
 
 	if codec.MimeType == "" {
 		t.params.Logger.Errorw("codec mime type is empty", nil)
@@ -733,7 +825,7 @@ func (t *MediaTrackSubscriptions) maybeNotifyNoSubscribers() {
 	}
 
 	t.subscribedTracksMu.RLock()
-	empty := len(t.subscribedTracks) == 0 && len(t.pendingClose) == 0
+	empty := len(t.subscribedTracks) == 0 && len(t.inProgress) == 0 && len(t.requestsQueue) == 0
 	t.subscribedTracksMu.RUnlock()
 
 	if empty {
@@ -750,7 +842,6 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	subscriberID := sub.ID()
 	t.subscribedTracksMu.Lock()
 	delete(t.subscribedTracks, subscriberID)
-	delete(t.pendingClose, subscriberID)
 	t.subscribedTracksMu.Unlock()
 
 	t.maybeNotifyNoSubscribers()
@@ -794,4 +885,14 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	if !willBeResumed {
 		sub.Negotiate(false)
 	}
+
+	t.clearInProgressAndProcessRequestsQueue(subscriberID)
+}
+
+func (t *MediaTrackSubscriptions) clearInProgressAndProcessRequestsQueue(subscriberID livekit.ParticipantID) {
+	t.subscribedTracksMu.Lock()
+	delete(t.inProgress, subscriberID)
+	t.subscribedTracksMu.Unlock()
+
+	t.processRequestsQueue(subscriberID)
 }

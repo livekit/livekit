@@ -381,17 +381,11 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 		streamId = PackStreamID(t.PublisherID(), t.ID())
 	}
 
-	downTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs))
+	err := t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs))
 	if err != nil {
 		return err
 	}
 
-	if downTrack != nil {
-		if t.Kind() == livekit.TrackType_AUDIO {
-			downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
-		}
-
-	}
 	return nil
 }
 
@@ -548,6 +542,12 @@ func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 	}
 
 	return receiver.GetAudioLevel()
+}
+
+func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
+	if t.Kind() == livekit.TrackType_AUDIO {
+		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
+	}
 }
 
 // handles max loss for audio streams
