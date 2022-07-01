@@ -385,7 +385,7 @@ func (t *MediaTrackSubscriptions) RevokeDisallowedSubscribers(allowedSubscriberI
 				"subscriber", subTrack.SubscriberIdentity(),
 				"subscriberID", subTrack.SubscriberID(),
 			)
-			go subTrack.DownTrack().Close()
+			t.RemoveSubscriber(subTrack.SubscriberID(), false)
 			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
 		}
 	}
