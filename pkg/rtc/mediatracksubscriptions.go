@@ -180,6 +180,9 @@ func (t *MediaTrackSubscriptions) processRequestsQueue(subscriberID livekit.Part
 
 	default:
 		t.params.Logger.Warnw("unknown request type", nil)
+
+		// let the queue move forward
+		go t.clearInProgressAndProcessRequestsQueue(subscriberID)
 	}
 }
 
