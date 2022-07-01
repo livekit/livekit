@@ -91,6 +91,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		Telemetry:        params.Telemetry,
 		Logger:           params.Logger,
 	})
+	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
 
 	if t.trackInfo.Muted {
 		t.SetMuted(true)

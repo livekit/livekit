@@ -29,6 +29,8 @@ const (
 
 var (
 	errAlreadySubscribed = errors.New("already subscribed")
+	errNoTransceiver     = errors.New("cannot subscribe without a transceiver in place")
+	errNoSender          = errors.New("cannot subscribe without a sender in place")
 )
 
 type SubscribeRequestType int
@@ -332,11 +334,11 @@ func (t *MediaTrackSubscriptions) addSubscriber(sub types.LocalParticipant, wr *
 	}
 	if transceiver == nil {
 		// cannot add, no transceiver
-		return errors.New("cannot subscribe without a transceiver in place")
+		return errNoTransceiver
 	}
 	if sender == nil {
 		// cannot add, no sender
-		return errors.New("cannot subscribe without a sender in place")
+		return errNoSender
 	}
 
 	// wthether re-using or stopping remove transceiver from cache
