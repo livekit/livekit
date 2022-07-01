@@ -31,6 +31,7 @@ var (
 	errAlreadySubscribed = errors.New("already subscribed")
 	errNoTransceiver     = errors.New("cannot subscribe without a transceiver in place")
 	errNoSender          = errors.New("cannot subscribe without a sender in place")
+	errNotFound          = errors.New("not found")
 )
 
 type SubscribeRequestType int
@@ -176,7 +177,10 @@ func (t *MediaTrackSubscriptions) processRequestsQueue(subscriberID livekit.Part
 		}
 
 	case SubscribeRequestTypeRemove:
-		t.removeSubscriber(subscriberID, request.willBeResumed)
+		err := t.removeSubscriber(subscriberID, request.willBeResumed)
+		if err != nil {
+			go t.clearInProgressAndProcessRequestsQueue(subscriberID)
+		}
 
 	default:
 		t.params.Logger.Warnw("unknown request type", nil)
@@ -408,12 +412,15 @@ func (t *MediaTrackSubscriptions) RemoveSubscriber(subscriberID livekit.Particip
 	t.processRequestsQueue(subscriberID)
 }
 
-func (t *MediaTrackSubscriptions) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) {
+func (t *MediaTrackSubscriptions) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) error {
 	t.params.Logger.Debugw("removing subscriber", "subscriberID", subscriberID, "willBeResumed", willBeResumed)
 	subTrack := t.getSubscribedTrack(subscriberID)
-	if subTrack != nil {
-		t.closeSubscribedTrack(subTrack, willBeResumed)
+	if subTrack == nil {
+		return errNotFound
 	}
+
+	t.closeSubscribedTrack(subTrack, willBeResumed)
+	return nil
 }
 
 func (t *MediaTrackSubscriptions) RemoveAllSubscribers(willBeResumed bool) {
@@ -849,8 +856,6 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	delete(t.subscribedTracks, subscriberID)
 	t.subscribedTracksMu.Unlock()
 
-	t.maybeNotifyNoSubscribers()
-
 	if !willBeResumed {
 		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
@@ -892,6 +897,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	}
 
 	t.clearInProgressAndProcessRequestsQueue(subscriberID)
+	t.maybeNotifyNoSubscribers()
 }
 
 func (t *MediaTrackSubscriptions) clearInProgressAndProcessRequestsQueue(subscriberID livekit.ParticipantID) {
