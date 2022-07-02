@@ -262,7 +262,12 @@ func (t *MediaTrackSubscriptions) addSubscriber(sub types.LocalParticipant, wr *
 			downTrack.SeedForwarderState(forwarderState)
 		}
 		if err = wr.AddDownTrack(downTrack); err != nil {
-			t.params.Logger.Errorw("could not add down track", err, "participant", sub.Identity(), "pID", sub.ID())
+			sub.GetLogger().Errorw(
+				"could not add down track", err,
+				"publisher", subTrack.PublisherIdentity(),
+				"publisherID", subTrack.PublisherID(),
+				"trackID", trackID,
+			)
 		}
 
 		go subTrack.Bound()
@@ -508,6 +513,13 @@ func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
 	return subs
 }
 
+func (t *MediaTrackSubscriptions) GetNumSubscribers() int {
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	return len(t.subscribedTracks)
+}
+
 func (t *MediaTrackSubscriptions) UpdateVideoLayers() {
 	for _, st := range t.getAllSubscribedTracks() {
 		st.UpdateVideoLayer()
@@ -562,7 +574,7 @@ func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalPar
 		i := 0
 		for {
 			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				t.params.Logger.Errorw("could not write RTCP", err)
+				sub.GetLogger().Errorw("could not write RTCP", err)
 				return
 			}
 			if i > 5 {
