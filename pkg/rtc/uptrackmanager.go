@@ -423,7 +423,6 @@ func (u *UpTrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, su
 
 	u.pendingSubscriptions[trackID] = append(u.pendingSubscriptions[trackID], subscriberIdentity)
 	u.opsQueue.Enqueue(func() {
-		sub.GetLogger().Debugw("PERMS_DEBUG queuing perm false", "publisherID", u.params.SID, "trackID", trackID)
 		sub.SubscriptionPermissionUpdate(u.params.SID, trackID, false)
 	})
 }
@@ -479,7 +478,6 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 			}
 
 			u.opsQueue.Enqueue(func() {
-				sub.GetLogger().Debugw("PERMS_DEBUG queuing perm true", "publisherID", u.params.SID, "trackID", trackID)
 				sub.SubscriptionPermissionUpdate(u.params.SID, trackID, true)
 			})
 		}
