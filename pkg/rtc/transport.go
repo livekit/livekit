@@ -365,7 +365,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	} else {
 		// when there's an ongoing negotiation, let it finish and not disrupt its state
 		if t.negotiationState == negotiationStateClient {
-			t.params.Logger.Debugw("skipping negotiation, trying again later")
+			t.params.Logger.Infow("skipping negotiation, trying again later")
 			t.negotiationState = negotiationRetry
 			return nil
 		} else if t.negotiationState == negotiationRetry {
