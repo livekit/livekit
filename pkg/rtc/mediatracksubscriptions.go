@@ -132,7 +132,7 @@ func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 	// This will queue up the current state, but subscriber
 	// driven changes could update it.
 	if !muted {
-		t.updateQualityChange(true)
+		t.UpdateQualityChange(true)
 	}
 
 	// update mute of all subscribed tracks
@@ -648,7 +648,7 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 	}
 	t.maxQualityLock.Unlock()
 
-	t.updateQualityChange(false)
+	t.UpdateQualityChange(false)
 }
 
 func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -694,10 +694,10 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.
 	}
 	t.maxQualityLock.Unlock()
 
-	t.updateQualityChange(false)
+	t.UpdateQualityChange(false)
 }
 
-func (t *MediaTrackSubscriptions) updateQualityChange(force bool) {
+func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
@@ -774,7 +774,7 @@ func (t *MediaTrackSubscriptions) updateQualityChange(force bool) {
 	// if quality downgrade (or become OFF), delay notify to publisher if needed
 	if len(qualityDowngrades) > 0 && !force {
 		t.maxSubscribedQualityDebounce(func() {
-			t.updateQualityChange(true)
+			t.UpdateQualityChange(true)
 		})
 
 		// no quality upgrades
@@ -836,7 +836,7 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
-		t.updateQualityChange(force)
+		t.UpdateQualityChange(force)
 	})
 }
 
