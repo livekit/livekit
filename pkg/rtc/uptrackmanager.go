@@ -205,6 +205,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
+	u.params.Logger.Debugw("updating subscription permission", "permissions", subscriptionPermission)
 	if subscriptionPermission == nil {
 		// store as is for use when migrating
 		u.subscriptionPermission = subscriptionPermission
@@ -422,6 +423,7 @@ func (u *UpTrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, su
 	}
 
 	u.pendingSubscriptions[trackID] = append(u.pendingSubscriptions[trackID], subscriberIdentity)
+	u.params.Logger.Debugw("adding pending subscription", "subscriberID", sub.ID(), "trackID", trackID)
 	u.opsQueue.Enqueue(func() {
 		sub.SubscriptionPermissionUpdate(u.params.SID, trackID, false)
 	})
@@ -477,6 +479,7 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 				continue
 			}
 
+			u.params.Logger.Debugw("reinstating pending subscription", "subscriberID", sub.ID(), "trackID", trackID)
 			u.opsQueue.Enqueue(func() {
 				sub.SubscriptionPermissionUpdate(u.params.SID, trackID, true)
 			})
