@@ -128,6 +128,13 @@ func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownT
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
+	// update quality based on subscription if unmuting.
+	// This will queue up the current state, but subscriber
+	// driven changes could update it.
+	if !muted {
+		t.updateQualityChange(true)
+	}
+
 	// update mute of all subscribed tracks
 	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
@@ -641,7 +648,7 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange(false)
+	t.updateQualityChange(false)
 }
 
 func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -687,10 +694,10 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange(false)
+	t.updateQualityChange(false)
 }
 
-func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
+func (t *MediaTrackSubscriptions) updateQualityChange(force bool) {
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
 	}
@@ -753,11 +760,11 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 			noChangeCount++
 		}
 	}
-	t.params.Logger.Debugw("updating quality change",
+	t.params.Logger.Debugw("updated quality change",
 		"changed", changed,
 		"maxSubscribedQuality", maxSubscribedQuality,
 		"t.maxSubscribedQuality", t.maxSubscribedQuality,
-		"comesDownQuality", qualityDowngrades)
+		"qualityDowngrades", qualityDowngrades)
 
 	if !changed && !force {
 		t.maxQualityLock.Unlock()
@@ -767,7 +774,7 @@ func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
 	// if quality downgrade (or become OFF), delay notify to publisher if needed
 	if len(qualityDowngrades) > 0 && !force {
 		t.maxSubscribedQualityDebounce(func() {
-			t.UpdateQualityChange(true)
+			t.updateQualityChange(true)
 		})
 
 		// no quality upgrades
@@ -829,7 +836,7 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		t.stopMaxQualityTimer()
-		t.UpdateQualityChange(force)
+		t.updateQualityChange(force)
 	})
 }
 
