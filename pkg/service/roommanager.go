@@ -218,6 +218,7 @@ func (r *RoomManager) StartSession(
 			Message: &livekit.SignalResponse_Leave{
 				Leave: &livekit.LeaveRequest{
 					CanReconnect: true,
+					Reason:       livekit.DisconnectReason_STATE_MISMATCH,
 				},
 			},
 		})

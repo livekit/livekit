@@ -689,7 +689,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{
 			Message: &livekit.SignalResponse_Leave{
-				Leave: &livekit.LeaveRequest{},
+				Leave: &livekit.LeaveRequest{
+					Reason: reason.ToDisconnectReason(),
+				},
 			},
 		})
 	}
