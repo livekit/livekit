@@ -487,7 +487,7 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 			}
 
 			if err := track.AddSubscriber(sub); err != nil {
-				u.params.Logger.Errorw("error reinstating subscription", err)
+				u.params.Logger.Errorw("error reinstating subscription", err, "subscirberID", sub.ID(), "trackID", trackID)
 				// keep it in pending on error in case the error is transient
 				updatedPending = append(updatedPending, identity)
 				continue
