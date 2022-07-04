@@ -164,6 +164,12 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	var offerCount int32
 	transportA.OnOffer(func(sd webrtc.SessionDescription) {
 		atomic.AddInt32(&offerCount, 1)
+		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
+		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+			require.Eventually(t, func() bool {
+				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete
+			}, 10*time.Second, time.Millisecond*10)
+		}
 		handleOffer(sd)
 	})
 
@@ -215,6 +221,12 @@ func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
 	var offerCount int32
 	transportA.OnOffer(func(sd webrtc.SessionDescription) {
 		atomic.AddInt32(&offerCount, 1)
+		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
+		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+			require.Eventually(t, func() bool {
+				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete
+			}, 10*time.Second, time.Millisecond*10)
+		}
 		handleOffer(sd)
 	})
 
