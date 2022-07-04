@@ -27,7 +27,7 @@ Head to [our playground](https://livekit.io/playground) and give it a spin. Buil
 
 Client SDKs:
 
-- [Javascript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
+- [JavaScript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
 - [React](https://github.com/livekit/livekit-react)
 - [iOS & MacOS - Swift](https://github.com/livekit/client-sdk-swift) ([docs](https://docs.livekit.io/client-sdk-swift/))
 - [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
@@ -37,10 +37,11 @@ Client SDKs:
 
 Server SDKs:
 
-- [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
+- [JavaScript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
 - [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
 - [Ruby](https://github.com/livekit/server-sdk-ruby)
 - [Python (community)](https://github.com/tradablebits/livekit-server-sdk-python)
+- [PHP (community)](https://github.com/agence104/livekit-server-sdk-php)
 
 Tools:
 
