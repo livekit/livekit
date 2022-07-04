@@ -348,7 +348,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
-	iceRestart := options != nil && options.ICERestart
+	iceRestart := (options != nil && options.ICERestart) || t.restartAtNextOffer
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
