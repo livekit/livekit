@@ -60,7 +60,7 @@ type PCTransport struct {
 	pc     *webrtc.PeerConnection
 	me     *webrtc.MediaEngine
 
-	lock                  sync.Mutex
+	lock                  sync.RWMutex
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	onOffer               func(offer webrtc.SessionDescription)
@@ -436,7 +436,10 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		t.signalStateCheckTimer.Stop()
 	}
 	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
-		if t.negotiateCounter.Load() == negotiateVersion && t.negotiationState != negotiationStateNone {
+		t.lock.RLock()
+		failed := t.negotiationState != negotiationStateNone
+		t.lock.RUnlock()
+		if t.negotiateCounter.Load() == negotiateVersion && failed {
 			t.params.Logger.Infow("negotiation timeout")
 			if t.onNegotiationFailed != nil {
 				t.onNegotiationFailed()
