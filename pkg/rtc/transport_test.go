@@ -210,6 +210,9 @@ func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
 		require.NoError(t, transportB.pc.SetLocalDescription(answer))
 	})
 	require.NoError(t, transportA.CreateAndSendOffer(nil))
+	require.Eventually(t, func() bool {
+		return transportB.pc.SignalingState() == webrtc.SignalingStateStable
+	}, time.Second, 10*time.Millisecond)
 
 	// exchange ICE
 	handleICEExchange(t, transportA, transportB)
