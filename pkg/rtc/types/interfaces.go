@@ -80,6 +80,7 @@ const (
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonNegotiateFailed
 )
 
 func (p ParticipantCloseReason) String() string {

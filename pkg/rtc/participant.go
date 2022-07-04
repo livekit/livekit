@@ -225,6 +225,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 
+	p.subscriber.OnNegotiationFailed(p.handleNegotiationFailed)
+
 	p.publisher.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
@@ -2054,4 +2056,17 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	}
 
 	return nil, sfu.ForwarderState{}
+}
+
+func (p *ParticipantImpl) handleNegotiationFailed() {
+	p.params.Logger.Infow("negotiation failed, notify client do full reconnect")
+	_ = p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Leave{
+			Leave: &livekit.LeaveRequest{
+				CanReconnect: true,
+				Reason:       types.ParticipantCloseReasonNegotiateFailed.ToDisconnectReason(),
+			},
+		},
+	})
+	p.closeSignalConnection()
 }
