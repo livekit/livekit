@@ -80,6 +80,7 @@ const (
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonNegotiateFailed
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -118,6 +119,8 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_NODE_FAILURE"
 	case ParticipantCloseReasonSimulateServerLeave:
 		return "SIMULATE_SERVER_LEAVE"
+	case ParticipantCloseReasonNegotiateFailed:
+		return "NEGOTIATE_FAILED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}

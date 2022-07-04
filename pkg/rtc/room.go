@@ -964,7 +964,9 @@ func (r *Room) connectionQualityWorker() {
 				continue
 			}
 
-			nowConnectionInfos[p.ID()] = p.GetConnectionQuality()
+			if q := p.GetConnectionQuality(); q != nil {
+				nowConnectionInfos[p.ID()] = q
+			}
 		}
 
 		// send an update if there is a change

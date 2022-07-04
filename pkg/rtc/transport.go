@@ -14,6 +14,7 @@ import (
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -28,11 +29,16 @@ import (
 
 const (
 	negotiationFrequency       = 150 * time.Millisecond
+	negotiationFailedTimout    = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
 	iceFailedTimeout       = 25 * time.Second // pion's default
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+)
+
+var (
+	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
 )
 
 const (
@@ -54,12 +60,16 @@ type PCTransport struct {
 	pc     *webrtc.PeerConnection
 	me     *webrtc.MediaEngine
 
-	lock                  sync.Mutex
+	lock                  sync.RWMutex
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
+	restartAtNextOffer    bool
 	negotiationState      int
+	negotiateCounter      atomic.Int32
+	signalStateCheckTimer *time.Timer
+	onNegotiationFailed   func()
 
 	// stream allocator for subscriber PC
 	streamAllocator *sfu.StreamAllocator
@@ -276,6 +286,10 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	lastState := t.negotiationState
 	t.negotiationState = negotiationStateNone
 
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+	}
+
 	for _, c := range t.pendingCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
 			return err
@@ -296,6 +310,10 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 // OnOffer is called when the PeerConnection starts negotiation and prepares an offer
 func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
+}
+
+func (t *PCTransport) OnNegotiationFailed(f func()) {
+	t.onNegotiationFailed = f
 }
 
 func (t *PCTransport) Negotiate(force bool) {
@@ -330,7 +348,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
-	iceRestart := options != nil && options.ICERestart
+	iceRestart := (options != nil && options.ICERestart) || t.restartAtNextOffer
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
@@ -345,14 +363,17 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if iceRestart && t.negotiationState != negotiationStateNone {
 		currentSD := t.pc.CurrentRemoteDescription()
 		if currentSD == nil {
-			// never received an answer from client, create a new peer connection
-			t.params.Logger.Infow("no previous answer from client on ICE restart, creating a new PC")
-			t.pc.Close()
-			if err := t.createPeerConnection(); err != nil {
-				t.params.Logger.Errorw("could not create new PC on ICE restart", err)
-				return err
+			// restart without current remote description, sent current local description again to try recover
+			offer := t.pc.LocalDescription()
+			if offer == nil {
+				// it should not happend, check for safety
+				t.params.Logger.Infow("ice restart without local offer")
+				return ErrIceRestartWithoutLocalSDP
 			} else {
-				options.ICERestart = false
+				t.negotiationState = negotiationRetry
+				t.restartAtNextOffer = true
+				go t.onOffer(*offer)
+				return nil
 			}
 		} else {
 			// recover by re-applying the last answer
@@ -374,12 +395,22 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		}
 	}
 
-	if t.previousAnswer != nil {
-		t.previousAnswer = nil
+	ensureICERestart := func(options *webrtc.OfferOptions) *webrtc.OfferOptions {
 		if options == nil {
 			options = &webrtc.OfferOptions{}
 		}
 		options.ICERestart = true
+		return options
+	}
+
+	if t.previousAnswer != nil {
+		t.previousAnswer = nil
+		options = ensureICERestart(options)
+	}
+
+	if t.restartAtNextOffer {
+		t.restartAtNextOffer = false
+		options = ensureICERestart(options)
 	}
 
 	offer, err := t.pc.CreateOffer(options)
@@ -399,6 +430,22 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
 	t.restartAfterGathering = false
+
+	negotiateVersion := t.negotiateCounter.Inc()
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+	}
+	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
+		t.lock.RLock()
+		failed := t.negotiationState != negotiationStateNone
+		t.lock.RUnlock()
+		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			t.params.Logger.Infow("negotiation timeout")
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+		}
+	})
 
 	go t.onOffer(offer)
 	return nil
