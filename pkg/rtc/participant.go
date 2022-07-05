@@ -717,10 +717,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 	p.lock.Unlock()
 
-	for _, dt := range downTracksToClose {
-		dt.Close()
-	}
-
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
@@ -735,6 +731,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
+		for _, dt := range downTracksToClose {
+			dt.Close()
+		}
+
 		p.publisher.Close()
 		p.subscriber.Close()
 	}()
