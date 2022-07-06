@@ -27,8 +27,6 @@ type TelemetryService interface {
 	TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
-	RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo)
-	RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
 	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
 }
@@ -132,18 +130,6 @@ func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID li
 func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 	t.enqueue(func() {
 		t.internalService.TrackUnsubscribed(ctx, participantID, track)
-	})
-}
-
-func (t *telemetryService) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.enqueue(func() {
-		t.internalService.RecordingStarted(ctx, ri)
-	})
-}
-
-func (t *telemetryService) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.enqueue(func() {
-		t.internalService.RecordingEnded(ctx, ri)
 	})
 }
 
