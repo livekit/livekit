@@ -133,12 +133,13 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 	for _, track := range tracks {
 		trackID := track.ID()
 		subscriberIdentity := sub.Identity()
+		u.lock.Lock()
 		if !u.hasPermission(trackID, subscriberIdentity) {
-			u.lock.Lock()
 			u.maybeAddPendingSubscription(trackID, sub)
 			u.lock.Unlock()
 			continue
 		}
+		u.lock.Unlock()
 
 		if err := track.AddSubscriber(sub); err != nil {
 			return n, err
@@ -209,14 +210,15 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
-	u.params.Logger.Debugw("updating subscription permission", "permissions", subscriptionPermission)
 	if subscriptionPermission == nil {
+		u.params.Logger.Debugw("updating subscription permission, setting to nil")
 		// store as is for use when migrating
 		u.subscriptionPermission = subscriptionPermission
 		// possible to get a nil when migrating
 		return nil
 	}
 
+	u.params.Logger.Debugw("updating subscription permission", "permissions", subscriptionPermission.String())
 	if err := u.parseSubscriptionPermissions(subscriptionPermission, resolverBySid); err != nil {
 		// when failed, do not override previous permissions
 		return err

@@ -2112,7 +2112,7 @@ func (p *ParticipantImpl) handleNegotiationFailed() {
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
-	p.params.Logger.Infow("queueing subscribe", "trackID", trackID)
+	p.params.Logger.Infow("queuing subscribe", "trackID", trackID)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
@@ -2125,7 +2125,7 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 }
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
-	p.params.Logger.Infow("queueing unsubscribe", "trackID", trackID)
+	p.params.Logger.Infow("queuing unsubscribe", "trackID", trackID)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
@@ -2163,20 +2163,20 @@ func (p *ParticipantImpl) ProcessSubscriptionRequestsQueue(trackID livekit.Track
 			}
 
 			// process pending request even if adding errors out
-			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+			p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 		}
 
 	case SubscribeRequestTypeRemove:
 		err := request.removeCb(p.ID(), request.willBeResumed)
 		if err != nil {
-			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+			p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 		}
 
 	default:
 		p.params.Logger.Warnw("unknown request type", nil)
 
 		// let the queue move forward
-		go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+		p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 	}
 }
 
@@ -2185,5 +2185,5 @@ func (p *ParticipantImpl) ClearInProgressAndProcessSubscriptionRequestsQueue(tra
 	delete(p.subscriptionInProgress, trackID)
 	p.lock.Unlock()
 
-	p.ProcessSubscriptionRequestsQueue(trackID)
+	go p.ProcessSubscriptionRequestsQueue(trackID)
 }
