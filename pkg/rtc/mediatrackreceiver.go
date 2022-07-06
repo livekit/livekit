@@ -359,8 +359,6 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	trackID := t.ID()
 	sub.EnqueueSubscribeTrack(trackID, t.addSubscriber)
-
-	go sub.ProcessSubscriptionRequestsQueue(trackID)
 	return nil
 }
 
@@ -417,8 +415,6 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	sub := subTrack.Subscriber()
 	trackID := subTrack.ID()
 	sub.EnqueueUnsubscribeTrack(trackID, willBeResumed, t.MediaTrackSubscriptions.RemoveSubscriber)
-
-	go sub.ProcessSubscriptionRequestsQueue(trackID)
 }
 
 func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
