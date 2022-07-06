@@ -2112,7 +2112,7 @@ func (p *ParticipantImpl) handleNegotiationFailed() {
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
-	p.params.Logger.Infow("queueing subscribe", "trackID", trackID)
+	p.params.Logger.Infow("queuing subscribe", "trackID", trackID)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
@@ -2125,7 +2125,7 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 }
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
-	p.params.Logger.Infow("queueing unsubscribe", "trackID", trackID)
+	p.params.Logger.Infow("queuing unsubscribe", "trackID", trackID)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
