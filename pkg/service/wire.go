@@ -18,7 +18,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -31,7 +30,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	wire.Build(
 		getNodeID,
 		createRedisClient,
-		createMessageBus,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
 		createKeyProvider,
@@ -45,7 +43,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewTelemetryService,
 		egress.NewRedisRPCClient,
 		NewEgressService,
-		NewRecordingService,
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
@@ -156,13 +153,6 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	}
 
 	return rc, nil
-}
-
-func createMessageBus(rc *redis.Client) utils.MessageBus {
-	if rc == nil {
-		return nil
-	}
-	return utils.NewRedisMessageBus(rc)
 }
 
 func createStore(rc *redis.Client) ObjectStore {

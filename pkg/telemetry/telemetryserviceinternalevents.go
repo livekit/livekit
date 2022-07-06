@@ -263,34 +263,6 @@ func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, partic
 	})
 }
 
-func (t *telemetryServiceInternal) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event:         webhook.EventRecordingStarted,
-		RecordingInfo: ri,
-	})
-
-	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_RECORDING_STARTED,
-		Timestamp:   timestamppb.Now(),
-		RecordingId: ri.Id,
-		Room:        &livekit.Room{Name: ri.RoomName},
-	})
-}
-
-func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event:         webhook.EventRecordingFinished,
-		RecordingInfo: ri,
-	})
-
-	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_RECORDING_ENDED,
-		Timestamp:   timestamppb.Now(),
-		RecordingId: ri.Id,
-		Room:        &livekit.Room{Name: ri.RoomName},
-	})
-}
-
 func (t *telemetryServiceInternal) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
 	if w := t.getStatsWorker(participantID); w != nil {
 		return w.roomID, w.roomName

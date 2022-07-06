@@ -28,7 +28,6 @@ import (
 type LivekitServer struct {
 	config        *config.Config
 	egressService *EgressService
-	recService    *RecordingService
 	rtcService    *RTCService
 	httpServer    *http.Server
 	promServer    *http.Server
@@ -44,7 +43,6 @@ type LivekitServer struct {
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
-	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -55,7 +53,6 @@ func NewLivekitServer(conf *config.Config,
 	s = &LivekitServer{
 		config:        conf,
 		egressService: egressService,
-		recService:    recService,
 		rtcService:    rtcService,
 		router:        router,
 		roomManager:   roomManager,
@@ -82,7 +79,6 @@ func NewLivekitServer(conf *config.Config,
 
 	roomServer := livekit.NewRoomServiceServer(roomService)
 	egressServer := livekit.NewEgressServer(egressService)
-	recServer := livekit.NewRecordingServiceServer(recService)
 
 	mux := http.NewServeMux()
 	if conf.Development {
@@ -93,7 +89,6 @@ func NewLivekitServer(conf *config.Config,
 	}
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
-	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
@@ -153,7 +148,6 @@ func (s *LivekitServer) Start() error {
 	}
 
 	s.egressService.Start()
-	s.recService.Start()
 
 	// ensure we could listen
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
@@ -221,7 +215,6 @@ func (s *LivekitServer) Start() error {
 
 	s.roomManager.Stop()
 	s.egressService.Stop()
-	s.recService.Stop()
 
 	close(s.closedChan)
 	return nil

@@ -19,7 +19,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
@@ -61,8 +60,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	egressService := NewEgressService(rpcClient, objectStore, roomService, telemetryService)
-	messageBus := createMessageBus(client)
-	recordingService := NewRecordingService(messageBus, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
@@ -74,7 +71,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -182,13 +179,6 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	}
 
 	return rc, nil
-}
-
-func createMessageBus(rc *redis.Client) utils.MessageBus {
-	if rc == nil {
-		return nil
-	}
-	return utils.NewRedisMessageBus(rc)
 }
 
 func createStore(rc *redis.Client) ObjectStore {
