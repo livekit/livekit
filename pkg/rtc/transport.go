@@ -267,6 +267,13 @@ func (t *PCTransport) IsEstablished() bool {
 }
 
 func (t *PCTransport) Close() {
+	t.lock.Lock()
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+	t.lock.Unlock()
+
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
 	}
@@ -288,6 +295,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 
 	if t.signalStateCheckTimer != nil {
 		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
 	}
 
 	for _, c := range t.pendingCandidates {
@@ -434,6 +442,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	negotiateVersion := t.negotiateCounter.Inc()
 	if t.signalStateCheckTimer != nil {
 		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
 	}
 	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
 		t.lock.RLock()
