@@ -93,11 +93,8 @@ func (t *MediaTrackSubscriptions) Restart() {
 }
 
 func (t *MediaTrackSubscriptions) Stop() {
-	t.stopMaxQualityTimer()
-}
-
-func (t *MediaTrackSubscriptions) Close() {
 	t.qualityNotifyOpQueue.Stop()
+	t.stopMaxQualityTimer()
 }
 
 func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownTrack)) {
@@ -700,6 +697,11 @@ func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
 
 	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
 		return
+	}
+
+	if t.maxQualityTimer != nil {
+		t.maxQualityTimer.Stop()
+		t.maxQualityTimer = nil
 	}
 
 	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {

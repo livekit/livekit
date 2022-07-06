@@ -2163,20 +2163,20 @@ func (p *ParticipantImpl) ProcessSubscriptionRequestsQueue(trackID livekit.Track
 			}
 
 			// process pending request even if adding errors out
-			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+			p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 		}
 
 	case SubscribeRequestTypeRemove:
 		err := request.removeCb(p.ID(), request.willBeResumed)
 		if err != nil {
-			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+			p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 		}
 
 	default:
 		p.params.Logger.Warnw("unknown request type", nil)
 
 		// let the queue move forward
-		go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+		p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
 	}
 }
 
@@ -2185,5 +2185,5 @@ func (p *ParticipantImpl) ClearInProgressAndProcessSubscriptionRequestsQueue(tra
 	delete(p.subscriptionInProgress, trackID)
 	p.lock.Unlock()
 
-	p.ProcessSubscriptionRequestsQueue(trackID)
+	go p.ProcessSubscriptionRequestsQueue(trackID)
 }

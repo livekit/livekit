@@ -28,6 +28,10 @@ const (
 	layerSelectionTolerance = 0.9
 )
 
+var (
+	ErrNoReceiver = errors.New("cannot subscribe without a receiver in place")
+)
+
 type simulcastReceiver struct {
 	sfu.TrackReceiver
 	priority   int
@@ -57,12 +61,13 @@ type MediaTrackReceiver struct {
 	muted       atomic.Bool
 	simulcasted atomic.Bool
 
-	lock            sync.RWMutex
-	receivers       []*simulcastReceiver
-	receiversShadow []*simulcastReceiver
-	trackInfo       *livekit.TrackInfo
-	layerDimensions map[livekit.VideoQuality]*livekit.VideoLayer
-	potentialCodecs []webrtc.RTPCodecParameters
+	lock               sync.RWMutex
+	receivers          []*simulcastReceiver
+	receiversShadow    []*simulcastReceiver
+	trackInfo          *livekit.TrackInfo
+	layerDimensions    map[livekit.VideoQuality]*livekit.VideoLayer
+	potentialCodecs    []webrtc.RTPCodecParameters
+	pendingSubscribeOp map[livekit.ParticipantID]int
 
 	// track audio fraction lost
 	downFracLostLock   sync.Mutex
@@ -78,9 +83,10 @@ type MediaTrackReceiver struct {
 
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
-		params:          params,
-		trackInfo:       proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
-		layerDimensions: make(map[livekit.VideoQuality]*livekit.VideoLayer),
+		params:             params,
+		trackInfo:          proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
+		layerDimensions:    make(map[livekit.VideoQuality]*livekit.VideoLayer),
+		pendingSubscribeOp: make(map[livekit.ParticipantID]int),
 	}
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
@@ -94,7 +100,8 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
 	t.MediaTrackSubscriptions.OnSubscriptionOperationComplete(func(sub types.LocalParticipant) {
-		go sub.ClearInProgressAndProcessSubscriptionRequestsQueue(t.ID())
+		t.removePendingSubscribeOp(sub.ID())
+		sub.ClearInProgressAndProcessSubscriptionRequestsQueue(t.ID())
 	})
 
 	if t.trackInfo.Muted {
@@ -230,8 +237,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 		}
 	}
 
-	t.receiversShadow = make([]*simulcastReceiver, len(t.receivers))
-	copy(t.receiversShadow, t.receivers)
+	t.shadowReceiversLocked()
 
 	stopSubscription := len(t.receiversShadow) == 0
 	t.lock.Unlock()
@@ -274,7 +280,7 @@ func (t *MediaTrackReceiver) Close() {
 	onclose := t.onClose
 	t.lock.RUnlock()
 
-	t.MediaTrackSubscriptions.Close()
+	t.MediaTrackSubscriptions.Stop()
 	for _, f := range onclose {
 		f()
 	}
@@ -355,14 +361,43 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 	t.lock.Unlock()
 }
 
+func (t *MediaTrackReceiver) addPendingSubscribeOp(subscriberID livekit.ParticipantID) {
+	t.lock.Lock()
+	if c, ok := t.pendingSubscribeOp[subscriberID]; !ok {
+		t.pendingSubscribeOp[subscriberID] = 1
+	} else {
+		t.pendingSubscribeOp[subscriberID] = c + 1
+	}
+	t.lock.Unlock()
+}
+
+func (t *MediaTrackReceiver) removePendingSubscribeOp(subscriberID livekit.ParticipantID) {
+	t.lock.Lock()
+	if c, ok := t.pendingSubscribeOp[subscriberID]; ok {
+		t.pendingSubscribeOp[subscriberID] = c - 1
+		if t.pendingSubscribeOp[subscriberID] == 0 {
+			delete(t.pendingSubscribeOp, subscriberID)
+		}
+	}
+	t.lock.Unlock()
+}
+
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
+	t.addPendingSubscribeOp(sub.ID())
+
 	trackID := t.ID()
 	sub.EnqueueSubscribeTrack(trackID, t.addSubscriber)
 	return nil
 }
 
-func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) error {
+func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err error) {
+	defer func() {
+		if err != nil {
+			t.removePendingSubscribeOp(sub.ID())
+		}
+	}()
+
 	t.lock.RLock()
 	receivers := t.receiversShadow
 	potentialCodecs := make([]webrtc.RTPCodecParameters, len(t.potentialCodecs))
@@ -371,7 +406,8 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) error {
 
 	if len(receivers) == 0 {
 		// cannot add, no receiver
-		return errors.New("cannot subscribe without a receiver in place")
+		err = ErrNoReceiver
+		return
 	}
 
 	for _, receiver := range receivers {
@@ -396,9 +432,9 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) error {
 		streamId = PackStreamID(t.PublisherID(), t.ID())
 	}
 
-	err := t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs))
+	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs))
 	if err != nil {
-		return err
+		return
 	}
 
 	return nil
@@ -413,8 +449,20 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	}
 
 	sub := subTrack.Subscriber()
-	trackID := subTrack.ID()
-	sub.EnqueueUnsubscribeTrack(trackID, willBeResumed, t.MediaTrackSubscriptions.RemoveSubscriber)
+	t.addPendingSubscribeOp(sub.ID())
+
+	sub.EnqueueUnsubscribeTrack(subTrack.ID(), willBeResumed, t.removeSubscriber)
+}
+
+func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) (err error) {
+	defer func() {
+		if err != nil {
+			t.removePendingSubscribeOp(subscriberID)
+		}
+	}()
+
+	err = t.MediaTrackSubscriptions.RemoveSubscriber(subscriberID, willBeResumed)
+	return
 }
 
 func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
@@ -422,6 +470,13 @@ func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribers() {
 		t.RemoveSubscriber(subscriberID, willBeResumed)
 	}
+}
+
+func (t *MediaTrackReceiver) IsSubscribed() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.MediaTrackSubscriptions.GetNumSubscribers() != 0 || len(t.pendingSubscribeOp) != 0
 }
 
 func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
