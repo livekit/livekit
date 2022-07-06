@@ -38,6 +38,20 @@ func (r *simulcastReceiver) Priority() int {
 	return r.priority
 }
 
+type MediaTrackReceiverParams struct {
+	TrackInfo           *livekit.TrackInfo
+	MediaTrack          types.MediaTrack
+	ParticipantID       livekit.ParticipantID
+	ParticipantIdentity livekit.ParticipantIdentity
+	ParticipantVersion  uint32
+	BufferFactory       *buffer.Factory
+	ReceiverConfig      ReceiverConfig
+	SubscriberConfig    DirectionConfig
+	VideoConfig         config.VideoConfig
+	Telemetry           telemetry.TelemetryService
+	Logger              logger.Logger
+}
+
 type MediaTrackReceiver struct {
 	params      MediaTrackReceiverParams
 	muted       atomic.Bool
@@ -62,19 +76,6 @@ type MediaTrackReceiver struct {
 	*MediaTrackSubscriptions
 }
 
-type MediaTrackReceiverParams struct {
-	TrackInfo           *livekit.TrackInfo
-	MediaTrack          types.MediaTrack
-	ParticipantID       livekit.ParticipantID
-	ParticipantIdentity livekit.ParticipantIdentity
-	BufferFactory       *buffer.Factory
-	ReceiverConfig      ReceiverConfig
-	SubscriberConfig    DirectionConfig
-	VideoConfig         config.VideoConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
-}
-
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
 	t := &MediaTrackReceiver{
 		params:          params,
@@ -92,6 +93,9 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
+	t.MediaTrackSubscriptions.OnSubscriptionOperationComplete(func(sub types.LocalParticipant) {
+		go sub.ClearInProgressAndProcessSubscriptionRequestsQueue(t.ID())
+	})
 
 	if t.trackInfo.Muted {
 		t.SetMuted(true)
@@ -305,6 +309,10 @@ func (t *MediaTrackReceiver) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.ParticipantIdentity
 }
 
+func (t *MediaTrackReceiver) PublisherVersion() uint32 {
+	return t.params.ParticipantVersion
+}
+
 func (t *MediaTrackReceiver) IsSimulcast() bool {
 	return t.simulcasted.Load()
 }
@@ -349,6 +357,15 @@ func (t *MediaTrackReceiver) AddOnClose(f func()) {
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
+	trackID := t.ID()
+	sub.EnqueueSubscribeTrack(trackID, t.addSubscriber)
+
+	go sub.ProcessSubscriptionRequestsQueue(trackID)
+	return nil
+}
+
+// dddSubscriber subscribes sub to current mediaTrack
+func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) error {
 	t.lock.RLock()
 	receivers := t.receiversShadow
 	potentialCodecs := make([]webrtc.RTPCodecParameters, len(t.potentialCodecs))
@@ -388,6 +405,54 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	}
 
 	return nil
+}
+
+// RemoveSubscriber removes participant from subscription
+// stop all forwarders to the client
+func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) {
+	subTrack := t.getSubscribedTrack(subscriberID)
+	if subTrack == nil {
+		return
+	}
+
+	sub := subTrack.Subscriber()
+	trackID := subTrack.ID()
+	sub.EnqueueUnsubscribeTrack(trackID, willBeResumed, t.MediaTrackSubscriptions.RemoveSubscriber)
+
+	go sub.ProcessSubscriptionRequestsQueue(trackID)
+}
+
+func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
+	t.params.Logger.Debugw("removing all subscribers")
+	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribers() {
+		t.RemoveSubscriber(subscriberID, willBeResumed)
+	}
+}
+
+func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
+
+	// LK-TODO: large number of subscribers needs to be solved for this loop
+	for _, subTrack := range t.MediaTrackSubscriptions.getAllSubscribedTracks() {
+		found := false
+		for _, allowedIdentity := range allowedSubscriberIdentities {
+			if subTrack.SubscriberIdentity() == allowedIdentity {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.params.Logger.Infow("revoking subscription",
+				"subscriber", subTrack.SubscriberIdentity(),
+				"subscriberID", subTrack.SubscriberID(),
+			)
+			t.RemoveSubscriber(subTrack.SubscriberID(), false)
+			revokedSubscriberIdentities = append(revokedSubscriberIdentities, subTrack.SubscriberIdentity())
+		}
+	}
+
+	return revokedSubscriberIdentities
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {

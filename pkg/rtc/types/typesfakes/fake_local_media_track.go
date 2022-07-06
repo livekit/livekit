@@ -184,6 +184,16 @@ type FakeLocalMediaTrack struct {
 	publisherIdentityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	PublisherVersionStub        func() uint32
+	publisherVersionMutex       sync.RWMutex
+	publisherVersionArgsForCall []struct {
+	}
+	publisherVersionReturns struct {
+		result1 uint32
+	}
+	publisherVersionReturnsOnCall map[int]struct {
+		result1 uint32
+	}
 	ReceiversStub        func() []sfu.TrackReceiver
 	receiversMutex       sync.RWMutex
 	receiversArgsForCall []struct {
@@ -1203,6 +1213,59 @@ func (fake *FakeLocalMediaTrack) PublisherIdentityReturnsOnCall(i int, result1 l
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) PublisherVersion() uint32 {
+	fake.publisherVersionMutex.Lock()
+	ret, specificReturn := fake.publisherVersionReturnsOnCall[len(fake.publisherVersionArgsForCall)]
+	fake.publisherVersionArgsForCall = append(fake.publisherVersionArgsForCall, struct {
+	}{})
+	stub := fake.PublisherVersionStub
+	fakeReturns := fake.publisherVersionReturns
+	fake.recordInvocation("PublisherVersion", []interface{}{})
+	fake.publisherVersionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) PublisherVersionCallCount() int {
+	fake.publisherVersionMutex.RLock()
+	defer fake.publisherVersionMutex.RUnlock()
+	return len(fake.publisherVersionArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) PublisherVersionCalls(stub func() uint32) {
+	fake.publisherVersionMutex.Lock()
+	defer fake.publisherVersionMutex.Unlock()
+	fake.PublisherVersionStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) PublisherVersionReturns(result1 uint32) {
+	fake.publisherVersionMutex.Lock()
+	defer fake.publisherVersionMutex.Unlock()
+	fake.PublisherVersionStub = nil
+	fake.publisherVersionReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) PublisherVersionReturnsOnCall(i int, result1 uint32) {
+	fake.publisherVersionMutex.Lock()
+	defer fake.publisherVersionMutex.Unlock()
+	fake.PublisherVersionStub = nil
+	if fake.publisherVersionReturnsOnCall == nil {
+		fake.publisherVersionReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.publisherVersionReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
+}
+
 func (fake *FakeLocalMediaTrack) Receivers() []sfu.TrackReceiver {
 	fake.receiversMutex.Lock()
 	ret, specificReturn := fake.receiversReturnsOnCall[len(fake.receiversArgsForCall)]
@@ -1710,6 +1773,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherIDMutex.RUnlock()
 	fake.publisherIdentityMutex.RLock()
 	defer fake.publisherIdentityMutex.RUnlock()
+	fake.publisherVersionMutex.RLock()
+	defer fake.publisherVersionMutex.RUnlock()
 	fake.receiversMutex.RLock()
 	defer fake.receiversMutex.RUnlock()
 	fake.removeAllSubscribersMutex.RLock()

@@ -49,6 +49,20 @@ type downTrackState struct {
 	forwarder   sfu.ForwarderState
 }
 
+type SubscribeRequestType int
+
+const (
+	SubscribeRequestTypeRemove SubscribeRequestType = iota
+	SubscribeRequestTypeAdd
+)
+
+type SubscribeRequest struct {
+	requestType   SubscribeRequestType
+	willBeResumed bool
+	addCb         func(sub types.LocalParticipant) error
+	removeCb      func(subscriberID livekit.ParticipantID, willBeResumed bool) error
+}
+
 type ParticipantParams struct {
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName
@@ -144,6 +158,10 @@ type ParticipantImpl struct {
 	iceConfig      types.IceConfig
 
 	cachedDownTracks map[livekit.TrackID]*downTrackState
+
+	subscriptionInProgress    map[livekit.TrackID]bool
+	subscriptionRequestsQueue map[livekit.TrackID][]SubscribeRequest
+	trackPublisherVersion     map[livekit.TrackID]uint32
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -157,16 +175,19 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, ErrMissingGrants
 	}
 	p := &ParticipantImpl{
-		params:                   params,
-		rtcpCh:                   make(chan []rtcp.Packet, 100),
-		pendingTracks:            make(map[string]*pendingTrackInfo),
-		subscribedTracks:         make(map[livekit.TrackID]types.SubscribedTrack),
-		subscribedTracksSettings: make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
-		disallowedSubscriptions:  make(map[livekit.TrackID]livekit.ParticipantID),
-		subscribedTo:             make(map[livekit.ParticipantID]struct{}),
-		connectedAt:              time.Now(),
-		rttUpdatedAt:             time.Now(),
-		cachedDownTracks:         make(map[livekit.TrackID]*downTrackState),
+		params:                    params,
+		rtcpCh:                    make(chan []rtcp.Packet, 100),
+		pendingTracks:             make(map[string]*pendingTrackInfo),
+		subscribedTracks:          make(map[livekit.TrackID]types.SubscribedTrack),
+		subscribedTracksSettings:  make(map[livekit.TrackID]*livekit.UpdateTrackSettings),
+		disallowedSubscriptions:   make(map[livekit.TrackID]livekit.ParticipantID),
+		subscribedTo:              make(map[livekit.ParticipantID]struct{}),
+		connectedAt:               time.Now(),
+		rttUpdatedAt:              time.Now(),
+		cachedDownTracks:          make(map[livekit.TrackID]*downTrackState),
+		subscriptionInProgress:    make(map[livekit.TrackID]bool),
+		subscriptionRequestsQueue: make(map[livekit.TrackID][]SubscribeRequest),
+		trackPublisherVersion:     make(map[livekit.TrackID]uint32),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -954,8 +975,17 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID())
 	p.lock.Lock()
+	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.lock.Unlock()
+		p.params.Logger.Infow("ignoring add subscribedTrack from older version", "current", v, "requesting", subTrack.PublisherVersion())
+		return
+	}
+	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
+
 	onSubscribedTo := p.onSubscribedTo
+
 	p.subscribedTracks[subTrack.ID()] = subTrack
+
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
 
@@ -987,10 +1017,16 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
 
-	p.subscriber.RemoveTrack(subTrack)
-
 	p.lock.Lock()
+	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.lock.Unlock()
+		p.params.Logger.Infow("ignoring remove subscribedTrack from older version", "current", v, "requesting", subTrack.PublisherVersion())
+		return
+	}
+	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
+
 	delete(p.subscribedTracks, subTrack.ID())
+
 	// remove from subscribed map
 	numRemaining := 0
 	for _, st := range p.subscribedTracks {
@@ -1009,6 +1045,8 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 		delete(p.subscribedTo, subTrack.PublisherID())
 	}
 	p.lock.Unlock()
+
+	p.subscriber.RemoveTrack(subTrack)
 
 	if numRemaining == 0 {
 		//
@@ -1659,6 +1697,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 			SdpCid:              track.ID(),
 			ParticipantID:       p.params.SID,
 			ParticipantIdentity: p.params.Identity,
+			ParticipantVersion:  p.version.Load(),
 			RTCPChan:            p.rtcpCh,
 			BufferFactory:       p.params.Config.BufferFactory,
 			ReceiverConfig:      p.params.Config.Receiver,
@@ -1723,6 +1762,7 @@ func (p *ParticipantImpl) addMigrateMutedTrack(cid string, t *livekit.TrackInfo)
 		SdpCid:              cid,
 		ParticipantID:       p.params.SID,
 		ParticipantIdentity: p.params.Identity,
+		ParticipantVersion:  p.version.Load(),
 		RTCPChan:            p.rtcpCh,
 		BufferFactory:       p.params.Config.BufferFactory,
 		ReceiverConfig:      p.params.Config.Receiver,
@@ -2069,4 +2109,75 @@ func (p *ParticipantImpl) handleNegotiationFailed() {
 		},
 	})
 	p.closeSignalConnection()
+}
+
+func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
+	p.params.Logger.Infow("queueing subscribe", "trackID", trackID)
+	p.lock.Lock()
+	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
+		requestType: SubscribeRequestTypeAdd,
+		addCb:       f,
+	})
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+	p.params.Logger.Infow("queueing unsubscribe", "trackID", trackID)
+	p.lock.Lock()
+	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
+		requestType:   SubscribeRequestTypeRemove,
+		willBeResumed: willBeResumed,
+		removeCb:      f,
+	})
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) ProcessSubscriptionRequestsQueue(trackID livekit.TrackID) {
+	p.lock.Lock()
+	if p.subscriptionInProgress[trackID] || len(p.subscriptionRequestsQueue[trackID]) == 0 {
+		p.lock.Unlock()
+		return
+	}
+
+	request := p.subscriptionRequestsQueue[trackID][0]
+	p.subscriptionRequestsQueue[trackID] = p.subscriptionRequestsQueue[trackID][1:]
+	if len(p.subscriptionRequestsQueue[trackID]) == 0 {
+		delete(p.subscriptionRequestsQueue, trackID)
+	}
+
+	p.subscriptionInProgress[trackID] = true
+	p.lock.Unlock()
+
+	switch request.requestType {
+	case SubscribeRequestTypeAdd:
+		err := request.addCb(p)
+		if err != nil {
+			if err != errAlreadySubscribed {
+				p.params.Logger.Errorw("error adding subscriber", err, "trackID", trackID)
+			}
+
+			// process pending request even if adding errors out
+			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+		}
+
+	case SubscribeRequestTypeRemove:
+		err := request.removeCb(p.ID(), request.willBeResumed)
+		if err != nil {
+			go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+		}
+
+	default:
+		p.params.Logger.Warnw("unknown request type", nil)
+
+		// let the queue move forward
+		go p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)
+	}
+}
+
+func (p *ParticipantImpl) ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID) {
+	p.lock.Lock()
+	delete(p.subscriptionInProgress, trackID)
+	p.lock.Unlock()
+
+	p.ProcessSubscriptionRequestsQueue(trackID)
 }

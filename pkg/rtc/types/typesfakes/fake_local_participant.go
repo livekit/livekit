@@ -98,6 +98,11 @@ type FakeLocalParticipant struct {
 	claimGrantsReturnsOnCall map[int]struct {
 		result1 *auth.ClaimGrants
 	}
+	ClearInProgressAndProcessSubscriptionRequestsQueueStub        func(livekit.TrackID)
+	clearInProgressAndProcessSubscriptionRequestsQueueMutex       sync.RWMutex
+	clearInProgressAndProcessSubscriptionRequestsQueueArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
 	CloseStub        func(bool, types.ParticipantCloseReason) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -129,6 +134,19 @@ type FakeLocalParticipant struct {
 	}
 	debugInfoReturnsOnCall map[int]struct {
 		result1 map[string]interface{}
+	}
+	EnqueueSubscribeTrackStub        func(livekit.TrackID, func(sub types.LocalParticipant) error)
+	enqueueSubscribeTrackMutex       sync.RWMutex
+	enqueueSubscribeTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+		arg2 func(sub types.LocalParticipant) error
+	}
+	EnqueueUnsubscribeTrackStub        func(livekit.TrackID, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	enqueueUnsubscribeTrackMutex       sync.RWMutex
+	enqueueUnsubscribeTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+		arg2 bool
+		arg3 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
 	}
 	GetAdaptiveStreamStub        func() bool
 	getAdaptiveStreamMutex       sync.RWMutex
@@ -396,6 +414,11 @@ type FakeLocalParticipant struct {
 	onTrackUpdatedMutex       sync.RWMutex
 	onTrackUpdatedArgsForCall []struct {
 		arg1 func(types.LocalParticipant, types.MediaTrack)
+	}
+	ProcessSubscriptionRequestsQueueStub        func(livekit.TrackID)
+	processSubscriptionRequestsQueueMutex       sync.RWMutex
+	processSubscriptionRequestsQueueArgsForCall []struct {
+		arg1 livekit.TrackID
 	}
 	ProtocolVersionStub        func() types.ProtocolVersion
 	protocolVersionMutex       sync.RWMutex
@@ -1123,6 +1146,38 @@ func (fake *FakeLocalParticipant) ClaimGrantsReturnsOnCall(i int, result1 *auth.
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) ClearInProgressAndProcessSubscriptionRequestsQueue(arg1 livekit.TrackID) {
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.Lock()
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueArgsForCall = append(fake.clearInProgressAndProcessSubscriptionRequestsQueueArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.ClearInProgressAndProcessSubscriptionRequestsQueueStub
+	fake.recordInvocation("ClearInProgressAndProcessSubscriptionRequestsQueue", []interface{}{arg1})
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.Unlock()
+	if stub != nil {
+		fake.ClearInProgressAndProcessSubscriptionRequestsQueueStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) ClearInProgressAndProcessSubscriptionRequestsQueueCallCount() int {
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RLock()
+	defer fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RUnlock()
+	return len(fake.clearInProgressAndProcessSubscriptionRequestsQueueArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ClearInProgressAndProcessSubscriptionRequestsQueueCalls(stub func(livekit.TrackID)) {
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.Lock()
+	defer fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.Unlock()
+	fake.ClearInProgressAndProcessSubscriptionRequestsQueueStub = stub
+}
+
+func (fake *FakeLocalParticipant) ClearInProgressAndProcessSubscriptionRequestsQueueArgsForCall(i int) livekit.TrackID {
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RLock()
+	defer fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RUnlock()
+	argsForCall := fake.clearInProgressAndProcessSubscriptionRequestsQueueArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason) error {
 	fake.closeMutex.Lock()
 	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
@@ -1289,6 +1344,73 @@ func (fake *FakeLocalParticipant) DebugInfoReturnsOnCall(i int, result1 map[stri
 	fake.debugInfoReturnsOnCall[i] = struct {
 		result1 map[string]interface{}
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrack(arg1 livekit.TrackID, arg2 func(sub types.LocalParticipant) error) {
+	fake.enqueueSubscribeTrackMutex.Lock()
+	fake.enqueueSubscribeTrackArgsForCall = append(fake.enqueueSubscribeTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+		arg2 func(sub types.LocalParticipant) error
+	}{arg1, arg2})
+	stub := fake.EnqueueSubscribeTrackStub
+	fake.recordInvocation("EnqueueSubscribeTrack", []interface{}{arg1, arg2})
+	fake.enqueueSubscribeTrackMutex.Unlock()
+	if stub != nil {
+		fake.EnqueueSubscribeTrackStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrackCallCount() int {
+	fake.enqueueSubscribeTrackMutex.RLock()
+	defer fake.enqueueSubscribeTrackMutex.RUnlock()
+	return len(fake.enqueueSubscribeTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrackCalls(stub func(livekit.TrackID, func(sub types.LocalParticipant) error)) {
+	fake.enqueueSubscribeTrackMutex.Lock()
+	defer fake.enqueueSubscribeTrackMutex.Unlock()
+	fake.EnqueueSubscribeTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) EnqueueSubscribeTrackArgsForCall(i int) (livekit.TrackID, func(sub types.LocalParticipant) error) {
+	fake.enqueueSubscribeTrackMutex.RLock()
+	defer fake.enqueueSubscribeTrackMutex.RUnlock()
+	argsForCall := fake.enqueueSubscribeTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrack(arg1 livekit.TrackID, arg2 bool, arg3 func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+	fake.enqueueUnsubscribeTrackMutex.Lock()
+	fake.enqueueUnsubscribeTrackArgsForCall = append(fake.enqueueUnsubscribeTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+		arg2 bool
+		arg3 func(subscriberID livekit.ParticipantID, willBeResumed bool) error
+	}{arg1, arg2, arg3})
+	stub := fake.EnqueueUnsubscribeTrackStub
+	fake.recordInvocation("EnqueueUnsubscribeTrack", []interface{}{arg1, arg2, arg3})
+	fake.enqueueUnsubscribeTrackMutex.Unlock()
+	if stub != nil {
+		fake.EnqueueUnsubscribeTrackStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackCallCount() int {
+	fake.enqueueUnsubscribeTrackMutex.RLock()
+	defer fake.enqueueUnsubscribeTrackMutex.RUnlock()
+	return len(fake.enqueueUnsubscribeTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackCalls(stub func(livekit.TrackID, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error)) {
+	fake.enqueueUnsubscribeTrackMutex.Lock()
+	defer fake.enqueueUnsubscribeTrackMutex.Unlock()
+	fake.EnqueueUnsubscribeTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) EnqueueUnsubscribeTrackArgsForCall(i int) (livekit.TrackID, bool, func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+	fake.enqueueUnsubscribeTrackMutex.RLock()
+	defer fake.enqueueUnsubscribeTrackMutex.RUnlock()
+	argsForCall := fake.enqueueUnsubscribeTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) GetAdaptiveStream() bool {
@@ -2746,6 +2868,38 @@ func (fake *FakeLocalParticipant) OnTrackUpdatedArgsForCall(i int) func(types.Lo
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
 	argsForCall := fake.onTrackUpdatedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) ProcessSubscriptionRequestsQueue(arg1 livekit.TrackID) {
+	fake.processSubscriptionRequestsQueueMutex.Lock()
+	fake.processSubscriptionRequestsQueueArgsForCall = append(fake.processSubscriptionRequestsQueueArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.ProcessSubscriptionRequestsQueueStub
+	fake.recordInvocation("ProcessSubscriptionRequestsQueue", []interface{}{arg1})
+	fake.processSubscriptionRequestsQueueMutex.Unlock()
+	if stub != nil {
+		fake.ProcessSubscriptionRequestsQueueStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) ProcessSubscriptionRequestsQueueCallCount() int {
+	fake.processSubscriptionRequestsQueueMutex.RLock()
+	defer fake.processSubscriptionRequestsQueueMutex.RUnlock()
+	return len(fake.processSubscriptionRequestsQueueArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ProcessSubscriptionRequestsQueueCalls(stub func(livekit.TrackID)) {
+	fake.processSubscriptionRequestsQueueMutex.Lock()
+	defer fake.processSubscriptionRequestsQueueMutex.Unlock()
+	fake.ProcessSubscriptionRequestsQueueStub = stub
+}
+
+func (fake *FakeLocalParticipant) ProcessSubscriptionRequestsQueueArgsForCall(i int) livekit.TrackID {
+	fake.processSubscriptionRequestsQueueMutex.RLock()
+	defer fake.processSubscriptionRequestsQueueMutex.RUnlock()
+	argsForCall := fake.processSubscriptionRequestsQueueArgsForCall[i]
 	return argsForCall.arg1
 }
 
@@ -4331,12 +4485,18 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.canSubscribeMutex.RUnlock()
 	fake.claimGrantsMutex.RLock()
 	defer fake.claimGrantsMutex.RUnlock()
+	fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RLock()
+	defer fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
 	defer fake.connectedAtMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
 	defer fake.debugInfoMutex.RUnlock()
+	fake.enqueueSubscribeTrackMutex.RLock()
+	defer fake.enqueueSubscribeTrackMutex.RUnlock()
+	fake.enqueueUnsubscribeTrackMutex.RLock()
+	defer fake.enqueueUnsubscribeTrackMutex.RUnlock()
 	fake.getAdaptiveStreamMutex.RLock()
 	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
@@ -4397,6 +4557,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onTrackPublishedMutex.RUnlock()
 	fake.onTrackUpdatedMutex.RLock()
 	defer fake.onTrackUpdatedMutex.RUnlock()
+	fake.processSubscriptionRequestsQueueMutex.RLock()
+	defer fake.processSubscriptionRequestsQueueMutex.RUnlock()
 	fake.protocolVersionMutex.RLock()
 	defer fake.protocolVersionMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()

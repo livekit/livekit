@@ -284,6 +284,11 @@ type LocalParticipant interface {
 	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
 	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
+
+	EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub LocalParticipant) error)
+	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
+	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -312,6 +317,7 @@ type MediaTrack interface {
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
 
 	IsMuted() bool
 	SetMuted(muted bool)
@@ -362,6 +368,7 @@ type SubscribedTrack interface {
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
 	SubscriberID() livekit.ParticipantID
 	SubscriberIdentity() livekit.ParticipantIdentity
 	Subscriber() LocalParticipant
