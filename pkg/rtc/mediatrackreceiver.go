@@ -364,7 +364,6 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	return nil
 }
 
-// dddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) error {
 	t.lock.RLock()
 	receivers := t.receiversShadow
