@@ -21,6 +21,7 @@ const (
 type SubscribedTrackParams struct {
 	PublisherID       livekit.ParticipantID
 	PublisherIdentity livekit.ParticipantIdentity
+	PublisherVersion  uint32
 	Subscriber        types.LocalParticipant
 	MediaTrack        types.MediaTrack
 	DownTrack         *sfu.DownTrack
@@ -78,6 +79,10 @@ func (t *SubscribedTrack) PublisherID() livekit.ParticipantID {
 
 func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.PublisherIdentity
+}
+
+func (t *SubscribedTrack) PublisherVersion() uint32 {
+	return t.params.PublisherVersion
 }
 
 func (t *SubscribedTrack) SubscriberID() livekit.ParticipantID {

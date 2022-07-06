@@ -38,6 +38,7 @@ type MediaTrackParams struct {
 	SdpCid              string
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
+	ParticipantVersion  uint32
 	// channel to send RTCP packets to the source
 	RTCPChan          chan []rtcp.Packet
 	BufferFactory     *buffer.Factory
@@ -61,6 +62,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		MediaTrack:          t,
 		ParticipantID:       params.ParticipantID,
 		ParticipantIdentity: params.ParticipantIdentity,
+		ParticipantVersion:  params.ParticipantVersion,
 		BufferFactory:       params.BufferFactory,
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
