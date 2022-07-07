@@ -101,20 +101,23 @@ func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack, 
 
 // AddSubscriber subscribes op to all publishedTracks
 func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.AddSubscriberParams) (int, error) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
 	var tracks []types.MediaTrack
 	if params.AllTracks {
-		tracks = u.GetPublishedTracks()
+		for _, t := range u.publishedTracks {
+			tracks = append(tracks, t)
+		}
 	} else {
-		u.lock.RLock()
 		for _, trackID := range params.TrackIDs {
-			track := u.getPublishedTrack(trackID)
+			track := u.getPublishedTrackLocked(trackID)
 			if track == nil {
 				continue
 			}
 
 			tracks = append(tracks, track)
 		}
-		u.lock.RUnlock()
 	}
 	if len(tracks) == 0 {
 		return 0, nil
@@ -133,35 +136,31 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 	for _, track := range tracks {
 		trackID := track.ID()
 		subscriberIdentity := sub.Identity()
-		u.lock.Lock()
-		if !u.hasPermission(trackID, subscriberIdentity) {
-			u.maybeAddPendingSubscription(trackID, sub)
-			u.lock.Unlock()
+		if !u.hasPermissionLocked(trackID, subscriberIdentity) {
+			u.maybeAddPendingSubscriptionLocked(trackID, sub)
 			continue
 		}
-		u.lock.Unlock()
 
 		if err := track.AddSubscriber(sub); err != nil {
 			return n, err
 		}
 		n += 1
 
-		u.lock.Lock()
-		u.maybeRemovePendingSubscription(trackID, sub, true)
-		u.lock.Unlock()
+		u.maybeRemovePendingSubscriptionLocked(trackID, sub, true)
 	}
 	return n, nil
 }
 
 func (u *UpTrackManager) RemoveSubscriber(sub types.LocalParticipant, trackID livekit.TrackID, willBeResumed bool) {
-	track := u.GetPublishedTrack(trackID)
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	track := u.getPublishedTrackLocked(trackID)
 	if track != nil {
 		track.RemoveSubscriber(sub.ID(), willBeResumed)
 	}
 
-	u.lock.Lock()
-	u.maybeRemovePendingSubscription(trackID, sub, false)
-	u.lock.Unlock()
+	u.maybeRemovePendingSubscriptionLocked(trackID, sub, false)
 }
 
 func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
@@ -188,7 +187,7 @@ func (u *UpTrackManager) GetPublishedTrack(trackID livekit.TrackID) types.MediaT
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return u.getPublishedTrack(trackID)
+	return u.getPublishedTrackLocked(trackID)
 }
 
 func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
@@ -208,24 +207,27 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
 	u.lock.Lock()
-	defer u.lock.Unlock()
-
 	if subscriptionPermission == nil {
 		u.params.Logger.Debugw("updating subscription permission, setting to nil")
 		// store as is for use when migrating
 		u.subscriptionPermission = subscriptionPermission
 		// possible to get a nil when migrating
+		u.lock.Unlock()
 		return nil
 	}
 
 	u.params.Logger.Debugw("updating subscription permission", "permissions", subscriptionPermission.String())
 	if err := u.parseSubscriptionPermissions(subscriptionPermission, resolverBySid); err != nil {
 		// when failed, do not override previous permissions
+		u.params.Logger.Errorw("failed updating subscription permission", err)
+		u.lock.Unlock()
 		return err
 	}
 
 	// store as is for use when migrating
 	u.subscriptionPermission = subscriptionPermission
+	u.lock.Unlock()
+
 	u.processPendingSubscriptions(resolverByIdentity)
 	u.maybeRevokeSubscriptions(resolverByIdentity)
 
@@ -317,8 +319,7 @@ func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResu
 	u.lock.Unlock()
 }
 
-// should be called with lock held
-func (u *UpTrackManager) getPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
+func (u *UpTrackManager) getPublishedTrackLocked(trackID livekit.TrackID) types.MediaTrack {
 	return u.publishedTracks[trackID]
 }
 
@@ -371,7 +372,7 @@ func (u *UpTrackManager) parseSubscriptionPermissions(
 	return nil
 }
 
-func (u *UpTrackManager) hasPermission(trackID livekit.TrackID, subscriberIdentity livekit.ParticipantIdentity) bool {
+func (u *UpTrackManager) hasPermissionLocked(trackID livekit.TrackID, subscriberIdentity livekit.ParticipantIdentity) bool {
 	if u.subscriberPermissions == nil {
 		return true
 	}
@@ -394,7 +395,7 @@ func (u *UpTrackManager) hasPermission(trackID livekit.TrackID, subscriberIdenti
 	return false
 }
 
-func (u *UpTrackManager) getAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantIdentity {
+func (u *UpTrackManager) getAllowedSubscribersLocked(trackID livekit.TrackID) []livekit.ParticipantIdentity {
 	if u.subscriberPermissions == nil {
 		return nil
 	}
@@ -417,7 +418,7 @@ func (u *UpTrackManager) getAllowedSubscribers(trackID livekit.TrackID) []liveki
 	return allowed
 }
 
-func (u *UpTrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant) {
+func (u *UpTrackManager) maybeAddPendingSubscriptionLocked(trackID livekit.TrackID, sub types.LocalParticipant) {
 	subscriberIdentity := sub.Identity()
 
 	pending := u.pendingSubscriptions[trackID]
@@ -435,7 +436,7 @@ func (u *UpTrackManager) maybeAddPendingSubscription(trackID livekit.TrackID, su
 	})
 }
 
-func (u *UpTrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID, sub types.LocalParticipant, sendUpdate bool) {
+func (u *UpTrackManager) maybeRemovePendingSubscriptionLocked(trackID livekit.TrackID, sub types.LocalParticipant, sendUpdate bool) {
 	subscriberIdentity := sub.Identity()
 
 	found := false
@@ -464,9 +465,42 @@ func (u *UpTrackManager) maybeRemovePendingSubscription(trackID livekit.TrackID,
 
 // creates subscriptions for tracks if permissions have been granted
 func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant) {
+	type ResolvedInfo struct {
+		sub   types.LocalParticipant
+		state livekit.ParticipantInfo_State
+	}
+
+	// gather all identites that need resolving
+	resolvedInfos := make(map[livekit.ParticipantIdentity]*ResolvedInfo)
+	u.lock.RLock()
+	for trackID, pending := range u.pendingSubscriptions {
+		track := u.getPublishedTrackLocked(trackID)
+		if track == nil {
+			// published track is gone
+			continue
+		}
+
+		for _, identity := range pending {
+			resolvedInfos[identity] = nil
+		}
+	}
+	u.lock.RUnlock()
+
+	for identity := range resolvedInfos {
+		sub := resolver(identity)
+		if sub != nil {
+			resolvedInfos[identity] = &ResolvedInfo{
+				sub:   sub,
+				state: sub.State(),
+			}
+		}
+	}
+
+	// check for subscriptions that can be reinstated
+	u.lock.Lock()
 	updatedPendingSubscriptions := make(map[livekit.TrackID][]livekit.ParticipantIdentity)
 	for trackID, pending := range u.pendingSubscriptions {
-		track := u.getPublishedTrack(trackID)
+		track := u.getPublishedTrackLocked(trackID)
 		if track == nil {
 			// published track is gone
 			continue
@@ -474,20 +508,18 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 
 		var updatedPending []livekit.ParticipantIdentity
 		for _, identity := range pending {
-			var sub types.LocalParticipant
-			if resolver != nil {
-				sub = resolver(identity)
-			}
-			if sub == nil || sub.State() == livekit.ParticipantInfo_DISCONNECTED {
+			resolvedInfo := resolvedInfos[identity]
+			if resolvedInfo == nil || resolvedInfo.sub == nil || resolvedInfo.state == livekit.ParticipantInfo_DISCONNECTED {
 				// do not keep this pending subscription as subscriber may be gone
 				continue
 			}
 
-			if !u.hasPermission(trackID, identity) {
+			if !u.hasPermissionLocked(trackID, identity) {
 				updatedPending = append(updatedPending, identity)
 				continue
 			}
 
+			sub := resolvedInfo.sub
 			if err := track.AddSubscriber(sub); err != nil {
 				u.params.Logger.Errorw("error reinstating subscription", err, "subscirberID", sub.ID(), "trackID", trackID)
 				// keep it in pending on error in case the error is transient
@@ -505,12 +537,35 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 	}
 
 	u.pendingSubscriptions = updatedPendingSubscriptions
+	u.lock.Unlock()
 }
 
 func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant) {
-	for _, track := range u.publishedTracks {
-		trackID := track.ID()
-		allowed := u.getAllowedSubscribers(trackID)
+	allowedSubs := make(map[livekit.TrackID][]livekit.ParticipantIdentity)
+	subs := make(map[livekit.ParticipantIdentity]types.LocalParticipant)
+	u.lock.RLock()
+	for trackID := range u.publishedTracks {
+		allowed := u.getAllowedSubscribersLocked(trackID)
+		if allowed == nil {
+			// no restrictions
+			continue
+		}
+
+		allowedSubs[trackID] = allowed
+
+		for _, identity := range allowed {
+			subs[identity] = nil
+		}
+	}
+	u.lock.RUnlock()
+
+	for identity := range subs {
+		subs[identity] = resolver(identity)
+	}
+
+	u.lock.Lock()
+	for trackID, track := range u.publishedTracks {
+		allowed := allowedSubs[trackID]
 		if allowed == nil {
 			// no restrictions
 			continue
@@ -518,15 +573,16 @@ func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantIdent
 
 		revokedSubscribers := track.RevokeDisallowedSubscribers(allowed)
 		for _, subIdentity := range revokedSubscribers {
-			sub := resolver(subIdentity)
+			sub := subs[subIdentity]
 			if sub == nil {
 				// participant may have disconnected
 				continue
 			}
 
-			u.maybeAddPendingSubscription(trackID, sub)
+			u.maybeAddPendingSubscriptionLocked(trackID, sub)
 		}
 	}
+	u.lock.Unlock()
 }
 
 func (u *UpTrackManager) DebugInfo() map[string]interface{} {

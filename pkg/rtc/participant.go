@@ -1558,7 +1558,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if req.Sid != "" {
-		track := p.getPublishedTrack(livekit.TrackID(req.Sid))
+		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
 			p.params.Logger.Infow("track not found for new codec publish", "trackID", req.Sid)
 			return nil
