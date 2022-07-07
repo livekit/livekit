@@ -165,13 +165,22 @@ func (s *StreamTracker) resetLocked() {
 
 func (s *StreamTracker) SetPaused(paused bool) {
 	s.lock.Lock()
-	defer s.lock.Unlock()
 
 	s.paused = paused
 
+	status := s.status
+	changed := false
 	if !paused {
 		s.resetLocked()
+	} else {
+		// bump generation to trigger exit of current worker
+		s.generation.Inc()
+
+		status, changed = s.maybeSetStatus(StreamStatusStopped)
 	}
+	s.lock.Unlock()
+
+	s.maybeNotifyStatus(status, changed)
 }
 
 // Observe a packet that's received
