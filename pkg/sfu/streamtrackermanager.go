@@ -72,6 +72,7 @@ type StreamTrackerManager struct {
 
 	availableLayers  []int32
 	maxExpectedLayer int32
+	paused           bool
 
 	onAvailableLayersChanged     func(availableLayers []int32)
 	onBitrateAvailabilityChanged func()
@@ -137,11 +138,15 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 				}
 			}
 
-			s.lock.RLock()
-			maxExpectedLayer := s.maxExpectedLayer
-			s.lock.RUnlock()
+			if exempt {
+				s.lock.RLock()
+				if layer > s.maxExpectedLayer || s.paused {
+					exempt = false
+				}
+				s.lock.RUnlock()
+			}
 
-			if !exempt || layer > maxExpectedLayer {
+			if !exempt {
 				s.removeAvailableLayer(layer)
 			} else {
 				s.logger.Debugw("not removing exempt layer", "layer", layer)
@@ -183,6 +188,7 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	}
 	s.availableLayers = make([]int32, 0)
 	s.maxExpectedLayer = DefaultMaxLayerSpatial
+	s.paused = false
 	s.lock.Unlock()
 
 	for _, tracker := range trackers {
@@ -200,9 +206,10 @@ func (s *StreamTrackerManager) GetTracker(layer int32) *StreamTracker {
 }
 
 func (s *StreamTrackerManager) SetPaused(paused bool) {
-	s.lock.RLock()
+	s.lock.Lock()
+	s.paused = paused
 	trackers := s.trackers
-	s.lock.RUnlock()
+	s.lock.Unlock()
 
 	for _, tracker := range trackers {
 		if tracker != nil {
