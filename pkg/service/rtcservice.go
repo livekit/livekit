@@ -183,7 +183,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, ""),
-		pi.Identity, "",
+		pi.Identity,
+		"",
+		false,
 	)
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
