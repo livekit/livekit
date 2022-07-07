@@ -129,7 +129,7 @@ func Recover() {
 }
 
 // logger helpers
-func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID) logger.Logger {
+func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID, isRemote bool) logger.Logger {
 	lr := logr.Logger(l)
 	if identity != "" {
 		lr = lr.WithValues("participant", identity)
@@ -137,6 +137,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	if sid != "" {
 		lr = lr.WithValues("pID", sid)
 	}
+	lr = lr.WithValues("remote", isRemote)
 	return logger.Logger(lr)
 }
 

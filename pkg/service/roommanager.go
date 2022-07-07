@@ -240,7 +240,7 @@ func (r *RoomManager) StartSession(
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
-	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid)
+	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
 	protoRoom := room.ToProto()
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
@@ -401,7 +401,9 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetDefaultLogger(), room.Name(), room.ID()),
-		participant.Identity(), participant.ID(),
+		participant.Identity(),
+		participant.ID(),
+		false,
 	)
 
 	// send first refresh for cases when client token is close to expiring
@@ -469,6 +471,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, room.ID()),
 		identity,
 		sid,
+		false,
 	)
 
 	switch rm := msg.Message.(type) {
