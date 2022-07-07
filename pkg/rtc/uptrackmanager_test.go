@@ -191,16 +191,16 @@ func TestSubscriptionPermission(t *testing.T) {
 			AllParticipants: true,
 		}
 		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
 		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.False(t, um.hasPermission("audio", "p1"))
-		require.False(t, um.hasPermission("audio", "p2"))
+		require.False(t, um.hasPermissionLocked("audio", "p1"))
+		require.False(t, um.hasPermissionLocked("audio", "p2"))
 
 		// allow all tracks for participants
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -216,22 +216,22 @@ func TestSubscriptionPermission(t *testing.T) {
 			},
 		}
 		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.True(t, um.hasPermission("video", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.True(t, um.hasPermissionLocked("video", "p2"))
 
 		// add a new track after permissions are set
 		trs := &typesfakes.FakeMediaTrack{}
 		trs.IDReturns("screen")
 		um.publishedTracks["screen"] = trs
 
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.True(t, um.hasPermission("video", "p2"))
-		require.True(t, um.hasPermission("screen", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.True(t, um.hasPermissionLocked("video", "p2"))
+		require.True(t, um.hasPermissionLocked("screen", "p2"))
 
 		// allow all tracks for some and restrictive for others
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -251,36 +251,36 @@ func TestSubscriptionPermission(t *testing.T) {
 			},
 		}
 		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
 
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.False(t, um.hasPermission("video", "p2"))
-		require.False(t, um.hasPermission("screen", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.False(t, um.hasPermissionLocked("video", "p2"))
+		require.False(t, um.hasPermissionLocked("screen", "p2"))
 
-		require.False(t, um.hasPermission("audio", "p3"))
-		require.True(t, um.hasPermission("video", "p3"))
-		require.False(t, um.hasPermission("screen", "p3"))
+		require.False(t, um.hasPermissionLocked("audio", "p3"))
+		require.True(t, um.hasPermissionLocked("video", "p3"))
+		require.False(t, um.hasPermissionLocked("screen", "p3"))
 
 		// add a new track after restrictive permissions are set
 		trw := &typesfakes.FakeMediaTrack{}
 		trw.IDReturns("watch")
 		um.publishedTracks["watch"] = trw
 
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
-		require.True(t, um.hasPermission("watch", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
+		require.True(t, um.hasPermissionLocked("watch", "p1"))
 
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.False(t, um.hasPermission("video", "p2"))
-		require.False(t, um.hasPermission("screen", "p2"))
-		require.False(t, um.hasPermission("watch", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.False(t, um.hasPermissionLocked("video", "p2"))
+		require.False(t, um.hasPermissionLocked("screen", "p2"))
+		require.False(t, um.hasPermissionLocked("watch", "p2"))
 
-		require.False(t, um.hasPermission("audio", "p3"))
-		require.True(t, um.hasPermission("video", "p3"))
-		require.False(t, um.hasPermission("screen", "p3"))
-		require.False(t, um.hasPermission("watch", "p3"))
+		require.False(t, um.hasPermissionLocked("audio", "p3"))
+		require.True(t, um.hasPermissionLocked("video", "p3"))
+		require.False(t, um.hasPermissionLocked("screen", "p3"))
+		require.False(t, um.hasPermissionLocked("watch", "p3"))
 	})
 }
