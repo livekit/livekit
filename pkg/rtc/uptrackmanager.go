@@ -137,7 +137,7 @@ func (u *UpTrackManager) AddSubscriber(sub types.LocalParticipant, params types.
 		trackID := track.ID()
 		subscriberIdentity := sub.Identity()
 		if !u.hasPermissionLocked(trackID, subscriberIdentity) {
-			u.maybeAddPendingSubscriptionLocked(trackID, sub)
+			u.maybeAddPendingSubscriptionLocked(trackID, subscriberIdentity, sub, nil)
 			continue
 		}
 
@@ -418,9 +418,12 @@ func (u *UpTrackManager) getAllowedSubscribersLocked(trackID livekit.TrackID) []
 	return allowed
 }
 
-func (u *UpTrackManager) maybeAddPendingSubscriptionLocked(trackID livekit.TrackID, sub types.LocalParticipant) {
-	subscriberIdentity := sub.Identity()
-
+func (u *UpTrackManager) maybeAddPendingSubscriptionLocked(
+	trackID livekit.TrackID,
+	subscriberIdentity livekit.ParticipantIdentity,
+	sub types.LocalParticipant,
+	resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant,
+) {
 	pending := u.pendingSubscriptions[trackID]
 	for _, identity := range pending {
 		if identity == subscriberIdentity {
@@ -430,9 +433,21 @@ func (u *UpTrackManager) maybeAddPendingSubscriptionLocked(trackID livekit.Track
 	}
 
 	u.pendingSubscriptions[trackID] = append(u.pendingSubscriptions[trackID], subscriberIdentity)
-	u.params.Logger.Debugw("adding pending subscription", "subscriberID", sub.ID(), "trackID", trackID)
+	u.params.Logger.Debugw("adding pending subscription", "subscriberIdentity", subscriberIdentity, "trackID", trackID)
 	u.opsQueue.Enqueue(func() {
-		sub.SubscriptionPermissionUpdate(u.params.SID, trackID, false)
+		if sub == nil {
+			if resolver == nil {
+				u.params.Logger.Warnw("no resolver", nil)
+			} else {
+				sub = resolver(subscriberIdentity)
+			}
+		}
+
+		if sub != nil {
+			sub.SubscriptionPermissionUpdate(u.params.SID, trackID, false)
+		} else {
+			u.params.Logger.Warnw("could not send subscription permission update, no subscriber", nil, "subscriberIdentity", subscriberIdentity)
+		}
 	})
 }
 
@@ -541,48 +556,21 @@ func (u *UpTrackManager) processPendingSubscriptions(resolver func(participantId
 }
 
 func (u *UpTrackManager) maybeRevokeSubscriptions(resolver func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant) {
-	allowedSubs := make(map[livekit.TrackID][]livekit.ParticipantIdentity)
-	subs := make(map[livekit.ParticipantIdentity]types.LocalParticipant)
-	u.lock.RLock()
-	for trackID := range u.publishedTracks {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	for trackID, track := range u.publishedTracks {
 		allowed := u.getAllowedSubscribersLocked(trackID)
 		if allowed == nil {
 			// no restrictions
 			continue
 		}
 
-		allowedSubs[trackID] = allowed
-
-		for _, identity := range allowed {
-			subs[identity] = nil
+		revoked := track.RevokeDisallowedSubscribers(allowed)
+		for _, subIdentity := range revoked {
+			u.maybeAddPendingSubscriptionLocked(trackID, subIdentity, nil, resolver)
 		}
 	}
-	u.lock.RUnlock()
-
-	for identity := range subs {
-		subs[identity] = resolver(identity)
-	}
-
-	u.lock.Lock()
-	for trackID, track := range u.publishedTracks {
-		allowed := allowedSubs[trackID]
-		if allowed == nil {
-			// no restrictions
-			continue
-		}
-
-		revokedSubscribers := track.RevokeDisallowedSubscribers(allowed)
-		for _, subIdentity := range revokedSubscribers {
-			sub := subs[subIdentity]
-			if sub == nil {
-				// participant may have disconnected
-				continue
-			}
-
-			u.maybeAddPendingSubscriptionLocked(trackID, sub)
-		}
-	}
-	u.lock.Unlock()
 }
 
 func (u *UpTrackManager) DebugInfo() map[string]interface{} {
