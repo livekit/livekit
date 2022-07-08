@@ -260,9 +260,6 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
-	if d.IsClosed() {
-		return webrtc.RTPCodecParameters{}, ErrDownTrackClosed
-	}
 	if d.bound.Load() {
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
@@ -278,8 +275,14 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if codec.MimeType == "" {
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
-	d.logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec)
 
+	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
+	if d.IsClosed() {
+		d.logger.Debugw("DownTrack closed before bind")
+		return codec, nil
+	}
+
+	d.logger.Debugw("DownTrack.Bind", "codecs", d.upstreamCodecs, "matchCodec", codec)
 	d.ssrc = uint32(t.SSRC())
 	d.payloadType = uint8(codec.PayloadType)
 	d.writeStream = t.WriteStream()
