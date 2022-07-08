@@ -260,9 +260,6 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
-	if d.IsClosed() {
-		return webrtc.RTPCodecParameters{}, ErrDownTrackClosed
-	}
 	if d.bound.Load() {
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
