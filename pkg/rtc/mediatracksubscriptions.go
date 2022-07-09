@@ -93,6 +93,10 @@ func (t *MediaTrackSubscriptions) Restart() {
 }
 
 func (t *MediaTrackSubscriptions) Stop() {
+	t.stopMaxQualityTimer()
+}
+
+func (t *MediaTrackSubscriptions) Close() {
 	t.qualityNotifyOpQueue.Stop()
 	t.stopMaxQualityTimer()
 }

@@ -1674,7 +1674,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	p.params.Logger.Debugw("media track received", "track", track.ID(), "kind", track.Kind())
+	p.params.Logger.Debugw("media track received", "trackID", track.ID(), "kind", track.Kind())
 	var mid string
 	for _, tr := range p.publisher.pc.GetTransceivers() {
 		if tr.Receiver() == rtpReceiver {
