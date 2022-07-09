@@ -280,7 +280,7 @@ func (t *MediaTrackReceiver) Close() {
 	onclose := t.onClose
 	t.lock.RUnlock()
 
-	t.MediaTrackSubscriptions.Stop()
+	t.MediaTrackSubscriptions.Close()
 	for _, f := range onclose {
 		f()
 	}
