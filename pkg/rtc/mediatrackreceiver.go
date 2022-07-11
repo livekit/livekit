@@ -266,7 +266,7 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 func (t *MediaTrackReceiver) TryClose() bool {
 	t.lock.RLock()
 	if len(t.receiversShadow) > 0 {
-		t.lock.Unlock()
+		t.lock.RUnlock()
 		return false
 	}
 	t.lock.RUnlock()
