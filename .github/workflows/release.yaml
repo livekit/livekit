@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-12
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Fetch all tags
