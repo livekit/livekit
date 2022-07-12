@@ -6,7 +6,7 @@ set -o errtrace
 set -o errexit
 set -o pipefail
 
-REPO="livekit-cli"
+REPO="livekit"
 INSTALL_PATH="/usr/local/bin"
 
 log()  { printf "%b\n" "$*"; }
@@ -51,14 +51,23 @@ ARCH="$(/usr/bin/uname -m)"
 if [[ "${ARCH}" == "aarch64" ]]
 then
   ARCH="arm64"
+elif [[ "${ARCH}" == "x86_64" ]]
+then
+  ARCH="amd64"
 fi
 
 VERSION=$(get_latest_version)
 ARCHIVE_URL="https://github.com/livekit/$REPO/releases/download/v${VERSION}/${REPO}_${VERSION}_linux_${ARCH}.tar.gz"
 
-log "Installing ${VERSION}"
-log "fetching from $ARCHIVE_URL"
+# Ensure version follows SemVer
+if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+then
+  abort "Invalid version: ${VERSION}"
+fi
+
+log "Installing ${REPO} ${VERSION}"
+log "Downloading from ${ARCHIVE_URL}..."
 
 curl -s -L "${ARCHIVE_URL}" | tar xzf - -C "${INSTALL_PATH}" --wildcards --no-anchored "$REPO*"
 
-log "\n$REPO is installed to $INSTALL_PATH\n"
+log "\nlivekit-server is installed to $INSTALL_PATH\n"
