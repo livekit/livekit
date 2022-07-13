@@ -171,6 +171,9 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				{Type: webrtc.TypeRTCPFBNACK},
 				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
 			},
+			Audio: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
 		},
 	}
 	if rtcConf.CongestionControl.UseSendSideBWE {
