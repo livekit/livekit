@@ -104,6 +104,18 @@ Client SDK enables your frontend to include interactive, multi-user experiences.
       <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
     </td>
   </tr>
+  <tr>
+    <td>Flutter</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
+    </td>
+    <td>native</td>
+    <td>
+      <a href="https://docs.livekit.io/client-sdk-flutter/" target="_blank" rel="noopener noreferrer">docs</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-flutter/tree/main/example" target="_blank" rel="noopener noreferrer">example</a>
+    </td>
+  </tr>
   <!-- Unity -->
   <tr>
     <td>Unity WebGL</td>
@@ -121,7 +133,7 @@ Client SDK enables your frontend to include interactive, multi-user experiences.
     <td>
       <a href="https://github.com/livekit/client-sdk-react-native" target="_blank" rel="noopener noreferrer">client-sdk-react-native</a>
     </td>
-    <td></td>
+    <td>native</td>
     <td></td>
   </tr>
 </table>
