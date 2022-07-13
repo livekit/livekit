@@ -759,26 +759,6 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
-		p.lock.Lock()
-		if p.reliableDC != nil {
-			p.reliableDC.Close()
-			p.reliableDC = nil
-		}
-		if p.reliableDCSub != nil {
-			p.reliableDCSub.Close()
-			p.reliableDCSub = nil
-		}
-
-		if p.lossyDC != nil {
-			p.lossyDC.Close()
-			p.lossyDC = nil
-		}
-		if p.lossyDCSub != nil {
-			p.lossyDCSub.Close()
-			p.lossyDCSub = nil
-		}
-		p.lock.Unlock()
-
 		for _, dt := range downTracksToClose {
 			dt.Close()
 		}
