@@ -270,7 +270,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		primaryPC = p.subscriber.pc
 		secondaryPC = p.publisher.pc
 		if !params.Migration {
-			if err := p.createDataChannelForSubscriberAsPrimary(); err != nil {
+			if err := p.createDataChannelForSubscriberAsPrimary(nil); err != nil {
 				return nil, err
 			}
 		}
@@ -290,7 +290,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	return p, nil
 }
 
-func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
+func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary(pendingDataChannels []*livekit.DataChannelInfo) error {
 	primaryPC := p.subscriber.pc
 	ordered := true
 	var (
@@ -302,7 +302,7 @@ func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 	// data channels with default ID.
 	// for new version migration clients, we create data channels with new ID and negotiate with client
 
-	for _, dc := range p.pendingDataChannels {
+	for _, dc := range pendingDataChannels {
 		if dc.Target == livekit.SignalTarget_SUBSCRIBER {
 			if dc.Label == ReliableDataChannel {
 				// pion use step 2 for auto generated ID, so we need to add 4 to avoid conflict
@@ -315,6 +315,7 @@ func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 		}
 	}
 
+	p.lock.Lock()
 	var err error
 	negotiated := p.params.Migration && reliableIDPtr == nil
 	p.reliableDCSub, err = primaryPC.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
@@ -323,9 +324,11 @@ func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 		Negotiated: &negotiated,
 	})
 	if err != nil {
+		p.lock.Unlock()
 		return err
 	}
 	p.reliableDCSub.OnOpen(p.incActiveCounter)
+
 	retransmits := uint16(0)
 	negotiated = p.params.Migration && lossyIDPtr == nil
 	p.lossyDCSub, err = primaryPC.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
@@ -335,9 +338,12 @@ func (p *ParticipantImpl) createDataChannelForSubscriberAsPrimary() error {
 		Negotiated:     &negotiated,
 	})
 	if err != nil {
+		p.lock.Unlock()
 		return err
 	}
 	p.lossyDCSub.OnOpen(p.incActiveCounter)
+	p.lock.Unlock()
+
 	return nil
 }
 
@@ -641,13 +647,14 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 		p.pendingTracks[t.GetCid()] = pendingInfo
 	}
 	p.pendingDataChannels = dataChannels
+	p.pendingTracksLock.Unlock()
 
 	if p.SubscriberAsPrimary() {
-		if err := p.createDataChannelForSubscriberAsPrimary(); err != nil {
+		if err := p.createDataChannelForSubscriberAsPrimary(dataChannels); err != nil {
 			p.params.Logger.Errorw("create data channel failed", err)
 		}
 	}
-	p.pendingTracksLock.Unlock()
+
 	p.subscriber.SetPreviousAnswer(previousAnswer)
 }
 
@@ -657,7 +664,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	p.params.Logger.Debugw("setting subPC answer")
+	p.params.Logger.Debugw("setting subPC answer", "answer", sdp)
 
 	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
@@ -752,6 +759,26 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
+		p.lock.Lock()
+		if p.reliableDC != nil {
+			p.reliableDC.Close()
+			p.reliableDC = nil
+		}
+		if p.reliableDCSub != nil {
+			p.reliableDCSub.Close()
+			p.reliableDCSub = nil
+		}
+
+		if p.lossyDC != nil {
+			p.lossyDC.Close()
+			p.lossyDC = nil
+		}
+		if p.lossyDCSub != nil {
+			p.lossyDCSub.Close()
+			p.lossyDCSub = nil
+		}
+		p.lock.Unlock()
+
 		for _, dt := range downTracksToClose {
 			dt.Close()
 		}
@@ -777,6 +804,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.lock.Unlock()
 		return
 	}
+
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
 	var pendingOffer *webrtc.SessionDescription
 	p.migrateState.Store(s)
@@ -785,9 +813,16 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.pendingOffer = nil
 	}
 	p.lock.Unlock()
+
 	if s == types.MigrateStateComplete {
-		p.handlePendingPublisherDataChannels()
+		p.pendingTracksLock.Lock()
+		pendingDataChannels := p.pendingDataChannels
+		p.pendingDataChannels = nil
+		p.pendingTracksLock.Unlock()
+
+		p.handlePendingPublisherDataChannels(pendingDataChannels)
 	}
+
 	if pendingOffer != nil {
 		_, err := p.HandleOffer(*pendingOffer)
 		if err != nil {
@@ -1160,7 +1195,7 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		return
 	}
 
-	p.params.Logger.Debugw("sending server offer to participant")
+	p.params.Logger.Debugw("sending server offer to participant", "offer", offer)
 
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
@@ -1217,14 +1252,18 @@ func (p *ParticipantImpl) onDataChannel(dc *webrtc.DataChannel) {
 	}
 	switch dc.Label() {
 	case ReliableDataChannel:
+		p.lock.Lock()
 		p.reliableDC = dc
+		p.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if p.CanPublishData() {
 				p.handleDataMessage(livekit.DataPacket_RELIABLE, msg.Data)
 			}
 		})
 	case LossyDataChannel:
+		p.lock.Lock()
 		p.lossyDC = dc
+		p.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if p.CanPublishData() {
 				p.handleDataMessage(livekit.DataPacket_LOSSY, msg.Data)
@@ -1992,10 +2031,16 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	return info
 }
 
-func (p *ParticipantImpl) handlePendingPublisherDataChannels() {
+func (p *ParticipantImpl) handlePendingPublisherDataChannels(pendingDataChannels []*livekit.DataChannelInfo) {
 	ordered := true
 	negotiated := true
-	for _, ci := range p.pendingDataChannels {
+
+	p.lock.RLock()
+	lossyDC := p.lossyDC
+	reliableDC := p.reliableDC
+	p.lock.RUnlock()
+
+	for _, ci := range pendingDataChannels {
 		var (
 			dc  *webrtc.DataChannel
 			err error
@@ -2003,7 +2048,7 @@ func (p *ParticipantImpl) handlePendingPublisherDataChannels() {
 		if ci.Target == livekit.SignalTarget_SUBSCRIBER {
 			continue
 		}
-		if ci.Label == LossyDataChannel && p.lossyDC == nil {
+		if ci.Label == LossyDataChannel && lossyDC == nil {
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
 			dc, err = p.publisher.pc.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
@@ -2012,7 +2057,7 @@ func (p *ParticipantImpl) handlePendingPublisherDataChannels() {
 				Negotiated:     &negotiated,
 				ID:             &id,
 			})
-		} else if ci.Label == ReliableDataChannel && p.reliableDC == nil {
+		} else if ci.Label == ReliableDataChannel && reliableDC == nil {
 			id := uint16(ci.GetId())
 			dc, err = p.publisher.pc.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
 				Ordered:    &ordered,
@@ -2027,7 +2072,6 @@ func (p *ParticipantImpl) handlePendingPublisherDataChannels() {
 			p.onDataChannel(dc)
 		}
 	}
-	p.pendingDataChannels = nil
 }
 
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
