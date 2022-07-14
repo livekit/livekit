@@ -32,6 +32,10 @@ func main() {
 		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
 		Flags: []cli.Flag{
+			&cli.StringSliceFlag{
+				Name:  "bind",
+				Usage: "IP address to listen on, use flag multiple times to specify multiple addresses",
+			},
 			&cli.StringFlag{
 				Name:  "config",
 				Usage: "path to LiveKit config file",
@@ -92,7 +96,7 @@ func main() {
 			},
 			&cli.BoolFlag{
 				Name:  "dev",
-				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production.",
+				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
 			},
 		},
 		Action: startServer,
@@ -108,7 +112,9 @@ func main() {
 				Action: printPorts,
 			},
 			{
+				// this subcommand is deprecated, token generation is provided by CLI
 				Name:   "create-join-token",
+				Hidden: true,
 				Usage:  "create a room join token for development use",
 				Action: createToken,
 				Flags: []cli.Flag{
@@ -155,9 +161,8 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	}
 	serverlogger.InitFromConfig(conf.Logging)
 
-	if c.String("config") == "" && c.String("config-body") == "" {
-		// without config, use single port UDP
-		conf.Development = true
+	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
+		// use single port UDP when no config is provided
 		conf.RTC.UDPPort = 7882
 		conf.RTC.ICEPortRangeStart = 0
 		conf.RTC.ICEPortRangeEnd = 0
@@ -170,6 +175,13 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 			)
 			conf.Keys = map[string]string{
 				"devkey": "secret",
+			}
+			// when dev mode and using shared keys, we'll bind to localhost by default
+			if conf.BindAddresses == nil {
+				conf.BindAddresses = []string{
+					"127.0.0.1",
+					"[::1]",
+				}
 			}
 		}
 	}
