@@ -17,7 +17,7 @@ LiveKit is written in Go, using the awesome [Pion WebRTC](https://github.com/pio
 - Built for production - JWT authentication
 - Robust networking & connectivity. UDP/TCP/TURN
 - Easy to deploy - single binary, docker & kubernetes
-- Advanced features
+- Advanced features, including:
   - [speaker detection](https://docs.livekit.io/guides/room/receive/#speaker-detection)
   - [simulcast](https://docs.livekit.io/guides/room/publish/#video-simulcast)
   - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
@@ -40,7 +40,7 @@ Head to [our playground](https://livekit.io/playground) and give it a spin. Buil
 
 Client SDK enables your frontend to include interactive, multi-user experiences.
 
-<table style="table-layout:fixed; white-space: nowrap;">
+<table>
   <tr>
     <th>Language</th>
     <th>Repo</th>
@@ -157,7 +157,7 @@ Server SDKs enables your backend to generate [access tokens](https://docs.liveki
 - [Docker image](https://hub.docker.com/r/livekit/livekit-server)
 - [Helm charts](https://github.com/livekit/livekit-helm)
 
-## Installing
+## Install
 
 We recommend installing [livekit-cli](https://github.com/livekit/livekit-cli) along with the server. It lets you access server APIs, create tokens, and generate test traffic.
 
@@ -181,18 +181,18 @@ Download the [latest release here](https://github.com/livekit/livekit/releases/l
 
 ### Starting LiveKit
 
-Start LiveKit by running `livekit-server` with no arguments. It will start in development mode by default with a set of placeholder API key/secret pair.
+Start LiveKit by running `livekit-server` with no arguments. It will start in development mode by default with a set of placeholder API key/secret.
 
 ```
 API Key: devkey
 API Secret: secret
 ```
 
-To customize your setup for production, refer to [deployment docs](https://docs.livekit.io/deploy/)
+To customize your setup for production, refer to our [deployment docs](https://docs.livekit.io/deploy/)
 
-### Creating an Access Token
+### Creating an access token
 
-Each user that connects to a LiveKit room requires an [Access Token](https://docs.livekit.io/guides/access-tokens/). It's a JWT token that encodes the user's identity as well as permissions granted to them. You can generate tokens with our CLI:
+Each user that connects to a LiveKit room requires an [access token](https://docs.livekit.io/guides/access-tokens/). It's a JWT token that encodes the user's identity and the permissions granted to them. You can generate tokens with our CLI:
 
 ```shell
 livekit-cli create-token \
@@ -203,8 +203,7 @@ livekit-cli create-token \
 
 ### Test with example app
 
-Head over to the [example app](https://example.livekit.io) and enter the generated token to connect to your LiveKit
-server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
+Head over to the [example app](https://example.livekit.io) and enter the generated token to connect to your LiveKit server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
 
 Once connected, your video and audio are now published to your new LiveKit instance!
 
@@ -218,11 +217,11 @@ livekit-cli join-room \
     --publish-demo
 ```
 
-This command publishes a demo video loop to the room. Because of the way the video clip is encoded (keyframes every 3 seconds), there is a slight delay before browser has sufficient data to start rendering frames. This is an artifact of the simulation.
+This command publishes a demo video loop to the room. Because of the way the video clip is encoded (keyframes every 3 seconds), there is a slight delay before the browser has sufficient data to start rendering frames. This is an artifact of the simulation.
 
 ## Deploying to a server
 
-Deployment Docs: https://docs.livekit.io/deploy/
+[Read our deployment docs](https://docs.livekit.io/deploy/) for more information.
 
 ## Building from source
 
