@@ -60,6 +60,11 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		return nil, false, err
 	}
 
+	sysPacketsOut, sysPacketsDropped, err := getTCStats()
+	if err != nil {
+		return nil, false, err
+	}
+
 	bytesInNow := bytesIn.Load()
 	bytesOutNow := bytesOut.Load()
 	packetsInNow := packetsIn.Load()
@@ -110,6 +115,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
 		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
+		SysPacketsOut:              sysPacketsOut,
+		SysPacketsDropped:          sysPacketsDropped,
 	}
 
 	// update stats
@@ -122,6 +129,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
+		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPacketsOut), elapsed)
+		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysPacketsDropped), elapsed)
 	}
 
 	return stats, computeAverage, nil

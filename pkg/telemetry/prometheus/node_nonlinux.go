@@ -9,8 +9,10 @@ import (
 	"github.com/mackerelio/go-osstat/cpu"
 )
 
-var cpuStatsLock sync.RWMutex
-var lastCPUTotal, lastCPUIdle uint64
+var (
+	cpuStatsLock              sync.RWMutex
+	lastCPUTotal, lastCPUIdle uint64
+)
 
 func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 	cpuInfo, err := cpu.Get()
@@ -29,5 +31,10 @@ func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 
 	numCPUs = uint32(runtime.NumCPU())
 
+	return
+}
+
+func getTCStats() (packets, drops uint32, err error) {
+	// linux only
 	return
 }

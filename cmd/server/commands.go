@@ -159,14 +159,15 @@ func listNodes(c *cli.Context) error {
 	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
-		"CPUs", "CPU Usage /\nLoad Avg",
-		"Rooms", "Clients /\nTracks In/Out",
-		"Bytes/s In/Out /\nBytes Total", "Packets/s In/Out /\nPackets Total",
-		"Nack/s /\nNack Total", "Retrans/s /\nRetrans Total",
-		"Started At /\nUpdated At",
+		"CPUs", "CPU Usage\nLoad Avg",
+		"Rooms", "Clients\nTracks In/Out",
+		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "TC Pkts/s Out / Dropped\nTC Pkts Out / Dropped",
+		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
+		"Started At\nUpdated At",
 	})
 	table.SetColumnAlignment([]int{
 		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
 		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
@@ -184,6 +185,7 @@ func listNodes(c *cli.Context) error {
 		cpus := strconv.Itoa(int(stats.NumCpus))
 		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
 			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
+		sysPackets := fmt.Sprintf("%vps / %vps\n%v / %v", stats.SysPacketsOutPerSec, stats.SysPacketsDroppedPerSec, stats.SysPacketsOut, stats.SysPacketsDropped)
 
 		// Room stats
 		rooms := strconv.Itoa(int(stats.NumRooms))
@@ -205,7 +207,7 @@ func listNodes(c *cli.Context) error {
 			idAndState, node.Ip, node.Region,
 			cpus, cpuUsageAndLoadAvg,
 			rooms, clientsAndTracks,
-			bytes, packets,
+			bytes, packets, sysPackets,
 			nacks, retransmit,
 			startedAndUpdated,
 		})
