@@ -974,8 +974,8 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 	subTrack := p.subscribedTracks[trackID]
 	if subTrack == nil {
 		p.lock.Unlock()
-		p.params.Logger.Warnw("could not find subscribed track", nil, "trackID", trackID)
-		return errors.New("could not find subscribed track")
+		p.params.Logger.Infow("could not find subscribed track", "trackID", trackID)
+		return nil
 	}
 	p.lock.Unlock()
 
