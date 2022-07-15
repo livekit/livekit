@@ -39,14 +39,14 @@ func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 func getTCStats() (packets, drops uint32, err error) {
 	rtnl, err := tc.Open(&tc.Config{})
 	if err != nil {
-		fmt.Errorf("could not open rtnetlink socket: %v\n", err)
+		err = fmt.Errorf("could not open rtnetlink socket: %v", err)
 		return
 	}
 	defer rtnl.Close()
 
 	qdiscs, err := rtnl.Qdisc().Get()
 	if err != nil {
-		err = fmt.Errorf("could not get qdiscs: %v\n", err)
+		err = fmt.Errorf("could not get qdiscs: %v", err)
 		return
 	}
 
