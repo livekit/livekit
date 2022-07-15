@@ -108,6 +108,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
+	bindLock      sync.Mutex
 	logger        logger.Logger
 	id            livekit.TrackID
 	subscriberID  livekit.ParticipantID
@@ -260,7 +261,9 @@ func NewDownTrack(
 // This asserts that the code requested is supported by the remote peer.
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
+	d.bindLock.Lock()
 	if d.bound.Load() {
+		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
 	var codec webrtc.RTPCodecParameters
@@ -273,12 +276,14 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 
 	if codec.MimeType == "" {
+		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, webrtc.ErrUnsupportedCodec
 	}
 
 	// if a downtrack is closed before bind, it already unsubscribed from client, don't do subsequent operation and return here.
 	if d.IsClosed() {
 		d.logger.Debugw("DownTrack closed before bind")
+		d.bindLock.Unlock()
 		return codec, nil
 	}
 
@@ -299,6 +304,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.onBind()
 	}
 	d.bound.Store(true)
+	d.bindLock.Unlock()
 
 	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
 	d.connectionStats.Start()
@@ -642,6 +648,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		return
 	}
 
+	d.bindLock.Lock()
 	d.logger.Infow("close down track", "flushBlankFrame", flush)
 	if d.bound.Load() {
 		if d.forwarder != nil {
@@ -670,6 +677,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.receiver.DeleteDownTrack(d.subscriberID)
 	}
 
+	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
 	d.logger.Infow("rtp stats", "stats", d.rtpStats.ToString())
