@@ -301,7 +301,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		go t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), utils.QualityForSpatialLayer(layer))
+		t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), utils.QualityForSpatialLayer(layer))
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
@@ -517,7 +517,7 @@ func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID liveki
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange(false)
+	go t.UpdateQualityChange(false)
 }
 
 func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -563,7 +563,7 @@ func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.
 	}
 	t.maxQualityLock.Unlock()
 
-	t.UpdateQualityChange(false)
+	go t.UpdateQualityChange(false)
 }
 
 func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {

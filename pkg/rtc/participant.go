@@ -973,6 +973,7 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 
 	subTrack := p.subscribedTracks[trackID]
 	if subTrack == nil {
+		// will get set when subscribed track is added
 		p.lock.Unlock()
 		p.params.Logger.Infow("could not find subscribed track", "trackID", trackID)
 		return nil
@@ -1969,6 +1970,7 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
+			p.params.Logger.Infow("exiting RTCP send worker")
 			return
 		}
 
