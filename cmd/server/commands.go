@@ -195,7 +195,7 @@ func listNodes(c *cli.Context) error {
 			humanize.Bytes(stats.BytesIn), humanize.Bytes(stats.BytesOut))
 		packets := fmt.Sprintf("%s / %s\n%s / %s", humanize.Comma(int64(stats.PacketsInPerSec)), humanize.Comma(int64(stats.PacketsOutPerSec)),
 			strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsIn), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsOut), 2, "")))
-		sysPackets := fmt.Sprintf("%v %%\n%v / %v", stats.SysPacketsDroppedPctPerSec,
+		sysPackets := fmt.Sprintf("%.2f %%\n%v / %v", stats.SysPacketsDroppedPctPerSec*100,
 			strings.TrimSpace(humanize.SIWithDigits(float64(stats.SysPacketsOutPerSec), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.SysPacketsDroppedPerSec), 2, "")))
 		nacks := fmt.Sprintf("%.2f\n%s", stats.NackPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.NackTotal), 2, "")))
 		retransmit := fmt.Sprintf("%.2f\n%s", stats.RetransmitPacketsOutPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.RetransmitPacketsOut), 2, "")))
