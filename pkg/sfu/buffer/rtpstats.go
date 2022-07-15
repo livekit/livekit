@@ -259,10 +259,6 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		r.highestSN = rtph.SequenceNumber
 		r.highestTS = rtph.Timestamp
 		r.highestTime = packetTime
-
-		if rtph.Marker {
-			r.frames++
-		}
 	}
 
 	if !isDuplicate {
@@ -271,6 +267,10 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			r.bytesPadding += pktSize
 		} else {
 			r.bytes += pktSize
+
+			if rtph.Marker {
+				r.frames++
+			}
 		}
 
 		r.updateJitter(rtph, packetTime)
