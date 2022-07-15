@@ -18,6 +18,11 @@ const (
 var (
 	MessageCounter          *prometheus.CounterVec
 	ServiceOperationCounter *prometheus.CounterVec
+
+	sysPacketsStart              uint32
+	sysDroppedPacketsStart       uint32
+	promSysPacketGauge           *prometheus.GaugeVec
+	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
 func init() {
@@ -42,8 +47,33 @@ func init() {
 		[]string{"type", "status", "error_type"},
 	)
 
+	promSysPacketGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "packet_total",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			Help:        "System level packet count. Count starts at 0 when service is first started.",
+		},
+		[]string{"type"},
+	)
+
+	promSysDroppedPacketPctGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "dropped_packets",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			Help:        "System level dropped outgoing packet percentage.",
+		},
+	)
+
 	prometheus.MustRegister(MessageCounter)
 	prometheus.MustRegister(ServiceOperationCounter)
+	prometheus.MustRegister(promSysPacketGauge)
+	prometheus.MustRegister(promSysDroppedPacketPctGauge)
+
+	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
 	initPacketStats(nodeID)
 	initRoomStats(nodeID)
@@ -59,6 +89,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	if err != nil {
 		return nil, false, err
 	}
+
+	sysPackets, sysDroppedPackets, err := getTCStats()
+	if err != nil {
+		return nil, false, err
+	}
+	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
+	promSysPacketGauge.WithLabelValues("dropped").Set(float64(sysDroppedPackets - sysDroppedPacketsStart))
 
 	bytesInNow := bytesIn.Load()
 	bytesOutNow := bytesOut.Load()
@@ -110,6 +147,8 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
 		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
+		SysPacketsOut:              sysPackets,
+		SysPacketsDropped:          sysDroppedPackets,
 	}
 
 	// update stats
@@ -122,6 +161,16 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
 		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
+		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPackets), elapsed)
+		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
+
+		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
+		if packetTotal == 0 {
+			stats.SysPacketsDroppedPctPerSec = 0
+		} else {
+			stats.SysPacketsDroppedPctPerSec = float32(stats.SysPacketsDroppedPerSec) / float32(packetTotal)
+		}
+		promSysDroppedPacketPctGauge.Set(float64(stats.SysPacketsDroppedPctPerSec))
 	}
 
 	return stats, computeAverage, nil
