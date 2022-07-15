@@ -46,7 +46,7 @@ func TestJoinedState(t *testing.T) {
 	t.Run("should be current time when a participant joins", func(t *testing.T) {
 		s := time.Now().Unix()
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		require.Equal(t, s, rm.FirstJoinedAt())
+		require.LessOrEqual(t, s, rm.FirstJoinedAt())
 		require.Equal(t, int64(0), rm.LastLeftAt())
 	})
 
@@ -55,7 +55,7 @@ func TestJoinedState(t *testing.T) {
 		p0 := rm.GetParticipants()[0]
 		s := time.Now().Unix()
 		rm.RemoveParticipant(p0.Identity(), types.ParticipantCloseReasonClientRequestLeave)
-		require.Equal(t, s, rm.LastLeftAt())
+		require.LessOrEqual(t, s, rm.LastLeftAt())
 	})
 
 	t.Run("LastLeftAt should not be set when there are still participants in the room", func(t *testing.T) {
