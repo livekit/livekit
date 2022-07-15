@@ -161,7 +161,7 @@ func listNodes(c *cli.Context) error {
 		"ID", "IP Address", "Region",
 		"CPUs", "CPU Usage\nLoad Avg",
 		"Rooms", "Clients\nTracks In/Out",
-		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "TC Pkts/s Out / Dropped\nTC Pkts Out / Dropped",
+		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "Dropped Packet Rate\nTC Pkts/s Out / Dropped",
 		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
 		"Started At\nUpdated At",
 	})
@@ -185,7 +185,6 @@ func listNodes(c *cli.Context) error {
 		cpus := strconv.Itoa(int(stats.NumCpus))
 		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
 			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
-		sysPackets := fmt.Sprintf("%vps / %vps\n%v / %v", stats.SysPacketsOutPerSec, stats.SysPacketsDroppedPerSec, stats.SysPacketsOut, stats.SysPacketsDropped)
 
 		// Room stats
 		rooms := strconv.Itoa(int(stats.NumRooms))
@@ -196,6 +195,8 @@ func listNodes(c *cli.Context) error {
 			humanize.Bytes(stats.BytesIn), humanize.Bytes(stats.BytesOut))
 		packets := fmt.Sprintf("%s / %s\n%s / %s", humanize.Comma(int64(stats.PacketsInPerSec)), humanize.Comma(int64(stats.PacketsOutPerSec)),
 			strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsIn), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsOut), 2, "")))
+		sysPackets := fmt.Sprintf("%v %%\n%v / %v", stats.SysPacketsDroppedPctPerSec,
+			strings.TrimSpace(humanize.SIWithDigits(float64(stats.SysPacketsOutPerSec), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.SysPacketsDroppedPerSec), 2, "")))
 		nacks := fmt.Sprintf("%.2f\n%s", stats.NackPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.NackTotal), 2, "")))
 		retransmit := fmt.Sprintf("%.2f\n%s", stats.RetransmitPacketsOutPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.RetransmitPacketsOut), 2, "")))
 

@@ -131,6 +131,13 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
 		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPacketsOut), elapsed)
 		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysPacketsDropped), elapsed)
+
+		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
+		if packetTotal == 0 {
+			stats.SysPacketsDroppedPctPerSec = 0
+		} else {
+			stats.SysPacketsDroppedPctPerSec = float32(stats.SysPacketsDroppedPerSec) / float32(packetTotal)
+		}
 	}
 
 	return stats, computeAverage, nil
