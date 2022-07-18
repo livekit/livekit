@@ -122,7 +122,7 @@ func (t *telemetryServiceInternal) CleanupWorkers() {
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
 			pID := worker.ParticipantID()
-			logger.Infow("reaping analytics worker for participant", "pID", pID)
+			logger.Debugw("reaping analytics worker for participant", "pID", pID)
 			t.workersMu.Lock()
 			if idx, ok := t.workersIdx[pID]; ok {
 				delete(t.workersIdx, pID)
