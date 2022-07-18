@@ -453,8 +453,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}
 
+	var meta *packetMeta
 	if d.sequencer != nil {
-		meta := d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
+		meta = d.sequencer.push(extPkt.Packet.SequenceNumber, tp.rtp.sequenceNumber, tp.rtp.timestamp, int8(layer))
 		if meta != nil && tp.vp8 != nil {
 			meta.packVP8(tp.vp8.Header)
 		}
@@ -464,6 +465,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	if err != nil {
 		d.pktsDropped.Inc()
 		return err
+	}
+
+	if meta != nil && d.dependencyDescriptorID != 0 {
+		meta.ddBytes = hdr.GetExtension(uint8(d.dependencyDescriptorID))
 	}
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
@@ -1263,7 +1268,14 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			}
 		}
 
-		err = d.writeRTPHeaderExtensions(&pkt.Header)
+		var extraExtensions []extensionData
+		if len(meta.ddBytes) > 0 {
+			extraExtensions = append(extraExtensions, extensionData{
+				id:      uint8(d.dependencyDescriptorID),
+				payload: meta.ddBytes,
+			})
+		}
+		err = d.writeRTPHeaderExtensions(&pkt.Header, extraExtensions...)
 		if err != nil {
 			d.logger.Errorw("writing rtp header extensions err", err)
 			continue
