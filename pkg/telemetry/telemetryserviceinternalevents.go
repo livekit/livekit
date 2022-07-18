@@ -119,13 +119,6 @@ func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *li
 		w.Close()
 	}
 
-	t.workersMu.Lock()
-	if idx, ok := t.workersIdx[livekit.ParticipantID(participant.Sid)]; ok {
-		delete(t.workersIdx, livekit.ParticipantID(participant.Sid))
-		t.workers[idx] = nil
-	}
-	t.workersMu.Unlock()
-
 	prometheus.SubParticipant()
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{

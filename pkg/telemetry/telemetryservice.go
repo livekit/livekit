@@ -53,10 +53,16 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 func (t *telemetryService) run() {
 	ticker := time.NewTicker(config.StatsUpdateInterval)
 	defer ticker.Stop()
+
+	cleanupTicker := time.NewTicker(time.Minute)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
 			t.internalService.SendAnalytics()
+		case <-cleanupTicker.C:
+			t.internalService.CleanupWorkers()
 		case op := <-t.jobsChan:
 			op()
 		}
