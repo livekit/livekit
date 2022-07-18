@@ -53,6 +53,8 @@ type packetMeta struct {
 	layer int8
 	// Information that differs depending on the codec
 	misc uint64
+	// Dependency Descriptor of packet
+	ddBytes []byte
 }
 
 func (p *packetMeta) packVP8(vp8 *buffer.VP8) {
