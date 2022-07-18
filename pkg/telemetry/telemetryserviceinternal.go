@@ -8,6 +8,7 @@ import (
 	"github.com/gammazero/workerpool"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -121,6 +122,7 @@ func (t *telemetryServiceInternal) CleanupWorkers() {
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
 			pID := worker.ParticipantID()
+			logger.Infow("reaping analytics worker for participant", "pID", pID)
 			t.workersMu.Lock()
 			if idx, ok := t.workersIdx[pID]; ok {
 				delete(t.workersIdx, pID)
