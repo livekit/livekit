@@ -3,20 +3,26 @@ package telemetry
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/gammazero/workerpool"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
-const maxWebhookWorkers = 50
+const (
+	maxWebhookWorkers = 50
+	workerCleanupWait = 3 * time.Minute
+)
 
 type TelemetryServiceInternal interface {
 	TelemetryService
 	SendAnalytics()
+	CleanupWorkers()
 }
 
 type TelemetryReporter interface {
@@ -99,6 +105,30 @@ func (t *telemetryServiceInternal) SendAnalytics() {
 	for _, worker := range workers {
 		if worker != nil {
 			worker.Update()
+		}
+	}
+}
+
+func (t *telemetryServiceInternal) CleanupWorkers() {
+	t.workersMu.RLock()
+	workers := t.workers
+	t.workersMu.RUnlock()
+
+	for _, worker := range workers {
+		if worker == nil {
+			continue
+		}
+
+		closedAt := worker.ClosedAt()
+		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
+			pID := worker.ParticipantID()
+			logger.Debugw("reaping analytics worker for participant", "pID", pID)
+			t.workersMu.Lock()
+			if idx, ok := t.workersIdx[pID]; ok {
+				delete(t.workersIdx, pID)
+				t.workers[idx] = nil
+			}
+			t.workersMu.Unlock()
 		}
 	}
 }

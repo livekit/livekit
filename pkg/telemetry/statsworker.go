@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -20,9 +21,10 @@ type StatsWorker struct {
 	participantID       livekit.ParticipantID
 	participantIdentity livekit.ParticipantIdentity
 
-	lock             sync.Mutex
+	lock             sync.RWMutex
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	closedAt         time.Time
 }
 
 func newStatsWorker(
@@ -60,6 +62,11 @@ func (s *StatsWorker) Update() {
 	ts := timestamppb.Now()
 
 	s.lock.Lock()
+	if !s.closedAt.IsZero() {
+		s.lock.Unlock()
+		return
+	}
+
 	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
 
 	incomingPerTrack := s.incomingPerTrack
@@ -123,6 +130,21 @@ func (s *StatsWorker) patch(
 
 func (s *StatsWorker) Close() {
 	s.Update()
+
+	s.lock.Lock()
+	s.closedAt = time.Now()
+	s.lock.Unlock()
+}
+
+func (s *StatsWorker) ClosedAt() time.Time {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.closedAt
+}
+
+func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
+	return s.participantID
 }
 
 // -------------------------------------------------------------------------

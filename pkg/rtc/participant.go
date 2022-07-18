@@ -1837,8 +1837,11 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 
-	if p.onTrackPublished != nil {
-		p.onTrackPublished(p, track)
+	p.lock.RLock()
+	onTrackPublished := p.onTrackPublished
+	p.lock.RUnlock()
+	if onTrackPublished != nil {
+		onTrackPublished(p, track)
 	}
 }
 
