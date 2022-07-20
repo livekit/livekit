@@ -53,8 +53,12 @@ type DirectionConfig struct {
 	RTCPFeedback       RTCPFeedbackConfig
 }
 
-// number of packets to buffer up
-const readBufferSize = 50
+const (
+	// number of packets to buffer up
+	readBufferSize = 50
+
+	writeBufferSizeInBytes = 4 * 1024 * 1024
+)
 
 func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
@@ -121,11 +125,13 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			return nil, err
 		}
 
-		tcpMux := webrtc.NewICETCPMux(
-			s.LoggerFactory.NewLogger("tcp_mux"),
-			tcpListener,
-			readBufferSize,
-		)
+		tcpMux := ice.NewTCPMuxDefault(ice.TCPMuxParams{
+			Logger:          s.LoggerFactory.NewLogger("tcp_mux"),
+			Listener:        tcpListener,
+			ReadBufferSize:  readBufferSize,
+			WriteBufferSize: writeBufferSizeInBytes,
+		})
+
 		s.SetICETCPMux(tcpMux)
 	}
 
