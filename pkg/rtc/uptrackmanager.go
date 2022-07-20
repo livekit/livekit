@@ -215,9 +215,13 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		tv := utils.NewTimedVersionFromProto(timedVersion)
 		// ignore older version
 		if !tv.After(u.subscriptionPermissionVersion) {
+			perms := ""
+			if u.subscriptionPermission != nil {
+				perms = u.subscriptionPermission.String()
+			}
 			u.params.Logger.Infow(
-				"ignoring older subscription permission version",
-				"existingValue", u.subscriptionPermission.String(),
+				"skipping older subscription permission version",
+				"existingValue", perms,
 				"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
 				"requestingValue", subscriptionPermission.String(),
 				"requestingVersion", timedVersion.String(),
@@ -231,25 +235,29 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		u.subscriptionPermissionVersion.Update(time.Now())
 	}
 
+	// store as is for use when migrating
+	u.subscriptionPermission = subscriptionPermission
 	if subscriptionPermission == nil {
-		u.params.Logger.Debugw("updating subscription permission, setting to nil")
-		// store as is for use when migrating
-		u.subscriptionPermission = subscriptionPermission
+		u.params.Logger.Debugw(
+			"updating subscription permission, setting to nil",
+			"version", u.subscriptionPermissionVersion.ToProto().String(),
+		)
 		// possible to get a nil when migrating
 		u.lock.Unlock()
 		return nil
 	}
 
-	u.params.Logger.Debugw("updating subscription permission", "permissions", subscriptionPermission.String())
+	u.params.Logger.Debugw(
+		"updating subscription permission",
+		"permissions", u.subscriptionPermission.String(),
+		"version", u.subscriptionPermissionVersion.ToProto().String(),
+	)
 	if err := u.parseSubscriptionPermissions(subscriptionPermission, resolverBySid); err != nil {
 		// when failed, do not override previous permissions
 		u.params.Logger.Errorw("failed updating subscription permission", err)
 		u.lock.Unlock()
 		return err
 	}
-
-	// store as is for use when migrating
-	u.subscriptionPermission = subscriptionPermission
 	u.lock.Unlock()
 
 	u.processPendingSubscriptions(resolverByIdentity)
