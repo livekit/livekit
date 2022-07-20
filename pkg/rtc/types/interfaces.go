@@ -181,11 +181,12 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason) error
 
-	SubscriptionPermission() (*livekit.SubscriptionPermission, uint32)
+	SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
 
 	// updates from remotes
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
+		timedVersion *livekit.TimedVersion,
 		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error

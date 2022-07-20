@@ -3,6 +3,7 @@ package rtc
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -28,7 +29,7 @@ type UpTrackManager struct {
 	// publishedTracks that participant is publishing
 	publishedTracks               map[livekit.TrackID]types.MediaTrack
 	subscriptionPermission        *livekit.SubscriptionPermission
-	subscriptionPermissionVersion uint32
+	subscriptionPermissionVersion *utils.TimedVersion
 	// subscriber permission for published tracks
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
@@ -45,10 +46,11 @@ type UpTrackManager struct {
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	return &UpTrackManager{
-		params:               params,
-		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack),
-		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantIdentity),
-		opsQueue:             utils.NewOpsQueue(params.Logger, "utm", 20),
+		params:                        params,
+		publishedTracks:               make(map[livekit.TrackID]types.MediaTrack),
+		subscriptionPermissionVersion: utils.NewTimedVersion(time.Now(), 0),
+		pendingSubscriptions:          make(map[livekit.TrackID][]livekit.ParticipantIdentity),
+		opsQueue:                      utils.NewOpsQueue(params.Logger, "utm", 20),
 	}
 }
 
@@ -204,10 +206,31 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(
 	subscriptionPermission *livekit.SubscriptionPermission,
+	timedVersion *livekit.TimedVersion,
 	resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) types.LocalParticipant,
 	resolverBySid func(participantID livekit.ParticipantID) types.LocalParticipant,
 ) error {
 	u.lock.Lock()
+	if timedVersion != nil {
+		tv := utils.NewTimedVersionFromProto(timedVersion)
+		// ignore older version
+		if !tv.After(u.subscriptionPermissionVersion) {
+			u.params.Logger.Infow(
+				"ignoring older subscription permission version",
+				"existingValue", u.subscriptionPermission.String(),
+				"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
+				"requestingValue", subscriptionPermission.String(),
+				"requestingVersion", timedVersion.String(),
+			)
+			u.lock.Unlock()
+			return nil
+		}
+		u.subscriptionPermissionVersion.Update(time.UnixMicro(timedVersion.UnixMicro))
+	} else {
+		// ignore older version
+		u.subscriptionPermissionVersion.Update(time.Now())
+	}
+
 	if subscriptionPermission == nil {
 		u.params.Logger.Debugw("updating subscription permission, setting to nil")
 		// store as is for use when migrating
@@ -235,12 +258,11 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	return nil
 }
 
-func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, uint32) {
-	u.lock.Lock()
-	defer u.lock.Unlock()
+func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion) {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
 
-	u.subscriptionPermissionVersion++
-	return u.subscriptionPermission, u.subscriptionPermissionVersion
+	return u.subscriptionPermission, u.subscriptionPermissionVersion.ToProto()
 }
 
 func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {
