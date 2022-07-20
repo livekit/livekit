@@ -26,8 +26,9 @@ type UpTrackManager struct {
 	closed bool
 
 	// publishedTracks that participant is publishing
-	publishedTracks        map[livekit.TrackID]types.MediaTrack
-	subscriptionPermission *livekit.SubscriptionPermission
+	publishedTracks               map[livekit.TrackID]types.MediaTrack
+	subscriptionPermission        *livekit.SubscriptionPermission
+	subscriptionPermissionVersion uint32
 	// subscriber permission for published tracks
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 	// keeps tracks of track specific subscribers who are awaiting permission
@@ -234,11 +235,12 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	return nil
 }
 
-func (u *UpTrackManager) SubscriptionPermission() *livekit.SubscriptionPermission {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
+func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, uint32) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
 
-	return u.subscriptionPermission
+	u.subscriptionPermissionVersion++
+	return u.subscriptionPermission, u.subscriptionPermissionVersion
 }
 
 func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error {

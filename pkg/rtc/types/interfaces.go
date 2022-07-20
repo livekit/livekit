@@ -181,7 +181,7 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason) error
 
-	SubscriptionPermission() *livekit.SubscriptionPermission
+	SubscriptionPermission() (*livekit.SubscriptionPermission, uint32)
 
 	// updates from remotes
 	UpdateSubscriptionPermission(

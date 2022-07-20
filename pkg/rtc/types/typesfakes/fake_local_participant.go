@@ -606,15 +606,17 @@ type FakeLocalParticipant struct {
 	subscriberPCReturnsOnCall map[int]struct {
 		result1 *webrtc.PeerConnection
 	}
-	SubscriptionPermissionStub        func() *livekit.SubscriptionPermission
+	SubscriptionPermissionStub        func() (*livekit.SubscriptionPermission, uint32)
 	subscriptionPermissionMutex       sync.RWMutex
 	subscriptionPermissionArgsForCall []struct {
 	}
 	subscriptionPermissionReturns struct {
 		result1 *livekit.SubscriptionPermission
+		result2 uint32
 	}
 	subscriptionPermissionReturnsOnCall map[int]struct {
 		result1 *livekit.SubscriptionPermission
+		result2 uint32
 	}
 	SubscriptionPermissionUpdateStub        func(livekit.ParticipantID, livekit.TrackID, bool)
 	subscriptionPermissionUpdateMutex       sync.RWMutex
@@ -3943,7 +3945,7 @@ func (fake *FakeLocalParticipant) SubscriberPCReturnsOnCall(i int, result1 *webr
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SubscriptionPermission() *livekit.SubscriptionPermission {
+func (fake *FakeLocalParticipant) SubscriptionPermission() (*livekit.SubscriptionPermission, uint32) {
 	fake.subscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.subscriptionPermissionReturnsOnCall[len(fake.subscriptionPermissionArgsForCall)]
 	fake.subscriptionPermissionArgsForCall = append(fake.subscriptionPermissionArgsForCall, struct {
@@ -3956,9 +3958,9 @@ func (fake *FakeLocalParticipant) SubscriptionPermission() *livekit.Subscription
 		return stub()
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeLocalParticipant) SubscriptionPermissionCallCount() int {
@@ -3967,33 +3969,36 @@ func (fake *FakeLocalParticipant) SubscriptionPermissionCallCount() int {
 	return len(fake.subscriptionPermissionArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SubscriptionPermissionCalls(stub func() *livekit.SubscriptionPermission) {
+func (fake *FakeLocalParticipant) SubscriptionPermissionCalls(stub func() (*livekit.SubscriptionPermission, uint32)) {
 	fake.subscriptionPermissionMutex.Lock()
 	defer fake.subscriptionPermissionMutex.Unlock()
 	fake.SubscriptionPermissionStub = stub
 }
 
-func (fake *FakeLocalParticipant) SubscriptionPermissionReturns(result1 *livekit.SubscriptionPermission) {
+func (fake *FakeLocalParticipant) SubscriptionPermissionReturns(result1 *livekit.SubscriptionPermission, result2 uint32) {
 	fake.subscriptionPermissionMutex.Lock()
 	defer fake.subscriptionPermissionMutex.Unlock()
 	fake.SubscriptionPermissionStub = nil
 	fake.subscriptionPermissionReturns = struct {
 		result1 *livekit.SubscriptionPermission
-	}{result1}
+		result2 uint32
+	}{result1, result2}
 }
 
-func (fake *FakeLocalParticipant) SubscriptionPermissionReturnsOnCall(i int, result1 *livekit.SubscriptionPermission) {
+func (fake *FakeLocalParticipant) SubscriptionPermissionReturnsOnCall(i int, result1 *livekit.SubscriptionPermission, result2 uint32) {
 	fake.subscriptionPermissionMutex.Lock()
 	defer fake.subscriptionPermissionMutex.Unlock()
 	fake.SubscriptionPermissionStub = nil
 	if fake.subscriptionPermissionReturnsOnCall == nil {
 		fake.subscriptionPermissionReturnsOnCall = make(map[int]struct {
 			result1 *livekit.SubscriptionPermission
+			result2 uint32
 		})
 	}
 	fake.subscriptionPermissionReturnsOnCall[i] = struct {
 		result1 *livekit.SubscriptionPermission
-	}{result1}
+		result2 uint32
+	}{result1, result2}
 }
 
 func (fake *FakeLocalParticipant) SubscriptionPermissionUpdate(arg1 livekit.ParticipantID, arg2 livekit.TrackID, arg3 bool) {
