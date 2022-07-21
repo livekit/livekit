@@ -56,9 +56,7 @@ func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName, sids
 	rooms := make([]*livekit.Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
 		if (names == nil && sids == nil) || funk.Contains(names, livekit.RoomName(r.Name)) || funk.Contains(sids, livekit.RoomID(r.Sid)) {
-			if !funk.Contains(rooms, r) {
-				rooms = append(rooms, r)
-			}
+			rooms = append(rooms, r)
 		}
 	}
 	return rooms, nil

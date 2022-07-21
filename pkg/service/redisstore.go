@@ -94,9 +94,7 @@ func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName, sids
 		}
 
 		if (names == nil && sids == nil) || funk.Contains(names, livekit.RoomName(room.Name)) || funk.Contains(sids, livekit.RoomID(room.Sid)) {
-			if !funk.Contains(rooms, &room) {
-				rooms = append(rooms, &room)
-			}
+			rooms = append(rooms, &room)
 		}
 	}
 	return rooms, nil
