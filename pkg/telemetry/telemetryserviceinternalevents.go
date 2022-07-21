@@ -159,8 +159,12 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 		Timestamp:     timestamppb.Now(),
 		RoomId:        string(roomID),
 		ParticipantId: string(participantID),
-		Track:         track,
-		Room:          &livekit.Room{Name: string(roomName)},
+		Participant: &livekit.ParticipantInfo{
+			Sid:      string(participantID),
+			Identity: string(identity),
+		},
+		Track: track,
+		Room:  &livekit.Room{Name: string(roomName)},
 	})
 }
 
