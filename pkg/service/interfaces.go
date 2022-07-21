@@ -29,9 +29,9 @@ type ObjectStore interface {
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
 	LoadRoom(ctx context.Context, name livekit.RoomName) (*livekit.Room, error)
-	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
+	// ListRooms returns currently active rooms. if names and/or sids is not nil, it'll filter and return
 	// only rooms that match
-	ListRooms(ctx context.Context, names []livekit.RoomName) ([]*livekit.Room, error)
+	ListRooms(ctx context.Context, names []livekit.RoomName, sids []livekit.RoomID) ([]*livekit.Room, error)
 
 	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)

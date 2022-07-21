@@ -202,11 +202,11 @@ func roomServiceListRoom(t *testing.T) {
 	createCtx := contextWithToken(createRoomToken())
 	listCtx := contextWithToken(listRoomToken())
 	// create rooms
-	_, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+	testRm, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
 		Name: testRoom,
 	})
 	require.NoError(t, err)
-	_, err = roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+	yourRm, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
 		Name: "yourroom",
 	})
 	require.NoError(t, err)
@@ -216,12 +216,37 @@ func roomServiceListRoom(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, res.Rooms, 2)
 	})
-	t.Run("list specific rooms", func(t *testing.T) {
+	t.Run("list specific rooms by name", func(t *testing.T) {
 		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
 			Names: []string{"yourroom"},
 		})
 		require.NoError(t, err)
 		require.Len(t, res.Rooms, 1)
 		require.Equal(t, "yourroom", res.Rooms[0].Name)
+	})
+	t.Run("list specific rooms by sid", func(t *testing.T) {
+		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
+			Sids: []string{testRm.Sid},
+		})
+		require.NoError(t, err)
+		require.Len(t, res.Rooms, 1)
+		require.Equal(t, testRm.Sid, res.Rooms[0].Sid)
+	})
+	t.Run("list specific rooms by name and sid overlap", func(t *testing.T) {
+		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
+			Names: []string{testRoom},
+			Sids:  []string{testRm.Sid},
+		})
+		require.NoError(t, err)
+		require.Len(t, res.Rooms, 1)
+		require.Equal(t, testRm.Sid, res.Rooms[0].Sid)
+	})
+	t.Run("list specific rooms by name and sid non-overlap", func(t *testing.T) {
+		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
+			Names: []string{testRoom},
+			Sids:  []string{yourRm.Sid},
+		})
+		require.NoError(t, err)
+		require.Len(t, res.Rooms, 2)
 	})
 }
