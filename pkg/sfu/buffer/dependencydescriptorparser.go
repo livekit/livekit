@@ -19,7 +19,7 @@ type DependencyDescriptorParser struct {
 }
 
 func NewDependencyDescriptorParser(ddExt uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
-	logger.Infow("creating dependency descriptor parse", "ddExt", ddExt)
+	logger.Infow("creating dependency descriptor parser", "ddExt", ddExt)
 	return &DependencyDescriptorParser{
 		ddExt:             ddExt,
 		logger:            logger,

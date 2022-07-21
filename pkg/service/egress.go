@@ -276,7 +276,7 @@ func (s *EgressService) updateWorker() {
 				if res.Error != "" {
 					logger.Errorw("egress failed", errors.New(res.Error), "egressID", res.EgressId)
 				} else {
-					logger.Debugw("egress ended", "egressID", res.EgressId)
+					logger.Infow("egress ended", "egressID", res.EgressId)
 				}
 
 				s.telemetry.EgressEnded(context.Background(), res)

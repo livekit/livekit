@@ -165,7 +165,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	}
 
 	if cs.score < 4.0 {
-		cs.params.Logger.Infow("low score", "score", cs.score, "params", params)
+		cs.params.Logger.Debugw("low connection quality score", "score", cs.score, "params", params)
 	}
 
 	return cs.score

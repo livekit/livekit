@@ -374,8 +374,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 			// restart without current remote description, sent current local description again to try recover
 			offer := t.pc.LocalDescription()
 			if offer == nil {
-				// it should not happend, check for safety
-				t.params.Logger.Infow("ice restart without local offer")
+				// it should not happen, log just in case
+				t.params.Logger.Warnw("ice restart without local offer", nil)
 				return ErrIceRestartWithoutLocalSDP
 			} else {
 				t.negotiationState = negotiationRetry
@@ -449,7 +449,6 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		failed := t.negotiationState != negotiationStateNone
 		t.lock.RUnlock()
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
-			t.params.Logger.Infow("negotiation timeout")
 			if t.onNegotiationFailed != nil {
 				t.onNegotiationFailed()
 			}

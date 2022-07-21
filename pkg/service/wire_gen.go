@@ -148,8 +148,10 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 	}
 
+	values := make([]interface{}, 0)
+	values = append(values, "sentinel", conf.UseSentinel())
 	if conf.UseSentinel() {
-		logger.Infow("using multi-node routing via redis", "sentinel", true, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		values = append(values, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
 		rcOptions := &redis.FailoverOptions{
 			SentinelAddrs:    conf.Redis.SentinelAddresses,
 			SentinelUsername: conf.Redis.SentinelUsername,
@@ -162,7 +164,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 		rc = redis.NewFailoverClient(rcOptions)
 	} else {
-		logger.Infow("using multi-node routing via redis", "sentinel", false, "addr", conf.Redis.Address)
+		values = append(values, "addr", conf.Redis.Address)
 		rcOptions := &redis.Options{
 			Addr:      conf.Redis.Address,
 			Username:  conf.Redis.Username,
@@ -172,6 +174,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 		rc = redis.NewClient(rcOptions)
 	}
+	logger.Infow("using multi-node routing via redis", values...)
 
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")

@@ -32,7 +32,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			return nil
 		}
 		if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-			pLogger.Warnw("could not handle trickle", err)
+			pLogger.Warnw("could not add ICE candidate", err)
 		}
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
@@ -65,7 +65,7 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 				continue
 			}
 
-			pLogger.Debugw("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
+			pLogger.Infow("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
 		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)

@@ -754,7 +754,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 		if sender == nil {
 			return
 		}
-		sub.GetLogger().Infow("removing peerconnection track",
+		sub.GetLogger().Debugw("removing PeerConnection track",
 			"publisher", subTrack.PublisherIdentity(),
 			"publisherID", subTrack.PublisherID(),
 			"kind", t.params.MediaTrack.Kind(),
@@ -767,7 +767,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
 				// most of these are safe to ignore, since the track state might have already
 				// been set to Inactive
-				sub.GetLogger().Infow("could not remove remoteTrack from forwarder",
+				sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
 					"error", err,
 					"publisher", subTrack.PublisherIdentity(),
 					"publisherID", subTrack.PublisherID(),
