@@ -111,7 +111,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	region := ""
 	if router, ok := s.router.(routing.Router); ok {
 		region = router.GetRegion()
-		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
+		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName, ""); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
 				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
 			}
@@ -154,7 +154,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
-		_, err := s.store.LoadRoom(context.Background(), roomName)
+		_, err := s.store.LoadRoom(context.Background(), roomName, "")
 		if err == ErrRoomNotFound {
 			handleError(w, 404, err.Error())
 			return

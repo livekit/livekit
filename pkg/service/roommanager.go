@@ -82,7 +82,7 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 }
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID) error {
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
@@ -94,12 +94,12 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName)
 	// clear routing information
 	go func() {
 		defer wg.Done()
-		err = r.router.ClearRoomState(ctx, roomName)
+		err = r.router.ClearRoomState(ctx, roomName, roomID)
 	}()
 	// also delete room from db
 	go func() {
 		defer wg.Done()
-		err2 = r.roomStore.DeleteRoom(ctx, roomName)
+		err2 = r.roomStore.DeleteRoom(ctx, roomName, roomID)
 	}()
 
 	wg.Wait()
@@ -122,7 +122,7 @@ func (r *RoomManager) CleanupRooms() error {
 	now := time.Now().Unix()
 	for _, room := range rooms {
 		if (now - room.CreationTime) > roomPurgeSeconds {
-			if err := r.DeleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
+			if err := r.DeleteRoom(ctx, livekit.RoomName(room.Name), livekit.RoomID(room.Sid)); err != nil {
 				return err
 			}
 		}
@@ -326,7 +326,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// create new room, get details first
-	ri, err := r.roomStore.LoadRoom(ctx, roomName)
+	ri, err := r.roomStore.LoadRoom(ctx, roomName, "")
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 	newRoom.OnClose(func() {
 		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
-		if err := r.DeleteRoom(ctx, roomName); err != nil {
+		if err := r.DeleteRoom(ctx, roomName, newRoom.ID()); err != nil {
 			newRoom.Logger.Errorw("could not delete room", err)
 		}
 
@@ -448,10 +448,10 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	r.lock.RUnlock()
 
 	if room == nil {
-		if _, ok := msg.Message.(*livekit.RTCNodeMessage_DeleteRoom); ok {
+		if req, ok := msg.Message.(*livekit.RTCNodeMessage_DeleteRoom); ok {
 			// special case of a non-RTC room e.g. room created but no participants joined
 			logger.Debugw("Deleting non-rtc room, loading from roomstore")
-			err := r.roomStore.DeleteRoom(ctx, roomName)
+			err := r.roomStore.DeleteRoom(ctx, roomName, livekit.RoomID(req.DeleteRoom.RoomSid))
 			if err != nil {
 				logger.Debugw("Error deleting non-rtc room", "err", err)
 			}

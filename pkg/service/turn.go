@@ -116,7 +116,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 func newTurnAuthHandler(roomStore ObjectStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
-		rm, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username))
+		rm, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username), "")
 		if err != nil {
 			return nil, false
 		}

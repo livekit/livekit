@@ -16,6 +16,9 @@ const (
 
 	// hash of room_name => node_id
 	NodeRoomKey = "room_node_map"
+
+	// hash of room_sid => node_id
+	NodeRoomSidKey = "room_sid_node_map"
 )
 
 var redisCtx = context.Background()

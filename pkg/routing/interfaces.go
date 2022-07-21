@@ -66,9 +66,9 @@ type Router interface {
 
 	ListNodes() ([]*livekit.Node, error)
 
-	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
-	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
-	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
+	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID) (*livekit.Node, error)
+	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID, nodeId livekit.NodeID) error
+	ClearRoomState(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID) error
 
 	GetRegion() string
 
@@ -89,7 +89,7 @@ type MessageRouter interface {
 
 	// Write a message to a participant or room
 	WriteParticipantRTC(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error
-	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
+	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID, msg *livekit.RTCNodeMessage) error
 }
 
 func CreateRouter(rc *redis.Client, node LocalNode) Router {

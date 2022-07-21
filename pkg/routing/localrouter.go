@@ -39,18 +39,18 @@ func NewLocalRouter(currentNode LocalNode) *LocalRouter {
 	}
 }
 
-func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ livekit.RoomName) (*livekit.Node, error) {
+func (r *LocalRouter) GetNodeForRoom(_ context.Context, _ livekit.RoomName, _ livekit.RoomID) (*livekit.Node, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	node := proto.Clone((*livekit.Node)(r.currentNode)).(*livekit.Node)
 	return node, nil
 }
 
-func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ livekit.NodeID) error {
+func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ livekit.RoomID, _ livekit.NodeID) error {
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName) error {
+func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName, _ livekit.RoomID) error {
 	// do nothing
 	return nil
 }
@@ -133,7 +133,7 @@ func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 	return r.writeRTCMessage(r.rtcMessageChan, msg)
 }
 
-func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
+func (r *LocalRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, _roomID livekit.RoomID, msg *livekit.RTCNodeMessage) error {
 	msg.ParticipantKey = string(participantKey(roomName, ""))
 	return r.WriteNodeRTC(ctx, r.currentNode.Id, msg)
 }

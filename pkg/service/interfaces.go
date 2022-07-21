@@ -20,7 +20,7 @@ type ObjectStore interface {
 	UnlockRoom(ctx context.Context, name livekit.RoomName, uid string) error
 
 	StoreRoom(ctx context.Context, room *livekit.Room) error
-	DeleteRoom(ctx context.Context, name livekit.RoomName) error
+	DeleteRoom(ctx context.Context, name livekit.RoomName, roomID livekit.RoomID) error
 
 	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
 	DeleteParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error
@@ -28,7 +28,7 @@ type ObjectStore interface {
 
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
-	LoadRoom(ctx context.Context, name livekit.RoomName) (*livekit.Room, error)
+	LoadRoom(ctx context.Context, name livekit.RoomName, roomID livekit.RoomID) (*livekit.Room, error)
 	// ListRooms returns currently active rooms. if names and/or sids is not nil, it'll filter and return
 	// only rooms that match
 	ListRooms(ctx context.Context, names []livekit.RoomName, sids []livekit.RoomID) ([]*livekit.Room, error)

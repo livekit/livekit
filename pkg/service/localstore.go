@@ -14,6 +14,8 @@ import (
 type LocalStore struct {
 	// map of roomName => room
 	rooms map[livekit.RoomName]*livekit.Room
+	// map of roomSid => room
+	room_sids map[livekit.RoomID]*livekit.Room
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 
@@ -24,6 +26,7 @@ type LocalStore struct {
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
 		rooms:        make(map[livekit.RoomName]*livekit.Room),
+		room_sids:    make(map[livekit.RoomID]*livekit.Room),
 		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		lock:         sync.RWMutex{},
 	}
@@ -35,17 +38,21 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	}
 	s.lock.Lock()
 	s.rooms[livekit.RoomName(room.Name)] = room
+	s.room_sids[livekit.RoomID(room.Sid)] = room
 	s.lock.Unlock()
 	return nil
 }
 
-func (s *LocalStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
+func (s *LocalStore) LoadRoom(_ context.Context, name livekit.RoomName, roomID livekit.RoomID) (*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
 	room := s.rooms[name]
 	if room == nil {
-		return nil, ErrRoomNotFound
+		room := s.room_sids[roomID]
+		if room == nil {
+			return nil, ErrRoomNotFound
+		}
 	}
 	return room, nil
 }
@@ -62,8 +69,8 @@ func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName, sids
 	return rooms, nil
 }
 
-func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
-	room, err := s.LoadRoom(ctx, name)
+func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName, roomID livekit.RoomID) error {
+	room, err := s.LoadRoom(ctx, name, roomID)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {
@@ -75,6 +82,7 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName) erro
 
 	delete(s.participants, livekit.RoomName(room.Name))
 	delete(s.rooms, livekit.RoomName(room.Name))
+	delete(s.room_sids, livekit.RoomID(room.Sid))
 	return nil
 }
 

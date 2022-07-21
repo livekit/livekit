@@ -86,8 +86,20 @@ func (r *RedisRouter) RemoveDeadNodes() error {
 	return nil
 }
 
-func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Node, error) {
-	nodeID, err := r.rc.HGet(r.ctx, NodeRoomKey, string(roomName)).Result()
+func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomName, roomID livekit.RoomID) (*livekit.Node, error) {
+	var key, value string
+	if roomName != "" {
+		key = NodeRoomKey
+		value = string(roomName)
+	} else if roomID != "" {
+		key = NodeRoomSidKey
+		value = string(roomID)
+	}
+	if value == "" {
+		return nil, errors.New("need non-empty room name or room sid")
+	}
+
+	nodeID, err := r.rc.HGet(r.ctx, key, value).Result()
 	if err == redis.Nil {
 		return nil, ErrNotFound
 	} else if err != nil {
@@ -97,12 +109,24 @@ func (r *RedisRouter) GetNodeForRoom(_ context.Context, roomName livekit.RoomNam
 	return r.GetNode(livekit.NodeID(nodeID))
 }
 
-func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
-	return r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), string(nodeID)).Err()
+func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomName, roomID livekit.RoomID, nodeID livekit.NodeID) error {
+	if err := r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), string(nodeID)).Err(); err != nil {
+		return err
+	}
+
+	if err := r.rc.HSet(r.ctx, NodeRoomSidKey, string(roomID), string(nodeID)).Err(); err != nil {
+		r.rc.HDel(context.Background(), NodeRoomKey, string(roomName))
+		return err
+	}
+
+	return nil
 }
 
-func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) error {
+func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName, roomID livekit.RoomID) error {
 	if err := r.rc.HDel(context.Background(), NodeRoomKey, string(roomName)).Err(); err != nil {
+		return errors.Wrap(err, "could not clear room state")
+	}
+	if err := r.rc.HDel(context.Background(), NodeRoomSidKey, string(roomID)).Err(); err != nil {
 		return errors.Wrap(err, "could not clear room state")
 	}
 	return nil
@@ -141,7 +165,7 @@ func (r *RedisRouter) ListNodes() ([]*livekit.Node, error) {
 // StartParticipantSignal signal connection sets up paths to the RTC node, and starts to route messages to that message queue
 func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
 	// find the node where the room is hosted at
-	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
+	rtcNode, err := r.GetNodeForRoom(ctx, roomName, "")
 	if err != nil {
 		return
 	}
@@ -186,8 +210,8 @@ func (r *RedisRouter) WriteParticipantRTC(_ context.Context, roomName livekit.Ro
 	return r.writeRTCMessage(rtcSink, msg)
 }
 
-func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error {
-	node, err := r.GetNodeForRoom(ctx, roomName)
+func (r *RedisRouter) WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, roomID livekit.RoomID, msg *livekit.RTCNodeMessage) error {
+	node, err := r.GetNodeForRoom(ctx, roomName, roomID)
 	if err != nil {
 		return err
 	}
@@ -202,16 +226,14 @@ func (r *RedisRouter) WriteNodeRTC(_ context.Context, rtcNodeID string, msg *liv
 
 func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantKey livekit.ParticipantKey) error {
 	// find the node where the room is hosted at
-	rtcNode, err := r.GetNodeForRoom(r.ctx, livekit.RoomName(ss.RoomName))
+	rtcNode, err := r.GetNodeForRoom(r.ctx, livekit.RoomName(ss.RoomName), "")
 	if err != nil {
 		return err
 	}
 
 	if rtcNode.Id != r.currentNode.Id {
 		err = ErrIncorrectRTCNode
-		logger.Errorw("called participant on incorrect node", err,
-			"rtcNode", rtcNode,
-		)
+		logger.Errorw("called participant on incorrect node", err, "rtcNode", rtcNode)
 		return err
 	}
 

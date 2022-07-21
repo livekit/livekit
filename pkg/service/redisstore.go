@@ -17,6 +17,9 @@ const (
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey = "rooms"
 
+	// RoomSidsKey is hash of room_sid => Room proto
+	RoomSidsKey = "room_sids"
+
 	// EgressKey is a hash of egressID => egress info
 	EgressKey        = "egress"
 	RoomEgressPrefix = "room_egress:"
@@ -52,6 +55,7 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 
 	pp := s.rc.Pipeline()
 	pp.HSet(s.ctx, RoomsKey, room.Name, data)
+	pp.HSet(s.ctx, RoomSidsKey, room.Sid, data)
 
 	if _, err = pp.Exec(s.ctx); err != nil {
 		return errors.Wrap(err, "could not create room")
@@ -59,11 +63,17 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	return nil
 }
 
-func (s *RedisStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
+func (s *RedisStore) LoadRoom(_ context.Context, name livekit.RoomName, roomID livekit.RoomID) (*livekit.Room, error) {
 	data, err := s.rc.HGet(s.ctx, RoomsKey, string(name)).Result()
 	if err != nil {
 		if err == redis.Nil {
-			err = ErrRoomNotFound
+			data, err = s.rc.HGet(s.ctx, RoomSidsKey, string(roomID)).Result()
+			if err != nil {
+				if err == redis.Nil {
+					err = ErrRoomNotFound
+				}
+			}
+			return nil, err
 		}
 		return nil, err
 	}
@@ -100,8 +110,8 @@ func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName, sids
 	return rooms, nil
 }
 
-func (s *RedisStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
-	_, err := s.LoadRoom(ctx, name)
+func (s *RedisStore) DeleteRoom(ctx context.Context, name livekit.RoomName, roomID livekit.RoomID) error {
+	_, err := s.LoadRoom(ctx, name, roomID)
 	if err == ErrRoomNotFound {
 		return nil
 	}

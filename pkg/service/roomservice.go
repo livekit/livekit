@@ -81,7 +81,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
+	err := s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), livekit.RoomID(req.RoomSid), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_DeleteRoom{
 			DeleteRoom: req,
 		},
@@ -92,7 +92,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	// we should not return until when the room is confirmed deleted
 	err = confirmExecution(func() error {
-		_, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		_, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), livekit.RoomID(req.RoomSid))
 		if err == nil {
 			return ErrOperationFailed
 		} else if err != ErrRoomNotFound {
@@ -264,7 +264,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 		return nil, twirpAuthError(err)
 	}
 
-	err := s.router.WriteRoomRTC(ctx, roomName, &livekit.RTCNodeMessage{
+	err := s.router.WriteRoomRTC(ctx, roomName, livekit.RoomID(req.RoomSid), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_SendData{
 			SendData: req,
 		},
@@ -285,14 +285,14 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+	room, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), livekit.RoomID(req.RoomSid))
 	if err != nil {
 		return nil, err
 	}
 
 	// no one has joined the room, would not have been created on an RTC node.
 	// in this case, we'd want to run create again
-	_, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
+	room, err = s.roomAllocator.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name:     req.Room,
 		Metadata: req.Metadata,
 	})
@@ -300,7 +300,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	err = s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), &livekit.RTCNodeMessage{
+	err = s.router.WriteRoomRTC(ctx, livekit.RoomName(req.Room), livekit.RoomID(room.Sid), &livekit.RTCNodeMessage{
 		Message: &livekit.RTCNodeMessage_UpdateRoomMetadata{
 			UpdateRoomMetadata: req,
 		},
@@ -310,7 +310,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	err = confirmExecution(func() error {
-		room, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		room, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), livekit.RoomID(req.RoomSid))
 		if err != nil {
 			return err
 		}
