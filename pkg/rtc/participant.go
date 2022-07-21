@@ -620,7 +620,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if !p.CanPublish() {
+	if !p.grants.Video.GetCanPublish() {
 		p.params.Logger.Warnw("no permission to publish track", nil)
 		return
 	}
