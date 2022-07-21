@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/thoas/go-funk"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
@@ -76,37 +77,25 @@ func (s *RedisStore) LoadRoom(_ context.Context, name livekit.RoomName) (*liveki
 	return &room, nil
 }
 
-func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
+func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName, sids []livekit.RoomID) ([]*livekit.Room, error) {
 	var items []string
 	var err error
-	if names == nil {
-		items, err = s.rc.HVals(s.ctx, RoomsKey).Result()
-		if err != nil && err != redis.Nil {
-			return nil, errors.Wrap(err, "could not get rooms")
-		}
-	} else {
-		roomNames := livekit.RoomNamesAsStrings(names)
-		var results []interface{}
-		results, err = s.rc.HMGet(s.ctx, RoomsKey, roomNames...).Result()
-		if err != nil && err != redis.Nil {
-			return nil, errors.Wrap(err, "could not get rooms by names")
-		}
-		for _, r := range results {
-			if item, ok := r.(string); ok {
-				items = append(items, item)
-			}
-		}
+	items, err = s.rc.HVals(s.ctx, RoomsKey).Result()
+	if err != nil && err != redis.Nil {
+		return nil, errors.Wrap(err, "could not get rooms")
 	}
 
 	rooms := make([]*livekit.Room, 0, len(items))
-
 	for _, item := range items {
 		room := livekit.Room{}
 		err := proto.Unmarshal([]byte(item), &room)
 		if err != nil {
 			return nil, err
 		}
-		rooms = append(rooms, &room)
+
+		if (names == nil && sids == nil) || funk.Contains(names, livekit.RoomName(room.Name)) || funk.Contains(sids, livekit.RoomID(room.Sid)) {
+			rooms = append(rooms, &room)
+		}
 	}
 	return rooms, nil
 }

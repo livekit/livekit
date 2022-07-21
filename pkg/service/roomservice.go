@@ -61,7 +61,11 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 	if len(req.Names) > 0 {
 		names = livekit.StringsAsRoomNames(req.Names)
 	}
-	rooms, err := s.roomStore.ListRooms(ctx, names)
+	var sids []livekit.RoomID
+	if len(req.RoomSids) > 0 {
+		sids = livekit.StringsAsRoomIDs(req.RoomSids)
+	}
+	rooms, err := s.roomStore.ListRooms(ctx, names, sids)
 	if err != nil {
 		// TODO: translate error codes to twirp
 		return

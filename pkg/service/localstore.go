@@ -50,12 +50,12 @@ func (s *LocalStore) LoadRoom(_ context.Context, name livekit.RoomName) (*liveki
 	return room, nil
 }
 
-func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
+func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName, sids []livekit.RoomID) ([]*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	rooms := make([]*livekit.Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		if names == nil || funk.Contains(names, livekit.RoomName(r.Name)) {
+		if (names == nil && sids == nil) || funk.Contains(names, livekit.RoomName(r.Name)) || funk.Contains(sids, livekit.RoomID(r.Sid)) {
 			rooms = append(rooms, r)
 		}
 	}
