@@ -94,11 +94,12 @@ type FakeServiceStore struct {
 		result1 *livekit.ParticipantInfo
 		result2 error
 	}
-	LoadRoomStub        func(context.Context, livekit.RoomName) (*livekit.Room, error)
+	LoadRoomStub        func(context.Context, livekit.RoomName, livekit.RoomID) (*livekit.Room, error)
 	loadRoomMutex       sync.RWMutex
 	loadRoomArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
+		arg3 livekit.RoomID
 	}
 	loadRoomReturns struct {
 		result1 *livekit.Room
@@ -535,19 +536,20 @@ func (fake *FakeServiceStore) LoadParticipantReturnsOnCall(i int, result1 *livek
 	}{result1, result2}
 }
 
-func (fake *FakeServiceStore) LoadRoom(arg1 context.Context, arg2 livekit.RoomName) (*livekit.Room, error) {
+func (fake *FakeServiceStore) LoadRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.RoomID) (*livekit.Room, error) {
 	fake.loadRoomMutex.Lock()
 	ret, specificReturn := fake.loadRoomReturnsOnCall[len(fake.loadRoomArgsForCall)]
 	fake.loadRoomArgsForCall = append(fake.loadRoomArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-	}{arg1, arg2})
+		arg3 livekit.RoomID
+	}{arg1, arg2, arg3})
 	stub := fake.LoadRoomStub
 	fakeReturns := fake.loadRoomReturns
-	fake.recordInvocation("LoadRoom", []interface{}{arg1, arg2})
+	fake.recordInvocation("LoadRoom", []interface{}{arg1, arg2, arg3})
 	fake.loadRoomMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -561,17 +563,17 @@ func (fake *FakeServiceStore) LoadRoomCallCount() int {
 	return len(fake.loadRoomArgsForCall)
 }
 
-func (fake *FakeServiceStore) LoadRoomCalls(stub func(context.Context, livekit.RoomName) (*livekit.Room, error)) {
+func (fake *FakeServiceStore) LoadRoomCalls(stub func(context.Context, livekit.RoomName, livekit.RoomID) (*livekit.Room, error)) {
 	fake.loadRoomMutex.Lock()
 	defer fake.loadRoomMutex.Unlock()
 	fake.LoadRoomStub = stub
 }
 
-func (fake *FakeServiceStore) LoadRoomArgsForCall(i int) (context.Context, livekit.RoomName) {
+func (fake *FakeServiceStore) LoadRoomArgsForCall(i int) (context.Context, livekit.RoomName, livekit.RoomID) {
 	fake.loadRoomMutex.RLock()
 	defer fake.loadRoomMutex.RUnlock()
 	argsForCall := fake.loadRoomArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeServiceStore) LoadRoomReturns(result1 *livekit.Room, result2 error) {

@@ -165,12 +165,13 @@ type FakeRouter struct {
 	writeParticipantRTCReturnsOnCall map[int]struct {
 		result1 error
 	}
-	WriteRoomRTCStub        func(context.Context, livekit.RoomName, *livekit.RTCNodeMessage) error
+	WriteRoomRTCStub        func(context.Context, livekit.RoomName, livekit.RoomID, *livekit.RTCNodeMessage) error
 	writeRoomRTCMutex       sync.RWMutex
 	writeRoomRTCArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 *livekit.RTCNodeMessage
+		arg3 livekit.RoomID
+		arg4 *livekit.RTCNodeMessage
 	}
 	writeRoomRTCReturns struct {
 		result1 error
@@ -944,20 +945,21 @@ func (fake *FakeRouter) WriteParticipantRTCReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeRouter) WriteRoomRTC(arg1 context.Context, arg2 livekit.RoomName, arg3 *livekit.RTCNodeMessage) error {
+func (fake *FakeRouter) WriteRoomRTC(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.RoomID, arg4 *livekit.RTCNodeMessage) error {
 	fake.writeRoomRTCMutex.Lock()
 	ret, specificReturn := fake.writeRoomRTCReturnsOnCall[len(fake.writeRoomRTCArgsForCall)]
 	fake.writeRoomRTCArgsForCall = append(fake.writeRoomRTCArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 *livekit.RTCNodeMessage
-	}{arg1, arg2, arg3})
+		arg3 livekit.RoomID
+		arg4 *livekit.RTCNodeMessage
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.WriteRoomRTCStub
 	fakeReturns := fake.writeRoomRTCReturns
-	fake.recordInvocation("WriteRoomRTC", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("WriteRoomRTC", []interface{}{arg1, arg2, arg3, arg4})
 	fake.writeRoomRTCMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1
@@ -971,17 +973,17 @@ func (fake *FakeRouter) WriteRoomRTCCallCount() int {
 	return len(fake.writeRoomRTCArgsForCall)
 }
 
-func (fake *FakeRouter) WriteRoomRTCCalls(stub func(context.Context, livekit.RoomName, *livekit.RTCNodeMessage) error) {
+func (fake *FakeRouter) WriteRoomRTCCalls(stub func(context.Context, livekit.RoomName, livekit.RoomID, *livekit.RTCNodeMessage) error) {
 	fake.writeRoomRTCMutex.Lock()
 	defer fake.writeRoomRTCMutex.Unlock()
 	fake.WriteRoomRTCStub = stub
 }
 
-func (fake *FakeRouter) WriteRoomRTCArgsForCall(i int) (context.Context, livekit.RoomName, *livekit.RTCNodeMessage) {
+func (fake *FakeRouter) WriteRoomRTCArgsForCall(i int) (context.Context, livekit.RoomName, livekit.RoomID, *livekit.RTCNodeMessage) {
 	fake.writeRoomRTCMutex.RLock()
 	defer fake.writeRoomRTCMutex.RUnlock()
 	argsForCall := fake.writeRoomRTCArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeRouter) WriteRoomRTCReturns(result1 error) {
