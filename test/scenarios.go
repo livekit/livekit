@@ -226,7 +226,7 @@ func roomServiceListRoom(t *testing.T) {
 	})
 	t.Run("list specific rooms by sid", func(t *testing.T) {
 		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
-			Sids: []string{testRm.Sid},
+			RoomSids: []string{testRm.Sid},
 		})
 		require.NoError(t, err)
 		require.Len(t, res.Rooms, 1)
@@ -234,8 +234,8 @@ func roomServiceListRoom(t *testing.T) {
 	})
 	t.Run("list specific rooms by name and sid overlap", func(t *testing.T) {
 		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
-			Names: []string{testRoom},
-			Sids:  []string{testRm.Sid},
+			Names:    []string{testRoom},
+			RoomSids: []string{testRm.Sid},
 		})
 		require.NoError(t, err)
 		require.Len(t, res.Rooms, 1)
@@ -243,8 +243,8 @@ func roomServiceListRoom(t *testing.T) {
 	})
 	t.Run("list specific rooms by name and sid non-overlap", func(t *testing.T) {
 		res, err := roomClient.ListRooms(listCtx, &livekit.ListRoomsRequest{
-			Names: []string{testRoom},
-			Sids:  []string{yourRm.Sid},
+			Names:    []string{testRoom},
+			RoomSids: []string{yourRm.Sid},
 		})
 		require.NoError(t, err)
 		require.Len(t, res.Rooms, 2)

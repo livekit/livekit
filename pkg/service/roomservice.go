@@ -62,8 +62,8 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 		names = livekit.StringsAsRoomNames(req.Names)
 	}
 	var sids []livekit.RoomID
-	if len(req.Sids) > 0 {
-		sids = livekit.StringsAsRoomIDs(req.Sids)
+	if len(req.RoomSids) > 0 {
+		sids = livekit.StringsAsRoomIDs(req.RoomSids)
 	}
 	rooms, err := s.roomStore.ListRooms(ctx, names, sids)
 	if err != nil {
