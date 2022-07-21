@@ -118,6 +118,7 @@ func (s *RedisStore) DeleteRoom(ctx context.Context, name livekit.RoomName, room
 
 	pp := s.rc.Pipeline()
 	pp.HDel(s.ctx, RoomsKey, string(name))
+	pp.HDel(s.ctx, RoomSidsKey, string(roomID))
 	pp.Del(s.ctx, RoomParticipantsPrefix+string(name))
 
 	_, err = pp.Exec(s.ctx)

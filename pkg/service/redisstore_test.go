@@ -19,7 +19,7 @@ func TestParticipantPersistence(t *testing.T) {
 	rs := service.NewRedisStore(redisClient())
 
 	roomName := livekit.RoomName("room1")
-	_ = rs.DeleteRoom(ctx, roomName)
+	_ = rs.DeleteRoom(ctx, roomName, "")
 
 	p := &livekit.ParticipantInfo{
 		Sid:      "PA_test",
