@@ -308,7 +308,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 
 	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
 	d.connectionStats.Start()
-	d.logger.Debugw("bound")
+	d.logger.Debugw("downtrack bound")
 
 	return codec, nil
 }
@@ -685,7 +685,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.bindLock.Unlock()
 	d.connectionStats.Close()
 	d.rtpStats.Stop()
-	d.logger.Infow("rtp stats", "stats", d.rtpStats.ToString())
+	d.logger.Infow("rtp stats", "direction", "downstream", "stats", d.rtpStats.ToString())
 
 	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
 		d.onMaxLayerChanged(d, InvalidLayerSpatial)
@@ -1347,7 +1347,7 @@ func (d *DownTrack) getTranslatedRTPHeader(extPkt *buffer.ExtPacket, tp *Transla
 	if d.dependencyDescriptorID != 0 && tp.ddExtension != nil {
 		bytes, err := tp.ddExtension.Marshal()
 		if err != nil {
-			d.logger.Infow("marshalling dependency descriptor extension err", "err", err)
+			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {
 			extension = append(extension, extensionData{
 				id:      uint8(d.dependencyDescriptorID),

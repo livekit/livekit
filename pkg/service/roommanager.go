@@ -200,7 +200,7 @@ func (r *RoomManager) StartSession(
 		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
 		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
 		if pi.Reconnect {
-			logger.Debugw("resuming RTC session",
+			logger.Infow("resuming RTC session",
 				"room", roomName,
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
@@ -225,7 +225,7 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	logger.Debugw("starting RTC session",
+	logger.Infow("starting RTC session",
 		"room", roomName,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
@@ -351,22 +351,22 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom.OnClose(func() {
 		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
-			logger.Errorw("could not delete room", err)
+			newRoom.Logger.Errorw("could not delete room", err)
 		}
 
-		logger.Infow("room closed")
+		newRoom.Logger.Infow("room closed")
 	})
 
 	newRoom.OnMetadataUpdate(func(metadata string) {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto()); err != nil {
-			logger.Errorw("could not handle metadata update", err)
+			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}
 	})
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if p.State() != livekit.ParticipantInfo_DISCONNECTED {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
-				logger.Errorw("could not handle participant change", err)
+				newRoom.Logger.Errorw("could not handle participant change", err)
 			}
 		}
 	})
@@ -388,7 +388,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		// give time for the participant to be closed with a proper reason.
 		// if participant is closed from here, we would be obscuring the real reason the participant is closed.
 		time.Sleep(2 * time.Second)
-		logger.Debugw("RTC session finishing",
+		logger.Infow("RTC session finishing",
 			"participant", participant.Identity(),
 			"pID", participant.ID(),
 			"room", room.Name(),

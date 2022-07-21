@@ -714,7 +714,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave, "reason", reason)
+	p.params.Logger.Infow("closing participant", "sendLeave", sendLeave, "reason", reason.String())
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{
@@ -884,15 +884,6 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	}
 
 	rating := connectionquality.Score2Rating(avgScore)
-	if rating != livekit.ConnectionQuality_EXCELLENT {
-		p.params.Logger.Infow("connection quality not optimal",
-			"totalScore", totalScore,
-			"numTracks", numTracks,
-			"rating", rating,
-			"publisherScores", publisherScores,
-			"subscriberScores", subscriberScores,
-		)
-	}
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
@@ -1314,7 +1305,7 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 				}
 				if primaryPC.ConnectionState() != webrtc.PeerConnectionStateConnected {
 					p.params.Logger.Infow("closing disconnected participant")
-					p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
+					_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
 				}
 			})
 			p.lock.Unlock()
@@ -1580,7 +1571,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
-			p.params.Logger.Infow("track not found for new codec publish", "trackID", req.Sid)
+			p.params.Logger.Infow("could not find existing track for multi-codec simulcast", "trackID", req.Sid)
 			return nil
 		}
 
@@ -2098,7 +2089,7 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState) {
 	p.lock.Lock()
 	if existing := p.cachedDownTracks[trackID]; existing != nil && existing.transceiver != rtpTransceiver {
-		p.params.Logger.Infow("cached transceiver change", "trackID", trackID)
+		p.params.Logger.Infow("cached transceiver changed", "trackID", trackID)
 	}
 	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, forwarder: forwarderState}
 	p.lock.Unlock()
@@ -2128,7 +2119,7 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 }
 
 func (p *ParticipantImpl) handleNegotiationFailed() {
-	p.params.Logger.Infow("negotiation failed, notify client do full reconnect")
+	p.params.Logger.Infow("negotiation failed, starting full reconnect")
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: &livekit.LeaveRequest{
@@ -2202,7 +2193,8 @@ func (p *ParticipantImpl) ProcessSubscriptionRequestsQueue(trackID livekit.Track
 		}
 
 	default:
-		p.params.Logger.Warnw("unknown request type", nil)
+		p.params.Logger.Warnw("unknown request type", nil,
+			"requestType", request.requestType)
 
 		// let the queue move forward
 		p.ClearInProgressAndProcessSubscriptionRequestsQueue(trackID)

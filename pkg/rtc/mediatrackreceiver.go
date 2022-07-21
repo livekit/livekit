@@ -466,7 +466,7 @@ func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID
 }
 
 func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
-	t.params.Logger.Debugw("removing all subscribers")
+	t.params.Logger.Infow("removing all subscribers")
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribers() {
 		t.RemoveSubscriber(subscriberID, willBeResumed)
 	}

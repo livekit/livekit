@@ -526,7 +526,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates) VideoAllocation {
 		if bandwidthRequested == 0 && f.maxLayers.IsValid() {
 			// if we cannot allocate anything below max layer,
 			// look for a layer above. It is okay to overshoot
-			// in optimal allocation (i. e. no bandwidth restricstions).
+			// in optimal allocation (i.e. no bandwidth restrictions).
 			// It is possible that clients send only a higher layer.
 			// To accommodate cases like that, try finding a layer
 			// above the requested maximum to ensure streaming
