@@ -1,6 +1,7 @@
 # LiveKit: High-performance WebRTC
 
-LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to provide everything you need to build real-time video/audio/data capabilities in your applications.
+LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to
+provide everything you need to build real-time video/audio/data capabilities in your applications.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -18,12 +19,12 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 - Robust networking and connectivity, UDP/TCP/TURN
 - Easy to deploy: single binary, Docker or Kubernetes
 - Advanced features including:
-  - [speaker detection](https://docs.livekit.io/guides/room/receive/#speaker-detection)
-  - [simulcast](https://docs.livekit.io/guides/room/publish/#video-simulcast)
-  - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
-  - [selective subscription](https://docs.livekit.io/guides/room/receive/#selective-subscription)
-  - [moderation APIs](https://docs.livekit.io/guides/server-api/)
-  - [webhooks](https://docs.livekit.io/guides/webhooks/)
+    - [speaker detection](https://docs.livekit.io/guides/room/receive/#speaker-detection)
+    - [simulcast](https://docs.livekit.io/guides/room/publish/#video-simulcast)
+    - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
+    - [selective subscription](https://docs.livekit.io/guides/room/receive/#selective-subscription)
+    - [moderation APIs](https://docs.livekit.io/guides/server-api/)
+    - [webhooks](https://docs.livekit.io/guides/webhooks/)
 
 ## Documentation & Guides
 
@@ -140,10 +141,13 @@ Client SDKs enable your frontend to include interactive, multi-user experiences.
 
 ### Server SDKs
 
-Server SDKs enable your backend to generate [access tokens](https://docs.livekit.io/guides/access-tokens/), call [server APIs](https://docs.livekit.io/guides/server-api/), and receive [webhooks](https://docs.livekit.io/guides/webhooks/). In addition, the Go SDK includes client capabilities, enabling you to build automations that behave like end-users.
+Server SDKs enable your backend to generate [access tokens](https://docs.livekit.io/guides/access-tokens/),
+call [server APIs](https://docs.livekit.io/guides/server-api/), and
+receive [webhooks](https://docs.livekit.io/guides/webhooks/). In addition, the Go SDK includes client capabilities,
+enabling you to build automations that behave like end-users.
 
 | Language                | Repo                                                                                                | Docs                                                        |
-| :---------------------- | :-------------------------------------------------------------------------------------------------- | :---------------------------------------------------------- |
+|:------------------------|:----------------------------------------------------------------------------------------------------|:------------------------------------------------------------|
 | Go                      | [server-sdk-go](https://github.com/livekit/server-sdk-go)                                           | [docs](https://pkg.go.dev/github.com/livekit/server-sdk-go) |
 | JavaScript (TypeScript) | [server-sdk-js](https://github.com/livekit/server-sdk-js)                                           | [docs](https://docs.livekit.io/server-sdk-js/)              |
 | Ruby                    | [server-sdk-ruby](https://github.com/livekit/server-sdk-ruby)                                       |                                                             |
@@ -159,7 +163,8 @@ Server SDKs enable your backend to generate [access tokens](https://docs.livekit
 
 ## Install
 
-We recommend installing [livekit-cli](https://github.com/livekit/livekit-cli) along with the server. It lets you access server APIs, create tokens, and generate test traffic.
+We recommend installing [livekit-cli](https://github.com/livekit/livekit-cli) along with the server. It lets you access
+server APIs, create tokens, and generate test traffic.
 
 ### MacOS
 
@@ -181,7 +186,7 @@ Download the [latest release here](https://github.com/livekit/livekit/releases/l
 
 ### Starting LiveKit
 
-Start LiveKit by running `livekit-server` with no arguments. It will start in development mode by default with a placeholder API key/secret pair.
+Start LiveKit in development mode by running `livekit-server --dev`. It'll use a placeholder API key/secret pair.
 
 ```
 API Key: devkey
@@ -190,9 +195,11 @@ API Secret: secret
 
 To customize your setup for production, refer to our [deployment docs](https://docs.livekit.io/deploy/)
 
-### Creating an access token
+### Creating access token
 
-A user connecting to a LiveKit room requires an [access token](https://docs.livekit.io/guides/access-tokens/). Access tokens (JWT) encode the user's identity and the room permissions they've been granted. You can generate a token with our CLI:
+A user connecting to a LiveKit room requires an [access token](https://docs.livekit.io/guides/access-tokens/). Access
+tokens (JWT) encode the user's identity and the room permissions they've been granted. You can generate a token with our
+CLI:
 
 ```shell
 livekit-cli create-token \
@@ -203,7 +210,8 @@ livekit-cli create-token \
 
 ### Test with example app
 
-Head over to our [example app](https://example.livekit.io) and enter a generated token to connect to your LiveKit server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
+Head over to our [example app](https://example.livekit.io) and enter a generated token to connect to your LiveKit
+server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
 
 Once connected, your video and audio are now being published to your new LiveKit instance!
 
@@ -217,7 +225,9 @@ livekit-cli join-room \
     --publish-demo
 ```
 
-This command publishes a looped demo video to a room. Due to how the video clip was encoded (keyframes every 3s), there's a slight delay before the browser has sufficient data to begin rendering frames. This is an artifact of the simulation.
+This command publishes a looped demo video to a room. Due to how the video clip was encoded (keyframes every 3s),
+there's a slight delay before the browser has sufficient data to begin rendering frames. This is an artifact of the
+simulation.
 
 ## Deploying to a server
 
@@ -227,7 +237,7 @@ Read our [deployment docs](https://docs.livekit.io/deploy/) for more information
 
 Pre-requisites:
 
-- Go 1.15+ is installed
+- Go 1.16+ is installed
 - GOPATH/bin is in your PATH
 
 Then run
