@@ -169,3 +169,39 @@ func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) erro
 	// redis is required for egress
 	return nil
 }
+
+func (s *LocalStore) StoreIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	// redis is required for ingress
+
+	return nil
+}
+
+func (s *LocalStore) LoadIngress(_ context.Context, _ string) (*livekit.IngressInfo, error) {
+	// redis is required for ingress
+
+	return nil, nil
+}
+
+func (s *LocalStore) LoadIngressFromStreamKey(_ context.Context, _ string) (*livekit.IngressInfo, error) {
+	// redis is required for ingress
+
+	return nil, nil
+}
+
+func (s *LocalStore) ListIngress(_ context.Context, _ livekit.RoomName) ([]*livekit.IngressInfo, error) {
+	// redis is required for ingress
+
+	return nil, nil
+}
+
+func (s *LocalStore) UpdateIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	// redis is required for ingress
+
+	return nil
+}
+
+func (s *LocalStore) DeleteIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	// redis is required for ingress
+
+	return nil
+}
