@@ -354,7 +354,7 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		case ErrIngressNotFound:
 			// Ingress doesn't exist yet
 		case nil:
-			oldRoom = oldInfo.Room
+			oldRoom = oldInfo.RoomName
 		default:
 			return err
 		}
@@ -363,12 +363,12 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 			pipe.HSet(s.ctx, IngressKey, info.IngressId, data)
 			pipe.HSet(s.ctx, StreamKeyKey, info.IngressId, info.StreamKey)
 
-			if oldRoom != info.Room {
+			if oldRoom != info.RoomName {
 				if oldRoom != "" {
 					pipe.SRem(s.ctx, RoomIngressPrefix+oldRoom, info.IngressId)
 				}
-				if info.Room != "" {
-					pipe.SAdd(s.ctx, RoomIngressPrefix+info.Room, info.IngressId)
+				if info.RoomName != "" {
+					pipe.SAdd(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
 				}
 			}
 
@@ -492,7 +492,7 @@ func (s *RedisStore) UpdateIngress(ctx context.Context, info *livekit.IngressInf
 }
 
 func (s *RedisStore) DeleteIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	err := s.rc.SRem(s.ctx, RoomIngressPrefix+info.Room, info.IngressId).Err()
+	err := s.rc.SRem(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId).Err()
 	if err != nil {
 		return err
 	}

@@ -131,7 +131,7 @@ func TestStoreIngress(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(infos))
 
-	info.Room = "room"
+	info.RoomName = "room"
 	err = rs.UpdateIngress(ctx, info)
 	require.NoError(t, err)
 
@@ -142,7 +142,7 @@ func TestStoreIngress(t *testing.T) {
 	require.Equal(t, 1, len(infos))
 	compareIngressInfo(t, infos[0], info)
 
-	info.Room = ""
+	info.RoomName = ""
 	err = rs.UpdateIngress(ctx, info)
 	require.NoError(t, err)
 
@@ -154,5 +154,5 @@ func TestStoreIngress(t *testing.T) {
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
 	require.Equal(t, expected.IngressId, v.IngressId)
 	require.Equal(t, expected.StreamKey, v.StreamKey)
-	require.Equal(t, expected.Room, v.Room)
+	require.Equal(t, expected.RoomName, v.RoomName)
 }
