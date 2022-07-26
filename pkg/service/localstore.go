@@ -165,3 +165,28 @@ func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) erro
 func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {
 	return ErrEgressNotConnected
 }
+
+// redis is required for ingress
+func (s *LocalStore) StoreIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	return ErrIngressNotConnected
+}
+
+func (s *LocalStore) LoadIngress(_ context.Context, _ string) (*livekit.IngressInfo, error) {
+	return nil, ErrIngressNotConnected
+}
+
+func (s *LocalStore) LoadIngressFromStreamKey(_ context.Context, _ string) (*livekit.IngressInfo, error) {
+	return nil, ErrIngressNotConnected
+}
+
+func (s *LocalStore) ListIngress(_ context.Context, _ livekit.RoomName) ([]*livekit.IngressInfo, error) {
+	return nil, ErrIngressNotConnected
+}
+
+func (s *LocalStore) UpdateIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	return ErrIngressNotConnected
+}
+
+func (s *LocalStore) DeleteIngress(_ context.Context, _ *livekit.IngressInfo) error {
+	return ErrIngressNotConnected
+}
