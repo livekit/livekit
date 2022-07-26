@@ -375,6 +375,10 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 			return nil
 		})
 
+		if err != nil {
+			return err
+		}
+
 		for _, res := range results {
 			if err := res.Err(); err != nil {
 				return err
