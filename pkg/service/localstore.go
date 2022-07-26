@@ -145,27 +145,23 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	return nil
 }
 
+// redis is required for egress
 func (s *LocalStore) StoreEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
-	return nil
+	return ErrEgressNotConnected
 }
 
 func (s *LocalStore) LoadEgress(_ context.Context, _ string) (*livekit.EgressInfo, error) {
-	// redis is required for egress
-	return nil, ErrEgressNotFound
+	return nil, ErrEgressNotConnected
 }
 
 func (s *LocalStore) ListEgress(_ context.Context, _ livekit.RoomID) ([]*livekit.EgressInfo, error) {
-	// redis is required for egress
-	return nil, nil
+	return nil, ErrEgressNotConnected
 }
 
 func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
-	return nil
+	return ErrEgressNotConnected
 }
 
 func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	// redis is required for egress
-	return nil
+	return ErrEgressNotConnected
 }
