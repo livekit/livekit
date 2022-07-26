@@ -334,10 +334,10 @@ func (s *RedisStore) DeleteEgress(_ context.Context, info *livekit.EgressInfo) e
 
 func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) error {
 	if info.IngressId == "" {
-		errors.New("Missing IngressId")
+		return errors.New("Missing IngressId")
 	}
 	if info.StreamKey == "" {
-		errors.New("Missing StreamKey")
+		return errors.New("Missing StreamKey")
 	}
 
 	data, err := proto.Marshal(info)
