@@ -359,18 +359,17 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 			return err
 		}
 
-		if oldRoom != "" && oldRoom != info.Room {
-			tx.SRem(s.ctx, RoomIngressPrefix+oldRoom, info.IngressId).Err()
-			if err != nil {
-				return err
-			}
-		}
 		results, err := tx.TxPipelined(s.ctx, func(pipe redis.Pipeliner) error {
 			pipe.HSet(s.ctx, IngressKey, info.IngressId, data)
 			pipe.HSet(s.ctx, StreamKeyKey, info.IngressId, info.StreamKey)
 
-			if info.Room != "" && oldRoom != info.Room {
-				pipe.SAdd(s.ctx, RoomIngressPrefix+info.Room, info.IngressId)
+			if oldRoom != info.Room {
+				if oldRoom != "" {
+					pipe.SRem(s.ctx, RoomIngressPrefix+oldRoom, info.IngressId)
+				}
+				if info.Room != "" {
+					pipe.SAdd(s.ctx, RoomIngressPrefix+info.Room, info.IngressId)
+				}
 			}
 
 			return nil
