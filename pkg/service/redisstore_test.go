@@ -110,3 +110,49 @@ func TestRoomLock(t *testing.T) {
 		_ = rs.UnlockRoom(ctx, roomName, token2)
 	})
 }
+
+func TestStoreIngress(t *testing.T) {
+	ctx := context.Background()
+	rs := service.NewRedisStore(redisClient())
+
+	info := &livekit.IngressInfo{
+		IngressId: "ingressId",
+		StreamKey: "streamKey",
+	}
+
+	err := rs.StoreIngress(ctx, info)
+	require.NoError(t, err)
+
+	pulledInfo, err := rs.LoadIngress(ctx, "ingressId")
+	require.NoError(t, err)
+	compareIngressInfo(t, pulledInfo, info)
+
+	infos, err := rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(infos))
+
+	info.Room = "room"
+	err = rs.UpdateIngress(ctx, info)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, len(infos))
+	compareIngressInfo(t, infos[0], info)
+
+	info.Room = ""
+	err = rs.UpdateIngress(ctx, info)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "room")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(infos))
+}
+
+func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
+	require.Equal(t, expected.IngressId, v.IngressId)
+	require.Equal(t, expected.StreamKey, v.StreamKey)
+	require.Equal(t, expected.Room, v.Room)
+}
