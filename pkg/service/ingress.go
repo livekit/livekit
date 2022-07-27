@@ -68,11 +68,10 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		},
 	}
 
-	go func() {
-		if err := s.store.StoreIngress(ctx, info); err != nil {
-			logger.Errorw("could not write ingress info", err)
-		}
-	}()
+	if err := s.store.StoreIngress(ctx, info); err != nil {
+		logger.Errorw("could not write ingress info", err)
+		return nil, err
+	}
 
 	return info, nil
 }
@@ -87,6 +86,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 
 	info, err := s.store.LoadIngress(ctx, req.IngressId)
 	if err != nil {
+		logger.Errorw("could not load ingress info", err)
 		return nil, err
 	}
 
@@ -122,12 +122,14 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 			Request:   &livekit.IngressRequest_Update{Update: req},
 		})
 		if err != nil {
+			logger.Errorw("could not update active ingress", err)
 			return nil, err
 		}
 	}
 
 	err = s.store.UpdateIngress(ctx, info)
 	if err != nil {
+		logger.Errorw("could not update ingress info", err)
 		return nil, err
 	}
 
@@ -144,6 +146,7 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 
 	infos, err := s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
 	if err != nil {
+		logger.Errorw("could not list ingress info", err)
 		return nil, err
 	}
 
@@ -171,12 +174,14 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 			Request:   &livekit.IngressRequest_Delete{Delete: req},
 		})
 		if err != nil {
+			logger.Errorw("could not stop active ingress", err)
 			return nil, err
 		}
 	}
 
 	err = s.store.DeleteIngress(ctx, info)
 	if err != nil {
+		logger.Errorw("could not delete ingress info", err)
 		return nil, err
 	}
 
