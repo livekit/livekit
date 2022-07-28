@@ -107,8 +107,8 @@ func getHeaderExtensionID(extensions []interceptor.RTPHeaderExtension, extension
 func (u *UnhandleSimulcastInterceptor) BindRemoteStream(info *interceptor.StreamInfo, reader interceptor.RTPReader) interceptor.RTPReader {
 	if t, ok := u.simTracks[info.SSRC]; ok {
 		// if we support fec for simulcast streams at future, should get rsid extensions
-		midExtensionID := getHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{sdp.SDESMidURI})
-		streamIDExtensionID := getHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{sdp.SDESRTPStreamIDURI})
+		midExtensionID := getHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.SDESMidURI})
+		streamIDExtensionID := getHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.SDESRTPStreamIDURI})
 		if midExtensionID == 0 || streamIDExtensionID == 0 {
 			return reader
 		}

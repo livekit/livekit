@@ -5,25 +5,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/logger"
+	"github.com/stretchr/testify/require"
 )
 
 var (
 	ConnectTimeout = 30 * time.Second
 )
 
-func WithTimeout(t *testing.T, description string, f func() bool) bool {
-	logger.Infow(description)
+func WithTimeout(t *testing.T, f func() string) {
 	ctx, cancel := context.WithTimeout(context.Background(), ConnectTimeout)
 	defer cancel()
+	lastErr := ""
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatal("timed out: " + description)
-			return false
+			require.Empty(t, lastErr)
 		case <-time.After(10 * time.Millisecond):
-			if f() {
-				return true
+			lastErr = f()
+			if lastErr == "" {
+				return
 			}
 		}
 	}

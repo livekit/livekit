@@ -7,40 +7,48 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 func Test_sequencer(t *testing.T) {
-	seq := newSequencer(500)
+	seq := newSequencer(500, logger.GetDefaultLogger())
 	off := uint16(15)
 
-	for i := uint16(1); i < 520; i++ {
-		seq.push(i, i+off, 123, 2, true)
+	for i := uint16(1); i < 518; i++ {
+		seq.push(i, i+off, 123, 2)
 	}
+	// send the last two out-of-order
+	seq.push(519, 519+off, 123, 2)
+	seq.push(518, 518+off, 123, 2)
 
 	time.Sleep(60 * time.Millisecond)
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
-	res := seq.getSeqNoPairs(req)
+	res := seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
-		require.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.layer, int8(2))
 	}
-	res = seq.getSeqNoPairs(req)
+	res = seq.getPacketsMeta(req)
 	require.Equal(t, 0, len(res))
 	time.Sleep(150 * time.Millisecond)
-	res = seq.getSeqNoPairs(req)
+	res = seq.getPacketsMeta(req)
 	require.Equal(t, len(req), len(res))
 	for i, val := range res {
 		require.Equal(t, val.targetSeqNo, req[i])
 		require.Equal(t, val.sourceSeqNo, req[i]-off)
-		require.Equal(t, val.layer, uint8(2))
+		require.Equal(t, val.layer, int8(2))
 	}
 
-	s := seq.push(521, 521+off, 123, 1, true)
-	s.sourceSeqNo = 12
-	m := seq.getSeqNoPairs([]uint16{521 + off})
+	seq.push(521, 521+off, 123, 1)
+	m := seq.getPacketsMeta([]uint16{521 + off})
+	require.Equal(t, 1, len(m))
+
+	seq.push(505, 505+off, 123, 1)
+	m = seq.getPacketsMeta([]uint16{505 + off})
 	require.Equal(t, 1, len(m))
 }
 
@@ -74,19 +82,19 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := newSequencer(500)
+			n := newSequencer(500, logger.GetDefaultLogger())
 
 			for _, i := range tt.fields.input {
-				n.push(i, i+tt.fields.offset, 123, 3, true)
+				n.push(i, i+tt.fields.offset, 123, 3)
 			}
 
-			g := n.getSeqNoPairs(tt.args.seqNo)
+			g := n.getPacketsMeta(tt.args.seqNo)
 			var got []uint16
 			for _, sn := range g {
 				got = append(got, sn.sourceSeqNo)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getSeqNoPairs() = %v, want %v", got, tt.want)
+				t.Errorf("getPacketsMeta() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -114,7 +122,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 	p.packVP8(vp8)
 
 	// booleans are not packed, so they will be `false` in unpacked.
-	// Also TID is only two bits, so it should be modulo 3.
+	// Also, TID is only two bits, so it should be modulo 3.
 	expectedVP8 := &buffer.VP8{
 		FirstByte:        25,
 		PictureIDPresent: 1,

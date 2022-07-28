@@ -344,3 +344,15 @@ func BenchmarkBuildPacket(b *testing.B) {
 		_ = twcc.buildTransportCCPacket()
 	}
 }
+
+func TestTccWithPacketLost(t *testing.T) {
+	twcc := NewTransportWideCCResponder(123)
+	var fbreceived int
+	twcc.OnFeedback(func(p rtcp.RawPacket) { fbreceived++ })
+
+	for i := 0; i < 200; i++ {
+		twcc.Push(10000+uint16(i*70), time.Now().UnixNano()+int64(i)*1e6, false)
+	}
+
+	assert.Greater(t, fbreceived, 0)
+}

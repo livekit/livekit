@@ -4,8 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -38,19 +40,17 @@ func TestMultiNodeRouting(t *testing.T) {
 		defer t1.Stop()
 	}
 
-	testutils.WithTimeout(t, "c2 should receive one track", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2 received no tracks"
 		}
-		// should have received two tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 1 {
-			return false
+			return "c2 didn't receive track published by c1"
 		}
-
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
 		streamID, _ := rtc.UnpackStreamID(tr1.StreamID())
 		require.Equal(t, c1.ID(), streamID)
-		return true
+		return ""
 	})
 
 	remoteC1 := c2.GetRemoteParticipant(c1.ID())
@@ -141,13 +141,123 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	scenarioDataPublish(t)
 }
 
-func TestMultiNodeRoomList(t *testing.T) {
+func TestMultiNodeJoinAfterClose(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
-	_, _, finish := setupMultiNodeTest("TestMultiNodeRoomList")
+
+	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
 	defer finish()
 
-	roomServiceListRoom(t)
+	scenarioJoinClosedRoom(t)
+}
+
+func TestMultiNodeCloseNonRTCRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTest("closeNonRTCRoom")
+	defer finish()
+
+	closeNonRTCRoom(t)
+}
+
+// ensure that token accurately reflects out of band updates
+func TestMultiNodeRefreshToken(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
+	defer finish()
+
+	// a participant joining with full permissions
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	// update permissions and metadata
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err := roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "c1",
+		Permission: &livekit.ParticipantPermission{
+			CanPublish:   false,
+			CanSubscribe: true,
+		},
+		Metadata: "metadata",
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		if c1.RefreshToken() == "" {
+			return "did not receive refresh token"
+		}
+		// parse token to ensure it's correct
+		verifier, err := auth.ParseAPIToken(c1.RefreshToken())
+		require.NoError(t, err)
+
+		grants, err := verifier.Verify(testApiSecret)
+		require.NoError(t, err)
+
+		if grants.Metadata != "metadata" {
+			return "metadata did not match"
+		}
+		if *grants.Video.CanPublish {
+			return "canPublish should be false"
+		}
+		if *grants.Video.CanPublishData {
+			return "canPublishData should be false"
+		}
+		if !*grants.Video.CanSubscribe {
+			return "canSubscribe should be true"
+		}
+		return ""
+	})
+}
+
+func TestMultiNodeRevokePublishPermission(t *testing.T) {
+	_, _, finish := setupMultiNodeTest("TestMultiNodeRevokePublishPermission")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c2 := createRTCClient("c2", secondServerPort, nil)
+	waitUntilConnected(t, c1, c2)
+
+	// c1 publishes a track for c2
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+
+	testutils.WithTimeout(t, func() string {
+		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+			return "c2 did not receive c1's tracks"
+		}
+		return ""
+	})
+
+	// revoke permission
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err := roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "c1",
+		Permission: &livekit.ParticipantPermission{
+			CanPublish:     false,
+			CanPublishData: true,
+			CanSubscribe:   true,
+		},
+	})
+	require.NoError(t, err)
+
+	// ensure c1 no longer has track published, c2 no longer see track under C1
+	testutils.WithTimeout(t, func() string {
+		if len(c1.GetPublishedTrackIDs()) != 0 {
+			return "c1 did not unpublish tracks"
+		}
+		remoteC1 := c2.GetRemoteParticipant(c1.ID())
+		if remoteC1 == nil {
+			return "c2 doesn't know about c1"
+		}
+		if len(remoteC1.Tracks) != 0 {
+			return "c2 still has c1's tracks"
+		}
+		return ""
+	})
 }

@@ -11,4 +11,7 @@ var (
 	ErrUnexpectedOffer         = errors.New("expected answer SDP, received offer")
 	ErrDataChannelUnavailable  = errors.New("data channel is not available")
 	ErrCannotSubscribe         = errors.New("participant does not have permission to subscribe")
+	ErrEmptyIdentity           = errors.New("participant identity cannot be empty")
+	ErrEmptyParticipantID      = errors.New("participant ID cannot be empty")
+	ErrMissingGrants           = errors.New("VideoGrant is missing")
 )

@@ -78,7 +78,7 @@ func BuildLinux() error {
 	if err := os.MkdirAll("bin", 0755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-server-amd64")
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", "../../bin/livekit-server-amd64")
 	cmd.Env = []string{
 		"GOOS=linux",
 		"GOARCH=amd64",
@@ -92,6 +92,44 @@ func BuildLinux() error {
 	}
 
 	checksummer.WriteChecksum()
+	return nil
+}
+
+func Deadlock() error {
+	if err := installTool("golang.org/x/tools/cmd/goimports", "latest", false); err != nil {
+		return err
+	}
+	if err := run("go get github.com/sasha-s/go-deadlock"); err != nil {
+		return err
+	}
+	if err := pipe("grep -rl sync.Mutex ./pkg", "xargs sed -i  -e s/sync.Mutex/deadlock.Mutex/g"); err != nil {
+		return err
+	}
+	if err := pipe("grep -rl sync.RWMutex ./pkg", "xargs sed -i  -e s/sync.RWMutex/deadlock.RWMutex/g"); err != nil {
+		return err
+	}
+	if err := pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+		return err
+	}
+	if err := run("go mod tidy"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Sync() error {
+	if err := pipe("grep -rl deadlock.Mutex ./pkg", "xargs sed -i  -e s/deadlock.Mutex/sync.Mutex/g"); err != nil {
+		return err
+	}
+	if err := pipe("grep -rl deadlock.RWMutex ./pkg", "xargs sed -i  -e s/deadlock.RWMutex/sync.RWMutex/g"); err != nil {
+		return err
+	}
+	if err := pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+		return err
+	}
+	if err := run("go mod tidy"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -116,19 +154,16 @@ func PublishDocker() error {
 
 // run unit tests, skipping integration
 func Test() error {
-	mg.Deps(generateWire)
-	cmd := exec.Command("go", "test", "-short", "./...")
+	mg.Deps(generateWire, setULimit)
+	cmd := exec.Command("go", "test", "-short", "./...", "-count=1")
 	connectStd(cmd)
 	return cmd.Run()
 }
 
 // run all tests including integration
 func TestAll() error {
-	mg.Deps(generateWire)
-	// "-v", "-race",
-	cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=4m")
-	connectStd(cmd)
-	return cmd.Run()
+	mg.Deps(generateWire, setULimit)
+	return run("go test ./... -count=1 -timeout=4m -v")
 }
 
 // cleans up builds
@@ -143,10 +178,7 @@ func Generate() error {
 	mg.Deps(installDeps, generateWire)
 
 	fmt.Println("generating...")
-
-	cmd := exec.Command("go", "generate", "./...")
-	connectStd(cmd)
-	return cmd.Run()
+	return run("go generate ./...")
 }
 
 // code generation for wiring
@@ -334,5 +366,50 @@ func (c *Checksummer) computeChecksum() error {
 	}
 	c.checksum = fmt.Sprintf("%x", h.Sum(nil))
 
+	return nil
+}
+
+func run(commands ...string) error {
+	for _, command := range commands {
+		args := strings.Split(command, " ")
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pipe(first, second string) error {
+	a1 := strings.Split(first, " ")
+	c1 := exec.Command(a1[0], a1[1:]...)
+
+	c1.Stderr = os.Stderr
+	p, err := c1.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	a2 := strings.Split(second, " ")
+	c2 := exec.Command(a2[0], a2[1:]...)
+
+	c2.Stdin = p
+	c2.Stdout = os.Stdout
+	c2.Stderr = os.Stderr
+
+	if err = c1.Start(); err != nil {
+		return err
+	}
+	if err = c2.Start(); err != nil {
+		return err
+	}
+	if err = c1.Wait(); err != nil {
+		return err
+	}
+	if err = c2.Wait(); err != nil {
+		return err
+	}
 	return nil
 }

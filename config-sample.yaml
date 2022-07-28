@@ -2,16 +2,23 @@
 # for production setups, this port should be placed behind a load balancer with TLS
 port: 7880
 
-# log level, valid values: debug, info, warning, error
-log_level: info
-
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
 # clients could connect to any node and be routed to the same room
 redis:
   address: redis.host:6379
+  # To require TLS transport
+  # use_tls: true
   # db: 0
   # username: myuser
   # password: mypassword
+  # To use sentinel remove the address key above and add the following
+  # sentinel_master_name: livekit
+  # sentinel_addresses:
+  # - livekit-redis-node-0.livekit-redis-headless:26379
+  # - livekit-redis-node-1.livekit-redis-headless:26379
+  # If you use a different set of credentials for sentinel add
+  # sentinel_username: user
+  # sentinel_password: pass
 
 # WebRTC configuration
 rtc:
@@ -28,20 +35,29 @@ rtc:
   # this is useful for cloud environments such as AWS & Google where hosts have an internal IP
   # that maps to an external one
   use_external_ip: true
+  # when set to true, server will use a lite ice agent, that will speed up ice connection, but 
+  # might cause connect issue if server running behind NAT.
+  # use_ice_lite: true
   # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
   # a single port. This simplifies deployment, but mux will become an overhead for
   # highly trafficked deployments.
   # port_range_start & end must not be set for this config to take effect
   # udp_port: 7882
   # optional settings
-  # # when using REMB, the max bitrate that the SFU would accept, defaults to 3Mbps
-  # max_bitrate: 3145728
   # # number of packets to buffer in the SFU, defaults to 500
   # packet_buffer_size: 500
   # # optional STUN servers for LiveKit clients to use. Clients will be configured to use these STUN servers automatically.
   # # by default LiveKit clients use Google's public STUN servers
   # stun_servers:
   #   - server1
+  # # optional TURN servers for clients. This isn't necessary if using embedded TURN server (see below).
+  # turn_servers:
+  #   - host: myhost.com
+  #     port: 443
+  #     # tls, tcp, or udp
+  #     protocol: tls
+  #     username: ""
+  #     credential: ""
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:
@@ -56,6 +72,15 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
+  # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
+  # # both inclusion and exclusion filters can be used together. If neither is defined (default), all interfaces on the machine will be used.
+  # # If both of them are set, then only interfaces that satisfy both filters will be used.
+  # # If an interface is present in both lists, include takes precedence.
+  # interfaces:
+  #   includes:
+  #     - en0
+  #   excludes:
+  #     - docker0
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
@@ -67,10 +92,25 @@ keys:
   key1: secret1
   key2: secret2
 
+# Logging config
+# logging:
+#   # log level, valid values: debug, info, warning, error
+#   level: info
+#   # log level for pion, default error
+#   pion_level: error
+#   # when set to true, emit json fields
+#   json: false
+#   # for production setups, enables sampling algorithm
+#   # https://github.com/uber-go/zap/blob/master/FAQ.md#why-sample-application-logs
+#   sample: false
+
+
 # Default room config
 # Each room created will inherit these settings. If rooms are created explicitly with CreateRoom, they will take
 # precedence over defaults
 # room:
+#   # allow rooms to be automatically created when participants join, defaults to true
+#   # auto_create: false
 #   # number of seconds to leave a room open when it's empty
 #   empty_timeout: 300
 #   # limit number of participants that can be in a room, 0 for no limit
@@ -84,6 +124,8 @@ keys:
 #   # allow tracks to be unmuted remotely, defaults to false
 #   # tracks can always be muted from the Room Service APIs
 #   enable_remote_unmute: true
+#   # limit size of room and participant's metadata, 0 for no limit
+#   max_metadata_size: 0
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events
@@ -122,6 +164,9 @@ keys:
 #   udp_port: 3478
 #   # defaults to 5349 - if not using a load balancer, this must be set to 443
 #   tls_port: 5349
+#   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
+#   relay_range_start: 1024
+#   relay_range_end: 30000
 #   # set external_tl to true if using a L4 load balancer to terminate TLS. when enabled,
 #   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
 #   external_tls: true
@@ -136,8 +181,11 @@ keys:
 
 # # node selector
 # node_selector:
-#   # default: random. valid values: random, sysload, regionaware
+#   # default: any. valid values: any, sysload, cpuload, regionaware
 #   kind: sysload
+#   # priority used for selection of node when multiple are available
+#   # default: random. valid values: random, sysload, cpuload, rooms, clients, tracks, bytespersec
+#   sort_by: sysload
 #   # used in sysload and regionaware
 #   # do not assign room to node if load per CPU exceeds sysload_limit
 #   sysload_limit: 0.7

@@ -3,6 +3,8 @@ package sfu
 import (
 	"github.com/elliotchance/orderedmap"
 
+	"github.com/livekit/protocol/logger"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
@@ -10,7 +12,17 @@ import (
 // VP8 munger
 //
 type TranslationParamsVP8 struct {
-	header *buffer.VP8
+	Header *buffer.VP8
+}
+
+type VP8MungerState struct {
+	ExtLastPictureId int32
+	PictureIdUsed    int
+	LastTl0PicIdx    uint8
+	Tl0PicIdxUsed    int
+	TidUsed          int
+	LastKeyIdx       uint8
+	KeyIdxUsed       int
 }
 
 type VP8MungerParams struct {
@@ -31,14 +43,41 @@ type VP8MungerParams struct {
 }
 
 type VP8Munger struct {
+	logger logger.Logger
+
 	VP8MungerParams
 }
 
-func NewVP8Munger() *VP8Munger {
-	return &VP8Munger{VP8MungerParams: VP8MungerParams{
-		missingPictureIds:    orderedmap.NewOrderedMap(),
-		lastDroppedPictureId: -1,
-	}}
+func NewVP8Munger(logger logger.Logger) *VP8Munger {
+	return &VP8Munger{
+		logger: logger,
+		VP8MungerParams: VP8MungerParams{
+			missingPictureIds:    orderedmap.NewOrderedMap(),
+			lastDroppedPictureId: -1,
+		},
+	}
+}
+
+func (v *VP8Munger) GetLast() VP8MungerState {
+	return VP8MungerState{
+		ExtLastPictureId: v.extLastPictureId,
+		PictureIdUsed:    v.pictureIdUsed,
+		LastTl0PicIdx:    v.lastTl0PicIdx,
+		Tl0PicIdxUsed:    v.tl0PicIdxUsed,
+		TidUsed:          v.tidUsed,
+		LastKeyIdx:       v.lastKeyIdx,
+		KeyIdxUsed:       v.keyIdxUsed,
+	}
+}
+
+func (v *VP8Munger) SeedLast(state VP8MungerState) {
+	v.extLastPictureId = state.ExtLastPictureId
+	v.pictureIdUsed = state.PictureIdUsed
+	v.lastTl0PicIdx = state.LastTl0PicIdx
+	v.tl0PicIdxUsed = state.Tl0PicIdxUsed
+	v.tidUsed = state.TidUsed
+	v.lastKeyIdx = state.LastKeyIdx
+	v.keyIdxUsed = state.KeyIdxUsed
 }
 
 func (v *VP8Munger) SetLast(extPkt *buffer.ExtPacket) {
@@ -132,7 +171,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 			HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 		}
 		return &TranslationParamsVP8{
-			header: vp8Packet,
+			Header: vp8Packet,
 		}, nil
 	}
 
@@ -215,7 +254,7 @@ func (v *VP8Munger) UpdateAndGet(extPkt *buffer.ExtPacket, ordering SequenceNumb
 		HeaderSize:       vp8.HeaderSize + buffer.VP8PictureIdSizeDiff(mungedPictureId > 127, vp8.MBit),
 	}
 	return &TranslationParamsVP8{
-		header: vp8Packet,
+		Header: vp8Packet,
 	}, nil
 }
 

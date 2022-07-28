@@ -7,7 +7,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-func HandleParticipantSignal(room types.Room, participant types.Participant, req *livekit.SignalRequest, pLogger logger.Logger) error {
+func HandleParticipantSignal(room types.Room, participant types.LocalParticipant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
 		_, err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
@@ -16,7 +16,7 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			return err
 		}
 	case *livekit.SignalRequest_AddTrack:
-		pLogger.Debugw("add track request", "track", msg.AddTrack.Cid)
+		pLogger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
 		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Answer:
 		sd := FromProtoSessionDescription(msg.Answer)
@@ -32,13 +32,14 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			return nil
 		}
 		if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-			pLogger.Warnw("could not handle trickle", err)
+			pLogger.Warnw("could not add ICE candidate", err)
 		}
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
 		var err error
-		if participant.CanSubscribe() {
+		// always allow unsubscribe
+		if participant.CanSubscribe() || !msg.Subscription.Subscribe {
 			updateErr := room.UpdateSubscriptions(
 				participant,
 				livekit.StringsAsTrackIDs(msg.Subscription.TrackSids),
@@ -58,17 +59,13 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 		}
 	case *livekit.SignalRequest_TrackSetting:
 		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {
-			subTrack := participant.GetSubscribedTrack(sid)
-			if subTrack == nil {
-				pLogger.Warnw("unable to find SubscribedTrack", nil,
-					"track", sid)
+			err := participant.UpdateSubscribedTrackSettings(sid, msg.TrackSetting)
+			if err != nil {
+				pLogger.Errorw("failed to update subscribed track settings", err, "trackID", sid)
 				continue
 			}
 
-			// find quality for published track
-			pLogger.Debugw("updating track settings",
-				"settings", msg.TrackSetting)
-			subTrack.UpdateSubscriberSettings(msg.TrackSetting)
+			pLogger.Infow("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
 		}
 	case *livekit.SignalRequest_UpdateLayers:
 		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)
@@ -78,18 +75,25 @@ func HandleParticipantSignal(room types.Room, participant types.Participant, req
 			return nil
 		}
 	case *livekit.SignalRequest_Leave:
-		_ = participant.Close()
-	case *livekit.SignalRequest_SubscriptionPermissions:
-		err := room.UpdateSubscriptionPermissions(participant, msg.SubscriptionPermissions)
+		pLogger.Infow("client leaving room")
+		room.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonClientRequestLeave)
+	case *livekit.SignalRequest_SubscriptionPermission:
+		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
 		if err != nil {
-			pLogger.Warnw("could not update subscription permissions", err,
-				"permissions", msg.SubscriptionPermissions)
+			pLogger.Warnw("could not update subscription permission", err,
+				"permissions", msg.SubscriptionPermission)
 		}
 	case *livekit.SignalRequest_SyncState:
 		err := room.SyncState(participant, msg.SyncState)
 		if err != nil {
-			pLogger.Warnw("could not sync subscribe state", err,
+			pLogger.Warnw("could not sync state", err,
 				"state", msg.SyncState)
+		}
+	case *livekit.SignalRequest_Simulate:
+		err := room.SimulateScenario(participant, msg.Simulate)
+		if err != nil {
+			pLogger.Warnw("could not simulate scenario", err,
+				"simulate", msg.Simulate)
 		}
 	}
 	return nil

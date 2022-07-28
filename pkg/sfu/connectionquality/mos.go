@@ -1,86 +1,122 @@
 package connectionquality
 
 import (
+	"time"
+
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/rtcscore-go/pkg/rtcmos"
 )
 
-// MOS score calculation is based on webrtc-stats
-// available @ https://github.com/oanguenot/webrtc-stats
-
-const (
-	rtt = 70
-)
-
-func Score2Rating(score float64) livekit.ConnectionQuality {
-	if score > 3.9 {
+func Score2Rating(score float32) livekit.ConnectionQuality {
+	if score > 4.0 {
 		return livekit.ConnectionQuality_EXCELLENT
 	}
 
-	if score > 2.5 {
+	if score > 3.0 {
 		return livekit.ConnectionQuality_GOOD
 	}
 	return livekit.ConnectionQuality_POOR
 }
 
-func mosAudioEmodel(cur, prev *ConnectionStat) float64 {
-
-	if cur == nil {
-		return 0.0
-	}
-
-	// find percentage of lost packets in this window
-	deltaTotalPackets := cur.TotalPackets - prev.TotalPackets
-	if deltaTotalPackets == 0 {
-		return 0.0
-	}
-
-	deltaTotalLostPackets := cur.PacketsLost - prev.PacketsLost
-	percentageLost := (float64(deltaTotalLostPackets) / float64(deltaTotalPackets)) * 100
-
-	rx := 93.2 - percentageLost
-	ry := 0.18*rx*rx - 27.9*rx + 1126.62
-
-	//Jitter is in MicroSecs (1/1e6) units. Convert it to MilliSecs
-	d := float64(rtt + (cur.Jitter / 1000))
-	h := d - 177.3
-	if h < 0 {
-		h = 0
-	} else {
-		h = 1
-	}
-	id := 0.024*d + 0.11*(d-177.3)*h
-	r := ry - (id)
-	if r < 0 {
-		return 1
-	}
-	if r > 100 {
-		return 4.5
-	}
-	score := 1 + (0.035 * r) + (7.0/1000000)*r*(r-60)*(100-r)
-
-	return score
+func getBitRate(interval float64, bytes uint64) int32 {
+	return int32(float64(bytes*8) / interval)
 }
 
-func Loss2Score(loss uint32, reducedQuality bool) float64 {
+func getFrameRate(interval float64, frames uint32) int32 {
+	return int32(float64(frames) / interval)
+}
+
+func getLossPercentage(expected uint32, lost uint32) float32 {
+	if expected == 0 {
+		return 0.0
+	}
+
+	return float32(lost) * 100.0 / float32(expected)
+}
+
+func int32Ptr(x int32) *int32 {
+	return &x
+}
+
+type TrackScoreParams struct {
+	Duration         time.Duration
+	Codec            string
+	PacketsExpected  uint32
+	PacketsLost      uint32
+	Bytes            uint64
+	Frames           uint32
+	Jitter           float64
+	Rtt              uint32
+	DtxDisabled      bool
+	ActualWidth      uint32
+	ActualHeight     uint32
+	ExpectedWidth    uint32
+	ExpectedHeight   uint32
+	IsReducedQuality bool
+}
+
+func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
+	return rtcmos.Stat{
+		Bitrate:       getBitRate(params.Duration.Seconds(), params.Bytes),
+		PacketLoss:    getLossPercentage(params.PacketsExpected, params.PacketsLost),
+		RoundTripTime: int32Ptr(int32(params.Rtt)),
+		BufferDelay:   int32Ptr(int32(params.Jitter / 1000.0)),
+	}
+}
+
+func AudioTrackScore(params TrackScoreParams) float32 {
+	stat := getRtcMosStat(params)
+	stat.AudioConfig = &rtcmos.AudioConfig{}
+	if !params.DtxDisabled {
+		flag := true
+		stat.AudioConfig.Dtx = &flag
+	}
+
+	scores := rtcmos.Score([]rtcmos.Stat{stat})
+	if len(scores) == 1 {
+		return float32(scores[0].AudioScore)
+	}
+	return 0
+}
+
+func VideoTrackScore(params TrackScoreParams) float32 {
+	stat := getRtcMosStat(params)
+	stat.VideoConfig = &rtcmos.VideoConfig{
+		FrameRate:      int32Ptr(getFrameRate(params.Duration.Seconds(), params.Frames)),
+		Codec:          params.Codec,
+		ExpectedWidth:  int32Ptr(int32(params.ExpectedWidth)),
+		ExpectedHeight: int32Ptr(int32(params.ExpectedHeight)),
+		Width:          int32Ptr(int32(params.ActualWidth)),
+		Height:         int32Ptr(int32(params.ActualHeight)),
+	}
+
+	scores := rtcmos.Score([]rtcmos.Stat{stat})
+	if len(scores) == 1 {
+		return float32(scores[0].VideoScore)
+	}
+	return 0
+}
+
+//
+// rtcmos gives lower score when screen share content is static.
+// Even though the frame rate is low, the bit rate is also low and
+// the resolution is high. Till rtcmos model can be adapted to that
+// scenario, use loss based scoring.
+//
+func ScreenshareTrackScore(params TrackScoreParams) float32 {
+	pctLoss := getLossPercentage(params.PacketsExpected, params.PacketsLost)
 	// No Loss, excellent
-	if loss == 0 && !reducedQuality {
-		return 5
+	if pctLoss == 0.0 && !params.IsReducedQuality {
+		return 5.0
 	}
 	// default when loss is minimal, but reducedQuality
-	score := 3.5
+	score := float32(3.5)
 	// loss is bad
-	if loss >= 4 {
+	if pctLoss >= 4.0 {
 		score = 2.0
-	} else if loss <= 2 && !reducedQuality {
+	} else if pctLoss <= 2.0 && !params.IsReducedQuality {
 		// loss is acceptable and at reduced quality
 		score = 4.5
 	}
 	return score
-}
-
-func ConnectionScore(cur, prev *ConnectionStat, kind livekit.TrackType) float64 {
-	if kind == livekit.TrackType_AUDIO {
-		return mosAudioEmodel(cur, prev)
-	}
-	return 0
 }

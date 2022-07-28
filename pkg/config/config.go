@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -11,12 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
-)
 
-const (
-	defaultLimitNumTracksPerCPU int32   = 400
-	defaultLimitMaxNumTracks    int32   = 8000
-	defaultLimitBytesPerSec     float32 = 1_000_000_000 // just under 10 Gbps
+	"github.com/livekit/protocol/logger"
 )
 
 var DefaultStunServers = []string{
@@ -24,60 +19,87 @@ var DefaultStunServers = []string{
 	"stun1.l.google.com:19302",
 }
 
+type CongestionControlProbeMode string
+
+const (
+	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
+	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
+
+	StatsUpdateInterval = time.Second * 10
+)
+
 type Config struct {
 	Port           uint32             `yaml:"port"`
-	PrometheusPort uint32             `yaml:"prometheus_port"`
-	RTC            RTCConfig          `yaml:"rtc"`
-	Redis          RedisConfig        `yaml:"redis"`
-	Audio          AudioConfig        `yaml:"audio"`
-	Room           RoomConfig         `yaml:"room"`
-	TURN           TURNConfig         `yaml:"turn"`
-	WebHook        WebHookConfig      `yaml:"webhook"`
-	NodeSelector   NodeSelectorConfig `yaml:"node_selector"`
-	KeyFile        string             `yaml:"key_file"`
-	Keys           map[string]string  `yaml:"keys"`
-	Region         string             `yaml:"region"`
-	LogLevel       string             `yaml:"log_level"`
-	Limit          LimitConfig        `yaml:"limit"`
+	BindAddresses  []string           `yaml:"bind_addresses"`
+	PrometheusPort uint32             `yaml:"prometheus_port,omitempty"`
+	RTC            RTCConfig          `yaml:"rtc,omitempty"`
+	Redis          RedisConfig        `yaml:"redis,omitempty"`
+	Audio          AudioConfig        `yaml:"audio,omitempty"`
+	Video          VideoConfig        `yaml:"video,omitempty"`
+	Room           RoomConfig         `yaml:"room,omitempty"`
+	TURN           TURNConfig         `yaml:"turn,omitempty"`
+	WebHook        WebHookConfig      `yaml:"webhook,omitempty"`
+	NodeSelector   NodeSelectorConfig `yaml:"node_selector,omitempty"`
+	KeyFile        string             `yaml:"key_file,omitempty"`
+	Keys           map[string]string  `yaml:"keys,omitempty"`
+	Region         string             `yaml:"region,omitempty"`
+	// LogLevel is deprecated
+	LogLevel string        `yaml:"log_level,omitempty"`
+	Logging  LoggingConfig `yaml:"logging,omitempty"`
+	Limit    LimitConfig   `yaml:"limit,omitempty"`
 
-	Development bool `yaml:"development"`
+	Development bool `yaml:"development,omitempty"`
 }
 
 type RTCConfig struct {
-	UDPPort           uint32 `yaml:"udp_port"`
-	TCPPort           uint32 `yaml:"tcp_port"`
-	ICEPortRangeStart uint32 `yaml:"port_range_start"`
-	ICEPortRangeEnd   uint32 `yaml:"port_range_end"`
-	NodeIP            string `yaml:"node_ip"`
-	// for testing, disable UDP
-	ForceTCP      bool     `yaml:"force_tcp"`
-	StunServers   []string `yaml:"stun_servers"`
-	UseExternalIP bool     `yaml:"use_external_ip"`
+	UDPPort           uint32           `yaml:"udp_port,omitempty"`
+	TCPPort           uint32           `yaml:"tcp_port,omitempty"`
+	ICEPortRangeStart uint32           `yaml:"port_range_start,omitempty"`
+	ICEPortRangeEnd   uint32           `yaml:"port_range_end,omitempty"`
+	NodeIP            string           `yaml:"node_ip,omitempty"`
+	STUNServers       []string         `yaml:"stun_servers,omitempty"`
+	TURNServers       []TURNServer     `yaml:"turn_servers,omitempty"`
+	UseExternalIP     bool             `yaml:"use_external_ip"`
+	UseICELite        bool             `yaml:"use_ice_lite,omitempty"`
+	Interfaces        InterfacesConfig `yaml:"interfaces"`
 
 	// Number of packets to buffer for NACK
-	PacketBufferSize int `yaml:"packet_buffer_size"`
-
-	// Max bitrate for REMB
-	MaxBitrate uint64 `yaml:"max_bitrate"`
+	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
 
 	// Throttle periods for pli/fir rtcp packets
-	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle"`
+	PLIThrottle PLIThrottleConfig `yaml:"pli_throttle,omitempty"`
 
-	// Which side runs bandwidth estimation
-	UseSendSideBWE bool `yaml:"send_side_bandwidth_estimation"`
+	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
-	CongestionControl CongestionControlConfig `yaml:"congestion_control"`
+	// for testing, disable UDP
+	ForceTCP bool `yaml:"force_tcp,omitempty"`
+}
+
+type TURNServer struct {
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Protocol   string `yaml:"protocol"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
 }
 
 type PLIThrottleConfig struct {
-	LowQuality  time.Duration `yaml:"low_quality"`
-	MidQuality  time.Duration `yaml:"mid_quality"`
-	HighQuality time.Duration `yaml:"high_quality"`
+	LowQuality  time.Duration `yaml:"low_quality,omitempty"`
+	MidQuality  time.Duration `yaml:"mid_quality,omitempty"`
+	HighQuality time.Duration `yaml:"high_quality,omitempty"`
 }
 
 type CongestionControlConfig struct {
-	Enabled    bool `yaml:"enabled"`
-	AllowPause bool `yaml:"allow_pause"`
+	Enabled            bool                       `yaml:"enabled"`
+	AllowPause         bool                       `yaml:"allow_pause"`
+	UseSendSideBWE     bool                       `yaml:"send_side_bandwidth_estimation,omitempty"`
+	ProbeMode          CongestionControlProbeMode `yaml:"padding_mode,omitempty"`
+	MinChannelCapacity int64                      `yaml:"min_channel_capacity,omitempty"`
+}
+
+type InterfacesConfig struct {
+	Includes []string `yaml:"includes"`
+	Excludes []string `yaml:"excludes"`
 }
 
 type AudioConfig struct {
@@ -93,18 +115,30 @@ type AudioConfig struct {
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
 }
 
+type VideoConfig struct {
+	DynacastPauseDelay time.Duration `yaml:"dynacast_pause_delay,omitempty"`
+}
+
 type RedisConfig struct {
-	Address  string `yaml:"address"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
+	Address           string   `yaml:"address"`
+	Username          string   `yaml:"username"`
+	Password          string   `yaml:"password"`
+	DB                int      `yaml:"db"`
+	UseTLS            bool     `yaml:"use_tls"`
+	MasterName        string   `yaml:"sentinel_master_name"`
+	SentinelUsername  string   `yaml:"sentinel_username"`
+	SentinelPassword  string   `yaml:"sentinel_password"`
+	SentinelAddresses []string `yaml:"sentinel_addresses"`
 }
 
 type RoomConfig struct {
+	// enable rooms to be automatically created
+	AutoCreate         bool        `yaml:"auto_create"`
 	EnabledCodecs      []CodecSpec `yaml:"enabled_codecs"`
 	MaxParticipants    uint32      `yaml:"max_participants"`
 	EmptyTimeout       uint32      `yaml:"empty_timeout"`
 	EnableRemoteUnmute bool        `yaml:"enable_remote_unmute"`
+	MaxMetadataSize    uint32      `yaml:"max_metadata_size"`
 }
 
 type CodecSpec struct {
@@ -112,14 +146,21 @@ type CodecSpec struct {
 	FmtpLine string `yaml:"fmtp_line"`
 }
 
+type LoggingConfig struct {
+	logger.Config `yaml:",inline"`
+	PionLevel     string `yaml:"pion_level,omitempty"`
+}
+
 type TURNConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Domain      string `yaml:"domain"`
-	CertFile    string `yaml:"cert_file"`
-	KeyFile     string `yaml:"key_file"`
-	TLSPort     int    `yaml:"tls_port"`
-	UDPPort     int    `yaml:"udp_port"`
-	ExternalTLS bool   `yaml:"external_tls"`
+	Enabled             bool   `yaml:"enabled"`
+	Domain              string `yaml:"domain"`
+	CertFile            string `yaml:"cert_file"`
+	KeyFile             string `yaml:"key_file"`
+	TLSPort             int    `yaml:"tls_port"`
+	UDPPort             int    `yaml:"udp_port"`
+	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
+	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
+	ExternalTLS         bool   `yaml:"external_tls"`
 }
 
 type WebHookConfig struct {
@@ -130,6 +171,8 @@ type WebHookConfig struct {
 
 type NodeSelectorConfig struct {
 	Kind         string         `yaml:"kind"`
+	SortBy       string         `yaml:"sort_by"`
+	CPULoadLimit float32        `yaml:"cpu_load_limit"`
 	SysloadLimit float32        `yaml:"sysload_limit"`
 	Regions      []RegionConfig `yaml:"regions"`
 }
@@ -157,8 +200,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
-			StunServers:       []string{},
-			MaxBitrate:        3 * 1024 * 1024, // 3 mbps
+			STUNServers:       []string{},
 			PacketBufferSize:  500,
 			PLIThrottle: PLIThrottleConfig{
 				LowQuality:  500 * time.Millisecond,
@@ -167,25 +209,33 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			},
 			CongestionControl: CongestionControlConfig{
 				Enabled:    true,
-				AllowPause: true,
+				AllowPause: false,
+				ProbeMode:  CongestionControlProbeModePadding,
 			},
 		},
 		Audio: AudioConfig{
-			ActiveLevel:     30, // -30dBov = 0.03
+			ActiveLevel:     35, // -35dBov
 			MinPercentile:   40,
-			UpdateInterval:  500,
+			UpdateInterval:  400,
 			SmoothIntervals: 2,
+		},
+		Video: VideoConfig{
+			DynacastPauseDelay: 5 * time.Second,
 		},
 		Redis: RedisConfig{},
 		Room: RoomConfig{
-			// by default only enable opus and VP8
+			AutoCreate: true,
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
 				{Mime: webrtc.MimeTypeVP8},
 				{Mime: webrtc.MimeTypeH264},
+				// {Mime: webrtc.MimeTypeAV1},
 				// {Mime: webrtc.MimeTypeVP9},
 			},
 			EmptyTimeout: 5 * 60,
+		},
+		Logging: LoggingConfig{
+			PionLevel: "error",
 		},
 		TURN: TURNConfig{
 			Domain:      "dev-turn.luxrobo.com",
@@ -194,8 +244,10 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			TLSPort:     3478,
 		},
 		NodeSelector: NodeSelectorConfig{
-			Kind:         "random",
-			SysloadLimit: 0.7,
+			Kind:         "any",
+			SortBy:       "random",
+			SysloadLimit: 0.9,
+			CPULoadLimit: 0.9,
 		},
 		Keys: map[string]string{},
 	}
@@ -229,6 +281,18 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		}
 	}
 
+	// set defaults for Turn relay if none are set
+	if conf.TURN.RelayPortRangeStart == 0 || conf.TURN.RelayPortRangeEnd == 0 {
+		// to make it easier to run in dev mode/docker, default to two ports
+		if conf.Development {
+			conf.TURN.RelayPortRangeStart = 30000
+			conf.TURN.RelayPortRangeEnd = 30002
+		} else {
+			conf.TURN.RelayPortRangeStart = 30000
+			conf.TURN.RelayPortRangeEnd = 40000
+		}
+	}
+
 	if conf.RTC.NodeIP == "" {
 		conf.RTC.NodeIP, err = conf.determineIP()
 		if err != nil {
@@ -236,22 +300,22 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		}
 	}
 
-	if conf.Limit.NumTracks == 0 {
-		conf.Limit.NumTracks = defaultLimitNumTracksPerCPU * int32(runtime.NumCPU())
-		if conf.Limit.NumTracks > defaultLimitMaxNumTracks {
-			conf.Limit.NumTracks = defaultLimitMaxNumTracks
-		}
+	if conf.LogLevel != "" {
+		conf.Logging.Level = conf.LogLevel
 	}
-
-	if conf.Limit.BytesPerSec == 0 {
-		conf.Limit.BytesPerSec = defaultLimitBytesPerSec
+	if conf.Logging.Level == "" && conf.Development {
+		conf.Logging.Level = "debug"
 	}
 
 	return conf, nil
 }
 
 func (conf *Config) HasRedis() bool {
-	return conf.Redis.Address != ""
+	return conf.Redis.Address != "" || conf.Redis.SentinelAddresses != nil
+}
+
+func (conf *Config) UseSentinel() bool {
+	return conf.Redis.SentinelAddresses != nil
 }
 
 func (conf *Config) updateFromCLI(c *cli.Context) error {
@@ -284,7 +348,12 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("node-ip") {
 		conf.RTC.NodeIP = c.String("node-ip")
 	}
-
+	if c.IsSet("udp-port") {
+		conf.RTC.UDPPort = uint32(c.Int("udp-port"))
+	}
+	if c.IsSet("bind") {
+		conf.BindAddresses = c.StringSlice("bind")
+	}
 	return nil
 }
 

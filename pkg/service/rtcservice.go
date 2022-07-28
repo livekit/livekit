@@ -1,14 +1,17 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/sebest/xff"
+	"github.com/ua-parser/uap-go/uaparser"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -16,27 +19,38 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
+	store         ServiceStore
 	upgrader      websocket.Upgrader
 	currentNode   routing.LocalNode
+	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
+	parser        *uaparser.Parser
 }
 
-func NewRTCService(conf *config.Config, ra RoomAllocator, router routing.MessageRouter, currentNode routing.LocalNode) *RTCService {
+func NewRTCService(
+	conf *config.Config,
+	ra RoomAllocator,
+	store ServiceStore,
+	router routing.MessageRouter,
+	currentNode routing.LocalNode,
+) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
+		store:         store,
 		upgrader:      websocket.Upgrader{},
 		currentNode:   currentNode,
+		config:        conf,
 		isDev:         conf.Development,
 		limits:        conf.Limit,
+		parser:        uaparser.NewFromSaved(),
 	}
 
 	// allow connections from any origin, since script may be hosted anywhere
@@ -69,10 +83,15 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		return "", routing.ParticipantInit{}, http.StatusUnauthorized, err
 	}
 
+	if claims.Identity == "" {
+		return "", routing.ParticipantInit{}, http.StatusBadRequest, ErrIdentityEmpty
+	}
+
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
 	autoSubParam := r.FormValue("auto_subscribe")
 	publishParam := r.FormValue("publish")
+	adaptiveStreamParam := r.FormValue("adaptive_stream")
 
 	if onlyName != "" {
 		roomName = onlyName
@@ -81,7 +100,7 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 	// this is new connection for existing participant -  with publish only permissions
 	if publishParam != "" {
 		// Make sure grant has CanPublish set,
-		if claims.Video.CanPublish != nil && *claims.Video.CanPublish == false {
+		if !claims.Video.GetCanPublish() {
 			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
 		}
 		// Make sure by default subscribe is off
@@ -89,7 +108,9 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		claims.Identity += "#" + publishParam
 	}
 
+	region := ""
 	if router, ok := s.router.(routing.Router); ok {
+		region = router.GetRegion()
 		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
 			if selector.LimitsReached(s.limits, foundNode.Stats) {
 				return "", routing.ParticipantInit{}, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
@@ -102,16 +123,17 @@ func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.Partic
 		Identity:      livekit.ParticipantIdentity(claims.Identity),
 		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
-		Metadata:      claims.Metadata,
-		Hidden:        claims.Video.Hidden,
-		Recorder:      claims.Video.Recorder,
-		Client:        s.parseClientInfo(r.Form),
+		Client:        s.ParseClientInfo(r),
+		Grants:        claims,
+		Region:        region,
 	}
 
 	if autoSubParam != "" {
 		pi.AutoSubscribe = boolValue(autoSubParam)
 	}
-	pi.Permission = permissionFromGrant(claims.Video)
+	if adaptiveStreamParam != "" {
+		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
+	}
 
 	return roomName, pi, http.StatusOK, nil
 }
@@ -128,6 +150,18 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(w, code, err.Error())
 		return
+	}
+
+	// when auto create is disabled, we'll check to ensure it's already created
+	if !s.config.Room.AutoCreate {
+		_, err := s.store.LoadRoom(context.Background(), roomName)
+		if err == ErrRoomNotFound {
+			handleError(w, 404, err.Error())
+			return
+		} else if err != nil {
+			handleError(w, 500, err.Error())
+			return
+		}
 	}
 
 	// create room if it doesn't exist, also assigns an RTC node for the room
@@ -147,13 +181,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.Logger(logger.GetLogger()), roomName),
-		pi.Identity, "",
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, livekit.RoomID(rm.Sid)),
+		pi.Identity,
+		"",
+		false,
 	)
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		pLogger.Infow("server closing WS connection", "connID", connId)
+		pLogger.Infow("finishing WS connection", "connID", connId)
+		resSource.Close()
 		reqSink.Close()
 		close(done)
 	}()
@@ -167,15 +204,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sigConn := NewWSSignalConnection(conn)
-	if types.ProtocolVersion(pi.Client.Protocol).SupportsProtobuf() {
-		sigConn.useJSON = false
-	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
-	pLogger.Infow("new client WS connected",
-		"connID", connId,
-		"roomID", rm.Sid,
-	)
+	pLogger.Infow("new client WS connected", "connID", connId)
 
 	// handle responses
 	go func() {
@@ -218,6 +249,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
+				pLogger.Debugw("exit ws read loop for closed connection", "connID", connId)
 				return
 			} else {
 				pLogger.Errorw("error reading from websocket", err)
@@ -231,7 +263,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
+func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
+	values := r.Form
 	ci := &livekit.ClientInfo{}
 	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
 		ci.Protocol = int32(pv)
@@ -240,15 +273,52 @@ func (s *RTCService) parseClientInfo(values url.Values) *livekit.ClientInfo {
 	switch sdkString {
 	case "js":
 		ci.Sdk = livekit.ClientInfo_JS
-	case "ios":
-		ci.Sdk = livekit.ClientInfo_IOS
+	case "ios", "swift":
+		ci.Sdk = livekit.ClientInfo_SWIFT
 	case "android":
 		ci.Sdk = livekit.ClientInfo_ANDROID
 	case "flutter":
 		ci.Sdk = livekit.ClientInfo_FLUTTER
 	case "go":
 		ci.Sdk = livekit.ClientInfo_GO
+	case "unity":
+		ci.Sdk = livekit.ClientInfo_UNITY
 	}
+
 	ci.Version = values.Get("version")
+	ci.Os = values.Get("os")
+	ci.OsVersion = values.Get("os_version")
+	ci.Browser = values.Get("browser")
+	ci.BrowserVersion = values.Get("browser_version")
+	ci.DeviceModel = values.Get("device_model")
+	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
+	ci.Address = r.Header.Get("CF-Connecting-IP")
+	if len(ci.Address) == 0 {
+		ci.Address = xff.GetRemoteAddr(r)
+	}
+
+	// attempt to parse types for SDKs that support browser as a platform
+	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_FLUTTER ||
+		ci.Sdk == livekit.ClientInfo_UNITY {
+		client := s.parser.Parse(r.UserAgent())
+		if ci.Browser == "" {
+			ci.Browser = client.UserAgent.Family
+			ci.BrowserVersion = client.UserAgent.ToVersionString()
+		}
+		if ci.Os == "" {
+			ci.Os = client.Os.Family
+			ci.OsVersion = client.Os.ToVersionString()
+		}
+		if ci.DeviceModel == "" {
+			model := client.Device.Family
+			if model != "" && client.Device.Model != "" && model != client.Device.Model {
+				model += " " + client.Device.Model
+			}
+
+			ci.DeviceModel = model
+		}
+	}
+
 	return ci
 }

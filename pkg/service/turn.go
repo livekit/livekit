@@ -6,10 +6,11 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
@@ -36,17 +37,19 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
-		LoggerFactory: logging.LoggerFactory(),
+		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
 	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 		Address:      "0.0.0.0",
-		MinPort:      turnMinPort,
-		MaxPort:      turnMaxPort,
+		MinPort:      turnConf.RelayPortRangeStart,
+		MaxPort:      turnConf.RelayPortRangeEnd,
 		MaxRetries:   allocateRetries,
 	}
-	logging.Debugf("relayAddrGen %v", relayAddrGen)
 	var logValues []interface{}
+
+	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
+	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 
 	if turnConf.TLSPort > 0 {
 		if turnConf.Domain == "" {
@@ -110,7 +113,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 	return turn.NewServer(serverConfig)
 }
 
-func newTurnAuthHandler(roomStore RoomStore) turn.AuthHandler {
+func newTurnAuthHandler(roomStore ObjectStore) turn.AuthHandler {
 	return func(username, realm string, srcAddr net.Addr) (key []byte, ok bool) {
 		// room id should be the username, create a hashed room id
 		rm, err := roomStore.LoadRoom(context.Background(), livekit.RoomName(username))

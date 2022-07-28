@@ -1,0 +1,81 @@
+# Changelog
+
+Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.1.2] - 2022-07-11
+### Added
+- Returns reason when server disconnects a client (#801 #806)
+- Allow livekit-server to start without keys configuration (#788)
+- Added recovery from negotiation failures (#807)
+
+### Fixed
+- Fixed synchronization issues with Dynacast (#779 #802)
+- Fixed panic due to timing in Pion's ICE agent (#780)
+- ICELite is disabled by default, improving connectivity behind NAT (#784)
+- Fixed EgressService UpdateLayout (#782)
+- Fixed synchronization bugs with selective subscriptions & permissions (#796 #797 #805 #813 #814 #816)
+- Correctly recover from ICE Restart during an negotiation attempt (#798)
+
+### Changed
+- Improved Transceiver re-use to avoid renegotiation (#785)
+- Close room if recorder is the only participant left (#787)
+- Improved connection quality score stability & computation (#793 #795)
+- Set layer state to stopped when paused (#818)
+
+### Removed
+- Removed deprecated RecordingService - Egress should be used instead (#811)
+
+## [1.1.0] - 2022-06-21
+### Added
+- Add support for Redis Sentinel (#707)
+- Track participant join total + rate in node stats (#741)
+- Protocol 8 - fast connection support (#747)
+- Simulate switch candidate for network connectivity with poor UDP performance (#754)
+- Allow server to disable codec for certain devices (#755)
+- Support for on-demand multi-codec publishing (#762)
+
+### Fixed
+- Fixed unclean DownTrack close when removed before bound. (#736)
+- Do not munge VP8 header in place - fixes video corruption (#763)
+
+### Changed
+- Reintroduce audio-level quantization to dampen small changes (#732)
+- Allow overshooting maximum when there are no bandwidth constraints. (#739)
+- Improvements to upcoming multi-codec simulcast (#740)
+- Send layer dimensions when max subscribed layers change (#746)
+- Use stable TrackID after unpublishing & republishing (#751)
+- Update egress RPC handler (#759)
+- Improved connection quality metrics (#766 #767 #770 #771 #773 #774 #775)
+
+## [1.0.2] - 2022-05-27
+### Changed
+- Fixed edge cases where streams were not allocated (#701)
+- Fixed panic caused by concurrent modifications to stats worker map (#702 #704)
+- Batched subscriber updates to reduce noise in large rooms (#703 #729)
+- Fixed potential data race conditions (#706 #709 #711 #713 #715 #716 #717 #724 #727
+- /debug/pprof endpoint when running in development mode (#708)
+- When audio tracks are muted, send blank frames to induce silence (#710)
+- Fixed stream allocator not upgrading streams after downgrading (#719)
+- Fixed repeated AddSubscriber potentially ignored (#723)
+- Fixed ListEgress API sometimes returning not found (#722)
+
+## [1.0.1] - 2022-05-19
+### Changed
+- Update Egress details when changed, fixed Egress APIs (#694)
+
+## [1.0.0] - 2022-05-17
+### Added
+- Improved stats around NACKs (#664)
+- Internal structures in preparation for AV1 SVC support (#669)
+### Changed
+- Supports participant identity in permissions API (#633)
+- Fixed concurrent access of stats worker map (#666 #670)
+- Do not count padding packets in stream tracker (#667)
+- Fixed TWCC panic under heavy packet loss (#668)
+- Change state to JOINED before sending JoinResponse (#674)
+- Improved frequency of stats update (#673)
+- Send active speaker update during initial subscription (#676)
+- Updated DTLS library to incorporate security fixes (#678)
+- Improved list-nodes command (#681)
+- Improved screen-share handling in StreamTracker (#683)
+- Inject slience opus packets when muted (#682)

@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	"github.com/pion/ice/v2"
@@ -9,8 +10,10 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -33,7 +36,6 @@ type WebRTCConfig struct {
 
 type ReceiverConfig struct {
 	PacketBufferSize int
-	maxBitrate       uint64
 }
 
 type RTPHeaderExtensionConfig struct {
@@ -51,8 +53,12 @@ type DirectionConfig struct {
 	RTCPFeedback       RTCPFeedbackConfig
 }
 
-// number of packets to buffer up
-const readBufferSize = 50
+const (
+	// number of packets to buffer up
+	readBufferSize = 50
+
+	writeBufferSizeInBytes = 4 * 1024 * 1024
+)
 
 func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
@@ -60,11 +66,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 	s := webrtc.SettingEngine{
-		LoggerFactory: serverlogger.LoggerFactory(),
+		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
-	s.SetLite(true)
 
-	if externalIP != "" {
+	// force it to the node IPs that the user has set
+	if externalIP != "" && (conf.RTC.UseExternalIP || conf.RTC.NodeIP != "") {
 		s.SetNAT1To1IPs([]string{externalIP}, webrtc.ICECandidateTypeHost)
 	}
 
@@ -79,14 +85,14 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	if !rtcConf.ForceTCP {
 		networkTypes = append(networkTypes,
-			webrtc.NetworkTypeUDP4,
+			webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6,
 		)
 		if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
 			if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
 				return nil, err
 			}
 		} else if rtcConf.UDPPort != 0 {
-			udpMuxConn, err = net.ListenUDP("udp4", &net.UDPAddr{
+			udpMuxConn, err = net.ListenUDP("udp", &net.UDPAddr{
 				Port: int(rtcConf.UDPPort),
 			})
 			if err != nil {
@@ -110,20 +116,22 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	var tcpListener *net.TCPListener
 	if rtcConf.TCPPort != 0 {
 		networkTypes = append(networkTypes,
-			webrtc.NetworkTypeTCP4,
+			webrtc.NetworkTypeTCP4, webrtc.NetworkTypeTCP6,
 		)
-		tcpListener, err = net.ListenTCP("tcp4", &net.TCPAddr{
+		tcpListener, err = net.ListenTCP("tcp", &net.TCPAddr{
 			Port: int(rtcConf.TCPPort),
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		tcpMux := webrtc.NewICETCPMux(
-			s.LoggerFactory.NewLogger("tcp_mux"),
-			tcpListener,
-			readBufferSize,
-		)
+		tcpMux := ice.NewTCPMuxDefault(ice.TCPMuxParams{
+			Logger:          s.LoggerFactory.NewLogger("tcp_mux"),
+			Listener:        tcpListener,
+			ReadBufferSize:  readBufferSize,
+			WriteBufferSize: writeBufferSizeInBytes,
+		})
+
 		s.SetICETCPMux(tcpMux)
 	}
 
@@ -145,11 +153,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
 				frameMarking,
+				dd.ExtensionUrl,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBGoogREMB},
 				{Type: webrtc.TypeRTCPFBTransportCC},
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},
@@ -160,15 +168,21 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	// subscriber configuration
 	subscriberConfig := DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Video: []string{dd.ExtensionUrl},
+		},
 		RTCPFeedback: RTCPFeedbackConfig{
 			Video: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},
 				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
 			},
+			Audio: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
 		},
 	}
-	if rtcConf.UseSendSideBWE {
+	if rtcConf.CongestionControl.UseSendSideBWE {
 		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
 		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
 	} else {
@@ -176,12 +190,50 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
 	}
 
+	if rtcConf.UseICELite {
+		s.SetLite(true)
+	} else if !rtcConf.UseExternalIP {
+		// use STUN servers for server to support NAT
+		// when deployed in production, we expect UseExternalIP to be used, and ports accessible
+		// this is not compatible with ICE Lite
+		if len(rtcConf.STUNServers) > 0 {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(rtcConf.STUNServers)}
+		} else {
+			c.ICEServers = []webrtc.ICEServer{iceServerForStunServers(config.DefaultStunServers)}
+		}
+	}
+
+	if len(rtcConf.Interfaces.Includes) != 0 || len(rtcConf.Interfaces.Excludes) != 0 {
+		includes := rtcConf.Interfaces.Includes
+		excludes := rtcConf.Interfaces.Excludes
+		s.SetInterfaceFilter(func(s string) bool {
+			// filter by include interfaces
+			if len(includes) > 0 {
+				for _, iface := range includes {
+					if iface == s {
+						return true
+					}
+				}
+				return false
+			}
+
+			// filter by exclude interfaces
+			if len(excludes) > 0 {
+				for _, iface := range excludes {
+					if iface == s {
+						return false
+					}
+				}
+			}
+			return true
+		})
+	}
+
 	return &WebRTCConfig{
 		Configuration: c,
 		SettingEngine: s,
 		Receiver: ReceiverConfig{
 			PacketBufferSize: rtcConf.PacketBufferSize,
-			maxBitrate:       rtcConf.MaxBitrate,
 		},
 		UDPMux:         udpMux,
 		UDPMuxConn:     udpMuxConn,
@@ -194,4 +246,12 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
+}
+
+func iceServerForStunServers(servers []string) webrtc.ICEServer {
+	iceServer := webrtc.ICEServer{}
+	for _, stunServer := range servers {
+		iceServer.URLs = append(iceServer.URLs, fmt.Sprintf("stun:%s", stunServer))
+	}
+	return iceServer
 }

@@ -2,18 +2,24 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 func TestClientCouldConnect(t *testing.T) {
@@ -22,7 +28,7 @@ func TestClientCouldConnect(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	_, finish := setupSingleNodeTest("TestClientCouldConnect")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -30,8 +36,14 @@ func TestClientCouldConnect(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// ensure they both see each other
-	testutils.WithTimeout(t, "c1 and c2 could connect", func() bool {
-		return len(c1.RemoteParticipants()) != 0 && len(c2.RemoteParticipants()) != 0
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) == 0 {
+			return "c1 did not see c2"
+		}
+		if len(c2.RemoteParticipants()) == 0 {
+			return "c2 did not see c1"
+		}
+		return ""
 	})
 }
 
@@ -41,7 +53,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestClientCouldConnect", testRoom)
+	_, finish := setupSingleNodeTest("TestClientCouldConnect")
 	defer finish()
 
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
@@ -65,13 +77,13 @@ func TestClientConnectDuplicate(t *testing.T) {
 	opts := &testclient.Options{
 		Publish: "duplicate_connection",
 	}
-	success := testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2 didn't subscribe to anything"
 		}
 		// should have received three tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
-			return false
+			return "c2 didn't subscribe to both tracks from c1"
 		}
 
 		// participant ID can be appended with '#..' . but should contain orig id as prefix
@@ -81,11 +93,8 @@ func TestClientConnectDuplicate(t *testing.T) {
 		tr2 := c2.SubscribedTracks()[c1.ID()][1]
 		participantId2, _ := rtc.UnpackStreamID(tr2.StreamID())
 		require.Equal(t, c1.ID(), participantId2)
-		return true
+		return ""
 	})
-	if !success {
-		t.FailNow()
-	}
 
 	c1Dup := createRTCClientWithToken(token, defaultServerPort, opts)
 
@@ -95,20 +104,17 @@ func TestClientConnectDuplicate(t *testing.T) {
 	require.NoError(t, err)
 	defer t3.Stop()
 
-	success = testutils.WithTimeout(t, "c2 should receive third tracks", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()[c1Dup.ID()]) != 1 {
-			return false
+			return "c2 was not subscribed to track from duplicated c1"
 		}
 
 		tr3 := c2.SubscribedTracks()[c1Dup.ID()][0]
 		participantId3, _ := rtc.UnpackStreamID(tr3.StreamID())
 		require.Contains(t, c1Dup.ID(), participantId3)
 
-		return true
+		return ""
 	})
-	if !success {
-		t.FailNow()
-	}
 }
 
 func TestSinglePublisher(t *testing.T) {
@@ -117,7 +123,7 @@ func TestSinglePublisher(t *testing.T) {
 		return
 	}
 
-	s, finish := setupSingleNodeTest("TestSinglePublisher", testRoom)
+	s, finish := setupSingleNodeTest("TestSinglePublisher")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -132,19 +138,19 @@ func TestSinglePublisher(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	testutils.WithTimeout(t, "c2 should receive two tracks", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2 was not subscribed to anything"
 		}
 		// should have received two tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
-			return false
+			return "c2 didn't subscribe to both tracks from c1"
 		}
 
 		tr1 := c2.SubscribedTracks()[c1.ID()][0]
 		participantId, _ := rtc.UnpackStreamID(tr1.StreamID())
 		require.Equal(t, c1.ID(), participantId)
-		return true
+		return ""
 	})
 	// ensure mime type is received
 	remoteC1 := c2.GetRemoteParticipant(c1.ID())
@@ -158,15 +164,15 @@ func TestSinglePublisher(t *testing.T) {
 
 	// ensure that new client that has joined also received tracks
 	waitUntilConnected(t, c3)
-	testutils.WithTimeout(t, "c3 should receive two tracks", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c3.SubscribedTracks()) == 0 {
-			return false
+			return "c3 didn't subscribe to anything"
 		}
 		// should have received two tracks
 		if len(c3.SubscribedTracks()[c1.ID()]) != 2 {
-			return false
+			return "c3 didn't subscribe to tracks from c1"
 		}
-		return true
+		return ""
 	})
 
 	// ensure that the track ids are generated by server
@@ -175,22 +181,20 @@ func TestSinglePublisher(t *testing.T) {
 		require.True(t, strings.HasPrefix(tr.ID(), "TR_"), "track should begin with TR")
 	}
 
-	// when c3 disconnects.. ensure subscriber is cleaned up correctly
+	// when c3 disconnects, ensure subscriber is cleaned up correctly
 	c3.Stop()
 
-	testutils.WithTimeout(t, "c3 is cleaned up as a subscriber", func() bool {
+	testutils.WithTimeout(t, func() string {
 		room := s.RoomManager().GetRoom(context.Background(), testRoom)
-		require.NotNil(t, room)
-
 		p := room.GetParticipant("c1")
 		require.NotNil(t, p)
 
 		for _, t := range p.GetPublishedTracks() {
 			if t.IsSubscriber(c3.ID()) {
-				return false
+				return "c3 was not a subscriber of c1's tracks"
 			}
 		}
-		return true
+		return ""
 	})
 }
 
@@ -200,7 +204,7 @@ func Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks(
 		return
 	}
 
-	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks", testRoom)
+	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks")
 	defer finish()
 
 	opts := testclient.Options{AutoSubscribe: false}
@@ -225,7 +229,7 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestRenegotiationWithDifferentCodecs", testRoom)
+	_, finish := setupSingleNodeTest("TestRenegotiationWithDifferentCodecs")
 	defer finish()
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
@@ -240,26 +244,24 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 	require.NoError(t, err)
 	defer t2.Stop()
 
-	success := testutils.WithTimeout(t, "c2 should receive two tracks, video is vp8", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2 was not subscribed to anything"
 		}
 		// should have received two tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
-			return false
+			return "c2 was not subscribed to tracks from c1"
 		}
 
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, t := range tracks {
 			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
-				return true
+				return ""
+
 			}
 		}
-		return false
+		return "did not receive track with vp8"
 	})
-	if !success {
-		t.FailNow()
-	}
 
 	t3, err := c1.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{
 		MimeType:    "video/h264",
@@ -269,13 +271,13 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 	defer t3.Stop()
 	require.NoError(t, err)
 
-	success = testutils.WithTimeout(t, "c2 should receive two video tracks, one vp8 one h264", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if len(c2.SubscribedTracks()) == 0 {
-			return false
+			return "c2's not subscribed to anything"
 		}
 		// should have received three tracks
 		if len(c2.SubscribedTracks()[c1.ID()]) != 3 {
-			return false
+			return "c2's not subscribed to 3 tracks from c1"
 		}
 
 		var vp8Found, h264Found bool
@@ -287,11 +289,14 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 				h264Found = true
 			}
 		}
-		return vp8Found && h264Found
+		if !vp8Found {
+			return "did not receive track with vp8"
+		}
+		if !h264Found {
+			return "did not receive track with h264"
+		}
+		return ""
 	})
-	if !success {
-		t.FailNow()
-	}
 }
 
 func TestSingleNodeRoomList(t *testing.T) {
@@ -299,8 +304,159 @@ func TestSingleNodeRoomList(t *testing.T) {
 		t.SkipNow()
 		return
 	}
-	_, finish := setupSingleNodeTest("TestSingleNodeRoomList", testRoom)
+	_, finish := setupSingleNodeTest("TestSingleNodeRoomList")
 	defer finish()
 
 	roomServiceListRoom(t)
+}
+
+// Ensure that CORS headers are returned
+func TestSingleNodeCORS(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	s, finish := setupSingleNodeTest("TestSingleNodeCORS")
+	defer finish()
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", s.HTTPPort()), nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "bearer xyz")
+	req.Header.Set("Origin", "testhost.com")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
+}
+
+func TestSingleNodeJoinAfterClose(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("TestJoinAfterClose")
+	defer finish()
+
+	scenarioJoinClosedRoom(t)
+}
+
+func TestSingleNodeCloseNonRTCRoom(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupSingleNodeTest("closeNonRTCRoom")
+	defer finish()
+
+	closeNonRTCRoom(t)
+}
+
+func TestAutoCreate(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	disableAutoCreate := func(conf *config.Config) {
+		conf.Room.AutoCreate = false
+	}
+	t.Run("cannot join if room isn't created", func(t *testing.T) {
+		s := createSingleNodeServer(disableAutoCreate)
+		go func() {
+			if err := s.Start(); err != nil {
+				logger.Errorw("server returned error", err)
+			}
+		}()
+		defer s.Stop(true)
+
+		waitForServerToStart(s)
+
+		token := joinToken(testRoom, "start-before-create")
+		_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
+		require.Error(t, err)
+
+		// second join should also fail
+		token = joinToken(testRoom, "start-before-create-2")
+		_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("join with explicit createRoom", func(t *testing.T) {
+		s := createSingleNodeServer(disableAutoCreate)
+		go func() {
+			if err := s.Start(); err != nil {
+				logger.Errorw("server returned error", err)
+			}
+		}()
+		defer s.Stop(true)
+
+		waitForServerToStart(s)
+
+		// explicitly create
+		_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: testRoom})
+		require.NoError(t, err)
+
+		c1 := createRTCClient("join-after-create", defaultServerPort, nil)
+		waitUntilConnected(t, c1)
+
+		c1.Stop()
+	})
+}
+
+// don't give user subscribe permissions initially, and ensure autosubscribe is triggered afterwards
+func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeUpdateSubscriptionPermissions")
+	defer finish()
+
+	pub := createRTCClient("pub", defaultServerPort, nil)
+	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
+	grant.SetCanSubscribe(false)
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(grant).
+		SetIdentity("sub")
+	token, err := at.ToJWT()
+	require.NoError(t, err)
+	sub := createRTCClientWithToken(token, defaultServerPort, nil)
+
+	waitUntilConnected(t, pub, sub)
+
+	writers := publishTracksForClients(t, pub)
+	defer stopWriters(writers...)
+
+	// wait sub receives tracks
+	testutils.WithTimeout(t, func() string {
+		pubRemote := sub.GetRemoteParticipant(pub.ID())
+		if pubRemote == nil {
+			return "could not find remote publisher"
+		}
+		if len(pubRemote.Tracks) != 2 {
+			return "did not receive metadata for published tracks"
+		}
+		return ""
+	})
+
+	// set permissions out of band
+	ctx := contextWithToken(adminRoomToken(testRoom))
+	_, err = roomClient.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		Room:     testRoom,
+		Identity: "sub",
+		Permission: &livekit.ParticipantPermission{
+			CanSubscribe: true,
+			CanPublish:   true,
+		},
+	})
+	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		tracks := sub.SubscribedTracks()[pub.ID()]
+		if len(tracks) == 2 {
+			return ""
+		} else {
+			return fmt.Sprintf("expected 2 tracks subscribed, actual: %d", len(tracks))
+		}
+	})
 }

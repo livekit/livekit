@@ -2,7 +2,7 @@ package types
 
 type ProtocolVersion int
 
-const DefaultProtocol = 2
+const DefaultProtocol = 6
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0
@@ -38,4 +38,18 @@ func (v ProtocolVersion) SupportsConnectionQuality() bool {
 
 func (v ProtocolVersion) SupportsSessionMigrate() bool {
 	return v > 5
+}
+
+func (v ProtocolVersion) SupportsICELite() bool {
+	return v > 5
+}
+
+func (v ProtocolVersion) SupportsUnpublish() bool {
+	return v > 6
+}
+
+// SupportFastStart - if client supports fast start, server side will send media streams
+// in the first offer
+func (v ProtocolVersion) SupportFastStart() bool {
+	return v > 7
 }

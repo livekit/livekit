@@ -1,3 +1,3 @@
 package version
 
-const Version = "0.15.2"
+const Version = "1.1.2"

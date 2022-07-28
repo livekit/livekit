@@ -1,20 +1,28 @@
 package prometheus
 
 import (
-	"sync/atomic"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
+	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils"
 )
 
-const livekitNamespace string = "livekit"
+const (
+	livekitNamespace string = "livekit"
+)
 
 var (
 	MessageCounter          *prometheus.CounterVec
 	ServiceOperationCounter *prometheus.CounterVec
+
+	sysPacketsStart              uint32
+	sysDroppedPacketsStart       uint32
+	promSysPacketGauge           *prometheus.GaugeVec
+	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
 func init() {
@@ -39,56 +47,133 @@ func init() {
 		[]string{"type", "status", "error_type"},
 	)
 
+	promSysPacketGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "packet_total",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			Help:        "System level packet count. Count starts at 0 when service is first started.",
+		},
+		[]string{"type"},
+	)
+
+	promSysDroppedPacketPctGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "dropped_packets",
+			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			Help:        "System level dropped outgoing packet percentage.",
+		},
+	)
+
 	prometheus.MustRegister(MessageCounter)
 	prometheus.MustRegister(ServiceOperationCounter)
+	prometheus.MustRegister(promSysPacketGauge)
+	prometheus.MustRegister(promSysDroppedPacketPctGauge)
+
+	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
 	initPacketStats(nodeID)
 	initRoomStats(nodeID)
-
-	logger.Infow("prometheus nodeID : ", nodeID)
 }
 
-func UpdateCurrentNodeStats(nodeStats *livekit.NodeStats) error {
-	updatedAtPrevious := nodeStats.UpdatedAt
-	nodeStats.UpdatedAt = time.Now().Unix()
-	secondsSinceLastUpdate := nodeStats.UpdatedAt - updatedAtPrevious
-
-	err := updateCurrentNodeSystemStats(nodeStats)
-	updateCurrentNodeRoomStats(nodeStats)
-	updateCurrentNodePacketStats(nodeStats, secondsSinceLastUpdate)
-
-	return err
-}
-
-func updateCurrentNodeRoomStats(nodeStats *livekit.NodeStats) {
-	nodeStats.NumClients = atomic.LoadInt32(&atomicParticipantTotal)
-	nodeStats.NumRooms = atomic.LoadInt32(&atomicRoomTotal)
-	nodeStats.NumTracksIn = atomic.LoadInt32(&atomicTrackPublishedTotal)
-	nodeStats.NumTracksOut = atomic.LoadInt32(&atomicTrackSubscribedTotal)
-}
-
-func updateCurrentNodePacketStats(nodeStats *livekit.NodeStats, secondsSinceLastUpdate int64) {
-	if secondsSinceLastUpdate == 0 {
-		return
+func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
+	loadAvg, err := loadavg.Get()
+	if err != nil {
+		return nil, false, err
 	}
 
-	bytesInPrevious := nodeStats.BytesIn
-	bytesOutPrevious := nodeStats.BytesOut
-	packetsInPrevious := nodeStats.PacketsIn
-	packetsOutPrevious := nodeStats.PacketsOut
-	nackTotalPrevious := nodeStats.NackTotal
+	cpuLoad, numCPUs, err := getCPUStats()
+	if err != nil {
+		return nil, false, err
+	}
 
-	nodeStats.BytesIn = atomic.LoadUint64(&atomicBytesIn)
-	nodeStats.BytesOut = atomic.LoadUint64(&atomicBytesOut)
-	nodeStats.PacketsIn = atomic.LoadUint64(&atomicPacketsIn)
-	nodeStats.PacketsOut = atomic.LoadUint64(&atomicPacketsOut)
-	nodeStats.NackTotal = atomic.LoadUint64(&atomicNackTotal)
+	sysPackets, sysDroppedPackets, err := getTCStats()
+	if err != nil {
+		return nil, false, err
+	}
+	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
+	promSysPacketGauge.WithLabelValues("dropped").Set(float64(sysDroppedPackets - sysDroppedPacketsStart))
 
-	nodeStats.BytesInPerSec = perSec(bytesInPrevious, nodeStats.BytesIn, secondsSinceLastUpdate)
-	nodeStats.BytesOutPerSec = perSec(bytesOutPrevious, nodeStats.BytesOut, secondsSinceLastUpdate)
-	nodeStats.PacketsInPerSec = perSec(packetsInPrevious, nodeStats.PacketsIn, secondsSinceLastUpdate)
-	nodeStats.PacketsOutPerSec = perSec(packetsOutPrevious, nodeStats.PacketsOut, secondsSinceLastUpdate)
-	nodeStats.NackPerSec = perSec(nackTotalPrevious, nodeStats.NackTotal, secondsSinceLastUpdate)
+	bytesInNow := bytesIn.Load()
+	bytesOutNow := bytesOut.Load()
+	packetsInNow := packetsIn.Load()
+	packetsOutNow := packetsOut.Load()
+	nackTotalNow := nackTotal.Load()
+	retransmitBytesNow := retransmitBytes.Load()
+	retransmitPacketsNow := retransmitPackets.Load()
+	participantJoinNow := participantJoin.Load()
+
+	updatedAt := time.Now().Unix()
+	elapsed := updatedAt - prevAverage.UpdatedAt
+	// include sufficient buffer to be sure a stats update had taken place
+	computeAverage := elapsed > int64(config.StatsUpdateInterval.Seconds()+2)
+	if bytesInNow != prevAverage.BytesIn ||
+		bytesOutNow != prevAverage.BytesOut ||
+		packetsInNow != prevAverage.PacketsIn ||
+		packetsOutNow != prevAverage.PacketsOut ||
+		retransmitBytesNow != prevAverage.RetransmitBytesOut ||
+		retransmitPacketsNow != prevAverage.RetransmitPacketsOut {
+		computeAverage = true
+	}
+
+	stats := &livekit.NodeStats{
+		StartedAt:                  prev.StartedAt,
+		UpdatedAt:                  updatedAt,
+		NumRooms:                   roomTotal.Load(),
+		NumClients:                 participantTotal.Load(),
+		NumTracksIn:                trackPublishedTotal.Load(),
+		NumTracksOut:               trackSubscribedTotal.Load(),
+		BytesIn:                    bytesInNow,
+		BytesOut:                   bytesOutNow,
+		PacketsIn:                  packetsInNow,
+		PacketsOut:                 packetsOutNow,
+		RetransmitBytesOut:         retransmitBytesNow,
+		RetransmitPacketsOut:       retransmitPacketsNow,
+		NackTotal:                  nackTotalNow,
+		ParticipantJoin:            participantJoinNow,
+		BytesInPerSec:              prevAverage.BytesInPerSec,
+		BytesOutPerSec:             prevAverage.BytesOutPerSec,
+		PacketsInPerSec:            prevAverage.PacketsInPerSec,
+		PacketsOutPerSec:           prevAverage.PacketsOutPerSec,
+		RetransmitBytesOutPerSec:   prevAverage.RetransmitBytesOutPerSec,
+		RetransmitPacketsOutPerSec: prevAverage.RetransmitPacketsOutPerSec,
+		NackPerSec:                 prevAverage.NackPerSec,
+		ParticipantJoinPerSec:      prevAverage.ParticipantJoinPerSec,
+		NumCpus:                    numCPUs,
+		CpuLoad:                    cpuLoad,
+		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
+		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
+		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
+		SysPacketsOut:              sysPackets,
+		SysPacketsDropped:          sysDroppedPackets,
+	}
+
+	// update stats
+	if computeAverage {
+		stats.BytesInPerSec = perSec(prevAverage.BytesIn, bytesInNow, elapsed)
+		stats.BytesOutPerSec = perSec(prevAverage.BytesOut, bytesOutNow, elapsed)
+		stats.PacketsInPerSec = perSec(prevAverage.PacketsIn, packetsInNow, elapsed)
+		stats.PacketsOutPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
+		stats.RetransmitBytesOutPerSec = perSec(prevAverage.RetransmitBytesOut, retransmitBytesNow, elapsed)
+		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
+		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
+		stats.ParticipantJoinPerSec = perSec(prevAverage.ParticipantJoin, participantJoinNow, elapsed)
+		stats.SysPacketsOutPerSec = perSec(uint64(prev.SysPacketsOut), uint64(sysPackets), elapsed)
+		stats.SysPacketsDroppedPerSec = perSec(uint64(prev.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
+
+		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
+		if packetTotal == 0 {
+			stats.SysPacketsDroppedPctPerSec = 0
+		} else {
+			stats.SysPacketsDroppedPctPerSec = float32(stats.SysPacketsDroppedPerSec) / float32(packetTotal)
+		}
+		promSysDroppedPacketPctGauge.Set(float64(stats.SysPacketsDroppedPctPerSec))
+	}
+
+	return stats, computeAverage, nil
 }
 
 func perSec(prev, curr uint64, secs int64) float32 {

@@ -7,17 +7,25 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 	"os"
+)
+
+import (
+	_ "net/http/pprof"
 )
 
 // Injectors from wire.go:
@@ -28,16 +36,18 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(client, currentNode)
-	roomStore := createStore(client)
-	roomAllocator, err := NewRoomAllocator(conf, router, roomStore)
+	objectStore := createStore(client)
+	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(roomAllocator, roomStore, router)
+	roomConfig := getRoomConf(conf)
+	roomService, err := NewRoomService(roomAllocator, objectStore, router, roomConfig)
 	if err != nil {
 		return nil, err
 	}
-	messageBus := createMessageBus(client)
+	nodeID := getNodeID(currentNode)
+	rpcClient := egress.NewRedisRPCClient(nodeID, client)
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -48,18 +58,19 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	recordingService := NewRecordingService(messageBus, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, router, currentNode)
-	roomManager, err := NewLocalRoomManager(conf, roomStore, currentNode, router, telemetryService)
+	egressService := NewEgressService(rpcClient, objectStore, roomService, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
+	clientConfigurationManager := createClientConfiguration()
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
 	if err != nil {
 		return nil, err
 	}
-	authHandler := newTurnAuthHandler(roomStore)
+	authHandler := newTurnAuthHandler(objectStore)
 	server, err := NewTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, recordingService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, rtcService, keyProvider, router, roomManager, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +88,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 
 // wire.go:
 
+func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
+	return livekit.NodeID(currentNode.Id)
+}
+
 func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 
 	if conf.KeyFile != "" {
@@ -92,7 +107,10 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 		defer func() {
 			_ = f.Close()
 		}()
-		return auth.NewFileBasedKeyProviderFromReader(f)
+		decoder := yaml.NewDecoder(f)
+		if err = decoder.Decode(conf.Keys); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(conf.Keys) == 0 {
@@ -119,13 +137,44 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	if !conf.HasRedis() {
 		return nil, nil
 	}
-	logger.Infow("using multi-node-xxxxxxxx routing via redis", "addr", conf.Redis.Address)
-	rc := redis.NewClient(&redis.Options{
-		Addr:     conf.Redis.Address,
-		Username: conf.Redis.Username,
-		Password: conf.Redis.Password,
-		DB:       conf.Redis.DB,
-	})
+
+	var rc *redis.Client
+	var tlsConfig *tls.Config
+
+	if conf.Redis.UseTLS {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	values := make([]interface{}, 0)
+	values = append(values, "sentinel", conf.UseSentinel())
+	if conf.UseSentinel() {
+		values = append(values, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		rcOptions := &redis.FailoverOptions{
+			SentinelAddrs:    conf.Redis.SentinelAddresses,
+			SentinelUsername: conf.Redis.SentinelUsername,
+			SentinelPassword: conf.Redis.SentinelPassword,
+			MasterName:       conf.Redis.MasterName,
+			Username:         conf.Redis.Username,
+			Password:         conf.Redis.Password,
+			DB:               conf.Redis.DB,
+			TLSConfig:        tlsConfig,
+		}
+		rc = redis.NewFailoverClient(rcOptions)
+	} else {
+		values = append(values, "addr", conf.Redis.Address)
+		rcOptions := &redis.Options{
+			Addr:      conf.Redis.Address,
+			Username:  conf.Redis.Username,
+			Password:  conf.Redis.Password,
+			DB:        conf.Redis.DB,
+			TLSConfig: tlsConfig,
+		}
+		rc = redis.NewClient(rcOptions)
+	}
+	logger.Infow("using multi-node routing via redis", values...)
+
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
 		return nil, err
@@ -134,16 +183,17 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	return rc, nil
 }
 
-func createMessageBus(rc *redis.Client) utils.MessageBus {
-	if rc == nil {
-		return nil
+func createStore(rc *redis.Client) ObjectStore {
+	if rc != nil {
+		return NewRedisStore(rc)
 	}
-	return utils.NewRedisMessageBus(rc)
+	return NewLocalStore()
 }
 
-func createStore(rc *redis.Client) RoomStore {
-	if rc != nil {
-		return NewRedisRoomStore(rc)
-	}
-	return NewLocalRoomStore()
+func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
+	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
+}
+
+func getRoomConf(config2 *config.Config) config.RoomConfig {
+	return config2.Room
 }

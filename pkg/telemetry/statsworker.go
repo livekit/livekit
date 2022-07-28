@@ -2,193 +2,248 @@ package telemetry
 
 import (
 	"context"
+	"sync"
+	"time"
 
-	"github.com/livekit/protocol/livekit"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
-	ctx           context.Context
-	t             TelemetryReporter
-	roomID        livekit.RoomID
-	roomName      livekit.RoomName
-	participantID livekit.ParticipantID
+	ctx                 context.Context
+	t                   TelemetryReporter
+	roomID              livekit.RoomID
+	roomName            livekit.RoomName
+	participantID       livekit.ParticipantID
+	participantIdentity livekit.ParticipantIdentity
 
-	upstreamBuffers      map[livekit.TrackID][]*buffer.Buffer
-	drainUpstreamBuffers map[livekit.TrackID]bool
-
-	outgoingPerTrack map[livekit.TrackID]*Stats
-	incomingPerTrack map[livekit.TrackID]*Stats
+	lock             sync.RWMutex
+	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	closedAt         time.Time
 }
 
-type Stats struct {
-	next             *livekit.AnalyticsStat
-	totalPackets     uint32
-	prevPackets      uint32
-	totalBytes       uint64
-	prevBytes        uint64
-	totalPacketsLost uint64
-	prevPacketsLost  uint64
-}
-
-func newStatsWorker(ctx context.Context, t TelemetryReporter, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID) *StatsWorker {
+func newStatsWorker(
+	ctx context.Context,
+	t TelemetryReporter,
+	roomID livekit.RoomID,
+	roomName livekit.RoomName,
+	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
+) *StatsWorker {
 	s := &StatsWorker{
-		ctx:           ctx,
-		t:             t,
-		roomID:        roomID,
-		roomName:      roomName,
-		participantID: participantID,
-
-		upstreamBuffers:      make(map[livekit.TrackID][]*buffer.Buffer),
-		drainUpstreamBuffers: make(map[livekit.TrackID]bool),
-
-		outgoingPerTrack: make(map[livekit.TrackID]*Stats),
-		incomingPerTrack: make(map[livekit.TrackID]*Stats),
+		ctx:                 ctx,
+		t:                   t,
+		roomID:              roomID,
+		roomName:            roomName,
+		participantID:       participantID,
+		participantIdentity: identity,
+		outgoingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
+		incomingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 	}
 	return s
 }
 
-func (s *StatsWorker) AddBuffer(trackID livekit.TrackID, buffer *buffer.Buffer) {
-	s.upstreamBuffers[trackID] = append(s.upstreamBuffers[trackID], buffer)
-}
-
-func (s *StatsWorker) OnDownstreamPacket(trackID livekit.TrackID, bytes int) {
-	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalBytes += uint64(bytes)
-	s.getOrCreateOutgoingStatsIfEmpty(trackID).totalPackets++
-}
-
-func (s *StatsWorker) getOrCreateOutgoingStatsIfEmpty(trackID livekit.TrackID) *Stats {
-	if s.outgoingPerTrack[trackID] == nil {
-		s.outgoingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
-			Kind:          livekit.StreamType_DOWNSTREAM,
-			RoomId:        string(s.roomID),
-			ParticipantId: string(s.participantID),
-			RoomName:      string(s.roomName),
-		}}
-	}
-	return s.outgoingPerTrack[trackID]
-}
-
-func (s *StatsWorker) getOrCreateIncomingStatsIfEmpty(trackID livekit.TrackID) *Stats {
-	if s.incomingPerTrack[trackID] == nil {
-		s.incomingPerTrack[trackID] = &Stats{next: &livekit.AnalyticsStat{
-			Kind:          livekit.StreamType_UPSTREAM,
-			RoomId:        string(s.roomID),
-			ParticipantId: string(s.participantID),
-			RoomName:      string(s.roomName),
-		}}
-	}
-	return s.incomingPerTrack[trackID]
-}
-
-func (s *StatsWorker) OnRTCP(trackID livekit.TrackID, direction livekit.StreamType, stats *livekit.AnalyticsStat) {
-	var ds *Stats
+func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.StreamType, stat *livekit.AnalyticsStat) {
+	s.lock.Lock()
 	if direction == livekit.StreamType_DOWNSTREAM {
-		ds = s.getOrCreateOutgoingStatsIfEmpty(trackID)
+		s.outgoingPerTrack[trackID] = append(s.outgoingPerTrack[trackID], stat)
 	} else {
-		ds = s.getOrCreateIncomingStatsIfEmpty(trackID)
+		s.incomingPerTrack[trackID] = append(s.incomingPerTrack[trackID], stat)
 	}
-	ds.totalPacketsLost = stats.PacketLost
-
-	if stats.Rtt > ds.next.Rtt {
-		ds.next.Rtt = stats.Rtt
-	}
-	if stats.Jitter > ds.next.Jitter {
-		ds.next.Jitter = stats.Jitter
-	}
-	ds.next.NackCount += stats.NackCount
-	ds.next.PliCount += stats.PliCount
-	ds.next.FirCount += stats.FirCount
-}
-
-func (s *StatsWorker) calculateTotalBytesPackets(allBuffers []*buffer.Buffer) (totalBytes uint64, totalPackets uint32) {
-	totalBytes = 0
-	totalPackets = 0
-
-	for _, buffer := range allBuffers {
-		totalBytes += buffer.GetStats().TotalByte
-		totalPackets += buffer.GetStats().PacketCount
-	}
-	return totalBytes, totalPackets
+	s.lock.Unlock()
 }
 
 func (s *StatsWorker) Update() {
 	ts := timestamppb.Now()
-	stats := make([]*livekit.AnalyticsStat, 0)
 
-	stats = s.collectUpstreamStats(ts, stats)
-	stats = s.collectDownstreamStats(ts, stats)
+	s.lock.Lock()
+	if !s.closedAt.IsZero() {
+		s.lock.Unlock()
+		return
+	}
 
-	s.t.Report(s.ctx, stats)
+	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
+
+	incomingPerTrack := s.incomingPerTrack
+	s.incomingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+
+	outgoingPerTrack := s.outgoingPerTrack
+	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+	s.lock.Unlock()
+
+	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
+	stats = s.collectStats(ts, livekit.StreamType_DOWNSTREAM, outgoingPerTrack, stats)
+	if len(stats) > 0 {
+		s.t.Report(s.ctx, stats)
+	}
 }
 
-func (s *StatsWorker) collectDownstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
-	for trackID, trackDownStreamStats := range s.outgoingPerTrack {
-		analyticsStat := s.update(trackDownStreamStats, ts)
+func (s *StatsWorker) collectStats(
+	ts *timestamppb.Timestamp,
+	streamType livekit.StreamType,
+	perTrack map[livekit.TrackID][]*livekit.AnalyticsStat,
+	stats []*livekit.AnalyticsStat,
+) []*livekit.AnalyticsStat {
+	for trackID, analyticsStats := range perTrack {
+		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, streamType)
 		if analyticsStat != nil {
-			analyticsStat.TrackId = string(trackID)
 			stats = append(stats, analyticsStat)
 		}
 	}
 	return stats
 }
 
-func (s *StatsWorker) collectUpstreamStats(ts *timestamppb.Timestamp, stats []*livekit.AnalyticsStat) []*livekit.AnalyticsStat {
-	for trackID, buffers := range s.upstreamBuffers {
-		totalBytes, totalPackets := s.calculateTotalBytesPackets(buffers)
-
-		s.getOrCreateIncomingStatsIfEmpty(trackID).totalBytes = totalBytes
-		s.getOrCreateIncomingStatsIfEmpty(trackID).totalPackets = totalPackets
-
-		analyticsStats := s.update(s.incomingPerTrack[trackID], ts)
-		if analyticsStats != nil {
-			analyticsStats.TrackId = string(trackID)
-			stats = append(stats, analyticsStats)
-		}
-	}
-
-	if len(s.drainUpstreamBuffers) > 0 {
-		for trackID := range s.drainUpstreamBuffers {
-			delete(s.upstreamBuffers, trackID)
-			delete(s.incomingPerTrack, trackID)
-		}
-		s.drainUpstreamBuffers = make(map[livekit.TrackID]bool)
-	}
-	return stats
-}
-
-func (s *StatsWorker) update(stats *Stats, ts *timestamppb.Timestamp) *livekit.AnalyticsStat {
-	if stats.totalBytes == 0 {
+func (s *StatsWorker) getDeltaStats(
+	stats []*livekit.AnalyticsStat,
+	ts *timestamppb.Timestamp,
+	trackID livekit.TrackID,
+	kind livekit.StreamType,
+) *livekit.AnalyticsStat {
+	// merge all streams stats of track
+	analyticsStat := coalesce(stats)
+	if analyticsStat == nil {
 		return nil
 	}
 
-	next := stats.next
-	stats.next = &livekit.AnalyticsStat{
-		Kind:          next.Kind,
-		RoomId:        string(s.roomID),
-		ParticipantId: string(s.participantID),
-		RoomName:      string(s.roomName),
-	}
-
-	next.TimeStamp = ts
-	next.TotalPackets = uint64(stats.totalPackets - stats.prevPackets)
-	next.TotalBytes = stats.totalBytes - stats.prevBytes
-	next.PacketLost = stats.totalPacketsLost - stats.prevPacketsLost
-
-	stats.prevPackets = stats.totalPackets
-	stats.prevBytes = stats.totalBytes
-	stats.prevPacketsLost = stats.totalPacketsLost
-
-	return next
+	s.patch(analyticsStat, ts, trackID, kind)
+	return analyticsStat
 }
 
-func (s *StatsWorker) RemoveBuffer(trackID livekit.TrackID) {
-	s.drainUpstreamBuffers[trackID] = true
+func (s *StatsWorker) patch(
+	analyticsStat *livekit.AnalyticsStat,
+	ts *timestamppb.Timestamp,
+	trackID livekit.TrackID,
+	kind livekit.StreamType,
+) {
+	analyticsStat.TimeStamp = ts
+	analyticsStat.TrackId = string(trackID)
+	analyticsStat.Kind = kind
+	analyticsStat.RoomId = string(s.roomID)
+	analyticsStat.ParticipantId = string(s.participantID)
+	analyticsStat.RoomName = string(s.roomName)
 }
 
 func (s *StatsWorker) Close() {
 	s.Update()
+
+	s.lock.Lock()
+	s.closedAt = time.Now()
+	s.lock.Unlock()
+}
+
+func (s *StatsWorker) ClosedAt() time.Time {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.closedAt
+}
+
+func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
+	return s.participantID
+}
+
+// -------------------------------------------------------------------------
+
+// create a single stream and single video layer post aggregation
+func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
+	if len(stats) == 0 {
+		return nil
+	}
+
+	// find aggregates across streams
+	score := float32(0.0)
+	maxRtt := uint32(0)
+	maxJitter := uint32(0)
+	coalescedVideoLayers := make(map[int32]*livekit.AnalyticsVideoLayer)
+	coalescedStream := &livekit.AnalyticsStream{}
+	for _, stat := range stats {
+		if !isValid(stat) {
+			logger.Warnw("telemetry skipping invalid stat", nil, "stat", stat)
+			continue
+		}
+
+		score += stat.Score
+		for _, analyticsStream := range stat.Streams {
+			if analyticsStream.Rtt > maxRtt {
+				maxRtt = analyticsStream.Rtt
+			}
+
+			if analyticsStream.Jitter > maxJitter {
+				maxJitter = analyticsStream.Jitter
+			}
+
+			coalescedStream.PrimaryPackets += analyticsStream.PrimaryPackets
+			coalescedStream.PrimaryBytes += analyticsStream.PrimaryBytes
+			coalescedStream.RetransmitPackets += analyticsStream.RetransmitPackets
+			coalescedStream.RetransmitBytes += analyticsStream.RetransmitBytes
+			coalescedStream.PaddingPackets += analyticsStream.PaddingPackets
+			coalescedStream.PaddingBytes += analyticsStream.PaddingBytes
+			coalescedStream.PacketsLost += analyticsStream.PacketsLost
+			coalescedStream.Frames += analyticsStream.Frames
+			coalescedStream.Nacks += analyticsStream.Nacks
+			coalescedStream.Plis += analyticsStream.Plis
+			coalescedStream.Firs += analyticsStream.Firs
+
+			for _, videoLayer := range analyticsStream.VideoLayers {
+				coalescedVideoLayer := coalescedVideoLayers[videoLayer.Layer]
+				if coalescedVideoLayer == nil {
+					coalescedVideoLayer = proto.Clone(videoLayer).(*livekit.AnalyticsVideoLayer)
+					coalescedVideoLayers[videoLayer.Layer] = coalescedVideoLayer
+				} else {
+					coalescedVideoLayer.Packets += videoLayer.Packets
+					coalescedVideoLayer.Bytes += videoLayer.Bytes
+					coalescedVideoLayer.Frames += videoLayer.Frames
+				}
+			}
+		}
+	}
+	coalescedStream.Rtt = maxRtt
+	coalescedStream.Jitter = maxJitter
+
+	// whittle it down to one video layer, just the max available layer
+	maxVideoLayer := int32(-1)
+	for _, coalescedVideoLayer := range coalescedVideoLayers {
+		if maxVideoLayer == -1 || maxVideoLayer < coalescedVideoLayer.Layer {
+			maxVideoLayer = coalescedVideoLayer.Layer
+			coalescedStream.VideoLayers = []*livekit.AnalyticsVideoLayer{coalescedVideoLayer}
+		}
+	}
+
+	return &livekit.AnalyticsStat{
+		Score:   score / float32(len(stats)),
+		Streams: []*livekit.AnalyticsStream{coalescedStream},
+	}
+}
+
+func isValid(stat *livekit.AnalyticsStat) bool {
+	for _, analyticsStream := range stat.Streams {
+		if int32(analyticsStream.PrimaryPackets) < 0 ||
+			int64(analyticsStream.PrimaryBytes) < 0 ||
+			int32(analyticsStream.RetransmitPackets) < 0 ||
+			int64(analyticsStream.RetransmitBytes) < 0 ||
+			int32(analyticsStream.PaddingPackets) < 0 ||
+			int64(analyticsStream.PaddingBytes) < 0 ||
+			int32(analyticsStream.PacketsLost) < 0 ||
+			int32(analyticsStream.Frames) < 0 ||
+			int32(analyticsStream.Nacks) < 0 ||
+			int32(analyticsStream.Plis) < 0 ||
+			int32(analyticsStream.Firs) < 0 {
+			return false
+		}
+
+		for _, videoLayer := range analyticsStream.VideoLayers {
+			if int32(videoLayer.Packets) < 0 ||
+				int64(videoLayer.Bytes) < 0 ||
+				int32(videoLayer.Frames) < 0 {
+				return false
+			}
+		}
+	}
+
+	return true
 }

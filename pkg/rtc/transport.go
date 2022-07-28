@@ -7,13 +7,20 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
+	"github.com/go-logr/logr"
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/cc"
+	"github.com/pion/interceptor/pkg/gcc"
+	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -21,7 +28,17 @@ import (
 )
 
 const (
-	negotiationFrequency = 150 * time.Millisecond
+	negotiationFrequency       = 150 * time.Millisecond
+	negotiationFailedTimout    = 15 * time.Second
+	dtlsRetransmissionInterval = 100 * time.Millisecond
+
+	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
+	iceFailedTimeout       = 25 * time.Second // pion's default
+	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+)
+
+var (
+	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
 )
 
 const (
@@ -39,20 +56,23 @@ type SimulcastTrackInfo struct {
 
 // PCTransport is a wrapper around PeerConnection, with some helper methods
 type PCTransport struct {
-	pc *webrtc.PeerConnection
-	me *webrtc.MediaEngine
+	params TransportParams
+	pc     *webrtc.PeerConnection
+	me     *webrtc.MediaEngine
 
-	lock                  sync.Mutex
+	lock                  sync.RWMutex
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
+	restartAtNextOffer    bool
 	negotiationState      int
+	negotiateCounter      atomic.Int32
+	signalStateCheckTimer *time.Timer
+	onNegotiationFailed   func()
 
 	// stream allocator for subscriber PC
 	streamAllocator *sfu.StreamAllocator
-
-	logger logger.Logger
 
 	previousAnswer *webrtc.SessionDescription
 }
@@ -60,6 +80,7 @@ type PCTransport struct {
 type TransportParams struct {
 	ParticipantID           livekit.ParticipantID
 	ParticipantIdentity     livekit.ParticipantIdentity
+	ProtocolVersion         types.ProtocolVersion
 	Target                  livekit.SignalTarget
 	Config                  *WebRTCConfig
 	CongestionControlConfig config.CongestionControlConfig
@@ -69,8 +90,7 @@ type TransportParams struct {
 	SimTracks               map[uint32]SimulcastTrackInfo
 }
 
-// LK-TODO-SSBWE func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
 	var directionConfig DirectionConfig
 	if params.Target == livekit.SignalTarget_PUBLISHER {
 		directionConfig = params.Config.Publisher
@@ -84,6 +104,35 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+	//
+	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
+	// Needed due to lack of RTX stream support in Pion.
+	//
+	// When clients probe for bandwidth, there are several possible approaches
+	//   1. Use padding packet (Chrome uses this)
+	//   2. Use an older packet (Firefox uses this)
+	// Typically, these are sent over the RTX stream and hence SRTP replay protection will not
+	// trigger. As Pion does not support RTX, when firefox uses older packet for probing, they
+	// trigger the replay protection.
+	//
+	// That results in two issues
+	//   - Firefox bandwidth probing is not successful
+	//   - Pion runs out of read buffer capacity - this potentially looks like a Pion issue
+	//
+	// NOTE: It is not required to disable RTCP replay protection, but doing it to be symmetric.
+	//
+	se.DisableSRTPReplayProtection(true)
+	se.DisableSRTCPReplayProtection(true)
+	if !params.ProtocolVersion.SupportsICELite() {
+		se.SetLite(false)
+	}
+	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
+	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
+
+	lf := serverlogger.NewLoggerFactory(logr.Logger(params.Logger))
+	if lf != nil {
+		se.LoggerFactory = lf
+	}
 
 	ir := &interceptor.Registry{}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
@@ -102,7 +151,6 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 		}
 
 		if isSendSideBWE {
-			/* LK-TODO-SSBWE
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
 					gcc.SendSideBWEInitialBitrate(1*1000*1000),
@@ -122,7 +170,6 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 					ir.Add(tf)
 				}
 			}
-			*/
 		}
 	}
 	if len(params.SimTracks) > 0 {
@@ -143,23 +190,10 @@ func newPeerConnection(params TransportParams) (*webrtc.PeerConnection, *webrtc.
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
-	/* LK-TODO-SSBWE
-	var bwe cc.BandwidthEstimator
-	pc, me, err := newPeerConnection(params, func(estimator cc.BandwidthEstimator) {
-		bwe = estimator
-	})
-	*/
-	pc, me, err := newPeerConnection(params)
-	if err != nil {
-		return nil, err
-	}
-
 	t := &PCTransport{
-		pc:                 pc,
-		me:                 me,
+		params:             params,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
-		logger:             params.Logger,
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
@@ -167,28 +201,47 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			Logger: params.Logger,
 		})
 		t.streamAllocator.Start()
-		/* LK-TODO-SSBWE
-		if bwe != nil {
-			t.streamAllocator.SetBandwidthEstimator(bwe)
-		}
-		*/
 	}
+
+	if err := t.createPeerConnection(); err != nil {
+		return nil, err
+	}
+
+	return t, nil
+}
+
+func (t *PCTransport) createPeerConnection() error {
+	var bwe cc.BandwidthEstimator
+	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
+		bwe = estimator
+	})
+	if err != nil {
+		return err
+	}
+
+	t.pc = pc
 	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
 		if state == webrtc.ICEGathererStateComplete {
 			go func() {
 				t.lock.Lock()
 				defer t.lock.Unlock()
 				if t.restartAfterGathering {
-					params.Logger.Debugw("restarting ICE after ICE gathering")
+					t.params.Logger.Debugw("restarting ICE after ICE gathering")
 					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-						params.Logger.Warnw("could not restart ICE", err)
+						t.params.Logger.Warnw("could not restart ICE", err)
 					}
 				}
 			}()
 		}
 	})
 
-	return t, nil
+	t.me = me
+
+	if bwe != nil && t.streamAllocator != nil {
+		t.streamAllocator.SetBandwidthEstimator(bwe)
+	}
+
+	return nil
 }
 
 func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
@@ -199,7 +252,7 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 		return nil
 	}
 
-	t.logger.Debugw("add candidate ", "candidate", candidate.Candidate)
+	t.params.Logger.Debugw("add candidate ", "candidate", candidate.Candidate)
 
 	return t.pc.AddICECandidate(candidate)
 }
@@ -208,7 +261,19 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 	return t.pc
 }
 
+// IsEstablished returns true if the PeerConnection has been established
+func (t *PCTransport) IsEstablished() bool {
+	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
+}
+
 func (t *PCTransport) Close() {
+	t.lock.Lock()
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+	t.lock.Unlock()
+
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
 	}
@@ -228,6 +293,11 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	lastState := t.negotiationState
 	t.negotiationState = negotiationStateNone
 
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+
 	for _, c := range t.pendingCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
 			return err
@@ -237,9 +307,9 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 
 	// only initiate when we are the offerer
 	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
-		t.logger.Debugw("re-negotiate after answering")
+		t.params.Logger.Debugw("re-negotiate after receiving answer")
 		if err := t.createAndSendOffer(nil); err != nil {
-			t.logger.Errorw("could not negotiate", err)
+			t.params.Logger.Errorw("could not negotiate", err)
 		}
 	}
 	return nil
@@ -250,12 +320,25 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
 }
 
-func (t *PCTransport) Negotiate() {
-	t.debouncedNegotiate(func() {
+func (t *PCTransport) OnNegotiationFailed(f func()) {
+	t.onNegotiationFailed = f
+}
+
+func (t *PCTransport) Negotiate(force bool) {
+	if force {
+		t.debouncedNegotiate(func() {
+			// no op to cancel pending negotiation
+		})
 		if err := t.CreateAndSendOffer(nil); err != nil {
-			t.logger.Errorw("could not negotiate", err)
+			t.params.Logger.Errorw("could not negotiate", err)
 		}
-	})
+	} else {
+		t.debouncedNegotiate(func() {
+			if err := t.CreateAndSendOffer(nil); err != nil {
+				t.params.Logger.Errorw("could not negotiate", err)
+			}
+		})
+	}
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
@@ -273,62 +356,104 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return nil
 	}
 
-	iceRestart := options != nil && options.ICERestart
+	iceRestart := (options != nil && options.ICERestart) || t.restartAtNextOffer
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if iceRestart {
 		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-			t.logger.Debugw("restart ICE after gathering")
+			t.params.Logger.Debugw("restart ICE after gathering")
 			t.restartAfterGathering = true
 			return nil
 		}
-		t.logger.Debugw("restarting ICE")
+		t.params.Logger.Debugw("restarting ICE")
 	}
 
-	// when there's an ongoing negotiation, let it finish and not disrupt its state
-	if t.negotiationState == negotiationStateClient {
+	if iceRestart && t.negotiationState != negotiationStateNone {
 		currentSD := t.pc.CurrentRemoteDescription()
-		if iceRestart && currentSD != nil {
-			t.logger.Debugw("recovering from client negotiation state")
+		if currentSD == nil {
+			// restart without current remote description, sent current local description again to try recover
+			offer := t.pc.LocalDescription()
+			if offer == nil {
+				// it should not happen, log just in case
+				t.params.Logger.Warnw("ice restart without local offer", nil)
+				return ErrIceRestartWithoutLocalSDP
+			} else {
+				t.negotiationState = negotiationRetry
+				t.restartAtNextOffer = true
+				go t.onOffer(*offer)
+				return nil
+			}
+		} else {
+			// recover by re-applying the last answer
+			t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
 			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
 				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 				return err
 			}
-		} else {
-			t.logger.Debugw("skipping negotiation, trying again later")
+		}
+	} else {
+		// when there's an ongoing negotiation, let it finish and not disrupt its state
+		if t.negotiationState == negotiationStateClient {
+			t.params.Logger.Infow("skipping negotiation, trying again later")
 			t.negotiationState = negotiationRetry
 			return nil
+		} else if t.negotiationState == negotiationRetry {
+			// already set to retry, we can safely skip this attempt
+			return nil
 		}
-	} else if t.negotiationState == negotiationRetry {
-		// already set to retry, we can safely skip this attempt
-		return nil
 	}
 
-	if t.previousAnswer != nil {
-		t.previousAnswer = nil
+	ensureICERestart := func(options *webrtc.OfferOptions) *webrtc.OfferOptions {
 		if options == nil {
 			options = &webrtc.OfferOptions{}
 		}
 		options.ICERestart = true
+		return options
+	}
+
+	if t.previousAnswer != nil {
+		t.previousAnswer = nil
+		options = ensureICERestart(options)
+	}
+
+	if t.restartAtNextOffer {
+		t.restartAtNextOffer = false
+		options = ensureICERestart(options)
 	}
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
-		t.logger.Errorw("could not create offer", err)
+		t.params.Logger.Errorw("could not create offer", err)
 		return err
 	}
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
-		t.logger.Errorw("could not set local description", err)
+		t.params.Logger.Errorw("could not set local description", err)
 		return err
 	}
 
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
 	t.restartAfterGathering = false
+
+	negotiateVersion := t.negotiateCounter.Inc()
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
+		t.lock.RLock()
+		failed := t.negotiationState != negotiationStateNone
+		t.lock.RUnlock()
+		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+		}
+	})
 
 	go t.onOffer(offer)
 	return nil
@@ -346,17 +471,27 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 		return err
 	}
 
-	// for pion generate unmatched sdp, it always append data channel to last m-lines,
-	// that is not consistent with our subscribe offer which data channel is first m-lines,
-	// so use a dumb pc to negotiate sdp with only data channel then the data channel will
-	// sticky to first m-lines(subsequent sdp negotiation will keep m-lines's sequence)
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
 		return err
 	}
 	t.pc.SetLocalDescription(offer)
 
-	pc2, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	//
+	// Simulate client side peer connection and set DTLS role from previous answer.
+	// Role needs to be set properly (one side needs to be server and the other side
+	// needs to be the client) for DTLS connection to form properly. As this is
+	// trying to replicate previous setup, read from previous answer and use that role.
+	//
+	se := webrtc.SettingEngine{}
+	se.SetAnsweringDTLSRole(extractDTLSRole(parsed))
+	api := webrtc.NewAPI(
+		webrtc.WithSettingEngine(se),
+		webrtc.WithMediaEngine(t.me),
+	)
+	pc2, err := api.NewPeerConnection(webrtc.Configuration{
+		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
+	})
 	if err != nil {
 		return err
 	}
@@ -369,7 +504,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	}
 
 	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
-	// keep the firgerprint at first call of SetRemoteDescription, if dumb pc and client pc use
+	// keep the fingerprint at first call of SetRemoteDescription, if dumb pc and client pc use
 	// different fingerprint, that will cause pion denied dtls data after handshake with client
 	// complete (can't pass fingerprint change).
 	// in this step, we don't established connection with dump pc(no candidate swap), just use
@@ -396,12 +531,8 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousAnswer(previousOffer webrtc.SessionDescription) error {
-	if err := t.preparePC(previousOffer); err != nil {
-		return err
-	}
-
-	parsed, err := previousOffer.Unmarshal()
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
+	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
 		return err
 	}
@@ -412,6 +543,16 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousOffer webrtc.SessionDescr
 			codecType = webrtc.RTPCodecTypeVideo
 		case "audio":
 			codecType = webrtc.RTPCodecTypeAudio
+		case "application":
+			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
+			// that not consistent with our previous answer that data channel might at middle-line
+			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
+			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
+			if err := t.preparePC(previousAnswer); err != nil {
+				t.params.Logger.Errorw("prepare pc for migration failed", err)
+				return err
+			}
+			continue
 		default:
 			continue
 		}
@@ -445,6 +586,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), sfu.AddTrackParams{
 		Source:      subTrack.MediaTrack().Source(),
 		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+		PublisherID: subTrack.MediaTrack().PublisherID(),
 	})
 }
 
@@ -456,12 +598,14 @@ func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) SetPreviousAnswer(offer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = offer
-		t.initPCWithPreviousAnswer(*t.previousAnswer)
+		t.previousAnswer = answer
+		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
+		}
 	}
 }
 
@@ -475,7 +619,7 @@ func getMidValue(media *sdp.MediaDescription) string {
 }
 
 func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
-	fingerprints := []string{}
+	fingerprints := make([]string, 0)
 
 	if fingerprint, haveFingerprint := desc.Attribute("fingerprint"); haveFingerprint {
 		fingerprints = append(fingerprints, fingerprint)
@@ -502,4 +646,38 @@ func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
 		return "", "", webrtc.ErrSessionDescriptionInvalidFingerprint
 	}
 	return parts[1], parts[0], nil
+}
+
+func extractDTLSRole(desc *sdp.SessionDescription) webrtc.DTLSRole {
+	for _, md := range desc.MediaDescriptions {
+		setup, ok := md.Attribute(sdp.AttrKeyConnectionSetup)
+		if !ok {
+			continue
+		}
+
+		if setup == sdp.ConnectionRoleActive.String() {
+			return webrtc.DTLSRoleClient
+		}
+
+		if setup == sdp.ConnectionRolePassive.String() {
+			return webrtc.DTLSRoleServer
+		}
+	}
+
+	//
+	// If 'setup' attribute is not available, use client role
+	// as that is the default behaviour of answerers
+	//
+	// There seems to be some differences in how role is decided.
+	// libwebrtc (Chrome) code - (https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/pc/jsep_transport.cc;l=592;drc=369fb686729e7eb20d2bd09717cec14269a399d7)
+	// does not mention anything about ICE role when determining
+	// DTLS Role.
+	//
+	// But, ORTC has this - https://github.com/w3c/ortc/issues/167#issuecomment-69409953
+	// and pion/webrtc follows that (https://github.com/pion/webrtc/blob/e071a4eded1efd5d9b401bcfc4efacb3a2a5a53c/dtlstransport.go#L269)
+	//
+	// So if remote is ice-lite, pion will use DTLSRoleServer when answering
+	// while browsers pick DTLSRoleClient.
+	//
+	return webrtc.DTLSRoleClient
 }

@@ -1,33 +1,37 @@
 package prometheus
 
 import (
-	"sync/atomic"
-
-	"github.com/livekit/protocol/logger"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 )
 
 type Direction string
 
 const (
-	Incoming Direction = "incoming"
-	Outgoing Direction = "outgoing"
+	Incoming               Direction = "incoming"
+	Outgoing               Direction = "outgoing"
+	transmissionInitial              = "initial"
+	transmissionRetransmit           = "retransmit"
 )
 
 var (
-	atomicBytesIn    uint64
-	atomicBytesOut   uint64
-	atomicPacketsIn  uint64
-	atomicPacketsOut uint64
-	atomicNackTotal  uint64
+	bytesIn           atomic.Uint64
+	bytesOut          atomic.Uint64
+	packetsIn         atomic.Uint64
+	packetsOut        atomic.Uint64
+	nackTotal         atomic.Uint64
+	retransmitBytes   atomic.Uint64
+	retransmitPackets atomic.Uint64
+	participantJoin   atomic.Uint64
 
-	promPacketLabels = []string{"direction"}
-
-	promPacketTotal *prometheus.CounterVec
-	promPacketBytes *prometheus.CounterVec
-	promNackTotal   *prometheus.CounterVec
-	promPliTotal    *prometheus.CounterVec
-	promFirTotal    *prometheus.CounterVec
+	promPacketLabels    = []string{"direction", "transmission"}
+	promPacketTotal     *prometheus.CounterVec
+	promPacketBytes     *prometheus.CounterVec
+	promRTCPLabels      = []string{"direction"}
+	promNackTotal       *prometheus.CounterVec
+	promPliTotal        *prometheus.CounterVec
+	promFirTotal        *prometheus.CounterVec
+	promParticipantJoin *prometheus.CounterVec
 )
 
 func initPacketStats(nodeID string) {
@@ -48,60 +52,88 @@ func initPacketStats(nodeID string) {
 		Subsystem:   "nack",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
-	}, promPacketLabels)
+	}, promRTCPLabels)
 	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "pli",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
-	}, promPacketLabels)
+	}, promRTCPLabels)
 	promFirTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "fir",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
-	}, promPacketLabels)
+	}, promRTCPLabels)
+	promParticipantJoin = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "participant_join",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, nil)
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
-
-	logger.Infow("promPacketTotal : ", promPacketTotal)
-	logger.Infow("promPacketBytes : ", promPacketBytes)
-	logger.Infow("promNackTotal : ", promNackTotal)
-	logger.Infow("promPliTotal : ", promPliTotal)
-	logger.Infow("promFirTotal : ", promFirTotal)
+	prometheus.MustRegister(promParticipantJoin)
 }
 
-func IncrementPackets(direction Direction, count uint64) {
-	promPacketTotal.WithLabelValues(string(direction)).Add(float64(count))
+func IncrementPackets(direction Direction, count uint64, retransmit bool) {
+	promPacketTotal.WithLabelValues(
+		string(direction),
+		transmissionLabel(retransmit),
+	).Add(float64(count))
 	if direction == Incoming {
-		atomic.AddUint64(&atomicPacketsIn, count)
+		packetsIn.Add(count)
 	} else {
-		atomic.AddUint64(&atomicPacketsOut, count)
+		packetsOut.Add(count)
+		if retransmit {
+			retransmitPackets.Add(count)
+		}
 	}
 }
 
-func IncrementBytes(direction Direction, count uint64) {
-	promPacketBytes.WithLabelValues(string(direction)).Add(float64(count))
+func IncrementBytes(direction Direction, count uint64, retransmit bool) {
+	promPacketBytes.WithLabelValues(
+		string(direction),
+		transmissionLabel(retransmit),
+	).Add(float64(count))
 	if direction == Incoming {
-		atomic.AddUint64(&atomicBytesIn, count)
+		bytesIn.Add(count)
 	} else {
-		atomic.AddUint64(&atomicBytesOut, count)
+		bytesOut.Add(count)
+		if retransmit {
+			retransmitBytes.Add(count)
+		}
 	}
 }
 
-func IncrementRTCP(direction Direction, nack, pli, fir int32) {
+func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
 	if nack > 0 {
 		promNackTotal.WithLabelValues(string(direction)).Add(float64(nack))
-		atomic.AddUint64(&atomicNackTotal, uint64(nack))
+		nackTotal.Add(uint64(nack))
 	}
 	if pli > 0 {
 		promPliTotal.WithLabelValues(string(direction)).Add(float64(pli))
 	}
 	if fir > 0 {
 		promFirTotal.WithLabelValues(string(direction)).Add(float64(fir))
+	}
+}
+
+func IncrementParticipantJoin(join uint32) {
+	if join > 0 {
+		promParticipantJoin.WithLabelValues().Add(float64(join))
+		participantJoin.Add(uint64(join))
+	}
+}
+
+func transmissionLabel(retransmit bool) string {
+	if !retransmit {
+		return transmissionInitial
+	} else {
+		return transmissionRetransmit
 	}
 }

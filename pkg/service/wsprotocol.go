@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
@@ -28,7 +29,7 @@ func NewWSSignalConnection(conn types.WebsocketClient) *WSSignalConnection {
 	wsc := &WSSignalConnection{
 		conn:    conn,
 		mu:      sync.Mutex{},
-		useJSON: true,
+		useJSON: false,
 	}
 	go wsc.pingWorker()
 	return wsc

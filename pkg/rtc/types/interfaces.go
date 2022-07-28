@@ -1,10 +1,14 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -24,6 +28,8 @@ type AddSubscriberParams struct {
 	TrackIDs  []livekit.TrackID
 }
 
+// ---------------------------------------------
+
 type MigrateState int32
 
 const (
@@ -32,24 +38,191 @@ const (
 	MigrateStateComplete
 )
 
+func (m MigrateState) String() string {
+	switch m {
+	case MigrateStateInit:
+		return "MIGRATE_STATE_INIT"
+	case MigrateStateSync:
+		return "MIGRATE_STATE_SYNC"
+	case MigrateStateComplete:
+		return "MIGRATE_STATE_COMPLETE"
+	default:
+		return fmt.Sprintf("%d", int(m))
+	}
+}
+
+// ---------------------------------------------
+
+type SubscribedCodecQuality struct {
+	CodecMime string
+	Quality   livekit.VideoQuality
+}
+
+// ---------------------------------------------
+
+type ParticipantCloseReason int
+
+const (
+	ParticipantCloseReasonClientRequestLeave ParticipantCloseReason = iota
+	ParticipantCloseReasonRoomManagerStop
+	ParticipantCloseReasonRoomClose
+	ParticipantCloseReasonVerifyFailed
+	ParticipantCloseReasonJoinFailed
+	ParticipantCloseReasonJoinTimeout
+	ParticipantCloseReasonRTCSessionFinish
+	ParticipantCloseReasonStateDisconnected
+	ParticipantCloseReasonPeerConnectionDisconnected
+	ParticipantCloseReasonDuplicateIdentity
+	ParticipantCloseReasonMigrationComplete
+	ParticipantCloseReasonStale
+	ParticipantCloseReasonServiceRequestRemoveParticipant
+	ParticipantCloseReasonServiceRequestDeleteRoom
+	ParticipantCloseReasonSimulateMigration
+	ParticipantCloseReasonSimulateNodeFailure
+	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonNegotiateFailed
+)
+
+func (p ParticipantCloseReason) String() string {
+	switch p {
+	case ParticipantCloseReasonClientRequestLeave:
+		return "CLIENT_REQUEST_LEAVE"
+	case ParticipantCloseReasonRoomManagerStop:
+		return "ROOM_MANAGER_STOP"
+	case ParticipantCloseReasonRoomClose:
+		return "ROOM_CLOSE"
+	case ParticipantCloseReasonVerifyFailed:
+		return "VERIFY_FAILED"
+	case ParticipantCloseReasonJoinFailed:
+		return "JOIN_FAILED"
+	case ParticipantCloseReasonJoinTimeout:
+		return "JOIN_TIMEOUT"
+	case ParticipantCloseReasonRTCSessionFinish:
+		return "RTC_SESSION_FINISH"
+	case ParticipantCloseReasonStateDisconnected:
+		return "STATE_DISCONNECTED"
+	case ParticipantCloseReasonPeerConnectionDisconnected:
+		return "PEER_CONNECTION_DISCONNECTED"
+	case ParticipantCloseReasonDuplicateIdentity:
+		return "DUPLICATE_IDENTITY"
+	case ParticipantCloseReasonMigrationComplete:
+		return "MIGRATION_COMPLETE"
+	case ParticipantCloseReasonStale:
+		return "STALE"
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return "SERVICE_REQUEST_REMOVE_PARTICIPANT"
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return "SERVICE_REQUEST_DELETE_ROOM"
+	case ParticipantCloseReasonSimulateMigration:
+		return "SIMULATE_MIGRATION"
+	case ParticipantCloseReasonSimulateNodeFailure:
+		return "SIMULATE_NODE_FAILURE"
+	case ParticipantCloseReasonSimulateServerLeave:
+		return "SIMULATE_SERVER_LEAVE"
+	case ParticipantCloseReasonNegotiateFailed:
+		return "NEGOTIATE_FAILED"
+	default:
+		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
+	switch p {
+	case ParticipantCloseReasonClientRequestLeave:
+		return livekit.DisconnectReason_CLIENT_INITIATED
+	case ParticipantCloseReasonRoomManagerStop:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonVerifyFailed, ParticipantCloseReasonJoinFailed, ParticipantCloseReasonJoinTimeout:
+		// expected to be connected but is not
+		return livekit.DisconnectReason_JOIN_FAILURE
+	case ParticipantCloseReasonPeerConnectionDisconnected:
+		return livekit.DisconnectReason_STATE_MISMATCH
+	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonStale:
+		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return livekit.DisconnectReason_PARTICIPANT_REMOVED
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return livekit.DisconnectReason_ROOM_DELETED
+	case ParticipantCloseReasonSimulateMigration:
+		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonSimulateNodeFailure:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonSimulateServerLeave:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonNegotiateFailed:
+		return livekit.DisconnectReason_STATE_MISMATCH
+	default:
+		// the other types will map to unknown reason
+		return livekit.DisconnectReason_UNKNOWN_REASON
+	}
+}
+
+// ---------------------------------------------
+
+//counterfeiter:generate . Participant
+type Participant interface {
+	ID() livekit.ParticipantID
+	Identity() livekit.ParticipantIdentity
+
+	ToProto() *livekit.ParticipantInfo
+
+	SetMetadata(metadata string)
+
+	GetPublishedTrack(sid livekit.TrackID) MediaTrack
+	GetPublishedTracks() []MediaTrack
+
+	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
+	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
+
+	// permissions
+	Hidden() bool
+	IsRecorder() bool
+
+	Start()
+	Close(sendLeave bool, reason ParticipantCloseReason) error
+
+	SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
+
+	// updates from remotes
+	UpdateSubscriptionPermission(
+		subscriptionPermission *livekit.SubscriptionPermission,
+		timedVersion *livekit.TimedVersion,
+		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
+		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
+	) error
+	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
+	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
+
+	DebugInfo() map[string]interface{}
+}
+
+type IceConfig struct {
+	PreferSubTcp bool
+	PreferPubTcp bool
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
+	Participant
+
+	GetLogger() logger.Logger
+	GetAdaptiveStream() bool
+
 	ProtocolVersion() ProtocolVersion
 
 	ConnectedAt() time.Time
 
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
-
-	IsRecorder() bool
-
 	SubscriberAsPrimary() bool
 
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
 
 	// permissions
-	SetPermission(permission *livekit.ParticipantPermission)
+	ClaimGrants() *auth.ClaimGrants
+	SetPermission(permission *livekit.ParticipantPermission) bool
 	CanPublish() bool
 	CanSubscribe() bool
 	CanPublishData() bool
@@ -64,165 +237,142 @@ type LocalParticipant interface {
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
-	Negotiate()
-	ICERestart() error
+	Negotiate(force bool)
+	ICERestart(iceConfig *IceConfig) error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
-	GetSubscribedTrack(sid livekit.TrackID) SubscribedTrack
+	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
+	IsSubscribedTo(sid livekit.ParticipantID) bool
+	IsPublisher() bool
 
-	GetAudioLevel() (level uint8, active bool)
+	GetAudioLevel() (smoothedLevel float64, active bool)
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
-	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo, updatedAt time.Time) error
+	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer, region string) error
+	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
+	SendRefreshToken(token string) error
 
 	// callbacks
-	OnStateChange(func(p Participant, oldState livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant, oldState livekit.ParticipantInfo_State))
+	// OnTrackPublished - remote added a track
+	OnTrackPublished(func(LocalParticipant, MediaTrack))
 	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, PublishedTrack))
-	OnMetadataUpdate(callback func(Participant))
-	OnDataPacket(callback func(Participant, *livekit.DataPacket))
-	OnClose(_callback func(Participant, map[livekit.TrackID]livekit.ParticipantID))
-
-	// updates from remotes
-	UpdateSubscribedQuality(nodeID string, trackID livekit.TrackID, maxQuality livekit.VideoQuality) error
-	UpdateMediaLoss(nodeID string, trackID livekit.TrackID, fractionalLoss uint32) error
+	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
+	// OnParticipantUpdate - metadata or permission is updated
+	OnParticipantUpdate(callback func(LocalParticipant))
+	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
+	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
+	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnClaimsChanged(_callback func(LocalParticipant))
 
 	// session migration
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
-	AddMigratedTrack(cid string, ti *livekit.TrackInfo)
-	SetPreviousAnswer(previous *webrtc.SessionDescription)
+	SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
+
+	UpdateRTT(rtt uint32)
+
+	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
+	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
+	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
+
+	EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub LocalParticipant) error)
+	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
+	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 }
 
-//counterfeiter:generate . Participant
-type Participant interface {
-	LocalParticipant
-
-	ID() livekit.ParticipantID
-	Identity() livekit.ParticipantIdentity
-
-	ToProto() *livekit.ParticipantInfo
-
-	SetMetadata(metadata string)
-
-	GetPublishedTrack(sid livekit.TrackID) PublishedTrack
-	GetPublishedTracks() []PublishedTrack
-
-	AddSubscriber(op Participant, params AddSubscriberParams) (int, error)
-	RemoveSubscriber(op Participant, trackID livekit.TrackID)
-
-	// permissions
-	Hidden() bool
-
-	Start()
-	Close() error
-
-	// callbacks
-	// OnTrackPublished - remote added a remoteTrack
-	OnTrackPublished(func(Participant, PublishedTrack))
-
-	UpdateSubscriptionPermissions(permissions *livekit.UpdateSubscriptionPermissions, resolver func(participantID livekit.ParticipantID) Participant) error
-	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-
-	DebugInfo() map[string]interface{}
-}
-
-// Room is a container of participants, and can provide room level actions
+// Room is a container of participants, and can provide room-level actions
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
-	UpdateSubscriptions(participant Participant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
-	UpdateSubscriptionPermissions(participant Participant, permissions *livekit.UpdateSubscriptionPermissions) error
-	SyncState(participant Participant, state *livekit.SyncState) error
-
+	ID() livekit.RoomID
+	RemoveParticipant(identity livekit.ParticipantIdentity, reason ParticipantCloseReason)
+	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool) error
+	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
+	SyncState(participant LocalParticipant, state *livekit.SyncState) error
+	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
+	SetParticipantPermission(participant LocalParticipant, permission *livekit.ParticipantPermission) error
 	UpdateVideoLayers(participant Participant, updateVideoLayers *livekit.UpdateVideoLayers) error
-}
-
-//counterfeiter:generate . LocalMediaTrack
-type LocalMediaTrack interface {
-	NotifySubscriberNodeMediaLoss(nodeID string, fractionalLoss uint8)
 }
 
 // MediaTrack represents a media track
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
-	LocalMediaTrack
-
 	ID() livekit.TrackID
 	Kind() livekit.TrackType
 	Name() string
-	IsMuted() bool
-	SetMuted(muted bool)
-	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	Source() livekit.TrackSource
-	IsSimulcast() bool
+
+	ToProto() *livekit.TrackInfo
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
 
-	ToProto() *livekit.TrackInfo
-
-	// subscribers
-	AddSubscriber(participant Participant) error
-	RemoveSubscriber(participantID livekit.ParticipantID)
-	IsSubscriber(subID livekit.ParticipantID) bool
-	GetAllSubscriberIDs() []livekit.ParticipantID
-	RemoveAllSubscribers()
-	RevokeDisallowedSubscribers(allowedSubscriberIDs []livekit.ParticipantID) []livekit.ParticipantID
-
-	// returns quality information that's appropriate for width & height
-	GetQualityForDimension(width, height uint32) livekit.VideoQuality
-
-	NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality)
-	NotifySubscriberNodeMaxQuality(nodeID string, quality livekit.VideoQuality)
-}
-
-//counterfeiter:generate . LocalPublishedTrack
-type LocalPublishedTrack interface {
-	SignalCid() string
-	SdpCid() string
-
-	GetAudioLevel() (level uint8, active bool)
-	GetConnectionScore() float64
-}
-
-// PublishedTrack is the main interface representing a track published to the room
-// it's responsible for managing subscribers and forwarding data from the input track to all subscribers
-//counterfeiter:generate . PublishedTrack
-type PublishedTrack interface {
-	MediaTrack
-
-	ToProto() *livekit.TrackInfo
-
-	Receiver() sfu.TrackReceiver
+	IsMuted() bool
+	SetMuted(muted bool)
 
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
+	IsSimulcast() bool
 
-	OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedQuality, maxQuality livekit.VideoQuality) error)
+	Restart()
 
 	// callbacks
 	AddOnClose(func())
 
-	LocalPublishedTrack
+	// subscribers
+	AddSubscriber(participant LocalParticipant) error
+	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
+	IsSubscriber(subID livekit.ParticipantID) bool
+	RemoveAllSubscribers(willBeResumed bool)
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
+	GetAllSubscribers() []livekit.ParticipantID
+	GetNumSubscribers() int
+
+	// returns quality information that's appropriate for width & height
+	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualites []SubscribedCodecQuality)
+	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
+
+	Receivers() []sfu.TrackReceiver
 }
 
+//counterfeiter:generate . LocalMediaTrack
+type LocalMediaTrack interface {
+	MediaTrack
+
+	SignalCid() string
+	HasSdpCid(cid string) bool
+
+	GetAudioLevel() (level float64, active bool)
+	GetConnectionScore() float32
+
+	SetRTT(rtt uint32)
+}
+
+// MediaTrack is the main interface representing a track published to the room
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
+	SubscriberID() livekit.ParticipantID
+	SubscriberIdentity() livekit.ParticipantIdentity
+	Subscriber() LocalParticipant
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool
@@ -230,13 +380,4 @@ type SubscribedTrack interface {
 	UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings)
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
-}
-
-// interface for properties of webrtc.TrackRemote
-//counterfeiter:generate . TrackRemote
-type TrackRemote interface {
-	SSRC() webrtc.SSRC
-	StreamID() string
-	Kind() webrtc.RTPCodecType
-	Codec() webrtc.RTPCodecParameters
 }

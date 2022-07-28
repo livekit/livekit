@@ -2,8 +2,9 @@ package buffer
 
 import (
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVP8Helper_Unmarshal(t *testing.T) {
@@ -75,19 +76,49 @@ func TestVP8Helper_Unmarshal(t *testing.T) {
 				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if tt.checkTemporal {
-				assert.Equal(t, tt.temporalSupport, p.TIDPresent == 1)
+				require.Equal(t, tt.temporalSupport, p.TIDPresent == 1)
 			}
 			if tt.checkKeyFrame {
-				assert.Equal(t, tt.keyFrame, p.IsKeyFrame)
+				require.Equal(t, tt.keyFrame, p.IsKeyFrame)
 			}
 			if tt.checkPictureID {
-				assert.Equal(t, tt.pictureID, p.PictureID)
+				require.Equal(t, tt.pictureID, p.PictureID)
 			}
 			if tt.checkTlzIdx {
-				assert.Equal(t, tt.tlzIdx, p.TL0PICIDX)
+				require.Equal(t, tt.tlzIdx, p.TL0PICIDX)
 			}
 			if tt.checkTempID {
-				assert.Equal(t, tt.temporalID, p.TID)
+				require.Equal(t, tt.temporalID, p.TID)
+			}
+		})
+	}
+}
+
+// ------------------------------------------
+
+func Test_timeToNtp(t *testing.T) {
+	type args struct {
+		ns time.Time
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantNTP uint64
+	}{
+		{
+			name: "Must return correct NTP time",
+			args: args{
+				ns: time.Unix(1602391458, 1234),
+			},
+			wantNTP: 16369753560730047668,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			gotNTP := uint64(ToNtpTime(tt.args.ns))
+			if gotNTP != tt.wantNTP {
+				t.Errorf("timeToNtp() gotFraction = %v, want %v", gotNTP, tt.wantNTP)
 			}
 		})
 	}

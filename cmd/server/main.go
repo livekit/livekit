@@ -11,11 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/urfave/cli/v2"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
@@ -26,12 +27,15 @@ func init() {
 }
 
 func main() {
-	serverlogger.Initialize("livekit")
 	app := &cli.App{
 		Name:        "livekit-server",
-		Usage:       "distributed audio/video rooms over WebRTC",
+		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
 		Flags: []cli.Flag{
+			&cli.StringSliceFlag{
+				Name:  "bind",
+				Usage: "IP address to listen on, use flag multiple times to specify multiple addresses",
+			},
 			&cli.StringFlag{
 				Name:  "config",
 				Usage: "path to LiveKit config file",
@@ -60,6 +64,11 @@ func main() {
 				Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
 				EnvVars: []string{"NODE_IP"},
 			},
+			&cli.IntFlag{
+				Name:    "udp-port",
+				Usage:   "Single UDP port to use for WebRTC traffic",
+				EnvVars: []string{"UDP_PORT"},
+			},
 			&cli.StringFlag{
 				Name:    "redis-host",
 				Usage:   "host (incl. port) to redis server",
@@ -71,18 +80,6 @@ func main() {
 				EnvVars: []string{"REDIS_PASSWORD"},
 			},
 			&cli.StringFlag{
-				Name:  "cpuprofile",
-				Usage: "write cpu profile to `file`",
-			},
-			&cli.StringFlag{
-				Name:  "memprofile",
-				Usage: "write memory profile to `file`",
-			},
-			&cli.BoolFlag{
-				Name:  "dev",
-				Usage: "sets log-level to debug, and console formatter",
-			},
-			&cli.StringFlag{
 				Name:    "turn-cert",
 				Usage:   "tls cert file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_CERT"},
@@ -91,6 +88,15 @@ func main() {
 				Name:    "turn-key",
 				Usage:   "tls key file for TURN server",
 				EnvVars: []string{"LIVEKIT_TURN_KEY"},
+			},
+			// debugging flags
+			&cli.StringFlag{
+				Name:  "memprofile",
+				Usage: "write memory profile to `file`",
+			},
+			&cli.BoolFlag{
+				Name:  "dev",
+				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
 			},
 		},
 		Action: startServer,
@@ -106,7 +112,9 @@ func main() {
 				Action: printPorts,
 			},
 			{
+				// this subcommand is deprecated, token generation is provided by CLI
 				Name:   "create-join-token",
+				Hidden: true,
 				Usage:  "create a room join token for development use",
 				Action: createToken,
 				Flags: []cli.Flag{
@@ -147,40 +155,47 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	return config.NewConfig(confString, c)
+	conf, err := config.NewConfig(confString, c)
+	if err != nil {
+		return nil, err
+	}
+	serverlogger.InitFromConfig(conf.Logging)
+
+	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
+		// use single port UDP when no config is provided
+		conf.RTC.UDPPort = 7882
+		conf.RTC.ICEPortRangeStart = 0
+		conf.RTC.ICEPortRangeEnd = 0
+		logger.Infow("starting in development mode")
+
+		if len(conf.Keys) == 0 {
+			logger.Infow("no keys provided, using placeholder keys",
+				"API Key", "devkey",
+				"API Secret", "secret",
+			)
+			conf.Keys = map[string]string{
+				"devkey": "secret",
+			}
+			// when dev mode and using shared keys, we'll bind to localhost by default
+			if conf.BindAddresses == nil {
+				conf.BindAddresses = []string{
+					"127.0.0.1",
+					"[::1]",
+				}
+			}
+		}
+	}
+	return conf, nil
 }
 
 func startServer(c *cli.Context) error {
 	rand.Seed(time.Now().UnixNano())
 
-	cpuProfile := c.String("cpuprofile")
 	memProfile := c.String("memprofile")
-	serverlogger.Debugf("cpuProfile : %s,  memProfile : %s", cpuProfile, memProfile)
 
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
-	}
-	serverlogger.Debugf("config %v", conf)
-
-	if conf.Development {
-		serverlogger.Debugf("log level development set")
-		serverlogger.InitDevelopment(conf.LogLevel)
-	} else {
-		serverlogger.Debugf("log level production set")
-		serverlogger.InitProduction(conf.LogLevel)
-	}
-
-	if cpuProfile != "" {
-		if f, err := os.Create(cpuProfile); err != nil {
-			return err
-		} else {
-			defer f.Close()
-			if err := pprof.StartCPUProfile(f); err != nil {
-				return err
-			}
-			defer pprof.StopCPUProfile()
-		}
 	}
 
 	if memProfile != "" {
@@ -197,7 +212,6 @@ func startServer(c *cli.Context) error {
 	}
 
 	currentNode, err := routing.NewLocalNode(conf)
-	serverlogger.Debugf("NewLocalNode : %v, err : %v", currentNode, err)
 	if err != nil {
 		return err
 	}

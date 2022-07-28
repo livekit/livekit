@@ -13,11 +13,6 @@ type FakeMessageSink struct {
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 	}
-	OnCloseStub        func(func())
-	onCloseMutex       sync.RWMutex
-	onCloseArgsForCall []struct {
-		arg1 func()
-	}
 	WriteMessageStub        func(protoreflect.ProtoMessage) error
 	writeMessageMutex       sync.RWMutex
 	writeMessageArgsForCall []struct {
@@ -55,38 +50,6 @@ func (fake *FakeMessageSink) CloseCalls(stub func()) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
-}
-
-func (fake *FakeMessageSink) OnClose(arg1 func()) {
-	fake.onCloseMutex.Lock()
-	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.OnCloseStub
-	fake.recordInvocation("OnClose", []interface{}{arg1})
-	fake.onCloseMutex.Unlock()
-	if stub != nil {
-		fake.OnCloseStub(arg1)
-	}
-}
-
-func (fake *FakeMessageSink) OnCloseCallCount() int {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	return len(fake.onCloseArgsForCall)
-}
-
-func (fake *FakeMessageSink) OnCloseCalls(stub func(func())) {
-	fake.onCloseMutex.Lock()
-	defer fake.onCloseMutex.Unlock()
-	fake.OnCloseStub = stub
-}
-
-func (fake *FakeMessageSink) OnCloseArgsForCall(i int) func() {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	argsForCall := fake.onCloseArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeMessageSink) WriteMessage(arg1 protoreflect.ProtoMessage) error {
@@ -155,8 +118,6 @@ func (fake *FakeMessageSink) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

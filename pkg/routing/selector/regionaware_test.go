@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
@@ -17,6 +18,7 @@ const (
 	regionWest    = "us-west"
 	regionEast    = "us-east"
 	regionSeattle = "seattle"
+	sortBy        = "random"
 )
 
 func TestRegionAwareRouting(t *testing.T) {
@@ -41,7 +43,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		nodes := []*livekit.Node{
 			newTestNodeInRegion("", false),
 		}
-		s, err := selector.NewRegionAwareSelector(regionEast, nil)
+		s, err := selector.NewRegionAwareSelector(regionEast, nil, sortBy)
 		require.NoError(t, err)
 
 		node, err := s.SelectNode(nodes)
@@ -57,7 +59,7 @@ func TestRegionAwareRouting(t *testing.T) {
 			expectedNode,
 			newTestNodeInRegion(regionEast, false),
 		}
-		s, err := selector.NewRegionAwareSelector(regionEast, rc)
+		s, err := selector.NewRegionAwareSelector(regionEast, rc, sortBy)
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
@@ -74,7 +76,7 @@ func TestRegionAwareRouting(t *testing.T) {
 			newTestNodeInRegion(regionWest, true),
 			newTestNodeInRegion(regionEast, false),
 		}
-		s, err := selector.NewRegionAwareSelector(regionEast, rc)
+		s, err := selector.NewRegionAwareSelector(regionEast, rc, sortBy)
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
@@ -90,7 +92,7 @@ func TestRegionAwareRouting(t *testing.T) {
 			expectedNode,
 			newTestNodeInRegion(regionEast, true),
 		}
-		s, err := selector.NewRegionAwareSelector(regionSeattle, rc)
+		s, err := selector.NewRegionAwareSelector(regionSeattle, rc, sortBy)
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
@@ -108,7 +110,7 @@ func TestRegionAwareRouting(t *testing.T) {
 			expectedNode,
 			expectedNode,
 		}
-		s, err := selector.NewRegionAwareSelector(regionSeattle, rc)
+		s, err := selector.NewRegionAwareSelector(regionSeattle, rc, sortBy)
 		require.NoError(t, err)
 		s.SysloadLimit = loadLimit
 
@@ -121,7 +123,7 @@ func TestRegionAwareRouting(t *testing.T) {
 		nodes := []*livekit.Node{
 			newTestNodeInRegion(regionWest, true),
 		}
-		s, err := selector.NewRegionAwareSelector(regionEast, rc)
+		s, err := selector.NewRegionAwareSelector(regionEast, rc, sortBy)
 		require.NoError(t, err)
 
 		node, err := s.SelectNode(nodes)

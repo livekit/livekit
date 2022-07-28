@@ -12,7 +12,7 @@ import (
 
 func (conf *Config) determineIP() (string, error) {
 	if conf.RTC.UseExternalIP {
-		stunServers := conf.RTC.StunServers
+		stunServers := conf.RTC.STUNServers
 		if len(stunServers) == 0 {
 			stunServers = DefaultStunServers
 		}
@@ -30,28 +30,32 @@ func (conf *Config) determineIP() (string, error) {
 	}
 
 	// use local ip instead
-	return GetLocalIPAddress()
+	addresses, err := GetLocalIPAddresses()
+	if len(addresses) > 0 {
+		return addresses[0], err
+	}
+	return "", err
 }
 
-func GetLocalIPAddress() (string, error) {
+func GetLocalIPAddresses() ([]string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	// handle err
-	var loopBack string
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
+	loopBacks := make([]string, 0)
+	addresses := make([]string, 0)
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
 		if err != nil {
 			continue
 		}
 		for _, addr := range addrs {
 			var ip net.IP
-			switch v := addr.(type) {
+			switch typedAddr := addr.(type) {
 			case *net.IPNet:
-				ip = v.IP.To4()
+				ip = typedAddr.IP.To4()
 			case *net.IPAddr:
-				ip = v.IP.To4()
+				ip = typedAddr.IP.To4()
 			default:
 				continue
 			}
@@ -59,17 +63,20 @@ func GetLocalIPAddress() (string, error) {
 				continue
 			}
 			if ip.IsLoopback() {
-				loopBack = ip.String()
+				loopBacks = append(loopBacks, ip.String())
 			} else {
-				return ip.String(), nil
+				addresses = append(addresses, ip.String())
 			}
 		}
 	}
 
-	if loopBack != "" {
-		return loopBack, nil
+	if len(addresses) > 0 {
+		return addresses, nil
 	}
-	return "", fmt.Errorf("could not find local IP address")
+	if len(loopBacks) > 0 {
+		return loopBacks, nil
+	}
+	return nil, fmt.Errorf("could not find local IP address")
 }
 
 func GetExternalIP(stunServers []string) (string, error) {

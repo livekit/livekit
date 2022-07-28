@@ -1,16 +1,17 @@
 package rtc
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	"github.com/pion/webrtc/v3"
+	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -20,35 +21,51 @@ const (
 type SubscribedTrackParams struct {
 	PublisherID       livekit.ParticipantID
 	PublisherIdentity livekit.ParticipantIdentity
-	SubscriberID      livekit.ParticipantID
+	PublisherVersion  uint32
+	Subscriber        types.LocalParticipant
 	MediaTrack        types.MediaTrack
 	DownTrack         *sfu.DownTrack
+	AdaptiveStream    bool
 }
+
 type SubscribedTrack struct {
 	params   SubscribedTrackParams
-	subMuted utils.AtomicFlag
-	pubMuted utils.AtomicFlag
+	subMuted atomic.Bool
+	pubMuted atomic.Bool
 	settings atomic.Value // *livekit.UpdateTrackSettings
 
-	onBind func()
+	onBind atomic.Value // func()
+	bound  atomic.Bool
 
 	debouncer func(func())
 }
 
 func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
-	return &SubscribedTrack{
+	s := &SubscribedTrack{
 		params:    params,
 		debouncer: debounce.New(subscriptionDebounceInterval),
 	}
+
+	return s
 }
 
 func (t *SubscribedTrack) OnBind(f func()) {
-	t.onBind = f
+	t.onBind.Store(f)
+
+	t.maybeOnBind()
 }
 
 func (t *SubscribedTrack) Bound() {
-	if t.onBind != nil {
-		t.onBind()
+	t.bound.Store(true)
+	if !t.params.AdaptiveStream {
+		t.params.DownTrack.SetMaxSpatialLayer(utils.SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+	}
+	t.maybeOnBind()
+}
+
+func (t *SubscribedTrack) maybeOnBind() {
+	if onBind := t.onBind.Load(); onBind != nil && t.bound.Load() {
+		go onBind.(func())()
 	}
 }
 
@@ -64,6 +81,22 @@ func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
 	return t.params.PublisherIdentity
 }
 
+func (t *SubscribedTrack) PublisherVersion() uint32 {
+	return t.params.PublisherVersion
+}
+
+func (t *SubscribedTrack) SubscriberID() livekit.ParticipantID {
+	return t.params.Subscriber.ID()
+}
+
+func (t *SubscribedTrack) SubscriberIdentity() livekit.ParticipantIdentity {
+	return t.params.Subscriber.Identity()
+}
+
+func (t *SubscribedTrack) Subscriber() types.LocalParticipant {
+	return t.params.Subscriber
+}
+
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
 	return t.params.DownTrack
 }
@@ -74,19 +107,19 @@ func (t *SubscribedTrack) MediaTrack() types.MediaTrack {
 
 // has subscriber indicated it wants to mute this track
 func (t *SubscribedTrack) IsMuted() bool {
-	return t.subMuted.Get()
+	return t.subMuted.Load()
 }
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
-	t.pubMuted.TrySet(muted)
+	t.pubMuted.Store(muted)
 	t.updateDownTrackMute()
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings) {
-	visibilityChanged := t.subMuted.TrySet(settings.Disabled)
+	prevDisabled := t.subMuted.Swap(settings.Disabled)
 	t.settings.Store(settings)
 	// avoid frequent changes to mute & video layers, unless it became visible
-	if visibilityChanged && !settings.Disabled {
+	if prevDisabled != settings.Disabled && !settings.Disabled {
 		t.UpdateVideoLayer()
 	} else {
 		t.debouncer(t.UpdateVideoLayer)
@@ -98,10 +131,7 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if t.DownTrack().Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
-	if t.subMuted.Get() {
-		t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, livekit.VideoQuality_OFF)
-		return
-	}
+
 	settings, ok := t.settings.Load().(*livekit.UpdateTrackSettings)
 	if !ok {
 		return
@@ -111,12 +141,10 @@ func (t *SubscribedTrack) UpdateVideoLayer() {
 	if settings.Width > 0 {
 		quality = t.MediaTrack().GetQualityForDimension(settings.Width, settings.Height)
 	}
-	t.DownTrack().SetMaxSpatialLayer(SpatialLayerForQuality(quality))
-
-	t.MediaTrack().NotifySubscriberMaxQuality(t.params.SubscriberID, quality)
+	t.DownTrack().SetMaxSpatialLayer(utils.SpatialLayerForQuality(quality))
 }
 
 func (t *SubscribedTrack) updateDownTrackMute() {
-	muted := t.subMuted.Get() || t.pubMuted.Get()
+	muted := t.subMuted.Load() || t.pubMuted.Load()
 	t.DownTrack().Mute(muted)
 }

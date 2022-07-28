@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/twitchtv/twirp"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
-	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
@@ -43,12 +44,14 @@ var (
 )
 
 func init() {
-	serverlogger.InitDevelopment("")
+	serverlogger.InitFromConfig(config.LoggingConfig{
+		Config: logger.Config{Level: "debug"},
+	})
 }
 
-func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, func()) {
+func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s := createSingleNodeServer()
+	s := createSingleNodeServer(nil)
 	go func() {
 		if err := s.Start(); err != nil {
 			logger.Errorw("server returned error", err)
@@ -57,11 +60,6 @@ func setupSingleNodeTest(name string, roomName string) (*service.LivekitServer, 
 
 	waitForServerToStart(s)
 
-	// create test room
-	_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: roomName})
-	if err != nil {
-		panic(err)
-	}
 	return s, func() {
 		s.Stop(true)
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
@@ -106,7 +104,11 @@ func waitForServerToStart(s *service.LivekitServer) {
 			panic("could not start server after timeout")
 		case <-time.After(10 * time.Millisecond):
 			if s.IsRunning() {
-				return
+				// ensure we can connect to it
+				res, err := http.Get(fmt.Sprintf("http://localhost:%d", s.HTTPPort()))
+				if err == nil && res.StatusCode == http.StatusOK {
+					return
+				}
 			}
 		}
 	}
@@ -132,14 +134,16 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	}
 }
 
-func createSingleNodeServer() *service.LivekitServer {
+func createSingleNodeServer(configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	if configUpdater != nil {
+		configUpdater(conf)
+	}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -166,7 +170,6 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.RTC.UDPPort = port + 1
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	currentNode, err := routing.NewLocalNode(conf)
@@ -253,6 +256,16 @@ func joinTokenWithGrant(name string, grant *auth.VideoGrant) string {
 func createRoomToken() string {
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
 		AddGrant(&auth.VideoGrant{RoomCreate: true})
+	t, err := at.ToJWT()
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func adminRoomToken(name string) string {
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		AddGrant(&auth.VideoGrant{RoomAdmin: true, Room: name})
 	t, err := at.ToJWT()
 	if err != nil {
 		panic(err)

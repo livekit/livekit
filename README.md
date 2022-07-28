@@ -1,20 +1,34 @@
-# LiveKit - Open source, distributed video/audio rooms over WebRTC
+# LiveKit: High-performance WebRTC
 
-LiveKit is an open source project that provides scalable, multi-user conferencing over WebRTC. It's designed to give you
-everything you need to build real time video/audio capabilities in your applications.
+LiveKit is an open source project that provides scalable, multi-user conferencing based on WebRTC. It's designed to
+provide everything you need to build real-time video/audio/data capabilities in your applications.
+
+LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
+
+[![GitHub stars](https://img.shields.io/github/stars/livekit/livekit?style=social&label=Star&maxAge=2592000)](https://github.com/livekit/livekit/stargazers/)
+[![Slack community](https://img.shields.io/endpoint?url=https%3A%2F%2Flivekit.io%2Fbadges%2Fslack)](https://livekit.io/join-slack)
+[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/livekit/livekit/Test)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/livekit/livekit)](https://github.com/livekit/livekit/releases/latest)
+[![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
 
 ## Features
 
-- Horizontally scalable WebRTC Selective Forwarding Unit (SFU)
-- Modern, full-featured [client SDKs](https://docs.livekit.io/references/client-sdks/) for JS, iOS, Android, and Flutter
-- Built for production - JWT authentication and [server APIs](https://docs.livekit.io/guides/server-api)
-- Robust networking & connectivity, over UDP & TCP
-- Easy to deploy - pure Go & single binary
-- Advanced features - speaker detection, simulcast, selective subscription, moderation APIs, and webhooks.
+- Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
+- Modern, full-featured client SDKs
+- Built for production, supports JWT authentication
+- Robust networking and connectivity, UDP/TCP/TURN
+- Easy to deploy: single binary, Docker or Kubernetes
+- Advanced features including:
+    - [speaker detection](https://docs.livekit.io/guides/room/receive/#speaker-detection)
+    - [simulcast](https://docs.livekit.io/guides/room/publish/#video-simulcast)
+    - [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
+    - [selective subscription](https://docs.livekit.io/guides/room/receive/#selective-subscription)
+    - [moderation APIs](https://docs.livekit.io/guides/server-api/)
+    - [webhooks](https://docs.livekit.io/guides/webhooks/)
 
 ## Documentation & Guides
 
-Docs & Guides at: https://docs.livekit.io
+https://docs.livekit.io
 
 ## Try it live
 
@@ -23,128 +37,222 @@ Head to [our playground](https://livekit.io/playground) and give it a spin. Buil
 
 ## SDKs & Tools
 
-Client SDKs:
+### Client SDKs
 
-- [Javascript](https://github.com/livekit/client-sdk-js) ([docs](https://docs.livekit.io/client-sdk-js/))
-- [React](https://github.com/livekit/livekit-react)
-- [iOS - Swift](https://github.com/livekit/client-sdk-ios) ([docs](https://docs.livekit.io/client-sdk-ios/))
-- [Android - Kotlin](https://github.com/livekit/client-sdk-android) ([docs](https://docs.livekit.io/client-sdk-android/))
-- [Flutter](https://github.com/livekit/client-sdk-flutter) ([docs](https://docs.livekit.io/client-sdk-flutter/))
+Client SDKs enable your frontend to include interactive, multi-user experiences.
 
-Server SDKs:
+<table>
+  <tr>
+    <th>Language</th>
+    <th>Repo</th>
+    <th>
+        <a href="https://docs.livekit.io/guides/room/events/#declarative-ui" target="_blank" rel="noopener noreferrer">Declarative UI</a>
+    </th>
+    <th>Links</th>
+  </tr>
+  <!-- BEGIN Template
+  <tr>
+    <td>Language</td>
+    <td>
+      <a href="" target="_blank" rel="noopener noreferrer"></a>
+    </td>
+    <td></td>
+    <td></td>
+  </tr>
+  END -->
+  <!-- JavaScript -->
+  <tr>
+    <td>JavaScript (TypeScript)</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-js" target="_blank" rel="noopener noreferrer">client-sdk-js</a>
+    </td>
+    <td>
+      <a href="https://github.com/livekit/livekit-react" target="_blank" rel="noopener noreferrer">React</a>
+    </td>
+    <td>
+      <a href="https://docs.livekit.io/client-sdk-js/" target="_blank" rel="noopener noreferrer">docs</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-js/tree/main/example" target="_blank" rel="noopener noreferrer">JS example</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-js/tree/main/example" target="_blank" rel="noopener noreferrer">React example</a>
+    </td>
+  </tr>
+  <!-- Swift -->
+  <tr>
+    <td>Swift (iOS / MacOS)</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-swift" target="_blank" rel="noopener noreferrer">client-sdk-swift</a>
+    </td>
+    <td>Swift UI</td>
+    <td>
+      <a href="https://docs.livekit.io/client-sdk-swift/" target="_blank" rel="noopener noreferrer">docs</a>
+      |
+      <a href="https://github.com/livekit/client-example-swift" target="_blank" rel="noopener noreferrer">example</a>
+    </td>
+  </tr>
+  <!-- Kotlin -->
+  <tr>
+    <td>Kotlin (Android)</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-android" target="_blank" rel="noopener noreferrer">client-sdk-android</a>
+    </td>
+    <td>Compose</td>
+    <td>
+      <a href="https://docs.livekit.io/client-sdk-android/index.html" target="_blank" rel="noopener noreferrer">docs</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app/src/main/java/io/livekit/android/sample" target="_blank" rel="noopener noreferrer">example</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
+    </td>
+  </tr>
+  <tr>
+    <td>Flutter</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
+    </td>
+    <td>native</td>
+    <td>
+      <a href="https://docs.livekit.io/client-sdk-flutter/" target="_blank" rel="noopener noreferrer">docs</a>
+      |
+      <a href="https://github.com/livekit/client-sdk-flutter/tree/main/example" target="_blank" rel="noopener noreferrer">example</a>
+    </td>
+  </tr>
+  <!-- Unity -->
+  <tr>
+    <td>Unity WebGL</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-unity-web" target="_blank" rel="noopener noreferrer">client-sdk-unity-web</a>
+    </td>
+    <td></td>
+    <td>
+      <a href="https://livekit.github.io/client-sdk-unity-web/" target="_blank" rel="noopener noreferrer">docs</a>
+    </td>
+  </tr>
+  <!-- React Native -->
+  <tr>
+    <td>React Native (beta)</td>
+    <td>
+      <a href="https://github.com/livekit/client-sdk-react-native" target="_blank" rel="noopener noreferrer">client-sdk-react-native</a>
+    </td>
+    <td>native</td>
+    <td></td>
+  </tr>
+</table>
 
-- [Javascript](https://github.com/livekit/server-sdk-js) ([docs](https://docs.livekit.io/server-sdk-js/))
-- [Go](https://github.com/livekit/server-sdk-go) ([docs](https://pkg.go.dev/github.com/livekit/server-sdk-go))
+### Server SDKs
 
-Tools:
+Server SDKs enable your backend to generate [access tokens](https://docs.livekit.io/guides/access-tokens/),
+call [server APIs](https://docs.livekit.io/guides/server-api/), and
+receive [webhooks](https://docs.livekit.io/guides/webhooks/). In addition, the Go SDK includes client capabilities,
+enabling you to build automations that behave like end-users.
 
-- [livekit-cli](https://github.com/livekit/livekit-cli)
-- [chrometester](https://github.com/livekit/chrometester)
+| Language                | Repo                                                                                                | Docs                                                        |
+|:------------------------|:----------------------------------------------------------------------------------------------------|:------------------------------------------------------------|
+| Go                      | [server-sdk-go](https://github.com/livekit/server-sdk-go)                                           | [docs](https://pkg.go.dev/github.com/livekit/server-sdk-go) |
+| JavaScript (TypeScript) | [server-sdk-js](https://github.com/livekit/server-sdk-js)                                           | [docs](https://docs.livekit.io/server-sdk-js/)              |
+| Ruby                    | [server-sdk-ruby](https://github.com/livekit/server-sdk-ruby)                                       |                                                             |
+| Python (community)      | [tradablebits/livekit-server-sdk-python](https://github.com/tradablebits/livekit-server-sdk-python) |                                                             |
+| PHP (community)         | [agence104/livekit-server-sdk-php](https://github.com/agence104/livekit-server-sdk-php)             |                                                             |
 
-## Installing
+### Ecosystem & Tools
 
-### From source
+- [Egress](https://github.com/livekit/egress) - export and record your rooms
+- [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
+- [Docker image](https://hub.docker.com/r/livekit/livekit-server)
+- [Helm charts](https://github.com/livekit/livekit-helm)
+
+## Install
+
+We recommend installing [livekit-cli](https://github.com/livekit/livekit-cli) along with the server. It lets you access
+server APIs, create tokens, and generate test traffic.
+
+### MacOS
+
+```shell
+brew install livekit
+```
+
+### Linux
+
+```shell
+curl -sSL https://get.livekit.io | bash
+```
+
+### Windows
+
+Download the [latest release here](https://github.com/livekit/livekit/releases/latest)
+
+## Getting Started
+
+### Starting LiveKit
+
+Start LiveKit in development mode by running `livekit-server --dev`. It'll use a placeholder API key/secret pair.
+
+```
+API Key: devkey
+API Secret: secret
+```
+
+To customize your setup for production, refer to our [deployment docs](https://docs.livekit.io/deploy/)
+
+### Creating access token
+
+A user connecting to a LiveKit room requires an [access token](https://docs.livekit.io/guides/access-tokens/). Access
+tokens (JWT) encode the user's identity and the room permissions they've been granted. You can generate a token with our
+CLI:
+
+```shell
+livekit-cli create-token \
+    --api-key devkey --api-secret secret \
+    --join --room my-first-room --identity user1 \
+    --valid-for 24h
+```
+
+### Test with example app
+
+Head over to our [example app](https://example.livekit.io) and enter a generated token to connect to your LiveKit
+server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
+
+Once connected, your video and audio are now being published to your new LiveKit instance!
+
+### Simulating a test publisher
+
+```shell
+livekit-cli join-room \
+    --url ws://localhost:7880 \
+    --api-key devkey --api-secret secret \
+    --room my-first-room --identity bot-user1 \
+    --publish-demo
+```
+
+This command publishes a looped demo video to a room. Due to how the video clip was encoded (keyframes every 3s),
+there's a slight delay before the browser has sufficient data to begin rendering frames. This is an artifact of the
+simulation.
+
+## Deploying to a server
+
+Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
+
+## Building from source
 
 Pre-requisites:
 
-* Go 1.15+ is installed
-* GOPATH/bin is in your PATH
+- Go 1.16+ is installed
+- GOPATH/bin is in your PATH
 
 Then run
 
 ```shell
-git clone https://github.com/livekit/livekit-server
-cd livekit-server
+git clone https://github.com/livekit/livekit
+cd livekit
 ./bootstrap.sh
 mage
 ```
 
-### Docker
-
-LiveKit is published to Docker Hub under [livekit/livekit-server](https://hub.docker.com/r/livekit/livekit-server)
-
-## Running
-
-### Creating API keys
-
-LiveKit utilizes JWT based access tokens for authentication to all of its APIs. Because of this, the server needs a list
-of valid API keys and secrets to validate the provided tokens. For more,
-see [Access Tokens guide](https://docs.livekit.io/guides/access-tokens).
-
-Generate API key/secret pairs with:
-
-```shell
-./bin/livekit-server generate-keys
-```
-
-or
-
-```shell
-docker run --rm livekit/livekit-server generate-keys
-```
-
-Store the generate keys in a YAML file like:
-
-```yaml
-APIwLeah7g4fuLYDYAJeaKsSE: 8nTlwISkb-63DPP7OH4e.nw.J44JjicvZDiz8J59EoQ+
-```
-
-### Starting the server
-
-In development mode, LiveKit has no external dependencies. You can start LiveKit by passing it the API keys it should use
-in `LIVEKIT_KEYS`. LiveKit could also use a [config file](config-sample.yaml) or config environment
-variable `LIVEKIT_CONFIG`
-
-```shell
-LIVEKIT_KEYS="<key>: <secret>" ./bin/livekit-server --dev
-```
-
-or
-
-```shell
-docker run --rm \
-  -p 7880:7880 \
-  -p 7881:7881 \
-  -p 7882:7882/udp \
-  -e LIVEKIT_KEYS="<key>: <secret>" \
-  livekit/livekit-server \
-  --dev \
-  --node-ip=<machine-ip>
-```
-
-When running with docker, `--node-ip` needs to be set to your machine's IP address. If the service is to be exposed to
-public internet, this should the machine's public IP.
-
-The `--dev` flag turns on log verbosity to make it easier for local debugging/development
-
-### Creating a JWT token
-
-To create a join token for clients, livekit-server provides a convenient subcommand to create a **development** token.
-This token has an expiration of a month, which is useful for development & testing, but not appropriate for production
-use.
-
-```shell
-./bin/livekit-server --key-file <path/to/keyfile> create-join-token --room "myroom" --identity "myidentity"
-```
-
-### Sample client
-
-To test your server, you can use our [example web client](https://example.livekit.io/)
-(built with our [React component](https://github.com/livekit/livekit-react))
-
-Enter generated access token and you are connected to a room!
-
-## Deploying for production
-
-LiveKit is deployable to any environment that supports docker, including Kubernetes and Amazon ECS.
-
-See deployment docs at https://docs.livekit.io/guides/deploy
-
 ## Contributing
 
-We welcome your contributions to make LiveKit better! Please join
-us [on Slack](https://join.slack.com/t/livekit-users/shared_invite/zt-rrdy5abr-5pZ1wW8pXEkiQxBzFiXPUg) to discuss your
-ideas and/or submit PRs.
+We welcome your contributions toward improving LiveKit! Please join us
+[on Slack](http://livekit.io/join-slack) to discuss your ideas and/or PRs.
 
 ## License
 

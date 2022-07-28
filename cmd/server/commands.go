@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/utils"
+	"github.com/dustin/go-humanize"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -152,40 +155,61 @@ func listNodes(c *cli.Context) error {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
 		"ID", "IP Address", "Region",
-		"CPUs", "Load",
-		"Clients", "Rooms", "Tracks In/Out",
-		"Bytes In/Out", "Packets In/Out", "Nack", "Bps In/Out", "Pps In/Out", "Nack/Sec",
-		"Started At", "Updated At",
+		"CPUs", "CPU Usage\nLoad Avg",
+		"Rooms", "Clients\nTracks In/Out",
+		"Bytes/s In/Out\nBytes Total", "Packets/s In/Out\nPackets Total", "System Dropped Pkts/s\nPkts/s Out / Dropped",
+		"Nack/s\nNack Total", "Retrans/s\nRetrans Total",
+		"Started At\nUpdated At",
 	})
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_RIGHT, tablewriter.ALIGN_RIGHT,
+		tablewriter.ALIGN_CENTER,
+	})
+
 	for _, node := range nodes {
+		stats := node.Stats
+
+		// Id and state
+		idAndState := fmt.Sprintf("%s\n(%s)", node.Id, node.State.Enum().String())
+
 		// System stats
-		cpus := strconv.Itoa(int(node.Stats.NumCpus))
-		loadAvg := fmt.Sprintf("%.2f, %.2f, %.2f", node.Stats.LoadAvgLast1Min, node.Stats.LoadAvgLast5Min, node.Stats.LoadAvgLast15Min)
+		cpus := strconv.Itoa(int(stats.NumCpus))
+		cpuUsageAndLoadAvg := fmt.Sprintf("%.2f %%\n%.2f %.2f %.2f", stats.CpuLoad*100,
+			stats.LoadAvgLast1Min, stats.LoadAvgLast5Min, stats.LoadAvgLast15Min)
 
 		// Room stats
-		clients := strconv.Itoa(int(node.Stats.NumClients))
-		rooms := strconv.Itoa(int(node.Stats.NumRooms))
-		tracks := fmt.Sprintf("%d / %d", node.Stats.NumTracksIn, node.Stats.NumTracksOut)
+		rooms := strconv.Itoa(int(stats.NumRooms))
+		clientsAndTracks := fmt.Sprintf("%d\n%d / %d", stats.NumClients, stats.NumTracksIn, stats.NumTracksOut)
 
 		// Packet stats
-		bytes := fmt.Sprintf("%d / %d", node.Stats.BytesIn, node.Stats.BytesOut)
-		packets := fmt.Sprintf("%d / %d", node.Stats.PacketsIn, node.Stats.PacketsOut)
-		nack := strconv.Itoa(int(node.Stats.NackTotal))
-		bps := fmt.Sprintf("%.2f / %.2f", node.Stats.BytesInPerSec, node.Stats.BytesOutPerSec)
-		packetsPerSec := fmt.Sprintf("%.2f / %.2f", node.Stats.PacketsInPerSec, node.Stats.PacketsOutPerSec)
-		nackPerSec := fmt.Sprintf("%f", node.Stats.NackPerSec)
+		bytes := fmt.Sprintf("%sps / %sps\n%s / %s", humanize.Bytes(uint64(stats.BytesInPerSec)), humanize.Bytes(uint64(stats.BytesOutPerSec)),
+			humanize.Bytes(stats.BytesIn), humanize.Bytes(stats.BytesOut))
+		packets := fmt.Sprintf("%s / %s\n%s / %s", humanize.Comma(int64(stats.PacketsInPerSec)), humanize.Comma(int64(stats.PacketsOutPerSec)),
+			strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsIn), 2, "")), strings.TrimSpace(humanize.SIWithDigits(float64(stats.PacketsOut), 2, "")))
+		sysPackets := fmt.Sprintf("%.2f %%\n%v / %v", stats.SysPacketsDroppedPctPerSec*100, float64(stats.SysPacketsOutPerSec), float64(stats.SysPacketsDroppedPerSec))
+		nacks := fmt.Sprintf("%.2f\n%s", stats.NackPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.NackTotal), 2, "")))
+		retransmit := fmt.Sprintf("%.2f\n%s", stats.RetransmitPacketsOutPerSec, strings.TrimSpace(humanize.SIWithDigits(float64(stats.RetransmitPacketsOut), 2, "")))
 
-		startedAt := time.Unix(node.Stats.StartedAt, 0).String()
-		updatedAt := time.Unix(node.Stats.UpdatedAt, 0).String()
+		// Date
+		startedAndUpdated := fmt.Sprintf("%s\n%s", time.Unix(stats.StartedAt, 0).UTC().UTC().Format("2006-01-02 15:04:05"),
+			time.Unix(stats.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05"))
 
 		table.Append([]string{
-			node.Id, node.Ip, node.Region,
-			cpus, loadAvg,
-			clients, rooms, tracks,
-			bytes, packets, nack, bps, packetsPerSec, nackPerSec,
-			startedAt, updatedAt,
+			idAndState, node.Ip, node.Region,
+			cpus, cpuUsageAndLoadAvg,
+			rooms, clientsAndTracks,
+			bytes, packets, sysPackets,
+			nacks, retransmit,
+			startedAndUpdated,
 		})
 	}
 	table.Render()

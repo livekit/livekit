@@ -1,13 +1,15 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -27,42 +29,36 @@ func scenarioPublishingUponJoining(t *testing.T) {
 	defer stopWriters(writers...)
 
 	logger.Infow("waiting to receive tracks from c1 and c2")
-	success := testutils.WithTimeout(t, "c3 should receive tracks from both clients", func() bool {
+	testutils.WithTimeout(t, func() string {
 		tracks := c3.SubscribedTracks()
 		if len(tracks[c1.ID()]) != 2 {
-			return false
+			return "did not receive tracks from c1"
 		}
 		if len(tracks[c2.ID()]) != 2 {
-			return false
+			return "did not receive tracks from c2"
 		}
-		return true
+		return ""
 	})
-
-	if !success {
-		t.FailNow()
-	}
 
 	// after a delay, c2 reconnects, then publishing
 	time.Sleep(syncDelay)
 	c2.Stop()
 
 	logger.Infow("waiting for c2 tracks to be gone")
-	success = testutils.WithTimeout(t, "c2 tracks should be gone", func() bool {
+	testutils.WithTimeout(t, func() string {
 		tracks := c3.SubscribedTracks()
+
 		if len(tracks[c1.ID()]) != 2 {
-			return false
+			return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
 		}
 		if len(tracks[c2.ID()]) != 0 {
-			return false
+			return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
 		}
 		if len(c1.SubscribedTracks()[c2.ID()]) != 0 {
-			return false
+			return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 		}
-		return true
+		return ""
 	})
-	if !success {
-		t.FailNow()
-	}
 
 	logger.Infow("c2 reconnecting")
 	// connect to a diff port
@@ -72,15 +68,16 @@ func scenarioPublishingUponJoining(t *testing.T) {
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	testutils.WithTimeout(t, "new c2 tracks should be published again", func() bool {
+	testutils.WithTimeout(t, func() string {
 		tracks := c3.SubscribedTracks()
+		// "new c2 tracks should be published again",
 		if len(tracks[c2.ID()]) != 2 {
-			return false
+			return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
 		}
 		if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
-			return false
+			return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 		}
-		return true
+		return ""
 	})
 }
 
@@ -96,27 +93,35 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 	defer stopWriters(writers...)
 
 	// c2 should see some bytes flowing through
-	success := testutils.WithTimeout(t, "waiting to receive bytes on c2", func() bool {
-		return c2.BytesReceived() > 20
+	testutils.WithTimeout(t, func() string {
+		if c2.BytesReceived() > 20 {
+			return ""
+		} else {
+			return fmt.Sprintf("c2 only received %d bytes", c2.BytesReceived())
+		}
 	})
-	if !success {
-		t.FailNow()
-	}
 
 	// now publish on C2
 	writers = publishTracksForClients(t, c2)
 	defer stopWriters(writers...)
 
-	success = testutils.WithTimeout(t, "waiting to receive c2 tracks on c1", func() bool {
-		return len(c1.SubscribedTracks()[c2.ID()]) == 2
+	testutils.WithTimeout(t, func() string {
+		if len(c1.SubscribedTracks()[c2.ID()]) == 2 {
+			return ""
+		} else {
+			return fmt.Sprintf("expected c1 to receive 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+		}
 	})
-	require.True(t, success)
 
 	// now leave, and ensure that it's immediate
 	c2.Stop()
 
-	time.Sleep(testutils.ConnectTimeout)
-	require.Empty(t, c1.RemoteParticipants())
+	testutils.WithTimeout(t, func() string {
+		if len(c1.RemoteParticipants()) > 0 {
+			return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
+		}
+		return ""
+	})
 }
 
 func scenarioDataPublish(t *testing.T) {
@@ -127,18 +132,52 @@ func scenarioDataPublish(t *testing.T) {
 
 	payload := "test bytes"
 
-	received := utils.AtomicFlag{}
+	received := atomic.NewBool(false)
 	c2.OnDataReceived = func(data []byte, sid string) {
 		if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
-			received.TrySet(true)
+			received.Store(true)
 		}
 	}
 
 	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
 
-	testutils.WithTimeout(t, "waiting for c2 to receive data", func() bool {
-		return received.Get()
+	testutils.WithTimeout(t, func() string {
+		if received.Load() {
+			return ""
+		} else {
+			return "c2 did not receive published data"
+		}
 	})
+}
+
+func scenarioJoinClosedRoom(t *testing.T) {
+	c1 := createRTCClient("jcr1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	// close room with room client
+	_, err := roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
+
+	// now join again
+	c2 := createRTCClient("jcr2", defaultServerPort, nil)
+	waitUntilConnected(t, c2)
+	stopClients(c2)
+}
+
+// close a room that has been created, but no participant has joined
+func closeNonRTCRoom(t *testing.T) {
+	createCtx := contextWithToken(createRoomToken())
+	_, err := roomClient.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+		Name: testRoom,
+	})
+	require.NoError(t, err)
+
+	_, err = roomClient.DeleteRoom(createCtx, &livekit.DeleteRoomRequest{
+		Room: testRoom,
+	})
+	require.NoError(t, err)
 }
 
 func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {

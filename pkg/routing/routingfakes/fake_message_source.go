@@ -9,6 +9,10 @@ import (
 )
 
 type FakeMessageSource struct {
+	CloseStub        func()
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct {
+	}
 	ReadChanStub        func() <-chan protoreflect.ProtoMessage
 	readChanMutex       sync.RWMutex
 	readChanArgsForCall []struct {
@@ -21,6 +25,30 @@ type FakeMessageSource struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeMessageSource) Close() {
+	fake.closeMutex.Lock()
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
+	}{})
+	stub := fake.CloseStub
+	fake.recordInvocation("Close", []interface{}{})
+	fake.closeMutex.Unlock()
+	if stub != nil {
+		fake.CloseStub()
+	}
+}
+
+func (fake *FakeMessageSource) CloseCallCount() int {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	return len(fake.closeArgsForCall)
+}
+
+func (fake *FakeMessageSource) CloseCalls(stub func()) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = stub
 }
 
 func (fake *FakeMessageSource) ReadChan() <-chan protoreflect.ProtoMessage {
@@ -79,6 +107,8 @@ func (fake *FakeMessageSource) ReadChanReturnsOnCall(i int, result1 <-chan proto
 func (fake *FakeMessageSource) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
 	fake.readChanMutex.RLock()
 	defer fake.readChanMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

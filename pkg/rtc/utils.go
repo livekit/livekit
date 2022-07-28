@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/pion/webrtc/v3"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
@@ -34,23 +35,18 @@ func PackDataTrackLabel(participantID livekit.ParticipantID, trackID livekit.Tra
 	return string(participantID) + trackIdSeparator + string(trackID) + trackIdSeparator + label
 }
 
-func UnpackDataTrackLabel(packed string) (peerID livekit.ParticipantID, trackID livekit.TrackID, label string) {
+func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, trackID livekit.TrackID, label string) {
 	parts := strings.Split(packed, trackIdSeparator)
 	if len(parts) != 3 {
 		return "", livekit.TrackID(packed), ""
 	}
-	peerID = livekit.ParticipantID(parts[0])
+	participantID = livekit.ParticipantID(parts[0])
 	trackID = livekit.TrackID(parts[1])
 	label = parts[2]
 	return
 }
 
-// converts a fixed point number to the number part of %
-func FixedPointToPercent(frac uint8) uint32 {
-	return (uint32(frac) * 100) >> 8
-}
-
-func ToProtoParticipants(participants []types.Participant) []*livekit.ParticipantInfo {
+func ToProtoParticipants(participants []types.LocalParticipant) []*livekit.ParticipantInfo {
 	infos := make([]*livekit.ParticipantInfo, 0, len(participants))
 	for _, op := range participants {
 		infos = append(infos, op.ToProto())
@@ -128,12 +124,12 @@ func Recover() {
 		default:
 			err = errors.New("unknown panic")
 		}
-		logger.GetLogger().Error(err, "recovered panic", "panic", r)
+		logger.Errorw("recovered panic", err, "panic", r)
 	}
 }
 
 // logger helpers
-func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID) logger.Logger {
+func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity, sid livekit.ParticipantID, isRemote bool) logger.Logger {
 	lr := logr.Logger(l)
 	if identity != "" {
 		lr = lr.WithValues("participant", identity)
@@ -141,14 +137,43 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 	if sid != "" {
 		lr = lr.WithValues("pID", sid)
 	}
+	lr = lr.WithValues("remote", isRemote)
 	return logger.Logger(lr)
 }
 
-func LoggerWithRoom(l logger.Logger, name livekit.RoomName) logger.Logger {
+func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomID) logger.Logger {
 	lr := logr.Logger(l)
-	return logger.Logger(
-		lr.WithValues(
-			"room", name,
-		),
-	)
+	if name != "" {
+		lr = lr.WithValues("room", name)
+	}
+	if roomID != "" {
+		lr = lr.WithValues("roomID", roomID)
+	}
+	return logger.Logger(lr)
+}
+
+func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID) logger.Logger {
+	lr := logr.Logger(l)
+	if trackID != "" {
+		lr = lr.WithValues("trackID", trackID)
+	}
+	return logger.Logger(lr)
+}
+
+func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Logger {
+	lr := logr.Logger(l)
+	if lr.GetSink() == nil {
+		return l
+	}
+
+	lr = lr.WithValues("transport", target)
+	return logger.Logger(lr)
+}
+
+func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
+	lr := logr.Logger(l)
+	if mime != "" {
+		lr = lr.WithValues("mime", mime)
+	}
+	return logger.Logger(lr)
 }

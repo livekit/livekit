@@ -3,8 +3,9 @@ package rtc
 import (
 	"strings"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v3"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig) error {
@@ -42,6 +43,10 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		{
 			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032", RTCPFeedback: rtcpFeedback.Video},
 			PayloadType:        123,
+		},
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1, ClockRate: 90000, RTCPFeedback: rtcpFeedback.Video},
+			PayloadType:        35,
 		},
 	} {
 		if isCodecEnabled(codecs, codec.RTPCodecCapability) {

@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var vp8Codec = webrtc.RTPCodecParameters{
@@ -37,24 +38,19 @@ func TestNack(t *testing.T) {
 			return &b
 		},
 	}
-	logger := Logger
 
 	t.Run("nack normal", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool, logger)
+		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
-		assert.NotNil(t, buff)
+		require.NotNil(t, buff)
 		var wg sync.WaitGroup
-		// 3 nacks 1 Pli
-		wg.Add(4)
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		// 5 tries
+		wg.Add(5)
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
 					if p.Nacks[0].PacketList()[0] == 1 && p.MediaSSRC == 123 {
-						wg.Done()
-					}
-				case *rtcp.PictureLossIndication:
-					if p.MediaSSRC == 123 {
 						wg.Done()
 					}
 				}
@@ -63,28 +59,35 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability, Options{})
+		}, vp8Codec.RTPCodecCapability)
+		rtt := uint32(20)
+		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
 			if i == 1 {
 				continue
+			}
+			if i < 14 {
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+			} else {
+				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
 				Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			_, err = buff.Write(b)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 		wg.Wait()
 
 	})
 
 	t.Run("nack with seq wrap", func(t *testing.T) {
-		buff := NewBuffer(123, pool, pool, logger)
+		buff := NewBuffer(123, pool, pool)
 		buff.codecType = webrtc.RTPCodecTypeVideo
-		assert.NotNil(t, buff)
+		require.NotNil(t, buff)
 		var wg sync.WaitGroup
 		expects := map[uint16]int{
 			65534: 0,
@@ -92,8 +95,8 @@ func TestNack(t *testing.T) {
 			0:     0,
 			1:     0,
 		}
-		wg.Add(3 * len(expects)) // retry 3 times
-		buff.OnFeedback(func(fb []rtcp.Packet) {
+		wg.Add(5 * len(expects)) // retry 5 times
+		buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 			for _, pkt := range fb {
 				switch p := pkt.(type) {
 				case *rtcp.TransportLayerNack:
@@ -103,15 +106,11 @@ func TestNack(t *testing.T) {
 								if _, ok := expects[seq]; ok {
 									wg.Done()
 								} else {
-									assert.Fail(t, "unexpected nack seq ", seq)
+									require.Fail(t, "unexpected nack seq ", seq)
 								}
 								return true
 							})
 						}
-					}
-				case *rtcp.PictureLossIndication:
-					if p.MediaSSRC == 123 {
-						// wg.Done()
 					}
 				}
 			}
@@ -119,19 +118,26 @@ func TestNack(t *testing.T) {
 		buff.Bind(webrtc.RTPParameters{
 			HeaderExtensions: nil,
 			Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-		}, vp8Codec.RTPCodecCapability, Options{})
+		}, vp8Codec.RTPCodecCapability)
+		rtt := uint32(30)
+		buff.nacker.SetRTT(rtt)
 		for i := 0; i < 15; i++ {
 			if i > 0 && i < 5 {
 				continue
+			}
+			if i < 14 {
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+			} else {
+				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
 			pkt := rtp.Packet{
 				Header:  rtp.Header{SequenceNumber: uint16(i + 65533), Timestamp: uint32(i)},
 				Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 			}
 			b, err := pkt.Marshal()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			_, err = buff.Write(b)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 		wg.Wait()
 
@@ -141,7 +147,6 @@ func TestNack(t *testing.T) {
 func TestNewBuffer(t *testing.T) {
 	type args struct {
 		options Options
-		ssrc    uint32
 	}
 	tests := []struct {
 		name string
@@ -157,7 +162,6 @@ func TestNewBuffer(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			var TestPackets = []*rtp.Packet{
 				{
@@ -187,25 +191,22 @@ func TestNewBuffer(t *testing.T) {
 					return &b
 				},
 			}
-			logger := Logger
-			buff := NewBuffer(123, pool, pool, logger)
+			buff := NewBuffer(123, pool, pool)
 			buff.codecType = webrtc.RTPCodecTypeVideo
-			assert.NotNil(t, buff)
-			assert.NotNil(t, TestPackets)
-			buff.OnFeedback(func(_ []rtcp.Packet) {
+			require.NotNil(t, buff)
+			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {
 			})
 			buff.Bind(webrtc.RTPParameters{
 				HeaderExtensions: nil,
 				Codecs:           []webrtc.RTPCodecParameters{vp8Codec},
-			}, vp8Codec.RTPCodecCapability, Options{})
+			}, vp8Codec.RTPCodecCapability)
 
 			for _, p := range TestPackets {
 				buf, _ := p.Marshal()
 				_, _ = buff.Write(buf)
 			}
-			// assert.Equal(t, 6, buff.PacketQueue.size)
-			assert.Equal(t, uint32(1<<16), buff.seqHdlr.Cycles())
-			assert.Equal(t, uint16(2), uint16(buff.seqHdlr.MaxSeqNo()))
+			require.Equal(t, uint16(1), buff.rtpStats.cycles)
+			require.Equal(t, uint16(2), buff.rtpStats.highestSN)
 		})
 	}
 }
@@ -217,18 +218,18 @@ func TestFractionLostReport(t *testing.T) {
 			return &b
 		},
 	}
-	buff := NewBuffer(123, pool, pool, Logger)
+	buff := NewBuffer(123, pool, pool)
+	require.NotNil(t, buff)
 	buff.codecType = webrtc.RTPCodecTypeVideo
-	assert.NotNil(t, buff)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	buff.SetLastFractionLostReport(55)
-	buff.OnFeedback(func(fb []rtcp.Packet) {
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
 		for _, pkt := range fb {
 			switch p := pkt.(type) {
 			case *rtcp.ReceiverReport:
 				for _, v := range p.Reports {
-					assert.EqualValues(t, 55, v.FractionLost)
+					require.EqualValues(t, 55, v.FractionLost)
 				}
 				wg.Done()
 			}
@@ -237,73 +238,19 @@ func TestFractionLostReport(t *testing.T) {
 	buff.Bind(webrtc.RTPParameters{
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
-	}, opusCodec.RTPCodecCapability, Options{})
+	}, opusCodec.RTPCodecCapability)
 	for i := 0; i < 15; i++ {
 		pkt := rtp.Packet{
 			Header:  rtp.Header{SequenceNumber: uint16(i), Timestamp: uint32(i)},
 			Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
 		}
 		b, err := pkt.Marshal()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		if i == 1 {
 			time.Sleep(1 * time.Second)
 		}
 		_, err = buff.Write(b)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	wg.Wait()
-}
-
-func TestSeqWrapHandler(t *testing.T) {
-	s := SeqWrapHandler{}
-	s.UpdateMaxSeq(1)
-	assert.Equal(t, uint32(1), s.MaxSeqNo())
-
-	type caseInfo struct {
-		seqs  []uint32 // {seq1, seq2, unwrap of seq2}
-		newer bool     // seq2 is newer than seq1
-	}
-	// test normal case, name -> {seq1, seq2, unwrap of seq2}
-	cases := map[string]caseInfo{
-		"no wrap":                             {[]uint32{1, 4, 4}, true},
-		"no wrap backward":                    {[]uint32{4, 1, 1}, false},
-		"wrap around forward to zero":         {[]uint32{65534, 0, 65536}, true},
-		"wrap around forward":                 {[]uint32{65534, 10, 65546}, true},
-		"wrap around forward 2":               {[]uint32{65535 + 65536*2, 1, 1 + 65536*3}, true},
-		"wrap around backward ":               {[]uint32{5, 65534, 65534}, false},
-		"wrap around backward less than zero": {[]uint32{5, 65534, 65534}, false},
-	}
-
-	for k, v := range cases {
-		t.Run(k, func(t *testing.T) {
-			s := SeqWrapHandler{}
-			s.UpdateMaxSeq(v.seqs[0])
-			extsn, newer := s.Unwrap(uint16(v.seqs[1]))
-			assert.Equal(t, v.newer, newer)
-			assert.Equal(t, v.seqs[2], extsn)
-		})
-	}
-
-}
-
-func TestIsTimestampWrap(t *testing.T) {
-	type caseInfo struct {
-		name  string
-		ts1   uint32
-		ts2   uint32
-		later bool
-	}
-
-	cases := []caseInfo{
-		{"normal case 1 timestamp later ", 2, 1, true},
-		{"normal case 2 timestamp later", 0x1c000000, 0x10000000, true},
-		{"wrap case timestamp later", 0xffff, 0xfc000000, true},
-		{"wrap case timestamp early", 0xfc000000, 0xffff, false},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			assert.Equal(t, c.later, IsLaterTimestamp(c.ts1, c.ts2))
-		})
-	}
 }

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -30,14 +32,14 @@ func TestWebhooks(t *testing.T) {
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
 	waitUntilConnected(t, c1)
-	testutils.WithTimeout(t, "webhook events room_started and participant_joined", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventRoomStarted) == nil {
-			return false
+			return "did not receive RoomStarted"
 		}
 		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return false
+			return "did not receive ParticipantJoined"
 		}
-		return true
+		return ""
 	})
 
 	// first participant join should have started the room
@@ -54,23 +56,37 @@ func TestWebhooks(t *testing.T) {
 	c2 := createRTCClient("c2", defaultServerPort, nil)
 	waitUntilConnected(t, c2)
 	defer c2.Stop()
-	testutils.WithTimeout(t, "webhook events participant_joined", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return false
+			return "did not receive ParticipantJoined"
 		}
-		return true
+		return ""
 	})
 	joined = ts.GetEvent(webhook.EventParticipantJoined)
 	require.Equal(t, "c2", joined.Participant.Identity)
 	ts.ClearEvents()
 
+	// track published
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+	testutils.WithTimeout(t, func() string {
+		ev := ts.GetEvent(webhook.EventTrackPublished)
+		if ev == nil {
+			return "did not receive TrackPublished"
+		}
+		require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
+		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
+		return ""
+	})
+	ts.ClearEvents()
+
 	// first participant leaves
 	c1.Stop()
-	testutils.WithTimeout(t, "webhook events participant_left", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventParticipantLeft) == nil {
-			return false
+			return "did not receive ParticipantLeft"
 		}
-		return true
+		return ""
 	})
 	left := ts.GetEvent(webhook.EventParticipantLeft)
 	require.Equal(t, "c1", left.Participant.Identity)
@@ -79,11 +95,11 @@ func TestWebhooks(t *testing.T) {
 	// room closed
 	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
 	rm.Close()
-	testutils.WithTimeout(t, "webhook events room_finished", func() bool {
+	testutils.WithTimeout(t, func() string {
 		if ts.GetEvent(webhook.EventRoomFinished) == nil {
-			return false
+			return "did not receive RoomFinished"
 		}
-		return true
+		return ""
 	})
 	require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
 }
@@ -95,7 +111,6 @@ func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhoo
 	}
 	conf.WebHook.URLs = []string{"http://localhost:7890"}
 	conf.WebHook.APIKey = testApiKey
-	conf.Development = true
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 
 	testServer = newTestServer(":7890")
@@ -184,7 +199,22 @@ func (s *webhookTestServer) Start() error {
 		return err
 	}
 	go s.server.Serve(l)
-	return nil
+
+	// wait for webhook server to start
+	ctx, cancel := context.WithTimeout(context.Background(), testutils.ConnectTimeout)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("could not start webhook server after timeout")
+		case <-time.After(10 * time.Millisecond):
+			// ensure we can connect to it
+			res, err := http.Get(fmt.Sprintf("http://localhost%s", s.server.Addr))
+			if err == nil && res.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+	}
 }
 
 func (s *webhookTestServer) Stop() {

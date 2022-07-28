@@ -2,53 +2,45 @@ package serverlogger
 
 import (
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/logging"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 var (
-	// pion/webrtc, pion/turn
-	defaultFactory logging.LoggerFactory
+	pionLevel zapcore.Level
 )
 
-func LoggerFactory() logging.LoggerFactory {
-	if defaultFactory == nil {
-		defaultFactory = logging.NewDefaultLoggerFactory()
+// implements webrtc.LoggerFactory
+type LoggerFactory struct {
+	logger logr.Logger
+}
+
+func NewLoggerFactory(logger logr.Logger) *LoggerFactory {
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
 	}
-	return defaultFactory
+	return &LoggerFactory{
+		logger: logger,
+	}
+}
+
+func (f *LoggerFactory) NewLogger(scope string) logging.LeveledLogger {
+	return &logAdapter{
+		logger: f.logger.WithName(scope),
+		level:  pionLevel,
+	}
 }
 
 // Note: only pass in logr.Logger with default depth
 func SetLogger(l logr.Logger) {
 	logger.SetLogger(l, "livekit")
-	sfu.Logger = l.WithName("sfu")
-	buffer.Logger = sfu.Logger
 }
 
-func InitProduction(logLevel string) {
-	initLogger(zap.NewProductionConfig(), logLevel)
-}
-
-func InitDevelopment(logLevel string) {
-	initLogger(zap.NewDevelopmentConfig(), logLevel)
-}
-
-// valid levels: debug, info, warn, error, fatal, panic
-func initLogger(config zap.Config, level string) {
-	if level != "" {
-		lvl := zapcore.Level(0)
-		if err := lvl.UnmarshalText([]byte(level)); err == nil {
-			config.Level = zap.NewAtomicLevelAt(lvl)
-		}
-	}
-
-	l, _ := config.Build()
-	zapLogger := zapr.NewLogger(l)
-	SetLogger(zapLogger)
+func InitFromConfig(config config.LoggingConfig) {
+	pionLevel = logger.ParseZapLevel(config.PionLevel)
+	logger.InitFromConfig(config.Config, "livekit")
 }

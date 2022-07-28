@@ -1,4 +1,4 @@
-package rtc_test
+package rtc
 
 import (
 	"github.com/livekit/protocol/livekit"
@@ -8,9 +8,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool) *typesfakes.FakeParticipant {
-	p := &typesfakes.FakeParticipant{}
-	p.IDReturns(livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix)))
+func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
+	p := &typesfakes.FakeLocalParticipant{}
+	sid := utils.NewGuid(utils.ParticipantPrefix)
+	p.IDReturns(livekit.ParticipantID(sid))
 	p.IdentityReturns(identity)
 	p.StateReturns(livekit.ParticipantInfo_JOINED)
 	p.ProtocolVersionReturns(protocol)
@@ -18,18 +19,24 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.CanPublishReturns(!hidden)
 	p.CanPublishDataReturns(!hidden)
 	p.HiddenReturns(hidden)
+	p.ToProtoReturns(&livekit.ParticipantInfo{
+		Sid:         sid,
+		Identity:    string(identity),
+		State:       livekit.ParticipantInfo_JOINED,
+		IsPublisher: publisher,
+	})
 
 	p.SetMetadataStub = func(m string) {
-		var f func(participant types.Participant)
-		if p.OnMetadataUpdateCallCount() > 0 {
-			f = p.OnMetadataUpdateArgsForCall(p.OnMetadataUpdateCallCount() - 1)
+		var f func(participant types.LocalParticipant)
+		if p.OnParticipantUpdateCallCount() > 0 {
+			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
 		}
 		if f != nil {
 			f(p)
 		}
 	}
 	updateTrack := func() {
-		var f func(participant types.Participant, track types.PublishedTrack)
+		var f func(participant types.LocalParticipant, track types.MediaTrack)
 		if p.OnTrackUpdatedCallCount() > 0 {
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
@@ -48,8 +55,8 @@ func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	return p
 }
 
-func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakePublishedTrack {
-	t := &typesfakes.FakePublishedTrack{}
+func newMockTrack(kind livekit.TrackType, name string) *typesfakes.FakeMediaTrack {
+	t := &typesfakes.FakeMediaTrack{}
 	t.IDReturns(livekit.TrackID(utils.NewGuid(utils.TrackPrefix)))
 	t.KindReturns(kind)
 	t.NameReturns(name)

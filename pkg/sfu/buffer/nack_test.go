@@ -1,196 +1,150 @@
 package buffer
 
 import (
-	"math/rand"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/pion/rtcp"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_nackQueue_pairs(t *testing.T) {
-	type fields struct {
-		nacks []nack
+	type PairsResult struct {
+		pairs            []rtcp.NackPair
+		numSeqNumsNacked int
 	}
+
 	tests := []struct {
-		name   string
-		fields fields
-		args   []uint32
-		want   []rtcp.NackPair
+		name string
+		args []uint16
+		want PairsResult
 	}{
 		{
 			name: "Must return correct single pairs pair",
-			fields: fields{
-				nacks: nil,
+			args: []uint16{1, 2, 4, 5},
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    1,
+						LostPackets: 13,
+					},
+				},
+				numSeqNumsNacked: 4,
 			},
-			args: []uint32{1, 2, 4, 5},
-			want: []rtcp.NackPair{{
-				PacketID:    1,
-				LostPackets: 13,
-			}},
 		},
 		{
 			name: "Must return correct pair wrap",
-			fields: fields{
-				nacks: nil,
+			args: []uint16{65533, 2, 4, 5, 30, 32},
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    65533,
+						LostPackets: 1<<7 + 1<<6 + 1<<4,
+					},
+					{
+						PacketID:    30,
+						LostPackets: 1 << 1,
+					},
+				},
+				numSeqNumsNacked: 6,
 			},
-			args: []uint32{65536, 65538, 65540, 65541, 65566, 65568}, // wrap around 65533,2,4,5
-			want: []rtcp.NackPair{{
-				PacketID:    0, // 65536
-				LostPackets: 1<<4 + 1<<3 + 1<<1,
-			},
-				{
-					PacketID:    30, // 65566
-					LostPackets: 1 << 1,
-				}},
 		},
 		{
 			name: "Must return 2 pairs pair",
-			fields: fields{
-				nacks: nil,
-			},
-			args: []uint32{1, 2, 4, 5, 20, 22, 24, 27},
-			want: []rtcp.NackPair{
-				{
-					PacketID:    1,
-					LostPackets: 13,
+			args: []uint16{1, 2, 4, 5, 20, 22, 24, 27},
+			want: PairsResult{
+				pairs: []rtcp.NackPair{
+					{
+						PacketID:    1,
+						LostPackets: 13,
+					},
+					{
+						PacketID:    20,
+						LostPackets: 74,
+					},
 				},
-				{
-					PacketID:    20,
-					LostPackets: 74,
-				},
+				numSeqNumsNacked: 8,
 			},
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := &NackQueue{
-				nacks: tt.fields.nacks,
-			}
+			n := NewNACKQueue()
 			for _, sn := range tt.args {
 				n.Push(sn)
 			}
-			got, _ := n.Pairs(75530)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("pairs() = %v, want %v", got, tt.want)
-			}
+			time.Sleep(100 * time.Millisecond)
+			got, numSeqNumsNacked := n.Pairs()
+			require.EqualValues(t, tt.want.pairs, got)
+			require.Equal(t, tt.want.numSeqNumsNacked, numSeqNumsNacked)
 		})
 	}
 }
 
 func Test_nackQueue_push(t *testing.T) {
-	type fields struct {
-		nacks []nack
-	}
 	type args struct {
-		sn []uint32
+		sn []uint16
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   []uint32
+		name string
+		args args
+		want []uint16
 	}{
 		{
 			name: "Must keep packet order",
-			fields: fields{
-				nacks: make([]nack, 0, 10),
-			},
 			args: args{
-				sn: []uint32{3, 4, 1, 5, 8, 7, 5},
+				sn: []uint16{1, 3, 4, 5, 7, 8},
 			},
-			want: []uint32{1, 3, 4, 5, 7, 8},
+			want: []uint16{1, 3, 4, 5, 7, 8},
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := &NackQueue{
-				nacks: tt.fields.nacks,
-			}
+			n := NewNACKQueue()
 			for _, sn := range tt.args.sn {
 				n.Push(sn)
 			}
-			var newSN []uint32
-			for _, sn := range n.nacks {
-				newSN = append(newSN, sn.sn)
+			var newSN []uint16
+			for _, nack := range n.nacks {
+				newSN = append(newSN, nack.seqNum)
 			}
-			assert.Equal(t, tt.want, newSN)
-		})
-	}
-}
-
-func Test_nackQueue(t *testing.T) {
-	type fields struct {
-		nacks []nack
-	}
-	type args struct {
-		sn []uint32
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		{
-			name: "Must keep packet order",
-			fields: fields{
-				nacks: make([]nack, 0, 10),
-			},
-			args: args{
-				sn: []uint32{3, 4, 1, 5, 8, 7, 5},
-			},
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			n := NackQueue{}
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			for i := 0; i < 100; i++ {
-				assert.NotPanics(t, func() {
-					n.Push(uint32(r.Intn(60000)))
-					n.Remove(uint32(r.Intn(60000)))
-					n.Pairs(60001)
-				})
-			}
+			require.Equal(t, tt.want, newSN)
 		})
 	}
 }
 
 func Test_nackQueue_remove(t *testing.T) {
 	type args struct {
-		sn []uint32
+		sn []uint16
 	}
 	tests := []struct {
 		name string
 		args args
-		want []uint32
+		want []uint16
 	}{
 		{
 			name: "Must keep packet order",
 			args: args{
-				sn: []uint32{3, 4, 1, 5, 8, 7, 5},
+				sn: []uint16{1, 3, 4, 5, 7, 8},
 			},
-			want: []uint32{1, 3, 4, 7, 8},
+			want: []uint16{1, 3, 4, 7, 8},
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := NackQueue{}
+			n := NewNACKQueue()
 			for _, sn := range tt.args.sn {
 				n.Push(sn)
 			}
 			n.Remove(5)
-			var newSN []uint32
-			for _, sn := range n.nacks {
-				newSN = append(newSN, sn.sn)
+			var newSN []uint16
+			for _, nack := range n.nacks {
+				newSN = append(newSN, nack.seqNum)
 			}
-			assert.Equal(t, tt.want, newSN)
+			require.Equal(t, tt.want, newSN)
 		})
 	}
 }
