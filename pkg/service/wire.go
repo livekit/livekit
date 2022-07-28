@@ -42,6 +42,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		egress.NewRedisRPCClient,
+		getEgressStore,
 		NewEgressService,
 		NewRoomAllocator,
 		NewRoomService,
@@ -163,6 +164,17 @@ func createStore(rc *redis.Client) ObjectStore {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
+}
+
+func getEgressStore(s ObjectStore) EgressStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
