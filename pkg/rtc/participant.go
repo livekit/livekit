@@ -1599,7 +1599,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		})
 	}
 
-	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
+	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 		} else {
