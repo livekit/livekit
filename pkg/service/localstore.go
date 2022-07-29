@@ -145,48 +145,63 @@ func (s *LocalStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	return nil
 }
 
-// redis is required for egress
 func (s *LocalStore) StoreEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	return ErrEgressNotConnected
+	// redis is required for egress
+	return nil
 }
 
 func (s *LocalStore) LoadEgress(_ context.Context, _ string) (*livekit.EgressInfo, error) {
-	return nil, ErrEgressNotConnected
+	// redis is required for egress
+	return nil, ErrEgressNotFound
 }
 
 func (s *LocalStore) ListEgress(_ context.Context, _ livekit.RoomID) ([]*livekit.EgressInfo, error) {
-	return nil, ErrEgressNotConnected
+	// redis is required for egress
+	return nil, nil
 }
 
 func (s *LocalStore) UpdateEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	return ErrEgressNotConnected
+	// redis is required for egress
+	return nil
 }
 
 func (s *LocalStore) DeleteEgress(_ context.Context, _ *livekit.EgressInfo) error {
-	return ErrEgressNotConnected
+	// redis is required for egress
+	return nil
 }
 
-// redis is required for ingress
 func (s *LocalStore) StoreIngress(_ context.Context, _ *livekit.IngressInfo) error {
-	return ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil
 }
 
 func (s *LocalStore) LoadIngress(_ context.Context, _ string) (*livekit.IngressInfo, error) {
-	return nil, ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil, nil
 }
 
 func (s *LocalStore) LoadIngressFromStreamKey(_ context.Context, _ string) (*livekit.IngressInfo, error) {
-	return nil, ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil, nil
 }
 
 func (s *LocalStore) ListIngress(_ context.Context, _ livekit.RoomName) ([]*livekit.IngressInfo, error) {
-	return nil, ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil, nil
 }
 
 func (s *LocalStore) UpdateIngress(_ context.Context, _ *livekit.IngressInfo) error {
-	return ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil
 }
 
 func (s *LocalStore) DeleteIngress(_ context.Context, _ *livekit.IngressInfo) error {
-	return ErrIngressNotConnected
+	// redis is required for ingress
+
+	return nil
 }
