@@ -30,6 +30,7 @@ const (
 
 type Config struct {
 	Port           uint32             `yaml:"port"`
+	BindAddresses  []string           `yaml:"bind_addresses"`
 	PrometheusPort uint32             `yaml:"prometheus_port,omitempty"`
 	RTC            RTCConfig          `yaml:"rtc,omitempty"`
 	Redis          RedisConfig        `yaml:"redis,omitempty"`
@@ -195,7 +196,6 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		Port: 7880,
 		RTC: RTCConfig{
 			UseExternalIP:     false,
-			UseICELite:        true,
 			TCPPort:           7881,
 			UDPPort:           0,
 			ICEPortRangeStart: 0,
@@ -348,7 +348,9 @@ func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("udp-port") {
 		conf.RTC.UDPPort = uint32(c.Int("udp-port"))
 	}
-
+	if c.IsSet("bind") {
+		conf.BindAddresses = c.StringSlice("bind")
+	}
 	return nil
 }
 

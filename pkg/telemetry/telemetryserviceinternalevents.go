@@ -119,13 +119,6 @@ func (t *telemetryServiceInternal) ParticipantLeft(ctx context.Context, room *li
 		w.Close()
 	}
 
-	t.workersMu.Lock()
-	if idx, ok := t.workersIdx[livekit.ParticipantID(participant.Sid)]; ok {
-		delete(t.workersIdx, livekit.ParticipantID(participant.Sid))
-		t.workers[idx] = nil
-	}
-	t.workersMu.Unlock()
-
 	prometheus.SubParticipant()
 
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
@@ -166,8 +159,12 @@ func (t *telemetryServiceInternal) TrackPublished(ctx context.Context, participa
 		Timestamp:     timestamppb.Now(),
 		RoomId:        string(roomID),
 		ParticipantId: string(participantID),
-		Track:         track,
-		Room:          &livekit.Room{Name: string(roomName)},
+		Participant: &livekit.ParticipantInfo{
+			Sid:      string(participantID),
+			Identity: string(identity),
+		},
+		Track: track,
+		Room:  &livekit.Room{Name: string(roomName)},
 	})
 }
 
@@ -260,34 +257,6 @@ func (t *telemetryServiceInternal) TrackUnsubscribed(ctx context.Context, partic
 		ParticipantId: string(participantID),
 		TrackId:       track.Sid,
 		Room:          &livekit.Room{Name: string(roomName)},
-	})
-}
-
-func (t *telemetryServiceInternal) RecordingStarted(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event:         webhook.EventRecordingStarted,
-		RecordingInfo: ri,
-	})
-
-	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_RECORDING_STARTED,
-		Timestamp:   timestamppb.Now(),
-		RecordingId: ri.Id,
-		Room:        &livekit.Room{Name: ri.RoomName},
-	})
-}
-
-func (t *telemetryServiceInternal) RecordingEnded(ctx context.Context, ri *livekit.RecordingInfo) {
-	t.notifyEvent(ctx, &livekit.WebhookEvent{
-		Event:         webhook.EventRecordingFinished,
-		RecordingInfo: ri,
-	})
-
-	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
-		Type:        livekit.AnalyticsEventType_RECORDING_ENDED,
-		Timestamp:   timestamppb.Now(),
-		RecordingId: ri.Id,
-		Room:        &livekit.Room{Name: ri.RoomName},
 	})
 }
 

@@ -46,18 +46,6 @@ type FakeTelemetryService struct {
 		arg2 *livekit.Room
 		arg3 *livekit.ParticipantInfo
 	}
-	RecordingEndedStub        func(context.Context, *livekit.RecordingInfo)
-	recordingEndedMutex       sync.RWMutex
-	recordingEndedArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.RecordingInfo
-	}
-	RecordingStartedStub        func(context.Context, *livekit.RecordingInfo)
-	recordingStartedMutex       sync.RWMutex
-	recordingStartedArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.RecordingInfo
-	}
 	RoomEndedStub        func(context.Context, *livekit.Room)
 	roomEndedMutex       sync.RWMutex
 	roomEndedArgsForCall []struct {
@@ -299,72 +287,6 @@ func (fake *FakeTelemetryService) ParticipantLeftArgsForCall(i int) (context.Con
 	defer fake.participantLeftMutex.RUnlock()
 	argsForCall := fake.participantLeftArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
-}
-
-func (fake *FakeTelemetryService) RecordingEnded(arg1 context.Context, arg2 *livekit.RecordingInfo) {
-	fake.recordingEndedMutex.Lock()
-	fake.recordingEndedArgsForCall = append(fake.recordingEndedArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.RecordingInfo
-	}{arg1, arg2})
-	stub := fake.RecordingEndedStub
-	fake.recordInvocation("RecordingEnded", []interface{}{arg1, arg2})
-	fake.recordingEndedMutex.Unlock()
-	if stub != nil {
-		fake.RecordingEndedStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeTelemetryService) RecordingEndedCallCount() int {
-	fake.recordingEndedMutex.RLock()
-	defer fake.recordingEndedMutex.RUnlock()
-	return len(fake.recordingEndedArgsForCall)
-}
-
-func (fake *FakeTelemetryService) RecordingEndedCalls(stub func(context.Context, *livekit.RecordingInfo)) {
-	fake.recordingEndedMutex.Lock()
-	defer fake.recordingEndedMutex.Unlock()
-	fake.RecordingEndedStub = stub
-}
-
-func (fake *FakeTelemetryService) RecordingEndedArgsForCall(i int) (context.Context, *livekit.RecordingInfo) {
-	fake.recordingEndedMutex.RLock()
-	defer fake.recordingEndedMutex.RUnlock()
-	argsForCall := fake.recordingEndedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeTelemetryService) RecordingStarted(arg1 context.Context, arg2 *livekit.RecordingInfo) {
-	fake.recordingStartedMutex.Lock()
-	fake.recordingStartedArgsForCall = append(fake.recordingStartedArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.RecordingInfo
-	}{arg1, arg2})
-	stub := fake.RecordingStartedStub
-	fake.recordInvocation("RecordingStarted", []interface{}{arg1, arg2})
-	fake.recordingStartedMutex.Unlock()
-	if stub != nil {
-		fake.RecordingStartedStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeTelemetryService) RecordingStartedCallCount() int {
-	fake.recordingStartedMutex.RLock()
-	defer fake.recordingStartedMutex.RUnlock()
-	return len(fake.recordingStartedArgsForCall)
-}
-
-func (fake *FakeTelemetryService) RecordingStartedCalls(stub func(context.Context, *livekit.RecordingInfo)) {
-	fake.recordingStartedMutex.Lock()
-	defer fake.recordingStartedMutex.Unlock()
-	fake.RecordingStartedStub = stub
-}
-
-func (fake *FakeTelemetryService) RecordingStartedArgsForCall(i int) (context.Context, *livekit.RecordingInfo) {
-	fake.recordingStartedMutex.RLock()
-	defer fake.recordingStartedMutex.RUnlock()
-	argsForCall := fake.recordingStartedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room) {
@@ -691,10 +613,6 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.participantJoinedMutex.RUnlock()
 	fake.participantLeftMutex.RLock()
 	defer fake.participantLeftMutex.RUnlock()
-	fake.recordingEndedMutex.RLock()
-	defer fake.recordingEndedMutex.RUnlock()
-	fake.recordingStartedMutex.RLock()
-	defer fake.recordingStartedMutex.RUnlock()
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	fake.roomStartedMutex.RLock()

@@ -165,13 +165,22 @@ func (s *StreamTracker) resetLocked() {
 
 func (s *StreamTracker) SetPaused(paused bool) {
 	s.lock.Lock()
-	defer s.lock.Unlock()
 
 	s.paused = paused
 
+	status := s.status
+	changed := false
 	if !paused {
 		s.resetLocked()
+	} else {
+		// bump generation to trigger exit of current worker
+		s.generation.Inc()
+
+		status, changed = s.maybeSetStatus(StreamStatusStopped)
 	}
+	s.lock.Unlock()
+
+	s.maybeNotifyStatus(status, changed)
 }
 
 // Observe a packet that's received
@@ -214,9 +223,7 @@ func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 
 	// copy and process
 	brs := make([]int64, len(s.bitrate))
-	for i := 0; i < len(s.bitrate); i++ {
-		brs[i] = s.bitrate[i]
-	}
+	copy(brs, s.bitrate[:])
 
 	for i := len(brs) - 1; i >= 1; i-- {
 		if brs[i] != 0 {

@@ -13,10 +13,10 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/version"
@@ -32,6 +32,10 @@ func main() {
 		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
 		Flags: []cli.Flag{
+			&cli.StringSliceFlag{
+				Name:  "bind",
+				Usage: "IP address to listen on, use flag multiple times to specify multiple addresses",
+			},
 			&cli.StringFlag{
 				Name:  "config",
 				Usage: "path to LiveKit config file",
@@ -92,7 +96,7 @@ func main() {
 			},
 			&cli.BoolFlag{
 				Name:  "dev",
-				Usage: "sets log-level to debug, console formatter, and /debug/pprof",
+				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
 			},
 		},
 		Action: startServer,
@@ -108,7 +112,9 @@ func main() {
 				Action: printPorts,
 			},
 			{
+				// this subcommand is deprecated, token generation is provided by CLI
 				Name:   "create-join-token",
+				Hidden: true,
 				Usage:  "create a room join token for development use",
 				Action: createToken,
 				Flags: []cli.Flag{
@@ -149,7 +155,37 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	return config.NewConfig(confString, c)
+	conf, err := config.NewConfig(confString, c)
+	if err != nil {
+		return nil, err
+	}
+	serverlogger.InitFromConfig(conf.Logging)
+
+	if c.String("config") == "" && c.String("config-body") == "" && conf.Development {
+		// use single port UDP when no config is provided
+		conf.RTC.UDPPort = 7882
+		conf.RTC.ICEPortRangeStart = 0
+		conf.RTC.ICEPortRangeEnd = 0
+		logger.Infow("starting in development mode")
+
+		if len(conf.Keys) == 0 {
+			logger.Infow("no keys provided, using placeholder keys",
+				"API Key", "devkey",
+				"API Secret", "secret",
+			)
+			conf.Keys = map[string]string{
+				"devkey": "secret",
+			}
+			// when dev mode and using shared keys, we'll bind to localhost by default
+			if conf.BindAddresses == nil {
+				conf.BindAddresses = []string{
+					"127.0.0.1",
+					"[::1]",
+				}
+			}
+		}
+	}
+	return conf, nil
 }
 
 func startServer(c *cli.Context) error {
@@ -161,8 +197,6 @@ func startServer(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	serverlogger.InitFromConfig(conf.Logging)
 
 	if memProfile != "" {
 		if f, err := os.Create(memProfile); err != nil {

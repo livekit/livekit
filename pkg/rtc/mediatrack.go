@@ -38,6 +38,7 @@ type MediaTrackParams struct {
 	SdpCid              string
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
+	ParticipantVersion  uint32
 	// channel to send RTCP packets to the source
 	RTCPChan          chan []rtcp.Packet
 	BufferFactory     *buffer.Factory
@@ -61,6 +62,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		MediaTrack:          t,
 		ParticipantID:       params.ParticipantID,
 		ParticipantIdentity: params.ParticipantIdentity,
+		ParticipantVersion:  params.ParticipantVersion,
 		BufferFactory:       params.BufferFactory,
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
@@ -206,8 +208,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 				}
 			}
 
-			t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 			if len(potentialCodecs) > 0 {
+				t.params.Logger.Debugw("primary codec published, set potential codecs", "potential", potentialCodecs)
 				t.MediaTrackReceiver.SetPotentialCodecs(potentialCodecs, parameters.HeaderExtensions)
 			}
 			t.params.Telemetry.TrackPublished(
@@ -252,11 +254,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 
 func (t *MediaTrack) GetConnectionScore() float32 {
 	receiver := t.PrimaryReceiver()
-	if receiver == nil {
-		return 0.0
+	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
+		return rtcReceiver.GetConnectionScore()
 	}
-
-	return receiver.(*sfu.WebRTCReceiver).GetConnectionScore()
+	return 0.0
 }
 
 func (t *MediaTrack) SetRTT(rtt uint32) {

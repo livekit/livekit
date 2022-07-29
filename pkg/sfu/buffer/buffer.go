@@ -179,13 +179,13 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
-	if b.codecType == webrtc.RTPCodecTypeVideo {
-		for _, fb := range codec.RTCPFeedback {
-			switch fb.Type {
-			case webrtc.TypeRTCPFBGoogREMB:
-				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
-				b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
-			case webrtc.TypeRTCPFBTransportCC:
+	for _, fb := range codec.RTCPFeedback {
+		switch fb.Type {
+		case webrtc.TypeRTCPFBGoogREMB:
+			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
+			b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
+		case webrtc.TypeRTCPFBTransportCC:
+			if b.codecType == webrtc.RTPCodecTypeVideo {
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)
 				for _, ext := range params.HeaderExtensions {
 					if ext.URI == sdp.TransportCCURI {
@@ -193,11 +193,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 						break
 					}
 				}
-			case webrtc.TypeRTCPFBNACK:
-				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-				b.nacker = NewNACKQueue()
-				b.nacker.SetRTT(70) // default till it is updated
 			}
+		case webrtc.TypeRTCPFBNACK:
+			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
+			b.nacker = NewNACKQueue()
+			b.nacker.SetRTT(70) // default till it is updated
 		}
 	}
 
@@ -288,7 +288,7 @@ func (b *Buffer) Close() error {
 
 		if b.rtpStats != nil {
 			b.rtpStats.Stop()
-			b.logger.Infow("rtp stats", "stats", b.rtpStats.ToString())
+			b.logger.Infow("rtp stats", "direction", "upstream", "stats", b.rtpStats.ToString())
 		}
 
 		if b.onClose != nil {

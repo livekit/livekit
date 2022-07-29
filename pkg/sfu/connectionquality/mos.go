@@ -67,8 +67,8 @@ func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
 func AudioTrackScore(params TrackScoreParams) float32 {
 	stat := getRtcMosStat(params)
 	stat.AudioConfig = &rtcmos.AudioConfig{}
-	if params.DtxDisabled {
-		flag := false
+	if !params.DtxDisabled {
+		flag := true
 		stat.AudioConfig.Dtx = &flag
 	}
 

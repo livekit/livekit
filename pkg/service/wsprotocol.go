@@ -29,7 +29,7 @@ func NewWSSignalConnection(conn types.WebsocketClient) *WSSignalConnection {
 	wsc := &WSSignalConnection{
 		conn:    conn,
 		mu:      sync.Mutex{},
-		useJSON: true,
+		useJSON: false,
 	}
 	go wsc.pingWorker()
 	return wsc

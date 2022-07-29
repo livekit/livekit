@@ -80,6 +80,7 @@ const (
 	ParticipantCloseReasonSimulateMigration
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
+	ParticipantCloseReasonNegotiateFailed
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -118,8 +119,41 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_NODE_FAILURE"
 	case ParticipantCloseReasonSimulateServerLeave:
 		return "SIMULATE_SERVER_LEAVE"
+	case ParticipantCloseReasonNegotiateFailed:
+		return "NEGOTIATE_FAILED"
 	default:
 		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
+	switch p {
+	case ParticipantCloseReasonClientRequestLeave:
+		return livekit.DisconnectReason_CLIENT_INITIATED
+	case ParticipantCloseReasonRoomManagerStop:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonVerifyFailed, ParticipantCloseReasonJoinFailed, ParticipantCloseReasonJoinTimeout:
+		// expected to be connected but is not
+		return livekit.DisconnectReason_JOIN_FAILURE
+	case ParticipantCloseReasonPeerConnectionDisconnected:
+		return livekit.DisconnectReason_STATE_MISMATCH
+	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonStale:
+		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonServiceRequestRemoveParticipant:
+		return livekit.DisconnectReason_PARTICIPANT_REMOVED
+	case ParticipantCloseReasonServiceRequestDeleteRoom:
+		return livekit.DisconnectReason_ROOM_DELETED
+	case ParticipantCloseReasonSimulateMigration:
+		return livekit.DisconnectReason_DUPLICATE_IDENTITY
+	case ParticipantCloseReasonSimulateNodeFailure:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonSimulateServerLeave:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonNegotiateFailed:
+		return livekit.DisconnectReason_STATE_MISMATCH
+	default:
+		// the other types will map to unknown reason
+		return livekit.DisconnectReason_UNKNOWN_REASON
 	}
 }
 
@@ -147,11 +181,12 @@ type Participant interface {
 	Start()
 	Close(sendLeave bool, reason ParticipantCloseReason) error
 
-	SubscriptionPermission() *livekit.SubscriptionPermission
+	SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
 
 	// updates from remotes
 	UpdateSubscriptionPermission(
 		subscriptionPermission *livekit.SubscriptionPermission,
+		timedVersion *livekit.TimedVersion,
 		resolverByIdentity func(participantIdentity livekit.ParticipantIdentity) LocalParticipant,
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
@@ -246,6 +281,15 @@ type LocalParticipant interface {
 	SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
 
 	UpdateRTT(rtt uint32)
+
+	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
+	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
+	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
+
+	EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub LocalParticipant) error)
+	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
+	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -274,6 +318,7 @@ type MediaTrack interface {
 
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
 
 	IsMuted() bool
 	SetMuted(muted bool)
@@ -293,6 +338,7 @@ type MediaTrack interface {
 	RemoveAllSubscribers(willBeResumed bool)
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
+	GetNumSubscribers() int
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
@@ -323,8 +369,10 @@ type SubscribedTrack interface {
 	ID() livekit.TrackID
 	PublisherID() livekit.ParticipantID
 	PublisherIdentity() livekit.ParticipantIdentity
+	PublisherVersion() uint32
 	SubscriberID() livekit.ParticipantID
 	SubscriberIdentity() livekit.ParticipantIdentity
+	Subscriber() LocalParticipant
 	DownTrack() *sfu.DownTrack
 	MediaTrack() MediaTrack
 	IsMuted() bool

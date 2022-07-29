@@ -16,6 +16,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/urfave/negroni"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -28,7 +29,6 @@ import (
 type LivekitServer struct {
 	config        *config.Config
 	egressService *EgressService
-	recService    *RecordingService
 	rtcService    *RTCService
 	httpServer    *http.Server
 	promServer    *http.Server
@@ -44,7 +44,6 @@ type LivekitServer struct {
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
-	recService *RecordingService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -55,7 +54,6 @@ func NewLivekitServer(conf *config.Config,
 	s = &LivekitServer{
 		config:        conf,
 		egressService: egressService,
-		recService:    recService,
 		rtcService:    rtcService,
 		router:        router,
 		roomManager:   roomManager,
@@ -82,7 +80,6 @@ func NewLivekitServer(conf *config.Config,
 
 	roomServer := livekit.NewRoomServiceServer(roomService)
 	egressServer := livekit.NewEgressServer(egressService)
-	recServer := livekit.NewRecordingServiceServer(recService)
 
 	mux := http.NewServeMux()
 	if conf.Development {
@@ -93,7 +90,6 @@ func NewLivekitServer(conf *config.Config,
 	}
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
-	mux.Handle(recServer.PathPrefix(), recServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
@@ -106,13 +102,11 @@ func NewLivekitServer(conf *config.Config,
 	}
 
 	s.httpServer = &http.Server{
-		Addr:    fmt.Sprintf(":%d", conf.Port),
 		Handler: configureMiddlewares(mux, middlewares...),
 	}
 
 	if conf.PrometheusPort > 0 {
 		s.promServer = &http.Server{
-			Addr:    fmt.Sprintf(":%d", conf.PrometheusPort),
 			Handler: promhttp.Handler(),
 		}
 	}
@@ -159,50 +153,73 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	s.egressService.Start()
-	s.recService.Start()
-
-	// ensure we could listen
-	ln, err := net.Listen("tcp", s.httpServer.Addr)
-	if err != nil {
+	if err := s.egressService.Start(); err != nil {
 		return err
 	}
 
-	if s.promServer != nil {
-		promLn, err := net.Listen("tcp", s.promServer.Addr)
+	addresses := s.config.BindAddresses
+	if addresses == nil {
+		addresses = []string{""}
+	}
+
+	// ensure we could listen
+	listeners := make([]net.Listener, 0)
+	promListeners := make([]net.Listener, 0)
+	for _, addr := range addresses {
+		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
 		if err != nil {
 			return err
 		}
-		go func() {
-			_ = s.promServer.Serve(promLn)
-		}()
+		listeners = append(listeners, ln)
+
+		if s.promServer != nil {
+			ln, err = net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.PrometheusPort))
+			if err != nil {
+				return err
+			}
+			promListeners = append(promListeners, ln)
+		}
 	}
 
+	values := []interface{}{
+		"portHttp", s.config.Port,
+		"nodeID", s.currentNode.Id,
+		"nodeIP", s.currentNode.Ip,
+		"version", version.Version,
+	}
+	if s.config.BindAddresses != nil {
+		values = append(values, "bindAddresses", s.config.BindAddresses)
+	}
+	if s.config.RTC.TCPPort != 0 {
+		values = append(values, "rtc.portTCP", s.config.RTC.TCPPort)
+	}
+	if !s.config.RTC.ForceTCP && s.config.RTC.UDPPort != 0 {
+		values = append(values, "rtc.portUDP", s.config.RTC.UDPPort)
+	} else {
+		values = append(values,
+			"rtc.portICERange", []uint32{s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd},
+		)
+	}
+	if s.config.PrometheusPort != 0 {
+		values = append(values, "portPrometheus", s.config.PrometheusPort)
+	}
+	if s.config.Region != "" {
+		values = append(values, "region", s.config.Region)
+	}
+	logger.Infow("starting LiveKit server", values...)
+
+	for _, promLn := range promListeners {
+		go s.promServer.Serve(promLn)
+	}
+
+	httpGroup := &errgroup.Group{}
+	for _, ln := range listeners {
+		httpGroup.Go(func() error {
+			return s.httpServer.Serve(ln)
+		})
+	}
 	go func() {
-		values := []interface{}{
-			"addr", s.httpServer.Addr,
-			"nodeID", s.currentNode.Id,
-			"nodeIP", s.currentNode.Ip,
-			"version", version.Version,
-		}
-		if s.config.RTC.TCPPort != 0 {
-			values = append(values, "rtc.portTCP", s.config.RTC.TCPPort)
-		}
-		if !s.config.RTC.ForceTCP && s.config.RTC.UDPPort != 0 {
-			values = append(values, "rtc.portUDP", s.config.RTC.UDPPort)
-		} else {
-			values = append(values,
-				"rtc.portICERange", []uint32{s.config.RTC.ICEPortRangeStart, s.config.RTC.ICEPortRangeEnd},
-			)
-		}
-		if s.config.PrometheusPort != 0 {
-			values = append(values, "portPrometheus", s.config.PrometheusPort)
-		}
-		if s.config.Region != "" {
-			values = append(values, "region", s.config.Region)
-		}
-		logger.Infow("starting LiveKit server", values...)
-		if err := s.httpServer.Serve(ln); err != http.ErrServerClosed {
+		if err := httpGroup.Wait(); err != http.ErrServerClosed {
 			logger.Errorw("could not start server", err)
 			s.Stop(true)
 		}
@@ -228,7 +245,6 @@ func (s *LivekitServer) Start() error {
 
 	s.roomManager.Stop()
 	s.egressService.Stop()
-	s.recService.Stop()
 
 	close(s.closedChan)
 	return nil

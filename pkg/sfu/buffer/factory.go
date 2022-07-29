@@ -25,7 +25,7 @@ func NewBufferFactory(trackingPackets int) *Factory {
 		},
 		audioPool: &sync.Pool{
 			New: func() interface{} {
-				b := make([]byte, maxPktSize*25)
+				b := make([]byte, maxPktSize*200)
 				return &b
 			},
 		},

@@ -25,3 +25,5 @@ proto/
 
 # IDE
 .idea
+
+dist/

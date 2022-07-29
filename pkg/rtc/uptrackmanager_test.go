@@ -27,14 +27,14 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
 		require.Nil(t, um.subscriberPermissions)
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
 		require.NotNil(t, um.subscriberPermissions)
 		require.Equal(t, 0, len(um.subscriberPermissions))
 
@@ -70,7 +70,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, sidResolver)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, sidResolver)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -95,7 +95,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms3,
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
 		require.Equal(t, 3, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
 		require.EqualValues(t, perms2, um.subscriberPermissions["p2"])
@@ -147,7 +147,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 				perms2,
 			},
 		}
-		err := um.UpdateSubscriptionPermission(subscriptionPermission, nil, sidResolver)
+		err := um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, sidResolver)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
@@ -166,7 +166,7 @@ func TestUpdateSubscriptionPermission(t *testing.T) {
 			return nil
 		}
 
-		err = um.UpdateSubscriptionPermission(subscriptionPermission, nil, badSidResolver)
+		err = um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, badSidResolver)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(um.subscriberPermissions))
 		require.EqualValues(t, perms1, um.subscriberPermissions["p1"])
@@ -190,17 +190,17 @@ func TestSubscriptionPermission(t *testing.T) {
 		subscriptionPermission := &livekit.SubscriptionPermission{
 			AllParticipants: true,
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
 
 		// nobody is allowed to subscribe
 		subscriptionPermission = &livekit.SubscriptionPermission{
 			TrackPermissions: []*livekit.TrackPermission{},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.False(t, um.hasPermission("audio", "p1"))
-		require.False(t, um.hasPermission("audio", "p2"))
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		require.False(t, um.hasPermissionLocked("audio", "p1"))
+		require.False(t, um.hasPermissionLocked("audio", "p2"))
 
 		// allow all tracks for participants
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -215,23 +215,23 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.True(t, um.hasPermission("video", "p2"))
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.True(t, um.hasPermissionLocked("video", "p2"))
 
 		// add a new track after permissions are set
 		trs := &typesfakes.FakeMediaTrack{}
 		trs.IDReturns("screen")
 		um.publishedTracks["screen"] = trs
 
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.True(t, um.hasPermission("video", "p2"))
-		require.True(t, um.hasPermission("screen", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.True(t, um.hasPermissionLocked("video", "p2"))
+		require.True(t, um.hasPermissionLocked("screen", "p2"))
 
 		// allow all tracks for some and restrictive for others
 		subscriptionPermission = &livekit.SubscriptionPermission{
@@ -250,37 +250,37 @@ func TestSubscriptionPermission(t *testing.T) {
 				},
 			},
 		}
-		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil)
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
+		um.UpdateSubscriptionPermission(subscriptionPermission, nil, nil, nil)
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
 
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.False(t, um.hasPermission("video", "p2"))
-		require.False(t, um.hasPermission("screen", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.False(t, um.hasPermissionLocked("video", "p2"))
+		require.False(t, um.hasPermissionLocked("screen", "p2"))
 
-		require.False(t, um.hasPermission("audio", "p3"))
-		require.True(t, um.hasPermission("video", "p3"))
-		require.False(t, um.hasPermission("screen", "p3"))
+		require.False(t, um.hasPermissionLocked("audio", "p3"))
+		require.True(t, um.hasPermissionLocked("video", "p3"))
+		require.False(t, um.hasPermissionLocked("screen", "p3"))
 
 		// add a new track after restrictive permissions are set
 		trw := &typesfakes.FakeMediaTrack{}
 		trw.IDReturns("watch")
 		um.publishedTracks["watch"] = trw
 
-		require.True(t, um.hasPermission("audio", "p1"))
-		require.True(t, um.hasPermission("video", "p1"))
-		require.True(t, um.hasPermission("screen", "p1"))
-		require.True(t, um.hasPermission("watch", "p1"))
+		require.True(t, um.hasPermissionLocked("audio", "p1"))
+		require.True(t, um.hasPermissionLocked("video", "p1"))
+		require.True(t, um.hasPermissionLocked("screen", "p1"))
+		require.True(t, um.hasPermissionLocked("watch", "p1"))
 
-		require.True(t, um.hasPermission("audio", "p2"))
-		require.False(t, um.hasPermission("video", "p2"))
-		require.False(t, um.hasPermission("screen", "p2"))
-		require.False(t, um.hasPermission("watch", "p2"))
+		require.True(t, um.hasPermissionLocked("audio", "p2"))
+		require.False(t, um.hasPermissionLocked("video", "p2"))
+		require.False(t, um.hasPermissionLocked("screen", "p2"))
+		require.False(t, um.hasPermissionLocked("watch", "p2"))
 
-		require.False(t, um.hasPermission("audio", "p3"))
-		require.True(t, um.hasPermission("video", "p3"))
-		require.False(t, um.hasPermission("screen", "p3"))
-		require.False(t, um.hasPermission("watch", "p3"))
+		require.False(t, um.hasPermissionLocked("audio", "p3"))
+		require.True(t, um.hasPermissionLocked("video", "p3"))
+		require.False(t, um.hasPermissionLocked("screen", "p3"))
+		require.False(t, um.hasPermissionLocked("watch", "p3"))
 	})
 }

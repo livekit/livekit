@@ -181,11 +181,13 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		time.Sleep(10 * time.Millisecond)
-		lock.Lock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.Unlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
@@ -261,17 +263,16 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		time.Sleep(10 * time.Millisecond)
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// "s1" dropping to MEDIUM should disable HIGH layer
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_MEDIUM)
-
-		// wait for throttle to kick in
-		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -291,19 +292,19 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// "s1" , "s2" , "s3" dropping to LOW should disable HIGH & MEDIUM
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
 		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
 		mt.notifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_LOW)
 
-		// wait for throttle to kick in
-		time.Sleep(110 * time.Millisecond)
-
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
 				Codec: webrtc.MimeTypeVP8,
@@ -322,24 +323,29 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// muting "s2" only should not disable all qualities of vp8, no change of expected qualities
 		mt.notifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
 
-		time.Sleep(10 * time.Millisecond)
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		time.Sleep(100 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// muting "s1" and s3 also should disable all qualities
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
 		mt.notifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_OFF)
-		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -359,14 +365,16 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// unmuting "s1" should enable vp8 previously set max quality
 		mt.notifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
-		time.Sleep(110 * time.Millisecond)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -386,10 +394,13 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 
 		// a higher quality from a different node should trigger that quality
 		mt.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
@@ -415,10 +426,12 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		}
-		time.Sleep(10 * time.Millisecond)
-		lock.RLock()
-		require.Equal(t, livekit.TrackID("v1"), actualTrackID)
-		require.EqualValues(t, subscribedCodecsAsString(expectedSubscribedQualities), subscribedCodecsAsString(actualSubscribedQualities))
-		lock.RUnlock()
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return livekit.TrackID("v1") == actualTrackID &&
+				subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 	})
 }

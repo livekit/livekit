@@ -18,7 +18,6 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -31,7 +30,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	wire.Build(
 		getNodeID,
 		createRedisClient,
-		createMessageBus,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
 		createKeyProvider,
@@ -44,8 +42,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		egress.NewRedisRPCClient,
+		getEgressStore,
 		NewEgressService,
-		NewRecordingService,
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
@@ -125,8 +123,10 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 	}
 
+	values := make([]interface{}, 0)
+	values = append(values, "sentinel", conf.UseSentinel())
 	if conf.UseSentinel() {
-		logger.Infow("using multi-node routing via redis", "sentinel", true, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
+		values = append(values, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
 		rcOptions := &redis.FailoverOptions{
 			SentinelAddrs:    conf.Redis.SentinelAddresses,
 			SentinelUsername: conf.Redis.SentinelUsername,
@@ -139,7 +139,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 		rc = redis.NewFailoverClient(rcOptions)
 	} else {
-		logger.Infow("using multi-node routing via redis", "sentinel", false, "addr", conf.Redis.Address)
+		values = append(values, "addr", conf.Redis.Address)
 		rcOptions := &redis.Options{
 			Addr:      conf.Redis.Address,
 			Username:  conf.Redis.Username,
@@ -149,6 +149,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 		}
 		rc = redis.NewClient(rcOptions)
 	}
+	logger.Infow("using multi-node routing via redis", values...)
 
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		err = errors.Wrap(err, "unable to connect to redis")
@@ -158,18 +159,20 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	return rc, nil
 }
 
-func createMessageBus(rc *redis.Client) utils.MessageBus {
-	if rc == nil {
-		return nil
-	}
-	return utils.NewRedisMessageBus(rc)
-}
-
 func createStore(rc *redis.Client) ObjectStore {
 	if rc != nil {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
+}
+
+func getEgressStore(s ObjectStore) EgressStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

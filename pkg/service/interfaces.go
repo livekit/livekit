@@ -35,12 +35,24 @@ type ServiceStore interface {
 
 	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
+}
 
+//counterfeiter:generate . EgressStore
+type EgressStore interface {
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error
 	LoadEgress(ctx context.Context, egressID string) (*livekit.EgressInfo, error)
-	ListEgress(ctx context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error)
+	ListEgress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error)
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
-	DeleteEgress(ctx context.Context, info *livekit.EgressInfo) error
+}
+
+//counterfeiter:generate . IngressStore
+type IngressStore interface {
+	StoreIngress(ctx context.Context, info *livekit.IngressInfo) error
+	LoadIngress(ctx context.Context, ingressID string) (*livekit.IngressInfo, error)
+	LoadIngressFromStreamKey(ctx context.Context, streamKey string) (*livekit.IngressInfo, error)
+	ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error)
+	UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error
+	DeleteIngress(ctx context.Context, info *livekit.IngressInfo) error
 }
 
 //counterfeiter:generate . RoomAllocator

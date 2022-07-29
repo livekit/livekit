@@ -19,7 +19,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
@@ -182,13 +181,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, ""),
-		pi.Identity, "",
+		rtc.LoggerWithRoom(logger.GetDefaultLogger(), roomName, livekit.RoomID(rm.Sid)),
+		pi.Identity,
+		"",
+		false,
 	)
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
-		pLogger.Infow("server closing WS connection", "connID", connId)
+		pLogger.Infow("finishing WS connection", "connID", connId)
 		resSource.Close()
 		reqSink.Close()
 		close(done)
@@ -203,15 +204,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sigConn := NewWSSignalConnection(conn)
-	if types.ProtocolVersion(pi.Client.Protocol).SupportsProtobuf() {
-		sigConn.useJSON = false
-	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
-	pLogger.Infow("new client WS connected",
-		"connID", connId,
-		"roomID", rm.Sid,
-	)
+	pLogger.Infow("new client WS connected", "connID", connId)
 
 	// handle responses
 	go func() {
@@ -254,7 +249,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if err == io.EOF || strings.HasSuffix(err.Error(), "use of closed network connection") ||
 				websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				pLogger.Infow("exit ws read loop for closed connection", "connID", connId)
+				pLogger.Debugw("exit ws read loop for closed connection", "connID", connId)
 				return
 			} else {
 				pLogger.Errorw("error reading from websocket", err)

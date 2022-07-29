@@ -2,6 +2,29 @@
 
 Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2022-07-11
+### Added
+- Returns reason when server disconnects a client (#801 #806)
+- Allow livekit-server to start without keys configuration (#788)
+- Added recovery from negotiation failures (#807)
+
+### Fixed
+- Fixed synchronization issues with Dynacast (#779 #802)
+- Fixed panic due to timing in Pion's ICE agent (#780)
+- ICELite is disabled by default, improving connectivity behind NAT (#784)
+- Fixed EgressService UpdateLayout (#782)
+- Fixed synchronization bugs with selective subscriptions & permissions (#796 #797 #805 #813 #814 #816)
+- Correctly recover from ICE Restart during an negotiation attempt (#798)
+
+### Changed
+- Improved Transceiver re-use to avoid renegotiation (#785)
+- Close room if recorder is the only participant left (#787)
+- Improved connection quality score stability & computation (#793 #795)
+- Set layer state to stopped when paused (#818)
+
+### Removed
+- Removed deprecated RecordingService - Egress should be used instead (#811)
+
 ## [1.1.0] - 2022-06-21
 ### Added
 - Add support for Redis Sentinel (#707)

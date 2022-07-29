@@ -454,7 +454,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 }
 
 func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
-	return participant.UpdateSubscriptionPermission(subscriptionPermission, r.GetParticipant, r.GetParticipantBySid)
+	return participant.UpdateSubscriptionPermission(subscriptionPermission, nil, r.GetParticipant, r.GetParticipantBySid)
 }
 
 func (r *Room) RemoveDisallowedSubscriptions(sub types.LocalParticipant, disallowedSubscriptions map[livekit.TrackID]livekit.ParticipantID) {
@@ -508,7 +508,7 @@ func (r *Room) CloseIfEmpty() {
 	}
 
 	for _, p := range r.participants {
-		if !p.Hidden() {
+		if !p.IsRecorder() {
 			r.lock.Unlock()
 			return
 		}
@@ -544,6 +544,9 @@ func (r *Room) Close() {
 	close(r.closed)
 	r.lock.Unlock()
 	r.Logger.Infow("closing room")
+	for _, p := range r.GetParticipants() {
+		_ = p.Close(true, types.ParticipantCloseReasonRoomClose)
+	}
 	if r.onClose != nil {
 		r.onClose()
 	}
@@ -961,7 +964,9 @@ func (r *Room) connectionQualityWorker() {
 				continue
 			}
 
-			nowConnectionInfos[p.ID()] = p.GetConnectionQuality()
+			if q := p.GetConnectionQuality(); q != nil {
+				nowConnectionInfos[p.ID()] = q
+			}
 		}
 
 		// send an update if there is a change
