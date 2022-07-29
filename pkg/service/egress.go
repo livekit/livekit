@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -37,14 +38,20 @@ func NewEgressService(
 		es:          es,
 		roomService: rs,
 		telemetry:   ts,
-		shutdown:    make(chan struct{}),
 	}
 }
 
-func (s *EgressService) Start() {
-	if s.rpcClient != nil {
-		go s.updateWorker()
+func (s *EgressService) Start() error {
+	if s.shutdown != nil {
+		return nil
 	}
+
+	s.shutdown = make(chan struct{})
+	if s.rpcClient != nil && s.es != nil {
+		return s.startWorker()
+	}
+
+	return nil
 }
 
 func (s *EgressService) Stop() {
@@ -94,6 +101,8 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 		return nil, err
 	}
 
+	ensureRoomName(info)
+
 	s.telemetry.EgressStarted(ctx, info)
 	go func() {
 		if err := s.es.StoreEgress(ctx, info); err != nil {
@@ -121,17 +130,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 		return nil, err
 	}
 
-	var roomName string
-	switch r := info.Request.(type) {
-	case *livekit.EgressInfo_RoomComposite:
-		roomName = r.RoomComposite.RoomName
-	case *livekit.EgressInfo_TrackComposite:
-		roomName = r.TrackComposite.RoomName
-	case *livekit.EgressInfo_Track:
-		roomName = r.Track.RoomName
-	default:
-		return nil, ErrRoomNotFound
-	}
+	ensureRoomName(info)
 
 	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
 	if err != nil {
@@ -139,11 +138,11 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	}
 
 	grants := GetGrants(ctx)
-	grants.Video.Room = roomName
+	grants.Video.Room = info.RoomName
 	grants.Video.RoomAdmin = true
 
 	_, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
-		Room:     roomName,
+		Room:     info.RoomName,
 		Identity: info.EgressId,
 		Metadata: string(metadata),
 	})
@@ -172,6 +171,8 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 		return nil, err
 	}
 
+	ensureRoomName(info)
+
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
@@ -189,19 +190,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 		return nil, ErrEgressNotConnected
 	}
 
-	var roomID livekit.RoomID
-	if req.RoomName != "" {
-		room, err := s.store.LoadRoom(ctx, livekit.RoomName(req.RoomName))
-		if err != nil {
-			if err == ErrRoomNotFound {
-				return &livekit.ListEgressResponse{}, nil
-			}
-			return nil, err
-		}
-		roomID = livekit.RoomID(room.Sid)
-	}
-
-	infos, err := s.es.ListEgress(ctx, roomID)
+	infos, err := s.es.ListEgress(ctx, livekit.RoomName(req.RoomName))
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +216,8 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, err
 	}
 
+	ensureRoomName(info)
+
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
@@ -236,58 +227,86 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	return info, nil
 }
 
-func (s *EgressService) updateWorker() {
+func (s *EgressService) startWorker() error {
+	rs := s.es.(*RedisStore)
+	if err := rs.Start(); err != nil {
+		logger.Errorw("failed to start redis egress worker", err)
+		return err
+	}
+
 	sub, err := s.rpcClient.GetUpdateChannel(context.Background())
 	if err != nil {
 		logger.Errorw("failed to subscribe to results channel", err)
-		return
+		return err
 	}
 
-	resChan := sub.Channel()
-	for {
-		select {
-		case msg := <-resChan:
-			b := sub.Payload(msg)
+	go func() {
+		resChan := sub.Channel()
+		for {
+			select {
+			case msg := <-resChan:
+				b := sub.Payload(msg)
 
-			res := &livekit.EgressInfo{}
-			if err = proto.Unmarshal(b, res); err != nil {
-				logger.Errorw("failed to read results", err)
-				continue
+				res := &livekit.EgressInfo{}
+				if err = proto.Unmarshal(b, res); err != nil {
+					logger.Errorw("failed to read results", err)
+					continue
+				}
+
+				ensureRoomName(res)
+
+				switch res.Status {
+				case livekit.EgressStatus_EGRESS_COMPLETE,
+					livekit.EgressStatus_EGRESS_FAILED,
+					livekit.EgressStatus_EGRESS_ABORTED:
+
+					// make sure endedAt is set so it eventually gets deleted
+					if res.EndedAt == 0 {
+						res.EndedAt = time.Now().UnixNano()
+					}
+
+					err = s.es.UpdateEgress(context.Background(), res)
+					if err != nil {
+						logger.Errorw("could not update egress", err)
+					}
+
+					// log results
+					if res.Error != "" {
+						logger.Errorw("egress failed", errors.New(res.Error), "egressID", res.EgressId)
+					} else {
+						logger.Infow("egress ended", "egressID", res.EgressId)
+					}
+
+					s.telemetry.EgressEnded(context.Background(), res)
+
+				default:
+					err = s.es.UpdateEgress(context.Background(), res)
+					if err != nil {
+						logger.Errorw("could not update egress", err)
+					}
+				}
+
+			case <-s.shutdown:
+				_ = sub.Close()
+				rs.Stop()
+				return
 			}
+		}
+	}()
 
-			switch res.Status {
-			case livekit.EgressStatus_EGRESS_ACTIVE,
-				livekit.EgressStatus_EGRESS_ENDING:
+	return nil
+}
 
-				// save updated info to store
-				err = s.es.UpdateEgress(context.Background(), res)
-				if err != nil {
-					logger.Errorw("could not update egress", err)
-				}
-
-			case livekit.EgressStatus_EGRESS_COMPLETE,
-				livekit.EgressStatus_EGRESS_FAILED,
-				livekit.EgressStatus_EGRESS_ABORTED:
-
-				// delete from store
-				err = s.es.DeleteEgress(context.Background(), res)
-				if err != nil {
-					logger.Errorw("could not delete egress from store", err)
-				}
-
-				// log results
-				if res.Error != "" {
-					logger.Errorw("egress failed", errors.New(res.Error), "egressID", res.EgressId)
-				} else {
-					logger.Infow("egress ended", "egressID", res.EgressId)
-				}
-
-				s.telemetry.EgressEnded(context.Background(), res)
-			}
-
-		case <-s.shutdown:
-			_ = sub.Close()
-			return
+// Ensure compatibility with Egress <= v1.0.5
+func ensureRoomName(info *livekit.EgressInfo) {
+	if info.RoomName == "" {
+		switch r := info.Request.(type) {
+		case *livekit.EgressInfo_RoomComposite:
+			info.RoomName = r.RoomComposite.RoomName
+		case *livekit.EgressInfo_TrackComposite:
+			info.RoomName = r.TrackComposite.RoomName
+		case *livekit.EgressInfo_Track:
+			info.RoomName = r.Track.RoomName
 		}
 	}
 }

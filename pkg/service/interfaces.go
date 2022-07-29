@@ -41,9 +41,8 @@ type ServiceStore interface {
 type EgressStore interface {
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error
 	LoadEgress(ctx context.Context, egressID string) (*livekit.EgressInfo, error)
-	ListEgress(ctx context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error)
+	ListEgress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error)
 	UpdateEgress(ctx context.Context, info *livekit.EgressInfo) error
-	DeleteEgress(ctx context.Context, info *livekit.EgressInfo) error
 }
 
 //counterfeiter:generate . IngressStore
