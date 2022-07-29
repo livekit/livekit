@@ -279,6 +279,15 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	return
 }
 
+func (r *RTPStats) ForceUpdateLastPacket(rtph *rtp.Header, packetTime int64) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.highestSN = rtph.SequenceNumber - 1
+	r.highestTS = rtph.Timestamp
+	r.highestTime = packetTime
+}
+
 func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, packetTime int64, pktSize uint64, payloadSize int) bool {
 	if (r.getExtHighestSN() - r.extStartSN + 1) >= (NumSequenceNumbers / 2) {
 		return false
