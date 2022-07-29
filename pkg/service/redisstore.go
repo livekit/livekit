@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	goversion "github.com/hashicorp/go-version"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
@@ -24,10 +25,9 @@ const (
 	RoomsKey = "rooms"
 
 	// EgressKey is a hash of egressID => egress info
-	EgressKey           = "egress"
-	EndedEgressKey      = "ended_egress"
-	RoomEgressPrefix    = "egress:room:"
-	RoomEgressPrefixOld = "room_egress:"
+	EgressKey        = "egress"
+	EndedEgressKey   = "ended_egress"
+	RoomEgressPrefix = "egress:room:"
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey        = "ingress"
@@ -62,12 +62,17 @@ func (s *RedisStore) Start() error {
 	}
 
 	s.done = make(chan struct{}, 1)
-	existing, err := s.rc.Get(s.ctx, VersionKey).Result()
+	current, err := s.rc.Get(s.ctx, VersionKey).Result()
 	if err != nil && err != redis.Nil {
 		return err
 	}
+	if current == "" {
+		current = "0.0.0"
+	}
 
-	if existing != "1.1.3" {
+	v, _ := goversion.NewVersion(current)
+	migrateEgress, _ := goversion.NewVersion("1.1.3")
+	if v.LessThan(migrateEgress) {
 		if _, err = s.MigrateEgressInfo(); err != nil {
 			return err
 		}
@@ -268,55 +273,6 @@ func (s *RedisStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	key := RoomParticipantsPrefix + string(roomName)
 
 	return s.rc.HDel(s.ctx, key, string(identity)).Err()
-}
-
-// Temporary migration for upgrading from LiveKit v1.1.2 to v1.1.3
-func (s *RedisStore) MigrateEgressInfo() (int, error) {
-	locked, err := s.rc.SetNX(s.ctx, "egress-migration", utils.NewGuid("LOCK"), time.Minute).Result()
-	if err != nil {
-		return 0, err
-	} else if !locked {
-		return 0, nil
-	}
-
-	it := s.rc.Scan(s.ctx, 0, RoomEgressPrefixOld+"*", 0).Iterator()
-	migrated := 0
-	for it.Next(s.ctx) {
-		migrated++
-		key := it.Val()
-		egressIDs, err := s.rc.SMembers(s.ctx, key).Result()
-		if err != nil && err != redis.Nil {
-			return migrated, err
-		}
-
-		for _, egressID := range egressIDs {
-			info, err := s.LoadEgress(s.ctx, egressID)
-			if err != nil {
-				return migrated, err
-			}
-
-			var roomName string
-			switch req := info.Request.(type) {
-			case *livekit.EgressInfo_RoomComposite:
-				roomName = req.RoomComposite.RoomName
-			case *livekit.EgressInfo_TrackComposite:
-				roomName = req.TrackComposite.RoomName
-			case *livekit.EgressInfo_Track:
-				roomName = req.Track.RoomName
-			}
-
-			tx := s.rc.TxPipeline()
-			tx.SAdd(s.ctx, RoomEgressPrefix+roomName, egressID)
-			tx.SRem(s.ctx, key, egressID)
-			if _, err = tx.Exec(s.ctx); err != nil {
-				return migrated, err
-			}
-		}
-
-		s.rc.Del(s.ctx, key)
-	}
-
-	return migrated, nil
 }
 
 func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) error {
@@ -652,4 +608,53 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 	}
 
 	return nil
+}
+
+// Migration to LiveKit >= v1.1.3
+func (s *RedisStore) MigrateEgressInfo() (int, error) {
+	locked, err := s.rc.SetNX(s.ctx, "egress-migration", utils.NewGuid("LOCK"), time.Minute).Result()
+	if err != nil {
+		return 0, err
+	} else if !locked {
+		return 0, nil
+	}
+
+	it := s.rc.Scan(s.ctx, 0, "room_egress:*", 0).Iterator()
+	migrated := 0
+	for it.Next(s.ctx) {
+		migrated++
+		key := it.Val()
+		egressIDs, err := s.rc.SMembers(s.ctx, key).Result()
+		if err != nil && err != redis.Nil {
+			return migrated, err
+		}
+
+		for _, egressID := range egressIDs {
+			info, err := s.LoadEgress(s.ctx, egressID)
+			if err != nil {
+				return migrated, err
+			}
+
+			var roomName string
+			switch req := info.Request.(type) {
+			case *livekit.EgressInfo_RoomComposite:
+				roomName = req.RoomComposite.RoomName
+			case *livekit.EgressInfo_TrackComposite:
+				roomName = req.TrackComposite.RoomName
+			case *livekit.EgressInfo_Track:
+				roomName = req.Track.RoomName
+			}
+
+			tx := s.rc.TxPipeline()
+			tx.SAdd(s.ctx, RoomEgressPrefix+roomName, egressID)
+			tx.SRem(s.ctx, key, egressID)
+			if _, err = tx.Exec(s.ctx); err != nil {
+				return migrated, err
+			}
+		}
+
+		s.rc.Del(s.ctx, key)
+	}
+
+	return migrated, nil
 }
