@@ -170,6 +170,8 @@ func getEgressStore(s ObjectStore) EgressStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store
+	case *LocalStore:
+		return store
 	default:
 		return nil
 	}

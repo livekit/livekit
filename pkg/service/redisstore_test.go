@@ -8,10 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/service"
 )
@@ -113,101 +111,7 @@ func TestRoomLock(t *testing.T) {
 	})
 }
 
-func TestEgressStore(t *testing.T) {
-	ctx := context.Background()
-	rc := redisClient()
-	rs := service.NewRedisStore(rc)
-
-	roomName := "egress-test"
-
-	// test migration
-	info := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
-		RoomName: roomName,
-		Status:   livekit.EgressStatus_EGRESS_STARTING,
-		Request: &livekit.EgressInfo_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName: roomName,
-				Layout:   "speaker-dark",
-			},
-		},
-	}
-
-	data, err := proto.Marshal(info)
-	require.NoError(t, err)
-
-	// store egress info the old way
-	tx := rc.TxPipeline()
-	tx.HSet(ctx, service.EgressKey, info.EgressId, data)
-	tx.SAdd(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId, info.EgressId)
-	_, err = tx.Exec(ctx)
-	require.NoError(t, err)
-
-	// run migration
-	migrated, err := rs.MigrateEgressInfo()
-	require.NoError(t, err)
-	require.Equal(t, 1, migrated)
-
-	// check that it was migrated
-	exists, err := rc.Exists(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId).Result()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), exists)
-
-	exists, err = rc.Exists(ctx, service.RoomEgressPrefix+info.RoomName).Result()
-	require.NoError(t, err)
-	require.Equal(t, int64(1), exists)
-
-	// load
-	res, err := rs.LoadEgress(ctx, info.EgressId)
-	require.NoError(t, err)
-	require.Equal(t, res.EgressId, info.EgressId)
-
-	// store another
-	info2 := &livekit.EgressInfo{
-		EgressId: utils.NewGuid(utils.EgressPrefix),
-		RoomId:   utils.NewGuid(utils.RoomPrefix),
-		RoomName: "another-egress-test",
-		Status:   livekit.EgressStatus_EGRESS_STARTING,
-		Request: &livekit.EgressInfo_RoomComposite{
-			RoomComposite: &livekit.RoomCompositeEgressRequest{
-				RoomName: "another-egress-test",
-				Layout:   "speaker-dark",
-			},
-		},
-	}
-	require.NoError(t, rs.StoreEgress(ctx, info2))
-
-	// update
-	info2.Status = livekit.EgressStatus_EGRESS_COMPLETE
-	info2.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
-	require.NoError(t, rs.UpdateEgress(ctx, info))
-
-	// list
-	list, err := rs.ListEgress(ctx, "")
-	require.NoError(t, err)
-	require.Len(t, list, 2)
-
-	// list by room
-	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName))
-	require.NoError(t, err)
-	require.Len(t, list, 1)
-
-	// update
-	info.Status = livekit.EgressStatus_EGRESS_COMPLETE
-	info.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
-	require.NoError(t, rs.UpdateEgress(ctx, info))
-
-	// clean
-	require.NoError(t, rs.CleanEndedEgress())
-
-	// list
-	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName))
-	require.NoError(t, err)
-	require.Len(t, list, 0)
-}
-
-func TestIngressStore(t *testing.T) {
+func TestStoreIngress(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisStore(redisClient())
 
