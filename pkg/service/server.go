@@ -146,7 +146,9 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	s.egressService.Start()
+	if err := s.egressService.Start(); err != nil {
+		return err
+	}
 
 	addresses := s.config.BindAddresses
 	if addresses == nil {
