@@ -14,7 +14,7 @@ import (
 
 type IngressService struct {
 	rpc         ingress.RPC
-	store       IngressStore
+	store       ServiceStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	shutdown    chan struct{}
@@ -22,7 +22,7 @@ type IngressService struct {
 
 func NewIngressService(
 	rpc ingress.RPC,
-	store IngressStore,
+	store ServiceStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *IngressService {

@@ -49,7 +49,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeID := getNodeID(currentNode)
 	rpcClient := egress.NewRedisRPCClient(nodeID, client)
-	egressStore := getEgressStore(objectStore)
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -60,7 +59,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService)
+	egressService := NewEgressService(rpcClient, objectStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
@@ -190,17 +189,6 @@ func createStore(rc *redis.Client) ObjectStore {
 		return NewRedisStore(rc)
 	}
 	return NewLocalStore()
-}
-
-func getEgressStore(s ObjectStore) EgressStore {
-	switch store := s.(type) {
-	case *RedisStore:
-		return store
-	case *LocalStore:
-		return store
-	default:
-		return nil
-	}
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {

@@ -17,7 +17,6 @@ import (
 type EgressService struct {
 	rpcClient   egress.RPCClient
 	store       ServiceStore
-	es          EgressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
 	shutdown    chan struct{}
@@ -26,7 +25,6 @@ type EgressService struct {
 func NewEgressService(
 	rpcClient egress.RPCClient,
 	store ServiceStore,
-	es EgressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
 ) *EgressService {
@@ -34,7 +32,6 @@ func NewEgressService(
 	return &EgressService{
 		rpcClient:   rpcClient,
 		store:       store,
-		es:          es,
 		roomService: rs,
 		telemetry:   ts,
 		shutdown:    make(chan struct{}),
@@ -96,7 +93,7 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 
 	s.telemetry.EgressStarted(ctx, info)
 	go func() {
-		if err := s.es.StoreEgress(ctx, info); err != nil {
+		if err := s.store.StoreEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
 		}
 	}()
@@ -116,7 +113,7 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 		return nil, ErrEgressNotConnected
 	}
 
-	info, err := s.es.LoadEgress(ctx, req.EgressId)
+	info, err := s.store.LoadEgress(ctx, req.EgressId)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +170,7 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	}
 
 	go func() {
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
+		if err := s.store.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
 		}
 	}()
@@ -201,7 +198,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 		roomID = livekit.RoomID(room.Sid)
 	}
 
-	infos, err := s.es.ListEgress(ctx, roomID)
+	infos, err := s.store.ListEgress(ctx, roomID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +225,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	}
 
 	go func() {
-		if err := s.es.UpdateEgress(ctx, info); err != nil {
+		if err := s.store.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
 		}
 	}()
@@ -260,7 +257,7 @@ func (s *EgressService) updateWorker() {
 				livekit.EgressStatus_EGRESS_ENDING:
 
 				// save updated info to store
-				err = s.es.UpdateEgress(context.Background(), res)
+				err = s.store.UpdateEgress(context.Background(), res)
 				if err != nil {
 					logger.Errorw("could not update egress", err)
 				}
@@ -270,7 +267,7 @@ func (s *EgressService) updateWorker() {
 				livekit.EgressStatus_EGRESS_ABORTED:
 
 				// delete from store
-				err = s.es.DeleteEgress(context.Background(), res)
+				err = s.store.DeleteEgress(context.Background(), res)
 				if err != nil {
 					logger.Errorw("could not delete egress from store", err)
 				}
