@@ -25,9 +25,10 @@ const (
 	RoomsKey = "rooms"
 
 	// EgressKey is a hash of egressID => egress info
-	EgressKey        = "egress"
-	EndedEgressKey   = "ended_egress"
-	RoomEgressPrefix = "egress:room:"
+	EgressKey                  = "egress"
+	EndedEgressKey             = "ended_egress"
+	RoomEgressPrefix           = "egress:room:"
+	DeprecatedRoomEgressPrefix = "room_egress:"
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey        = "ingress"
@@ -619,7 +620,7 @@ func (s *RedisStore) MigrateEgressInfo() (int, error) {
 		return 0, nil
 	}
 
-	it := s.rc.Scan(s.ctx, 0, "room_egress:*", 0).Iterator()
+	it := s.rc.Scan(s.ctx, 0, DeprecatedRoomEgressPrefix+"*", 0).Iterator()
 	migrated := 0
 	for it.Next(s.ctx) {
 		migrated++

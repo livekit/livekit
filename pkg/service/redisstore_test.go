@@ -140,7 +140,7 @@ func TestEgressStore(t *testing.T) {
 	// store egress info the old way
 	tx := rc.TxPipeline()
 	tx.HSet(ctx, service.EgressKey, info.EgressId, data)
-	tx.SAdd(ctx, service.RoomEgressPrefixOld+info.RoomId, info.EgressId)
+	tx.SAdd(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId, info.EgressId)
 	_, err = tx.Exec(ctx)
 	require.NoError(t, err)
 
@@ -150,7 +150,7 @@ func TestEgressStore(t *testing.T) {
 	require.Equal(t, 1, migrated)
 
 	// check that it was migrated
-	exists, err := rc.Exists(ctx, service.RoomEgressPrefixOld+info.RoomId).Result()
+	exists, err := rc.Exists(ctx, service.DeprecatedRoomEgressPrefix+info.RoomId).Result()
 	require.NoError(t, err)
 	require.Equal(t, int64(0), exists)
 
