@@ -38,11 +38,15 @@ func NewEgressService(
 		es:          es,
 		roomService: rs,
 		telemetry:   ts,
-		shutdown:    make(chan struct{}),
 	}
 }
 
 func (s *EgressService) Start() error {
+	if s.shutdown != nil {
+		return nil
+	}
+
+	s.shutdown = make(chan struct{})
 	if s.rpcClient != nil && s.es != nil {
 		return s.startWorker()
 	}

@@ -11,12 +11,15 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
 const (
+	VersionKey = "livekit_version"
+
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey = "rooms"
 
@@ -59,8 +62,19 @@ func (s *RedisStore) Start() error {
 	}
 
 	s.done = make(chan struct{}, 1)
-	if _, err := s.MigrateEgressInfo(); err != nil {
+	existing, err := s.rc.Get(s.ctx, VersionKey).Result()
+	if err != nil && err != redis.Nil {
 		return err
+	}
+
+	if existing != "1.1.3" {
+		if _, err = s.MigrateEgressInfo(); err != nil {
+			return err
+		}
+
+		if err = s.rc.Set(s.ctx, VersionKey, version.Version, 0).Err(); err != nil {
+			return err
+		}
 	}
 
 	go s.egressWorker()
@@ -258,6 +272,13 @@ func (s *RedisStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 
 // Temporary migration for upgrading from LiveKit v1.1.2 to v1.1.3
 func (s *RedisStore) MigrateEgressInfo() (int, error) {
+	locked, err := s.rc.SetNX(s.ctx, "egress-migration", utils.NewGuid("LOCK"), time.Minute).Result()
+	if err != nil {
+		return 0, err
+	} else if !locked {
+		return 0, nil
+	}
+
 	it := s.rc.Scan(s.ctx, 0, RoomEgressPrefixOld+"*", 0).Iterator()
 	migrated := 0
 	for it.Next(s.ctx) {
