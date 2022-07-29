@@ -300,15 +300,13 @@ func (s *EgressService) startWorker() error {
 // Ensure compatibility with Egress <= v1.0.5
 func ensureRoomName(info *livekit.EgressInfo) {
 	if info.RoomName == "" {
-		if info.RoomName == "" {
-			switch r := info.Request.(type) {
-			case *livekit.EgressInfo_RoomComposite:
-				info.RoomName = r.RoomComposite.RoomName
-			case *livekit.EgressInfo_TrackComposite:
-				info.RoomName = r.TrackComposite.RoomName
-			case *livekit.EgressInfo_Track:
-				info.RoomName = r.Track.RoomName
-			}
+		switch r := info.Request.(type) {
+		case *livekit.EgressInfo_RoomComposite:
+			info.RoomName = r.RoomComposite.RoomName
+		case *livekit.EgressInfo_TrackComposite:
+			info.RoomName = r.TrackComposite.RoomName
+		case *livekit.EgressInfo_Track:
+			info.RoomName = r.Track.RoomName
 		}
 	}
 }
