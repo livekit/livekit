@@ -44,9 +44,10 @@ type Config struct {
 	Keys           map[string]string  `yaml:"keys,omitempty"`
 	Region         string             `yaml:"region,omitempty"`
 	// LogLevel is deprecated
-	LogLevel string        `yaml:"log_level,omitempty"`
-	Logging  LoggingConfig `yaml:"logging,omitempty"`
-	Limit    LimitConfig   `yaml:"limit,omitempty"`
+	LogLevel string         `yaml:"log_level,omitempty"`
+	Logging  LoggingConfig  `yaml:"logging,omitempty"`
+	Limit    LimitConfig    `yaml:"limit,omitempty"`
+	Autocert AutocertConfig `yaml:"autocert,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
 }
@@ -368,4 +369,9 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+type AutocertConfig struct {
+	Dtls string `yaml:"dtls,omitempty"`
+	Ws   string `yaml:"ws,omitempty"`
 }

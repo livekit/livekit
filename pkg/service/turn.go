@@ -8,6 +8,8 @@ import (
 
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -61,25 +63,37 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		}
 
 		if !turnConf.ExternalTLS {
-			cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-			if err != nil {
-				return nil, errors.Wrap(err, "TURN tls cert required")
-			}
+			if len(conf.Autocert.Dtls) == 0 {
+				cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+				if err != nil {
+					return nil, errors.Wrap(err, "TURN tls cert required")
+				}
 
-			tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
-				&tls.Config{
-					MinVersion:   tls.VersionTLS12,
-					Certificates: []tls.Certificate{cert},
-				})
-			if err != nil {
-				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-			}
+				tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
+					&tls.Config{
+						MinVersion:   tls.VersionTLS12,
+						Certificates: []tls.Certificate{cert},
+					})
+				if err != nil {
+					return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+				}
 
-			listenerConfig := turn.ListenerConfig{
-				Listener:              tlsListener,
-				RelayAddressGenerator: relayAddrGen,
+				listenerConfig := turn.ListenerConfig{
+					Listener:              tlsListener,
+					RelayAddressGenerator: relayAddrGen,
+				}
+				serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
+			} else {
+				tlsListener, err := tlsListener("0.0.0.0:"+strconv.Itoa(turnConf.TLSPort), conf.Autocert.Dtls)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not run autocert on TURN TCP port")
+				}
+				listenerConfig := turn.ListenerConfig{
+					Listener:              tlsListener,
+					RelayAddressGenerator: relayAddrGen,
+				}
+				serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 			}
-			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 		} else {
 			tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort))
 			if err != nil {
@@ -123,4 +137,28 @@ func newTurnAuthHandler(roomStore ObjectStore) turn.AuthHandler {
 
 		return turn.GenerateAuthKey(username, LivekitRealm, rm.TurnPassword), true
 	}
+}
+
+func tlsListener(addr, hosts string) (lnTls net.Listener, err error) {
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(hosts),
+		Cache:      autocert.DirCache("/tmp/certs"),
+	}
+
+	cfg := &tls.Config{
+		GetCertificate: m.GetCertificate,
+		NextProtos: []string{
+			"http/1.1", acme.ALPNProto,
+		},
+	}
+
+	// Let's Encrypt tls-alpn-01 only works on port 443.
+	ln, err := net.Listen("tcp4", addr) /* #nosec G102 */
+	if err != nil {
+		return
+	}
+
+	lnTls = tls.NewListener(ln, cfg)
+	return
 }

@@ -157,9 +157,19 @@ func (s *LivekitServer) Start() error {
 	listeners := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
 	for _, addr := range addresses {
-		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
-		if err != nil {
-			return err
+		var ln net.Listener
+		var err error
+
+		if len(s.config.Autocert.Ws) > 0 {
+			ln, err = tlsListener(s.httpServer.Addr, s.config.Autocert.Ws)
+			if err != nil {
+				return err
+			}
+		} else {
+			ln, err = net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
+			if err != nil {
+				return err
+			}
 		}
 		listeners = append(listeners, ln)
 
