@@ -63,6 +63,7 @@ type PCTransport struct {
 	lock                  sync.RWMutex
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
+	negotiationPending    atomic.Bool
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	restartAtNextOffer    bool
@@ -333,12 +334,17 @@ func (t *PCTransport) Negotiate(force bool) {
 			t.params.Logger.Errorw("could not negotiate", err)
 		}
 	} else {
+		t.negotiationPending.Store(true)
 		t.debouncedNegotiate(func() {
 			if err := t.CreateAndSendOffer(nil); err != nil {
 				t.params.Logger.Errorw("could not negotiate", err)
 			}
 		})
 	}
+}
+
+func (t *PCTransport) IsNegotiationPending() bool {
+	return t.negotiationPending.Load()
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
@@ -438,6 +444,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
 	t.restartAfterGathering = false
+	t.negotiationPending.Store(false)
 
 	negotiateVersion := t.negotiateCounter.Inc()
 	if t.signalStateCheckTimer != nil {

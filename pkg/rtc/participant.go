@@ -781,6 +781,10 @@ func (p *ParticipantImpl) Negotiate(force bool) {
 	}
 }
 
+func (p *ParticipantImpl) IsNegotiationPending() bool {
+	return p.subscriber.IsNegotiationPending()
+}
+
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.lock.Lock()
 	preState := p.MigrateState()

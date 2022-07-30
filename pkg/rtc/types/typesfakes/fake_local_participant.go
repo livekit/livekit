@@ -319,6 +319,16 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
+	IsNegotiationPendingStub        func() bool
+	isNegotiationPendingMutex       sync.RWMutex
+	isNegotiationPendingArgsForCall []struct {
+	}
+	isNegotiationPendingReturns struct {
+		result1 bool
+	}
+	isNegotiationPendingReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsPublisherStub        func() bool
 	isPublisherMutex       sync.RWMutex
 	isPublisherArgsForCall []struct {
@@ -2310,6 +2320,59 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}
 	fake.identityReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantIdentity
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPending() bool {
+	fake.isNegotiationPendingMutex.Lock()
+	ret, specificReturn := fake.isNegotiationPendingReturnsOnCall[len(fake.isNegotiationPendingArgsForCall)]
+	fake.isNegotiationPendingArgsForCall = append(fake.isNegotiationPendingArgsForCall, struct {
+	}{})
+	stub := fake.IsNegotiationPendingStub
+	fakeReturns := fake.isNegotiationPendingReturns
+	fake.recordInvocation("IsNegotiationPending", []interface{}{})
+	fake.isNegotiationPendingMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPendingCallCount() int {
+	fake.isNegotiationPendingMutex.RLock()
+	defer fake.isNegotiationPendingMutex.RUnlock()
+	return len(fake.isNegotiationPendingArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPendingCalls(stub func() bool) {
+	fake.isNegotiationPendingMutex.Lock()
+	defer fake.isNegotiationPendingMutex.Unlock()
+	fake.IsNegotiationPendingStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPendingReturns(result1 bool) {
+	fake.isNegotiationPendingMutex.Lock()
+	defer fake.isNegotiationPendingMutex.Unlock()
+	fake.IsNegotiationPendingStub = nil
+	fake.isNegotiationPendingReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPendingReturnsOnCall(i int, result1 bool) {
+	fake.isNegotiationPendingMutex.Lock()
+	defer fake.isNegotiationPendingMutex.Unlock()
+	fake.IsNegotiationPendingStub = nil
+	if fake.isNegotiationPendingReturnsOnCall == nil {
+		fake.isNegotiationPendingReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isNegotiationPendingReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -4536,6 +4599,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.identityMutex.RLock()
 	defer fake.identityMutex.RUnlock()
+	fake.isNegotiationPendingMutex.RLock()
+	defer fake.isNegotiationPendingMutex.RUnlock()
 	fake.isPublisherMutex.RLock()
 	defer fake.isPublisherMutex.RUnlock()
 	fake.isReadyMutex.RLock()

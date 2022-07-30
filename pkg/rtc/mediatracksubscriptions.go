@@ -249,7 +249,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
-		if sub.ProtocolVersion().SupportsTransceiverReuse() {
+		if sub.ProtocolVersion().SupportsTransceiverReuse() && !sub.IsNegotiationPending() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating

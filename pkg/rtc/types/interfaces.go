@@ -238,6 +238,7 @@ type LocalParticipant interface {
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	Negotiate(force bool)
+	IsNegotiationPending() bool
 	ICERestart(iceConfig *IceConfig) error
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
