@@ -27,6 +27,11 @@ type FakeLocalParticipant struct {
 	addICECandidateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	AddNegotiationPendingStub        func(livekit.ParticipantID)
+	addNegotiationPendingMutex       sync.RWMutex
+	addNegotiationPendingArgsForCall []struct {
+		arg1 livekit.ParticipantID
+	}
 	AddSubscribedTrackStub        func(types.SubscribedTrack)
 	addSubscribedTrackMutex       sync.RWMutex
 	addSubscribedTrackArgsForCall []struct {
@@ -319,9 +324,10 @@ type FakeLocalParticipant struct {
 	identityReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantIdentity
 	}
-	IsNegotiationPendingStub        func() bool
+	IsNegotiationPendingStub        func(livekit.ParticipantID) bool
 	isNegotiationPendingMutex       sync.RWMutex
 	isNegotiationPendingArgsForCall []struct {
+		arg1 livekit.ParticipantID
 	}
 	isNegotiationPendingReturns struct {
 		result1 bool
@@ -782,6 +788,38 @@ func (fake *FakeLocalParticipant) AddICECandidateReturnsOnCall(i int, result1 er
 	fake.addICECandidateReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) AddNegotiationPending(arg1 livekit.ParticipantID) {
+	fake.addNegotiationPendingMutex.Lock()
+	fake.addNegotiationPendingArgsForCall = append(fake.addNegotiationPendingArgsForCall, struct {
+		arg1 livekit.ParticipantID
+	}{arg1})
+	stub := fake.AddNegotiationPendingStub
+	fake.recordInvocation("AddNegotiationPending", []interface{}{arg1})
+	fake.addNegotiationPendingMutex.Unlock()
+	if stub != nil {
+		fake.AddNegotiationPendingStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) AddNegotiationPendingCallCount() int {
+	fake.addNegotiationPendingMutex.RLock()
+	defer fake.addNegotiationPendingMutex.RUnlock()
+	return len(fake.addNegotiationPendingArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) AddNegotiationPendingCalls(stub func(livekit.ParticipantID)) {
+	fake.addNegotiationPendingMutex.Lock()
+	defer fake.addNegotiationPendingMutex.Unlock()
+	fake.AddNegotiationPendingStub = stub
+}
+
+func (fake *FakeLocalParticipant) AddNegotiationPendingArgsForCall(i int) livekit.ParticipantID {
+	fake.addNegotiationPendingMutex.RLock()
+	defer fake.addNegotiationPendingMutex.RUnlock()
+	argsForCall := fake.addNegotiationPendingArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) AddSubscribedTrack(arg1 types.SubscribedTrack) {
@@ -2323,17 +2361,18 @@ func (fake *FakeLocalParticipant) IdentityReturnsOnCall(i int, result1 livekit.P
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) IsNegotiationPending() bool {
+func (fake *FakeLocalParticipant) IsNegotiationPending(arg1 livekit.ParticipantID) bool {
 	fake.isNegotiationPendingMutex.Lock()
 	ret, specificReturn := fake.isNegotiationPendingReturnsOnCall[len(fake.isNegotiationPendingArgsForCall)]
 	fake.isNegotiationPendingArgsForCall = append(fake.isNegotiationPendingArgsForCall, struct {
-	}{})
+		arg1 livekit.ParticipantID
+	}{arg1})
 	stub := fake.IsNegotiationPendingStub
 	fakeReturns := fake.isNegotiationPendingReturns
-	fake.recordInvocation("IsNegotiationPending", []interface{}{})
+	fake.recordInvocation("IsNegotiationPending", []interface{}{arg1})
 	fake.isNegotiationPendingMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -2347,10 +2386,17 @@ func (fake *FakeLocalParticipant) IsNegotiationPendingCallCount() int {
 	return len(fake.isNegotiationPendingArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) IsNegotiationPendingCalls(stub func() bool) {
+func (fake *FakeLocalParticipant) IsNegotiationPendingCalls(stub func(livekit.ParticipantID) bool) {
 	fake.isNegotiationPendingMutex.Lock()
 	defer fake.isNegotiationPendingMutex.Unlock()
 	fake.IsNegotiationPendingStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsNegotiationPendingArgsForCall(i int) livekit.ParticipantID {
+	fake.isNegotiationPendingMutex.RLock()
+	defer fake.isNegotiationPendingMutex.RUnlock()
+	argsForCall := fake.isNegotiationPendingArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) IsNegotiationPendingReturns(result1 bool) {
@@ -4539,6 +4585,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.addICECandidateMutex.RLock()
 	defer fake.addICECandidateMutex.RUnlock()
+	fake.addNegotiationPendingMutex.RLock()
+	defer fake.addNegotiationPendingMutex.RUnlock()
 	fake.addSubscribedTrackMutex.RLock()
 	defer fake.addSubscribedTrackMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
