@@ -781,6 +781,14 @@ func (p *ParticipantImpl) Negotiate(force bool) {
 	}
 }
 
+func (p *ParticipantImpl) AddNegotiationPending(publisherID livekit.ParticipantID) {
+	p.subscriber.AddNegotiationPending(publisherID)
+}
+
+func (p *ParticipantImpl) IsNegotiationPending(publisherID livekit.ParticipantID) bool {
+	return p.subscriber.IsNegotiationPending(publisherID)
+}
+
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	p.lock.Lock()
 	preState := p.MigrateState()
