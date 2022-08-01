@@ -2,23 +2,33 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	goversion "github.com/hashicorp/go-version"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
 const (
+	VersionKey = "livekit_version"
+
 	// RoomsKey is hash of room_name => Room proto
 	RoomsKey = "rooms"
 
 	// EgressKey is a hash of egressID => egress info
-	EgressKey        = "egress"
-	RoomEgressPrefix = "room_egress:"
+	EgressKey                  = "egress"
+	EndedEgressKey             = "ended_egress"
+	RoomEgressPrefix           = "egress:room:"
+	DeprecatedRoomEgressPrefix = "room_egress:"
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey        = "ingress"
@@ -35,14 +45,53 @@ const (
 )
 
 type RedisStore struct {
-	rc  *redis.Client
-	ctx context.Context
+	rc   *redis.Client
+	ctx  context.Context
+	done chan struct{}
 }
 
 func NewRedisStore(rc *redis.Client) *RedisStore {
 	return &RedisStore{
 		ctx: context.Background(),
 		rc:  rc,
+	}
+}
+
+func (s *RedisStore) Start() error {
+	if s.done != nil {
+		return nil
+	}
+
+	s.done = make(chan struct{}, 1)
+	current, err := s.rc.Get(s.ctx, VersionKey).Result()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+	if current == "" {
+		current = "0.0.0"
+	}
+
+	v, _ := goversion.NewVersion(current)
+	migrateEgress, _ := goversion.NewVersion("1.1.3")
+	if v.LessThan(migrateEgress) {
+		if _, err = s.MigrateEgressInfo(); err != nil {
+			return err
+		}
+
+		if err = s.rc.Set(s.ctx, VersionKey, version.Version, 0).Err(); err != nil {
+			return err
+		}
+	}
+
+	go s.egressWorker()
+	return nil
+}
+
+func (s *RedisStore) Stop() {
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
 	}
 }
 
@@ -233,11 +282,10 @@ func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) er
 		return err
 	}
 
-	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
-	pp.SAdd(s.ctx, RoomEgressPrefix+info.RoomId, info.EgressId)
-
-	if _, err = pp.Exec(s.ctx); err != nil {
+	tx := s.rc.TxPipeline()
+	tx.HSet(s.ctx, EgressKey, info.EgressId, data)
+	tx.SAdd(s.ctx, RoomEgressPrefix+info.RoomName, info.EgressId)
+	if _, err = tx.Exec(s.ctx); err != nil {
 		return errors.Wrap(err, "could not store egress info")
 	}
 
@@ -246,25 +294,27 @@ func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) er
 
 func (s *RedisStore) LoadEgress(_ context.Context, egressID string) (*livekit.EgressInfo, error) {
 	data, err := s.rc.HGet(s.ctx, EgressKey, egressID).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, ErrEgressNotFound
+	switch err {
+	case nil:
+		info := &livekit.EgressInfo{}
+		err = proto.Unmarshal([]byte(data), info)
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
-	}
+		return info, nil
 
-	info := &livekit.EgressInfo{}
-	err = proto.Unmarshal([]byte(data), info)
-	if err != nil {
+	case redis.Nil:
+		return nil, ErrEgressNotFound
+
+	default:
 		return nil, err
 	}
-	return info, nil
 }
 
-func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*livekit.EgressInfo, error) {
+func (s *RedisStore) ListEgress(_ context.Context, roomName livekit.RoomName) ([]*livekit.EgressInfo, error) {
 	var infos []*livekit.EgressInfo
 
-	if roomID == "" {
+	if roomName == "" {
 		data, err := s.rc.HGetAll(s.ctx, EgressKey).Result()
 		if err != nil {
 			if err == redis.Nil {
@@ -282,7 +332,7 @@ func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*li
 			infos = append(infos, info)
 		}
 	} else {
-		ids, err := s.rc.SMembers(s.ctx, RoomEgressPrefix+string(roomID)).Result()
+		egressIDs, err := s.rc.SMembers(s.ctx, RoomEgressPrefix+string(roomName)).Result()
 		if err != nil {
 			if err == redis.Nil {
 				return nil, nil
@@ -290,7 +340,7 @@ func (s *RedisStore) ListEgress(_ context.Context, roomID livekit.RoomID) ([]*li
 			return nil, err
 		}
 
-		data, _ := s.rc.HMGet(s.ctx, EgressKey, ids...).Result()
+		data, _ := s.rc.HMGet(s.ctx, EgressKey, egressIDs...).Result()
 		for _, d := range data {
 			if d == nil {
 				continue
@@ -313,23 +363,79 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 		return err
 	}
 
-	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, EgressKey, info.EgressId, data)
+	if info.EndedAt != 0 {
+		tx := s.rc.TxPipeline()
+		tx.HSet(s.ctx, EgressKey, info.EgressId, data)
+		tx.HSet(s.ctx, EndedEgressKey, info.EgressId, egressEndedValue(info.RoomName, info.EndedAt))
+		_, err = tx.Exec(s.ctx)
+	} else {
+		err = s.rc.HSet(s.ctx, EgressKey, info.EgressId, data).Err()
+	}
 
-	if _, err = pp.Exec(s.ctx); err != nil {
-		return errors.Wrap(err, "could not store egress info")
+	if err != nil {
+		return errors.Wrap(err, "could not update egress info")
 	}
 
 	return nil
 }
 
-func (s *RedisStore) DeleteEgress(_ context.Context, info *livekit.EgressInfo) error {
-	err := s.rc.SRem(s.ctx, RoomEgressPrefix+info.RoomId, info.EgressId).Err()
-	if err != nil {
+// Deletes egress info 24h after the egress has ended
+func (s *RedisStore) egressWorker() {
+	ticker := time.NewTicker(time.Minute * 30)
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			err := s.CleanEndedEgress()
+			if err != nil {
+				logger.Errorw("could not clean egress info", err)
+			}
+		}
+	}
+}
+
+func (s RedisStore) CleanEndedEgress() error {
+	values, err := s.rc.HGetAll(s.ctx, EndedEgressKey).Result()
+	if err != nil && err != redis.Nil {
 		return err
 	}
 
-	return s.rc.HDel(s.ctx, EgressKey, info.EgressId).Err()
+	expiry := time.Now().Add(-24 * time.Hour).UnixNano()
+	for egressID, val := range values {
+		roomName, endedAt, err := parseEgressEnded(val)
+		if err != nil {
+			return err
+		}
+
+		if endedAt < expiry {
+			tx := s.rc.TxPipeline()
+			tx.HDel(s.ctx, EndedEgressKey, egressID)
+			tx.SRem(s.ctx, RoomEgressPrefix+roomName, egressID)
+			tx.HDel(s.ctx, EgressKey, egressID)
+			if _, err := tx.Exec(s.ctx); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func egressEndedValue(roomName string, endedAt int64) string {
+	return fmt.Sprintf("%s|%d", roomName, endedAt)
+}
+
+func parseEgressEnded(value string) (roomName string, endedAt int64, err error) {
+	s := strings.Split(value, "|")
+	if len(s) != 2 {
+		err = errors.New("invalid egressEnded value")
+		return
+	}
+
+	roomName = s[0]
+	endedAt, err = strconv.ParseInt(s[1], 10, 64)
+	return
 }
 
 func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) error {
@@ -359,16 +465,16 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 			return err
 		}
 
-		results, err := tx.TxPipelined(s.ctx, func(pipe redis.Pipeliner) error {
-			pipe.HSet(s.ctx, IngressKey, info.IngressId, data)
-			pipe.HSet(s.ctx, StreamKeyKey, info.IngressId, info.StreamKey)
+		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
+			p.HSet(s.ctx, IngressKey, info.IngressId, data)
+			p.HSet(s.ctx, StreamKeyKey, info.IngressId, info.StreamKey)
 
 			if oldRoom != info.RoomName {
 				if oldRoom != "" {
-					pipe.SRem(s.ctx, RoomIngressPrefix+oldRoom, info.IngressId)
+					p.SRem(s.ctx, RoomIngressPrefix+oldRoom, info.IngressId)
 				}
 				if info.RoomName != "" {
-					pipe.SAdd(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
+					p.SAdd(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
 				}
 			}
 
@@ -408,20 +514,21 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 
 func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId string) (*livekit.IngressInfo, error) {
 	data, err := c.HGet(s.ctx, IngressKey, ingressId).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, ErrIngressNotFound
+	switch err {
+	case nil:
+		info := &livekit.IngressInfo{}
+		err = proto.Unmarshal([]byte(data), info)
+		if err != nil {
+			return nil, err
 		}
+		return info, nil
+
+	case redis.Nil:
+		return nil, ErrIngressNotFound
+
+	default:
 		return nil, err
 	}
-
-	info := &livekit.IngressInfo{}
-	err = proto.Unmarshal([]byte(data), info)
-	if err != nil {
-		return nil, err
-	}
-
-	return info, nil
 }
 
 func (s *RedisStore) LoadIngress(_ context.Context, ingressId string) (*livekit.IngressInfo, error) {
@@ -429,16 +536,17 @@ func (s *RedisStore) LoadIngress(_ context.Context, ingressId string) (*livekit.
 }
 
 func (s *RedisStore) LoadIngressFromStreamKey(_ context.Context, streamKey string) (*livekit.IngressInfo, error) {
-	ingressId, err := s.rc.HGet(s.ctx, StreamKeyKey, streamKey).Result()
+	ingressID, err := s.rc.HGet(s.ctx, StreamKeyKey, streamKey).Result()
 	switch err {
 	case nil:
+		return s.loadIngress(s.rc, ingressID)
+
 	case redis.Nil:
 		return nil, ErrIngressNotFound
+
 	default:
 		return nil, err
 	}
-
-	return s.loadIngress(s.rc, ingressId)
 }
 
 func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error) {
@@ -462,7 +570,7 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 			infos = append(infos, info)
 		}
 	} else {
-		ids, err := s.rc.SMembers(s.ctx, RoomIngressPrefix+string(roomName)).Result()
+		ingressIDs, err := s.rc.SMembers(s.ctx, RoomIngressPrefix+string(roomName)).Result()
 		if err != nil {
 			if err == redis.Nil {
 				return nil, nil
@@ -470,7 +578,7 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 			return nil, err
 		}
 
-		data, _ := s.rc.HMGet(s.ctx, IngressKey, ids...).Result()
+		data, _ := s.rc.HMGet(s.ctx, IngressKey, ingressIDs...).Result()
 		for _, d := range data {
 			if d == nil {
 				continue
@@ -487,25 +595,67 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 	return infos, nil
 }
 
-func (s *RedisStore) UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	return s.StoreIngress(ctx, info)
+func (s *RedisStore) UpdateIngress(_ context.Context, info *livekit.IngressInfo) error {
+	return s.StoreIngress(s.ctx, info)
 }
 
-func (s *RedisStore) DeleteIngress(ctx context.Context, info *livekit.IngressInfo) error {
-	err := s.rc.SRem(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId).Err()
-	if err != nil {
-		return err
-	}
-
-	err = s.rc.HDel(s.ctx, StreamKeyKey, info.IngressId).Err()
-	if err != nil {
-		return err
-	}
-
-	err = s.rc.HDel(s.ctx, EgressKey, info.IngressId).Err()
-	if err != nil {
-		return err
+func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo) error {
+	tx := s.rc.TxPipeline()
+	tx.SRem(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
+	tx.HDel(s.ctx, StreamKeyKey, info.IngressId)
+	tx.HDel(s.ctx, IngressKey, info.IngressId)
+	if _, err := tx.Exec(s.ctx); err != nil {
+		return errors.Wrap(err, "could not delete ingress info")
 	}
 
 	return nil
+}
+
+// Migration to LiveKit >= v1.1.3
+func (s *RedisStore) MigrateEgressInfo() (int, error) {
+	locked, err := s.rc.SetNX(s.ctx, "egress-migration", utils.NewGuid("LOCK"), time.Minute).Result()
+	if err != nil {
+		return 0, err
+	} else if !locked {
+		return 0, nil
+	}
+
+	it := s.rc.Scan(s.ctx, 0, DeprecatedRoomEgressPrefix+"*", 0).Iterator()
+	migrated := 0
+	for it.Next(s.ctx) {
+		migrated++
+		key := it.Val()
+		egressIDs, err := s.rc.SMembers(s.ctx, key).Result()
+		if err != nil && err != redis.Nil {
+			return migrated, err
+		}
+
+		for _, egressID := range egressIDs {
+			info, err := s.LoadEgress(s.ctx, egressID)
+			if err != nil {
+				return migrated, err
+			}
+
+			var roomName string
+			switch req := info.Request.(type) {
+			case *livekit.EgressInfo_RoomComposite:
+				roomName = req.RoomComposite.RoomName
+			case *livekit.EgressInfo_TrackComposite:
+				roomName = req.TrackComposite.RoomName
+			case *livekit.EgressInfo_Track:
+				roomName = req.Track.RoomName
+			}
+
+			tx := s.rc.TxPipeline()
+			tx.SAdd(s.ctx, RoomEgressPrefix+roomName, egressID)
+			tx.SRem(s.ctx, key, egressID)
+			if _, err = tx.Exec(s.ctx); err != nil {
+				return migrated, err
+			}
+		}
+
+		s.rc.Del(s.ctx, key)
+	}
+
+	return migrated, nil
 }

@@ -116,12 +116,13 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
 
-	t.Run("should not allow adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
+	t.Run("should queue adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		track := &typesfakes.FakeLocalMediaTrack{}
 		track.SignalCidReturns("cid")
+		track.ToProtoReturns(&livekit.TrackInfo{})
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
 
@@ -131,13 +132,27 @@ func TestTrackPublishing(t *testing.T) {
 			Type: livekit.TrackType_VIDEO,
 		})
 		require.Equal(t, 0, sink.WriteMessageCallCount())
+		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
+
+		// add again - it should be added to the queue
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
+
+		// check SID is the same
+		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 
-	t.Run("should not allow adding of duplicate tracks if already published by client id in sdp", func(t *testing.T) {
+	t.Run("should queue adding of duplicate tracks if already published by client id in sdp", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		track := &typesfakes.FakeLocalMediaTrack{}
+		track.ToProtoReturns(&livekit.TrackInfo{})
 		track.HasSdpCidCalls(func(s string) bool { return s == "cid" })
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track
@@ -148,6 +163,19 @@ func TestTrackPublishing(t *testing.T) {
 			Type: livekit.TrackType_VIDEO,
 		})
 		require.Equal(t, 0, sink.WriteMessageCallCount())
+		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
+
+		// add again - it should be added to the queue
+		p.AddTrack(&livekit.AddTrackRequest{
+			Cid:  "cid",
+			Name: "webcam",
+			Type: livekit.TrackType_VIDEO,
+		})
+		require.Equal(t, 0, sink.WriteMessageCallCount())
+		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
+
+		// check SID is the same
+		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 }
 
@@ -202,7 +230,7 @@ func TestMuteSetting(t *testing.T) {
 	t.Run("can set mute when track is pending", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
-		p.pendingTracks["cid"] = &pendingTrackInfo{TrackInfo: ti}
+		p.pendingTracks["cid"] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 
 		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
 		require.True(t, ti.Muted)
@@ -549,6 +577,7 @@ func TestSetStableTrackID(t *testing.T) {
 		name                 string
 		trackInfo            *livekit.TrackInfo
 		unpublished          []*livekit.TrackInfo
+		cid                  string
 		prefix               string
 		remainingUnpublished int
 	}{
@@ -578,6 +607,7 @@ func TestSetStableTrackID(t *testing.T) {
 					Sid:    "TR_VC1235",
 				},
 			},
+			cid:                  "TR_VC1235",
 			prefix:               "TR_VC1235",
 			remainingUnpublished: 1,
 		},
@@ -606,7 +636,7 @@ func TestSetStableTrackID(t *testing.T) {
 			p.unpublishedTracks = tc.unpublished
 
 			ti := tc.trackInfo
-			p.setStableTrackID(ti)
+			p.setStableTrackID(tc.cid, ti)
 			require.Contains(t, ti.Sid, tc.prefix)
 			require.Len(t, p.unpublishedTracks, tc.remainingUnpublished)
 		})

@@ -249,7 +249,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
-		if sub.ProtocolVersion().SupportsTransceiverReuse() {
+		if sub.ProtocolVersion().SupportsTransceiverReuse() && !sub.IsNegotiationPending(subTrack.PublisherID()) {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating
@@ -268,9 +268,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 				}
 			}
 		} else {
-			transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack, webrtc.RTPTransceiverInit{
-				Direction: webrtc.RTPTransceiverDirectionSendonly,
-			})
+			transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack)
 			if err != nil {
 				return err
 			}
@@ -778,6 +776,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 
 	sub.RemoveSubscribedTrack(subTrack)
 	if !willBeResumed {
+		sub.AddNegotiationPending(subTrack.PublisherID())
 		sub.Negotiate(false)
 	}
 }

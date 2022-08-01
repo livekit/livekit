@@ -63,6 +63,7 @@ type PCTransport struct {
 	lock                  sync.RWMutex
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
+	negotiationPending    map[livekit.ParticipantID]bool
 	onOffer               func(offer webrtc.SessionDescription)
 	restartAfterGathering bool
 	restartAtNextOffer    bool
@@ -194,6 +195,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		params:             params,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
+		negotiationPending: make(map[livekit.ParticipantID]bool),
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
@@ -324,6 +326,12 @@ func (t *PCTransport) OnNegotiationFailed(f func()) {
 	t.onNegotiationFailed = f
 }
 
+func (t *PCTransport) AddNegotiationPending(publisherID livekit.ParticipantID) {
+	t.lock.Lock()
+	t.negotiationPending[publisherID] = true
+	t.lock.Unlock()
+}
+
 func (t *PCTransport) Negotiate(force bool) {
 	if force {
 		t.debouncedNegotiate(func() {
@@ -339,6 +347,12 @@ func (t *PCTransport) Negotiate(force bool) {
 			}
 		})
 	}
+}
+
+func (t *PCTransport) IsNegotiationPending(publisherID livekit.ParticipantID) bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.negotiationPending[publisherID]
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
@@ -438,6 +452,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
 	t.restartAfterGathering = false
+	t.negotiationPending = make(map[livekit.ParticipantID]bool)
 
 	negotiateVersion := t.negotiateCounter.Inc()
 	if t.signalStateCheckTimer != nil {
