@@ -203,3 +203,6 @@ keys:
 #   num_tracks: -1
 #   # defaults to 1 GB/s, or just under 10 Gbps
 #   bytes_per_sec: 1_000_000_000
+
+# # using Autocert: configure cache dir
+# autocert_cache: /tmp/certs
