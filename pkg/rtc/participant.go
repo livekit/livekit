@@ -998,7 +998,7 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("added subscribedTrack",
+	p.params.Logger.Infow("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID())
@@ -1040,7 +1040,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("removed subscribedTrack",
+	p.params.Logger.Infow("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
