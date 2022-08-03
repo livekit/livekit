@@ -35,6 +35,8 @@ const (
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
 	iceFailedTimeout       = 25 * time.Second // pion's default
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+
+	shortConnectionThreshold = 2 * time.Minute
 )
 
 var (
@@ -61,6 +63,7 @@ type PCTransport struct {
 	me     *webrtc.MediaEngine
 
 	lock                  sync.RWMutex
+	iceConnectedAt        time.Time
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	negotiationPending    map[livekit.ParticipantID]bool
@@ -214,6 +217,43 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 func (t *PCTransport) Logger() logger.Logger {
 	return t.params.Logger
+}
+
+func (t *PCTransport) SetICEConnectedAt(at time.Time) {
+	t.lock.Lock()
+	t.iceConnectedAt = at
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if t.iceConnectedAt.IsZero() {
+		return false, 0
+	}
+
+	duration := at.Sub(t.iceConnectedAt)
+	return duration < shortConnectionThreshold, duration
+}
+
+func (t *PCTransport) GetSelectedPair() (*webrtc.ICECandidatePair, error) {
+	sctp := t.pc.SCTP()
+	if sctp == nil {
+		return nil, errors.New("no SCTP")
+	}
+
+	dtlsTransport := sctp.Transport()
+	if dtlsTransport == nil {
+		return nil, errors.New("no DTLS transport")
+	}
+
+	iceTransport := dtlsTransport.ICETransport()
+	if iceTransport == nil {
+		return nil, errors.New("no ICE transport")
+	}
+
+	return iceTransport.GetSelectedCandidatePair()
 }
 
 func (t *PCTransport) createPeerConnection() error {

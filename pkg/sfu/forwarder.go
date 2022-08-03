@@ -1275,7 +1275,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.targetLayers.Spatial == layer {
 			if extPkt.KeyFrame || tp.switchingToTargetLayer {
 				// lock to target layer
-				f.logger.Debugw("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
+				f.logger.Infow("locking to target layer", "current", f.currentLayers, "target", f.targetLayers)
 				f.currentLayers.Spatial = f.targetLayers.Spatial
 				if !f.isTemporalSupported {
 					f.currentLayers.Temporal = f.targetLayers.Temporal

@@ -277,8 +277,17 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	} else {
 		p.activeCounter.Add(2)
 	}
+
+	primaryPC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		p.handleICEStateChange(true, state)
+	})
+	secondaryPC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		p.handleICEStateChange(false, state)
+	})
+
 	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
 	secondaryPC.OnConnectionStateChange(p.handleSecondaryStateChange)
+
 	p.publisher.pc.OnTrack(p.onMediaTrack)
 	p.publisher.pc.OnDataChannel(p.onDataChannel)
 
@@ -989,7 +998,7 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("added subscribedTrack",
+	p.params.Logger.Infow("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID())
@@ -1031,7 +1040,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	p.params.Logger.Debugw("removed subscribedTrack",
+	p.params.Logger.Infow("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
@@ -1283,38 +1292,57 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	}
 }
 
-func (p *ParticipantImpl) logSelectedCandidatePair(isPrimary bool) {
+func (p *ParticipantImpl) getTransport(isPrimary bool) *PCTransport {
 	pcTransport := p.publisher
 	if (isPrimary && p.SubscriberAsPrimary()) || (!isPrimary && !p.SubscriberAsPrimary()) {
 		pcTransport = p.subscriber
 	}
 
-	sctp := pcTransport.pc.SCTP()
-	if sctp == nil {
-		return
-	}
+	return pcTransport
+}
 
-	transport := sctp.Transport()
-	if transport == nil {
-		return
-	}
+func (p *ParticipantImpl) handleICEConnected(isPrimary bool) {
+	pcTransport := p.getTransport(isPrimary)
+	pcTransport.SetICEConnectedAt(time.Now())
 
-	iceTransport := transport.ICETransport()
-	if iceTransport == nil {
-		return
-	}
-
-	selectedCandidatePair, err := iceTransport.GetSelectedCandidatePair()
-	if err != nil {
+	if pair, err := pcTransport.GetSelectedPair(); err != nil {
 		pcTransport.Logger().Errorw("error getting selected ICE candidate pair", err)
 	} else {
-		pcTransport.Logger().Infow("selected ICE candidate pair", "pair", selectedCandidatePair)
+		pcTransport.Logger().Infow("selected ICE candidate pair", "pair", pair)
+	}
+}
+
+func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
+	pcTransport := p.getTransport(isPrimary)
+	isShort, duration := pcTransport.IsShortConnection(time.Now())
+	if isShort {
+		// irrespective of which one fails, force TCP on both as the other one might
+		// fail at a different time and cause another disruption
+		pair, err := pcTransport.GetSelectedPair()
+		if err != nil {
+			pcTransport.Logger().Errorw("short ICE connection", err, "duration", duration)
+		} else {
+			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
+		}
+		/*
+			p.lock.Lock()
+			p.iceConfig.PreferSubTcp = true
+			p.iceConfig.PreferPubTcp = true
+			p.lock.Unlock()
+		*/
+	}
+}
+
+func (p *ParticipantImpl) handleICEStateChange(isPrimary bool, state webrtc.ICEConnectionState) {
+	if state == webrtc.ICEConnectionStateConnected {
+		p.handleICEConnected(isPrimary)
+	} else if state == webrtc.ICEConnectionStateFailed {
+		p.handleConnectionFailed(isPrimary)
 	}
 }
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
-		p.logSelectedCandidatePair(true)
 		if !p.firstConnected.Swap(true) {
 			p.setDowntracksConnected()
 		}
@@ -1324,6 +1352,8 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 		}
 		p.incActiveCounter()
 	} else if state == webrtc.PeerConnectionStateFailed {
+		p.handleConnectionFailed(true)
+
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 
@@ -1361,9 +1391,9 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 // for the secondary peer connection, we still need to handle when they become disconnected
 // instead of allowing them to silently fail.
 func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateConnected {
-		p.logSelectedCandidatePair(false)
-	} else if state == webrtc.PeerConnectionStateFailed {
+	if state == webrtc.PeerConnectionStateFailed {
+		p.handleConnectionFailed(false)
+
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 	}
