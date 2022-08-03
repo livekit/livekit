@@ -32,6 +32,7 @@ const (
 
 	// IngressKey is a hash of ingressID => ingress info
 	IngressKey        = "ingress"
+	IngressStateKey   = "ingress_state"
 	StreamKeyKey      = "stream_key"
 	RoomIngressPrefix = "room_ingress:"
 
@@ -446,6 +447,9 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		return errors.New("Missing StreamKey")
 	}
 
+	// State is stored independently
+	info.State = nil
+
 	data, err := proto.Marshal(info)
 	if err != nil {
 		return err
@@ -510,6 +514,15 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	return nil
+}
+
+func (s *RedisStore) StoreIngress(_ context.Context, ingressId string, state *livekit.IngressState) error {
+	if info.IngressId == "" {
+		return errors.New("invalid IngressId")
+	}
+
+	// Should we make sure the ingress exists?
+
 }
 
 func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId string) (*livekit.IngressInfo, error) {
