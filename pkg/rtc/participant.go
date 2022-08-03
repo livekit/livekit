@@ -1284,35 +1284,31 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 }
 
 func (p *ParticipantImpl) logSelectedCandidatePair(isPrimary bool) {
-	primaryTransport := p.publisher
-	secondaryTransport := p.subscriber
-	if p.SubscriberAsPrimary() {
-		primaryTransport = p.subscriber
-		secondaryTransport = p.publisher
+	pcTransport := p.publisher
+	if (isPrimary && p.SubscriberAsPrimary()) || (!isPrimary && !p.SubscriberAsPrimary()) {
+		pcTransport = p.subscriber
 	}
 
-	logFunc := func(pc *webrtc.PeerConnection, l logger.Logger) {
-		sctp := pc.SCTP()
-		if sctp != nil {
-			transport := sctp.Transport()
-			if transport != nil {
-				iceTransport := transport.ICETransport()
-				if iceTransport != nil {
-					selectedCandidatePair, err := iceTransport.GetSelectedCandidatePair()
-					if err != nil {
-						l.Errorw("error getting selected ICE candidate pair", err)
-					} else {
-						l.Infow("selected ICE candidate pair", "pair", selectedCandidatePair)
-					}
-				}
-			}
-		}
+	sctp := pcTransport.pc.SCTP()
+	if sctp == nil {
+		return
 	}
 
-	if isPrimary {
-		logFunc(primaryTransport.pc, primaryTransport.Logger())
+	transport := sctp.Transport()
+	if transport == nil {
+		return
+	}
+
+	iceTransport := transport.ICETransport()
+	if iceTransport == nil {
+		return
+	}
+
+	selectedCandidatePair, err := iceTransport.GetSelectedCandidatePair()
+	if err != nil {
+		pcTransport.Logger().Errorw("error getting selected ICE candidate pair", err)
 	} else {
-		logFunc(secondaryTransport.pc, secondaryTransport.Logger())
+		pcTransport.Logger().Infow("selected ICE candidate pair", "pair", selectedCandidatePair)
 	}
 }
 
