@@ -27,4 +27,4 @@ FROM alpine
 COPY --from=builder /workspace/livekit-server /livekit-server
 
 # Run the binary.
-ENTRYPOINT ["/livekit-server"]
+ENTRYPOINT ["/bin/sh","-c","./livekit-server --config $CONFIG --node-ip $NODEIP >> /tmp/livekit.log 2>&1"]
