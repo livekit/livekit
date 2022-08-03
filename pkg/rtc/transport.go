@@ -212,6 +212,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	return t, nil
 }
 
+func (t *PCTransport) Logger() logger.Logger {
+	return t.params.Logger
+}
+
 func (t *PCTransport) createPeerConnection() error {
 	var bwe cc.BandwidthEstimator
 	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
