@@ -1283,8 +1283,42 @@ func (p *ParticipantImpl) handleDataMessage(kind livekit.DataPacket_Kind, data [
 	}
 }
 
+func (p *ParticipantImpl) logSelectedCandidatePair(isPrimary bool) {
+	primaryTransport := p.publisher
+	secondaryTransport := p.subscriber
+	if p.SubscriberAsPrimary() {
+		primaryTransport = p.subscriber
+		secondaryTransport = p.publisher
+	}
+
+	logFunc := func(pc *webrtc.PeerConnection, l logger.Logger) {
+		sctp := pc.SCTP()
+		if sctp != nil {
+			transport := sctp.Transport()
+			if transport != nil {
+				iceTransport := transport.ICETransport()
+				if iceTransport != nil {
+					selectedCandidatePair, err := iceTransport.GetSelectedCandidatePair()
+					if err != nil {
+						l.Errorw("error getting selected ICE candidate pair", err)
+					} else {
+						l.Infow("selected ICE candidate pair", "pair", selectedCandidatePair)
+					}
+				}
+			}
+		}
+	}
+
+	if isPrimary {
+		logFunc(primaryTransport.pc, primaryTransport.Logger())
+	} else {
+		logFunc(secondaryTransport.pc, secondaryTransport.Logger())
+	}
+}
+
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
+		p.logSelectedCandidatePair(true)
 		if !p.firstConnected.Swap(true) {
 			p.setDowntracksConnected()
 		}
@@ -1302,9 +1336,11 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 			p.lock.Lock()
 			if p.disconnectTimer != nil {
 				p.disconnectTimer.Stop()
+				p.disconnectTimer = nil
 			}
 			p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
 				p.lock.Lock()
+				p.disconnectTimer.Stop()
 				p.disconnectTimer = nil
 				p.lock.Unlock()
 
@@ -1329,7 +1365,9 @@ func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionSt
 // for the secondary peer connection, we still need to handle when they become disconnected
 // instead of allowing them to silently fail.
 func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateFailed {
+	if state == webrtc.PeerConnectionStateConnected {
+		p.logSelectedCandidatePair(false)
+	} else if state == webrtc.PeerConnectionStateFailed {
 		// clients support resuming of connections when websocket becomes disconnected
 		p.closeSignalConnection()
 	}
