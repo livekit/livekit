@@ -467,7 +467,7 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 
 		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
 			p.HSet(s.ctx, IngressKey, info.IngressId, data)
-			p.HSet(s.ctx, StreamKeyKey, info.IngressId, info.StreamKey)
+			p.HSet(s.ctx, StreamKeyKey, info.StreamKey, info.IngressId)
 
 			if oldRoom != info.RoomName {
 				if oldRoom != "" {
