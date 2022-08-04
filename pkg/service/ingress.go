@@ -25,7 +25,7 @@ type IngressService struct {
 }
 
 func NewIngressService(
-	conf *config.IngressConfig,
+	conf *config.Config,
 	rpc ingress.RPC,
 	store IngressStore,
 	rs livekit.RoomService,
@@ -33,7 +33,7 @@ func NewIngressService(
 ) *IngressService {
 
 	return &IngressService{
-		conf:        conf,
+		conf:        &conf.Ingress,
 		rpc:         rpc,
 		store:       store,
 		roomService: rs,
