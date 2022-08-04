@@ -59,7 +59,7 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		return nil, twirpAuthError(err)
 	}
 	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(err)
+		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	sk := utils.NewGuid("")
@@ -95,7 +95,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		return nil, twirpAuthError(err)
 	}
 	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(err)
+		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	if s.rpc == nil {
@@ -160,7 +160,7 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 		return nil, twirpAuthError(err)
 	}
 	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(err)
+		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	if s.rpc == nil {
