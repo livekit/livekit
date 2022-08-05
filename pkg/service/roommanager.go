@@ -25,7 +25,13 @@ const (
 	roomPurgeSeconds     = 24 * 60 * 60
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+	iceConfigTTL         = 60 * time.Minute
 )
+
+type iceConfigCacheEntry struct {
+	iceConfig  types.IceConfig
+	modifiedAt time.Time
+}
 
 // RoomManager manages rooms and its interaction with participants.
 // It's responsible for creating, deleting rooms, as well as running sessions for participants
@@ -42,7 +48,7 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
-	iceConfigCache map[livekit.ParticipantIdentity]types.IceConfig
+	iceConfigCache map[livekit.ParticipantIdentity]*iceConfigCacheEntry
 }
 
 func NewLocalRoomManager(
@@ -70,7 +76,7 @@ func NewLocalRoomManager(
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
-		iceConfigCache: make(map[livekit.ParticipantIdentity]types.IceConfig),
+		iceConfigCache: make(map[livekit.ParticipantIdentity]*iceConfigCacheEntry),
 	}
 
 	// hook up to router
@@ -317,7 +323,10 @@ func (r *RoomManager) StartSession(
 	})
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig types.IceConfig) {
 		r.lock.Lock()
-		r.iceConfigCache[participant.Identity()] = iceConfig
+		r.iceConfigCache[participant.Identity()] = &iceConfigCacheEntry{
+			iceConfig:  iceConfig,
+			modifiedAt: time.Now(),
+		}
 		r.lock.Unlock()
 	})
 
@@ -629,15 +638,16 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 }
 
 func (r *RoomManager) setIceConfig(participant types.LocalParticipant) {
-	r.lock.RLock()
-	iceConfig, ok := r.iceConfigCache[participant.Identity()]
-	if !ok {
-		r.lock.RUnlock()
+	r.lock.Lock()
+	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
+	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
+		delete(r.iceConfigCache, participant.Identity())
+		r.lock.Unlock()
 		return
 	}
-	r.lock.RUnlock()
+	r.lock.Unlock()
 
-	participant.SetICEConfig(iceConfig)
+	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
 }
 
 // ------------------------------------
