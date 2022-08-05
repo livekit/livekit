@@ -1,10 +1,12 @@
 package rtc
 
 import (
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
@@ -267,6 +269,75 @@ func TestNegotiationFailed(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&failed) == 1
 	}, negotiationFailedTimout+time.Second, 10*time.Millisecond, "negotiation failed")
+}
+
+func TestFilteringCandidates(t *testing.T) {
+	params := TransportParams{
+		ParticipantID:       "id",
+		ParticipantIdentity: "identity",
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config:              &WebRTCConfig{},
+		EnabledCodecs: []*livekit.Codec{
+			{Mime: webrtc.MimeTypeOpus},
+			{Mime: webrtc.MimeTypeVP8},
+			{Mime: webrtc.MimeTypeH264},
+		},
+	}
+	transport, err := NewPCTransport(params)
+	require.NoError(t, err)
+
+	_, err = transport.pc.CreateDataChannel("test", nil)
+	require.NoError(t, err)
+
+	_, err = transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio)
+	require.NoError(t, err)
+
+	_, err = transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+	require.NoError(t, err)
+
+	offer, err := transport.pc.CreateOffer(nil)
+	require.NoError(t, err)
+
+	// when not prefering TCP, it should be untouched
+	filteredOffer := transport.FilterCandidates(offer)
+	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
+
+	// even when preferring TCP, should be untouched if there are no candidates
+	transport.SetPreferTCP(true)
+	filteredOffer = transport.FilterCandidates(offer)
+	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
+
+	offerGatheringComplete := webrtc.GatheringCompletePromise(transport.pc)
+	require.NoError(t, transport.pc.SetLocalDescription(offer))
+	<-offerGatheringComplete
+
+	offer = *transport.pc.LocalDescription()
+
+	parsed, err := offer.Unmarshal()
+	require.NoError(t, err)
+
+	getNumUDPCandidates := func(sdp *sdp.SessionDescription) int {
+		numUDPCandidates := 0
+		for _, a := range sdp.Attributes {
+			if a.Key == "candidate" && strings.Contains(a.Value, "udp") {
+				numUDPCandidates++
+			}
+		}
+		for _, m := range sdp.MediaDescriptions {
+			for _, a := range m.Attributes {
+				if a.Key == "candidate" && strings.Contains(a.Value, "udp") {
+					numUDPCandidates++
+				}
+			}
+		}
+		return numUDPCandidates
+	}
+	require.NotZero(t, getNumUDPCandidates(parsed))
+
+	filteredOffer = transport.FilterCandidates(offer)
+	parsed, err = filteredOffer.Unmarshal()
+	require.NoError(t, err)
+	require.Zero(t, getNumUDPCandidates(parsed))
 }
 
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {
