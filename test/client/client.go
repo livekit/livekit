@@ -55,6 +55,7 @@ type RTCClient struct {
 	lossyDCSub          *webrtc.DataChannel
 	publisherConnected  atomic.Bool
 	publisherNegotiated atomic.Bool
+	pongReceivedAt      atomic.Int64
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -347,6 +348,8 @@ func (c *RTCClient) Run() error {
 			delete(c.trackSenders, sid)
 			delete(c.localTracks, sid)
 			c.lock.Unlock()
+		case *livekit.SignalResponse_Pong:
+			c.pongReceivedAt.Store(msg.Pong)
 		}
 	}
 }
@@ -439,6 +442,18 @@ func (c *RTCClient) RefreshToken() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.refreshToken
+}
+
+func (c *RTCClient) PongReceivedAt() int64 {
+	return c.pongReceivedAt.Load()
+}
+
+func (c *RTCClient) SendPing() error {
+	return c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_Ping{
+			Ping: time.Now().UnixNano(),
+		},
+	})
 }
 
 func (c *RTCClient) SendRequest(msg *livekit.SignalRequest) error {

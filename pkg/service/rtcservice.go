@@ -256,6 +256,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
+			_ = sigConn.WriteResponse(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_Pong{
+					Pong: 1,
+				},
+			})
+			continue
+		}
 		if err := reqSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
 				"connID", connId)

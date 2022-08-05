@@ -54,6 +54,9 @@ func (p *ParticipantImpl) SendJoinResponse(
 				// indicates both server and client support subscriber as primary
 				SubscriberPrimary:   p.SubscriberAsPrimary(),
 				ClientConfiguration: p.params.ClientConf,
+				// sane defaults for ping interval & timeout
+				PingInterval: 10,
+				PingTimeout:  20,
 			},
 		},
 	})
