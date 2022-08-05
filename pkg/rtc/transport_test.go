@@ -314,18 +314,18 @@ func TestFilteringCandidates(t *testing.T) {
 	done := false
 	for _, m := range parsed.MediaDescriptions {
 		for _, a := range m.Attributes {
-			if a.Key == "candidate" {
+			if a.Key == sdp.AttrKeyCandidate {
 				for idx, aa := range m.Attributes {
-					if aa.Key == "end-of-candidates" {
+					if aa.Key == sdp.AttrKeyEndOfCandidates {
 						modifiedAttributes := make([]sdp.Attribute, idx)
 						copy(modifiedAttributes, m.Attributes[:idx])
 						modifiedAttributes = append(modifiedAttributes, []sdp.Attribute{
 							{
-								Key:   "candidate",
+								Key:   sdp.AttrKeyCandidate,
 								Value: "054225987 1 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
 							},
 							{
-								Key:   "candidate",
+								Key:   sdp.AttrKeyCandidate,
 								Value: "054225987 2 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
 							},
 						}...)
@@ -350,11 +350,11 @@ func TestFilteringCandidates(t *testing.T) {
 	parsed, err = offer.Unmarshal()
 	require.NoError(t, err)
 
-	getNumTransportTypeCandidates := func(sdp *sdp.SessionDescription) (int, int) {
+	getNumTransportTypeCandidates := func(sd *sdp.SessionDescription) (int, int) {
 		numUDPCandidates := 0
 		numTCPCandidates := 0
-		for _, a := range sdp.Attributes {
-			if a.Key == "candidate" {
+		for _, a := range sd.Attributes {
+			if a.Key == sdp.AttrKeyCandidate {
 				if strings.Contains(a.Value, "udp") {
 					numUDPCandidates++
 				}
@@ -363,9 +363,9 @@ func TestFilteringCandidates(t *testing.T) {
 				}
 			}
 		}
-		for _, m := range sdp.MediaDescriptions {
+		for _, m := range sd.MediaDescriptions {
 			for _, a := range m.Attributes {
-				if a.Key == "candidate" {
+				if a.Key == sdp.AttrKeyCandidate {
 					if strings.Contains(a.Value, "udp") {
 						numUDPCandidates++
 					}
