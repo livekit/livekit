@@ -538,6 +538,11 @@ type FakeLocalParticipant struct {
 	sendSpeakerUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SetICEConfigStub        func(types.IceConfig)
+	setICEConfigMutex       sync.RWMutex
+	setICEConfigArgsForCall []struct {
+		arg1 types.IceConfig
+	}
 	SetMetadataStub        func(string)
 	setMetadataMutex       sync.RWMutex
 	setMetadataArgsForCall []struct {
@@ -3584,6 +3589,38 @@ func (fake *FakeLocalParticipant) SendSpeakerUpdateReturnsOnCall(i int, result1 
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SetICEConfig(arg1 types.IceConfig) {
+	fake.setICEConfigMutex.Lock()
+	fake.setICEConfigArgsForCall = append(fake.setICEConfigArgsForCall, struct {
+		arg1 types.IceConfig
+	}{arg1})
+	stub := fake.SetICEConfigStub
+	fake.recordInvocation("SetICEConfig", []interface{}{arg1})
+	fake.setICEConfigMutex.Unlock()
+	if stub != nil {
+		fake.SetICEConfigStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SetICEConfigCallCount() int {
+	fake.setICEConfigMutex.RLock()
+	defer fake.setICEConfigMutex.RUnlock()
+	return len(fake.setICEConfigArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SetICEConfigCalls(stub func(types.IceConfig)) {
+	fake.setICEConfigMutex.Lock()
+	defer fake.setICEConfigMutex.Unlock()
+	fake.SetICEConfigStub = stub
+}
+
+func (fake *FakeLocalParticipant) SetICEConfigArgsForCall(i int) types.IceConfig {
+	fake.setICEConfigMutex.RLock()
+	defer fake.setICEConfigMutex.RUnlock()
+	argsForCall := fake.setICEConfigArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) SetMetadata(arg1 string) {
 	fake.setMetadataMutex.Lock()
 	fake.setMetadataArgsForCall = append(fake.setMetadataArgsForCall, struct {
@@ -4699,6 +4736,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.sendRoomUpdateMutex.RUnlock()
 	fake.sendSpeakerUpdateMutex.RLock()
 	defer fake.sendSpeakerUpdateMutex.RUnlock()
+	fake.setICEConfigMutex.RLock()
+	defer fake.setICEConfigMutex.RUnlock()
 	fake.setMetadataMutex.RLock()
 	defer fake.setMetadataMutex.RUnlock()
 	fake.setMigrateInfoMutex.RLock()

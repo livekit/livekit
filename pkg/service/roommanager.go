@@ -41,6 +41,8 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 
 	rooms map[livekit.RoomName]*rtc.Room
+
+	iceConfigCache map[livekit.ParticipantIdentity]types.IceConfig
 }
 
 func NewLocalRoomManager(
@@ -67,6 +69,8 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
+
+		iceConfigCache: make(map[livekit.ParticipantIdentity]types.IceConfig),
 	}
 
 	// hook up to router
@@ -264,6 +268,7 @@ func (r *RoomManager) StartSession(
 	if err != nil {
 		return err
 	}
+	r.setIceConfig(participant)
 
 	// join room
 	opts := rtc.ParticipantOptions{
@@ -309,6 +314,11 @@ func (r *RoomManager) StartSession(
 		if err := r.refreshToken(participant); err != nil {
 			logger.Errorw("could not refresh token", err)
 		}
+	})
+	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig types.IceConfig) {
+		r.lock.Lock()
+		r.iceConfigCache[participant.Identity()] = iceConfig
+		r.lock.Unlock()
 	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)
@@ -617,6 +627,20 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	}
 	return nil
 }
+
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) {
+	r.lock.RLock()
+	iceConfig, ok := r.iceConfigCache[participant.Identity()]
+	if !ok {
+		r.lock.RUnlock()
+		return
+	}
+	r.lock.RUnlock()
+
+	participant.SetICEConfig(iceConfig)
+}
+
+// ------------------------------------
 
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
 	iceServer := &livekit.ICEServer{}
