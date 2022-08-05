@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"github.com/rs/cors"
 	"github.com/urfave/negroni"
 	"go.uber.org/atomic"
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -166,9 +169,18 @@ func (s *LivekitServer) Start() error {
 	listeners := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
 	for _, addr := range addresses {
-		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
-		if err != nil {
-			return err
+		var ln net.Listener
+		var err error
+		if len(s.config.AutocertCache) > 0 {
+			ln, err = tlsListener(s.config.AutocertCache, fmt.Sprintf("0.0.0.0:%d", s.config.Port), addr)
+			if err != nil {
+				return err
+			}
+		} else {
+			ln, err = net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
+			if err != nil {
+				return err
+			}
 		}
 		listeners = append(listeners, ln)
 
@@ -335,4 +347,27 @@ func configureMiddlewares(handler http.Handler, middlewares ...negroni.Handler) 
 	}
 	n.UseHandler(handler)
 	return n
+}
+
+func tlsListener(cache string, addr string, hosts ...string) (lnTls net.Listener, err error) {
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(hosts...),
+		Cache:      autocert.DirCache(cache),
+	}
+
+	cfg := &tls.Config{
+		GetCertificate: m.GetCertificate,
+		NextProtos: []string{
+			"http/1.1", acme.ALPNProto,
+		},
+	}
+
+	ln, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return
+	}
+
+	lnTls = tls.NewListener(ln, cfg)
+	return
 }
