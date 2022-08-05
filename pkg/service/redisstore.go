@@ -467,8 +467,6 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		case oldInfo[0] == nil:
 		default:
 			oldRoom = oldInfo[0].RoomName
-		default:
-			return err
 		}
 
 		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
@@ -576,14 +574,14 @@ func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId ...string) ([]*livek
 		return nil, err
 	}
 
-	for i, data := range dataArray {
+	for i, data := range infoArray {
 		if data == nil {
 			continue
 		}
 		info := &livekit.IngressInfo{}
 		err = proto.Unmarshal([]byte(data.(string)), info)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		res[i] = info
 
@@ -594,7 +592,7 @@ func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId ...string) ([]*livek
 		state := &livekit.IngressState{}
 		err = proto.Unmarshal([]byte(data.(string)), state)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		info.State = state
 	}
@@ -614,11 +612,11 @@ func (s *RedisStore) LoadIngress(_ context.Context, ingressId string) (*livekit.
 	}
 }
 
-func (s *RedisStore) LoadIngressFromStreamKey(_ context.Context, streamKey string) (*livekit.IngressInfo, error) {
+func (s *RedisStore) LoadIngressFromStreamKey(ctx context.Context, streamKey string) (*livekit.IngressInfo, error) {
 	ingressID, err := s.rc.HGet(s.ctx, StreamKeyKey, streamKey).Result()
 	switch err {
 	case nil:
-		return s.LoadIngress(s.rc, ingressID)
+		return s.LoadIngress(ctx, ingressID)
 	case redis.Nil:
 		return nil, ErrIngressNotFound
 	default:
@@ -630,7 +628,21 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 	var infos []*livekit.IngressInfo
 
 	if roomName == "" {
-		data, err := s.rc.HGetAll(s.ctx, IngressKey).Result()
+		var infoCmd *redis.StringStringMapCmd
+		var stateCmd *redis.StringStringMapCmd
+
+		_, err := s.rc.Pipelined(s.ctx, func(pipe redis.Pipeliner) error {
+			infoCmd = s.rc.HGetAll(s.ctx, IngressKey)
+			stateCmd = s.rc.HGetAll(s.ctx, IngressStateKey)
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		infoData, err := infoCmd.Result()
 		if err != nil {
 			if err == redis.Nil {
 				return nil, nil
@@ -638,12 +650,25 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 			return nil, err
 		}
 
-		for _, d := range data {
+		stateData, err := stateCmd.Result()
+
+		for _, d := range infoData {
 			info := &livekit.IngressInfo{}
 			err = proto.Unmarshal([]byte(d), info)
 			if err != nil {
 				return nil, err
 			}
+
+			state := &livekit.IngressState{}
+			data := stateData[info.IngressId]
+			if data != "" {
+				err = proto.Unmarshal([]byte(data), state)
+				if err != nil {
+					return nil, err
+				}
+			}
+			info.State = state
+
 			infos = append(infos, info)
 		}
 	} else {
@@ -670,7 +695,9 @@ func (s *RedisStore) UpdateIngress(_ context.Context, info *livekit.IngressInfo)
 
 func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo) error {
 	tx := s.rc.TxPipeline()
-	tx.SRem(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
+	if info.RoomName != "" {
+		tx.SRem(s.ctx, RoomIngressPrefix+info.RoomName, info.IngressId)
+	}
 	tx.HDel(s.ctx, StreamKeyKey, info.IngressId)
 	tx.HDel(s.ctx, IngressKey, info.IngressId)
 	tx.HDel(s.ctx, IngressStateKey, info.IngressId)
