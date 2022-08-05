@@ -152,6 +152,7 @@ type ParticipantImpl struct {
 	pendingDataChannels []*livekit.DataChannelInfo
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
+	onICEConfigChanged  func(participant types.LocalParticipant, iceConfig types.IceConfig)
 
 	activeCounter  atomic.Int32
 	firstConnected atomic.Bool
@@ -538,7 +539,9 @@ func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[live
 }
 
 func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant)) {
+	p.lock.Lock()
 	p.onClaimsChanged = callback
+	p.lock.Unlock()
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
@@ -854,6 +857,18 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
 	})
+}
+
+func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
+	p.lock.Lock()
+	p.onICEConfigChanged = f
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) SetICEConfig(iceConfig types.IceConfig) {
+	p.lock.Lock()
+	p.iceConfig = iceConfig
+	p.lock.Unlock()
 }
 
 //
@@ -1328,7 +1343,13 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		p.lock.Lock()
 		p.iceConfig.PreferSubTcp = true
 		p.iceConfig.PreferPubTcp = true
+		onICEConfigChanged := p.onICEConfigChanged
+		iceConfig := p.iceConfig
 		p.lock.Unlock()
+
+		if onICEConfigChanged != nil {
+			onICEConfigChanged(p, iceConfig)
+		}
 	}
 }
 
