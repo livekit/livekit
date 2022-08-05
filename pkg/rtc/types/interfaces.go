@@ -274,8 +274,8 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, *livekit.DataPacket))
 	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
-	OnClose(_callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
-	OnClaimsChanged(_callback func(LocalParticipant))
+	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
+	OnClaimsChanged(callback func(LocalParticipant))
 
 	// session migration
 	SetMigrateState(s MigrateState)
@@ -292,6 +292,9 @@ type LocalParticipant interface {
 	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
+
+	SetICEConfig(iceConfig IceConfig)
+	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig IceConfig))
 }
 
 // Room is a container of participants, and can provide room-level actions

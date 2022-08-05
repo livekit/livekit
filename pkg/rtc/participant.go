@@ -152,6 +152,7 @@ type ParticipantImpl struct {
 	pendingDataChannels []*livekit.DataChannelInfo
 	onClose             func(types.LocalParticipant, map[livekit.TrackID]livekit.ParticipantID)
 	onClaimsChanged     func(participant types.LocalParticipant)
+	onICEConfigChanged  func(participant types.LocalParticipant, iceConfig types.IceConfig)
 
 	activeCounter  atomic.Int32
 	firstConnected atomic.Bool
@@ -538,7 +539,9 @@ func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant, map[live
 }
 
 func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant)) {
+	p.lock.Lock()
 	p.onClaimsChanged = callback
+	p.lock.Unlock()
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
@@ -569,6 +572,8 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		err = errors.Wrap(err, "could not create answer")
 		return
 	}
+
+	answer = p.publisher.FilterCandidates(answer)
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
@@ -839,9 +844,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 	if iceConfig != nil {
-		p.lock.Lock()
-		p.iceConfig = *iceConfig
-		p.lock.Unlock()
+		p.SetICEConfig(*iceConfig)
 	}
 
 	if p.subscriber.pc.RemoteDescription() == nil {
@@ -854,6 +857,31 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
 	})
+}
+
+func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
+	p.lock.Lock()
+	p.onICEConfigChanged = f
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) SetICEConfig(iceConfig types.IceConfig) {
+	p.lock.Lock()
+	p.iceConfig = iceConfig
+	if iceConfig.PreferPubTcp {
+		p.publisher.SetPreferTCP(true)
+	}
+
+	if iceConfig.PreferSubTcp {
+		p.subscriber.SetPreferTCP(true)
+	}
+
+	onICEConfigChanged := p.onICEConfigChanged
+	p.lock.Unlock()
+
+	if onICEConfigChanged != nil {
+		onICEConfigChanged(p, iceConfig)
+	}
 }
 
 //
@@ -1324,12 +1352,11 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		} else {
 			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
 		}
-		/*
-			p.lock.Lock()
-			p.iceConfig.PreferSubTcp = true
-			p.iceConfig.PreferPubTcp = true
-			p.lock.Unlock()
-		*/
+		pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
+		p.SetICEConfig(types.IceConfig{
+			PreferPubTcp: true,
+			PreferSubTcp: true,
+		})
 	}
 }
 

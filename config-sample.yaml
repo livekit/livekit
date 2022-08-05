@@ -176,6 +176,13 @@ keys:
 #   # cert_file: /path/to/cert.pem
 #   # key_file: /path/to/key.pem
 
+# ingress server
+# ingress:
+#   # Prefix used to generate RTMP URLs for RTMP ingress.
+#   # The stream_key will be appended to this base and returned as part of the
+#   # ingress info
+#   rtmp_base_url: "rtmp://my.domain.com/live"
+
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2
 
