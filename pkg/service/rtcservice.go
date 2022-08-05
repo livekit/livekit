@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/sebest/xff"
@@ -260,7 +259,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
 			_ = sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
-					Pong: time.Now().UnixNano(),
+					Pong: 1,
 				},
 			})
 			continue
