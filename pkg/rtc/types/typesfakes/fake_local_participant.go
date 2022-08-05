@@ -406,6 +406,11 @@ type FakeLocalParticipant struct {
 	onDataPacketArgsForCall []struct {
 		arg1 func(types.LocalParticipant, *livekit.DataPacket)
 	}
+	OnICEConfigChangedStub        func(func(participant types.LocalParticipant, iceConfig types.IceConfig))
+	onICEConfigChangedMutex       sync.RWMutex
+	onICEConfigChangedArgsForCall []struct {
+		arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)
+	}
 	OnParticipantUpdateStub        func(func(types.LocalParticipant))
 	onParticipantUpdateMutex       sync.RWMutex
 	onParticipantUpdateArgsForCall []struct {
@@ -2828,6 +2833,38 @@ func (fake *FakeLocalParticipant) OnDataPacketArgsForCall(i int) func(types.Loca
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) OnICEConfigChanged(arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
+	fake.onICEConfigChangedMutex.Lock()
+	fake.onICEConfigChangedArgsForCall = append(fake.onICEConfigChangedArgsForCall, struct {
+		arg1 func(participant types.LocalParticipant, iceConfig types.IceConfig)
+	}{arg1})
+	stub := fake.OnICEConfigChangedStub
+	fake.recordInvocation("OnICEConfigChanged", []interface{}{arg1})
+	fake.onICEConfigChangedMutex.Unlock()
+	if stub != nil {
+		fake.OnICEConfigChangedStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnICEConfigChangedCallCount() int {
+	fake.onICEConfigChangedMutex.RLock()
+	defer fake.onICEConfigChangedMutex.RUnlock()
+	return len(fake.onICEConfigChangedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnICEConfigChangedCalls(stub func(func(participant types.LocalParticipant, iceConfig types.IceConfig))) {
+	fake.onICEConfigChangedMutex.Lock()
+	defer fake.onICEConfigChangedMutex.Unlock()
+	fake.OnICEConfigChangedStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnICEConfigChangedArgsForCall(i int) func(participant types.LocalParticipant, iceConfig types.IceConfig) {
+	fake.onICEConfigChangedMutex.RLock()
+	defer fake.onICEConfigChangedMutex.RUnlock()
+	argsForCall := fake.onICEConfigChangedArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) OnParticipantUpdate(arg1 func(types.LocalParticipant)) {
 	fake.onParticipantUpdateMutex.Lock()
 	fake.onParticipantUpdateArgsForCall = append(fake.onParticipantUpdateArgsForCall, struct {
@@ -4704,6 +4741,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onCloseMutex.RUnlock()
 	fake.onDataPacketMutex.RLock()
 	defer fake.onDataPacketMutex.RUnlock()
+	fake.onICEConfigChangedMutex.RLock()
+	defer fake.onICEConfigChangedMutex.RUnlock()
 	fake.onParticipantUpdateMutex.RLock()
 	defer fake.onParticipantUpdateMutex.RUnlock()
 	fake.onStateChangeMutex.RLock()
