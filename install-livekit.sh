@@ -29,6 +29,20 @@ then
   abort "This script requires bash"
 fi
 
+# Check if $INSTALL_PATH exists
+if [ ! -d ${INSTALL_PATH} ]
+then
+  abort "Could not install, ${INSTALL_PATH} doesn't exist"
+fi
+
+# Needs SUDO if no permissions to write
+SUDO_PREFIX=""
+if [ ! -w ${INSTALL_PATH} ]
+then
+  SUDO_PREFIX="sudo"
+  log "sudo is required to install to ${INSTALL_PATH}"
+fi
+
 # Check cURL is installed
 if ! command -v curl >/dev/null
 then
@@ -68,6 +82,6 @@ fi
 log "Installing ${REPO} ${VERSION}"
 log "Downloading from ${ARCHIVE_URL}..."
 
-curl -s -L "${ARCHIVE_URL}" | tar xzf - -C "${INSTALL_PATH}" --wildcards --no-anchored "$REPO*"
+curl -s -L "${ARCHIVE_URL}" | ${SUDO_PREFIX} tar xzf - -C "${INSTALL_PATH}" --wildcards --no-anchored "$REPO*"
 
 log "\nlivekit-server is installed to $INSTALL_PATH\n"
