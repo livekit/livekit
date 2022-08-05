@@ -310,29 +310,84 @@ func TestFilteringCandidates(t *testing.T) {
 	parsed, err := offer.Unmarshal()
 	require.NoError(t, err)
 
-	getNumUDPCandidates := func(sdp *sdp.SessionDescription) int {
+	// add a couple of TCP candidates
+	done := false
+	for _, m := range parsed.MediaDescriptions {
+		for _, a := range m.Attributes {
+			if a.Key == "candidate" {
+				for idx, aa := range m.Attributes {
+					if aa.Key == "end-of-candidates" {
+						modifiedAttributes := make([]sdp.Attribute, idx)
+						copy(modifiedAttributes, m.Attributes[:idx])
+						modifiedAttributes = append(modifiedAttributes, []sdp.Attribute{
+							{
+								Key:   "candidate",
+								Value: "054225987 1 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
+							},
+							{
+								Key:   "candidate",
+								Value: "054225987 2 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
+							},
+						}...)
+						m.Attributes = append(modifiedAttributes, m.Attributes[idx:]...)
+						done = true
+						break
+					}
+				}
+			}
+			if done {
+				break
+			}
+		}
+		if done {
+			break
+		}
+	}
+	bytes, err := parsed.Marshal()
+	require.NoError(t, err)
+	offer.SDP = string(bytes)
+
+	parsed, err = offer.Unmarshal()
+	require.NoError(t, err)
+
+	getNumTransportTypeCandidates := func(sdp *sdp.SessionDescription) (int, int) {
 		numUDPCandidates := 0
+		numTCPCandidates := 0
 		for _, a := range sdp.Attributes {
-			if a.Key == "candidate" && strings.Contains(a.Value, "udp") {
-				numUDPCandidates++
+			if a.Key == "candidate" {
+				if strings.Contains(a.Value, "udp") {
+					numUDPCandidates++
+				}
+				if strings.Contains(a.Value, "tcp") {
+					numTCPCandidates++
+				}
 			}
 		}
 		for _, m := range sdp.MediaDescriptions {
 			for _, a := range m.Attributes {
-				if a.Key == "candidate" && strings.Contains(a.Value, "udp") {
-					numUDPCandidates++
+				if a.Key == "candidate" {
+					if strings.Contains(a.Value, "udp") {
+						numUDPCandidates++
+					}
+					if strings.Contains(a.Value, "tcp") {
+						numTCPCandidates++
+					}
 				}
 			}
 		}
-		return numUDPCandidates
+		return numUDPCandidates, numTCPCandidates
 	}
-	require.NotZero(t, getNumUDPCandidates(parsed))
+	udp, tcp := getNumTransportTypeCandidates(parsed)
+	require.NotZero(t, udp)
+	require.Equal(t, 2, tcp)
 
 	transport.SetPreferTCP(true)
 	filteredOffer = transport.FilterCandidates(offer)
 	parsed, err = filteredOffer.Unmarshal()
 	require.NoError(t, err)
-	require.Zero(t, getNumUDPCandidates(parsed))
+	udp, tcp = getNumTransportTypeCandidates(parsed)
+	require.Zero(t, udp)
+	require.Equal(t, 2, tcp)
 }
 
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {
