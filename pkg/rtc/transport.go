@@ -79,6 +79,8 @@ type PCTransport struct {
 	streamAllocator *sfu.StreamAllocator
 
 	previousAnswer *webrtc.SessionDescription
+
+	preferTCP bool
 }
 
 type TransportParams struct {
@@ -254,6 +256,12 @@ func (t *PCTransport) GetSelectedPair() (*webrtc.ICECandidatePair, error) {
 	}
 
 	return iceTransport.GetSelectedCandidatePair()
+}
+
+func (t *PCTransport) SetPreferTCP(preferTCP bool) {
+	t.lock.Lock()
+	t.preferTCP = preferTCP
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) createPeerConnection() error {
@@ -486,6 +494,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return err
 	}
 
+	offer = t.filterCandidates(offer)
+
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
@@ -667,6 +677,55 @@ func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 		}
 	}
 }
+
+func (t *PCTransport) FilterCandidates(sd webrtc.SessionDescription) webrtc.SessionDescription {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.filterCandidates(sd)
+}
+
+func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.SessionDescription {
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not unmarshal SDP to filter candidates", err)
+		return sd
+	}
+
+	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
+		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
+		for _, a := range attrs {
+			if a.Key == "candidate" {
+				if t.preferTCP {
+					if strings.Contains(a.Value, "tcp") {
+						filteredAttrs = append(filteredAttrs, a)
+					}
+				} else {
+					filteredAttrs = append(filteredAttrs, a)
+				}
+			} else {
+				filteredAttrs = append(filteredAttrs, a)
+			}
+		}
+
+		return filteredAttrs
+	}
+
+	parsed.Attributes = filterAttributes(parsed.Attributes)
+	for _, m := range parsed.MediaDescriptions {
+		m.Attributes = filterAttributes(m.Attributes)
+	}
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not marshal SDP to filter candidates", err)
+		return sd
+	}
+	sd.SDP = string(bytes)
+	return sd
+}
+
+// ---------------------------------------------
 
 func getMidValue(media *sdp.MediaDescription) string {
 	for _, attr := range media.Attributes {

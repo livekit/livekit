@@ -573,6 +573,8 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		return
 	}
 
+	answer = p.publisher.FilterCandidates(answer)
+
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		err = errors.Wrap(err, "could not set local description")
@@ -842,9 +844,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 	if iceConfig != nil {
-		p.lock.Lock()
-		p.iceConfig = *iceConfig
-		p.lock.Unlock()
+		p.SetICEConfig(*iceConfig)
 	}
 
 	if p.subscriber.pc.RemoteDescription() == nil {
@@ -868,7 +868,20 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 func (p *ParticipantImpl) SetICEConfig(iceConfig types.IceConfig) {
 	p.lock.Lock()
 	p.iceConfig = iceConfig
+	if iceConfig.PreferPubTcp {
+		p.publisher.SetPreferTCP(true)
+	}
+
+	if iceConfig.PreferSubTcp {
+		p.subscriber.SetPreferTCP(true)
+	}
+
+	onICEConfigChanged := p.onICEConfigChanged
 	p.lock.Unlock()
+
+	if onICEConfigChanged != nil {
+		onICEConfigChanged(p, iceConfig)
+	}
 }
 
 //
@@ -1340,16 +1353,10 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
 		}
 		pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
-		p.lock.Lock()
-		p.iceConfig.PreferSubTcp = true
-		p.iceConfig.PreferPubTcp = true
-		onICEConfigChanged := p.onICEConfigChanged
-		iceConfig := p.iceConfig
-		p.lock.Unlock()
-
-		if onICEConfigChanged != nil {
-			onICEConfigChanged(p, iceConfig)
-		}
+		p.SetICEConfig(types.IceConfig{
+			PreferPubTcp: true,
+			PreferSubTcp: true,
+		})
 	}
 }
 
