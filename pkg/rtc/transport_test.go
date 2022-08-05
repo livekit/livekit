@@ -298,20 +298,14 @@ func TestFilteringCandidates(t *testing.T) {
 	offer, err := transport.pc.CreateOffer(nil)
 	require.NoError(t, err)
 
-	// when not prefering TCP, it should be untouched
-	filteredOffer := transport.FilterCandidates(offer)
-	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
-
-	// even when preferring TCP, should be untouched if there are no candidates
-	transport.SetPreferTCP(true)
-	filteredOffer = transport.FilterCandidates(offer)
-	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
-
 	offerGatheringComplete := webrtc.GatheringCompletePromise(transport.pc)
 	require.NoError(t, transport.pc.SetLocalDescription(offer))
 	<-offerGatheringComplete
 
+	// should not filter out UDP candidates if TCP is not preferred
 	offer = *transport.pc.LocalDescription()
+	filteredOffer := transport.FilterCandidates(offer)
+	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
 
 	parsed, err := offer.Unmarshal()
 	require.NoError(t, err)
@@ -334,6 +328,7 @@ func TestFilteringCandidates(t *testing.T) {
 	}
 	require.NotZero(t, getNumUDPCandidates(parsed))
 
+	transport.SetPreferTCP(true)
 	filteredOffer = transport.FilterCandidates(offer)
 	parsed, err = filteredOffer.Unmarshal()
 	require.NoError(t, err)
