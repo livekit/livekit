@@ -25,7 +25,7 @@ type IngressService struct {
 }
 
 func NewIngressService(
-	conf *config.IngressConfig,
+	conf *config.Config,
 	rpc ingress.RPC,
 	store IngressStore,
 	rs livekit.RoomService,
@@ -33,7 +33,7 @@ func NewIngressService(
 ) *IngressService {
 
 	return &IngressService{
-		conf:        conf,
+		conf:        &conf.Ingress,
 		rpc:         rpc,
 		store:       store,
 		roomService: rs,
@@ -54,8 +54,12 @@ func (s *IngressService) Stop() {
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
+	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	sk := utils.NewGuid("")
@@ -86,9 +90,14 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
+	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -146,9 +155,14 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 }
 
 func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngressRequest) (*livekit.ListIngressResponse, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
+	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -163,9 +177,10 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 }
 
 func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	if _, err := EnsureJoinPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}

@@ -35,6 +35,8 @@ const (
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
 	iceFailedTimeout       = 25 * time.Second // pion's default
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
+
+	shortConnectionThreshold = 2 * time.Minute
 )
 
 var (
@@ -61,6 +63,7 @@ type PCTransport struct {
 	me     *webrtc.MediaEngine
 
 	lock                  sync.RWMutex
+	iceConnectedAt        time.Time
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	negotiationPending    map[livekit.ParticipantID]bool
@@ -76,6 +79,8 @@ type PCTransport struct {
 	streamAllocator *sfu.StreamAllocator
 
 	previousAnswer *webrtc.SessionDescription
+
+	preferTCP bool
 }
 
 type TransportParams struct {
@@ -210,6 +215,53 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 
 	return t, nil
+}
+
+func (t *PCTransport) Logger() logger.Logger {
+	return t.params.Logger
+}
+
+func (t *PCTransport) SetICEConnectedAt(at time.Time) {
+	t.lock.Lock()
+	t.iceConnectedAt = at
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if t.iceConnectedAt.IsZero() {
+		return false, 0
+	}
+
+	duration := at.Sub(t.iceConnectedAt)
+	return duration < shortConnectionThreshold, duration
+}
+
+func (t *PCTransport) GetSelectedPair() (*webrtc.ICECandidatePair, error) {
+	sctp := t.pc.SCTP()
+	if sctp == nil {
+		return nil, errors.New("no SCTP")
+	}
+
+	dtlsTransport := sctp.Transport()
+	if dtlsTransport == nil {
+		return nil, errors.New("no DTLS transport")
+	}
+
+	iceTransport := dtlsTransport.ICETransport()
+	if iceTransport == nil {
+		return nil, errors.New("no ICE transport")
+	}
+
+	return iceTransport.GetSelectedCandidatePair()
+}
+
+func (t *PCTransport) SetPreferTCP(preferTCP bool) {
+	t.lock.Lock()
+	t.preferTCP = preferTCP
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) createPeerConnection() error {
@@ -442,6 +494,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return err
 	}
 
+	offer = t.filterCandidates(offer)
+
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
@@ -623,6 +677,55 @@ func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 		}
 	}
 }
+
+func (t *PCTransport) FilterCandidates(sd webrtc.SessionDescription) webrtc.SessionDescription {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.filterCandidates(sd)
+}
+
+func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.SessionDescription {
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not unmarshal SDP to filter candidates", err)
+		return sd
+	}
+
+	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
+		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
+		for _, a := range attrs {
+			if a.Key == "candidate" {
+				if t.preferTCP {
+					if strings.Contains(a.Value, "tcp") {
+						filteredAttrs = append(filteredAttrs, a)
+					}
+				} else {
+					filteredAttrs = append(filteredAttrs, a)
+				}
+			} else {
+				filteredAttrs = append(filteredAttrs, a)
+			}
+		}
+
+		return filteredAttrs
+	}
+
+	parsed.Attributes = filterAttributes(parsed.Attributes)
+	for _, m := range parsed.MediaDescriptions {
+		m.Attributes = filterAttributes(m.Attributes)
+	}
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		t.params.Logger.Errorw("could not marshal SDP to filter candidates", err)
+		return sd
+	}
+	sd.SDP = string(bytes)
+	return sd
+}
+
+// ---------------------------------------------
 
 func getMidValue(media *sdp.MediaDescription) string {
 	for _, attr := range media.Attributes {

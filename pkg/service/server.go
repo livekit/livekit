@@ -27,23 +27,25 @@ import (
 )
 
 type LivekitServer struct {
-	config        *config.Config
-	egressService *EgressService
-	rtcService    *RTCService
-	httpServer    *http.Server
-	promServer    *http.Server
-	router        routing.Router
-	roomManager   *RoomManager
-	turnServer    *turn.Server
-	currentNode   routing.LocalNode
-	running       atomic.Bool
-	doneChan      chan struct{}
-	closedChan    chan struct{}
+	config         *config.Config
+	egressService  *EgressService
+	ingressService *IngressService
+	rtcService     *RTCService
+	httpServer     *http.Server
+	promServer     *http.Server
+	router         routing.Router
+	roomManager    *RoomManager
+	turnServer     *turn.Server
+	currentNode    routing.LocalNode
+	running        atomic.Bool
+	doneChan       chan struct{}
+	closedChan     chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
 	roomService livekit.RoomService,
 	egressService *EgressService,
+	ingressService *IngressService,
 	rtcService *RTCService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -52,11 +54,12 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:        conf,
-		egressService: egressService,
-		rtcService:    rtcService,
-		router:        router,
-		roomManager:   roomManager,
+		config:         conf,
+		egressService:  egressService,
+		ingressService: ingressService,
+		rtcService:     rtcService,
+		router:         router,
+		roomManager:    roomManager,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -80,6 +83,7 @@ func NewLivekitServer(conf *config.Config,
 
 	roomServer := livekit.NewRoomServiceServer(roomService)
 	egressServer := livekit.NewEgressServer(egressService)
+	ingressServer := livekit.NewIngressServer(ingressService)
 
 	mux := http.NewServeMux()
 	if conf.Development {
@@ -90,6 +94,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
+	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.healthCheck)
@@ -149,6 +154,8 @@ func (s *LivekitServer) Start() error {
 	if err := s.egressService.Start(); err != nil {
 		return err
 	}
+
+	s.ingressService.Start()
 
 	addresses := s.config.BindAddresses
 	if addresses == nil {
@@ -238,6 +245,7 @@ func (s *LivekitServer) Start() error {
 
 	s.roomManager.Stop()
 	s.egressService.Stop()
+	s.ingressService.Stop()
 
 	close(s.closedChan)
 	return nil

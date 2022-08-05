@@ -16,7 +16,7 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v0.13.5-0.20220801175011-ae34dc3ec45d
+	github.com/livekit/protocol v0.13.5-0.20220805160532-dc99a5ad3ce2
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a
 	github.com/mackerelio/go-osstat v0.2.1
 	github.com/magefile/mage v1.13.0
