@@ -711,17 +711,6 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.Sess
 		return filteredAttrs
 	}
 
-	attrs := make([]sdp.Attribute, 0, len(parsed.Attributes))
-	for _, a := range parsed.Attributes {
-		if a.Key == "candidate" {
-			if t.preferTCP && strings.Contains(a.Value, "tcp") {
-				attrs = append(attrs, a)
-			}
-		} else {
-			attrs = append(attrs, a)
-		}
-	}
-
 	parsed.Attributes = filterAttributes(parsed.Attributes)
 	for _, m := range parsed.MediaDescriptions {
 		m.Attributes = filterAttributes(m.Attributes)
