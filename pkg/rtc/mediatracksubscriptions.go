@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bep/debounce"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
@@ -23,10 +22,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
-const (
-	initialQualityUpdateWait = 10 * time.Second
-)
-
 var (
 	errAlreadySubscribed = errors.New("already subscribed")
 	errNoTransceiver     = errors.New("cannot subscribe without a transceiver in place")
@@ -41,19 +36,10 @@ type MediaTrackSubscriptions struct {
 	subscribedTracksMu sync.RWMutex
 	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
 
-	// quality level enable/disable
-	maxQualityLock               sync.RWMutex
-	maxSubscriberQuality         map[livekit.ParticipantID]*types.SubscribedCodecQuality
-	maxSubscriberNodeQuality     map[livekit.NodeID][]types.SubscribedCodecQuality
-	maxSubscribedQuality         map[string]livekit.VideoQuality // codec mime -> quality
-	maxSubscribedQualityDebounce func(func())
-	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)
-	maxQualityTimer              *time.Timer
-
-	qualityNotifyOpQueue *utils.OpsQueue
-
 	onDownTrackCreated              func(downTrack *sfu.DownTrack)
 	onSubscriptionOperationComplete func(sub types.LocalParticipant)
+
+	*DynacastQuality
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -71,34 +57,33 @@ type MediaTrackSubscriptionsParams struct {
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
 	t := &MediaTrackSubscriptions{
-		params:                       params,
-		subscribedTracks:             make(map[livekit.ParticipantID]types.SubscribedTrack),
-		maxSubscriberQuality:         make(map[livekit.ParticipantID]*types.SubscribedCodecQuality),
-		maxSubscriberNodeQuality:     make(map[livekit.NodeID][]types.SubscribedCodecQuality),
-		maxSubscribedQuality:         make(map[string]livekit.VideoQuality),
-		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.DynacastPauseDelay),
-		qualityNotifyOpQueue:         utils.NewOpsQueue(params.Logger, "quality-notify", 100),
+		params:           params,
+		subscribedTracks: make(map[livekit.ParticipantID]types.SubscribedTrack),
 	}
+
+	t.DynacastQuality = NewDynacastQuality(DynacastQualityParams{
+		TrackType:          params.MediaTrack.Kind(),
+		DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
+		Logger:             params.Logger,
+	})
 
 	return t
 }
 
 func (t *MediaTrackSubscriptions) Start() {
-	t.qualityNotifyOpQueue.Start()
-	t.startMaxQualityTimer(false)
+	t.DynacastQuality.Start()
 }
 
 func (t *MediaTrackSubscriptions) Restart() {
-	t.startMaxQualityTimer(true)
+	t.DynacastQuality.Restart()
 }
 
 func (t *MediaTrackSubscriptions) Stop() {
-	t.stopMaxQualityTimer()
+	t.DynacastQuality.Stop()
 }
 
 func (t *MediaTrackSubscriptions) Close() {
-	t.qualityNotifyOpQueue.Stop()
-	t.stopMaxQualityTimer()
+	t.DynacastQuality.Close()
 }
 
 func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownTrack)) {
@@ -210,7 +195,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		go t.sendDownTrackBindingReports(sub)
 
 		// initialize to default layer
-		t.notifySubscriberMaxQuality(subscriberID, downTrack.Codec(), livekit.VideoQuality_HIGH)
+		t.DynacastQuality.NotifySubscriberMaxQuality(subscriberID, downTrack.Codec(), livekit.VideoQuality_HIGH)
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
@@ -299,7 +284,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), utils.QualityForSpatialLayer(layer))
+		t.DynacastQuality.NotifySubscriberMaxQuality(subscriberID, dt.Codec(), utils.QualityForSpatialLayer(layer))
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
@@ -474,6 +459,7 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 	return subscribedTrackInfo
 }
 
+/*
 func (t *MediaTrackSubscriptions) OnSubscribedMaxQualityChange(f func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)) {
 	t.onSubscribedMaxQualityChange = f
 }
@@ -721,6 +707,7 @@ func (t *MediaTrackSubscriptions) stopMaxQualityTimer() {
 		t.maxQualityTimer = nil
 	}
 }
+*/
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
 	sub types.LocalParticipant,
