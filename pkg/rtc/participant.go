@@ -1324,12 +1324,11 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		} else {
 			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
 		}
-		/*
-			p.lock.Lock()
-			p.iceConfig.PreferSubTcp = true
-			p.iceConfig.PreferPubTcp = true
-			p.lock.Unlock()
-		*/
+		pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
+		p.lock.Lock()
+		p.iceConfig.PreferSubTcp = true
+		p.iceConfig.PreferPubTcp = true
+		p.lock.Unlock()
 	}
 }
 
