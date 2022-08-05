@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/sebest/xff"
@@ -255,6 +256,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				pLogger.Errorw("error reading from websocket", err)
 				return
 			}
+		}
+		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
+			_ = sigConn.WriteResponse(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_Pong{
+					Pong: time.Now().UnixNano(),
+				},
+			})
+			continue
 		}
 		if err := reqSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
