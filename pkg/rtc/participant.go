@@ -1344,10 +1344,11 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		p.iceConfig.PreferSubTcp = true
 		p.iceConfig.PreferPubTcp = true
 		onICEConfigChanged := p.onICEConfigChanged
+		iceConfig := p.iceConfig
 		p.lock.Unlock()
 
 		if onICEConfigChanged != nil {
-			onICEConfigChanged(p, p.iceConfig)
+			onICEConfigChanged(p, iceConfig)
 		}
 	}
 }
