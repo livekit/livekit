@@ -866,6 +866,7 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 }
 
 func (p *ParticipantImpl) SetICEConfig(iceConfig types.IceConfig) {
+	p.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
 	p.lock.Lock()
 	p.iceConfig = iceConfig
 	if iceConfig.PreferPubTcp {
