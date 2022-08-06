@@ -32,7 +32,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.1
 	github.com/pion/turn/v2 v2.0.8
-	github.com/pion/webrtc/v3 v3.1.42
+	github.com/pion/webrtc/v3 v3.1.43
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2
 	github.com/rs/cors v1.8.2
@@ -75,7 +75,7 @@ require (
 	github.com/pion/mdns v0.0.5 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/sctp v1.8.2 // indirect
-	github.com/pion/srtp/v2 v2.0.9 // indirect
+	github.com/pion/srtp/v2 v2.0.10 // indirect
 	github.com/pion/udp v0.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
