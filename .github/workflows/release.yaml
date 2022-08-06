@@ -14,21 +14,14 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Fetch all tags
         run: git fetch --force --tags
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/go/bin
-            ~/.cache
-          key: livekit-server
 
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.18
+          go-version: '>=1.18'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
