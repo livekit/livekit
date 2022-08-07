@@ -14,7 +14,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -49,7 +48,6 @@ type MediaTrackReceiverParams struct {
 	BufferFactory       *buffer.Factory
 	ReceiverConfig      ReceiverConfig
 	SubscriberConfig    DirectionConfig
-	VideoConfig         config.VideoConfig
 	Telemetry           telemetry.TelemetryService
 	Logger              logger.Logger
 }
@@ -89,7 +87,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		BufferFactory:    params.BufferFactory,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
-		VideoConfig:      t.params.VideoConfig,
 		Telemetry:        params.Telemetry,
 		Logger:           params.Logger,
 	})
