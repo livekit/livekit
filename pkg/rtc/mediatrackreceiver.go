@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
@@ -66,11 +67,13 @@ type MediaTrackReceiver struct {
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
 
-	onVideoLayerUpdate func(layers []*livekit.VideoLayer)
-	onClose            []func()
+	onSetupReceiver     func(mime string)
+	onClearReceiver     func()
+	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
+	onVideoLayerUpdate  func(layers []*livekit.VideoLayer)
+	onClose             []func()
 
 	*MediaTrackSubscriptions
-	*MediaLossProxy
 }
 
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
@@ -96,8 +99,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		sub.ClearInProgressAndProcessSubscriptionRequestsQueue(t.ID())
 	})
 
-	t.MediaLossProxy = NewMediaLossProxy()
-
 	if t.trackInfo.Muted {
 		t.SetMuted(true)
 	}
@@ -118,8 +119,10 @@ func (t *MediaTrackReceiver) Restart() {
 	for _, receiver := range receivers {
 		receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(livekit.VideoQuality_HIGH))
 	}
+}
 
-	t.MediaTrackSubscriptions.Restart()
+func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
+	t.onSetupReceiver = f
 }
 
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
@@ -169,9 +172,9 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow)
 	t.lock.Unlock()
 
-	t.MediaTrackSubscriptions.AddCodec(receiver.Codec().MimeType)
-
-	t.MediaTrackSubscriptions.Start()
+	if t.onSetupReceiver != nil {
+		t.onSetupReceiver(receiver.Codec().MimeType)
+	}
 }
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
@@ -221,6 +224,10 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	}
 }
 
+func (t *MediaTrackReceiver) OnClearReceiver(f func()) {
+	t.onClearReceiver = f
+}
+
 func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	t.lock.Lock()
 	for idx, receiver := range t.receivers {
@@ -236,8 +243,8 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	stopSubscription := len(t.receiversShadow) == 0
 	t.lock.Unlock()
 
-	if stopSubscription {
-		t.MediaTrackSubscriptions.Stop()
+	if stopSubscription && t.onClearReceiver != nil {
+		t.onClearReceiver()
 	}
 }
 
@@ -246,7 +253,14 @@ func (t *MediaTrackReceiver) ClearAllReceivers() {
 	t.receivers = t.receivers[:0]
 	t.receiversShadow = nil
 	t.lock.Unlock()
-	t.MediaTrackSubscriptions.Stop()
+
+	if t.onClearReceiver != nil {
+		t.onClearReceiver()
+	}
+}
+
+func (t *MediaTrackReceiver) OnMediaLossFeedback(f func(dt *sfu.DownTrack, rr *rtcp.ReceiverReport)) {
+	t.onMediaLossFeedback = f
 }
 
 func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLayer)) {
@@ -270,7 +284,6 @@ func (t *MediaTrackReceiver) Close() {
 	onclose := t.onClose
 	t.lock.RUnlock()
 
-	t.MediaTrackSubscriptions.Close()
 	for _, f := range onclose {
 		f()
 	}
@@ -652,7 +665,11 @@ func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 
 func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
 	if t.Kind() == livekit.TrackType_AUDIO {
-		downTrack.AddReceiverReportListener(t.MediaLossProxy.HandleMaxLossFeedback)
+		downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, rr *rtcp.ReceiverReport) {
+			if t.onMediaLossFeedback != nil {
+				t.onMediaLossFeedback(dt, rr)
+			}
+		})
 	}
 }
 
@@ -724,20 +741,6 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 			wr.SetRTT(rtt)
 		}
 	}
-}
-
-func (t *MediaTrackReceiver) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error) {
-	t.MediaTrackSubscriptions.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
-		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
-		}
-		for _, q := range maxSubscribedQualities {
-			receiver := t.Receiver(q.CodecMime)
-			if receiver != nil {
-				receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(q.Quality))
-			}
-		}
-	})
 }
 
 // ---------------------------

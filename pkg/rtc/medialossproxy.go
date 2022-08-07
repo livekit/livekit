@@ -7,6 +7,7 @@ import (
 	"github.com/pion/rtcp"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 )
@@ -15,7 +16,13 @@ const (
 	downLostUpdateDelta = time.Second
 )
 
+type MediaLossProxyParams struct {
+	Logger logger.Logger
+}
+
 type MediaLossProxy struct {
+	params MediaLossProxyParams
+
 	lock              sync.Mutex
 	maxDownFracLost   uint8
 	maxDownFracLostTs time.Time
@@ -23,8 +30,8 @@ type MediaLossProxy struct {
 	onMediaLossUpdate func(fractionalLoss uint8)
 }
 
-func NewMediaLossProxy() *MediaLossProxy {
-	return &MediaLossProxy{}
+func NewMediaLossProxy(params MediaLossProxyParams) *MediaLossProxy {
+	return &MediaLossProxy{params: params}
 }
 
 func (m *MediaLossProxy) OnMediaLossUpdate(f func(fractionalLoss uint8)) {

@@ -29,7 +29,7 @@ type DynacastQuality struct {
 	params DynacastQualityParams
 
 	// quality level enable/disable
-	maxQualityLock               sync.RWMutex
+	lock                         sync.RWMutex
 	maxSubscriberQuality         map[livekit.ParticipantID]*types.SubscribedCodecQuality
 	maxSubscriberNodeQuality     map[livekit.NodeID][]types.SubscribedCodecQuality
 	maxSubscribedQuality         map[string]livekit.VideoQuality // codec mime -> quality
@@ -71,6 +71,12 @@ func (d *DynacastQuality) Close() {
 	d.stopMaxQualityTimer()
 }
 
+func (d *DynacastQuality) AddCodec(mime string) {
+	d.lock.Lock()
+	d.maxSubscribedQuality[mime] = livekit.VideoQuality_HIGH
+	d.lock.Unlock()
+}
+
 func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)) {
 	d.onSubscribedMaxQualityChange = f
 }
@@ -85,11 +91,11 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 		d.params.Logger.Errorw("codec mime type is empty", nil)
 	}
 
-	d.maxQualityLock.Lock()
+	d.lock.Lock()
 	if quality == livekit.VideoQuality_OFF {
 		_, ok := d.maxSubscriberQuality[subscriberID]
 		if !ok {
-			d.maxQualityLock.Unlock()
+			d.lock.Unlock()
 			return
 		}
 
@@ -98,7 +104,7 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 		maxQuality, ok := d.maxSubscriberQuality[subscriberID]
 		if ok {
 			if maxQuality.Quality == quality && maxQuality.CodecMime == codec.MimeType {
-				d.maxQualityLock.Unlock()
+				d.lock.Unlock()
 				return
 			}
 			maxQuality.CodecMime = codec.MimeType
@@ -110,7 +116,7 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 			}
 		}
 	}
-	d.maxQualityLock.Unlock()
+	d.lock.Unlock()
 
 	go d.UpdateQualityChange(false)
 }
@@ -122,18 +128,18 @@ func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, 
 
 	if len(qualities) == 1 && qualities[0].CodecMime == "" {
 		// for old version msg don't have codec mime, use first mime type
-		d.maxQualityLock.RLock()
+		d.lock.RLock()
 		for mime := range d.maxSubscribedQuality {
 			qualities[0].CodecMime = mime
 			break
 		}
-		d.maxQualityLock.RUnlock()
+		d.lock.RUnlock()
 	}
 
-	d.maxQualityLock.Lock()
+	d.lock.Lock()
 	if len(qualities) == 0 {
 		if _, ok := d.maxSubscriberNodeQuality[nodeID]; !ok {
-			d.maxQualityLock.Unlock()
+			d.lock.Unlock()
 			return
 		}
 		delete(d.maxSubscriberNodeQuality, nodeID)
@@ -150,13 +156,13 @@ func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, 
 			}
 
 			if matchCounter == len(qualities) && matchCounter == len(maxQualities) {
-				d.maxQualityLock.Unlock()
+				d.lock.Unlock()
 				return
 			}
 		}
 		d.maxSubscriberNodeQuality[nodeID] = qualities
 	}
-	d.maxQualityLock.Unlock()
+	d.lock.Unlock()
 
 	go d.UpdateQualityChange(false)
 }
@@ -166,7 +172,7 @@ func (d *DynacastQuality) UpdateQualityChange(force bool) {
 		return
 	}
 
-	d.maxQualityLock.Lock()
+	d.lock.Lock()
 	d.params.Logger.Debugw("updating quality change",
 		"force", force,
 		"maxSubscriberQuality", d.maxSubscriberQuality,
@@ -231,7 +237,7 @@ func (d *DynacastQuality) UpdateQualityChange(force bool) {
 		"qualityDowngrades", qualityDowngrades)
 
 	if !changed && !force {
-		d.maxQualityLock.Unlock()
+		d.lock.Unlock()
 		return
 	}
 
@@ -243,7 +249,7 @@ func (d *DynacastQuality) UpdateQualityChange(force bool) {
 
 		// no quality upgrades
 		if len(qualityDowngrades)+noChangeCount == len(d.maxSubscribedQuality) {
-			d.maxQualityLock.Unlock()
+			d.lock.Unlock()
 			return
 		}
 	}
@@ -287,12 +293,12 @@ func (d *DynacastQuality) UpdateQualityChange(force bool) {
 			d.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
 		})
 	}
-	d.maxQualityLock.Unlock()
+	d.lock.Unlock()
 }
 
 func (d *DynacastQuality) startMaxQualityTimer(force bool) {
-	d.maxQualityLock.Lock()
-	defer d.maxQualityLock.Unlock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 
 	if d.params.TrackType != livekit.TrackType_VIDEO {
 		return
@@ -310,8 +316,8 @@ func (d *DynacastQuality) startMaxQualityTimer(force bool) {
 }
 
 func (d *DynacastQuality) stopMaxQualityTimer() {
-	d.maxQualityLock.Lock()
-	defer d.maxQualityLock.Unlock()
+	d.lock.Lock()
+	defer d.lock.Unlock()
 
 	if d.maxQualityTimer != nil {
 		d.maxQualityTimer.Stop()
