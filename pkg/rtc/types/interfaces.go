@@ -191,8 +191,6 @@ type Participant interface {
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
-	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -347,9 +345,6 @@ type MediaTrack interface {
 
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
-
-	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualites []SubscribedCodecQuality)
-	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 
 	Receivers() []sfu.TrackReceiver
 }
