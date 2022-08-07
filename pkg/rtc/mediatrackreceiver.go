@@ -5,9 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
@@ -24,7 +22,6 @@ import (
 )
 
 const (
-	downLostUpdateDelta     = time.Second
 	layerSelectionTolerance = 0.9
 )
 
@@ -69,16 +66,11 @@ type MediaTrackReceiver struct {
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
 
-	// track audio fraction lost
-	downFracLostLock   sync.Mutex
-	maxDownFracLost    uint8
-	maxDownFracLostTs  time.Time
-	onMediaLossUpdate  func(fractionalLoss uint8)
 	onVideoLayerUpdate func(layers []*livekit.VideoLayer)
-
-	onClose []func()
+	onClose            []func()
 
 	*MediaTrackSubscriptions
+	*MediaLossProxy
 }
 
 func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver {
@@ -103,6 +95,8 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		t.removePendingSubscribeOp(sub.ID())
 		sub.ClearInProgressAndProcessSubscriptionRequestsQueue(t.ID())
 	})
+
+	t.MediaLossProxy = NewMediaLossProxy()
 
 	if t.trackInfo.Muted {
 		t.SetMuted(true)
@@ -253,10 +247,6 @@ func (t *MediaTrackReceiver) ClearAllReceivers() {
 	t.receiversShadow = nil
 	t.lock.Unlock()
 	t.MediaTrackSubscriptions.Stop()
-}
-
-func (t *MediaTrackReceiver) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
-	t.onMediaLossUpdate = f
 }
 
 func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLayer)) {
@@ -662,53 +652,7 @@ func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
 
 func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
 	if t.Kind() == livekit.TrackType_AUDIO {
-		downTrack.AddReceiverReportListener(t.handleMaxLossFeedback)
-	}
-}
-
-// handles max loss for audio streams
-func (t *MediaTrackReceiver) handleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
-	t.downFracLostLock.Lock()
-	for _, rr := range report.Reports {
-		if t.maxDownFracLost < rr.FractionLost {
-			t.maxDownFracLost = rr.FractionLost
-		}
-	}
-	t.downFracLostLock.Unlock()
-
-	t.maybeUpdateLoss()
-}
-
-func (t *MediaTrackReceiver) NotifySubscriberNodeMediaLoss(_nodeID livekit.NodeID, fractionalLoss uint8) {
-	t.downFracLostLock.Lock()
-	if t.maxDownFracLost < fractionalLoss {
-		t.maxDownFracLost = fractionalLoss
-	}
-	t.downFracLostLock.Unlock()
-
-	t.maybeUpdateLoss()
-}
-
-func (t *MediaTrackReceiver) maybeUpdateLoss() {
-	var (
-		shouldUpdate bool
-		maxLost      uint8
-	)
-
-	t.downFracLostLock.Lock()
-	now := time.Now()
-	if now.Sub(t.maxDownFracLostTs) > downLostUpdateDelta {
-		shouldUpdate = true
-		maxLost = t.maxDownFracLost
-		t.maxDownFracLost = 0
-		t.maxDownFracLostTs = now
-	}
-	t.downFracLostLock.Unlock()
-
-	if shouldUpdate {
-		if t.onMediaLossUpdate != nil {
-			t.onMediaLossUpdate(maxLost)
-		}
+		downTrack.AddReceiverReportListener(t.MediaLossProxy.HandleMaxLossFeedback)
 	}
 }
 
