@@ -695,7 +695,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.Sess
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
 		filteredAttrs := make([]sdp.Attribute, 0, len(attrs))
 		for _, a := range attrs {
-			if a.Key == "candidate" {
+			if a.Key == sdp.AttrKeyCandidate {
 				if t.preferTCP {
 					if strings.Contains(a.Value, "tcp") {
 						filteredAttrs = append(filteredAttrs, a)
@@ -729,7 +729,7 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.Sess
 
 func getMidValue(media *sdp.MediaDescription) string {
 	for _, attr := range media.Attributes {
-		if attr.Key == "mid" {
+		if attr.Key == sdp.AttrKeyMID {
 			return attr.Value
 		}
 	}
