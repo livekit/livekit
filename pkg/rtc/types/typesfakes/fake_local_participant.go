@@ -666,10 +666,36 @@ type FakeLocalParticipant struct {
 	uncacheDownTrackArgsForCall []struct {
 		arg1 *webrtc.RTPTransceiver
 	}
+	UpdateMediaLossStub        func(livekit.NodeID, livekit.TrackID, uint32) error
+	updateMediaLossMutex       sync.RWMutex
+	updateMediaLossArgsForCall []struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 uint32
+	}
+	updateMediaLossReturns struct {
+		result1 error
+	}
+	updateMediaLossReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateRTTStub        func(uint32)
 	updateRTTMutex       sync.RWMutex
 	updateRTTArgsForCall []struct {
 		arg1 uint32
+	}
+	UpdateSubscribedQualityStub        func(livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) error
+	updateSubscribedQualityMutex       sync.RWMutex
+	updateSubscribedQualityArgsForCall []struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 []types.SubscribedCodecQuality
+	}
+	updateSubscribedQualityReturns struct {
+		result1 error
+	}
+	updateSubscribedQualityReturnsOnCall map[int]struct {
+		result1 error
 	}
 	UpdateSubscribedTrackSettingsStub        func(livekit.TrackID, *livekit.UpdateTrackSettings) error
 	updateSubscribedTrackSettingsMutex       sync.RWMutex
@@ -4278,6 +4304,69 @@ func (fake *FakeLocalParticipant) UncacheDownTrackArgsForCall(i int) *webrtc.RTP
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) UpdateMediaLoss(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 uint32) error {
+	fake.updateMediaLossMutex.Lock()
+	ret, specificReturn := fake.updateMediaLossReturnsOnCall[len(fake.updateMediaLossArgsForCall)]
+	fake.updateMediaLossArgsForCall = append(fake.updateMediaLossArgsForCall, struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 uint32
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateMediaLossStub
+	fakeReturns := fake.updateMediaLossReturns
+	fake.recordInvocation("UpdateMediaLoss", []interface{}{arg1, arg2, arg3})
+	fake.updateMediaLossMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) UpdateMediaLossCallCount() int {
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
+	return len(fake.updateMediaLossArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateMediaLossCalls(stub func(livekit.NodeID, livekit.TrackID, uint32) error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateMediaLossArgsForCall(i int) (livekit.NodeID, livekit.TrackID, uint32) {
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
+	argsForCall := fake.updateMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeLocalParticipant) UpdateMediaLossReturns(result1 error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = nil
+	fake.updateMediaLossReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) UpdateMediaLossReturnsOnCall(i int, result1 error) {
+	fake.updateMediaLossMutex.Lock()
+	defer fake.updateMediaLossMutex.Unlock()
+	fake.UpdateMediaLossStub = nil
+	if fake.updateMediaLossReturnsOnCall == nil {
+		fake.updateMediaLossReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateMediaLossReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) UpdateRTT(arg1 uint32) {
 	fake.updateRTTMutex.Lock()
 	fake.updateRTTArgsForCall = append(fake.updateRTTArgsForCall, struct {
@@ -4308,6 +4397,74 @@ func (fake *FakeLocalParticipant) UpdateRTTArgsForCall(i int) uint32 {
 	defer fake.updateRTTMutex.RUnlock()
 	argsForCall := fake.updateRTTArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQuality(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 []types.SubscribedCodecQuality) error {
+	var arg3Copy []types.SubscribedCodecQuality
+	if arg3 != nil {
+		arg3Copy = make([]types.SubscribedCodecQuality, len(arg3))
+		copy(arg3Copy, arg3)
+	}
+	fake.updateSubscribedQualityMutex.Lock()
+	ret, specificReturn := fake.updateSubscribedQualityReturnsOnCall[len(fake.updateSubscribedQualityArgsForCall)]
+	fake.updateSubscribedQualityArgsForCall = append(fake.updateSubscribedQualityArgsForCall, struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 []types.SubscribedCodecQuality
+	}{arg1, arg2, arg3Copy})
+	stub := fake.UpdateSubscribedQualityStub
+	fakeReturns := fake.updateSubscribedQualityReturns
+	fake.recordInvocation("UpdateSubscribedQuality", []interface{}{arg1, arg2, arg3Copy})
+	fake.updateSubscribedQualityMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQualityCallCount() int {
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
+	return len(fake.updateSubscribedQualityArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQualityCalls(stub func(livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQualityArgsForCall(i int) (livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) {
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
+	argsForCall := fake.updateSubscribedQualityArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQualityReturns(result1 error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = nil
+	fake.updateSubscribedQualityReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedQualityReturnsOnCall(i int, result1 error) {
+	fake.updateSubscribedQualityMutex.Lock()
+	defer fake.updateSubscribedQualityMutex.Unlock()
+	fake.UpdateSubscribedQualityStub = nil
+	if fake.updateSubscribedQualityReturnsOnCall == nil {
+		fake.updateSubscribedQualityReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateSubscribedQualityReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscribedTrackSettings(arg1 livekit.TrackID, arg2 *livekit.UpdateTrackSettings) error {
@@ -4650,8 +4807,12 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.toProtoMutex.RUnlock()
 	fake.uncacheDownTrackMutex.RLock()
 	defer fake.uncacheDownTrackMutex.RUnlock()
+	fake.updateMediaLossMutex.RLock()
+	defer fake.updateMediaLossMutex.RUnlock()
 	fake.updateRTTMutex.RLock()
 	defer fake.updateRTTMutex.RUnlock()
+	fake.updateSubscribedQualityMutex.RLock()
+	defer fake.updateSubscribedQualityMutex.RUnlock()
 	fake.updateSubscribedTrackSettingsMutex.RLock()
 	defer fake.updateSubscribedTrackSettingsMutex.RUnlock()
 	fake.updateSubscriptionPermissionMutex.RLock()

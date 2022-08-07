@@ -2328,3 +2328,25 @@ func (p *ParticipantImpl) ClearInProgressAndProcessSubscriptionRequestsQueue(tra
 
 	go p.ProcessSubscriptionRequestsQueue(trackID)
 }
+
+func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
+	track := p.GetPublishedTrack(trackID)
+	if track == nil {
+		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find published track")
+	}
+
+	track.(types.LocalMediaTrack).NotifySubscriberNodeMaxQuality(nodeID, maxQualities)
+	return nil
+}
+
+func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
+	track := p.GetPublishedTrack(trackID)
+	if track == nil {
+		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find published track")
+	}
+
+	track.(types.LocalMediaTrack).NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
+	return nil
+}

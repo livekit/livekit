@@ -41,7 +41,7 @@ type DynacastQuality struct {
 }
 
 func NewDynacastQuality(params DynacastQualityParams) *DynacastQuality {
-	t := &DynacastQuality{
+	return &DynacastQuality{
 		params:                       params,
 		maxSubscriberQuality:         make(map[livekit.ParticipantID]*types.SubscribedCodecQuality),
 		maxSubscriberNodeQuality:     make(map[livekit.NodeID][]types.SubscribedCodecQuality),
@@ -49,8 +49,6 @@ func NewDynacastQuality(params DynacastQualityParams) *DynacastQuality {
 		maxSubscribedQualityDebounce: debounce.New(params.DynacastPauseDelay),
 		qualityNotifyOpQueue:         utils.NewOpsQueue(params.Logger, "quality-notify", 100),
 	}
-
-	return t
 }
 
 func (d *DynacastQuality) Start() {

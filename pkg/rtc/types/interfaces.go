@@ -293,6 +293,9 @@ type LocalParticipant interface {
 
 	SetICEConfig(iceConfig IceConfig)
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig IceConfig))
+
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
+	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -360,6 +363,9 @@ type LocalMediaTrack interface {
 	GetConnectionScore() float32
 
 	SetRTT(rtt uint32)
+
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []SubscribedCodecQuality)
+	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
 // MediaTrack is the main interface representing a track published to the room
