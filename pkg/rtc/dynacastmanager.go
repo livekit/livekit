@@ -29,6 +29,8 @@ type DynacastManager struct {
 
 	qualityNotifyOpQueue *utils.OpsQueue
 
+	isClosed bool
+
 	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)
 }
 
@@ -72,6 +74,8 @@ func (d *DynacastManager) Close() {
 	d.lock.Lock()
 	dqs := d.getDynacastQualitiesLocked()
 	d.dynacastQuality = make(map[string]*DynacastQuality)
+
+	d.isClosed = true
 	d.lock.Unlock()
 
 	for _, dq := range dqs {
@@ -83,21 +87,40 @@ func (d *DynacastManager) ForceUpdate() {
 	d.update(true)
 }
 
+func (d *DynacastManager) ForceQuality(quality livekit.VideoQuality) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	for mime := range d.committedMaxSubscribedQuality {
+		d.committedMaxSubscribedQuality[mime] = quality
+	}
+
+	d.enqueueSubscribedQualityChange()
+}
+
 func (d *DynacastManager) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, mime string, quality livekit.VideoQuality) {
 	dq := d.getOrCreateDynacastQuality(mime)
-	dq.NotifySubscriberMaxQuality(subscriberID, quality)
+	if dq != nil {
+		dq.NotifySubscriberMaxQuality(subscriberID, quality)
+	}
 }
 
 func (d *DynacastManager) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
 	for _, quality := range qualities {
 		dq := d.getOrCreateDynacastQuality(quality.CodecMime)
-		dq.NotifySubscriberNodeMaxQuality(nodeID, quality.Quality)
+		if dq != nil {
+			dq.NotifySubscriberNodeMaxQuality(nodeID, quality.Quality)
+		}
 	}
 }
 
 func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuality {
 	d.lock.Lock()
 	defer d.lock.Unlock()
+
+	if d.isClosed {
+		return nil
+	}
 
 	if dq := d.dynacastQuality[mime]; dq != nil {
 		return dq
@@ -191,6 +214,15 @@ func (d *DynacastManager) update(force bool) {
 		d.committedMaxSubscribedQuality[mime] = quality
 	}
 
+	d.enqueueSubscribedQualityChange()
+	d.lock.Unlock()
+}
+
+func (d *DynacastManager) enqueueSubscribedQualityChange() {
+	if d.isClosed {
+		return
+	}
+
 	subscribedCodec := make([]*livekit.SubscribedCodec, 0, len(d.committedMaxSubscribedQuality))
 	maxSubscribedQualities := make([]types.SubscribedCodecQuality, 0, len(d.committedMaxSubscribedQuality))
 	for mime, quality := range d.committedMaxSubscribedQuality {
@@ -230,5 +262,4 @@ func (d *DynacastManager) update(force bool) {
 			d.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
 		})
 	}
-	d.lock.Unlock()
 }
