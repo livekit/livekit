@@ -81,7 +81,7 @@ func (d *DynacastManager) getDynacastQuality(mime string) *DynacastQuality {
 func (d *DynacastManager) Restart() {
 	d.lock.RLock()
 	dqs := d.getDynacastQualitiesLocked()
-	d.lock.Unlock()
+	d.lock.RUnlock()
 
 	for _, dq := range dqs {
 		dq.Restart()
