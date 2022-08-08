@@ -270,18 +270,16 @@ type FakeLocalParticipant struct {
 	handleAnswerReturnsOnCall map[int]struct {
 		result1 error
 	}
-	HandleOfferStub        func(webrtc.SessionDescription) (webrtc.SessionDescription, error)
+	HandleOfferStub        func(webrtc.SessionDescription) error
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 	}
 	handleOfferReturns struct {
-		result1 webrtc.SessionDescription
-		result2 error
+		result1 error
 	}
 	handleOfferReturnsOnCall map[int]struct {
-		result1 webrtc.SessionDescription
-		result2 error
+		result1 error
 	}
 	HiddenStub        func() bool
 	hiddenMutex       sync.RWMutex
@@ -2087,7 +2085,7 @@ func (fake *FakeLocalParticipant) HandleAnswerReturnsOnCall(i int, result1 error
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) (webrtc.SessionDescription, error) {
+func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) error {
 	fake.handleOfferMutex.Lock()
 	ret, specificReturn := fake.handleOfferReturnsOnCall[len(fake.handleOfferArgsForCall)]
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
@@ -2101,9 +2099,9 @@ func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) (w
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
@@ -2112,7 +2110,7 @@ func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
 	return len(fake.handleOfferArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription) (webrtc.SessionDescription, error)) {
+func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription) error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = stub
@@ -2125,30 +2123,27 @@ func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) webrtc.SessionDe
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleOfferReturns(result1 webrtc.SessionDescription, result2 error) {
+func (fake *FakeLocalParticipant) HandleOfferReturns(result1 error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = nil
 	fake.handleOfferReturns = struct {
-		result1 webrtc.SessionDescription
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleOfferReturnsOnCall(i int, result1 webrtc.SessionDescription, result2 error) {
+func (fake *FakeLocalParticipant) HandleOfferReturnsOnCall(i int, result1 error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = nil
 	if fake.handleOfferReturnsOnCall == nil {
 		fake.handleOfferReturnsOnCall = make(map[int]struct {
-			result1 webrtc.SessionDescription
-			result2 error
+			result1 error
 		})
 	}
 	fake.handleOfferReturnsOnCall[i] = struct {
-		result1 webrtc.SessionDescription
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) Hidden() bool {

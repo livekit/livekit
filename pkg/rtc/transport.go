@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -62,18 +63,19 @@ type PCTransport struct {
 	pc     *webrtc.PeerConnection
 	me     *webrtc.MediaEngine
 
-	lock                  sync.RWMutex
-	iceConnectedAt        time.Time
-	pendingCandidates     []webrtc.ICECandidateInit
-	debouncedNegotiate    func(func())
-	negotiationPending    map[livekit.ParticipantID]bool
-	onOffer               func(offer webrtc.SessionDescription)
-	restartAfterGathering bool
-	restartAtNextOffer    bool
-	negotiationState      int
-	negotiateCounter      atomic.Int32
-	signalStateCheckTimer *time.Timer
-	onNegotiationFailed   func()
+	lock                       sync.RWMutex
+	iceConnectedAt             time.Time
+	pendingCandidates          []webrtc.ICECandidateInit
+	debouncedNegotiate         func(func())
+	negotiationPending         map[livekit.ParticipantID]bool
+	onOffer                    func(offer webrtc.SessionDescription)
+	onRemoteDescripitonSettled func() error
+	restartAfterGathering      bool
+	restartAtNextOffer         bool
+	negotiationState           int
+	negotiateCounter           atomic.Int32
+	signalStateCheckTimer      *time.Timer
+	onNegotiationFailed        func()
 
 	// stream allocator for subscriber PC
 	streamAllocator *sfu.StreamAllocator
@@ -81,6 +83,9 @@ type PCTransport struct {
 	previousAnswer *webrtc.SessionDescription
 
 	preferTCP bool
+
+	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
+	pendingRestartIceOffer    *webrtc.SessionDescription
 }
 
 type TransportParams struct {
@@ -278,12 +283,22 @@ func (t *PCTransport) createPeerConnection() error {
 		if state == webrtc.ICEGathererStateComplete {
 			go func() {
 				t.lock.Lock()
-				defer t.lock.Unlock()
 				if t.restartAfterGathering {
 					t.params.Logger.Debugw("restarting ICE after ICE gathering")
 					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
 						t.params.Logger.Warnw("could not restart ICE", err)
 					}
+					t.lock.Unlock()
+				} else if t.pendingRestartIceOffer != nil {
+					t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+					offer := t.pendingRestartIceOffer
+					t.pendingRestartIceOffer = nil
+					t.lock.Unlock()
+					if err := t.SetRemoteDescription(*offer); err != nil {
+						t.params.Logger.Warnw("could not accept remote restart ice offer", err)
+					}
+				} else {
+					t.lock.Unlock()
 				}
 			}()
 		}
@@ -337,10 +352,35 @@ func (t *PCTransport) Close() {
 
 func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	t.lock.Lock()
-	defer t.lock.Unlock()
+
+	var (
+		iceCredential   string
+		offerRestartICE bool
+	)
+	if sd.Type == webrtc.SDPTypeOffer {
+		var err error
+		iceCredential, offerRestartICE, err = t.isRemoteOfferRestartICE(sd)
+		if err != nil {
+			t.Logger().Errorw("check remote offer restart ice failed", err)
+			t.lock.Unlock()
+			return err
+		}
+	}
+
+	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+		t.Logger().Debugw("remote offer restart ice while ice gathering")
+		t.pendingRestartIceOffer = &sd
+		t.lock.Unlock()
+		return nil
+	}
 
 	if err := t.pc.SetRemoteDescription(sd); err != nil {
+		t.lock.Unlock()
 		return err
+	}
+
+	if t.currentOfferIceCredential == "" || offerRestartICE {
+		t.currentOfferIceCredential = iceCredential
 	}
 
 	// negotiated, reset flag
@@ -354,6 +394,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 
 	for _, c := range t.pendingCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
+			t.lock.Unlock()
 			return err
 		}
 	}
@@ -366,12 +407,40 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 			t.params.Logger.Errorw("could not negotiate", err)
 		}
 	}
+	onRemoteDescripitonSettled := t.onRemoteDescripitonSettled
+	t.lock.Unlock()
+
+	if onRemoteDescripitonSettled != nil {
+		return onRemoteDescripitonSettled()
+	}
 	return nil
+}
+
+func (t *PCTransport) isRemoteOfferRestartICE(sd webrtc.SessionDescription) (string, bool, error) {
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return "", false, err
+	}
+	user, pwd, err := extractICECredential(parsed)
+	if err != nil {
+		return "", false, err
+	}
+
+	credential := fmt.Sprintf("%s:%s", user, pwd)
+	// ice credential changed, remote offer restart ice
+	restartICE := t.currentOfferIceCredential != "" && t.currentOfferIceCredential != credential
+	return credential, restartICE, nil
 }
 
 // OnOffer is called when the PeerConnection starts negotiation and prepares an offer
 func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
+}
+
+func (t *PCTransport) OnRemoteDescripitonSettled(f func() error) {
+	t.lock.Lock()
+	t.onRemoteDescripitonSettled = f
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) OnNegotiationFailed(f func()) {
@@ -798,4 +867,45 @@ func extractDTLSRole(desc *sdp.SessionDescription) webrtc.DTLSRole {
 	// while browsers pick DTLSRoleClient.
 	//
 	return webrtc.DTLSRoleClient
+}
+
+func extractICECredential(desc *sdp.SessionDescription) (string, string, error) {
+	remotePwds := []string{}
+	remoteUfrags := []string{}
+
+	if ufrag, haveUfrag := desc.Attribute("ice-ufrag"); haveUfrag {
+		remoteUfrags = append(remoteUfrags, ufrag)
+	}
+	if pwd, havePwd := desc.Attribute("ice-pwd"); havePwd {
+		remotePwds = append(remotePwds, pwd)
+	}
+
+	for _, m := range desc.MediaDescriptions {
+		if ufrag, haveUfrag := m.Attribute("ice-ufrag"); haveUfrag {
+			remoteUfrags = append(remoteUfrags, ufrag)
+		}
+		if pwd, havePwd := m.Attribute("ice-pwd"); havePwd {
+			remotePwds = append(remotePwds, pwd)
+		}
+	}
+
+	if len(remoteUfrags) == 0 {
+		return "", "", webrtc.ErrSessionDescriptionMissingIceUfrag
+	} else if len(remotePwds) == 0 {
+		return "", "", webrtc.ErrSessionDescriptionMissingIcePwd
+	}
+
+	for _, m := range remoteUfrags {
+		if m != remoteUfrags[0] {
+			return "", "", webrtc.ErrSessionDescriptionConflictingIceUfrag
+		}
+	}
+
+	for _, m := range remotePwds {
+		if m != remotePwds[0] {
+			return "", "", webrtc.ErrSessionDescriptionConflictingIcePwd
+		}
+	}
+
+	return remoteUfrags[0], remotePwds[0], nil
 }

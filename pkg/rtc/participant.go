@@ -255,6 +255,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		}
 		p.sendIceCandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
+	p.publisher.OnRemoteDescripitonSettled(p.createPublsiherAnswerAndSend)
 	p.subscriber.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED || p.MigrateState() == types.MigrateStateInit {
 			return
@@ -545,40 +546,44 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
 	p.lock.Lock()
 	if p.MigrateState() == types.MigrateStateInit {
 		p.pendingOffer = &sdp
 		p.lock.Unlock()
-		return
+		return nil
 	}
-	onParticipantUpdate := p.onParticipantUpdate
 	p.lock.Unlock()
 	p.params.Logger.Debugw("answering pub offer",
 		"state", p.State().String(),
 		// "sdp", sdp.SDP,
 	)
 
-	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
+	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
-		return
+		return err
 	}
 
+	return nil
+}
+
+func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
+	p.lock.RLock()
+	onParticipantUpdate := p.onParticipantUpdate
+	p.lock.RUnlock()
 	p.configureReceiverDTX()
 
-	answer, err = p.publisher.pc.CreateAnswer(nil)
+	answer, err := p.publisher.pc.CreateAnswer(nil)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
-		err = errors.Wrap(err, "could not create answer")
-		return
+		return errors.Wrap(err, "could not create answer")
 	}
 
 	answer = p.publisher.FilterCandidates(answer)
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
-		err = errors.Wrap(err, "could not set local description")
-		return
+		return errors.Wrap(err, "could not set local description")
 	}
 
 	p.params.Logger.Debugw("sending answer to client")
@@ -590,7 +595,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 	})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-		return
+		return err
 	}
 
 	if p.isPublisher.Load() != p.CanPublish() {
@@ -607,7 +612,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		go p.handleMigrateMutedTrack()
 	}
 
-	return
+	return nil
 }
 
 func (p *ParticipantImpl) handleMigrateMutedTrack() {
@@ -830,7 +835,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	if pendingOffer != nil {
-		_, err := p.HandleOffer(*pendingOffer)
+		err := p.HandleOffer(*pendingOffer)
 		if err != nil {
 			p.GetLogger().Errorw("could not handle offer", err)
 		}
