@@ -50,12 +50,12 @@ func (d *DynacastManager) OnSubscribedMaxQualityChange(f func(subscribedQualitie
 	d.lock.Unlock()
 }
 
-func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuality {
+func (d *DynacastManager) AddCodec(mime string) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
 	if dq := d.dynacastQuality[mime]; dq != nil {
-		return dq
+		return
 	}
 
 	dq := NewDynacastQuality(DynacastQualityParams{
@@ -69,8 +69,13 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	dq.Start()
 
 	d.dynacastQuality[mime] = dq
+}
 
-	return dq
+func (d *DynacastManager) getDynacastQuality(mime string) *DynacastQuality {
+	d.lock.RLock()
+	defer d.lock.RUnlock()
+
+	return d.dynacastQuality[mime]
 }
 
 func (d *DynacastManager) Restart() {
@@ -101,14 +106,16 @@ func (d *DynacastManager) ForceUpdate() {
 }
 
 func (d *DynacastManager) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, mime string, quality livekit.VideoQuality) {
-	dq := d.getOrCreateDynacastQuality(mime)
-	dq.NotifySubscriberMaxQuality(subscriberID, quality)
+	if dq := d.getDynacastQuality(mime); dq != nil {
+		dq.NotifySubscriberMaxQuality(subscriberID, quality)
+	}
 }
 
 func (d *DynacastManager) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
 	for _, quality := range qualities {
-		dq := d.getOrCreateDynacastQuality(quality.CodecMime)
-		dq.NotifySubscriberNodeMaxQuality(nodeID, quality.Quality)
+		if dq := d.getDynacastQuality(quality.CodecMime); dq != nil {
+			dq.NotifySubscriberNodeMaxQuality(nodeID, quality.Quality)
+		}
 	}
 }
 

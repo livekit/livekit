@@ -65,6 +65,7 @@ type MediaTrackReceiver struct {
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
 
+	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	onVideoLayerUpdate  func(layers []*livekit.VideoLayer)
 	onClose             []func()
@@ -116,6 +117,12 @@ func (t *MediaTrackReceiver) Restart() {
 	}
 }
 
+func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
+	t.lock.Lock()
+	t.onSetupReceiver = f
+	t.lock.Unlock()
+}
+
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
 
@@ -160,8 +167,13 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 	t.shadowReceiversLocked()
 
+	onSetupReceiver := t.onSetupReceiver
 	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow)
 	t.lock.Unlock()
+
+	if onSetupReceiver != nil {
+		onSetupReceiver(receiver.Codec().MimeType)
+	}
 }
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {

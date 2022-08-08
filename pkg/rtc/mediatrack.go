@@ -99,6 +99,9 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		}
 	})
 
+	t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
+		t.dynacastManager.AddCodec(mime)
+	})
 	t.MediaTrackReceiver.OnSubscriberMaxQualityChange(func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
 		t.dynacastManager.NotifySubscriberMaxQuality(subscriberID, codec.MimeType, utils.QualityForSpatialLayer(layer))
 	})
