@@ -546,12 +546,12 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error) {
+func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
 	p.lock.Lock()
 	if p.MigrateState() == types.MigrateStateInit {
 		p.pendingOffer = &sdp
 		p.lock.Unlock()
-		return
+		return nil
 	}
 	p.lock.Unlock()
 	p.params.Logger.Debugw("answering pub offer",
@@ -559,12 +559,12 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) (answer web
 		// "sdp", sdp.SDP,
 	)
 
-	if err = p.publisher.SetRemoteDescription(sdp); err != nil {
+	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
@@ -835,7 +835,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	if pendingOffer != nil {
-		_, err := p.HandleOffer(*pendingOffer)
+		err := p.HandleOffer(*pendingOffer)
 		if err != nil {
 			p.GetLogger().Errorw("could not handle offer", err)
 		}

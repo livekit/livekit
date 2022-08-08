@@ -229,7 +229,7 @@ type LocalParticipant interface {
 
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
 
-	HandleOffer(sdp webrtc.SessionDescription) (answer webrtc.SessionDescription, err error)
+	HandleOffer(sdp webrtc.SessionDescription) error
 
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)

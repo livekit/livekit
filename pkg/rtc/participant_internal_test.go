@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -674,9 +675,20 @@ func TestDisableCodecs(t *testing.T) {
 	require.True(t, found264)
 
 	// negotiated codec should not contain h264
-	anwser, err := participant.HandleOffer(sdp)
+	sink := &routingfakes.FakeMessageSink{}
+	participant.SetResponseSink(sink)
+	var answer webrtc.SessionDescription
+	sink.WriteMessageStub = func(msg proto.Message) error {
+		if res, ok := msg.(*livekit.SignalResponse); ok {
+			if res.GetAnswer() != nil {
+				answer = FromProtoSessionDescription(res.GetAnswer())
+			}
+		}
+		return nil
+	}
+	err = participant.HandleOffer(sdp)
 	require.NoError(t, err)
-	require.NoError(t, pc.SetRemoteDescription(anwser), anwser.SDP, sdp.SDP)
+	require.NoError(t, pc.SetRemoteDescription(answer), answer.SDP, sdp.SDP)
 	codecs = transceiver.Receiver().GetParameters().Codecs
 	found264 = false
 	for _, c := range codecs {
