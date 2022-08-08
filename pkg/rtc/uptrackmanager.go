@@ -60,7 +60,7 @@ func (u *UpTrackManager) Start() {
 
 func (u *UpTrackManager) Restart() {
 	for _, t := range u.GetPublishedTracks() {
-		t.Restart()
+		t.(types.LocalMediaTrack).Restart()
 	}
 }
 

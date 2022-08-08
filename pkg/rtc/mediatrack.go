@@ -30,8 +30,9 @@ type MediaTrack struct {
 	buffer      *buffer.Buffer
 
 	*MediaTrackReceiver
-	*DynacastQuality
 	*MediaLossProxy
+
+	dynacastManager *DynacastManager
 
 	lock sync.RWMutex
 }
@@ -59,6 +60,10 @@ type MediaTrackParams struct {
 func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params: params,
+		dynacastManager: NewDynacastManager(DynacastManagerParams{
+			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
+			Logger:             params.Logger,
+		}),
 	}
 
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
@@ -84,12 +89,6 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 			})
 	})
 
-	t.DynacastQuality = NewDynacastQuality(DynacastQualityParams{
-		TrackType:          params.TrackInfo.Type,
-		DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
-		Logger:             params.Logger,
-	})
-
 	t.MediaLossProxy = NewMediaLossProxy(MediaLossProxyParams{
 		Logger: params.Logger,
 	})
@@ -100,21 +99,16 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		}
 	})
 
-	t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
-	t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
-		t.DynacastQuality.AddCodec(mime)
-		t.DynacastQuality.Start()
-	})
-	t.MediaTrackReceiver.OnClearReceiver(t.DynacastQuality.Stop)
 	t.MediaTrackReceiver.OnSubscriberMaxQualityChange(func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
-		t.DynacastQuality.NotifySubscriberMaxQuality(subscriberID, codec, utils.QualityForSpatialLayer(layer))
+		t.dynacastManager.NotifySubscriberMaxQuality(subscriberID, codec.MimeType, utils.QualityForSpatialLayer(layer))
 	})
+	t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
 
 	return t
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error) {
-	t.DynacastQuality.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
+	t.dynacastManager.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
 		if f != nil && !t.IsMuted() {
 			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
 		}
@@ -125,6 +119,10 @@ func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID
 			}
 		}
 	})
+}
+
+func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
+	t.dynacastManager.NotifySubscriberNodeMaxQuality(nodeID, qualities)
 }
 
 func (t *MediaTrack) SignalCid() string {
@@ -219,6 +217,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.RemoveAllSubscribers(false)
 			t.MediaTrackReceiver.ClearReceiver(mime)
 			if t.MediaTrackReceiver.TryClose() {
+				t.dynacastManager.Close()
 				t.params.Telemetry.TrackUnpublished(
 					context.Background(),
 					t.PublisherID(),
@@ -321,11 +320,11 @@ func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {
 func (t *MediaTrack) Restart() {
 	t.MediaTrackReceiver.Restart()
 
-	t.DynacastQuality.Restart()
+	t.dynacastManager.Restart()
 }
 
 func (t *MediaTrack) Close() {
-	t.DynacastQuality.Close()
+	t.dynacastManager.Close()
 
 	t.MediaTrackReceiver.Close()
 }
@@ -335,7 +334,7 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	// This will queue up the current state, but subscriber
 	// driven changes could update it.
 	if !muted {
-		t.DynacastQuality.UpdateQualityChange(true)
+		t.dynacastManager.ForceUpdate()
 	}
 
 	t.MediaTrackReceiver.SetMuted(muted)

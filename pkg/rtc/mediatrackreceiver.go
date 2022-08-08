@@ -65,8 +65,6 @@ type MediaTrackReceiver struct {
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
 
-	onSetupReceiver     func(mime string)
-	onClearReceiver     func()
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	onVideoLayerUpdate  func(layers []*livekit.VideoLayer)
 	onClose             []func()
@@ -118,10 +116,6 @@ func (t *MediaTrackReceiver) Restart() {
 	}
 }
 
-func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
-	t.onSetupReceiver = f
-}
-
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
 
@@ -168,10 +162,6 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 
 	t.params.Logger.Debugw("setup receiver", "mime", receiver.Codec().MimeType, "priority", priority, "receivers", t.receiversShadow)
 	t.lock.Unlock()
-
-	if t.onSetupReceiver != nil {
-		t.onSetupReceiver(receiver.Codec().MimeType)
-	}
 }
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
@@ -221,10 +211,6 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	}
 }
 
-func (t *MediaTrackReceiver) OnClearReceiver(f func()) {
-	t.onClearReceiver = f
-}
-
 func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	t.lock.Lock()
 	for idx, receiver := range t.receivers {
@@ -236,13 +222,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 	}
 
 	t.shadowReceiversLocked()
-
-	stopSubscription := len(t.receiversShadow) == 0
 	t.lock.Unlock()
-
-	if stopSubscription && t.onClearReceiver != nil {
-		t.onClearReceiver()
-	}
 }
 
 func (t *MediaTrackReceiver) ClearAllReceivers() {
@@ -250,10 +230,6 @@ func (t *MediaTrackReceiver) ClearAllReceivers() {
 	t.receivers = t.receivers[:0]
 	t.receiversShadow = nil
 	t.lock.Unlock()
-
-	if t.onClearReceiver != nil {
-		t.onClearReceiver()
-	}
 }
 
 func (t *MediaTrackReceiver) OnMediaLossFeedback(f func(dt *sfu.DownTrack, rr *rtcp.ReceiverReport)) {

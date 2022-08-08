@@ -332,8 +332,6 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	Restart()
-
 	// callbacks
 	AddOnClose(func())
 
@@ -355,6 +353,8 @@ type MediaTrack interface {
 //counterfeiter:generate . LocalMediaTrack
 type LocalMediaTrack interface {
 	MediaTrack
+
+	Restart()
 
 	SignalCid() string
 	HasSdpCid(cid string) bool

@@ -142,7 +142,6 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				},
 			},
 		})
-		mt.Start()
 		var lock sync.Mutex
 		actualTrackID := livekit.TrackID("")
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
@@ -154,14 +153,11 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			return nil
 		})
 
-		mt.AddCodec(webrtc.MimeTypeVP8)
-		mt.AddCodec(webrtc.MimeTypeAV1)
-
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_HIGH)
-		mt.NotifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_HIGH)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_HIGH)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s2", webrtc.MimeTypeAV1, livekit.VideoQuality_HIGH)
 
 		// mute all subscribers of vp8
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_OFF)
 
 		expectedSubscribedQualities := []*livekit.SubscribedCodec{
 			{
@@ -219,10 +215,6 @@ func TestSubscribedMaxQuality(t *testing.T) {
 				DynacastPauseDelay: 100 * time.Millisecond,
 			},
 		})
-		mt.Start()
-
-		mt.AddCodec(webrtc.MimeTypeVP8)
-		mt.AddCodec(webrtc.MimeTypeAV1)
 
 		lock := sync.RWMutex{}
 		lock.Lock()
@@ -237,13 +229,13 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			return nil
 		})
 
-		mt.maxSubscribedQuality = map[string]livekit.VideoQuality{
+		mt.dynacastManager.maxSubscribedQuality = map[string]livekit.VideoQuality{
 			webrtc.MimeTypeVP8: livekit.VideoQuality_LOW,
 			webrtc.MimeTypeAV1: livekit.VideoQuality_LOW,
 		}
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_HIGH)
-		mt.NotifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_MEDIUM)
-		mt.NotifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_MEDIUM)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_HIGH)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s2", webrtc.MimeTypeVP8, livekit.VideoQuality_MEDIUM)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s3", webrtc.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
 
 		expectedSubscribedQualities := []*livekit.SubscribedCodec{
 			{
@@ -272,7 +264,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// "s1" dropping to MEDIUM should disable HIGH layer
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_MEDIUM)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_MEDIUM)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -301,9 +293,9 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// "s1" , "s2" , "s3" dropping to LOW should disable HIGH & MEDIUM
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
-		mt.NotifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
-		mt.NotifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_LOW)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_LOW)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s2", webrtc.MimeTypeVP8, livekit.VideoQuality_LOW)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s3", webrtc.MimeTypeAV1, livekit.VideoQuality_LOW)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -332,7 +324,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// muting "s2" only should not disable all qualities of vp8, no change of expected qualities
-		mt.NotifySubscriberMaxQuality("s2", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s2", webrtc.MimeTypeVP8, livekit.VideoQuality_OFF)
 
 		time.Sleep(100 * time.Millisecond)
 		require.Eventually(t, func() bool {
@@ -344,8 +336,8 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// muting "s1" and s3 also should disable all qualities
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_OFF)
-		mt.NotifySubscriberMaxQuality("s3", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}, livekit.VideoQuality_OFF)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_OFF)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s3", webrtc.MimeTypeAV1, livekit.VideoQuality_OFF)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -374,7 +366,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// unmuting "s1" should enable vp8 previously set max quality
-		mt.NotifySubscriberMaxQuality("s1", webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, livekit.VideoQuality_LOW)
+		mt.dynacastManager.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeVP8, livekit.VideoQuality_LOW)
 
 		expectedSubscribedQualities = []*livekit.SubscribedCodec{
 			{
@@ -403,7 +395,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		}, 10*time.Second, 100*time.Millisecond)
 
 		// a higher quality from a different node should trigger that quality
-		mt.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
+		mt.dynacastManager.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
 			{CodecMime: webrtc.MimeTypeVP8, Quality: livekit.VideoQuality_HIGH},
 			{CodecMime: webrtc.MimeTypeAV1, Quality: livekit.VideoQuality_MEDIUM},
 		})

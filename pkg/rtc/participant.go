@@ -1616,7 +1616,8 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		SubscribedQualities: subscribedQualities[0].Qualities, // for compatible with old client
 		SubscribedCodecs:    subscribedQualities,
 	}
-	// get track's layer dimensions
+
+	// send layer info about max subscription changes to telemetry
 	track := p.UpTrackManager.GetPublishedTrack(trackID)
 	var layerInfo map[livekit.VideoQuality]*livekit.VideoLayer
 	if track != nil {
