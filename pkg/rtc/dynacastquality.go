@@ -57,6 +57,17 @@ func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(maxSubscribedQuali
 	d.onSubscribedMaxQualityChange = f
 }
 
+func (d *DynacastQuality) MimeType() string {
+	return d.params.MimeType
+}
+
+func (d *DynacastQuality) MaxSubscribedQuality() livekit.VideoQuality {
+	d.lock.RLock()
+	defer d.lock.RUnlock()
+
+	return d.maxSubscribedQuality
+}
+
 func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
 	d.lock.Lock()
 	if quality == livekit.VideoQuality_OFF {
