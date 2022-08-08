@@ -44,7 +44,7 @@ require (
 	github.com/urfave/cli/v2 v2.11.1
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.9.0
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.22.0
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
