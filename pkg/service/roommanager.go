@@ -25,7 +25,7 @@ const (
 	roomPurgeSeconds     = 24 * 60 * 60
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
-	iceConfigTTL         = 60 * time.Minute
+	iceConfigTTL         = 5 * time.Minute
 )
 
 type iceConfigCacheEntry struct {

@@ -546,17 +546,20 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
+func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.lock.Lock()
 	if p.MigrateState() == types.MigrateStateInit {
-		p.pendingOffer = &sdp
+		p.pendingOffer = &offer
 		p.lock.Unlock()
 		return nil
 	}
 	p.lock.Unlock()
 
-	p.publisher.Logger().Infow("remote offer", "sdp", sdp.SDP)
-	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
+	// filter before setting remote description so that pion does not see filtered remote candidates
+	p.publisher.Logger().Infow("remote offer (unfiltered)", "sdp", offer.SDP)
+	modifiedOffer := p.publisher.FilterCandidates(offer)
+	p.publisher.Logger().Infow("remote offer (filtered)", "sdp", modifiedOffer.SDP)
+	if err := p.publisher.SetRemoteDescription(modifiedOffer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return err
 	}
@@ -685,13 +688,16 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
-	if sdp.Type != webrtc.SDPTypeAnswer {
+func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) error {
+	if answer.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
 
-	p.subscriber.Logger().Infow("remote answer", "sdp", sdp.SDP)
-	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
+	// filter before setting remote description so that pion does not see filtered remote candidates
+	p.subscriber.Logger().Infow("remote answer (unfiltered)", "sdp", answer.SDP)
+	modifiedAnswer := p.subscriber.FilterCandidates(answer)
+	p.subscriber.Logger().Infow("remote answer (filtered)", "sdp", modifiedAnswer.SDP)
+	if err := p.subscriber.SetRemoteDescription(modifiedAnswer); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
 
@@ -701,20 +707,22 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 // AddICECandidate adds candidates for remote peer
 func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
 	var filterOut bool
+	var pcTransport *PCTransport
 	p.lock.RLock()
 	if target == livekit.SignalTarget_SUBSCRIBER {
 		if p.iceConfig.PreferSubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
-			p.subscriber.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
+			pcTransport = p.subscriber
 		}
 	} else if target == livekit.SignalTarget_PUBLISHER {
 		if p.iceConfig.PreferPubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
-			p.publisher.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
+			pcTransport = p.publisher
 		}
 	}
 	p.lock.RUnlock()
 	if filterOut {
+		pcTransport.Logger().Infow("filtering out remote candidate", "candidate", candidate.Candidate)
 		return nil
 	}
 

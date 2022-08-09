@@ -37,7 +37,7 @@ const (
 	iceFailedTimeout       = 25 * time.Second // pion's default
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
 
-	shortConnectionThreshold = 2 * time.Minute
+	shortConnectionThreshold = 90 * time.Second
 )
 
 var (
@@ -228,7 +228,9 @@ func (t *PCTransport) Logger() logger.Logger {
 
 func (t *PCTransport) SetICEConnectedAt(at time.Time) {
 	t.lock.Lock()
-	t.iceConnectedAt = at
+	if t.iceConnectedAt.IsZero() {
+		t.iceConnectedAt = at
+	}
 	t.lock.Unlock()
 }
 
