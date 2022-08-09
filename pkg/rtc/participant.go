@@ -852,7 +852,9 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 		return nil
 	}
 
-	p.UpTrackManager.Restart()
+	for _, t := range p.GetPublishedTracks() {
+		t.(types.LocalMediaTrack).Restart()
+	}
 
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,

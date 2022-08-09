@@ -83,10 +83,22 @@ func (d *DynacastManager) Close() {
 	}
 }
 
+//
+// THere are situations like track unmute or streaming from a sifferent node
+// where subscribed quality needs to sent to the provider immediately.
+// This bypasses any debouncing and forces a subscribed quality update
+// with immediate effect.
+//
 func (d *DynacastManager) ForceUpdate() {
 	d.update(true)
 }
 
+//
+// It is possible for tracks to be in pending close state. When track
+// is waiting to be closed, a node is not streaming a track. This can
+// be used to force an update announcing that subscribed quality is OFF,
+// i.e. indicating not pulling track any more.
+//
 func (d *DynacastManager) ForceQuality(quality livekit.VideoQuality) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
@@ -162,20 +174,19 @@ func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality liveki
 func (d *DynacastManager) update(force bool) {
 	d.lock.Lock()
 
-	changed := false
-	downgradesOnly := true
-	for mime, quality := range d.maxSubscribedQuality {
-		if cq, ok := d.committedMaxSubscribedQuality[mime]; !ok {
-			// a new mime has been added
-			changed = true
-			downgradesOnly = false
-		} else {
-			if cq != quality {
-				changed = true
-			}
+	// add or remove of a mime triggers an update
+	changed := len(d.maxSubscribedQuality) != len(d.committedMaxSubscribedQuality)
+	downgradesOnly := !changed
+	if !changed {
+		for mime, quality := range d.maxSubscribedQuality {
+			if cq, ok := d.committedMaxSubscribedQuality[mime]; ok {
+				if cq != quality {
+					changed = true
+				}
 
-			if (cq == livekit.VideoQuality_OFF && quality != livekit.VideoQuality_OFF) || (cq != livekit.VideoQuality_OFF && quality != livekit.VideoQuality_OFF && cq < quality) {
-				downgradesOnly = false
+				if (cq == livekit.VideoQuality_OFF && quality != livekit.VideoQuality_OFF) || (cq != livekit.VideoQuality_OFF && quality != livekit.VideoQuality_OFF && cq < quality) {
+					downgradesOnly = false
+				}
 			}
 		}
 	}
@@ -219,11 +230,11 @@ func (d *DynacastManager) update(force bool) {
 }
 
 func (d *DynacastManager) enqueueSubscribedQualityChange() {
-	if d.isClosed {
+	if d.isClosed || d.onSubscribedMaxQualityChange == nil {
 		return
 	}
 
-	subscribedCodec := make([]*livekit.SubscribedCodec, 0, len(d.committedMaxSubscribedQuality))
+	subscribedCodecs := make([]*livekit.SubscribedCodec, 0, len(d.committedMaxSubscribedQuality))
 	maxSubscribedQualities := make([]types.SubscribedCodecQuality, 0, len(d.committedMaxSubscribedQuality))
 	for mime, quality := range d.committedMaxSubscribedQuality {
 		maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
@@ -232,7 +243,7 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 		})
 
 		if quality == livekit.VideoQuality_OFF {
-			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
+			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
 				Codec: mime,
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
@@ -248,18 +259,17 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 					Enabled: q <= quality,
 				})
 			}
-			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
+			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
 				Codec:     mime,
 				Qualities: subscribedQualities,
 			})
 		}
 	}
-	if d.onSubscribedMaxQualityChange != nil {
-		d.params.Logger.Debugw("subscribedMaxQualityChange",
-			"subscribedCodec", subscribedCodec,
-			"maxSubscribedQualities", maxSubscribedQualities)
-		d.qualityNotifyOpQueue.Enqueue(func() {
-			d.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
-		})
-	}
+
+	d.params.Logger.Debugw("subscribedMaxQualityChange",
+		"subscribedCodecs", subscribedCodecs,
+		"maxSubscribedQualities", maxSubscribedQualities)
+	d.qualityNotifyOpQueue.Enqueue(func() {
+		d.onSubscribedMaxQualityChange(subscribedCodecs, maxSubscribedQualities)
+	})
 }

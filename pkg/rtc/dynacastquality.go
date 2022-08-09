@@ -18,7 +18,7 @@ type DynacastQualityParams struct {
 	Logger             logger.Logger
 }
 
-// DybacastQuality manages max subscribed quality of a media track
+// DynacastQuality manages max subscribed quality of a single receiver of a media track
 type DynacastQuality struct {
 	params DynacastQualityParams
 

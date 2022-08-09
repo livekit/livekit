@@ -58,12 +58,6 @@ func (u *UpTrackManager) Start() {
 	u.opsQueue.Start()
 }
 
-func (u *UpTrackManager) Restart() {
-	for _, t := range u.GetPublishedTracks() {
-		t.(types.LocalMediaTrack).Restart()
-	}
-}
-
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.opsQueue.Stop()
 
