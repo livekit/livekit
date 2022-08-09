@@ -214,10 +214,17 @@ func TestIngressStore(t *testing.T) {
 	info := &livekit.IngressInfo{
 		IngressId: "ingressId",
 		StreamKey: "streamKey",
+		State: &livekit.IngressState{
+			StartedAt: 2,
+		},
 	}
 
 	err := rs.StoreIngress(ctx, info)
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		rs.DeleteIngress(ctx, info)
+	})
 
 	pulledInfo, err := rs.LoadIngress(ctx, "ingressId")
 	require.NoError(t, err)
@@ -245,6 +252,21 @@ func TestIngressStore(t *testing.T) {
 	infos, err = rs.ListIngress(ctx, "room")
 	require.NoError(t, err)
 	require.Equal(t, 0, len(infos))
+
+	info.RoomName = "room2"
+	info.State.StartedAt = 1
+	err = rs.UpdateIngress(ctx, info)
+	require.Equal(t, service.ErrIngressOutOfDate, err)
+
+	info.RoomName = "room2"
+	info.State.StartedAt = 3
+	err = rs.UpdateIngress(ctx, info)
+	require.NoError(t, err)
+
+	infos, err = rs.ListIngress(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(infos))
+	require.Equal(t, "room2", infos[0].RoomName)
 }
 
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {

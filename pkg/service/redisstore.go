@@ -446,6 +446,10 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		return errors.New("Missing StreamKey")
 	}
 
+	if info.State == nil {
+		info.State = &livekit.IngressState{}
+	}
+
 	data, err := proto.Marshal(info)
 	if err != nil {
 		return err
@@ -454,6 +458,7 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 	// Use a "transaction" to remove the old room association if it changed
 	txf := func(tx *redis.Tx) error {
 		var oldRoom string
+		var oldStartedAt int64
 
 		oldInfo, err := s.loadIngress(tx, info.IngressId)
 		switch err {
@@ -461,11 +466,17 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 			// Ingress doesn't exist yet
 		case nil:
 			oldRoom = oldInfo.RoomName
+			oldStartedAt = oldInfo.State.StartedAt
 		default:
 			return err
 		}
 
 		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
+			if info.State.StartedAt < oldStartedAt {
+				// Do not overwrite the info and state for a later session
+				return ErrIngressOutOfDate
+			}
+
 			p.HSet(s.ctx, IngressKey, info.IngressId, data)
 			p.HSet(s.ctx, StreamKeyKey, info.StreamKey, info.IngressId)
 
@@ -497,16 +508,13 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 	// Retry if the key has been changed.
 	for i := 0; i < maxRetries; i++ {
 		err := s.rc.Watch(s.ctx, txf, IngressKey, StreamKeyKey)
-		if err == nil {
-			// Success.
-			return nil
-		}
-		if err == redis.TxFailedErr {
+		switch err {
+		case redis.TxFailedErr:
 			// Optimistic lock lost. Retry.
 			continue
+		default:
+			return err
 		}
-		// Return any other error.
-		return err
 	}
 
 	return nil
