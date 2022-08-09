@@ -557,9 +557,13 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.lock.Unlock()
 
 	// filter before setting remote description so that pion does not see filtered remote candidates
-	p.publisher.Logger().Infow("remote offer (unfiltered)", "sdp", offer.SDP)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("remote offer (unfiltered)", "sdp", offer.SDP)
+	}
 	modifiedOffer := p.publisher.FilterCandidates(offer)
-	p.publisher.Logger().Infow("remote offer (filtered)", "sdp", modifiedOffer.SDP)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("remote offer (filtered)", "sdp", modifiedOffer.SDP)
+	}
 	if err := p.publisher.SetRemoteDescription(modifiedOffer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return err
@@ -580,7 +584,9 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 		return errors.Wrap(err, "could not create answer")
 	}
 
-	p.publisher.Logger().Infow("local answer (unfiltered)", "sdp", answer.SDP)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("local answer (unfiltered)", "sdp", answer.SDP)
+	}
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "could not set local description")
@@ -593,7 +599,9 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 	// see filtered candidates.
 	//
 	answer = p.publisher.FilterCandidates(answer)
-	p.publisher.Logger().Infow("local answer (filtered)", "sdp", answer.SDP)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("local answer (filtered)", "sdp", answer.SDP)
+	}
 	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -695,9 +703,13 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) error {
 	}
 
 	// filter before setting remote description so that pion does not see filtered remote candidates
-	p.subscriber.Logger().Infow("remote answer (unfiltered)", "sdp", answer.SDP)
+	if p.iceConfig.PreferSubTcp {
+		p.subscriber.Logger().Infow("remote answer (unfiltered)", "sdp", answer.SDP)
+	}
 	modifiedAnswer := p.subscriber.FilterCandidates(answer)
-	p.subscriber.Logger().Infow("remote answer (filtered)", "sdp", modifiedAnswer.SDP)
+	if p.iceConfig.PreferSubTcp {
+		p.subscriber.Logger().Infow("remote answer (filtered)", "sdp", modifiedAnswer.SDP)
+	}
 	if err := p.subscriber.SetRemoteDescription(modifiedAnswer); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}

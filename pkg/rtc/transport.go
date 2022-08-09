@@ -569,7 +569,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return err
 	}
 
-	t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
+	}
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
@@ -584,7 +586,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// see filtered candidates.
 	//
 	offer = t.filterCandidates(offer)
-	t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
+	}
 
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
