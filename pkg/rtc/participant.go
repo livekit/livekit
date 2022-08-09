@@ -582,6 +582,12 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 		return errors.Wrap(err, "could not set local description")
 	}
 
+	//
+	// Filter after setting local description as pion expects the answer
+	// to match between CreateAnswer and SetLocalDescription.
+	// Filtered answer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
 	answer = p.publisher.FilterCandidates(answer)
 	p.publisher.Logger().Infow("local answer (filtered)", "sdp", answer.SDP)
 	err = p.writeMessage(&livekit.SignalResponse{
