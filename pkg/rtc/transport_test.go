@@ -1,17 +1,21 @@
 package rtc
 
 import (
+	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pion/ice/v2"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
+	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
@@ -390,6 +394,81 @@ func TestFilteringCandidates(t *testing.T) {
 	require.Equal(t, 2, tcp)
 }
 
+func TestTCPFallback(t *testing.T) {
+	seA := setupTCPMux(t, 10000)
+	paramsA := TransportParams{
+		ParticipantID:       "idA",
+		ParticipantIdentity: "identityA",
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config: &WebRTCConfig{
+			SettingEngine: *seA,
+		},
+	}
+	transportA, err := NewPCTransport(paramsA)
+	require.NoError(t, err)
+	_, err = transportA.pc.CreateDataChannel("test", nil)
+	require.NoError(t, err)
+
+	seB := setupTCPMux(t, 10001)
+	paramsB := TransportParams{
+		ParticipantID:       "idB",
+		ParticipantIdentity: "identityB",
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config: &WebRTCConfig{
+			SettingEngine: *seB,
+		},
+	}
+	transportB, err := NewPCTransport(paramsB)
+	require.NoError(t, err)
+
+	// exchange ICE
+	handleTCPOnlyICEExchange(t, transportA, transportB)
+
+	// set offer/answer
+	handleOffer := handleOfferFunc(t, transportA, transportB)
+	transportA.OnOffer(handleOffer)
+
+	// first establish connection
+	require.NoError(t, transportA.CreateAndSendOffer(nil))
+
+	// ensure we are connected the first time
+	testutils.WithTimeout(t, func() string {
+		if transportA.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportA did not become connected"
+		}
+
+		if transportB.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportB did not become connected"
+		}
+		return ""
+	})
+	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
+	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+
+	// offer again, but missed
+	transportA.OnOffer(func(sd webrtc.SessionDescription) {})
+	require.NoError(t, transportA.CreateAndSendOffer(nil))
+	require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
+	require.Equal(t, negotiationStateClient, transportA.negotiationState)
+
+	// now restart ICE
+	t.Logf("creating offer with ICE restart")
+	transportA.OnOffer(handleOffer)
+	require.NoError(t, transportA.CreateAndSendOffer(&webrtc.OfferOptions{
+		ICERestart: true,
+	}))
+
+	testutils.WithTimeout(t, func() string {
+		if transportA.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportA did not reconnect after ICE restart"
+		}
+		if transportB.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
+			return "transportB did not reconnect after ICE restart"
+		}
+		return ""
+	})
+}
+
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {
 	return func(sd webrtc.SessionDescription) {
 		t.Logf("handling offer")
@@ -417,6 +496,59 @@ func handleICEExchange(t *testing.T, a, b *PCTransport) {
 			return
 		}
 		t.Logf("got ICE candidate from B: %v", candidate)
+		require.NoError(t, a.AddICECandidate(candidate.ToJSON()))
+	})
+}
+
+func setupTCPMux(t *testing.T, port int) *webrtc.SettingEngine {
+	se := &webrtc.SettingEngine{
+		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
+	}
+	tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
+		Port: int(port),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tcpListener)
+
+	tcpMux := ice.NewTCPMuxDefault(ice.TCPMuxParams{
+		Logger:          se.LoggerFactory.NewLogger("tcp_mux"),
+		Listener:        tcpListener,
+		ReadBufferSize:  50,
+		WriteBufferSize: 4 * 1024 * 1024,
+	})
+
+	se.SetICETCPMux(tcpMux)
+	se.SetNetworkTypes([]webrtc.NetworkType{
+		webrtc.NetworkTypeUDP4,
+		webrtc.NetworkTypeUDP6,
+		webrtc.NetworkTypeTCP4,
+		webrtc.NetworkTypeTCP6,
+	})
+
+	return se
+}
+
+func handleTCPOnlyICEExchange(t *testing.T, a, b *PCTransport) {
+	a.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+		t.Logf("got ICE candidate from A: %v", candidate)
+		if candidate.Protocol != webrtc.ICEProtocolTCP {
+			t.Logf("filtering out ICE candidate from A: %v", candidate)
+			return
+		}
+		require.NoError(t, b.AddICECandidate(candidate.ToJSON()))
+	})
+	b.pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+		t.Logf("got ICE candidate from B: %v", candidate)
+		if candidate.Protocol != webrtc.ICEProtocolTCP {
+			t.Logf("filtering out ICE candidate from B: %v", candidate)
+			return
+		}
 		require.NoError(t, a.AddICECandidate(candidate.ToJSON()))
 	})
 }

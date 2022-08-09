@@ -84,6 +84,7 @@ type ParticipantParams struct {
 	Region                  string
 	Migration               bool
 	AdaptiveStream          bool
+	AllowTCPFallback        bool
 }
 
 type ParticipantImpl struct {
@@ -1370,11 +1371,13 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		} else {
 			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
 		}
-		pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
-		p.SetICEConfig(types.IceConfig{
-			PreferPubTcp: true,
-			PreferSubTcp: true,
-		})
+		if p.params.AllowTCPFallback {
+			pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
+			p.SetICEConfig(types.IceConfig{
+				PreferPubTcp: true,
+				PreferSubTcp: true,
+			})
+		}
 	}
 }
 

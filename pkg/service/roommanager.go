@@ -270,6 +270,7 @@ func (r *RoomManager) StartSession(
 		ClientConf:              clientConf,
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
+		AllowTCPFallback:        r.config.RTC.AllowTCPFallback,
 	})
 	if err != nil {
 		return err
