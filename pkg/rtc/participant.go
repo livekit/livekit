@@ -783,7 +783,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close will block.
 	go func() {
 		for _, dt := range downTracksToClose {
-			dt.Close()
+			dt.CloseWithFlush(sendLeave)
 		}
 
 		p.publisher.Close()
