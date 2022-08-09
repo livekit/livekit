@@ -554,10 +554,7 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
 		return nil
 	}
 	p.lock.Unlock()
-	p.params.Logger.Debugw("answering pub offer",
-		"state", p.State().String(),
-		// "sdp", sdp.SDP,
-	)
+	p.params.Logger.Infow("received pub offer", "state", p.State().String(), "sdp", sdp.SDP)
 
 	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
@@ -579,7 +576,9 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 		return errors.Wrap(err, "could not create answer")
 	}
 
+	p.params.Logger.Infow("sending pub answer (unfiltered)", "state", p.State().String(), "sdp", answer.SDP)
 	answer = p.publisher.FilterCandidates(answer)
+	p.params.Logger.Infow("sending pub answer (filtered)", "state", p.State().String(), "sdp", answer.SDP)
 
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
@@ -687,7 +686,7 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	p.params.Logger.Debugw("setting subPC answer", "answer", sdp)
+	p.params.Logger.Infow("setting subPC answer", "answer", sdp)
 
 	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
@@ -703,10 +702,12 @@ func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, tar
 	if target == livekit.SignalTarget_SUBSCRIBER {
 		if p.iceConfig.PreferSubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
+			p.subscriber.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
 		}
 	} else if target == livekit.SignalTarget_PUBLISHER {
 		if p.iceConfig.PreferPubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
+			p.publisher.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
 		}
 	}
 	p.lock.RUnlock()
@@ -1224,7 +1225,7 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		return
 	}
 
-	p.params.Logger.Debugw("sending server offer to participant", "offer", offer)
+	p.params.Logger.Infow("sending server offer to participant", "offer", offer)
 
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{

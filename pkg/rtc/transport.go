@@ -321,7 +321,7 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 		return nil
 	}
 
-	t.params.Logger.Debugw("add candidate ", "candidate", candidate.Candidate)
+	t.params.Logger.Infow("add candidate ", "candidate", candidate.Candidate)
 
 	return t.pc.AddICECandidate(candidate)
 }
@@ -563,7 +563,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return err
 	}
 
+	t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
 	offer = t.filterCandidates(offer)
+	t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
