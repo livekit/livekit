@@ -2,8 +2,6 @@ module github.com/livekit/livekit-server
 
 go 1.17
 
-replace github.com/livekit/protocol => ../protocol
-
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.12.1
@@ -18,7 +16,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v1.0.0
+	github.com/livekit/protocol v1.0.1-0.20220809040042-d76090cba26e
 	github.com/livekit/rtcscore-go v0.0.0-20220524203225-dfd1ba40744a
 	github.com/mackerelio/go-osstat v0.2.2
 	github.com/magefile/mage v1.13.0
@@ -46,7 +44,7 @@ require (
 	github.com/urfave/cli/v2 v2.11.1
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.9.0
-	go.uber.org/zap v1.21.0
+	go.uber.org/zap v1.22.0
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
