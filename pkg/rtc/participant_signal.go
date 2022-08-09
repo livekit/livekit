@@ -187,10 +187,12 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 	if target == livekit.SignalTarget_SUBSCRIBER {
 		if p.iceConfig.PreferSubTcp && c.Protocol != webrtc.ICEProtocolTCP {
 			filterOut = true
+			p.subscriber.Logger().Infow("filtering out candidate", "candidate", c)
 		}
 	} else if target == livekit.SignalTarget_PUBLISHER {
 		if p.iceConfig.PreferPubTcp && c.Protocol != webrtc.ICEProtocolTCP {
 			filterOut = true
+			p.publisher.Logger().Infow("filtering out candidate", "candidate", c)
 		}
 	}
 	p.lock.RUnlock()
