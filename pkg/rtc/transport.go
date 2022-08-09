@@ -229,6 +229,10 @@ func (t *PCTransport) Logger() logger.Logger {
 func (t *PCTransport) SetICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
+		//
+		// Record initial connection time.
+		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
+		//
 		t.iceConnectedAt = at
 	}
 	t.lock.Unlock()
