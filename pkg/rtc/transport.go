@@ -564,15 +564,21 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
-	offer = t.filterCandidates(offer)
-	t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
-
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		t.params.Logger.Errorw("could not set local description", err)
 		return err
 	}
+
+	//
+	// Filter after setting local description as pion expects the offer
+	// to match between CreateOffer and SetLocalDescription.
+	// Filtered offer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	offer = t.filterCandidates(offer)
+	t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
 
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient

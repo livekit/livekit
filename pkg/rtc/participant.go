@@ -554,8 +554,8 @@ func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
 		return nil
 	}
 	p.lock.Unlock()
-	p.params.Logger.Infow("received pub offer", "state", p.State().String(), "sdp", sdp.SDP)
 
+	p.publisher.Logger().Infow("remote offer", "sdp", sdp.SDP)
 	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return err
@@ -576,17 +576,14 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 		return errors.Wrap(err, "could not create answer")
 	}
 
-	p.params.Logger.Infow("sending pub answer (unfiltered)", "state", p.State().String(), "sdp", answer.SDP)
-	answer = p.publisher.FilterCandidates(answer)
-	p.params.Logger.Infow("sending pub answer (filtered)", "state", p.State().String(), "sdp", answer.SDP)
-
+	p.publisher.Logger().Infow("local answer (unfiltered)", "sdp", answer.SDP)
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "could not set local description")
 	}
 
-	p.params.Logger.Debugw("sending answer to client")
-
+	answer = p.publisher.FilterCandidates(answer)
+	p.publisher.Logger().Infow("local answer (filtered)", "sdp", answer.SDP)
 	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -686,8 +683,8 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 	if sdp.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	p.params.Logger.Infow("setting subPC answer", "answer", sdp)
 
+	p.subscriber.Logger().Infow("remote answer", "sdp", sdp.SDP)
 	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
@@ -1224,8 +1221,6 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		// skip when disconnected
 		return
 	}
-
-	p.params.Logger.Infow("sending server offer to participant", "offer", offer)
 
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
