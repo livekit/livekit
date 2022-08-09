@@ -306,6 +306,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bound.Store(true)
 	d.bindLock.Unlock()
 
+	if d.onMaxLayerChanged != nil {
+		d.onMaxLayerChanged(d, d.MaxLayers().Spatial)
+	}
 	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
 	d.connectionStats.Start()
 	d.logger.Debugw("downtrack bound")

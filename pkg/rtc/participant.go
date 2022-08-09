@@ -857,7 +857,9 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 		return nil
 	}
 
-	p.UpTrackManager.Restart()
+	for _, t := range p.GetPublishedTracks() {
+		t.(types.LocalMediaTrack).Restart()
+	}
 
 	return p.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
@@ -1621,7 +1623,8 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		SubscribedQualities: subscribedQualities[0].Qualities, // for compatible with old client
 		SubscribedCodecs:    subscribedQualities,
 	}
-	// get track's layer dimensions
+
+	// send layer info about max subscription changes to telemetry
 	track := p.UpTrackManager.GetPublishedTrack(trackID)
 	var layerInfo map[livekit.VideoQuality]*livekit.VideoLayer
 	if track != nil {
@@ -2332,4 +2335,26 @@ func (p *ParticipantImpl) ClearInProgressAndProcessSubscriptionRequestsQueue(tra
 	p.lock.Unlock()
 
 	go p.ProcessSubscriptionRequestsQueue(trackID)
+}
+
+func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
+	track := p.GetPublishedTrack(trackID)
+	if track == nil {
+		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find published track")
+	}
+
+	track.(types.LocalMediaTrack).NotifySubscriberNodeMaxQuality(nodeID, maxQualities)
+	return nil
+}
+
+func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
+	track := p.GetPublishedTrack(trackID)
+	if track == nil {
+		p.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
+		return errors.New("could not find published track")
+	}
+
+	track.(types.LocalMediaTrack).NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
+	return nil
 }

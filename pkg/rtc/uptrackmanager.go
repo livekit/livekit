@@ -58,12 +58,6 @@ func (u *UpTrackManager) Start() {
 	u.opsQueue.Start()
 }
 
-func (u *UpTrackManager) Restart() {
-	for _, t := range u.GetPublishedTracks() {
-		t.Restart()
-	}
-}
-
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.opsQueue.Stop()
 
@@ -285,28 +279,6 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 		u.onTrackUpdated(track, false)
 	}
 
-	return nil
-}
-
-func (u *UpTrackManager) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find published track")
-	}
-
-	track.NotifySubscriberNodeMaxQuality(nodeID, maxQualities)
-	return nil
-}
-
-func (u *UpTrackManager) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find published track")
-	}
-
-	track.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
 	return nil
 }
 

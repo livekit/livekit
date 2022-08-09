@@ -191,8 +191,6 @@ type Participant interface {
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 	UpdateVideoLayers(updateVideoLayers *livekit.UpdateVideoLayers) error
-	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
-	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	DebugInfo() map[string]interface{}
 }
@@ -295,6 +293,9 @@ type LocalParticipant interface {
 
 	SetICEConfig(iceConfig IceConfig)
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig IceConfig))
+
+	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
+	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -331,8 +332,6 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	Restart()
-
 	// callbacks
 	AddOnClose(func())
 
@@ -348,15 +347,14 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
-	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualites []SubscribedCodecQuality)
-	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
-
 	Receivers() []sfu.TrackReceiver
 }
 
 //counterfeiter:generate . LocalMediaTrack
 type LocalMediaTrack interface {
 	MediaTrack
+
+	Restart()
 
 	SignalCid() string
 	HasSdpCid(cid string) bool
@@ -365,6 +363,9 @@ type LocalMediaTrack interface {
 	GetConnectionScore() float32
 
 	SetRTT(rtt uint32)
+
+	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []SubscribedCodecQuality)
+	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 
 // MediaTrack is the main interface representing a track published to the room

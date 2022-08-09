@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bep/debounce"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
@@ -15,16 +14,10 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/utils"
-)
-
-const (
-	initialQualityUpdateWait = 10 * time.Second
 )
 
 var (
@@ -41,19 +34,9 @@ type MediaTrackSubscriptions struct {
 	subscribedTracksMu sync.RWMutex
 	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
 
-	// quality level enable/disable
-	maxQualityLock               sync.RWMutex
-	maxSubscriberQuality         map[livekit.ParticipantID]*types.SubscribedCodecQuality
-	maxSubscriberNodeQuality     map[livekit.NodeID][]types.SubscribedCodecQuality
-	maxSubscribedQuality         map[string]livekit.VideoQuality // codec mime -> quality
-	maxSubscribedQualityDebounce func(func())
-	onSubscribedMaxQualityChange func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)
-	maxQualityTimer              *time.Timer
-
-	qualityNotifyOpQueue *utils.OpsQueue
-
 	onDownTrackCreated              func(downTrack *sfu.DownTrack)
 	onSubscriptionOperationComplete func(sub types.LocalParticipant)
+	onSubscriberMaxQualityChange    func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -62,7 +45,6 @@ type MediaTrackSubscriptionsParams struct {
 	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
-	VideoConfig      config.VideoConfig
 
 	Telemetry telemetry.TelemetryService
 
@@ -70,35 +52,10 @@ type MediaTrackSubscriptionsParams struct {
 }
 
 func NewMediaTrackSubscriptions(params MediaTrackSubscriptionsParams) *MediaTrackSubscriptions {
-	t := &MediaTrackSubscriptions{
-		params:                       params,
-		subscribedTracks:             make(map[livekit.ParticipantID]types.SubscribedTrack),
-		maxSubscriberQuality:         make(map[livekit.ParticipantID]*types.SubscribedCodecQuality),
-		maxSubscriberNodeQuality:     make(map[livekit.NodeID][]types.SubscribedCodecQuality),
-		maxSubscribedQuality:         make(map[string]livekit.VideoQuality),
-		maxSubscribedQualityDebounce: debounce.New(params.VideoConfig.DynacastPauseDelay),
-		qualityNotifyOpQueue:         utils.NewOpsQueue(params.Logger, "quality-notify", 100),
+	return &MediaTrackSubscriptions{
+		params:           params,
+		subscribedTracks: make(map[livekit.ParticipantID]types.SubscribedTrack),
 	}
-
-	return t
-}
-
-func (t *MediaTrackSubscriptions) Start() {
-	t.qualityNotifyOpQueue.Start()
-	t.startMaxQualityTimer(false)
-}
-
-func (t *MediaTrackSubscriptions) Restart() {
-	t.startMaxQualityTimer(true)
-}
-
-func (t *MediaTrackSubscriptions) Stop() {
-	t.stopMaxQualityTimer()
-}
-
-func (t *MediaTrackSubscriptions) Close() {
-	t.qualityNotifyOpQueue.Stop()
-	t.stopMaxQualityTimer()
 }
 
 func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownTrack)) {
@@ -109,14 +66,11 @@ func (t *MediaTrackSubscriptions) OnSubscriptionOperationComplete(f func(sub typ
 	t.onSubscriptionOperationComplete = f
 }
 
-func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
-	// update quality based on subscription if unmuting.
-	// This will queue up the current state, but subscriber
-	// driven changes could update it.
-	if !muted {
-		t.UpdateQualityChange(true)
-	}
+func (t *MediaTrackSubscriptions) OnSubscriberMaxQualityChange(f func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)) {
+	t.onSubscriberMaxQualityChange = f
+}
 
+func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
 	// update mute of all subscribed tracks
 	for _, st := range t.getAllSubscribedTracks() {
 		st.SetPublisherMuted(muted)
@@ -129,12 +83,6 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 
 	_, ok := t.subscribedTracks[subID]
 	return ok
-}
-
-func (t *MediaTrackSubscriptions) AddCodec(mime string) {
-	t.subscribedTracksMu.Lock()
-	t.maxSubscribedQuality[mime] = livekit.VideoQuality_HIGH
-	t.subscribedTracksMu.Unlock()
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
@@ -209,8 +157,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		// when down track is bound, start loop to send reports
 		go t.sendDownTrackBindingReports(sub)
 
-		// initialize to default layer
-		t.notifySubscriberMaxQuality(subscriberID, downTrack.Codec(), livekit.VideoQuality_HIGH)
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
@@ -299,7 +245,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		t.notifySubscriberMaxQuality(subscriberID, dt.Codec(), utils.QualityForSpatialLayer(layer))
+		if t.onSubscriberMaxQualityChange != nil {
+			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
+		}
 	})
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
@@ -472,254 +420,6 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 	}
 
 	return subscribedTrackInfo
-}
-
-func (t *MediaTrackSubscriptions) OnSubscribedMaxQualityChange(f func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality)) {
-	t.onSubscribedMaxQualityChange = f
-}
-
-func (t *MediaTrackSubscriptions) notifySubscriberMaxQuality(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, quality livekit.VideoQuality) {
-	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
-		return
-	}
-	t.params.Logger.Debugw("notifying subscriber max quality", "subscriberID", subscriberID, "codec", codec, "quality", quality)
-
-	if codec.MimeType == "" {
-		t.params.Logger.Errorw("codec mime type is empty", nil)
-	}
-
-	t.maxQualityLock.Lock()
-	if quality == livekit.VideoQuality_OFF {
-		_, ok := t.maxSubscriberQuality[subscriberID]
-		if !ok {
-			t.maxQualityLock.Unlock()
-			return
-		}
-
-		delete(t.maxSubscriberQuality, subscriberID)
-	} else {
-		maxQuality, ok := t.maxSubscriberQuality[subscriberID]
-		if ok {
-			if maxQuality.Quality == quality && maxQuality.CodecMime == codec.MimeType {
-				t.maxQualityLock.Unlock()
-				return
-			}
-			maxQuality.CodecMime = codec.MimeType
-			maxQuality.Quality = quality
-		} else {
-			t.maxSubscriberQuality[subscriberID] = &types.SubscribedCodecQuality{
-				Quality:   quality,
-				CodecMime: codec.MimeType,
-			}
-		}
-	}
-	t.maxQualityLock.Unlock()
-
-	go t.UpdateQualityChange(false)
-}
-
-func (t *MediaTrackSubscriptions) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
-	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
-		return
-	}
-
-	if len(qualities) == 1 && qualities[0].CodecMime == "" {
-		// for old version msg don't have codec mime, use first mime type
-		t.maxQualityLock.RLock()
-		for mime := range t.maxSubscribedQuality {
-			qualities[0].CodecMime = mime
-			break
-		}
-		t.maxQualityLock.RUnlock()
-	}
-
-	t.maxQualityLock.Lock()
-	if len(qualities) == 0 {
-		if _, ok := t.maxSubscriberNodeQuality[nodeID]; !ok {
-			t.maxQualityLock.Unlock()
-			return
-		}
-		delete(t.maxSubscriberNodeQuality, nodeID)
-	} else {
-		if maxQualities, ok := t.maxSubscriberNodeQuality[nodeID]; ok {
-			var matchCounter int
-			for _, quality := range qualities {
-				for _, maxQuality := range maxQualities {
-					if quality == maxQuality {
-						matchCounter++
-						break
-					}
-				}
-			}
-
-			if matchCounter == len(qualities) && matchCounter == len(maxQualities) {
-				t.maxQualityLock.Unlock()
-				return
-			}
-		}
-		t.maxSubscriberNodeQuality[nodeID] = qualities
-	}
-	t.maxQualityLock.Unlock()
-
-	go t.UpdateQualityChange(false)
-}
-
-func (t *MediaTrackSubscriptions) UpdateQualityChange(force bool) {
-	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
-		return
-	}
-
-	t.maxQualityLock.Lock()
-	t.params.Logger.Debugw("updating quality change",
-		"force", force,
-		"maxSubscriberQuality", t.maxSubscriberQuality,
-		"maxSubscriberNodeQuality", t.maxSubscriberNodeQuality,
-		"maxSubscribedQuality", t.maxSubscribedQuality)
-
-	maxSubscribedQuality := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
-	var changed bool
-	// reset maxSubscribedQuality
-	for mime := range t.maxSubscribedQuality {
-		maxSubscribedQuality[mime] = livekit.VideoQuality_OFF
-	}
-
-	for _, subQuality := range t.maxSubscriberQuality {
-		if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
-			if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
-				maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
-			}
-		} else {
-			maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
-		}
-	}
-	for _, subQualities := range t.maxSubscriberNodeQuality {
-		for _, subQuality := range subQualities {
-			if q, ok := maxSubscribedQuality[subQuality.CodecMime]; ok {
-				if q == livekit.VideoQuality_OFF || (subQuality.Quality != livekit.VideoQuality_OFF && subQuality.Quality > q) {
-					maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
-				}
-			} else {
-				maxSubscribedQuality[subQuality.CodecMime] = subQuality.Quality
-			}
-		}
-	}
-
-	qualityDowngrades := make(map[string]livekit.VideoQuality, len(t.maxSubscribedQuality))
-	noChangeCount := 0
-	for mime, q := range maxSubscribedQuality {
-		origin, ok := t.maxSubscribedQuality[mime]
-		if !ok {
-			origin = livekit.VideoQuality_OFF
-		}
-		if origin != q {
-			if q == livekit.VideoQuality_OFF || (origin != livekit.VideoQuality_OFF && origin > q) {
-				// quality downgrade (or become off), delay notify to publisher
-				qualityDowngrades[mime] = origin
-				if force {
-					t.maxSubscribedQuality[mime] = q
-				}
-			} else {
-				// quality upgrade, update immediately
-				t.maxSubscribedQuality[mime] = q
-			}
-			changed = true
-		} else {
-			noChangeCount++
-		}
-	}
-	t.params.Logger.Debugw("updated quality change",
-		"changed", changed,
-		"maxSubscribedQuality", maxSubscribedQuality,
-		"t.maxSubscribedQuality", t.maxSubscribedQuality,
-		"qualityDowngrades", qualityDowngrades)
-
-	if !changed && !force {
-		t.maxQualityLock.Unlock()
-		return
-	}
-
-	// if quality downgrade (or become OFF), delay notify to publisher if needed
-	if len(qualityDowngrades) > 0 && !force {
-		t.maxSubscribedQualityDebounce(func() {
-			t.UpdateQualityChange(true)
-		})
-
-		// no quality upgrades
-		if len(qualityDowngrades)+noChangeCount == len(t.maxSubscribedQuality) {
-			t.maxQualityLock.Unlock()
-			return
-		}
-	}
-
-	subscribedCodec := make([]*livekit.SubscribedCodec, 0, len(t.maxSubscribedQuality))
-	maxSubscribedQualities := make([]types.SubscribedCodecQuality, 0, len(t.maxSubscribedQuality))
-	for mime, maxQuality := range t.maxSubscribedQuality {
-		maxSubscribedQualities = append(maxSubscribedQualities, types.SubscribedCodecQuality{
-			CodecMime: mime,
-			Quality:   maxQuality,
-		})
-
-		if maxQuality == livekit.VideoQuality_OFF {
-			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
-				Codec: mime,
-				Qualities: []*livekit.SubscribedQuality{
-					{Quality: livekit.VideoQuality_LOW, Enabled: false},
-					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
-				},
-			})
-		} else {
-			var subscribedQualities []*livekit.SubscribedQuality
-			for q := livekit.VideoQuality_LOW; q <= livekit.VideoQuality_HIGH; q++ {
-				subscribedQualities = append(subscribedQualities, &livekit.SubscribedQuality{
-					Quality: q,
-					Enabled: q <= maxQuality,
-				})
-			}
-			subscribedCodec = append(subscribedCodec, &livekit.SubscribedCodec{
-				Codec:     mime,
-				Qualities: subscribedQualities,
-			})
-		}
-	}
-	if t.onSubscribedMaxQualityChange != nil {
-		t.params.Logger.Debugw("subscribedMaxQualityChange",
-			"subscribedCodec", subscribedCodec,
-			"maxSubscribedQualities", maxSubscribedQualities)
-		t.qualityNotifyOpQueue.Enqueue(func() {
-			t.onSubscribedMaxQualityChange(subscribedCodec, maxSubscribedQualities)
-		})
-	}
-	t.maxQualityLock.Unlock()
-}
-
-func (t *MediaTrackSubscriptions) startMaxQualityTimer(force bool) {
-	t.maxQualityLock.Lock()
-	defer t.maxQualityLock.Unlock()
-
-	if t.params.MediaTrack.Kind() != livekit.TrackType_VIDEO {
-		return
-	}
-
-	if t.maxQualityTimer != nil {
-		t.maxQualityTimer.Stop()
-		t.maxQualityTimer = nil
-	}
-
-	t.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
-		t.stopMaxQualityTimer()
-		t.UpdateQualityChange(force)
-	})
-}
-
-func (t *MediaTrackSubscriptions) stopMaxQualityTimer() {
-	t.maxQualityLock.Lock()
-	defer t.maxQualityLock.Unlock()
-
-	if t.maxQualityTimer != nil {
-		t.maxQualityTimer.Stop()
-		t.maxQualityTimer = nil
-	}
 }
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
