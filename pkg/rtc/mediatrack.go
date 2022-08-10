@@ -60,15 +60,6 @@ type MediaTrackParams struct {
 func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params: params,
-		dynacastManager: NewDynacastManager(DynacastManagerParams{
-			TrackType:          params.TrackInfo.Type,
-			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
-			Logger:             params.Logger,
-		}),
-		MediaLossProxy: NewMediaLossProxy(MediaLossProxyParams{
-			TrackType: params.TrackInfo.Type,
-			Logger:    params.Logger,
-		}),
 	}
 
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
@@ -94,40 +85,55 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 			})
 	})
 
-	t.MediaLossProxy.OnMediaLossUpdate(func(fractionalLoss uint8) {
-		if t.buffer != nil && t.Kind() == livekit.TrackType_AUDIO {
-			// ok to access buffer since receivers are added before subscribers
-			t.buffer.SetLastFractionLostReport(fractionalLoss)
-		}
-	})
+	if params.TrackInfo.Type == livekit.TrackType_AUDIO {
+		t.MediaLossProxy = NewMediaLossProxy(MediaLossProxyParams{
+			Logger: params.Logger,
+		})
+		t.MediaLossProxy.OnMediaLossUpdate(func(fractionalLoss uint8) {
+			if t.buffer != nil {
+				// ok to access buffer since receivers are added before subscribers
+				t.buffer.SetLastFractionLostReport(fractionalLoss)
+			}
+		})
+		t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
+	}
 
-	t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
-		t.dynacastManager.AddCodec(mime)
-	})
-	t.MediaTrackReceiver.OnSubscriberMaxQualityChange(func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
-		t.dynacastManager.NotifySubscriberMaxQuality(subscriberID, codec.MimeType, utils.QualityForSpatialLayer(layer))
-	})
-	t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
+	if params.TrackInfo.Type == livekit.TrackType_VIDEO {
+		t.dynacastManager = NewDynacastManager(DynacastManagerParams{
+			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
+			Logger:             params.Logger,
+		})
+		t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
+			t.dynacastManager.AddCodec(mime)
+		})
+		t.MediaTrackReceiver.OnSubscriberMaxQualityChange(func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
+			t.dynacastManager.NotifySubscriberMaxQuality(subscriberID, codec.MimeType, utils.QualityForSpatialLayer(layer))
+		})
+	}
 
 	return t
 }
 
 func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error) {
-	t.dynacastManager.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
-		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
-		}
-		for _, q := range maxSubscribedQualities {
-			receiver := t.Receiver(q.CodecMime)
-			if receiver != nil {
-				receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(q.Quality))
+	if t.dynacastManager != nil {
+		t.dynacastManager.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
+			if f != nil && !t.IsMuted() {
+				_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
 			}
-		}
-	})
+			for _, q := range maxSubscribedQualities {
+				receiver := t.Receiver(q.CodecMime)
+				if receiver != nil {
+					receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(q.Quality))
+				}
+			}
+		})
+	}
 }
 
 func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
-	t.dynacastManager.NotifySubscriberNodeMaxQuality(nodeID, qualities)
+	if t.dynacastManager != nil {
+		t.dynacastManager.NotifySubscriberNodeMaxQuality(nodeID, qualities)
+	}
 }
 
 func (t *MediaTrack) SignalCid() string {
@@ -222,7 +228,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			t.RemoveAllSubscribers(false)
 			t.MediaTrackReceiver.ClearReceiver(mime)
 			if t.MediaTrackReceiver.TryClose() {
-				t.dynacastManager.Close()
+				if t.dynacastManager != nil {
+					t.dynacastManager.Close()
+				}
 				t.params.Telemetry.TrackUnpublished(
 					context.Background(),
 					t.PublisherID(),
@@ -325,11 +333,15 @@ func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {
 func (t *MediaTrack) Restart() {
 	t.MediaTrackReceiver.Restart()
 
-	t.dynacastManager.Restart()
+	if t.dynacastManager != nil {
+		t.dynacastManager.Restart()
+	}
 }
 
 func (t *MediaTrack) Close() {
-	t.dynacastManager.Close()
+	if t.dynacastManager != nil {
+		t.dynacastManager.Close()
+	}
 
 	t.MediaTrackReceiver.Close()
 }
@@ -338,7 +350,7 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	// update quality based on subscription if unmuting.
 	// This will queue up the current state, but subscriber
 	// driven changes could update it.
-	if !muted {
+	if !muted && t.dynacastManager != nil {
 		t.dynacastManager.ForceUpdate()
 	}
 

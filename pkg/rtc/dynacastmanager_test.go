@@ -22,9 +22,7 @@ func TestSubscribedMaxQuality(t *testing.T) {
 		return s1
 	}
 	t.Run("subscribers muted", func(t *testing.T) {
-		dm := NewDynacastManager(DynacastManagerParams{
-			TrackType: livekit.TrackType_VIDEO,
-		})
+		dm := NewDynacastManager(DynacastManagerParams{})
 		var lock sync.Mutex
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
 		dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
@@ -67,7 +65,6 @@ func TestSubscribedMaxQuality(t *testing.T) {
 
 	t.Run("subscribers max quality", func(t *testing.T) {
 		dm := NewDynacastManager(DynacastManagerParams{
-			TrackType:          livekit.TrackType_VIDEO,
 			DynacastPauseDelay: 100 * time.Millisecond,
 		})
 

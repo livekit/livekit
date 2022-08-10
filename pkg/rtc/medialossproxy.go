@@ -17,8 +17,7 @@ const (
 )
 
 type MediaLossProxyParams struct {
-	TrackType livekit.TrackType
-	Logger    logger.Logger
+	Logger logger.Logger
 }
 
 type MediaLossProxy struct {
@@ -43,10 +42,6 @@ func (m *MediaLossProxy) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
 }
 
 func (m *MediaLossProxy) HandleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
-	if m.params.TrackType != livekit.TrackType_AUDIO {
-		return
-	}
-
 	m.lock.Lock()
 	for _, rr := range report.Reports {
 		m.maxDownFracLostValid = true
@@ -60,10 +55,6 @@ func (m *MediaLossProxy) HandleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.Re
 }
 
 func (m *MediaLossProxy) NotifySubscriberNodeMediaLoss(_nodeID livekit.NodeID, fractionalLoss uint8) {
-	if m.params.TrackType != livekit.TrackType_AUDIO {
-		return
-	}
-
 	m.lock.Lock()
 	m.maxDownFracLostValid = true
 	if m.maxDownFracLost < fractionalLoss {
