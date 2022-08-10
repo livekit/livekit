@@ -204,16 +204,15 @@ type IceConfig struct {
 type LocalParticipant interface {
 	Participant
 
+	// getters
 	GetLogger() logger.Logger
 	GetAdaptiveStream() bool
-
 	ProtocolVersion() ProtocolVersion
-
 	ConnectedAt() time.Time
-
 	State() livekit.ParticipantInfo_State
 	IsReady() bool
 	SubscriberAsPrimary() bool
+	GetClientConfiguration() *livekit.ClientConfiguration
 
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
@@ -225,13 +224,11 @@ type LocalParticipant interface {
 	CanSubscribe() bool
 	CanPublishData() bool
 
+	// PeerConnection
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-
 	HandleOffer(sdp webrtc.SessionDescription) error
-
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
-
 	SubscriberMediaEngine() *webrtc.MediaEngine
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
@@ -239,6 +236,8 @@ type LocalParticipant interface {
 	AddNegotiationPending(publisherID livekit.ParticipantID)
 	IsNegotiationPending(publisherID livekit.ParticipantID) bool
 	ICERestart(iceConfig *IceConfig) error
+
+	// subscriptions
 	AddSubscribedTrack(st SubscribedTrack)
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
@@ -253,7 +252,7 @@ type LocalParticipant interface {
 	GetConnectionQuality() *livekit.ConnectionQualityInfo
 
 	// server sent messages
-	SendJoinResponse(info *livekit.Room, otherParticipants []*livekit.ParticipantInfo, iceServers []*livekit.ICEServer, region string) error
+	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
 	SendDataPacket(packet *livekit.DataPacket) error
@@ -299,6 +298,7 @@ type LocalParticipant interface {
 }
 
 // Room is a container of participants, and can provide room-level actions
+//
 //counterfeiter:generate . Room
 type Room interface {
 	Name() livekit.RoomName
@@ -313,6 +313,7 @@ type Room interface {
 }
 
 // MediaTrack represents a media track
+//
 //counterfeiter:generate . MediaTrack
 type MediaTrack interface {
 	ID() livekit.TrackID
@@ -369,6 +370,7 @@ type LocalMediaTrack interface {
 }
 
 // MediaTrack is the main interface representing a track published to the room
+//
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	OnBind(f func())

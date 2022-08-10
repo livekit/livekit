@@ -69,7 +69,7 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := newMockParticipant("new", types.DefaultProtocol, false, false)
+		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
 
 		_ = rm.Join(pNew, nil, iceServersForRoom, "test")
 
@@ -84,7 +84,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := newMockParticipant("new", types.DefaultProtocol, false, false)
+		p := newMockParticipant("new", types.CurrentProtocol, false, false)
 
 		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
@@ -619,7 +619,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		defer rm.Close()
 
-		pNew := newMockParticipant("new", types.DefaultProtocol, false, false)
+		pNew := newMockParticipant("new", types.CurrentProtocol, false, false)
 		rm.Join(pNew, nil, iceServersForRoom, "testregion")
 
 		// expect new participant to get a JoinReply
@@ -633,7 +633,7 @@ func TestHiddenParticipants(t *testing.T) {
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		p := newMockParticipant("new", types.DefaultProtocol, false, true)
+		p := newMockParticipant("new", types.CurrentProtocol, false, true)
 
 		err := rm.Join(p, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, "")
 		require.NoError(t, err)
