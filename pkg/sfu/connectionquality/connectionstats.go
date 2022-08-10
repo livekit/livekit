@@ -41,6 +41,7 @@ type ConnectionStats struct {
 	lock             sync.RWMutex
 	score            float32
 	lastUpdate       time.Time
+	isLowQuality     atomic.Bool
 	maxExpectedLayer int32
 
 	done     chan struct{}
@@ -162,10 +163,10 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		params.ExpectedWidth = expectedWidth
 		params.ExpectedHeight = expectedHeight
 		cs.score = VideoTrackScore(params)
-	}
 
-	if cs.score < 4.0 {
-		cs.params.Logger.Debugw("low connection quality score", "score", cs.score, "params", params)
+		if cs.score < 3.5 {
+			
+		}
 	}
 
 	return cs.score
