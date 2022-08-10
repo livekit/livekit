@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -40,6 +41,7 @@ type RoomManager struct {
 
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
+	serverInfo        *livekit.ServerInfo
 	currentNode       routing.LocalNode
 	router            routing.Router
 	roomStore         ObjectStore
@@ -77,6 +79,14 @@ func NewLocalRoomManager(
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
 		iceConfigCache: make(map[livekit.ParticipantIdentity]*iceConfigCacheEntry),
+
+		serverInfo: &livekit.ServerInfo{
+			Edition:  livekit.ServerInfo_Standard,
+			Version:  version.Version,
+			Protocol: types.CurrentProtocol,
+			Region:   conf.Region,
+			NodeId:   currentNode.Id,
+		},
 	}
 
 	// hook up to router
@@ -281,7 +291,7 @@ func (r *RoomManager) StartSession(
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom), r.currentNode.Region); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -366,7 +376,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
+	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry)
 
 	newRoom.OnClose(func() {
 		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
