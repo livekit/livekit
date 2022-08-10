@@ -23,9 +23,10 @@ type MediaLossProxyParams struct {
 type MediaLossProxy struct {
 	params MediaLossProxyParams
 
-	lock              sync.Mutex
-	maxDownFracLost   uint8
-	maxDownFracLostTs time.Time
+	lock                 sync.Mutex
+	maxDownFracLost      uint8
+	maxDownFracLostTs    time.Time
+	maxDownFracLostValid bool
 
 	onMediaLossUpdate func(fractionalLoss uint8)
 }
@@ -43,6 +44,7 @@ func (m *MediaLossProxy) OnMediaLossUpdate(f func(fractionalLoss uint8)) {
 func (m *MediaLossProxy) HandleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.ReceiverReport) {
 	m.lock.Lock()
 	for _, rr := range report.Reports {
+		m.maxDownFracLostValid = true
 		if m.maxDownFracLost < rr.FractionLost {
 			m.maxDownFracLost = rr.FractionLost
 		}
@@ -54,6 +56,7 @@ func (m *MediaLossProxy) HandleMaxLossFeedback(_ *sfu.DownTrack, report *rtcp.Re
 
 func (m *MediaLossProxy) NotifySubscriberNodeMediaLoss(_nodeID livekit.NodeID, fractionalLoss uint8) {
 	m.lock.Lock()
+	m.maxDownFracLostValid = true
 	if m.maxDownFracLost < fractionalLoss {
 		m.maxDownFracLost = fractionalLoss
 	}
@@ -70,11 +73,12 @@ func (m *MediaLossProxy) maybeUpdateLoss() {
 
 	m.lock.Lock()
 	now := time.Now()
-	if now.Sub(m.maxDownFracLostTs) > downLostUpdateDelta {
+	if now.Sub(m.maxDownFracLostTs) > downLostUpdateDelta && m.maxDownFracLostValid {
 		shouldUpdate = true
 		maxLost = m.maxDownFracLost
 		m.maxDownFracLost = 0
 		m.maxDownFracLostTs = now
+		m.maxDownFracLostValid = false
 	}
 	onMediaLossUpdate := m.onMediaLossUpdate
 	m.lock.Unlock()
