@@ -37,7 +37,7 @@ const (
 	iceFailedTimeout       = 25 * time.Second // pion's default
 	iceKeepaliveInterval   = 2 * time.Second  // pion's default
 
-	shortConnectionThreshold = 2 * time.Minute
+	shortConnectionThreshold = 90 * time.Second
 )
 
 var (
@@ -228,7 +228,13 @@ func (t *PCTransport) Logger() logger.Logger {
 
 func (t *PCTransport) SetICEConnectedAt(at time.Time) {
 	t.lock.Lock()
-	t.iceConnectedAt = at
+	if t.iceConnectedAt.IsZero() {
+		//
+		// Record initial connection time.
+		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
+		//
+		t.iceConnectedAt = at
+	}
 	t.lock.Unlock()
 }
 
@@ -563,15 +569,25 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return err
 	}
 
-	t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
-	offer = t.filterCandidates(offer)
-	t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
-
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
+	}
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		t.params.Logger.Errorw("could not set local description", err)
 		return err
+	}
+
+	//
+	// Filter after setting local description as pion expects the offer
+	// to match between CreateOffer and SetLocalDescription.
+	// Filtered offer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	offer = t.filterCandidates(offer)
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
 	}
 
 	// indicate waiting for client

@@ -84,6 +84,7 @@ type ParticipantParams struct {
 	Region                  string
 	Migration               bool
 	AdaptiveStream          bool
+	AllowTCPFallback        bool
 }
 
 type ParticipantImpl struct {
@@ -546,17 +547,24 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(sdp webrtc.SessionDescription) error {
+func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.lock.Lock()
 	if p.MigrateState() == types.MigrateStateInit {
-		p.pendingOffer = &sdp
+		p.pendingOffer = &offer
 		p.lock.Unlock()
 		return nil
 	}
 	p.lock.Unlock()
-	p.params.Logger.Infow("received pub offer", "state", p.State().String(), "sdp", sdp.SDP)
 
-	if err := p.publisher.SetRemoteDescription(sdp); err != nil {
+	// filter before setting remote description so that pion does not see filtered remote candidates
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("remote offer (unfiltered)", "sdp", offer.SDP)
+	}
+	modifiedOffer := p.publisher.FilterCandidates(offer)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("remote offer (filtered)", "sdp", modifiedOffer.SDP)
+	}
+	if err := p.publisher.SetRemoteDescription(modifiedOffer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "remote_description").Add(1)
 		return err
 	}
@@ -576,17 +584,24 @@ func (p *ParticipantImpl) createPublsiherAnswerAndSend() error {
 		return errors.Wrap(err, "could not create answer")
 	}
 
-	p.params.Logger.Infow("sending pub answer (unfiltered)", "state", p.State().String(), "sdp", answer.SDP)
-	answer = p.publisher.FilterCandidates(answer)
-	p.params.Logger.Infow("sending pub answer (filtered)", "state", p.State().String(), "sdp", answer.SDP)
-
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("local answer (unfiltered)", "sdp", answer.SDP)
+	}
 	if err = p.publisher.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "could not set local description")
 	}
 
-	p.params.Logger.Debugw("sending answer to client")
-
+	//
+	// Filter after setting local description as pion expects the answer
+	// to match between CreateAnswer and SetLocalDescription.
+	// Filtered answer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	answer = p.publisher.FilterCandidates(answer)
+	if p.iceConfig.PreferPubTcp {
+		p.publisher.Logger().Infow("local answer (filtered)", "sdp", answer.SDP)
+	}
 	err = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -682,13 +697,20 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
-	if sdp.Type != webrtc.SDPTypeAnswer {
+func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) error {
+	if answer.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
 	}
-	p.params.Logger.Infow("setting subPC answer", "answer", sdp)
 
-	if err := p.subscriber.SetRemoteDescription(sdp); err != nil {
+	// filter before setting remote description so that pion does not see filtered remote candidates
+	if p.iceConfig.PreferSubTcp {
+		p.subscriber.Logger().Infow("remote answer (unfiltered)", "sdp", answer.SDP)
+	}
+	modifiedAnswer := p.subscriber.FilterCandidates(answer)
+	if p.iceConfig.PreferSubTcp {
+		p.subscriber.Logger().Infow("remote answer (filtered)", "sdp", modifiedAnswer.SDP)
+	}
+	if err := p.subscriber.SetRemoteDescription(modifiedAnswer); err != nil {
 		return errors.Wrap(err, "could not set remote description")
 	}
 
@@ -698,20 +720,22 @@ func (p *ParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) error {
 // AddICECandidate adds candidates for remote peer
 func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
 	var filterOut bool
+	var pcTransport *PCTransport
 	p.lock.RLock()
 	if target == livekit.SignalTarget_SUBSCRIBER {
 		if p.iceConfig.PreferSubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
-			p.subscriber.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
+			pcTransport = p.subscriber
 		}
 	} else if target == livekit.SignalTarget_PUBLISHER {
 		if p.iceConfig.PreferPubTcp && !strings.Contains(candidate.Candidate, "tcp") {
 			filterOut = true
-			p.publisher.Logger().Infow("filtering out candidate", "candidate", candidate.Candidate)
+			pcTransport = p.publisher
 		}
 	}
 	p.lock.RUnlock()
 	if filterOut {
+		pcTransport.Logger().Infow("filtering out remote candidate", "candidate", candidate.Candidate)
 		return nil
 	}
 
@@ -1225,8 +1249,6 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 		return
 	}
 
-	p.params.Logger.Infow("sending server offer to participant", "offer", offer)
-
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
@@ -1361,11 +1383,13 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		} else {
 			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
 		}
-		pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
-		p.SetICEConfig(types.IceConfig{
-			PreferPubTcp: true,
-			PreferSubTcp: true,
-		})
+		if p.params.AllowTCPFallback {
+			pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
+			p.SetICEConfig(types.IceConfig{
+				PreferPubTcp: true,
+				PreferSubTcp: true,
+			})
+		}
 	}
 }
 
