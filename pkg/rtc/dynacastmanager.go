@@ -13,6 +13,7 @@ import (
 )
 
 type DynacastManagerParams struct {
+	TrackType          livekit.TrackType
 	DynacastPauseDelay time.Duration
 	Logger             logger.Logger
 }
@@ -130,7 +131,7 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
-	if d.isClosed {
+	if d.isClosed || d.params.TrackType != livekit.TrackType_VIDEO {
 		return nil
 	}
 
@@ -172,6 +173,10 @@ func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality liveki
 }
 
 func (d *DynacastManager) update(force bool) {
+	if d.params.TrackType != livekit.TrackType_VIDEO {
+		return
+	}
+
 	d.lock.Lock()
 
 	// add or remove of a mime triggers an update

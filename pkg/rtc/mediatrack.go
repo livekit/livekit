@@ -61,8 +61,13 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t := &MediaTrack{
 		params: params,
 		dynacastManager: NewDynacastManager(DynacastManagerParams{
+			TrackType:          params.TrackInfo.Type,
 			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
 			Logger:             params.Logger,
+		}),
+		MediaLossProxy: NewMediaLossProxy(MediaLossProxyParams{
+			TrackType: params.TrackInfo.Type,
+			Logger:    params.Logger,
 		}),
 	}
 
@@ -89,9 +94,6 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 			})
 	})
 
-	t.MediaLossProxy = NewMediaLossProxy(MediaLossProxyParams{
-		Logger: params.Logger,
-	})
 	t.MediaLossProxy.OnMediaLossUpdate(func(fractionalLoss uint8) {
 		if t.buffer != nil && t.Kind() == livekit.TrackType_AUDIO {
 			// ok to access buffer since receivers are added before subscribers
