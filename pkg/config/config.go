@@ -38,7 +38,7 @@ type Config struct {
 	Video          VideoConfig        `yaml:"video,omitempty"`
 	Room           RoomConfig         `yaml:"room,omitempty"`
 	TURN           TURNConfig         `yaml:"turn,omitempty"`
-	Ingress        IngressConfig      `yaml:ingress,omitempty"`
+	Ingress        IngressConfig      `yaml:"ingress,omitempty"`
 	WebHook        WebHookConfig      `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig `yaml:"node_selector,omitempty"`
 	KeyFile        string             `yaml:"key_file,omitempty"`
@@ -74,6 +74,9 @@ type RTCConfig struct {
 
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
+
+	// allow TCP fallback
+	AllowTCPFallback bool `yaml:"allow_tcp_fallback,omitempty"`
 }
 
 type TURNServer struct {
