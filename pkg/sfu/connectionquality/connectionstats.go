@@ -165,7 +165,12 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		cs.score = VideoTrackScore(params)
 
 		if cs.score < 3.5 {
-			
+			if !cs.isLowQuality.Swap(true) {
+				// changed from good to low quality, log
+				cs.params.Logger.Debugw("low connection quality", "score", cs.score, "params", params)
+			}
+		} else {
+			cs.isLowQuality.Store(false)
 		}
 	}
 
