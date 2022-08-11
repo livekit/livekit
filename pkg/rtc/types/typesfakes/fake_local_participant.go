@@ -188,6 +188,16 @@ type FakeLocalParticipant struct {
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.ForwarderState
 	}
+	GetClientConfigurationStub        func() *livekit.ClientConfiguration
+	getClientConfigurationMutex       sync.RWMutex
+	getClientConfigurationArgsForCall []struct {
+	}
+	getClientConfigurationReturns struct {
+		result1 *livekit.ClientConfiguration
+	}
+	getClientConfigurationReturnsOnCall map[int]struct {
+		result1 *livekit.ClientConfiguration
+	}
 	GetConnectionQualityStub        func() *livekit.ConnectionQualityInfo
 	getConnectionQualityMutex       sync.RWMutex
 	getConnectionQualityArgsForCall []struct {
@@ -483,13 +493,10 @@ type FakeLocalParticipant struct {
 	sendDataPacketReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendJoinResponseStub        func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) error
+	SendJoinResponseStub        func(*livekit.JoinResponse) error
 	sendJoinResponseMutex       sync.RWMutex
 	sendJoinResponseArgsForCall []struct {
-		arg1 *livekit.Room
-		arg2 []*livekit.ParticipantInfo
-		arg3 []*livekit.ICEServer
-		arg4 string
+		arg1 *livekit.JoinResponse
 	}
 	sendJoinResponseReturns struct {
 		result1 error
@@ -1633,6 +1640,59 @@ func (fake *FakeLocalParticipant) GetCachedDownTrackReturnsOnCall(i int, result1
 		result1 *webrtc.RTPTransceiver
 		result2 sfu.ForwarderState
 	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) GetClientConfiguration() *livekit.ClientConfiguration {
+	fake.getClientConfigurationMutex.Lock()
+	ret, specificReturn := fake.getClientConfigurationReturnsOnCall[len(fake.getClientConfigurationArgsForCall)]
+	fake.getClientConfigurationArgsForCall = append(fake.getClientConfigurationArgsForCall, struct {
+	}{})
+	stub := fake.GetClientConfigurationStub
+	fakeReturns := fake.getClientConfigurationReturns
+	fake.recordInvocation("GetClientConfiguration", []interface{}{})
+	fake.getClientConfigurationMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetClientConfigurationCallCount() int {
+	fake.getClientConfigurationMutex.RLock()
+	defer fake.getClientConfigurationMutex.RUnlock()
+	return len(fake.getClientConfigurationArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetClientConfigurationCalls(stub func() *livekit.ClientConfiguration) {
+	fake.getClientConfigurationMutex.Lock()
+	defer fake.getClientConfigurationMutex.Unlock()
+	fake.GetClientConfigurationStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetClientConfigurationReturns(result1 *livekit.ClientConfiguration) {
+	fake.getClientConfigurationMutex.Lock()
+	defer fake.getClientConfigurationMutex.Unlock()
+	fake.GetClientConfigurationStub = nil
+	fake.getClientConfigurationReturns = struct {
+		result1 *livekit.ClientConfiguration
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetClientConfigurationReturnsOnCall(i int, result1 *livekit.ClientConfiguration) {
+	fake.getClientConfigurationMutex.Lock()
+	defer fake.getClientConfigurationMutex.Unlock()
+	fake.GetClientConfigurationStub = nil
+	if fake.getClientConfigurationReturnsOnCall == nil {
+		fake.getClientConfigurationReturnsOnCall = make(map[int]struct {
+			result1 *livekit.ClientConfiguration
+		})
+	}
+	fake.getClientConfigurationReturnsOnCall[i] = struct {
+		result1 *livekit.ClientConfiguration
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) GetConnectionQuality() *livekit.ConnectionQualityInfo {
@@ -3283,31 +3343,18 @@ func (fake *FakeLocalParticipant) SendDataPacketReturnsOnCall(i int, result1 err
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.Room, arg2 []*livekit.ParticipantInfo, arg3 []*livekit.ICEServer, arg4 string) error {
-	var arg2Copy []*livekit.ParticipantInfo
-	if arg2 != nil {
-		arg2Copy = make([]*livekit.ParticipantInfo, len(arg2))
-		copy(arg2Copy, arg2)
-	}
-	var arg3Copy []*livekit.ICEServer
-	if arg3 != nil {
-		arg3Copy = make([]*livekit.ICEServer, len(arg3))
-		copy(arg3Copy, arg3)
-	}
+func (fake *FakeLocalParticipant) SendJoinResponse(arg1 *livekit.JoinResponse) error {
 	fake.sendJoinResponseMutex.Lock()
 	ret, specificReturn := fake.sendJoinResponseReturnsOnCall[len(fake.sendJoinResponseArgsForCall)]
 	fake.sendJoinResponseArgsForCall = append(fake.sendJoinResponseArgsForCall, struct {
-		arg1 *livekit.Room
-		arg2 []*livekit.ParticipantInfo
-		arg3 []*livekit.ICEServer
-		arg4 string
-	}{arg1, arg2Copy, arg3Copy, arg4})
+		arg1 *livekit.JoinResponse
+	}{arg1})
 	stub := fake.SendJoinResponseStub
 	fakeReturns := fake.sendJoinResponseReturns
-	fake.recordInvocation("SendJoinResponse", []interface{}{arg1, arg2Copy, arg3Copy, arg4})
+	fake.recordInvocation("SendJoinResponse", []interface{}{arg1})
 	fake.sendJoinResponseMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3321,17 +3368,17 @@ func (fake *FakeLocalParticipant) SendJoinResponseCallCount() int {
 	return len(fake.sendJoinResponseArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponseCalls(stub func(*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) error) {
+func (fake *FakeLocalParticipant) SendJoinResponseCalls(stub func(*livekit.JoinResponse) error) {
 	fake.sendJoinResponseMutex.Lock()
 	defer fake.sendJoinResponseMutex.Unlock()
 	fake.SendJoinResponseStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendJoinResponseArgsForCall(i int) (*livekit.Room, []*livekit.ParticipantInfo, []*livekit.ICEServer, string) {
+func (fake *FakeLocalParticipant) SendJoinResponseArgsForCall(i int) *livekit.JoinResponse {
 	fake.sendJoinResponseMutex.RLock()
 	defer fake.sendJoinResponseMutex.RUnlock()
 	argsForCall := fake.sendJoinResponseArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) SendJoinResponseReturns(result1 error) {
@@ -4627,6 +4674,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getAudioLevelMutex.RUnlock()
 	fake.getCachedDownTrackMutex.RLock()
 	defer fake.getCachedDownTrackMutex.RUnlock()
+	fake.getClientConfigurationMutex.RLock()
+	defer fake.getClientConfigurationMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()
 	defer fake.getConnectionQualityMutex.RUnlock()
 	fake.getLoggerMutex.RLock()

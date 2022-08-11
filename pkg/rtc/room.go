@@ -43,6 +43,7 @@ type Room struct {
 
 	config      WebRTCConfig
 	audioConfig *config.AudioConfig
+	serverInfo  *livekit.ServerInfo
 	telemetry   telemetry.TelemetryService
 
 	// map of identity -> Participant
@@ -70,13 +71,20 @@ type ParticipantOptions struct {
 	AutoSubscribe bool
 }
 
-func NewRoom(room *livekit.Room, config WebRTCConfig, audioConfig *config.AudioConfig, telemetry telemetry.TelemetryService) *Room {
+func NewRoom(
+	room *livekit.Room,
+	config WebRTCConfig,
+	audioConfig *config.AudioConfig,
+	serverInfo *livekit.ServerInfo,
+	telemetry telemetry.TelemetryService,
+) *Room {
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
 		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
+		serverInfo:      serverInfo,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		bufferFactory:   buffer.NewBufferFactory(config.Receiver.PacketBufferSize),
@@ -196,7 +204,7 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
-func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer, region string) error {
+func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -259,7 +267,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			speakers := r.GetActiveSpeakers()
 			for _, speaker := range speakers {
 				if livekit.ParticipantID(speaker.Sid) == publisherID {
-					p.SendSpeakerUpdate(speakers)
+					_ = p.SendSpeakerUpdate(speakers)
 					break
 				}
 			}
@@ -269,7 +277,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
 				update := &livekit.ConnectionQualityUpdate{}
 				update.Updates = append(update.Updates, pub.GetConnectionQuality())
-				p.SendConnectionQualityUpdate(update)
+				_ = p.SendConnectionQualityUpdate(update)
 			}
 		}()
 	})
@@ -287,14 +295,6 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	r.participants[participant.Identity()] = participant
 	r.participantOpts[participant.Identity()] = opts
 
-	// gather other participants and send join response
-	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
-	for _, p := range r.participants {
-		if p.ID() != participant.ID() && !p.Hidden() {
-			otherParticipants = append(otherParticipants, p.ToProto())
-		}
-	}
-
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
 	}
@@ -306,7 +306,8 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		}
 	})
 
-	if err := participant.SendJoinResponse(proto.Clone(r.protoRoom).(*livekit.Room), otherParticipants, iceServers, region); err != nil {
+	joinResponse := r.createJoinResponseLocked(participant, iceServers)
+	if err := participant.SendJoinResponse(joinResponse); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
 	}
@@ -661,6 +662,32 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 		return false
 	}
 	return true
+}
+
+func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.JoinResponse {
+	// gather other participants and send join response
+	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
+	for _, p := range r.participants {
+		if p.ID() != participant.ID() && !p.Hidden() {
+			otherParticipants = append(otherParticipants, p.ToProto())
+		}
+	}
+
+	return &livekit.JoinResponse{
+		Room:              r.protoRoom,
+		Participant:       participant.ToProto(),
+		OtherParticipants: otherParticipants,
+		ServerVersion:     r.serverInfo.Version,
+		ServerRegion:      r.serverInfo.Region,
+		IceServers:        iceServers,
+		// indicates both server and client support subscriber as primary
+		SubscriberPrimary:   participant.SubscriberAsPrimary(),
+		ClientConfiguration: participant.GetClientConfiguration(),
+		// sane defaults for ping interval & timeout
+		PingInterval: 10,
+		PingTimeout:  20,
+		ServerInfo:   r.serverInfo,
+	}
 }
 
 // a ParticipantImpl in the room added a new remoteTrack, subscribe other participants to it

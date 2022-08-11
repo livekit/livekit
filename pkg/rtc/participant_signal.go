@@ -9,7 +9,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/version"
 )
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
@@ -31,12 +30,7 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 	}
 }
 
-func (p *ParticipantImpl) SendJoinResponse(
-	roomInfo *livekit.Room,
-	otherParticipants []*livekit.ParticipantInfo,
-	iceServers []*livekit.ICEServer,
-	region string,
-) error {
+func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
@@ -44,20 +38,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
-			Join: &livekit.JoinResponse{
-				Room:              roomInfo,
-				Participant:       p.ToProto(),
-				OtherParticipants: otherParticipants,
-				ServerVersion:     version.Version,
-				ServerRegion:      region,
-				IceServers:        iceServers,
-				// indicates both server and client support subscriber as primary
-				SubscriberPrimary:   p.SubscriberAsPrimary(),
-				ClientConfiguration: p.params.ClientConf,
-				// sane defaults for ping interval & timeout
-				PingInterval: 10,
-				PingTimeout:  20,
-			},
+			Join: joinResponse,
 		},
 	})
 }
