@@ -240,7 +240,6 @@ func (t *PCTransport) Logger() logger.Logger {
 	return t.params.Logger
 }
 
-// RAJA-TODO check if this has to be reset on ICERestart
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
@@ -285,7 +284,6 @@ func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 	return iceTransport.GetSelectedCandidatePair()
 }
 
-// RAJA-TODO check if this has to be reset on ICERestart
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
 	if !t.connectedAt.IsZero() {

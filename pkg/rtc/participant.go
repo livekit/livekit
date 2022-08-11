@@ -932,31 +932,17 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	})
 	tm.OnSubscriberInitialConnected(p.onSubscriberInitialConnected)
 	tm.OnSubscriberNegotiationFailed(p.handleSubscriberNegotiationFailed)
+	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
 
 	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
 	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
 
+	// RAJA-TODO - review Prometheus stuff
+
 	/* RAJA-TODO
-	primaryPC := p.publisher.pc
-	secondaryPC := p.subscriber.pc
-	// primary connection does not change, canSubscribe can change if permission was updated
-	// after the participant has joined
-	p.subscriberAsPrimary = p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
-	if p.SubscriberAsPrimary() {
-		primaryPC = p.subscriber.pc
-		secondaryPC = p.publisher.pc
-		if !p.params.Migration {
-			if err := p.createDataChannelForSubscriberAsPrimary(nil); err != nil {
-				return err
-			}
-		}
-	} else {
+	if !p.SubscriberAsPrimary() {
 		p.activeCounter.Add(2)
 	}
-
-	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
-
-	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
 	*/
 
 	tm.OnDataMessage(p.onDataMessage)

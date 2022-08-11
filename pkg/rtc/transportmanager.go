@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
@@ -48,8 +49,9 @@ type TransportManager struct {
 	onPublisherGetDTX func() bool
 	onPublisherAnswer func(answer webrtc.SessionDescription) error
 
-	onSubscriberInitialConnected func()
-	onPrimaryConnectionFailed    func()
+	onSubscriberInitialConnected       func()
+	onPrimaryTransportInitialConnected func()
+	onAnyTransportFailed               func()
 
 	onICEConfigChanged func(iceConfig types.IceConfig)
 }
@@ -91,6 +93,17 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.publisher = publisher
 	t.publisher.OnRemoteDescripitonSettled(t.createPublisherAnswerAndSend)
+	t.publisher.OnInitialConnected(func() {
+		if !t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
+			t.onPrimaryTransportInitialConnected()
+		}
+	})
+	t.publisher.OnFailed(func(isShortLived bool) {
+		t.handleConnectionFailed(isShortLived)
+		if t.onAnyTransportFailed != nil {
+			t.onAnyTransportFailed()
+		}
+	})
 
 	subscriber, err := NewPCTransport(TransportParams{
 		ParticipantID:           params.SID,
@@ -107,6 +120,20 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		return nil, err
 	}
 	t.subscriber = subscriber
+	t.subscriber.OnInitialConnected(func() {
+		if t.onSubscriberInitialConnected != nil {
+			t.onSubscriberInitialConnected()
+		}
+		if t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
+			t.onPrimaryTransportInitialConnected()
+		}
+	})
+	t.subscriber.OnFailed(func(isShortLived bool) {
+		t.handleConnectionFailed(isShortLived)
+		if t.onAnyTransportFailed != nil {
+			t.onAnyTransportFailed()
+		}
+	})
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -164,12 +191,15 @@ func (t *TransportManager) OnSubscriberOffer(f func(offer webrtc.SessionDescript
 }
 
 func (t *TransportManager) OnSubscriberInitialConnected(f func()) {
-	// RAJA-TODO - need to check against primxry initial connected
-	t.subscriber.OnInitialConnected(f)
+	t.onSubscriberInitialConnected = f
 }
 
 func (t *TransportManager) OnSubscriberNegotiationFailed(f func()) {
 	t.subscriber.OnNegotiationFailed(f)
+}
+
+func (t *TransportManager) OnSubscriberStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
+	t.subscriber.OnStreamStateChange(f)
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
@@ -181,18 +211,11 @@ func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) OnPrimaryTransportInitialConnected(f func()) {
-	// RAJA-TODO t.subscriber.OnInitialConnected(f)
+	t.onPrimaryTransportInitialConnected = f
 }
 
 func (t *TransportManager) OnAnyTransportFailed(f func()) {
-	t.publisher.OnFailed(func(isShortLived bool) {
-		t.handleConnectionFailed(isShortLived)
-		f()
-	})
-	t.subscriber.OnFailed(func(isShortLived bool) {
-		t.handleConnectionFailed(isShortLived)
-		f()
-	})
+	t.onAnyTransportFailed = f
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
