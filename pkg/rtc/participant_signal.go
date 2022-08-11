@@ -182,6 +182,7 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
+	// RAJA-TODO - candidate filtering should happein in PCTransport
 	var filterOut bool
 	var pcTransport *PCTransport
 	p.lock.RLock()

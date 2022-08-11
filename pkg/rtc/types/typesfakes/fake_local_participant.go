@@ -610,16 +610,6 @@ type FakeLocalParticipant struct {
 	subscriberAsPrimaryReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SubscriberMediaEngineStub        func() *webrtc.MediaEngine
-	subscriberMediaEngineMutex       sync.RWMutex
-	subscriberMediaEngineArgsForCall []struct {
-	}
-	subscriberMediaEngineReturns struct {
-		result1 *webrtc.MediaEngine
-	}
-	subscriberMediaEngineReturnsOnCall map[int]struct {
-		result1 *webrtc.MediaEngine
-	}
 	SubscriberPCStub        func() *webrtc.PeerConnection
 	subscriberPCMutex       sync.RWMutex
 	subscriberPCArgsForCall []struct {
@@ -4018,59 +4008,6 @@ func (fake *FakeLocalParticipant) SubscriberAsPrimaryReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SubscriberMediaEngine() *webrtc.MediaEngine {
-	fake.subscriberMediaEngineMutex.Lock()
-	ret, specificReturn := fake.subscriberMediaEngineReturnsOnCall[len(fake.subscriberMediaEngineArgsForCall)]
-	fake.subscriberMediaEngineArgsForCall = append(fake.subscriberMediaEngineArgsForCall, struct {
-	}{})
-	stub := fake.SubscriberMediaEngineStub
-	fakeReturns := fake.subscriberMediaEngineReturns
-	fake.recordInvocation("SubscriberMediaEngine", []interface{}{})
-	fake.subscriberMediaEngineMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) SubscriberMediaEngineCallCount() int {
-	fake.subscriberMediaEngineMutex.RLock()
-	defer fake.subscriberMediaEngineMutex.RUnlock()
-	return len(fake.subscriberMediaEngineArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SubscriberMediaEngineCalls(stub func() *webrtc.MediaEngine) {
-	fake.subscriberMediaEngineMutex.Lock()
-	defer fake.subscriberMediaEngineMutex.Unlock()
-	fake.SubscriberMediaEngineStub = stub
-}
-
-func (fake *FakeLocalParticipant) SubscriberMediaEngineReturns(result1 *webrtc.MediaEngine) {
-	fake.subscriberMediaEngineMutex.Lock()
-	defer fake.subscriberMediaEngineMutex.Unlock()
-	fake.SubscriberMediaEngineStub = nil
-	fake.subscriberMediaEngineReturns = struct {
-		result1 *webrtc.MediaEngine
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) SubscriberMediaEngineReturnsOnCall(i int, result1 *webrtc.MediaEngine) {
-	fake.subscriberMediaEngineMutex.Lock()
-	defer fake.subscriberMediaEngineMutex.Unlock()
-	fake.SubscriberMediaEngineStub = nil
-	if fake.subscriberMediaEngineReturnsOnCall == nil {
-		fake.subscriberMediaEngineReturnsOnCall = make(map[int]struct {
-			result1 *webrtc.MediaEngine
-		})
-	}
-	fake.subscriberMediaEngineReturnsOnCall[i] = struct {
-		result1 *webrtc.MediaEngine
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) SubscriberPC() *webrtc.PeerConnection {
 	fake.subscriberPCMutex.Lock()
 	ret, specificReturn := fake.subscriberPCReturnsOnCall[len(fake.subscriberPCArgsForCall)]
@@ -4790,8 +4727,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.stateMutex.RUnlock()
 	fake.subscriberAsPrimaryMutex.RLock()
 	defer fake.subscriberAsPrimaryMutex.RUnlock()
-	fake.subscriberMediaEngineMutex.RLock()
-	defer fake.subscriberMediaEngineMutex.RUnlock()
 	fake.subscriberPCMutex.RLock()
 	defer fake.subscriberPCMutex.RUnlock()
 	fake.subscriptionPermissionMutex.RLock()

@@ -88,7 +88,9 @@ type ParticipantParams struct {
 }
 
 type ParticipantImpl struct {
-	params              ParticipantParams
+	params ParticipantParams
+
+	transportManager    *TransportManager
 	publisher           *PCTransport
 	subscriber          *PCTransport
 	isClosed            atomic.Bool
@@ -203,60 +205,38 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		return nil, err
 	}
 
-	enabledCodecs := make([]*livekit.Codec, 0, len(p.params.EnabledCodecs))
-	for _, c := range p.params.EnabledCodecs {
-		var disabled bool
-		for _, disableCodec := range p.params.ClientConf.GetDisabledCodecs().GetCodecs() {
-			// disable codec's fmtp is empty means disable this codec entirely
-			if strings.EqualFold(c.Mime, disableCodec.Mime) && (disableCodec.FmtpLine == "" || disableCodec.FmtpLine == c.FmtpLine) {
-				disabled = true
-				break
-			}
-		}
-		if !disabled {
-			enabledCodecs = append(enabledCodecs, c)
-		}
-	}
-
-	p.publisher, err = NewPCTransport(TransportParams{
-		ParticipantID:           p.params.SID,
-		ParticipantIdentity:     p.params.Identity,
-		ProtocolVersion:         p.ProtocolVersion(),
-		Target:                  livekit.SignalTarget_PUBLISHER,
+	p.transportManager, err = NewTransportManager(TransportManagerParams{
+		Identity:                params.Identity,
+		SID:                     params.SID,
 		Config:                  params.Config,
+		ProtocolVersion:         params.ProtocolVersion,
+		Telemetry:               params.Telemetry,
 		CongestionControlConfig: params.CongestionControlConfig,
-		Telemetry:               p.params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
-		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
+		EnabledCodecs:           params.EnabledCodecs,
 		SimTracks:               params.SimTracks,
-	})
-	if err != nil {
-		return nil, err
-	}
-	p.subscriber, err = NewPCTransport(TransportParams{
-		ParticipantID:           p.params.SID,
-		ParticipantIdentity:     p.params.Identity,
-		ProtocolVersion:         p.ProtocolVersion(),
-		Target:                  livekit.SignalTarget_SUBSCRIBER,
-		Config:                  params.Config,
-		CongestionControlConfig: params.CongestionControlConfig,
-		Telemetry:               p.params.Telemetry,
-		EnabledCodecs:           enabledCodecs,
-		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
+		ClientConf:              params.ClientConf,
+		Logger:                  params.Logger,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	p.subscriber.OnNegotiationFailed(p.handleNegotiationFailed)
-
-	p.publisher.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+	p.transportManager.OnPublisherICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
 		p.sendIceCandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
-	p.publisher.OnRemoteDescripitonSettled(p.createPublsiherAnswerAndSend)
+	// RAJA-TODO p.publisher.OnRemoteDescripitonSettled(p.createPublsiherAnswerAndSend)	// RAJA-TODO
+
+	p.transportManager.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED || p.MigrateState() == types.MigrateStateInit {
+			return
+		}
+		p.sendIceCandidate(c, livekit.SignalTarget_SUBSCRIBER)
+	})
+	p.transportManager.OnSubscriberNegotiationFailed(p.handleSubscriberNegotiationFailed)
+
 	p.subscriber.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED || p.MigrateState() == types.MigrateStateInit {
 			return
@@ -280,13 +260,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	} else {
 		p.activeCounter.Add(2)
 	}
-
-	primaryPC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		p.handleICEStateChange(true, state)
-	})
-	secondaryPC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		p.handleICEStateChange(false, state)
-	})
 
 	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
 	secondaryPC.OnConnectionStateChange(p.handleSecondaryStateChange)
@@ -490,10 +463,6 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info.Tracks = p.UpTrackManager.ToProto()
 
 	return info
-}
-
-func (p *ParticipantImpl) SubscriberMediaEngine() *webrtc.MediaEngine {
-	return p.subscriber.me
 }
 
 // callbacks for clients
@@ -1360,29 +1329,11 @@ func (p *ParticipantImpl) getTransport(isPrimary bool) *PCTransport {
 	return pcTransport
 }
 
-func (p *ParticipantImpl) handleICEConnected(isPrimary bool) {
-	pcTransport := p.getTransport(isPrimary)
-	pcTransport.SetICEConnectedAt(time.Now())
-
-	if pair, err := pcTransport.GetSelectedPair(); err != nil {
-		pcTransport.Logger().Errorw("error getting selected ICE candidate pair", err)
-	} else {
-		pcTransport.Logger().Infow("selected ICE candidate pair", "pair", pair)
-	}
-}
-
+/* RAJA-TODO
 func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
-	pcTransport := p.getTransport(isPrimary)
-	isShort, duration := pcTransport.IsShortConnection(time.Now())
 	if isShort {
 		// irrespective of which one fails, force TCP on both as the other one might
 		// fail at a different time and cause another disruption
-		pair, err := pcTransport.GetSelectedPair()
-		if err != nil {
-			pcTransport.Logger().Errorw("short ICE connection", err, "duration", duration)
-		} else {
-			pcTransport.Logger().Infow("short ICE connection", "pair", pair, "duration", duration)
-		}
 		if p.params.AllowTCPFallback {
 			pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
 			p.SetICEConfig(types.IceConfig{
@@ -1392,14 +1343,7 @@ func (p *ParticipantImpl) handleConnectionFailed(isPrimary bool) {
 		}
 	}
 }
-
-func (p *ParticipantImpl) handleICEStateChange(isPrimary bool, state webrtc.ICEConnectionState) {
-	if state == webrtc.ICEConnectionStateConnected {
-		p.handleICEConnected(isPrimary)
-	} else if state == webrtc.ICEConnectionStateFailed {
-		p.handleConnectionFailed(isPrimary)
-	}
-}
+RAJA-TODO */
 
 func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
 	if state == webrtc.PeerConnectionStateConnected {
@@ -2271,8 +2215,8 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	return nil, sfu.ForwarderState{}
 }
 
-func (p *ParticipantImpl) handleNegotiationFailed() {
-	p.params.Logger.Infow("negotiation failed, starting full reconnect")
+func (p *ParticipantImpl) handleSubscriberNegotiationFailed() {
+	p.params.Logger.Infow("subscriber negotiation failed, starting full reconnect")
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: &livekit.LeaveRequest{

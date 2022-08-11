@@ -68,6 +68,7 @@ type PCTransport struct {
 	pendingCandidates          []webrtc.ICECandidateInit
 	debouncedNegotiate         func(func())
 	negotiationPending         map[livekit.ParticipantID]bool
+	onICECandidate             func(c *webrtc.ICECandidate)
 	onOffer                    func(offer webrtc.SessionDescription)
 	onRemoteDescripitonSettled func() error
 	restartAfterGathering      bool
@@ -226,7 +227,7 @@ func (t *PCTransport) Logger() logger.Logger {
 	return t.params.Logger
 }
 
-func (t *PCTransport) SetICEConnectedAt(at time.Time) {
+func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
 		//
@@ -238,7 +239,7 @@ func (t *PCTransport) SetICEConnectedAt(at time.Time) {
 	t.lock.Unlock()
 }
 
-func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
+func (t *PCTransport) isShortConnection(at time.Time) (bool, time.Duration) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -250,7 +251,7 @@ func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 	return duration < shortConnectionThreshold, duration
 }
 
-func (t *PCTransport) GetSelectedPair() (*webrtc.ICECandidatePair, error) {
+func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 	sctp := t.pc.SCTP()
 	if sctp == nil {
 		return nil, errors.New("no SCTP")
@@ -269,6 +270,70 @@ func (t *PCTransport) GetSelectedPair() (*webrtc.ICECandidatePair, error) {
 	return iceTransport.GetSelectedCandidatePair()
 }
 
+func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
+	if state != webrtc.ICEGathererStateComplete {
+		return
+	}
+
+	go func() {
+		t.lock.Lock()
+		if t.restartAfterGathering {
+			t.params.Logger.Debugw("restarting ICE after ICE gathering")
+			if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
+				t.params.Logger.Warnw("could not restart ICE", err)
+			}
+			t.lock.Unlock()
+		} else if t.pendingRestartIceOffer != nil {
+			t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+			offer := t.pendingRestartIceOffer
+			t.pendingRestartIceOffer = nil
+			t.lock.Unlock()
+			if err := t.SetRemoteDescription(*offer); err != nil {
+				t.params.Logger.Warnw("could not accept remote restart ice offer", err)
+			}
+		} else {
+			t.lock.Unlock()
+		}
+	}()
+}
+
+func (t *PCTransport) handleConnectionFailed() {
+	isShort, duration := t.isShortConnection(time.Now())
+	if isShort {
+		// irrespective of which one fails, force TCP on both as the other one might
+		// fail at a different time and cause another disruption
+		pair, err := t.getSelectedPair()
+		if err != nil {
+			t.params.Logger.Errorw("short ICE connection", err, "duration", duration)
+		} else {
+			t.params.Logger.Infow("short ICE connection", "pair", pair, "duration", duration)
+		}
+		/* RAJA-TODO - do a callback from here
+		if p.params.AllowTCPFallback {
+			pcTransport.Logger().Infow("restricting transport to TCP on both peer connections")
+			p.SetICEConfig(types.IceConfig{
+				PreferPubTcp: true,
+				PreferSubTcp: true,
+			})
+		}
+		*/
+	}
+}
+
+func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
+	if state == webrtc.ICEConnectionStateConnected {
+		t.setICEConnectedAt(time.Now())
+
+		if pair, err := t.getSelectedPair(); err != nil {
+			t.params.Logger.Errorw("error getting selected ICE candidate pair", err)
+		} else {
+			t.params.Logger.Infow("selected ICE candidate pair", "pair", pair)
+		}
+	} else if state == webrtc.ICEConnectionStateFailed {
+		t.handleConnectionFailed()
+	}
+}
+
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
 	t.lock.Lock()
 	t.preferTCP = preferTCP
@@ -285,28 +350,11 @@ func (t *PCTransport) createPeerConnection() error {
 	}
 
 	t.pc = pc
-	t.pc.OnICEGatheringStateChange(func(state webrtc.ICEGathererState) {
-		if state == webrtc.ICEGathererStateComplete {
-			go func() {
-				t.lock.Lock()
-				if t.restartAfterGathering {
-					t.params.Logger.Debugw("restarting ICE after ICE gathering")
-					if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-						t.params.Logger.Warnw("could not restart ICE", err)
-					}
-					t.lock.Unlock()
-				} else if t.pendingRestartIceOffer != nil {
-					t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-					offer := t.pendingRestartIceOffer
-					t.pendingRestartIceOffer = nil
-					t.lock.Unlock()
-					if err := t.SetRemoteDescription(*offer); err != nil {
-						t.params.Logger.Warnw("could not accept remote restart ice offer", err)
-					}
-				} else {
-					t.lock.Unlock()
-				}
-			}()
+	t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+	t.pc.OnICEConnectionStateChange(t.onICEConnectionStateChange)
+	t.pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if t.onICECandidate != nil {
+			t.onICECandidate(c)
 		}
 	})
 
@@ -436,6 +484,10 @@ func (t *PCTransport) isRemoteOfferRestartICE(sd webrtc.SessionDescription) (str
 	// ice credential changed, remote offer restart ice
 	restartICE := t.currentOfferIceCredential != "" && t.currentOfferIceCredential != credential
 	return credential, restartICE, nil
+}
+
+func (t *PCTransport) OnICECandidate(f func(c *webrtc.ICECandidate)) {
+	t.onICECandidate = f
 }
 
 // OnOffer is called when the PeerConnection starts negotiation and prepares an offer
