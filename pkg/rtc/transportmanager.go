@@ -443,7 +443,7 @@ func (t *TransportManager) SetMigrateInfo(previousAnswer *webrtc.SessionDescript
 	t.lock.Unlock()
 
 	if t.params.SubscriberAsPrimary {
-		if err := t.createDataChannelsForSubscriber(dataChannels); err != nil {
+		if err := t.createDataChannelsForSubscriber(pendingDataChannelsSubscriber); err != nil {
 			t.params.Logger.Errorw("create subscriber data channels during migration failed", err)
 		}
 	}

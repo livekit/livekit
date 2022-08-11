@@ -304,7 +304,7 @@ func TestFilteringCandidates(t *testing.T) {
 
 	// should not filter out UDP candidates if TCP is not preferred
 	offer = *transport.pc.LocalDescription()
-	filteredOffer := transport.FilterCandidates(offer)
+	filteredOffer := transport.filterCandidates(offer)
 	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
 
 	parsed, err := offer.Unmarshal()
@@ -382,7 +382,7 @@ func TestFilteringCandidates(t *testing.T) {
 	require.Equal(t, 2, tcp)
 
 	transport.SetPreferTCP(true)
-	filteredOffer = transport.FilterCandidates(offer)
+	filteredOffer = transport.filterCandidates(offer)
 	parsed, err = filteredOffer.Unmarshal()
 	require.NoError(t, err)
 	udp, tcp = getNumTransportTypeCandidates(parsed)

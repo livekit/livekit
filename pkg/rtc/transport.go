@@ -384,6 +384,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			if t.onInitialConnected != nil {
 				t.onInitialConnected()
 			}
+
 			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
@@ -392,24 +393,31 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 }
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
 	switch dc.Label() {
 	case ReliableDataChannel:
+		t.lock.Lock()
 		t.reliableDC = dc
+		t.reliableDCOpened = true
+		t.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if t.onDataPacket != nil {
 				t.onDataPacket(livekit.DataPacket_RELIABLE, msg.Data)
 			}
 		})
+
+		t.maybeNotifyFullyEstablished()
 	case LossyDataChannel:
+		t.lock.Lock()
 		t.lossyDC = dc
+		t.lossyDCOpened = true
+		t.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if t.onDataPacket != nil {
 				t.onDataPacket(livekit.DataPacket_LOSSY, msg.Data)
 			}
 		})
+
+		t.maybeNotifyFullyEstablished()
 	default:
 		t.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
 	}
@@ -417,10 +425,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 func (t *PCTransport) maybeNotifyFullyEstablished() {
 	t.lock.RLock()
-	fullyEstablished := !t.connectedAt.IsZero()
-	if t.params.Target == livekit.SignalTarget_SUBSCRIBER {
-		fullyEstablished = fullyEstablished && t.reliableDCOpened && t.lossyDCOpened
-	}
+	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
 	t.lock.RUnlock()
 
 	if fullyEstablished && t.onFullyEstablished != nil {
@@ -449,6 +454,8 @@ func (t *PCTransport) createPeerConnection() error {
 	t.pc.OnICECandidate(t.onICECandidateTrickle)
 
 	t.pc.OnConnectionStateChange(t.onPeerConnectionStateChange)
+
+	t.pc.OnDataChannel(t.onDataChannel)
 
 	t.me = me
 
