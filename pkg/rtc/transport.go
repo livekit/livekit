@@ -13,9 +13,11 @@ import (
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
+	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -238,6 +240,7 @@ func (t *PCTransport) Logger() logger.Logger {
 	return t.params.Logger
 }
 
+// RAJA-TODO check if this has to be reset on ICERestart
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
@@ -282,6 +285,7 @@ func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 	return iceTransport.GetSelectedCandidatePair()
 }
 
+// RAJA-TODO check if this has to be reset on ICERestart
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
 	if !t.connectedAt.IsZero() {
@@ -290,6 +294,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	}
 
 	t.connectedAt = at
+	prometheus.ServiceOperationCounter.WithLabelValues("peer_connection", "success", "").Add(1)
 	t.lock.Unlock()
 	return true
 }
@@ -477,20 +482,6 @@ func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return nil
 }
 
-func (t *PCTransport) ReliableDataChannel() *webrtc.DataChannel {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return t.reliableDC
-}
-
-func (t *PCTransport) LossyDataChannel() *webrtc.DataChannel {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return t.lossyDC
-}
-
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	dc, err := t.pc.CreateDataChannel(label, dci)
 	if err != nil {
@@ -512,17 +503,22 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 }
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
+	t.lock.RLock()
 	var dc *webrtc.DataChannel
 	switch dcLabel {
 	case ReliableDataChannel:
-		dc = t.ReliableDataChannel()
+		dc = t.reliableDC
 	case LossyDataChannel:
-		dc = t.LossyDataChannel()
+		dc = t.lossyDC
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
+	}
+	t.lock.RUnlock()
+	if err != nil {
 		return
 	}
+
 	if dc != nil {
 		return dc.Label(), *dc.ID(), true, nil
 	}
@@ -539,6 +535,39 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 // IsEstablished returns true if the PeerConnection has been established
 func (t *PCTransport) IsEstablished() bool {
 	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
+}
+
+func (t *PCTransport) HasEverConnected() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return !t.connectedAt.IsZero()
+}
+
+func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
+	return t.pc.WriteRTCP(pkts)
+}
+
+func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket) error {
+	data, err := proto.Marshal(dp)
+	if err != nil {
+		return err
+	}
+
+	var dc *webrtc.DataChannel
+	t.lock.RLock()
+	if dp.Kind == livekit.DataPacket_RELIABLE {
+		dc = t.reliableDC
+	} else {
+		dc = t.lossyDC
+	}
+	t.lock.RUnlock()
+
+	if dc == nil {
+		return ErrDataChannelUnavailable
+	}
+
+	return dc.Send(data)
 }
 
 func (t *PCTransport) Close() {

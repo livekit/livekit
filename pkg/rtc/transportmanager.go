@@ -4,10 +4,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
-	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -41,12 +40,10 @@ type TransportManager struct {
 
 	lock sync.RWMutex
 
-	pendingOffer *webrtc.SessionDescription
+	pendingOfferPublisher        *webrtc.SessionDescription
+	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 
-	pendingDataChannelsPublisher  []*livekit.DataChannelInfo
-	pendingDataChannelsSubscriber []*livekit.DataChannelInfo
-
-	activeCounter atomic.Int32
+	// RAJA-TODO activeCounter atomic.Int32
 
 	onPublisherGetDTX func() bool
 	onPublisherAnswer func(answer webrtc.SessionDescription) error
@@ -116,25 +113,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 	}
 
-	/* RAJA-TODO
-	primaryPC := p.publisher.pc
-	secondaryPC := p.subscriber.pc
-	// primary connection does not change, canSubscribe can change if permission was updated
-	// after the participant has joined
-	p.subscriberAsPrimary = p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()
-	if p.SubscriberAsPrimary() {
-		primaryPC = p.subscriber.pc
-		secondaryPC = p.publisher.pc
-	} else {
-		p.activeCounter.Add(2)
-	}
-
-	primaryPC.OnConnectionStateChange(p.handlePrimaryStateChange)
-	secondaryPC.OnConnectionStateChange(p.handleSecondaryStateChange)
-
-	p.subscriber.OnStreamStateChange(p.onStreamStateChange)
-	*/
-
 	return t, nil
 }
 
@@ -172,6 +150,10 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 	return t.publisher.GetRTPReceiver(mid)
 }
 
+func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
+	return t.publisher.WriteRTCP(pkts)
+}
+
 func (t *TransportManager) OnSubscriberICECandidate(f func(c *webrtc.ICECandidate)) {
 	// TODO-CACHE-CANDIDATE - need to intercept and cache candidates until ready
 	t.subscriber.OnICECandidate(f)
@@ -182,11 +164,24 @@ func (t *TransportManager) OnSubscriberOffer(f func(offer webrtc.SessionDescript
 }
 
 func (t *TransportManager) OnSubscriberInitialConnected(f func()) {
+	// RAJA-TODO - need to check against primxry initial connected
 	t.subscriber.OnInitialConnected(f)
 }
 
 func (t *TransportManager) OnSubscriberNegotiationFailed(f func()) {
 	t.subscriber.OnNegotiationFailed(f)
+}
+
+func (t *TransportManager) HasSubscriberEverConnected() bool {
+	return t.subscriber.HasEverConnected()
+}
+
+func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
+	return t.subscriber.WriteRTCP(pkts)
+}
+
+func (t *TransportManager) OnPrimaryTransportInitialConnected(f func()) {
+	// RAJA-TODO t.subscriber.OnInitialConnected(f)
 }
 
 func (t *TransportManager) OnAnyTransportFailed(f func()) {
@@ -214,26 +209,8 @@ func (t *TransportManager) OnDataMessage(f func(kind livekit.DataPacket_Kind, da
 }
 
 func (t *TransportManager) SendDataPacket(dp *livekit.DataPacket) error {
-	data, err := proto.Marshal(dp)
-	if err != nil {
-		return err
-	}
-
 	// downstream data is sent via primary peer connection
-	transport := t.getTransport(true)
-
-	var dc *webrtc.DataChannel
-	if dp.Kind == livekit.DataPacket_RELIABLE {
-		dc = transport.ReliableDataChannel()
-	} else {
-		dc = transport.LossyDataChannel()
-	}
-
-	if dc == nil {
-		return ErrDataChannelUnavailable
-	}
-
-	return dc.Send(data)
+	return t.getTransport(true).SendDataPacket(dp)
 }
 
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
@@ -288,7 +265,7 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) error {
 	t.lock.Lock()
 	if shouldPend {
-		t.pendingOffer = &offer
+		t.pendingOfferPublisher = &offer
 		t.lock.Unlock()
 		return nil
 	}
@@ -297,10 +274,10 @@ func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPe
 	return t.publisher.SetRemoteDescription(offer)
 }
 
-func (t *TransportManager) ProcessPendingOffer() error {
+func (t *TransportManager) ProcessPendingPublisherOffer() error {
 	t.lock.Lock()
-	pendingOffer := t.pendingOffer
-	t.pendingOffer = nil
+	pendingOffer := t.pendingOfferPublisher
+	t.pendingOfferPublisher = nil
 	t.lock.Unlock()
 
 	if pendingOffer != nil {
@@ -331,6 +308,8 @@ func (t *TransportManager) createPublisherAnswerAndSend() error {
 	return nil
 }
 
+// HandleAnswer handles a client answer response, with subscriber PC, server initiates the
+// offer and client answers
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) error {
 	if answer.Type != webrtc.SDPTypeAnswer {
 		return ErrUnexpectedOffer
@@ -343,6 +322,7 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) error 
 	return nil
 }
 
+// AddICECandidate adds candidates for remote peer
 func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
@@ -433,70 +413,6 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		PreferSubTcp: true,
 	})
 }
-
-/*
-RAJA-TODO - handle connection failed callback and TCP fallback
-*/
-
-/*
-func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateConnected {
-		if !p.firstConnected.Swap(true) {
-			p.setDowntracksConnected()
-		}
-		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
-		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
-			p.SetMigrateState(types.MigrateStateComplete)
-		}
-		p.incActiveCounter()
-	} else if state == webrtc.PeerConnectionStateFailed {
-		p.handleConnectionFailed(true)
-
-		// clients support resuming of connections when websocket becomes disconnected
-		p.closeSignalConnection()
-
-		// detect when participant has actually left.
-		go func() {
-			p.lock.Lock()
-			if p.disconnectTimer != nil {
-				p.disconnectTimer.Stop()
-				p.disconnectTimer = nil
-			}
-			p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
-				p.lock.Lock()
-				p.disconnectTimer.Stop()
-				p.disconnectTimer = nil
-				p.lock.Unlock()
-
-				if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
-					return
-				}
-				primaryPC := p.publisher.pc
-				if p.SubscriberAsPrimary() {
-					primaryPC = p.subscriber.pc
-				}
-				if primaryPC.ConnectionState() != webrtc.PeerConnectionStateConnected {
-					p.params.Logger.Infow("closing disconnected participant")
-					_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
-				}
-			})
-			p.lock.Unlock()
-		}()
-
-	}
-}
-
-// for the secondary peer connection, we still need to handle when they become disconnected
-// instead of allowing them to silently fail.
-func (p *ParticipantImpl) handleSecondaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateFailed {
-		p.handleConnectionFailed(false)
-
-		// clients support resuming of connections when websocket becomes disconnected
-		p.closeSignalConnection()
-	}
-}
-*/
 
 func (t *TransportManager) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
 	t.lock.Lock()

@@ -109,7 +109,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 		return ErrDataChannelUnavailable
 	}
 
-	return p.transportManager.SendDataPacket(dp)
+	return p.TransportManager.SendDataPacket(dp)
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {

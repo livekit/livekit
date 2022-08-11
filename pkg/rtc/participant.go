@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -85,15 +86,13 @@ type ParticipantParams struct {
 type ParticipantImpl struct {
 	params ParticipantParams
 
-	transportManager    *TransportManager
-	isClosed            atomic.Bool
-	state               atomic.Value // livekit.ParticipantInfo_State
-	updateCache         *lru.Cache
-	resSink             atomic.Value // routing.MessageSink
-	resSinkValid        atomic.Bool
-	subscriberAsPrimary bool
-	grants              *auth.ClaimGrants
-	isPublisher         atomic.Bool
+	isClosed     atomic.Bool
+	state        atomic.Value // livekit.ParticipantInfo_State
+	updateCache  *lru.Cache
+	resSink      atomic.Value // routing.MessageSink
+	resSinkValid atomic.Bool
+	grants       *auth.ClaimGrants
+	isPublisher  atomic.Bool
 
 	// when first connected
 	connectedAt time.Time
@@ -109,6 +108,7 @@ type ParticipantImpl struct {
 	pendingTracksLock sync.RWMutex
 	pendingTracks     map[string]*pendingTrackInfo
 
+	*TransportManager
 	*UpTrackManager
 
 	// tracks the current participant is subscribed to
@@ -303,7 +303,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		}
 	}
 	// update isPublisher attribute
-	p.isPublisher.Store(canPublish && p.transportManager.IsPublisherEstablished())
+	p.isPublisher.Store(canPublish && p.TransportManager.IsPublisherEstablished())
 
 	if onParticipantUpdate != nil {
 		onParticipantUpdate(p)
@@ -387,13 +387,11 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	shouldPend := false
-	p.lock.RLock()
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
 	}
-	p.lock.RUnlock()
 
-	if err := p.transportManager.HandleOffer(offer, shouldPend); err != nil {
+	if err := p.TransportManager.HandleOffer(offer, shouldPend); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 		return err
 	}
@@ -490,20 +488,7 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.transportManager.SetMigrateInfo(previousAnswer, dataChannels)
-}
-
-// HandleAnswer handles a client answer response, with subscriber PC, server initiates the
-// offer and client answers
-func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) error {
-	// RAJA-TODO-FORWARD - forward directly
-	return p.transportManager.HandleAnswer(answer)
-}
-
-// AddICECandidate adds candidates for remote peer
-func (p *ParticipantImpl) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
-	// RAJA-TODO-FORWARD
-	return p.transportManager.AddICECandidate(candidate, target)
+	p.TransportManager.SetMigrateInfo(previousAnswer, dataChannels)
 }
 
 func (p *ParticipantImpl) Start() {
@@ -569,7 +554,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 			dt.CloseWithFlush(sendLeave)
 		}
 
-		p.transportManager.Close()
+		p.TransportManager.Close()
 	}()
 	return nil
 }
@@ -578,25 +563,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 // negotiate task and negotiate immediately
 func (p *ParticipantImpl) Negotiate(force bool) {
 	if p.MigrateState() != types.MigrateStateInit {
-		p.transportManager.NegotiateSubscriber(force)
+		p.TransportManager.NegotiateSubscriber(force)
 	}
 }
 
-func (p *ParticipantImpl) AddNegotiationPending(publisherID livekit.ParticipantID) {
-	// RAJA-TODO - forward
-	p.transportManager.AddNegotiationPending(publisherID)
-}
-
-func (p *ParticipantImpl) IsNegotiationPending(publisherID livekit.ParticipantID) bool {
-	// RAJA-TODO - forward
-	return p.transportManager.IsNegotiationPending(publisherID)
-}
-
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
-	p.lock.Lock()
 	preState := p.MigrateState()
 	if preState == types.MigrateStateComplete || preState == s {
-		p.lock.Unlock()
 		return
 	}
 
@@ -606,14 +579,13 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	if s == types.MigrateStateSync {
 		processPendingOffer = true
 	}
-	p.lock.Unlock()
 
 	if s == types.MigrateStateComplete {
-		p.transportManager.ProcessPendingPublisherDataChannels()
+		p.TransportManager.ProcessPendingPublisherDataChannels()
 	}
 
 	if processPendingOffer {
-		err := p.transportManager.ProcessPendingOffer()
+		err := p.TransportManager.ProcessPendingPublisherOffer()
 		if err != nil {
 			p.params.Logger.Errorw("could not handle pending offer during migration", err)
 		}
@@ -630,18 +602,13 @@ func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	return p.transportManager.ICERestart(iceConfig)
+	return p.TransportManager.ICERestart(iceConfig)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
 	p.lock.Lock()
 	p.onICEConfigChanged = f
 	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) SetICEConfig(iceConfig types.IceConfig) {
-	// RAJA-TODO - forward
-	p.transportManager.SetICEConfig(iceConfig)
 }
 
 //
@@ -759,16 +726,6 @@ func (p *ParticipantImpl) IsRecorder() bool {
 	return p.grants.Video.Recorder
 }
 
-func (p *ParticipantImpl) SubscriberAsPrimary() bool {
-	// RAJA-TODO - forward
-	return p.transportManager.SubscriberAsPrimary()
-}
-
-func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
-	// RAJA-TODO -forward
-	return p.transportManager.SubscriberPC()
-}
-
 func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error {
 	p.lock.Lock()
 	p.subscribedTracksSettings[trackID] = settings
@@ -808,12 +765,10 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	p.lock.Unlock()
 
 	subTrack.OnBind(func() {
-		/* RAJA-TODO
-		if p.firstConnected.Load() {
+		if p.TransportManager.HasSubscriberEverConnected() {
 			subTrack.DownTrack().SetConnected()
 		}
-		*/
-		p.transportManager.AddSubscribedTrack(subTrack)
+		p.TransportManager.AddSubscribedTrack(subTrack)
 	})
 
 	if settings != nil {
@@ -866,7 +821,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	}
 	p.lock.Unlock()
 
-	p.transportManager.RemoveSubscribedTrack(subTrack)
+	p.TransportManager.RemoveSubscribedTrack(subTrack)
 
 	if numRemaining == 0 {
 		//
@@ -978,6 +933,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnSubscriberInitialConnected(p.onSubscriberInitialConnected)
 	tm.OnSubscriberNegotiationFailed(p.handleSubscriberNegotiationFailed)
 
+	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
 	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
 
 	/* RAJA-TODO
@@ -1004,7 +960,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	*/
 
 	tm.OnDataMessage(p.onDataMessage)
-	p.transportManager = tm
+	p.TransportManager = tm
 	return nil
 }
 
@@ -1145,6 +1101,17 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 	p.sendIceCandidate(c, target)
 }
 
+func (p *ParticipantImpl) onSubscriberInitialConnected() {
+	p.setDowntracksConnected()
+}
+
+func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
+	if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
+		p.SetMigrateState(types.MigrateStateComplete)
+	}
+	// RAJA-TODO p.incActiveCounter()
+}
+
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
 	p.closeSignalConnection()
@@ -1170,25 +1137,6 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) onSubscriberInitialConnected() {
-	p.setDowntracksConnected()
-}
-
-/*
-func (p *ParticipantImpl) handlePrimaryStateChange(state webrtc.PeerConnectionState) {
-	if state == webrtc.PeerConnectionStateConnected {
-		if !p.firstConnected.Swap(true) {
-			p.setDowntracksConnected()
-		}
-		prometheus.ServiceOperationCounter.WithLabelValues("ice_connection", "success", "").Add(1)
-		if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
-			p.SetMigrateState(types.MigrateStateComplete)
-		}
-		// RAJA-TODO p.incActiveCounter()
-	}
-}
-*/
-
 // downTracksRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
 func (p *ParticipantImpl) downTracksRTCPWorker() {
@@ -1199,11 +1147,6 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
-		/* RAJA-TODO
-		if p.subscriber.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
-			continue
-		}
-		*/
 
 		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
@@ -1242,14 +1185,12 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 				batch = sd[:size]
 				sd = sd[size:]
 				pkts = append(pkts, &rtcp.SourceDescription{Chunks: batch})
-				/* RAJA-TODO
-				if err := p.subscriber.pc.WriteRTCP(pkts); err != nil {
+				if err := p.TransportManager.WriteSubscriberRTCP(pkts); err != nil {
 					if err == io.EOF || err == io.ErrClosedPipe {
 						return
 					}
-					logger.Errorw("could not send down track reports", err)
+					p.params.Logger.Errorw("could not send down track reports", err)
 				}
-				*/
 			}
 
 			pkts = pkts[:0]
@@ -1480,7 +1421,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 	newTrack := false
 
 	p.params.Logger.Debugw("media track received", "trackID", track.ID(), "kind", track.Kind())
-	mid := p.transportManager.GetPublisherMid(rtpReceiver)
+	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	if mid == "" {
 		p.params.Logger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
@@ -1517,7 +1458,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpRecei
 
 func (p *ParticipantImpl) addMigrateMutedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
 	p.params.Logger.Debugw("add migrate muted track", "cid", cid, "track", ti.String())
-	rtpReceiver := p.transportManager.GetPublisherRTPReceiver(ti.Mid)
+	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
 		p.params.Logger.Errorw("could not find receiver for migrated track", nil, "track", ti.Sid)
 		return nil
@@ -1760,11 +1701,9 @@ func (p *ParticipantImpl) rtcpSendWorker() {
 			return
 		}
 
-		/* RAJA-TODO
-		if err := p.publisher.pc.WriteRTCP(pkts); err != nil {
+		if err := p.TransportManager.WritePublisherRTCP(pkts); err != nil {
 			p.params.Logger.Errorw("could not write RTCP to participant", err)
 		}
-		*/
 	}
 }
 
