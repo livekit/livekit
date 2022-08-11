@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/pion/webrtc/v3"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 
@@ -110,30 +109,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 		return ErrDataChannelUnavailable
 	}
 
-	data, err := proto.Marshal(dp)
-	if err != nil {
-		return err
-	}
-
-	var dc *webrtc.DataChannel
-	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.SubscriberAsPrimary() {
-			dc = p.reliableDCSub
-		} else {
-			dc = p.reliableDC
-		}
-	} else {
-		if p.SubscriberAsPrimary() {
-			dc = p.lossyDCSub
-		} else {
-			dc = p.lossyDC
-		}
-	}
-
-	if dc == nil {
-		return ErrDataChannelUnavailable
-	}
-	return dc.Send(data)
+	return p.transportManager.SendDataPacket(dp)
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
@@ -163,33 +139,8 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
-	// RAJA-TODO - candidate filtering should happein in PCTransport
-	var filterOut bool
-	var pcTransport *PCTransport
-	p.lock.RLock()
-	if target == livekit.SignalTarget_SUBSCRIBER {
-		if p.iceConfig.PreferSubTcp && c.Protocol != webrtc.ICEProtocolTCP {
-			filterOut = true
-			pcTransport = p.subscriber
-		}
-	} else if target == livekit.SignalTarget_PUBLISHER {
-		if p.iceConfig.PreferPubTcp && c.Protocol != webrtc.ICEProtocolTCP {
-			filterOut = true
-			pcTransport = p.publisher
-		}
-	}
-	p.lock.RUnlock()
-	if filterOut {
-		pcTransport.Logger().Infow("filtering out local candidate", "candidate", c)
-		return
-	}
-
-	ci := c.ToJSON()
-
-	// write candidate
-	p.params.Logger.Debugw("sending ice candidates",
-		"candidate", c.String(), "target", target)
-	trickle := ToProtoTrickle(ci)
+	p.params.Logger.Infow("sending ice candidate", "candidate", c.String(), "target", target)
+	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{
