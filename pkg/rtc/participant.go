@@ -935,15 +935,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
 
 	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
+	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportInitialConnected)
 	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
-
-	// RAJA-TODO - review Prometheus stuff
-
-	/* RAJA-TODO
-	if !p.SubscriberAsPrimary() {
-		p.activeCounter.Add(2)
-	}
-	*/
 
 	tm.OnDataMessage(p.onDataMessage)
 	p.TransportManager = tm
@@ -1095,7 +1088,10 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	if !p.hasPendingMigratedTrack() && p.MigrateState() == types.MigrateStateSync {
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
-	// RAJA-TODO p.incActiveCounter()
+}
+
+func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
+	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
@@ -1740,14 +1736,6 @@ func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 	}
 	return tracks
 }
-
-/* RAJA-TODO
-func (p *ParticipantImpl) incActiveCounter() {
-	if p.activeCounter.Inc() == stateActiveCond {
-		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	}
-}
-*/
 
 func (p *ParticipantImpl) postRtcp(pkts []rtcp.Packet) {
 	select {

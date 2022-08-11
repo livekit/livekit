@@ -44,8 +44,6 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 
-	// RAJA-TODO activeCounter atomic.Int32
-
 	onPublisherGetDTX func() bool
 	onPublisherAnswer func(answer webrtc.SessionDescription) error
 
@@ -214,6 +212,10 @@ func (t *TransportManager) OnPrimaryTransportInitialConnected(f func()) {
 	t.onPrimaryTransportInitialConnected = f
 }
 
+func (t *TransportManager) OnPrimaryTransportFullyEstablished(f func()) {
+	t.getTransport(true).OnFullyEstablished(f)
+}
+
 func (t *TransportManager) OnAnyTransportFailed(f func()) {
 	t.onAnyTransportFailed = f
 }
@@ -269,7 +271,6 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	}); err != nil {
 		return err
 	}
-	// RAJA-TODO p.reliableDCSub.OnOpen(p.incActiveCounter)
 
 	retransmits := uint16(0)
 	negotiated = t.params.Migration && lossyIDPtr == nil
@@ -281,7 +282,6 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	}); err != nil {
 		return err
 	}
-	// RAJA-TODO p.lossyDCSub.OnOpen(p.incActiveCounter)
 	return nil
 }
 

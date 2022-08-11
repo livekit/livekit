@@ -70,12 +70,17 @@ type PCTransport struct {
 
 	lock sync.RWMutex
 
-	reliableDC   *webrtc.DataChannel
-	lossyDC      *webrtc.DataChannel
-	onDataPacket func(kind livekit.DataPacket_Kind, data []byte)
+	reliableDC       *webrtc.DataChannel
+	reliableDCOpened bool
+	lossyDC          *webrtc.DataChannel
+	lossyDCOpened    bool
+	onDataPacket     func(kind livekit.DataPacket_Kind, data []byte)
 
-	iceConnectedAt             time.Time
-	connectedAt                time.Time
+	iceConnectedAt time.Time
+	connectedAt    time.Time
+
+	onFullyEstablished func()
+
 	pendingCandidates          []webrtc.ICECandidateInit
 	debouncedNegotiate         func(func())
 	negotiationPending         map[livekit.ParticipantID]bool
@@ -374,8 +379,11 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		isInitialConnection := t.setConnectedAt(time.Now())
-		if isInitialConnection && t.onInitialConnected != nil {
-			t.onInitialConnected()
+		if isInitialConnection {
+			if t.onInitialConnected != nil {
+				t.onInitialConnected()
+			}
+			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
 		t.handleConnectionFailed()
@@ -403,6 +411,16 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		})
 	default:
 		t.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
+	}
+}
+
+func (t *PCTransport) maybeNotifyFullyEstablished() {
+	t.lock.RLock()
+	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	t.lock.RUnlock()
+
+	if fullyEstablished && t.onFullyEstablished != nil {
+		t.onFullyEstablished()
 	}
 }
 
@@ -490,8 +508,24 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	switch dc.Label() {
 	case ReliableDataChannel:
 		t.reliableDC = dc
+		t.reliableDC.OnOpen(func() {
+			t.params.Logger.Debugw("reliable data channel open")
+			t.lock.Lock()
+			t.reliableDCOpened = true
+			t.lock.Unlock()
+
+			t.maybeNotifyFullyEstablished()
+		})
 	case LossyDataChannel:
 		t.lossyDC = dc
+		t.lossyDC.OnOpen(func() {
+			t.params.Logger.Debugw("lossy data channel open")
+			t.lock.Lock()
+			t.lossyDCOpened = true
+			t.lock.Unlock()
+
+			t.maybeNotifyFullyEstablished()
+		})
 	default:
 		t.params.Logger.Errorw("unknown data channel label", nil, "label", dc.Label())
 	}
@@ -679,6 +713,10 @@ func (t *PCTransport) OnICECandidate(f func(c *webrtc.ICECandidate)) {
 
 func (t *PCTransport) OnInitialConnected(f func()) {
 	t.onInitialConnected = f
+}
+
+func (t *PCTransport) OnFullyEstablished(f func()) {
+	t.onFullyEstablished = f
 }
 
 func (t *PCTransport) OnFailed(f func(isShortLived bool)) {
