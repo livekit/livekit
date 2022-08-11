@@ -392,6 +392,10 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
 
+func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
+	return p.params.ClientConf
+}
+
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
