@@ -395,6 +395,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	switch dc.Label() {
 	case ReliableDataChannel:
+		t.params.Logger.Debugw("reliable data channel open")
 		t.lock.Lock()
 		t.reliableDC = dc
 		t.reliableDCOpened = true
@@ -407,6 +408,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		t.maybeNotifyFullyEstablished()
 	case LossyDataChannel:
+		t.params.Logger.Debugw("lossy data channel open")
 		t.lock.Lock()
 		t.lossyDC = dc
 		t.lossyDCOpened = true
