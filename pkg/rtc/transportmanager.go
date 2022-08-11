@@ -45,7 +45,6 @@ type TransportManager struct {
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 
 	onPublisherGetDTX func() bool
-	onPublisherAnswer func(answer webrtc.SessionDescription) error
 
 	onSubscriberInitialConnected       func()
 	onPrimaryTransportInitialConnected func()
@@ -155,8 +154,8 @@ func (t *TransportManager) OnPublisherGetDTX(f func() bool) {
 	t.onPublisherGetDTX = f
 }
 
-func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription) error) {
-	t.onPublisherAnswer = f
+func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription)) {
+	t.publisher.OnAnswer(f)
 }
 
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
@@ -315,17 +314,10 @@ func (t *TransportManager) createPublisherAnswerAndSend() error {
 	if t.onPublisherGetDTX != nil {
 		enableDTX = t.onPublisherGetDTX()
 	}
-	answer, err := t.publisher.CreateAnswer(enableDTX)
+	err := t.publisher.CreateAndSendAnswer(enableDTX)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
 		return errors.Wrap(err, "could not create answer")
-	}
-
-	if t.onPublisherAnswer != nil {
-		if err := t.onPublisherAnswer(*answer); err != nil {
-			t.params.Logger.Errorw("could not write publisher answer", err)
-			return err
-		}
 	}
 
 	return nil

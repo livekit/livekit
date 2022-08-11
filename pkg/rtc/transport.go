@@ -86,6 +86,7 @@ type PCTransport struct {
 	negotiationPending         map[livekit.ParticipantID]bool
 	onICECandidate             func(c *webrtc.ICECandidate)
 	onOffer                    func(offer webrtc.SessionDescription)
+	onAnswer                   func(offer webrtc.SessionDescription)
 	onRemoteDescriptionSettled func() error
 	onInitialConnected         func()
 	onFailed                   func(isShortLived bool)
@@ -331,7 +332,7 @@ func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
 
 func (t *PCTransport) onICECandidateTrickle(c *webrtc.ICECandidate) {
 	t.lock.RLock()
-	if t.preferTCP && c.Protocol != webrtc.ICEProtocolTCP {
+	if t.preferTCP && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
 		t.params.Logger.Infow("filtering out local candidate", "candidate", c.String())
 		t.lock.RUnlock()
 		return
@@ -416,7 +417,10 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 func (t *PCTransport) maybeNotifyFullyEstablished() {
 	t.lock.RLock()
-	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
+	fullyEstablished := !t.connectedAt.IsZero()
+	if t.params.Target == livekit.SignalTarget_SUBSCRIBER {
+		fullyEstablished = fullyEstablished && t.reliableDCOpened && t.lossyDCOpened
+	}
 	t.lock.RUnlock()
 
 	if fullyEstablished && t.onFullyEstablished != nil {
@@ -469,6 +473,7 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 		t.params.Logger.Infow("filtering out remote candidate", "candidate", candidate.Candidate)
 		return nil
 	}
+	t.lock.RUnlock()
 
 	t.params.Logger.Infow("add candidate ", "candidate", candidate.Candidate)
 	return t.pc.AddICECandidate(candidate)
@@ -736,6 +741,10 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
 	t.onOffer = f
 }
 
+func (t *PCTransport) OnAnswer(f func(sd webrtc.SessionDescription)) {
+	t.onAnswer = f
+}
+
 func (t *PCTransport) OnRemoteDescripitonSettled(f func() error) {
 	t.lock.Lock()
 	t.onRemoteDescriptionSettled = f
@@ -859,7 +868,7 @@ func (t *PCTransport) configureReceiverDTX(enableDTX bool) {
 	}
 }
 
-func (t *PCTransport) CreateAnswer(enableDTX bool) (*webrtc.SessionDescription, error) {
+func (t *PCTransport) CreateAndSendAnswer(enableDTX bool) error {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -867,14 +876,14 @@ func (t *PCTransport) CreateAnswer(enableDTX bool) (*webrtc.SessionDescription, 
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if t.preferTCP {
 		t.params.Logger.Infow("local answer (unfiltered)", "sdp", answer.SDP)
 	}
 	if err = t.pc.SetLocalDescription(answer); err != nil {
-		return nil, err
+		return err
 	}
 
 	//
@@ -888,7 +897,11 @@ func (t *PCTransport) CreateAnswer(enableDTX bool) (*webrtc.SessionDescription, 
 		t.params.Logger.Infow("local answer (filtered)", "sdp", answer.SDP)
 	}
 
-	return &answer, nil
+	if t.onAnswer != nil {
+		go t.onAnswer(answer)
+	}
+
+	return nil
 }
 
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {

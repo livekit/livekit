@@ -399,14 +399,14 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	return nil
 }
 
-func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
+func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
 		},
 	}); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-		return err
+		return
 	}
 
 	if p.isPublisher.Load() != p.CanPublish() {
@@ -428,8 +428,6 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
 	}
-
-	return nil
 }
 
 func (p *ParticipantImpl) handleMigrateMutedTrack() {
@@ -925,6 +923,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	})
 	tm.OnPublisherGetDTX(p.onPublisherGetDTX)
 	tm.OnPublisherAnswer(p.onPublisherAnswer)
+	tm.OnPublisherTrack(p.onMediaTrack)
 
 	tm.OnSubscriberOffer(p.onSubscriberOffer)
 	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) {
@@ -935,7 +934,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
 
 	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
-	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportInitialConnected)
+	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportFullyEstablished)
 	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
 
 	tm.OnDataMessage(p.onDataMessage)
