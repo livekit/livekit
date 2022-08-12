@@ -146,7 +146,6 @@ func (t *TransportManager) Close() {
 }
 
 func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate)) {
-	// TODO-CACHE-CANDIDATE - need to intercept and cache candidates until ready
 	t.publisher.OnICECandidate(f)
 }
 
@@ -179,7 +178,6 @@ func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) OnSubscriberICECandidate(f func(c *webrtc.ICECandidate)) {
-	// TODO-CACHE-CANDIDATE - need to intercept and cache candidates until ready
 	t.subscriber.OnICECandidate(f)
 }
 
