@@ -386,6 +386,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
+	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -400,6 +401,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
+	p.params.Logger.Infow("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -989,6 +991,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 		return
 	}
 
+	p.params.Logger.Infow("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
 	err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),

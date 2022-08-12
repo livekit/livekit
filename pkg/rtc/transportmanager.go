@@ -328,6 +328,7 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) error 
 		return ErrUnexpectedOffer
 	}
 
+	t.params.Logger.Infow("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
 	if err := t.subscriber.SetRemoteDescription(answer); err != nil {
 		return errors.Wrap(err, "could not set answer")
 	}
