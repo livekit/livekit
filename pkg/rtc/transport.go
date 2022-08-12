@@ -298,10 +298,10 @@ func (t *PCTransport) logICECandidates() {
 	t.lock.RLock()
 	t.params.Logger.Infow(
 		"ice candidates",
-		"local", t.allowedLocalCandidates,
-		"remote", t.allowedRemoteCandidates,
-		"local (filtered)", t.filteredLocalCandidates,
-		"remote (filtered)", t.filteredRemoteCandidates,
+		"lc", t.allowedLocalCandidates,
+		"rc", t.allowedRemoteCandidates,
+		"lc (filtered)", t.filteredLocalCandidates,
+		"rc (filtered)", t.filteredRemoteCandidates,
 	)
 	t.lock.RUnlock()
 }
