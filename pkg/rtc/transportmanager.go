@@ -173,6 +173,10 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 	return t.publisher.GetRTPReceiver(mid)
 }
 
+func (t *TransportManager) SetPublisherLocalDescriptionSent(sent bool) {
+	t.publisher.SetLocalDescriptionSent(sent)
+}
+
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	return t.publisher.WriteRTCP(pkts)
 }
@@ -195,6 +199,10 @@ func (t *TransportManager) OnSubscriberNegotiationFailed(f func()) {
 
 func (t *TransportManager) OnSubscriberStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
 	t.subscriber.OnStreamStateChange(f)
+}
+
+func (t *TransportManager) SetSubscriberLocalDescriptionSent(sent bool) {
+	t.subscriber.SetLocalDescriptionSent(sent)
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
@@ -367,6 +375,7 @@ func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) error {
 		t.SetICEConfig(*iceConfig)
 	}
 
+	t.subscriber.SetLocalDescriptionSent(false)
 	return t.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
 		ICERestart: true,
 	})

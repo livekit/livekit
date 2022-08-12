@@ -410,6 +410,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
+	p.TransportManager.SetPublisherLocalDescriptionSent(true)
 
 	if p.isPublisher.Load() != p.CanPublish() {
 		p.isPublisher.Store(p.CanPublish())
@@ -1002,6 +1003,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 	} else {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
 	}
+	p.TransportManager.SetSubscriberLocalDescriptionSent(true)
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -1079,7 +1081,7 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 		return
 	}
 
-	p.sendIceCandidate(c, target)
+	p.sendICECandidate(c, target)
 }
 
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
