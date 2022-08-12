@@ -464,19 +464,13 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 	}
 }
 
-func (t *PCTransport) SetLocalDescriptionSent(sent bool) {
+func (t *PCTransport) LocalDescriptionSent() {
 	var cachedLocalCandidates []*webrtc.ICECandidate
 	t.lock.Lock()
-	t.localDescriptionSent = sent
-	if sent {
-		cachedLocalCandidates = t.cachedLocalCandidates
-		t.cachedLocalCandidates = nil
-	} else {
-		t.allowedLocalCandidates = nil
-		t.allowedRemoteCandidates = nil
-		t.filteredLocalCandidates = nil
-		t.filteredRemoteCandidates = nil
-	}
+	t.localDescriptionSent = true
+
+	cachedLocalCandidates = t.cachedLocalCandidates
+	t.cachedLocalCandidates = nil
 	t.lock.Unlock()
 
 	if t.onICECandidate != nil {
@@ -484,6 +478,15 @@ func (t *PCTransport) SetLocalDescriptionSent(sent bool) {
 			t.onICECandidate(c)
 		}
 	}
+}
+
+func (t *PCTransport) clearLocalDescriptionSentLocked() {
+	t.localDescriptionSent = false
+
+	t.allowedLocalCandidates = nil
+	t.allowedRemoteCandidates = nil
+	t.filteredLocalCandidates = nil
+	t.filteredRemoteCandidates = nil
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -703,11 +706,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	if offerRestartICE && t.pendingRestartIceOffer == nil {
-		t.localDescriptionSent = false
-		t.allowedLocalCandidates = nil
-		t.allowedRemoteCandidates = nil
-		t.filteredLocalCandidates = nil
-		t.filteredRemoteCandidates = nil
+		t.clearLocalDescriptionSentLocked()
 	}
 
 	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
@@ -978,6 +977,11 @@ func (t *PCTransport) CreateAndSendAnswer(enableDTX bool) error {
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+
+	if options != nil && options.ICERestart {
+		t.clearLocalDescriptionSentLocked()
+	}
+
 	return t.createAndSendOffer(options)
 }
 
