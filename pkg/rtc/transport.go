@@ -81,7 +81,9 @@ type PCTransport struct {
 
 	onFullyEstablished func()
 
-	pendingCandidates          []webrtc.ICECandidateInit
+	localDescriptionSent       bool
+	cachedLocalCandidates      []*webrtc.ICECandidate
+	pendingRemoteCandidates    []webrtc.ICECandidateInit
 	debouncedNegotiate         func(func())
 	negotiationPending         map[livekit.ParticipantID]bool
 	onICECandidate             func(c *webrtc.ICECandidate)
@@ -106,6 +108,12 @@ type PCTransport struct {
 
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
+
+	// for cleaner logging
+	allowedLocalCandidates   []string
+	allowedRemoteCandidates  []string
+	filteredLocalCandidates  []string
+	filteredRemoteCandidates []string
 }
 
 type TransportParams struct {
@@ -242,10 +250,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	return t, nil
 }
 
-func (t *PCTransport) Logger() logger.Logger {
-	return t.params.Logger
-}
-
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
 	if t.iceConnectedAt.IsZero() {
@@ -290,6 +294,18 @@ func (t *PCTransport) getSelectedPair() (*webrtc.ICECandidatePair, error) {
 	return iceTransport.GetSelectedCandidatePair()
 }
 
+func (t *PCTransport) logICECandidates() {
+	t.lock.RLock()
+	t.params.Logger.Infow(
+		"ice candidates",
+		"local", t.allowedLocalCandidates,
+		"remote", t.allowedRemoteCandidates,
+		"local (filtered)", t.filteredLocalCandidates,
+		"remote (filtered)", t.filteredRemoteCandidates,
+	)
+	t.lock.RUnlock()
+}
+
 func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	t.lock.Lock()
 	if !t.connectedAt.IsZero() {
@@ -304,10 +320,12 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 }
 
 func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
+	t.params.Logger.Infow("ice gathering state change", "state", state.String())
 	if state != webrtc.ICEGathererStateComplete {
 		return
 	}
 
+	t.logICECandidates()
 	go func() {
 		t.lock.Lock()
 		if t.restartAfterGathering {
@@ -331,13 +349,24 @@ func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
 }
 
 func (t *PCTransport) onICECandidateTrickle(c *webrtc.ICECandidate) {
-	t.lock.RLock()
+	t.lock.Lock()
 	if t.preferTCP && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
-		t.params.Logger.Infow("filtering out local candidate", "candidate", c.String())
-		t.lock.RUnlock()
+		cstr := c.String()
+		t.params.Logger.Infow("filtering out local candidate", "candidate", cstr)
+		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
+		t.lock.Unlock()
 		return
 	}
-	t.lock.RUnlock()
+
+	if c != nil {
+		t.allowedLocalCandidates = append(t.allowedLocalCandidates, c.String())
+	}
+	if !t.localDescriptionSent {
+		t.cachedLocalCandidates = append(t.cachedLocalCandidates, c)
+		t.lock.Unlock()
+		return
+	}
+	t.lock.Unlock()
 
 	if t.onICECandidate != nil {
 		t.onICECandidate(c)
@@ -435,6 +464,28 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 	}
 }
 
+func (t *PCTransport) SetLocalDescriptionSent(sent bool) {
+	var cachedLocalCandidates []*webrtc.ICECandidate
+	t.lock.Lock()
+	t.localDescriptionSent = sent
+	if sent {
+		cachedLocalCandidates = t.cachedLocalCandidates
+		t.cachedLocalCandidates = nil
+	} else {
+		t.allowedLocalCandidates = nil
+		t.allowedRemoteCandidates = nil
+		t.filteredLocalCandidates = nil
+		t.filteredRemoteCandidates = nil
+	}
+	t.lock.Unlock()
+
+	if t.onICECandidate != nil {
+		for _, c := range cachedLocalCandidates {
+			t.onICECandidate(c)
+		}
+	}
+}
+
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
 	t.lock.Lock()
 	t.preferTCP = preferTCP
@@ -471,18 +522,21 @@ func (t *PCTransport) createPeerConnection() error {
 func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	if t.pc.RemoteDescription() == nil {
 		t.lock.Lock()
-		t.pendingCandidates = append(t.pendingCandidates, candidate)
+		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, candidate)
 		t.lock.Unlock()
 		return nil
 	}
 
-	t.lock.RLock()
+	t.lock.Lock()
 	if t.preferTCP && !strings.Contains(candidate.Candidate, "tcp") {
-		t.lock.RUnlock()
 		t.params.Logger.Infow("filtering out remote candidate", "candidate", candidate.Candidate)
+		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, candidate.Candidate)
+		t.lock.Unlock()
 		return nil
 	}
-	t.lock.RUnlock()
+
+	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, candidate.Candidate)
+	t.lock.Unlock()
 
 	t.params.Logger.Infow("add candidate ", "candidate", candidate.Candidate)
 	return t.pc.AddICECandidate(candidate)
@@ -642,14 +696,22 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 		var err error
 		iceCredential, offerRestartICE, err = t.isRemoteOfferRestartICE(sd)
 		if err != nil {
-			t.Logger().Errorw("check remote offer restart ice failed", err)
+			t.params.Logger.Errorw("check remote offer restart ice failed", err)
 			t.lock.Unlock()
 			return err
 		}
 	}
 
+	if offerRestartICE && t.pendingRestartIceOffer == nil {
+		t.localDescriptionSent = false
+		t.allowedLocalCandidates = nil
+		t.allowedRemoteCandidates = nil
+		t.filteredLocalCandidates = nil
+		t.filteredRemoteCandidates = nil
+	}
+
 	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.Logger().Debugw("remote offer restart ice while ice gathering")
+		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
 		t.pendingRestartIceOffer = &sd
 		t.lock.Unlock()
 		return nil
@@ -681,13 +743,13 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 		t.signalStateCheckTimer = nil
 	}
 
-	for _, c := range t.pendingCandidates {
+	for _, c := range t.pendingRemoteCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
 			t.lock.Unlock()
 			return err
 		}
 	}
-	t.pendingCandidates = nil
+	t.pendingRemoteCandidates = nil
 
 	// only initiate when we are the offerer
 	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
