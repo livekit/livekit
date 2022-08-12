@@ -229,7 +229,7 @@ type LocalParticipant interface {
 	HandleOffer(sdp webrtc.SessionDescription) error
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
-	SubscriberMediaEngine() *webrtc.MediaEngine
+
 	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	Negotiate(force bool)

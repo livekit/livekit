@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth"
@@ -19,6 +20,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
 func TestIsReady(t *testing.T) {
@@ -678,17 +680,28 @@ func TestDisableCodecs(t *testing.T) {
 	sink := &routingfakes.FakeMessageSink{}
 	participant.SetResponseSink(sink)
 	var answer webrtc.SessionDescription
+	var answerReceived atomic.Bool
 	sink.WriteMessageStub = func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
 				answer = FromProtoSessionDescription(res.GetAnswer())
+				answerReceived.Store(true)
 			}
 		}
 		return nil
 	}
 	err = participant.HandleOffer(sdp)
 	require.NoError(t, err)
+
+	testutils.WithTimeout(t, func() string {
+		if answerReceived.Load() {
+			return ""
+		} else {
+			return "answer not received"
+		}
+	})
 	require.NoError(t, pc.SetRemoteDescription(answer), answer.SDP, sdp.SDP)
+
 	codecs = transceiver.Receiver().GetParameters().Codecs
 	found264 = false
 	for _, c := range codecs {
