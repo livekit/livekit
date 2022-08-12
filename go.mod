@@ -43,7 +43,7 @@ require (
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
 	github.com/urfave/cli/v2 v2.11.1
 	github.com/urfave/negroni v1.0.0
-	go.uber.org/atomic v1.9.0
+	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.22.0
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	google.golang.org/protobuf v1.28.1
