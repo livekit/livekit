@@ -491,24 +491,3 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 		}
 	}
 }
-
-/*
-func (p *ParticipantImpl) incActiveCounter() {
-	if p.activeCounter.Inc() == stateActiveCond {
-		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	}
-}
-
-func (p *ParticipantImpl) handleNegotiationFailed() {
-	p.params.Logger.Infow("negotiation failed, starting full reconnect")
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Leave{
-			Leave: &livekit.LeaveRequest{
-				CanReconnect: true,
-				Reason:       types.ParticipantCloseReasonNegotiateFailed.ToDisconnectReason(),
-			},
-		},
-	})
-	p.closeSignalConnection()
-}
-*/

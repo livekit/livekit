@@ -569,7 +569,7 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 		return dc.Label(), *dc.ID(), true, nil
 	}
 
-	dc, err = t.pc.CreateDataChannel(label, dci)
+	dc, err = t.pc.CreateDataChannel(dcLabel, dci)
 	if err != nil {
 		return
 	}
