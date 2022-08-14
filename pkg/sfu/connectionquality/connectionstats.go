@@ -108,7 +108,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		Codec:           cs.params.CodecName,
 		PacketsExpected: maxAvailableLayerStats.Packets + maxAvailableLayerStats.PacketsPadding,
 		PacketsLost:     maxAvailableLayerStats.PacketsLost,
-		Bytes:           maxAvailableLayerStats.Bytes,
+		Bytes:           maxAvailableLayerStats.Bytes - maxAvailableLayerStats.HeaderBytes, // only use media payload size
 		Frames:          maxAvailableLayerStats.Frames,
 		Jitter:          maxAvailableLayerStats.JitterMax,
 		Rtt:             maxAvailableLayerStats.RttMax,
