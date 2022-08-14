@@ -51,6 +51,7 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params:           params,
 		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
+		normFactors:      [buffer.DefaultMaxLayerSpatial + 1]float32{1, 1, 1},
 		score:            MaxScore,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
 		done:             make(chan struct{}),
@@ -78,7 +79,7 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 			Codec:    cs.codecName,
 			Bytes:    20000 / 8,
 		}
-		cs.normFactors[0] = 5.0 / AudioTrackScore(params, 1)
+		cs.normFactors[0] = MaxScore / AudioTrackScore(params, 1)
 	} else {
 		for _, layer := range cs.trackInfo.Layers {
 			spatial := utils.SpatialLayerForQuality(layer.Quality)
@@ -98,7 +99,7 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 				Height:   layer.Height,
 				Frames:   frameRate,
 			}
-			cs.normFactors[utils.SpatialLayerForQuality(layer.Quality)] = 5.0 / VideoTrackScore(params, 1)
+			cs.normFactors[utils.SpatialLayerForQuality(layer.Quality)] = MaxScore / VideoTrackScore(params, 1)
 		}
 	}
 	cs.lock.Unlock()
@@ -239,7 +240,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 				if isDeficient {
 					cs.score -= float32(distanceToDesired)
 				}
-				cs.score = float32(clamp(float64(cs.score), 1, 5))
+				cs.score = float32(clamp(float64(cs.score), float64(MinScore), float64(MaxScore)))
 			}
 		}
 
