@@ -51,7 +51,7 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
 		params:           params,
 		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
-		score:            5.0,
+		score:            MaxScore,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
 		done:             make(chan struct{}),
 	}
@@ -146,7 +146,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 	// Initial interval will have partial data
 	if cs.lastUpdate.IsZero() {
 		cs.lastUpdate = time.Now()
-		cs.score = 5
+		cs.score = MaxScore
 		return cs.score
 	}
 
@@ -154,7 +154,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 
 	switch {
 	case cs.trackInfo.Type == livekit.TrackType_AUDIO:
-		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, buffer.InvalidLayerSpatial)
+		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
 			return cs.score
@@ -189,6 +189,10 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		maxExpectedLayer := cs.params.GetMaxExpectedLayer()
 		if maxExpectedLayer == buffer.InvalidLayerSpatial || maxExpectedLayer != cs.maxExpectedLayer {
 			cs.maxExpectedLayer = maxExpectedLayer
+			if maxExpectedLayer == buffer.InvalidLayerSpatial {
+				// if not expecting data, reset the score to maximum
+				cs.score = MaxScore
+			}
 			return cs.score
 		}
 
@@ -360,11 +364,13 @@ func getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers,
 	var maxAvailableLayerStats *buffer.RTPDeltaInfo
 	for _, stream := range streams {
 		for layer, layerStats := range stream.Layers {
+			if maxExpectedLayer == buffer.InvalidLayerSpatial || int32(layer) > maxExpectedLayer {
+				continue
+			}
+
 			if int32(layer) > maxAvailableLayer {
-				if maxExpectedLayer == buffer.InvalidLayerSpatial || int32(layer) <= maxExpectedLayer {
-					maxAvailableLayer = int32(layer)
-					maxAvailableLayerStats = layerStats
-				}
+				maxAvailableLayer = int32(layer)
+				maxAvailableLayerStats = layerStats
 			}
 		}
 	}

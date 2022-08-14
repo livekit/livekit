@@ -8,6 +8,11 @@ import (
 	"github.com/livekit/rtcscore-go/pkg/rtcmos"
 )
 
+const (
+	MinScore = float32(1)
+	MaxScore = float32(5)
+)
+
 func Score2Rating(score float32) livekit.ConnectionQuality {
 	if score > 4.0 {
 		return livekit.ConnectionQuality_EXCELLENT
@@ -79,7 +84,7 @@ func AudioTrackScore(params TrackScoreParams, normFactor float32) float32 {
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(clamp(float64(float32(scores[0].AudioScore)*normFactor), 1, 5))
+		return float32(clamp(float64(float32(scores[0].AudioScore)*normFactor), float64(MinScore), float64(MaxScore)))
 	}
 	return 0
 }
@@ -98,7 +103,7 @@ func VideoTrackScore(params TrackScoreParams, normFactor float32) float32 {
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(clamp(float64(float32(scores[0].VideoScore)*normFactor), 1, 5))
+		return float32(clamp(float64(float32(scores[0].VideoScore)*normFactor), float64(MinScore), float64(MaxScore)))
 	}
 	return 0
 }
@@ -114,7 +119,7 @@ func ScreenshareTrackScore(params TrackScoreParams) float32 {
 	pctLoss := getLossPercentage(params.PacketsExpected, params.PacketsLost)
 	// No Loss, excellent
 	if pctLoss == 0.0 && !params.IsReducedQuality {
-		return 5.0
+		return MaxScore
 	}
 	// default when loss is minimal, but reducedQuality
 	score := float32(3.5)

@@ -219,7 +219,6 @@ func (s *StreamTrackerManager) SetPaused(paused bool) {
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
-	return
 	s.lock.Lock()
 	if layer <= s.maxExpectedLayer {
 		// some higher layer(s) expected to stop, nothing else to do
