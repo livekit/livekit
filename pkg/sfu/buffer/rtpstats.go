@@ -691,7 +691,7 @@ func (r *RTPStats) DeltaInfo(snapshotId uint32) *RTPDeltaInfo {
 		PacketsPadding:       intervalStats.packetsPadding,
 		BytesPadding:         intervalStats.bytesPadding,
 		HeaderBytesPadding:   intervalStats.headerBytesPadding,
-		PacketsLost:          intervalStats.packetsLost,
+		PacketsLost:          packetsLost,
 		Frames:               intervalStats.frames,
 		RttMax:               then.maxRtt,
 		JitterMax:            maxJitterTime,
