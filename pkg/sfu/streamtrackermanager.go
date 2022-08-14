@@ -261,7 +261,15 @@ func (s *StreamTrackerManager) DistanceToDesired() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	distance := s.availableLayers[len(s.availableLayers)-1] - s.maxExpectedLayer
+	if s.paused || s.maxExpectedLayer == DefaultMaxLayerSpatial {
+		return 0
+	}
+
+	if len(s.availableLayers) == 0 {
+		return s.maxExpectedLayer + 1
+	}
+
+	distance := s.maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
 	if distance < 0 {
 		distance = 0
 	}
@@ -288,7 +296,7 @@ func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
 	return width, height
 }
 
-func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32, height uint32) {
+func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -297,15 +305,7 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32,
 	if maxExpectedLayer > s.maxPublishedLayer {
 		maxExpectedLayer = s.maxPublishedLayer
 	}
-	logger.Debugw("RAJA getmax", "maxE", s.maxExpectedLayer, "maxP", s.maxPublishedLayer, "trackInfo", s.trackInfo.String()) // REMOVE
-	for _, layer := range s.trackInfo.Layers {
-		if maxExpectedLayer == utils.SpatialLayerForQuality(layer.Quality) {
-			logger.Debugw("returning", "maxE", maxExpectedLayer, "layer", layer) // REMOVE
-			return maxExpectedLayer, layer.Width, layer.Height
-		}
-	}
-
-	return maxExpectedLayer, 0, 0
+	return maxExpectedLayer
 }
 
 func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {

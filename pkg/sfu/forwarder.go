@@ -364,6 +364,30 @@ func (f *Forwarder) GetForwardingStatus() ForwardingStatus {
 	return ForwardingStatusOptimal
 }
 
+func (f *Forwarder) IsReducedQuality() (int32, bool) {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if f.muted || len(f.availableLayers) == 0 || f.targetLayers.Spatial == InvalidLayerSpatial {
+		return 0, false
+	}
+
+	if f.currentLayers.Spatial != f.targetLayers.Spatial {
+		//
+		// Waiting for layer lock, do not declare reduced quality.
+		// Note the target might actually be a lower layer than current.
+		//
+		return 0, false
+	}
+
+	distance := f.maxLayers.Spatial - f.currentLayers.Spatial
+	if distance < 0 {
+		distance = 0
+	}
+
+	return distance, f.lastAllocation.state == VideoAllocationStateDeficient
+}
+
 func (f *Forwarder) UpTrackLayersChange(availableLayers []int32) {
 	f.lock.Lock()
 	defer f.lock.Unlock()

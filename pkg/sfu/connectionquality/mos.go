@@ -1,6 +1,7 @@
 package connectionquality
 
 import (
+	"math"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -16,6 +17,10 @@ func Score2Rating(score float32) livekit.ConnectionQuality {
 		return livekit.ConnectionQuality_GOOD
 	}
 	return livekit.ConnectionQuality_POOR
+}
+
+func clamp(value, min, max float64) float64 {
+	return math.Max(min, math.Min(value, max))
 }
 
 func getBitRate(interval float64, bytes uint64) float64 {
@@ -43,24 +48,19 @@ func float32Ptr(x float32) *float32 {
 }
 
 type TrackScoreParams struct {
-	Duration        time.Duration
-	Codec           string
-	PacketsExpected uint32
-	PacketsLost     uint32
-	Bytes           uint64
-	Frames          uint32
-	Jitter          float64
-	Rtt             uint32
-	DtxEnabled      bool
-	/* RAJA-REMOVE
-	ActualWidth      uint32
-	ActualHeight     uint32
-	ExpectedWidth    uint32
-	ExpectedHeight   uint32
-	*/
-	Width            uint32
-	Height           uint32
-	IsReducedQuality bool
+	Duration          time.Duration
+	Codec             string
+	PacketsExpected   uint32
+	PacketsLost       uint32
+	Bytes             uint64
+	Frames            uint32
+	FrameRateExpected uint32
+	Jitter            float64
+	Rtt               uint32
+	DtxEnabled        bool
+	Width             uint32
+	Height            uint32
+	IsReducedQuality  bool
 }
 
 func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
@@ -72,42 +72,40 @@ func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
 	}
 }
 
-func AudioTrackScore(params TrackScoreParams) float32 {
+func AudioTrackScore(params TrackScoreParams, normFactor float32) float32 {
 	stat := getRtcMosStat(params)
 	stat.AudioConfig = &rtcmos.AudioConfig{}
 	stat.AudioConfig.Dtx = &params.DtxEnabled
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(scores[0].AudioScore)
+		return float32(clamp(float64(float32(scores[0].AudioScore)*normFactor), 1, 5))
 	}
 	return 0
 }
 
-func VideoTrackScore(params TrackScoreParams) float32 {
+func VideoTrackScore(params TrackScoreParams, normFactor float32) float32 {
 	stat := getRtcMosStat(params)
 	stat.VideoConfig = &rtcmos.VideoConfig{
 		FrameRate: float32Ptr(float32(getFrameRate(params.Duration.Seconds(), params.Frames))),
 		Codec:     params.Codec,
-		/* RAJA-REMOVE
-		ExpectedWidth:  int32Ptr(int32(params.ExpectedWidth)),
-		ExpectedHeight: int32Ptr(int32(params.ExpectedHeight)),
-		Width:          int32Ptr(int32(params.ActualWidth)),
-		Height:         int32Ptr(int32(params.ActualHeight)),
-		*/
-		Width:  int32Ptr(int32(params.Width)),
-		Height: int32Ptr(int32(params.Height)),
+		Width:     int32Ptr(int32(params.Width)),
+		Height:    int32Ptr(int32(params.Height)),
+	}
+	if params.FrameRateExpected == 0 {
+		stat.VideoConfig.ExpectedFrameRate = stat.VideoConfig.FrameRate
 	}
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
-		return float32(scores[0].VideoScore)
+		return float32(clamp(float64(float32(scores[0].VideoScore)*normFactor), 1, 5))
 	}
 	return 0
 }
 
 //
 // rtcmos gives lower score when screen share content is static.
+// That is due to use of bits / pixel / frame in the model.
 // Even though the frame rate is low, the bit rate is also low and
 // the resolution is high. Till rtcmos model can be adapted to that
 // scenario, use loss based scoring.
@@ -124,7 +122,7 @@ func ScreenshareTrackScore(params TrackScoreParams) float32 {
 	if pctLoss >= 4.0 {
 		score = 2.0
 	} else if pctLoss <= 2.0 && !params.IsReducedQuality {
-		// loss is acceptable and at reduced quality
+		// loss is acceptable and not at reduced quality
 		score = 4.5
 	}
 	return score

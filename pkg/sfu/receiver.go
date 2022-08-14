@@ -53,9 +53,7 @@ type TrackReceiver interface {
 
 	DebugInfo() map[string]interface{}
 
-	// RAJA-REMOVE TrackSource() livekit.TrackSource
 	GetLayerDimension(layer int32) (uint32, uint32)
-	// RAJA-REMOVE IsDtxDisabled() bool
 	TrackInfo() *livekit.TrackInfo
 }
 
@@ -175,7 +173,6 @@ func NewWebRTCReceiver(
 	twcc *twcc.Responder,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
-	logger.Debugw("RAJA trackInfo", "trackInfo", trackInfo.String()) // REMOVE
 	w := &WebRTCReceiver{
 		logger:   logger,
 		receiver: receiver,
@@ -205,19 +202,15 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		/* RAJA-REMOVE
-		CodecType:     w.kind,
-		CodecName:     getCodecNameFromMime(w.codec.MimeType),
-		*/
-		MimeType:      w.codec.MimeType,
-		GetDeltaStats: w.getDeltaStats,
-		// RAJA-REMOVE IsDtxDisabled:        w.IsDtxDisabled,
-		GetLayerDimension:    w.GetLayerDimension,
-		GetMaxExpectedLayer:  w.streamTrackerManager.GetMaxExpectedLayer,
-		GetDistanceToDesired: w.streamTrackerManager.DistanceToDesired,
-		Logger:               w.logger,
+		MimeType:            w.codec.MimeType,
+		GetDeltaStats:       w.getDeltaStats,
+		GetMaxExpectedLayer: w.streamTrackerManager.GetMaxExpectedLayer,
+		GetIsReducedQuality: func() (int32, bool) {
+			distance := w.streamTrackerManager.DistanceToDesired()
+			return distance, distance > 0
+		},
+		Logger: w.logger,
 	})
-	// REMOVE w.connectionStats.SetTrackSource(w.trackInfo.Source)
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
 			w.onStatsUpdate(w, stat)
@@ -227,16 +220,6 @@ func NewWebRTCReceiver(
 
 	return w
 }
-
-/* RAJA-REMOVE
-func (w *WebRTCReceiver) TrackSource() livekit.TrackSource {
-	return w.trackInfo.Source
-}
-
-func (w *WebRTCReceiver) IsDtxDisabled() bool {
-	return w.trackInfo.DisableDtx
-}
-*/
 
 func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
 	return w.trackInfo

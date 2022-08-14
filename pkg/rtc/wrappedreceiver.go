@@ -221,23 +221,6 @@ func (d *DummyReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 	return 0, 0
 }
 
-/* RAJA-REMOVE
-func (d *DummyReceiver) IsDtxDisabled() bool {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.IsDtxDisabled()
-	}
-	return false
-}
-
-func (d *DummyReceiver) TrackSource() livekit.TrackSource {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.TrackSource()
-	}
-
-	return livekit.TrackSource_UNKNOWN
-}
-*/
-
 func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.TrackInfo()

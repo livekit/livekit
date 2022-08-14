@@ -20,24 +20,17 @@ const (
 )
 
 type ConnectionStatsParams struct {
-	UpdateInterval time.Duration
-	/* RAJA-REMOVE
-	CodecType              webrtc.RTPCodecType
-	CodecName              string
-	*/
+	UpdateInterval         time.Duration
 	MimeType               string
 	GetDeltaStats          func() map[uint32]*buffer.StreamStatsWithLayers
-	IsDtxDisabled          func() bool
-	GetLayerDimension      func(int32) (uint32, uint32)
-	GetMaxExpectedLayer    func() (int32, uint32, uint32)
+	GetMaxExpectedLayer    func() int32
 	GetCurrentLayerSpatial func() int32
-	GetDistanceToDesired   func() int32
+	GetIsReducedQuality    func() (int32, bool)
 	Logger                 logger.Logger
 }
 
 type ConnectionStats struct {
-	params ConnectionStatsParams
-	// RAJA-REMOVE trackSource livekit.TrackSource
+	params      ConnectionStatsParams
 	codecName   string
 	trackInfo   *livekit.TrackInfo
 	normFactors [buffer.DefaultMaxLayerSpatial + 1]float32
@@ -56,9 +49,8 @@ type ConnectionStats struct {
 
 func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	return &ConnectionStats{
-		params:    params,
-		codecName: getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
-		// RAJA-REMOVE trackSource:      livekit.TrackSource_UNKNOWN,
+		params:           params,
+		codecName:        getCodecNameFromMime(params.MimeType), // LK-TODO: have to notify on codec change
 		score:            5.0,
 		maxExpectedLayer: buffer.InvalidLayerSpatial,
 		done:             make(chan struct{}),
@@ -80,16 +72,17 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 	// the quality that is under SFU/infrastructure control.
 	//
 	if trackInfo.Type == livekit.TrackType_AUDIO {
+		// LK-TODO: would be good to have audio expected bitrate in Trackinfo
 		params := TrackScoreParams{
 			Duration: time.Second,
 			Codec:    cs.codecName,
 			Bytes:    20000 / 8,
 		}
-		cs.normFactors[0] = 5.0 / AudioTrackScore(params)
+		cs.normFactors[0] = 5.0 / AudioTrackScore(params, 1)
 	} else {
 		for _, layer := range cs.trackInfo.Layers {
 			spatial := utils.SpatialLayerForQuality(layer.Quality)
-			// LK-TODO: would be good to have this in Trackinfo
+			// LK-TODO: would be good to have expected frame rate in Trackinfo
 			frameRate := uint32(30)
 			switch spatial {
 			case 0:
@@ -105,11 +98,9 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 				Height:   layer.Height,
 				Frames:   frameRate,
 			}
-			cs.params.Logger.Debugw("RAJA norm factors", "layer", utils.SpatialLayerForQuality(layer.Quality), "score", VideoTrackScore(params), "params", params) // REMOVE
-			cs.normFactors[utils.SpatialLayerForQuality(layer.Quality)] = 5.0 / VideoTrackScore(params)
+			cs.normFactors[utils.SpatialLayerForQuality(layer.Quality)] = 5.0 / VideoTrackScore(params, 1)
 		}
 	}
-	cs.params.Logger.Debugw("RAJA norm factors", "factors", cs.normFactors) // REMOVE
 	cs.lock.Unlock()
 
 	go cs.updateStatsWorker()
@@ -123,12 +114,6 @@ func (cs *ConnectionStats) Close() {
 	close(cs.done)
 }
 
-/* RAJA-REMOVE
-func (cs *ConnectionStats) SetTrackSource(trackSource livekit.TrackSource) {
-	cs.trackSource = trackSource
-}
-*/
-
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
 	cs.onStatsUpdate = fn
 }
@@ -140,21 +125,18 @@ func (cs *ConnectionStats) GetScore() float32 {
 	return cs.score
 }
 
-func (cs *ConnectionStats) getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers, maxExpectedLayer int32) (int32, *buffer.RTPDeltaInfo) {
-	maxAvailableLayer := buffer.InvalidLayerSpatial
-	var maxAvailableLayerStats *buffer.RTPDeltaInfo
-	for _, stream := range streams {
-		for layer, layerStats := range stream.Layers {
-			if int32(layer) > maxAvailableLayer {
-				if maxExpectedLayer == buffer.InvalidLayerSpatial || int32(layer) <= maxExpectedLayer {
-					maxAvailableLayer = int32(layer)
-					maxAvailableLayerStats = layerStats
-				}
-			}
+func (cs *ConnectionStats) getLayerDimensions(layer int32) (uint32, uint32) {
+	if cs.trackInfo == nil {
+		return 0, 0
+	}
+
+	for _, l := range cs.trackInfo.Layers {
+		if layer == utils.SpatialLayerForQuality(l.Quality) {
+			return l.Width, l.Height
 		}
 	}
 
-	return maxAvailableLayer, maxAvailableLayerStats
+	return 0, 0
 }
 
 func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWithLayers) float32 {
@@ -172,7 +154,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 
 	switch {
 	case cs.trackInfo.Type == livekit.TrackType_AUDIO:
-		_, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams, buffer.InvalidLayerSpatial)
+		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, buffer.InvalidLayerSpatial)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
 			return cs.score
@@ -187,25 +169,32 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			return cs.score
 		}
 
-		cs.score = AudioTrackScore(params)
+		normFactor := float32(1)
+		if int(maxAvailableLayer) < len(cs.normFactors) {
+			normFactor = cs.normFactors[maxAvailableLayer]
+		}
+		cs.score = AudioTrackScore(params, normFactor)
 
 	case cs.trackInfo.Type == livekit.TrackType_VIDEO:
+		//
 		// See note below about muxed tracks quality calculation challenges.
+		//
+		// This part concerns simulcast + dynacast challeges.
 		// A sub-optimal solution is to measure only in windows where the max layer is stable.
 		// With adaptive stream, it is possible that subscription changes max layer.
 		// When expected layer changes from low -> high, the stats in that window
 		// (when the change happens) will correspond to lower layer at least partially.
 		// Using that to calculate against expected higher layer could result in lower score.
-		maxExpectedLayer, expectedWidth, expectedHeight := cs.params.GetMaxExpectedLayer()
-		if maxExpectedLayer == buffer.InvalidLayerSpatial || expectedWidth == 0 || expectedHeight == 0 || maxExpectedLayer != cs.maxExpectedLayer {
+		//
+		maxExpectedLayer := cs.params.GetMaxExpectedLayer()
+		if maxExpectedLayer == buffer.InvalidLayerSpatial || maxExpectedLayer != cs.maxExpectedLayer {
 			cs.maxExpectedLayer = maxExpectedLayer
-			cs.params.Logger.Debugw("return 5", "maxExpectedLayer", maxExpectedLayer, "width", expectedWidth, "height", expectedHeight, "existingMax", cs.maxExpectedLayer) // REMOVE
 			return cs.score
 		}
 
 		cs.maxExpectedLayer = maxExpectedLayer
 
-		maxAvailableLayer, maxAvailableLayerStats := cs.getMaxAvailableLayerStats(streams, maxExpectedLayer)
+		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, maxExpectedLayer)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
 			return cs.score
@@ -222,39 +211,33 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		if cs.params.GetCurrentLayerSpatial != nil {
 			maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
 		}
-		/* RAJA-REMOVE
-		params.ActualWidth, params.ActualHeight = cs.params.GetLayerDimension(maxAvailableLayer)
+		params.Width, params.Height = cs.getLayerDimensions(maxAvailableLayer)
+		if params.Width == 0 || params.Height == 0 {
+			cs.params.Logger.Warnw("could not get dimensions", nil, "maxAvailableLayer", maxAvailableLayer)
+			return cs.score
+		}
 
-		params.ExpectedWidth = expectedWidth
-		params.ExpectedHeight = expectedHeight
-		*/
-		params.Width, params.Height = cs.params.GetLayerDimension(maxAvailableLayer)
-		/* RAJA-TODO
 		if cs.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
-			if cs.params.GetDistanceToDesired != nil {
-				params.IsReducedQuality = cs.params.GetDistanceToDesired() > 0
+			if cs.params.GetIsReducedQuality != nil {
+				_, params.IsReducedQuality = cs.params.GetIsReducedQuality()
 			}
 
 			cs.score = ScreenshareTrackScore(params)
 		} else {
-		*/
-		cs.score = VideoTrackScore(params)
-		if int(maxAvailableLayer) < len(cs.normFactors) {
-			cs.score *= cs.normFactors[maxAvailableLayer]
-		}
-		if cs.score > 5 {
-			cs.score = 5
-		}
-		if cs.params.GetDistanceToDesired != nil {
-			cs.score -= float32(cs.params.GetDistanceToDesired())
-			if cs.score < 1 {
-				cs.score = 1
+			normFactor := float32(1)
+			if int(maxAvailableLayer) < len(cs.normFactors) {
+				normFactor = cs.normFactors[maxAvailableLayer]
+			}
+			cs.score = VideoTrackScore(params, normFactor)
+			if cs.params.GetIsReducedQuality != nil {
+				// penalty of one level per layer away from desired/expected layer
+				distanceToDesired, isDeficient := cs.params.GetIsReducedQuality()
+				if isDeficient {
+					cs.score -= float32(distanceToDesired)
+				}
+				cs.score = float32(clamp(float64(cs.score), 1, 5))
 			}
 		}
-		/*
-			}
-		*/
-		cs.params.Logger.Debugw("video connection quality score", "score", cs.score, "params", params)
 
 		if cs.score < 3.5 {
 			if !cs.isLowQuality.Swap(true) {
@@ -370,6 +353,23 @@ func toAnalyticsVideoLayer(layer int32, layerStats *buffer.RTPDeltaInfo) *liveki
 		Bytes:   layerStats.Bytes + layerStats.BytesDuplicate + layerStats.BytesPadding,
 		Frames:  layerStats.Frames,
 	}
+}
+
+func getMaxAvailableLayerStats(streams map[uint32]*buffer.StreamStatsWithLayers, maxExpectedLayer int32) (int32, *buffer.RTPDeltaInfo) {
+	maxAvailableLayer := buffer.InvalidLayerSpatial
+	var maxAvailableLayerStats *buffer.RTPDeltaInfo
+	for _, stream := range streams {
+		for layer, layerStats := range stream.Layers {
+			if int32(layer) > maxAvailableLayer {
+				if maxExpectedLayer == buffer.InvalidLayerSpatial || int32(layer) <= maxExpectedLayer {
+					maxAvailableLayer = int32(layer)
+					maxAvailableLayerStats = layerStats
+				}
+			}
+		}
+	}
+
+	return maxAvailableLayer, maxAvailableLayerStats
 }
 
 func getTrackScoreParams(codec string, layerStats *buffer.RTPDeltaInfo) TrackScoreParams {
