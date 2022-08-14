@@ -53,9 +53,10 @@ type TrackReceiver interface {
 
 	DebugInfo() map[string]interface{}
 
-	TrackSource() livekit.TrackSource
+	// RAJA-REMOVE TrackSource() livekit.TrackSource
 	GetLayerDimension(layer int32) (uint32, uint32)
-	IsDtxDisabled() bool
+	// RAJA-REMOVE IsDtxDisabled() bool
+	TrackInfo() *livekit.TrackInfo
 }
 
 // WebRTCReceiver receives a media track
@@ -174,6 +175,7 @@ func NewWebRTCReceiver(
 	twcc *twcc.Responder,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
+	logger.Debugw("RAJA trackInfo", "trackInfo", trackInfo.String()) // REMOVE
 	w := &WebRTCReceiver{
 		logger:   logger,
 		receiver: receiver,
@@ -203,33 +205,41 @@ func NewWebRTCReceiver(
 	})
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:           w.kind,
-		CodecName:           getCodecNameFromMime(w.codec.MimeType),
-		MimeType:            w.codec.MimeType,
-		GetDeltaStats:       w.getDeltaStats,
-		IsDtxDisabled:       w.IsDtxDisabled,
-		GetLayerDimension:   w.GetLayerDimension,
-		GetMaxExpectedLayer: w.streamTrackerManager.GetMaxExpectedLayer,
-		GetIsReducedQuality: w.streamTrackerManager.IsReducedQuality,
-		Logger:              w.logger,
+		/* RAJA-REMOVE
+		CodecType:     w.kind,
+		CodecName:     getCodecNameFromMime(w.codec.MimeType),
+		*/
+		MimeType:      w.codec.MimeType,
+		GetDeltaStats: w.getDeltaStats,
+		// RAJA-REMOVE IsDtxDisabled:        w.IsDtxDisabled,
+		GetLayerDimension:    w.GetLayerDimension,
+		GetMaxExpectedLayer:  w.streamTrackerManager.GetMaxExpectedLayer,
+		GetDistanceToDesired: w.streamTrackerManager.DistanceToDesired,
+		Logger:               w.logger,
 	})
-	w.connectionStats.SetTrackSource(w.trackInfo.Source)
+	// REMOVE w.connectionStats.SetTrackSource(w.trackInfo.Source)
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
 			w.onStatsUpdate(w, stat)
 		}
 	})
-	w.connectionStats.Start()
+	w.connectionStats.Start(w.trackInfo)
 
 	return w
 }
 
+/* RAJA-REMOVE
 func (w *WebRTCReceiver) TrackSource() livekit.TrackSource {
 	return w.trackInfo.Source
 }
 
 func (w *WebRTCReceiver) IsDtxDisabled() bool {
 	return w.trackInfo.DisableDtx
+}
+*/
+
+func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
+	return w.trackInfo
 }
 
 func (w *WebRTCReceiver) GetLayerDimension(layer int32) (uint32, uint32) {

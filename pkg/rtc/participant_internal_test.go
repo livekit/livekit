@@ -19,7 +19,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
@@ -253,6 +252,7 @@ func TestMuteSetting(t *testing.T) {
 	})
 }
 
+/* RAJA-REMOVE - move this to connection quality tester
 func TestConnectionQuality(t *testing.T) {
 	testPublishedVideoTrack := func(params connectionquality.TrackScoreParams) *typesfakes.FakeLocalMediaTrack {
 		tr := &typesfakes.FakeLocalMediaTrack{}
@@ -297,6 +297,8 @@ func TestConnectionQuality(t *testing.T) {
 			ExpectedHeight:  720,
 			ActualWidth:     1280,
 			ActualHeight:    720,
+			Width:           1280,
+			Height:          720,
 		}
 		p.UpTrackManager.publishedTracks["video"] = testPublishedVideoTrack(params)
 
@@ -534,6 +536,7 @@ func TestConnectionQuality(t *testing.T) {
 		require.Equal(t, livekit.ConnectionQuality_GOOD, p.GetConnectionQuality().GetQuality())
 	})
 }
+*/
 
 func TestSubscriberAsPrimary(t *testing.T) {
 	t.Run("protocol 4 uses subs as primary", func(t *testing.T) {

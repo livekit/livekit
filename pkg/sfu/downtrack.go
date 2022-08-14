@@ -222,11 +222,13 @@ func NewDownTrack(
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
+		/* RAJA-REMOVE
 		CodecType:         kind,
 		CodecName:         getCodecNameFromMime(codecs[0].MimeType), // LK-TODO: have to notify on codec change
-		MimeType:          codecs[0].MimeType,                       // LK-TODO have to notify on codec change
-		GetDeltaStats:     d.getDeltaStats,
-		IsDtxDisabled:     d.receiver.IsDtxDisabled,
+		*/
+		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
+		GetDeltaStats: d.getDeltaStats,
+		// RAJA-REMOVE IsDtxDisabled:     d.receiver.IsDtxDisabled,
 		GetLayerDimension: d.receiver.GetLayerDimension,
 		GetMaxExpectedLayer: func() (int32, uint32, uint32) {
 			maxLayer := d.forwarder.MaxLayers().Spatial
@@ -236,10 +238,8 @@ func NewDownTrack(
 		GetCurrentLayerSpatial: func() int32 {
 			return d.forwarder.CurrentLayers().Spatial
 		},
-		GetIsReducedQuality: func() bool {
-			return d.GetForwardingStatus() != ForwardingStatusOptimal
-		},
-		Logger: d.logger,
+		GetDistanceToDesired: d.forwarder.DistanceToDesired,
+		Logger:               d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -309,8 +309,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	if d.onMaxLayerChanged != nil {
 		d.onMaxLayerChanged(d, d.MaxLayers().Spatial)
 	}
-	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
-	d.connectionStats.Start()
+	// RAJA-REMOVE d.connectionStats.SetTrackSource(d.receiver.TrackSource())
+	d.connectionStats.Start(d.receiver.TrackInfo())
 	d.logger.Debugw("downtrack bound")
 
 	return codec, nil

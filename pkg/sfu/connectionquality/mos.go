@@ -18,12 +18,12 @@ func Score2Rating(score float32) livekit.ConnectionQuality {
 	return livekit.ConnectionQuality_POOR
 }
 
-func getBitRate(interval float64, bytes uint64) int32 {
-	return int32(float64(bytes*8) / interval)
+func getBitRate(interval float64, bytes uint64) float64 {
+	return float64(bytes*8) / interval
 }
 
-func getFrameRate(interval float64, frames uint32) int32 {
-	return int32(float64(frames) / interval)
+func getFrameRate(interval float64, frames uint32) float64 {
+	return float64(frames) / interval
 }
 
 func getLossPercentage(expected uint32, lost uint32) float32 {
@@ -38,26 +38,34 @@ func int32Ptr(x int32) *int32 {
 	return &x
 }
 
+func float32Ptr(x float32) *float32 {
+	return &x
+}
+
 type TrackScoreParams struct {
-	Duration         time.Duration
-	Codec            string
-	PacketsExpected  uint32
-	PacketsLost      uint32
-	Bytes            uint64
-	Frames           uint32
-	Jitter           float64
-	Rtt              uint32
-	DtxDisabled      bool
+	Duration        time.Duration
+	Codec           string
+	PacketsExpected uint32
+	PacketsLost     uint32
+	Bytes           uint64
+	Frames          uint32
+	Jitter          float64
+	Rtt             uint32
+	DtxEnabled      bool
+	/* RAJA-REMOVE
 	ActualWidth      uint32
 	ActualHeight     uint32
 	ExpectedWidth    uint32
 	ExpectedHeight   uint32
+	*/
+	Width            uint32
+	Height           uint32
 	IsReducedQuality bool
 }
 
 func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
 	return rtcmos.Stat{
-		Bitrate:       getBitRate(params.Duration.Seconds(), params.Bytes),
+		Bitrate:       float32(getBitRate(params.Duration.Seconds(), params.Bytes)),
 		PacketLoss:    getLossPercentage(params.PacketsExpected, params.PacketsLost),
 		RoundTripTime: int32Ptr(int32(params.Rtt)),
 		BufferDelay:   int32Ptr(int32(params.Jitter / 1000.0)),
@@ -67,10 +75,7 @@ func getRtcMosStat(params TrackScoreParams) rtcmos.Stat {
 func AudioTrackScore(params TrackScoreParams) float32 {
 	stat := getRtcMosStat(params)
 	stat.AudioConfig = &rtcmos.AudioConfig{}
-	if !params.DtxDisabled {
-		flag := true
-		stat.AudioConfig.Dtx = &flag
-	}
+	stat.AudioConfig.Dtx = &params.DtxEnabled
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
 	if len(scores) == 1 {
@@ -82,12 +87,16 @@ func AudioTrackScore(params TrackScoreParams) float32 {
 func VideoTrackScore(params TrackScoreParams) float32 {
 	stat := getRtcMosStat(params)
 	stat.VideoConfig = &rtcmos.VideoConfig{
-		FrameRate:      int32Ptr(getFrameRate(params.Duration.Seconds(), params.Frames)),
-		Codec:          params.Codec,
+		FrameRate: float32Ptr(float32(getFrameRate(params.Duration.Seconds(), params.Frames))),
+		Codec:     params.Codec,
+		/* RAJA-REMOVE
 		ExpectedWidth:  int32Ptr(int32(params.ExpectedWidth)),
 		ExpectedHeight: int32Ptr(int32(params.ExpectedHeight)),
 		Width:          int32Ptr(int32(params.ActualWidth)),
 		Height:         int32Ptr(int32(params.ActualHeight)),
+		*/
+		Width:  int32Ptr(int32(params.Width)),
+		Height: int32Ptr(int32(params.Height)),
 	}
 
 	scores := rtcmos.Score([]rtcmos.Stat{stat})
