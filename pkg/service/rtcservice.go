@@ -299,6 +299,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
+	ci.Network = values.Get("network")
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = r.Header.Get("CF-Connecting-IP")
 	if len(ci.Address) == 0 {
