@@ -58,13 +58,14 @@ func (d *DynacastManager) AddCodec(mime string) {
 }
 
 func (d *DynacastManager) Restart() {
-	d.lock.RLock()
+	d.lock.Lock()
+	d.committedMaxSubscribedQuality = make(map[string]livekit.VideoQuality)
+
 	dqs := d.getDynacastQualitiesLocked()
-	d.lock.RUnlock()
+	d.lock.Unlock()
 
 	for _, dq := range dqs {
 		dq.Restart()
-		d.committedMaxSubscribedQuality[dq.MimeType()] = dq.MaxSubscribedQuality()
 	}
 }
 
@@ -149,7 +150,6 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 	dq.Start()
 
 	d.dynacastQuality[mime] = dq
-	d.committedMaxSubscribedQuality[mime] = dq.MaxSubscribedQuality()
 
 	return dq
 }
