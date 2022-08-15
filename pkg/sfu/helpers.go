@@ -55,12 +55,3 @@ func getRttMs(report *rtcp.ReceptionReport) uint32 {
 	ntpDiff := now - report.LastSenderReport - report.Delay
 	return uint32(math.Ceil(float64(ntpDiff) * 1000.0 / 65536.0))
 }
-
-func getCodecNameFromMime(mime string) string {
-	codecName := ""
-	codecParsed := strings.Split(strings.ToLower(mime), "/")
-	if len(codecParsed) > 1 {
-		codecName = codecParsed[1]
-	}
-	return codecName
-}
