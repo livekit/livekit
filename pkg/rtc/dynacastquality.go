@@ -57,17 +57,6 @@ func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(maxSubscribedQuali
 	d.onSubscribedMaxQualityChange = f
 }
 
-func (d *DynacastQuality) MimeType() string {
-	return d.params.MimeType
-}
-
-func (d *DynacastQuality) MaxSubscribedQuality() livekit.VideoQuality {
-	d.lock.RLock()
-	defer d.lock.RUnlock()
-
-	return d.maxSubscribedQuality
-}
-
 func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, quality livekit.VideoQuality) {
 	d.lock.Lock()
 	if quality == livekit.VideoQuality_OFF {
@@ -77,7 +66,7 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 	}
 	d.lock.Unlock()
 
-	d.updateQualityChange()
+	d.updateQualityChange(false)
 }
 
 func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality) {
@@ -89,19 +78,18 @@ func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, 
 	}
 	d.lock.Unlock()
 
-	d.updateQualityChange()
+	d.updateQualityChange(false)
 }
 
 func (d *DynacastQuality) reset() {
 	d.lock.Lock()
 	d.initialized = false
-	d.maxSubscribedQuality = livekit.VideoQuality_HIGH
 	d.lock.Unlock()
 
 	d.startMaxQualityTimer()
 }
 
-func (d *DynacastQuality) updateQualityChange() {
+func (d *DynacastQuality) updateQualityChange(force bool) {
 	d.lock.Lock()
 	maxSubscribedQuality := livekit.VideoQuality_OFF
 	for _, subQuality := range d.maxSubscriberQuality {
@@ -115,7 +103,7 @@ func (d *DynacastQuality) updateQualityChange() {
 		}
 	}
 
-	if maxSubscribedQuality == d.maxSubscribedQuality && d.initialized {
+	if maxSubscribedQuality == d.maxSubscribedQuality && d.initialized && !force {
 		d.lock.Unlock()
 		return
 	}
@@ -147,7 +135,7 @@ func (d *DynacastQuality) startMaxQualityTimer() {
 
 	d.maxQualityTimer = time.AfterFunc(initialQualityUpdateWait, func() {
 		d.stopMaxQualityTimer()
-		d.updateQualityChange()
+		d.updateQualityChange(true)
 	})
 }
 
