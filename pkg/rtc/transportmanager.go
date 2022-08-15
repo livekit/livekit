@@ -3,8 +3,10 @@ package rtc
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/pion/rtcp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 
@@ -43,6 +45,7 @@ type TransportManager struct {
 
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
+	lastPublisherAnswer          atomic.Value
 
 	onPublisherGetDTX func() bool
 
@@ -154,7 +157,10 @@ func (t *TransportManager) OnPublisherGetDTX(f func() bool) {
 }
 
 func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription)) {
-	t.publisher.OnAnswer(f)
+	t.publisher.OnAnswer(func(sd webrtc.SessionDescription) {
+		t.lastPublisherAnswer.Store(sd)
+		f(sd)
+	})
 }
 
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
@@ -288,6 +294,49 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 		return err
 	}
 	return nil
+}
+
+func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDescription, mediaType string) (parsed *sdp.SessionDescription, unmatched *sdp.MediaDescription, err error) {
+	// prefer codec from offer for clients that don't support setCodecPreferences
+	parsed, err = offer.Unmarshal()
+	if err != nil {
+		t.params.Logger.Errorw("failed to parse offer for codec preference", err)
+		return
+	}
+
+	for i := len(parsed.MediaDescriptions) - 1; i >= 0; i-- {
+		media := parsed.MediaDescriptions[i]
+		if media.MediaName.Media == mediaType {
+			unmatched = media
+			break
+		}
+	}
+
+	if unmatched == nil {
+		return
+	}
+
+	lastAnswer := t.lastPublisherAnswer.Load()
+	if lastAnswer != nil {
+		answer := lastAnswer.(webrtc.SessionDescription)
+		parsedAnswer, err1 := answer.Unmarshal()
+		if err1 != nil {
+			// should not happend
+			t.params.Logger.Errorw("failed to parse last answer", err)
+			return
+		}
+
+		for _, m := range parsedAnswer.MediaDescriptions {
+			mid, _ := m.Attribute(sdp.AttrKeyMID)
+			if lastMid, _ := unmatched.Attribute(sdp.AttrKeyMID); lastMid == mid {
+				// mid matched, return
+				unmatched = nil
+				return
+			}
+		}
+	}
+
+	return
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) error {
