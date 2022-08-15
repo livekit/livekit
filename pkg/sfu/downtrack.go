@@ -33,6 +33,7 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SubscriberID() livekit.ParticipantID
+	TrackInfoAvailable()
 }
 
 const (
@@ -298,7 +299,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bound.Store(true)
 	d.bindLock.Unlock()
 
-	d.connectionStats.Start(d.receiver.TrackInfo())
 	d.logger.Debugw("downtrack bound")
 
 	return codec, nil
@@ -309,6 +309,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
 	return nil
+}
+
+func (d *DownTrack) TrackInfoAvailable() {
+	d.connectionStats.Start(d.receiver.TrackInfo())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
