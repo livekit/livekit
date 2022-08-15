@@ -294,9 +294,10 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 			if rtph.Marker {
 				r.frames++
 			}
+
+			r.updateJitter(rtph, packetTime)
 		}
 
-		r.updateJitter(rtph, packetTime)
 	}
 
 	return
