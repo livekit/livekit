@@ -3,12 +3,14 @@ package rtc
 import (
 	"context"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pion/rtcp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
@@ -392,12 +394,85 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 		shouldPend = true
 	}
 
+	offer = p.setCodecPreferencesForPublisher(offer)
+
 	if err := p.TransportManager.HandleOffer(offer, shouldPend); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 		return err
 	}
 
 	return nil
+}
+
+func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
+	parsed, lastVideo, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "video")
+	if err != nil || lastVideo == nil {
+		return offer
+	}
+	// last video is pending for publish, set codec preference
+	var streamID string
+	msid, ok := lastVideo.Attribute(sdp.AttrKeyMsid)
+	if !ok {
+		return offer
+	}
+	ids := strings.Split(msid, " ")
+	if len(ids) < 2 {
+		streamID = msid
+	} else {
+		streamID = ids[1]
+	}
+
+	p.pendingTracksLock.RLock()
+	_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+	if info == nil {
+		p.pendingTracksLock.RUnlock()
+		return offer
+	}
+	var mime string
+	for _, c := range info.Codecs {
+		if c.Cid == streamID {
+			mime = c.MimeType
+			break
+		}
+	}
+	if mime == "" && len(info.Codecs) > 0 {
+		mime = info.Codecs[0].MimeType
+	}
+	p.pendingTracksLock.RUnlock()
+
+	if mime == "" {
+		return offer
+	}
+
+	codecs, err := codecsFromMediaDescription(lastVideo)
+	if err != nil {
+		return offer
+	}
+
+	mime = strings.ToUpper(mime)
+	var preferredCodecs, leftCodecs []string
+	for _, c := range codecs {
+		if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
+			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+		} else {
+			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+		}
+	}
+
+	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats[:0], preferredCodecs...)
+	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats, leftCodecs...)
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		p.params.Logger.Infow("failed to marshal offer", "error", err)
+		p.params.Logger.Errorw("failed to marshal offer", err)
+		return offer
+	}
+
+	return webrtc.SessionDescription{
+		Type: offer.Type,
+		SDP:  string(bytes),
+	}
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
@@ -1903,4 +1978,29 @@ func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit
 
 	track.(types.LocalMediaTrack).NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
 	return nil
+}
+
+func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
+	s := &sdp.SessionDescription{
+		MediaDescriptions: []*sdp.MediaDescription{m},
+	}
+
+	for _, payloadStr := range m.MediaName.Formats {
+		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
+		if err != nil {
+			return nil, err
+		}
+
+		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
+		if err != nil {
+			if payloadType == 0 {
+				continue
+			}
+			return nil, err
+		}
+
+		out = append(out, codec)
+	}
+
+	return out, nil
 }
