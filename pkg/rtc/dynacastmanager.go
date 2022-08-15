@@ -174,6 +174,12 @@ func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality liveki
 func (d *DynacastManager) update(force bool) {
 	d.lock.Lock()
 
+	if len(d.maxSubscribedQuality) == 0 {
+		// no mime has been added, nothing to update
+		d.lock.Unlock()
+		return
+	}
+
 	// add or remove of a mime triggers an update
 	changed := len(d.maxSubscribedQuality) != len(d.committedMaxSubscribedQuality)
 	downgradesOnly := !changed

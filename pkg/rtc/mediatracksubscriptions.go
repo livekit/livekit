@@ -160,6 +160,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
+	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
+		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
+	})
+
+	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
+		if t.onSubscriberMaxQualityChange != nil {
+			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
+		}
+	})
+
+	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
+		go sub.UpdateRTT(rtt)
+	})
+
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
 
@@ -239,20 +253,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack.SetRTPHeaderExtensions(sendParameters.HeaderExtensions)
 
 	downTrack.SetTransceiver(transceiver)
-
-	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
-		t.params.Telemetry.TrackStats(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, stat)
-	})
-
-	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
-		if t.onSubscriberMaxQualityChange != nil {
-			t.onSubscriberMaxQualityChange(subscriberID, dt.Codec(), layer)
-		}
-	})
-
-	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
-		go sub.UpdateRTT(rtt)
-	})
 
 	downTrack.OnCloseHandler(func(willBeResumed bool) {
 		go t.downTrackClosed(sub, subTrack, willBeResumed, sender)
