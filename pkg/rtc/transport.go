@@ -325,7 +325,6 @@ func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
 		return
 	}
 
-	t.logICECandidates()
 	go func() {
 		t.lock.Lock()
 		if t.restartAfterGathering {
@@ -408,6 +407,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	t.params.Logger.Infow("peer connection state change", "state", state.String())
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
+		t.logICECandidates()
 		isInitialConnection := t.setConnectedAt(time.Now())
 		if isInitialConnection {
 			if t.onInitialConnected != nil {
