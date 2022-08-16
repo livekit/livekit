@@ -56,6 +56,10 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			pLogger.Warnw("could not update subscription", err,
 				"tracks", msg.Subscription.TrackSids,
 				"subscribe", msg.Subscription.Subscribe)
+		} else {
+			pLogger.Infow("updated subscription",
+				"tracks", msg.Subscription.TrackSids,
+				"subscribe", msg.Subscription.Subscribe)
 		}
 	case *livekit.SignalRequest_TrackSetting:
 		for _, sid := range livekit.StringsAsTrackIDs(msg.TrackSetting.TrackSids) {

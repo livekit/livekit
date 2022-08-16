@@ -597,6 +597,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 // Mute enables or disables media forwarding
 func (d *DownTrack) Mute(muted bool) {
+	d.logger.Infow("setting mute", "muted", muted)
 	changed, maxLayers := d.forwarder.Mute(muted)
 	if !changed {
 		return
@@ -694,6 +695,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
+	d.logger.Infow("setting max spatial layer", "layer", spatialLayer)
 	changed, maxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
