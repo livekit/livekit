@@ -701,8 +701,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 		return
 	}
 
-	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo &&
-		maxLayers.SpatialGreaterThanOrEqual(currentLayers) && d.bound.Load() {
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayers.SpatialGreaterThanOrEqual(currentLayers) {
 		//
 		// Notify when new max is
 		//   1. Equal to current -> already locked to the new max
