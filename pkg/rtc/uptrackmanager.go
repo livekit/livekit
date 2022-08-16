@@ -170,7 +170,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Debugw("mute status changed", "trackID", trackID, "muted", track.IsMuted())
+			u.params.Logger.Infow("mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track, false)
 			}
@@ -232,7 +232,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	// store as is for use when migrating
 	u.subscriptionPermission = subscriptionPermission
 	if subscriptionPermission == nil {
-		u.params.Logger.Debugw(
+		u.params.Logger.Infow(
 			"updating subscription permission, setting to nil",
 			"version", u.subscriptionPermissionVersion.ToProto().String(),
 		)
@@ -241,7 +241,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		return nil
 	}
 
-	u.params.Logger.Debugw(
+	u.params.Logger.Infow(
 		"updating subscription permission",
 		"permissions", u.subscriptionPermission.String(),
 		"version", u.subscriptionPermissionVersion.ToProto().String(),
