@@ -109,6 +109,7 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 		receiver.SetMaxExpectedSpatialLayer(d.maxExpectedLayer)
 	}
 	d.maxExpectedLayerValid = false
+
 	if d.pausedValid {
 		receiver.SetUpTrackPaused(d.paused)
 	}
@@ -166,24 +167,26 @@ func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 }
 
 func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		d.pausedValid = false
 		r.SetUpTrackPaused(paused)
 	} else {
-		d.settingsLock.Lock()
 		d.pausedValid = true
 		d.paused = paused
-		d.settingsLock.Unlock()
 	}
 }
 
 func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		d.maxExpectedLayerValid = false
 		r.SetMaxExpectedSpatialLayer(layer)
 	} else {
-		d.settingsLock.Lock()
 		d.maxExpectedLayerValid = true
 		d.maxExpectedLayer = layer
-		d.settingsLock.Unlock()
 	}
 }
 
