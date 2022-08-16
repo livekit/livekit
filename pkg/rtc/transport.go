@@ -815,7 +815,7 @@ func (t *PCTransport) OnAnswer(f func(sd webrtc.SessionDescription)) {
 	t.onAnswer = f
 }
 
-func (t *PCTransport) OnRemoteDescripitonSettled(f func() error) {
+func (t *PCTransport) OnRemoteDescriptionSettled(f func() error) {
 	t.lock.Lock()
 	t.onRemoteDescriptionSettled = f
 	t.lock.Unlock()

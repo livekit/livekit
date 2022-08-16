@@ -92,7 +92,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		return nil, err
 	}
 	t.publisher = publisher
-	t.publisher.OnRemoteDescripitonSettled(t.createPublisherAnswerAndSend)
+	t.publisher.OnRemoteDescriptionSettled(t.createPublisherAnswerAndSend)
 	t.publisher.OnInitialConnected(func() {
 		if !t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
 			t.onPrimaryTransportInitialConnected()
