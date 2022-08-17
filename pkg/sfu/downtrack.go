@@ -153,8 +153,8 @@ type DownTrack struct {
 	deltaStatsSnapshotId uint32
 
 	// Debug info
-	pktsDropped atomic.Uint32
-	writeErrors atomic.Uint32
+	pktsDropped   atomic.Uint32
+	writeIOErrors atomic.Uint32
 
 	isNACKThrottled atomic.Bool
 
@@ -475,9 +475,13 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	_, err = d.writeStream.WriteRTP(hdr, payload)
 	if err != nil {
 		d.pktsDropped.Inc()
-		writeErrors := d.writeErrors.Inc()
-		if (writeErrors % 100) == 1 {
-			d.logger.Errorw("write rtp packet failed", err, "count", writeErrors)
+		if errors.Is(err, io.ErrClosedPipe) {
+			writeIOErrors := d.writeIOErrors.Inc()
+			if (writeIOErrors % 100) == 1 {
+				d.logger.Errorw("write rtp packet failed", err, "count", writeIOErrors)
+			}
+		} else {
+			d.logger.Errorw("write rtp packet failed", err)
 		}
 		return err
 	}
