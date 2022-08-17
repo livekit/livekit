@@ -477,7 +477,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		d.pktsDropped.Inc()
 		writeErrors := d.writeErrors.Inc()
 		if (writeErrors % 100) == 1 {
-			d.logger.Errorw("write rtp packet failed", err)
+			d.logger.Errorw("write rtp packet failed", err, "count", writeErrors)
 		}
 		return err
 	}
