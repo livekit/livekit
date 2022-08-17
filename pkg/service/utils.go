@@ -7,11 +7,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func handleError(w http.ResponseWriter, status int, msg string) {
-	// GetLogger already with extra depth 1
-	logger.GetLogger().V(1).Info("error handling request", "error", msg, "status", status)
+func handleError(w http.ResponseWriter, status int, err error, keysAndValues ...interface{}) {
+	keysAndValues = append(keysAndValues, "status", status)
+	logger.Warnw("error handling request", err, keysAndValues...)
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(msg))
+	_, _ = w.Write([]byte(err.Error()))
 }
 
 func boolValue(s string) bool {
