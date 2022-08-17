@@ -27,7 +27,6 @@ const (
 
 var (
 	ErrClosingOrClosed = errors.New("track is closing or closed")
-	ErrMimeClosing     = errors.New("mime for track is closing")
 	ErrNoReceiver      = errors.New("cannot subscribe without a receiver in place")
 )
 
