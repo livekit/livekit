@@ -26,7 +26,8 @@ const (
 )
 
 var (
-	ErrNoReceiver = errors.New("cannot subscribe without a receiver in place")
+	ErrClosingOrClosed = errors.New("track is closing or closed")
+	ErrNoReceiver      = errors.New("cannot subscribe without a receiver in place")
 )
 
 type simulcastReceiver struct {
@@ -64,6 +65,9 @@ type MediaTrackReceiver struct {
 	layerDimensions    map[livekit.VideoQuality]*livekit.VideoLayer
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
+	isMimeClosed       map[string]bool
+	isClosing          bool
+	isClosed           bool
 
 	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
@@ -79,6 +83,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		trackInfo:          proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
 		layerDimensions:    make(map[livekit.VideoQuality]*livekit.VideoLayer),
 		pendingSubscribeOp: make(map[livekit.ParticipantID]int),
+		isMimeClosed:       make(map[string]bool),
 	}
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
@@ -126,10 +131,23 @@ func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
 
+	if t.isClosing || t.isClosed {
+		t.params.Logger.Warnw("cannot set up receiver on closing or closed track", nil)
+		t.lock.Unlock()
+		return
+	}
+
+	mimeType := receiver.Codec().MimeType
+	if t.isMimeClosed[mimeType] {
+		t.params.Logger.Warnw("cannot set up receiver on closing mime", nil, "mime", mimeType)
+		t.lock.Unlock()
+		return
+	}
+
 	// codec postion maybe taked by DumbReceiver, check and upgrade to WebRTCReceiver
 	var upgradeReceiver bool
 	for _, r := range t.receivers {
-		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
+		if strings.EqualFold(r.Codec().MimeType, mimeType) {
 			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
 				d.Upgrade(receiver)
 				upgradeReceiver = true
@@ -229,19 +247,34 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) {
 			t.receivers[idx] = t.receivers[len(t.receivers)-1]
 			t.receivers = t.receivers[:len(t.receivers)-1]
+
+			t.isMimeClosed[mime] = true
 			break
 		}
 	}
 
 	t.shadowReceiversLocked()
 	t.lock.Unlock()
+
+	t.removeAllSubscribersForMime(mime, false)
 }
 
 func (t *MediaTrackReceiver) ClearAllReceivers() {
 	t.lock.Lock()
+	var mimes []string
+	for _, receiver := range t.receivers {
+		mime := receiver.Codec().MimeType
+		t.isMimeClosed[mime] = true
+		mimes = append(mimes, mime)
+	}
+
 	t.receivers = t.receivers[:0]
 	t.receiversShadow = nil
 	t.lock.Unlock()
+
+	for _, mime := range mimes {
+		t.ClearReceiver(mime)
+	}
 }
 
 func (t *MediaTrackReceiver) OnMediaLossFeedback(f func(dt *sfu.DownTrack, rr *rtcp.ReceiverReport)) {
@@ -254,6 +287,11 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 
 func (t *MediaTrackReceiver) TryClose() bool {
 	t.lock.RLock()
+	if t.isClosed {
+		t.lock.RUnlock()
+		return true
+	}
+
 	if len(t.receiversShadow) > 0 {
 		t.lock.RUnlock()
 		return false
@@ -266,6 +304,7 @@ func (t *MediaTrackReceiver) TryClose() bool {
 
 func (t *MediaTrackReceiver) Close() {
 	t.lock.RLock()
+	t.isClosed = true
 	onclose := t.onClose
 	t.lock.RUnlock()
 
@@ -387,6 +426,12 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 	}()
 
 	t.lock.RLock()
+	if t.isClosing || t.isClosed {
+		t.lock.RUnlock()
+		err = ErrClosingOrClosed
+		return
+	}
+
 	receivers := t.receiversShadow
 	potentialCodecs := make([]webrtc.RTPCodecParameters, len(t.potentialCodecs))
 	copy(potentialCodecs, t.potentialCodecs)
@@ -453,8 +498,19 @@ func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID
 	return
 }
 
-func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
-	t.params.Logger.Infow("removing all subscribers")
+func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, willBeResumed bool) {
+	t.params.Logger.Infow("removing all subscribers", "mime", mime)
+	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribersForMime(mime) {
+		t.RemoveSubscriber(subscriberID, willBeResumed)
+	}
+}
+
+func (t *MediaTrackReceiver) InitiateClose(willBeResumed bool) {
+	t.params.Logger.Infow("initiating close")
+	t.lock.Lock()
+	t.isClosing = true
+	t.lock.Unlock()
+
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribers() {
 		t.RemoveSubscriber(subscriberID, willBeResumed)
 	}

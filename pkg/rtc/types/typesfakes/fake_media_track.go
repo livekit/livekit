@@ -68,6 +68,11 @@ type FakeMediaTrack struct {
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
 	}
+	InitiateCloseStub        func(bool)
+	initiateCloseMutex       sync.RWMutex
+	initiateCloseArgsForCall []struct {
+		arg1 bool
+	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
 	isMutedArgsForCall []struct {
@@ -158,11 +163,6 @@ type FakeMediaTrack struct {
 	}
 	receiversReturnsOnCall map[int]struct {
 		result1 []sfu.TrackReceiver
-	}
-	RemoveAllSubscribersStub        func(bool)
-	removeAllSubscribersMutex       sync.RWMutex
-	removeAllSubscribersArgsForCall []struct {
-		arg1 bool
 	}
 	RemoveSubscriberStub        func(livekit.ParticipantID, bool)
 	removeSubscriberMutex       sync.RWMutex
@@ -527,6 +527,38 @@ func (fake *FakeMediaTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.TrackID
 	}{result1}
+}
+
+func (fake *FakeMediaTrack) InitiateClose(arg1 bool) {
+	fake.initiateCloseMutex.Lock()
+	fake.initiateCloseArgsForCall = append(fake.initiateCloseArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.InitiateCloseStub
+	fake.recordInvocation("InitiateClose", []interface{}{arg1})
+	fake.initiateCloseMutex.Unlock()
+	if stub != nil {
+		fake.InitiateCloseStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) InitiateCloseCallCount() int {
+	fake.initiateCloseMutex.RLock()
+	defer fake.initiateCloseMutex.RUnlock()
+	return len(fake.initiateCloseArgsForCall)
+}
+
+func (fake *FakeMediaTrack) InitiateCloseCalls(stub func(bool)) {
+	fake.initiateCloseMutex.Lock()
+	defer fake.initiateCloseMutex.Unlock()
+	fake.InitiateCloseStub = stub
+}
+
+func (fake *FakeMediaTrack) InitiateCloseArgsForCall(i int) bool {
+	fake.initiateCloseMutex.RLock()
+	defer fake.initiateCloseMutex.RUnlock()
+	argsForCall := fake.initiateCloseArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) IsMuted() bool {
@@ -1014,38 +1046,6 @@ func (fake *FakeMediaTrack) ReceiversReturnsOnCall(i int, result1 []sfu.TrackRec
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) RemoveAllSubscribers(arg1 bool) {
-	fake.removeAllSubscribersMutex.Lock()
-	fake.removeAllSubscribersArgsForCall = append(fake.removeAllSubscribersArgsForCall, struct {
-		arg1 bool
-	}{arg1})
-	stub := fake.RemoveAllSubscribersStub
-	fake.recordInvocation("RemoveAllSubscribers", []interface{}{arg1})
-	fake.removeAllSubscribersMutex.Unlock()
-	if stub != nil {
-		fake.RemoveAllSubscribersStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) RemoveAllSubscribersCallCount() int {
-	fake.removeAllSubscribersMutex.RLock()
-	defer fake.removeAllSubscribersMutex.RUnlock()
-	return len(fake.removeAllSubscribersArgsForCall)
-}
-
-func (fake *FakeMediaTrack) RemoveAllSubscribersCalls(stub func(bool)) {
-	fake.removeAllSubscribersMutex.Lock()
-	defer fake.removeAllSubscribersMutex.Unlock()
-	fake.RemoveAllSubscribersStub = stub
-}
-
-func (fake *FakeMediaTrack) RemoveAllSubscribersArgsForCall(i int) bool {
-	fake.removeAllSubscribersMutex.RLock()
-	defer fake.removeAllSubscribersMutex.RUnlock()
-	argsForCall := fake.removeAllSubscribersArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeMediaTrack) RemoveSubscriber(arg1 livekit.ParticipantID, arg2 bool) {
 	fake.removeSubscriberMutex.Lock()
 	fake.removeSubscriberArgsForCall = append(fake.removeSubscriberArgsForCall, struct {
@@ -1335,6 +1335,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.initiateCloseMutex.RLock()
+	defer fake.initiateCloseMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
@@ -1353,8 +1355,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.publisherVersionMutex.RUnlock()
 	fake.receiversMutex.RLock()
 	defer fake.receiversMutex.RUnlock()
-	fake.removeAllSubscribersMutex.RLock()
-	defer fake.removeAllSubscribersMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()

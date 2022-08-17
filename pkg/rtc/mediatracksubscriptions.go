@@ -335,6 +335,21 @@ func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
 	return subs
 }
 
+func (t *MediaTrackSubscriptions) GetAllSubscribersForMime(mime string) []livekit.ParticipantID {
+	t.subscribedTracksMu.RLock()
+	defer t.subscribedTracksMu.RUnlock()
+
+	subs := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
+	for id, subTrack := range t.subscribedTracks {
+		if subTrack.DownTrack().Codec().MimeType != mime {
+			continue
+		}
+
+		subs = append(subs, id)
+	}
+	return subs
+}
+
 func (t *MediaTrackSubscriptions) GetNumSubscribers() int {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
