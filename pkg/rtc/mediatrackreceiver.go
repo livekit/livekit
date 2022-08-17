@@ -26,7 +26,8 @@ const (
 )
 
 var (
-	ErrNoReceiver = errors.New("cannot subscribe without a receiver in place")
+	ErrClosingOrClosed = errors.New("track is closing or closed")
+	ErrNoReceiver      = errors.New("cannot subscribe without a receiver in place")
 )
 
 type simulcastReceiver struct {
@@ -64,6 +65,8 @@ type MediaTrackReceiver struct {
 	layerDimensions    map[livekit.VideoQuality]*livekit.VideoLayer
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
+	isClosing          bool
+	isClosed           bool
 
 	onSetupReceiver     func(mime string)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
@@ -125,6 +128,12 @@ func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
 
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
+
+	if t.isClosing || t.isClosed {
+		t.params.Logger.Warnw("cannot set up receiver on closing or closed track", nil)
+		t.lock.Unlock()
+		return
+	}
 
 	// codec postion maybe taked by DumbReceiver, check and upgrade to WebRTCReceiver
 	var upgradeReceiver bool
@@ -254,6 +263,11 @@ func (t *MediaTrackReceiver) OnVideoLayerUpdate(f func(layers []*livekit.VideoLa
 
 func (t *MediaTrackReceiver) TryClose() bool {
 	t.lock.RLock()
+	if t.isClosed {
+		t.lock.RUnlock()
+		return true
+	}
+
 	if len(t.receiversShadow) > 0 {
 		t.lock.RUnlock()
 		return false
@@ -266,6 +280,7 @@ func (t *MediaTrackReceiver) TryClose() bool {
 
 func (t *MediaTrackReceiver) Close() {
 	t.lock.RLock()
+	t.isClosed = true
 	onclose := t.onClose
 	t.lock.RUnlock()
 
@@ -387,6 +402,11 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 	}()
 
 	t.lock.RLock()
+	if t.isClosing || t.isClosed {
+		t.lock.RUnlock()
+		return ErrClosingOrClosed
+	}
+
 	receivers := t.receiversShadow
 	potentialCodecs := make([]webrtc.RTPCodecParameters, len(t.potentialCodecs))
 	copy(potentialCodecs, t.potentialCodecs)
@@ -458,6 +478,15 @@ func (t *MediaTrackReceiver) RemoveAllSubscribers(willBeResumed bool) {
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribers() {
 		t.RemoveSubscriber(subscriberID, willBeResumed)
 	}
+}
+
+func (t *MediaTrackReceiver) InitiateClose(willBeResumed bool) {
+	t.params.Logger.Infow("initiating close")
+	t.lock.Lock()
+	t.isClosing = true
+	t.lock.Unlock()
+
+	t.RemoveAllSubscribers(willBeResumed)
 }
 
 func (t *MediaTrackReceiver) IsSubscribed() bool {

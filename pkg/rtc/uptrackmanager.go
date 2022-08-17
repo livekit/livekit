@@ -68,7 +68,7 @@ func (u *UpTrackManager) Close(willBeResumed bool) {
 
 	// remove all subscribers
 	for _, t := range u.GetPublishedTracks() {
-		t.RemoveAllSubscribers(willBeResumed)
+		t.InitiateClose(willBeResumed)
 	}
 
 	if notify && u.onClose != nil {
@@ -317,7 +317,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 }
 
 func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
-	track.RemoveAllSubscribers(willBeResumed)
+	track.InitiateClose(willBeResumed)
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()
