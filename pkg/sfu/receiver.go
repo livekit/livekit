@@ -563,9 +563,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			if err := dt.WriteRTP(pkt, spatialLayer); err != nil {
-				w.logger.Errorw("failed writing to down track", err)
-			}
+			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
 	}
 }
