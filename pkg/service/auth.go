@@ -21,7 +21,9 @@ const (
 type grantsKey struct{}
 
 var (
-	ErrPermissionDenied = errors.New("permissions denied")
+	ErrPermissionDenied          = errors.New("permissions denied")
+	ErrMissingAuthorization      = errors.New("invalid authorization header. Must start with " + bearerPrefix)
+	ErrInvalidAuthorizationToken = errors.New("invalid authorization token")
 )
 
 // authentication middleware
@@ -45,7 +47,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 	if authHeader != "" {
 		if !strings.HasPrefix(authHeader, bearerPrefix) {
-			handleError(w, http.StatusUnauthorized, "invalid authorization header. Must start with "+bearerPrefix)
+			handleError(w, http.StatusUnauthorized, ErrMissingAuthorization)
 			return
 		}
 
@@ -58,19 +60,19 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	if authToken != "" {
 		v, err := auth.ParseAPIToken(authToken)
 		if err != nil {
-			handleError(w, http.StatusUnauthorized, "invalid authorization token")
+			handleError(w, http.StatusUnauthorized, ErrInvalidAuthorizationToken)
 			return
 		}
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			handleError(w, http.StatusUnauthorized, "invalid API key")
+			handleError(w, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
 			return
 		}
 
 		grants, err := v.Verify(secret)
 		if err != nil {
-			handleError(w, http.StatusUnauthorized, "invalid token: "+authToken+", error: "+err.Error())
+			handleError(w, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
 		}
 
