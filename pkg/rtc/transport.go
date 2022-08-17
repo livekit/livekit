@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	lksdp "github.com/livekit/protocol/sdp"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
@@ -771,7 +772,7 @@ func (t *PCTransport) isRemoteOfferRestartICE(sd webrtc.SessionDescription) (str
 	if err != nil {
 		return "", false, err
 	}
-	user, pwd, err := extractICECredential(parsed)
+	user, pwd, err := lksdp.ExtractICECredential(parsed)
 	if err != nil {
 		return "", false, err
 	}
@@ -1119,7 +1120,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	if err != nil {
 		return err
 	}
-	fp, fpHahs, err := extractFingerprint(parsed)
+	fp, fpHahs, err := lksdp.ExtractFingerprint(parsed)
 	if err != nil {
 		return err
 	}
@@ -1137,7 +1138,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	// trying to replicate previous setup, read from previous answer and use that role.
 	//
 	se := webrtc.SettingEngine{}
-	se.SetAnsweringDTLSRole(extractDTLSRole(parsed))
+	se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
 	api := webrtc.NewAPI(
 		webrtc.WithSettingEngine(se),
 		webrtc.WithMediaEngine(t.me),
@@ -1214,7 +1215,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			return err
 		}
 		tr.Stop()
-		mid := getMidValue(m)
+		mid := lksdp.GetMidValue(m)
 		if mid == "" {
 			return errors.New("mid value not found")
 		}
@@ -1300,120 +1301,4 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.Sess
 	}
 	sd.SDP = string(bytes)
 	return sd
-}
-
-// ---------------------------------------------
-
-func getMidValue(media *sdp.MediaDescription) string {
-	for _, attr := range media.Attributes {
-		if attr.Key == sdp.AttrKeyMID {
-			return attr.Value
-		}
-	}
-	return ""
-}
-
-func extractFingerprint(desc *sdp.SessionDescription) (string, string, error) {
-	fingerprints := make([]string, 0)
-
-	if fingerprint, haveFingerprint := desc.Attribute("fingerprint"); haveFingerprint {
-		fingerprints = append(fingerprints, fingerprint)
-	}
-
-	for _, m := range desc.MediaDescriptions {
-		if fingerprint, haveFingerprint := m.Attribute("fingerprint"); haveFingerprint {
-			fingerprints = append(fingerprints, fingerprint)
-		}
-	}
-
-	if len(fingerprints) < 1 {
-		return "", "", webrtc.ErrSessionDescriptionNoFingerprint
-	}
-
-	for _, m := range fingerprints {
-		if m != fingerprints[0] {
-			return "", "", webrtc.ErrSessionDescriptionConflictingFingerprints
-		}
-	}
-
-	parts := strings.Split(fingerprints[0], " ")
-	if len(parts) != 2 {
-		return "", "", webrtc.ErrSessionDescriptionInvalidFingerprint
-	}
-	return parts[1], parts[0], nil
-}
-
-func extractDTLSRole(desc *sdp.SessionDescription) webrtc.DTLSRole {
-	for _, md := range desc.MediaDescriptions {
-		setup, ok := md.Attribute(sdp.AttrKeyConnectionSetup)
-		if !ok {
-			continue
-		}
-
-		if setup == sdp.ConnectionRoleActive.String() {
-			return webrtc.DTLSRoleClient
-		}
-
-		if setup == sdp.ConnectionRolePassive.String() {
-			return webrtc.DTLSRoleServer
-		}
-	}
-
-	//
-	// If 'setup' attribute is not available, use client role
-	// as that is the default behaviour of answerers
-	//
-	// There seems to be some differences in how role is decided.
-	// libwebrtc (Chrome) code - (https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/pc/jsep_transport.cc;l=592;drc=369fb686729e7eb20d2bd09717cec14269a399d7)
-	// does not mention anything about ICE role when determining
-	// DTLS Role.
-	//
-	// But, ORTC has this - https://github.com/w3c/ortc/issues/167#issuecomment-69409953
-	// and pion/webrtc follows that (https://github.com/pion/webrtc/blob/e071a4eded1efd5d9b401bcfc4efacb3a2a5a53c/dtlstransport.go#L269)
-	//
-	// So if remote is ice-lite, pion will use DTLSRoleServer when answering
-	// while browsers pick DTLSRoleClient.
-	//
-	return webrtc.DTLSRoleClient
-}
-
-func extractICECredential(desc *sdp.SessionDescription) (string, string, error) {
-	remotePwds := []string{}
-	remoteUfrags := []string{}
-
-	if ufrag, haveUfrag := desc.Attribute("ice-ufrag"); haveUfrag {
-		remoteUfrags = append(remoteUfrags, ufrag)
-	}
-	if pwd, havePwd := desc.Attribute("ice-pwd"); havePwd {
-		remotePwds = append(remotePwds, pwd)
-	}
-
-	for _, m := range desc.MediaDescriptions {
-		if ufrag, haveUfrag := m.Attribute("ice-ufrag"); haveUfrag {
-			remoteUfrags = append(remoteUfrags, ufrag)
-		}
-		if pwd, havePwd := m.Attribute("ice-pwd"); havePwd {
-			remotePwds = append(remotePwds, pwd)
-		}
-	}
-
-	if len(remoteUfrags) == 0 {
-		return "", "", webrtc.ErrSessionDescriptionMissingIceUfrag
-	} else if len(remotePwds) == 0 {
-		return "", "", webrtc.ErrSessionDescriptionMissingIcePwd
-	}
-
-	for _, m := range remoteUfrags {
-		if m != remoteUfrags[0] {
-			return "", "", webrtc.ErrSessionDescriptionConflictingIceUfrag
-		}
-	}
-
-	for _, m := range remotePwds {
-		if m != remotePwds[0] {
-			return "", "", webrtc.ErrSessionDescriptionConflictingIcePwd
-		}
-	}
-
-	return remoteUfrags[0], remotePwds[0], nil
 }
