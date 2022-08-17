@@ -771,7 +771,7 @@ func (t *PCTransport) isRemoteOfferRestartICE(sd webrtc.SessionDescription) (str
 	if err != nil {
 		return "", false, err
 	}
-	user, pwd, err := extractICECredential(parsed)
+	user, pwd, err := ExtractICECredential(parsed)
 	if err != nil {
 		return "", false, err
 	}
@@ -1377,7 +1377,7 @@ func extractDTLSRole(desc *sdp.SessionDescription) webrtc.DTLSRole {
 	return webrtc.DTLSRoleClient
 }
 
-func extractICECredential(desc *sdp.SessionDescription) (string, string, error) {
+func ExtractICECredential(desc *sdp.SessionDescription) (string, string, error) {
 	remotePwds := []string{}
 	remoteUfrags := []string{}
 
