@@ -131,8 +131,8 @@ func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
 func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority int, mid string) {
 	t.lock.Lock()
 
-	if t.isClosed {
-		t.params.Logger.Warnw("cannot set up receiver on closed track", nil)
+	if t.isClosing || t.isClosed {
+		t.params.Logger.Warnw("cannot set up receiver on closing or closed track", nil)
 		t.lock.Unlock()
 		return
 	}
