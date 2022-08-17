@@ -65,7 +65,6 @@ type MediaTrackReceiver struct {
 	layerDimensions    map[livekit.VideoQuality]*livekit.VideoLayer
 	potentialCodecs    []webrtc.RTPCodecParameters
 	pendingSubscribeOp map[livekit.ParticipantID]int
-	isMimeClosed       map[string]bool
 	isClosing          bool
 	isClosed           bool
 
@@ -83,7 +82,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 		trackInfo:          proto.Clone(params.TrackInfo).(*livekit.TrackInfo),
 		layerDimensions:    make(map[livekit.VideoQuality]*livekit.VideoLayer),
 		pendingSubscribeOp: make(map[livekit.ParticipantID]int),
-		isMimeClosed:       make(map[string]bool),
 	}
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
@@ -137,17 +135,10 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		return
 	}
 
-	mimeType := receiver.Codec().MimeType
-	if t.isMimeClosed[mimeType] {
-		t.params.Logger.Warnw("cannot set up receiver on closing mime", nil, "mime", mimeType)
-		t.lock.Unlock()
-		return
-	}
-
 	// codec postion maybe taked by DumbReceiver, check and upgrade to WebRTCReceiver
 	var upgradeReceiver bool
 	for _, r := range t.receivers {
-		if strings.EqualFold(r.Codec().MimeType, mimeType) {
+		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
 			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
 				d.Upgrade(receiver)
 				upgradeReceiver = true
@@ -242,13 +233,12 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 }
 
 func (t *MediaTrackReceiver) ClearReceiver(mime string) {
+	t.params.Logger.Debugw("clearing receiver", "mime", mime)
 	t.lock.Lock()
 	for idx, receiver := range t.receivers {
 		if strings.EqualFold(receiver.Codec().MimeType, mime) {
 			t.receivers[idx] = t.receivers[len(t.receivers)-1]
 			t.receivers = t.receivers[:len(t.receivers)-1]
-
-			t.isMimeClosed[mime] = true
 			break
 		}
 	}
@@ -260,12 +250,11 @@ func (t *MediaTrackReceiver) ClearReceiver(mime string) {
 }
 
 func (t *MediaTrackReceiver) ClearAllReceivers() {
+	t.params.Logger.Debugw("clearing all receivers")
 	t.lock.Lock()
 	var mimes []string
 	for _, receiver := range t.receivers {
-		mime := receiver.Codec().MimeType
-		t.isMimeClosed[mime] = true
-		mimes = append(mimes, mime)
+		mimes = append(mimes, receiver.Codec().MimeType)
 	}
 
 	t.receivers = t.receivers[:0]
