@@ -414,7 +414,7 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDe
 
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
 	parsed, lastAudio, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "audio")
-	if err != nil {
+	if err != nil || lastAudio == nil {
 		return offer
 	}
 
