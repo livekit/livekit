@@ -415,9 +415,6 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
 	defer func() {
-		// give time for the participant to be closed with a proper reason.
-		// if participant is closed from here, we would be obscuring the real reason the participant is closed.
-		time.Sleep(2 * time.Second)
 		logger.Infow("RTC session finishing",
 			"participant", participant.Identity(),
 			"pID", participant.ID(),
