@@ -17,6 +17,14 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		}, webrtc.RTPCodecTypeAudio); err != nil {
 			return err
 		}
+
+		redCodec := webrtc.RTPCodecCapability{MimeType: "audio/red", ClockRate: 48000, Channels: 2, SDPFmtpLine: "111/111"}
+		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: redCodec,
+			PayloadType:        63,
+		}, webrtc.RTPCodecTypeAudio); err != nil {
+			return err
+		}
 	}
 
 	for _, codec := range []webrtc.RTPCodecParameters{

@@ -388,7 +388,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
-	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER)
+	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER, "sdp", offer.SDP)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -405,6 +405,67 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
+	if p.params.AudioConfig.EnableOpusRed {
+		offer = p.setCodecPreferencesOpusRedForPublisher(offer)
+	}
+	offer = p.setCodecPreferencesVideoForPublisher(offer)
+	return offer
+}
+
+func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
+	parsed, lastAudio, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "audio")
+	if err != nil {
+		return offer
+	}
+
+	codecs, err := codecsFromMediaDescription(lastAudio)
+	if err != nil {
+		return offer
+	}
+
+	var opusPayload uint8
+	for _, codec := range codecs {
+		if strings.EqualFold(codec.Name, "opus") {
+			opusPayload = codec.PayloadType
+			break
+		}
+	}
+	if opusPayload == 0 {
+		return offer
+	}
+
+	var preferredCodecs, leftCodecs []string
+	for _, codec := range codecs {
+		// codec contain opus/red
+		if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+		} else {
+			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+		}
+	}
+
+	// no opus/red found
+	if len(preferredCodecs) == 0 {
+		return offer
+	}
+
+	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats[:0], preferredCodecs...)
+	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats, leftCodecs...)
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		p.params.Logger.Infow("failed to marshal offer", "error", err)
+		p.params.Logger.Errorw("failed to marshal offer", err)
+		return offer
+	}
+
+	return webrtc.SessionDescription{
+		Type: offer.Type,
+		SDP:  string(bytes),
+	}
+}
+
+func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
 	parsed, lastVideo, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "video")
 	if err != nil || lastVideo == nil {
 		return offer
