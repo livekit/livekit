@@ -171,8 +171,8 @@ func (s *LivekitServer) Start() error {
 	for _, addr := range addresses {
 		var ln net.Listener
 		var err error
-		if s.config.Autocert.Enabled {
-			ln, err = asTlsListener(s.config.Autocert.CacheDir, fmt.Sprintf("0.0.0.0:%d", s.config.Port), addr)
+		if s.config.Autocert.Enabled && s.config.Autocert.Domain != "" {
+			ln, err = asTlsListener(s.config.Autocert.CacheDir, fmt.Sprintf("0.0.0.0:%d", s.config.Port), s.config.Autocert.Domain)
 			if err != nil {
 				return err
 			}

@@ -44,7 +44,7 @@ type Config struct {
 	KeyFile        string             `yaml:"key_file,omitempty"`
 	Keys           map[string]string  `yaml:"keys,omitempty"`
 	Region         string             `yaml:"region,omitempty"`
-	Autocert       `yaml:"autocert,omitempty"`
+	Autocert       AutocertConfig     `yaml:"autocert,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -376,7 +376,8 @@ func (conf *Config) unmarshalKeys(keys string) error {
 	return nil
 }
 
-type Autocert struct {
+type AutocertConfig struct {
+	Domain   string `yaml:"domain,omitempty"`
 	Enabled  bool   `yaml:"enabled,omitempty"`
 	CacheDir string `yaml:"cache_dir,omitempty"`
 }
