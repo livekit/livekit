@@ -4,12 +4,10 @@ import (
 	"fmt"
 
 	"github.com/pion/webrtc/v3"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/version"
 )
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
@@ -31,12 +29,7 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 	}
 }
 
-func (p *ParticipantImpl) SendJoinResponse(
-	roomInfo *livekit.Room,
-	otherParticipants []*livekit.ParticipantInfo,
-	iceServers []*livekit.ICEServer,
-	region string,
-) error {
+func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)
 	}
@@ -44,17 +37,7 @@ func (p *ParticipantImpl) SendJoinResponse(
 	// send Join response
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
-			Join: &livekit.JoinResponse{
-				Room:              roomInfo,
-				Participant:       p.ToProto(),
-				OtherParticipants: otherParticipants,
-				ServerVersion:     version.Version,
-				ServerRegion:      region,
-				IceServers:        iceServers,
-				// indicates both server and client support subscriber as primary
-				SubscriberPrimary:   p.SubscriberAsPrimary(),
-				ClientConfiguration: p.params.ClientConf,
-			},
+			Join: joinResponse,
 		},
 	})
 }
@@ -126,30 +109,7 @@ func (p *ParticipantImpl) SendDataPacket(dp *livekit.DataPacket) error {
 		return ErrDataChannelUnavailable
 	}
 
-	data, err := proto.Marshal(dp)
-	if err != nil {
-		return err
-	}
-
-	var dc *webrtc.DataChannel
-	if dp.Kind == livekit.DataPacket_RELIABLE {
-		if p.SubscriberAsPrimary() {
-			dc = p.reliableDCSub
-		} else {
-			dc = p.reliableDC
-		}
-	} else {
-		if p.SubscriberAsPrimary() {
-			dc = p.lossyDCSub
-		} else {
-			dc = p.lossyDC
-		}
-	}
-
-	if dc == nil {
-		return ErrDataChannelUnavailable
-	}
-	return dc.Send(data)
+	return p.TransportManager.SendDataPacket(dp)
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
@@ -178,29 +138,9 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	})
 }
 
-func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
-	var filterOut bool
-	p.lock.RLock()
-	if target == livekit.SignalTarget_SUBSCRIBER {
-		if p.iceConfig.PreferSubTcp && c.Protocol != webrtc.ICEProtocolTCP {
-			filterOut = true
-		}
-	} else if target == livekit.SignalTarget_PUBLISHER {
-		if p.iceConfig.PreferPubTcp && c.Protocol != webrtc.ICEProtocolTCP {
-			filterOut = true
-		}
-	}
-	p.lock.RUnlock()
-	if filterOut {
-		return
-	}
-
-	ci := c.ToJSON()
-
-	// write candidate
-	p.params.Logger.Debugw("sending ice candidates",
-		"candidate", c.String(), "target", target)
-	trickle := ToProtoTrickle(ci)
+func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
+	p.params.Logger.Infow("sending ice candidate", "candidate", c.String(), "target", target)
+	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{

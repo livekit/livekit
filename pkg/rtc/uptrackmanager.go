@@ -58,12 +58,6 @@ func (u *UpTrackManager) Start() {
 	u.opsQueue.Start()
 }
 
-func (u *UpTrackManager) Restart() {
-	for _, t := range u.GetPublishedTracks() {
-		t.Restart()
-	}
-}
-
 func (u *UpTrackManager) Close(willBeResumed bool) {
 	u.opsQueue.Stop()
 
@@ -74,7 +68,7 @@ func (u *UpTrackManager) Close(willBeResumed bool) {
 
 	// remove all subscribers
 	for _, t := range u.GetPublishedTracks() {
-		t.RemoveAllSubscribers(willBeResumed)
+		t.InitiateClose(willBeResumed)
 	}
 
 	if notify && u.onClose != nil {
@@ -176,7 +170,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Debugw("mute status changed", "trackID", trackID, "muted", track.IsMuted())
+			u.params.Logger.Infow("mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track, false)
 			}
@@ -238,7 +232,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	// store as is for use when migrating
 	u.subscriptionPermission = subscriptionPermission
 	if subscriptionPermission == nil {
-		u.params.Logger.Debugw(
+		u.params.Logger.Infow(
 			"updating subscription permission, setting to nil",
 			"version", u.subscriptionPermissionVersion.ToProto().String(),
 		)
@@ -247,7 +241,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		return nil
 	}
 
-	u.params.Logger.Debugw(
+	u.params.Logger.Infow(
 		"updating subscription permission",
 		"permissions", u.subscriptionPermission.String(),
 		"version", u.subscriptionPermissionVersion.ToProto().String(),
@@ -288,28 +282,6 @@ func (u *UpTrackManager) UpdateVideoLayers(updateVideoLayers *livekit.UpdateVide
 	return nil
 }
 
-func (u *UpTrackManager) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []types.SubscribedCodecQuality) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find published track")
-	}
-
-	track.NotifySubscriberNodeMaxQuality(nodeID, maxQualities)
-	return nil
-}
-
-func (u *UpTrackManager) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
-	track := u.GetPublishedTrack(trackID)
-	if track == nil {
-		u.params.Logger.Warnw("could not find track", nil, "trackID", trackID)
-		return errors.New("could not find published track")
-	}
-
-	track.NotifySubscriberNodeMediaLoss(nodeID, uint8(fractionalLoss))
-	return nil
-}
-
 func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	u.lock.Lock()
 	if _, ok := u.publishedTracks[track.ID()]; !ok {
@@ -345,7 +317,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 }
 
 func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
-	track.RemoveAllSubscribers(willBeResumed)
+	track.InitiateClose(willBeResumed)
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()

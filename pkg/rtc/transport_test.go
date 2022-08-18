@@ -1,10 +1,12 @@
 package rtc
 
 import (
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
@@ -267,6 +269,125 @@ func TestNegotiationFailed(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&failed) == 1
 	}, negotiationFailedTimout+time.Second, 10*time.Millisecond, "negotiation failed")
+}
+
+func TestFilteringCandidates(t *testing.T) {
+	params := TransportParams{
+		ParticipantID:       "id",
+		ParticipantIdentity: "identity",
+		Target:              livekit.SignalTarget_PUBLISHER,
+		Config:              &WebRTCConfig{},
+		EnabledCodecs: []*livekit.Codec{
+			{Mime: webrtc.MimeTypeOpus},
+			{Mime: webrtc.MimeTypeVP8},
+			{Mime: webrtc.MimeTypeH264},
+		},
+	}
+	transport, err := NewPCTransport(params)
+	require.NoError(t, err)
+
+	_, err = transport.pc.CreateDataChannel("test", nil)
+	require.NoError(t, err)
+
+	_, err = transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio)
+	require.NoError(t, err)
+
+	_, err = transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+	require.NoError(t, err)
+
+	offer, err := transport.pc.CreateOffer(nil)
+	require.NoError(t, err)
+
+	offerGatheringComplete := webrtc.GatheringCompletePromise(transport.pc)
+	require.NoError(t, transport.pc.SetLocalDescription(offer))
+	<-offerGatheringComplete
+
+	// should not filter out UDP candidates if TCP is not preferred
+	offer = *transport.pc.LocalDescription()
+	filteredOffer := transport.filterCandidates(offer)
+	require.EqualValues(t, offer.SDP, filteredOffer.SDP)
+
+	parsed, err := offer.Unmarshal()
+	require.NoError(t, err)
+
+	// add a couple of TCP candidates
+	done := false
+	for _, m := range parsed.MediaDescriptions {
+		for _, a := range m.Attributes {
+			if a.Key == sdp.AttrKeyCandidate {
+				for idx, aa := range m.Attributes {
+					if aa.Key == sdp.AttrKeyEndOfCandidates {
+						modifiedAttributes := make([]sdp.Attribute, idx)
+						copy(modifiedAttributes, m.Attributes[:idx])
+						modifiedAttributes = append(modifiedAttributes, []sdp.Attribute{
+							{
+								Key:   sdp.AttrKeyCandidate,
+								Value: "054225987 1 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
+							},
+							{
+								Key:   sdp.AttrKeyCandidate,
+								Value: "054225987 2 tcp 2124414975 159.203.70.248 7881 typ host tcptype passive",
+							},
+						}...)
+						m.Attributes = append(modifiedAttributes, m.Attributes[idx:]...)
+						done = true
+						break
+					}
+				}
+			}
+			if done {
+				break
+			}
+		}
+		if done {
+			break
+		}
+	}
+	bytes, err := parsed.Marshal()
+	require.NoError(t, err)
+	offer.SDP = string(bytes)
+
+	parsed, err = offer.Unmarshal()
+	require.NoError(t, err)
+
+	getNumTransportTypeCandidates := func(sd *sdp.SessionDescription) (int, int) {
+		numUDPCandidates := 0
+		numTCPCandidates := 0
+		for _, a := range sd.Attributes {
+			if a.Key == sdp.AttrKeyCandidate {
+				if strings.Contains(a.Value, "udp") {
+					numUDPCandidates++
+				}
+				if strings.Contains(a.Value, "tcp") {
+					numTCPCandidates++
+				}
+			}
+		}
+		for _, m := range sd.MediaDescriptions {
+			for _, a := range m.Attributes {
+				if a.Key == sdp.AttrKeyCandidate {
+					if strings.Contains(a.Value, "udp") {
+						numUDPCandidates++
+					}
+					if strings.Contains(a.Value, "tcp") {
+						numTCPCandidates++
+					}
+				}
+			}
+		}
+		return numUDPCandidates, numTCPCandidates
+	}
+	udp, tcp := getNumTransportTypeCandidates(parsed)
+	require.NotZero(t, udp)
+	require.Equal(t, 2, tcp)
+
+	transport.SetPreferTCP(true)
+	filteredOffer = transport.filterCandidates(offer)
+	parsed, err = filteredOffer.Unmarshal()
+	require.NoError(t, err)
+	udp, tcp = getNumTransportTypeCandidates(parsed)
+	require.Zero(t, udp)
+	require.Equal(t, 2, tcp)
 }
 
 func handleOfferFunc(t *testing.T, current, other *PCTransport) func(sd webrtc.SessionDescription) {

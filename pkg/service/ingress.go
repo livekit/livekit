@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
@@ -13,6 +16,7 @@ import (
 )
 
 type IngressService struct {
+	conf        *config.IngressConfig
 	rpc         ingress.RPC
 	store       IngressStore
 	roomService livekit.RoomService
@@ -21,6 +25,7 @@ type IngressService struct {
 }
 
 func NewIngressService(
+	conf *config.Config,
 	rpc ingress.RPC,
 	store IngressStore,
 	rs livekit.RoomService,
@@ -28,6 +33,7 @@ func NewIngressService(
 ) *IngressService {
 
 	return &IngressService{
+		conf:        &conf.Ingress,
 		rpc:         rpc,
 		store:       store,
 		roomService: rs,
@@ -48,15 +54,21 @@ func (s *IngressService) Stop() {
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
+	}
+
+	sk := utils.NewGuid("")
 
 	info := &livekit.IngressInfo{
 		IngressId:           utils.NewGuid(utils.IngressPrefix),
 		Name:                req.Name,
-		StreamKey:           "TODO",
-		Url:                 "TODO",
+		StreamKey:           sk,
+		Url:                 newRtmpUrl(s.conf.RTMPBaseURL, sk),
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
@@ -78,9 +90,14 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
+	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -138,9 +155,14 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 }
 
 func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngressRequest) (*livekit.ListIngressResponse, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	roomName, err := EnsureJoinPermission(ctx)
+	if err != nil {
 		return nil, twirpAuthError(err)
 	}
+	if req.RoomName != "" && req.RoomName != string(roomName) {
+		return nil, twirpAuthError(ErrPermissionDenied)
+	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -155,9 +177,10 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 }
 
 func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteIngressRequest) (*livekit.IngressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	if _, err := EnsureJoinPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
+
 	if s.rpc == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -241,7 +264,15 @@ func (s *IngressService) entitiesWorker() {
 				continue
 			}
 
-			info, err := s.store.LoadIngress(context.Background(), req.IngressId)
+			var info *livekit.IngressInfo
+			var err error
+			if req.IngressId != "" {
+				info, err = s.store.LoadIngress(context.Background(), req.IngressId)
+			} else if req.StreamKey != "" {
+				info, err = s.store.LoadIngressFromStreamKey(context.Background(), req.StreamKey)
+			} else {
+				err = errors.New("request needs to specity either IngressId or StreamKey")
+			}
 			err = s.rpc.SendResponse(context.Background(), req, info, err)
 			if err != nil {
 				logger.Errorw("could not send response", err)
@@ -252,4 +283,8 @@ func (s *IngressService) entitiesWorker() {
 			return
 		}
 	}
+}
+
+func newRtmpUrl(baseUrl string, ingressId string) string {
+	return fmt.Sprintf("%s/%s", baseUrl, ingressId)
 }

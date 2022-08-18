@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/sebest/xff"
@@ -65,7 +67,7 @@ func NewRTCService(
 func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _, code, err := s.validate(r)
 	if err != nil {
-		handleError(w, code, err.Error())
+		handleError(w, code, err)
 		return
 	}
 	_, _ = w.Write([]byte("success"))
@@ -148,18 +150,25 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	roomName, pi, code, err := s.validate(r)
 	if err != nil {
-		handleError(w, code, err.Error())
+		handleError(w, code, err)
 		return
+	}
+
+	// for logger
+	loggerFields := []interface{}{
+		"participant", pi.Identity,
+		"room", roomName,
+		"remote", false,
 	}
 
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
 		_, err := s.store.LoadRoom(context.Background(), roomName)
 		if err == ErrRoomNotFound {
-			handleError(w, 404, err.Error())
+			handleError(w, 404, err, loggerFields...)
 			return
 		} else if err != nil {
-			handleError(w, 500, err.Error())
+			handleError(w, 500, err, loggerFields...)
 			return
 		}
 	}
@@ -168,7 +177,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rm, err := s.roomAllocator.CreateRoom(r.Context(), &livekit.CreateRoomRequest{Name: string(roomName)})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "create_room").Add(1)
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 
@@ -176,7 +185,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	connId, reqSink, resSource, err := s.router.StartParticipantSignal(r.Context(), roomName, pi)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "start_signal").Add(1)
-		handleError(w, http.StatusInternalServerError, "could not start session: "+err.Error())
+		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
 
@@ -186,6 +195,17 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"",
 		false,
 	)
+
+	// wait for the first message before upgrading to websocket. If no one is
+	// responding to our connection attempt, we should terminate the connection
+	// instead of waiting forever on the WebSocket
+	initialResponse, err := readInitialResponse(resSource, 5*time.Second)
+	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "initial_response").Add(1)
+		handleError(w, http.StatusInternalServerError, err, loggerFields...)
+		return
+	}
+
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of response sink as well
 	defer func() {
@@ -199,11 +219,16 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "upgrade").Add(1)
-		pLogger.Warnw("could not upgrade to WS", err)
-		handleError(w, http.StatusInternalServerError, err.Error())
+		handleError(w, http.StatusInternalServerError, err, loggerFields...)
 		return
 	}
+
+	// websocket established
 	sigConn := NewWSSignalConnection(conn)
+	if err := sigConn.WriteResponse(initialResponse); err != nil {
+		pLogger.Warnw("could not write initial response", err)
+		return
+	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "success", "").Add(1)
 	pLogger.Infow("new client WS connected", "connID", connId)
@@ -256,6 +281,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
+			_ = sigConn.WriteResponse(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_Pong{
+					Pong: 1,
+				},
+			})
+			continue
+		}
 		if err := reqSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err,
 				"connID", connId)
@@ -291,6 +324,7 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.Browser = values.Get("browser")
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
+	ci.Network = values.Get("network")
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = r.Header.Get("CF-Connecting-IP")
 	if len(ci.Address) == 0 {
@@ -321,4 +355,25 @@ func (s *RTCService) ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	}
 
 	return ci
+}
+
+func readInitialResponse(source routing.MessageSource, timeout time.Duration) (*livekit.SignalResponse, error) {
+	responseTimer := time.NewTimer(timeout)
+	defer responseTimer.Stop()
+	for {
+		select {
+		case <-responseTimer.C:
+			return nil, errors.New("timed out while waiting for signal response")
+		case msg := <-source.ReadChan():
+			if msg == nil {
+				return nil, errors.New("connection closed by media")
+			}
+			res, ok := msg.(*livekit.SignalResponse)
+			if !ok {
+				return nil, fmt.Errorf("unexpected message type: %T", msg)
+			}
+			return res, nil
+		}
+	}
+
 }

@@ -99,6 +99,7 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downtrackLock.Lock()
 	for _, t := range d.downtracks {
 		receiver.AddDownTrack(t)
+		t.TrackInfoAvailable()
 	}
 	d.downtracks = make(map[livekit.ParticipantID]sfu.TrackSender)
 	d.downtrackLock.Unlock()
@@ -108,6 +109,7 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 		receiver.SetMaxExpectedSpatialLayer(d.maxExpectedLayer)
 	}
 	d.maxExpectedLayerValid = false
+
 	if d.pausedValid {
 		receiver.SetUpTrackPaused(d.paused)
 	}
@@ -165,24 +167,26 @@ func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 }
 
 func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		d.pausedValid = false
 		r.SetUpTrackPaused(paused)
 	} else {
-		d.settingsLock.Lock()
 		d.pausedValid = true
 		d.paused = paused
-		d.settingsLock.Unlock()
 	}
 }
 
 func (d *DummyReceiver) SetMaxExpectedSpatialLayer(layer int32) {
+	d.settingsLock.Lock()
+	defer d.settingsLock.Unlock()
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		d.maxExpectedLayerValid = false
 		r.SetMaxExpectedSpatialLayer(layer)
 	} else {
-		d.settingsLock.Lock()
 		d.maxExpectedLayerValid = true
 		d.maxExpectedLayer = layer
-		d.settingsLock.Unlock()
 	}
 }
 
@@ -221,17 +225,9 @@ func (d *DummyReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 	return 0, 0
 }
 
-func (d *DummyReceiver) IsDtxDisabled() bool {
+func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.IsDtxDisabled()
+		return r.TrackInfo()
 	}
-	return false
-}
-
-func (d *DummyReceiver) TrackSource() livekit.TrackSource {
-	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.TrackSource()
-	}
-
-	return livekit.TrackSource_UNKNOWN
+	return nil
 }

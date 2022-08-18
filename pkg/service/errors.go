@@ -16,4 +16,5 @@ var (
 	ErrRoomUnlockFailed      = errors.New("could not unlock room, lock token does not match")
 	ErrTrackNotFound         = errors.New("track is not found")
 	ErrWebHookMissingAPIKey  = errors.New("api_key is required to use webhooks")
+	ErrIngressOutOfDate      = errors.New("trying to ovewrite an ingress with an older version")
 )

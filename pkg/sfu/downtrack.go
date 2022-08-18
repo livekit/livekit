@@ -33,6 +33,7 @@ type TrackSender interface {
 	// ID is the globally unique identifier for this Track.
 	ID() string
 	SubscriberID() livekit.ParticipantID
+	TrackInfoAvailable()
 }
 
 const (
@@ -152,7 +153,8 @@ type DownTrack struct {
 	deltaStatsSnapshotId uint32
 
 	// Debug info
-	pktsDropped atomic.Uint32
+	pktsDropped   atomic.Uint32
+	writeIOErrors atomic.Uint32
 
 	isNACKThrottled atomic.Bool
 
@@ -222,24 +224,16 @@ func NewDownTrack(
 	d.forwarder = NewForwarder(d.kind, d.logger)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
-		CodecType:         kind,
-		CodecName:         getCodecNameFromMime(codecs[0].MimeType), // LK-TODO: have to notify on codec change
-		MimeType:          codecs[0].MimeType,                       // LK-TODO have to notify on codec change
-		GetDeltaStats:     d.getDeltaStats,
-		IsDtxDisabled:     d.receiver.IsDtxDisabled,
-		GetLayerDimension: d.receiver.GetLayerDimension,
-		GetMaxExpectedLayer: func() (int32, uint32, uint32) {
-			maxLayer := d.forwarder.MaxLayers().Spatial
-			width, height := d.receiver.GetLayerDimension(maxLayer)
-			return maxLayer, width, height
+		MimeType:      codecs[0].MimeType, // LK-TODO have to notify on codec change
+		GetDeltaStats: d.getDeltaStats,
+		GetMaxExpectedLayer: func() int32 {
+			return d.forwarder.MaxLayers().Spatial
 		},
 		GetCurrentLayerSpatial: func() int32 {
 			return d.forwarder.CurrentLayers().Spatial
 		},
-		GetIsReducedQuality: func() bool {
-			return d.GetForwardingStatus() != ForwardingStatusOptimal
-		},
-		Logger: d.logger,
+		GetIsReducedQuality: d.forwarder.IsReducedQuality,
+		Logger:              d.logger,
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if d.onStatsUpdate != nil {
@@ -306,8 +300,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bound.Store(true)
 	d.bindLock.Unlock()
 
-	d.connectionStats.SetTrackSource(d.receiver.TrackSource())
-	d.connectionStats.Start()
 	d.logger.Debugw("downtrack bound")
 
 	return codec, nil
@@ -318,6 +310,10 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 func (d *DownTrack) Unbind(_ webrtc.TrackLocalContext) error {
 	d.bound.Store(false)
 	return nil
+}
+
+func (d *DownTrack) TrackInfoAvailable() {
+	d.connectionStats.Start(d.receiver.TrackInfo())
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
@@ -439,6 +435,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		if tp.isDroppingRelevant {
 			d.pktsDropped.Inc()
 		}
+		if err != nil {
+			d.logger.Errorw("write rtp packet failed", err)
+		}
 		return err
 	}
 
@@ -449,6 +448,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		payload, err = d.translateVP8PacketTo(extPkt.Packet, &incomingVP8, tp.vp8.Header, pool)
 		if err != nil {
 			d.pktsDropped.Inc()
+			d.logger.Errorw("write rtp packet failed", err)
 			return err
 		}
 	}
@@ -464,6 +464,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	hdr, err := d.getTranslatedRTPHeader(extPkt, tp)
 	if err != nil {
 		d.pktsDropped.Inc()
+		d.logger.Errorw("write rtp packet failed", err)
 		return err
 	}
 
@@ -472,37 +473,44 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	_, err = d.writeStream.WriteRTP(hdr, payload)
-	if err == nil {
-		pktSize := hdr.MarshalSize() + len(payload)
-		for _, f := range d.onPacketSent {
-			f(d, pktSize)
-		}
-
-		if tp.isSwitchingToMaxLayer && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
-			d.onMaxLayerChanged(d, layer)
-		}
-
-		if extPkt.KeyFrame || tp.switchingToTargetLayer {
-			d.isNACKThrottled.Store(false)
-			d.rtpStats.UpdateKeyFrame(1)
-
-			locked, _ := d.forwarder.CheckSync()
-			if locked {
-				d.stopKeyFrameRequester()
-			}
-
-			if !tp.switchingToTargetLayer {
-				d.logger.Debugw("forwarding key frame", "layer", layer)
-			}
-		}
-
-		d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
-	} else {
-		d.logger.Errorw("writing rtp packet err", err)
+	if err != nil {
 		d.pktsDropped.Inc()
+		if errors.Is(err, io.ErrClosedPipe) {
+			writeIOErrors := d.writeIOErrors.Inc()
+			if (writeIOErrors % 100) == 1 {
+				d.logger.Errorw("write rtp packet failed", err, "count", writeIOErrors)
+			}
+		} else {
+			d.logger.Errorw("write rtp packet failed", err)
+		}
+		return err
 	}
 
-	return err
+	pktSize := hdr.MarshalSize() + len(payload)
+	for _, f := range d.onPacketSent {
+		f(d, pktSize)
+	}
+
+	if tp.isSwitchingToMaxLayer && d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo {
+		d.onMaxLayerChanged(d, layer)
+	}
+
+	if extPkt.KeyFrame || tp.switchingToTargetLayer {
+		d.isNACKThrottled.Store(false)
+		d.rtpStats.UpdateKeyFrame(1)
+
+		locked, _ := d.forwarder.CheckSync()
+		if locked {
+			d.stopKeyFrameRequester()
+		}
+
+		if !tp.switchingToTargetLayer {
+			d.logger.Debugw("forwarding key frame", "layer", layer)
+		}
+	}
+
+	d.rtpStats.Update(hdr, len(payload), 0, time.Now().UnixNano())
+	return nil
 }
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
@@ -602,6 +610,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 
 // Mute enables or disables media forwarding
 func (d *DownTrack) Mute(muted bool) {
+	d.logger.Infow("setting mute", "muted", muted)
 	changed, maxLayers := d.forwarder.Mute(muted)
 	if !changed {
 		return
@@ -699,13 +708,13 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
+	d.logger.Infow("setting max spatial layer", "layer", spatialLayer)
 	changed, maxLayers, currentLayers := d.forwarder.SetMaxSpatialLayer(spatialLayer)
 	if !changed {
 		return
 	}
 
-	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo &&
-		maxLayers.SpatialGreaterThanOrEqual(currentLayers) && d.bound.Load() {
+	if d.onMaxLayerChanged != nil && d.kind == webrtc.RTPCodecTypeVideo && maxLayers.SpatialGreaterThanOrEqual(currentLayers) {
 		//
 		// Notify when new max is
 		//   1. Equal to current -> already locked to the new max

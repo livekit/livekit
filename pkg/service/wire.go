@@ -16,6 +16,7 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
+	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
@@ -44,6 +45,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		egress.NewRedisRPCClient,
 		getEgressStore,
 		NewEgressService,
+		ingress.NewRedisRPC,
+		getIngressStore,
+		NewIngressService,
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
@@ -167,6 +171,15 @@ func createStore(rc *redis.Client) ObjectStore {
 }
 
 func getEgressStore(s ObjectStore) EgressStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getIngressStore(s ObjectStore) IngressStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store

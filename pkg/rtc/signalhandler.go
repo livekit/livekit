@@ -10,7 +10,7 @@ import (
 func HandleParticipantSignal(room types.Room, participant types.LocalParticipant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
-		_, err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
+		err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
 		if err != nil {
 			pLogger.Errorw("could not handle offer", err)
 			return err
@@ -54,6 +54,10 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 		}
 		if err != nil {
 			pLogger.Warnw("could not update subscription", err,
+				"tracks", msg.Subscription.TrackSids,
+				"subscribe", msg.Subscription.Subscribe)
+		} else {
+			pLogger.Infow("updated subscription",
 				"tracks", msg.Subscription.TrackSids,
 				"subscribe", msg.Subscription.Subscribe)
 		}

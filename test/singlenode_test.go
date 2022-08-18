@@ -328,6 +328,23 @@ func TestSingleNodeCORS(t *testing.T) {
 	require.Equal(t, "testhost.com", res.Header.Get("Access-Control-Allow-Origin"))
 }
 
+func TestPingPong(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestPingPong")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, nil)
+	waitUntilConnected(t, c1)
+
+	require.NoError(t, c1.SendPing())
+	require.Eventually(t, func() bool {
+		return c1.PongReceivedAt() > 0
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestSingleNodeJoinAfterClose(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()

@@ -128,7 +128,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) *StreamTracker {
 	tracker := NewStreamTracker(params)
 	s.logger.Debugw("StreamTrackerManager add track", "layer", layer)
 	tracker.OnStatusChanged(func(status StreamStatus) {
-		s.logger.Debugw("StreamTrackerManager.OnStatusChanged", "layer", layer, "status", status)
+		s.logger.Debugw("StreamTrackerManager OnStatusChanged", "layer", layer, "status", status)
 		if status == StreamStatusStopped {
 			exempt := false
 			for _, l := range exemptLayers {
@@ -256,11 +256,24 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
 	}
 }
 
-func (s *StreamTrackerManager) IsReducedQuality() bool {
+func (s *StreamTrackerManager) DistanceToDesired() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	return int32(len(s.availableLayers)) < (s.maxExpectedLayer + 1)
+	if s.paused || s.maxExpectedLayer == DefaultMaxLayerSpatial {
+		return 0
+	}
+
+	if len(s.availableLayers) == 0 {
+		return s.maxExpectedLayer + 1
+	}
+
+	distance := s.maxExpectedLayer - s.availableLayers[len(s.availableLayers)-1]
+	if distance < 0 {
+		distance = 0
+	}
+
+	return distance
 }
 
 func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
@@ -282,7 +295,7 @@ func (s *StreamTrackerManager) GetLayerDimension(layer int32) (uint32, uint32) {
 	return width, height
 }
 
-func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32, height uint32) {
+func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -291,13 +304,7 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() (layer int32, width uint32,
 	if maxExpectedLayer > s.maxPublishedLayer {
 		maxExpectedLayer = s.maxPublishedLayer
 	}
-	for _, layer := range s.trackInfo.Layers {
-		if maxExpectedLayer == utils.SpatialLayerForQuality(layer.Quality) {
-			return maxExpectedLayer, layer.Width, layer.Height
-		}
-	}
-
-	return maxExpectedLayer, 0, 0
+	return maxExpectedLayer
 }
 
 func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {

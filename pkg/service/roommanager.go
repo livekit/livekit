@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -25,7 +26,13 @@ const (
 	roomPurgeSeconds     = 24 * 60 * 60
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+	iceConfigTTL         = 5 * time.Minute
 )
+
+type iceConfigCacheEntry struct {
+	iceConfig  types.IceConfig
+	modifiedAt time.Time
+}
 
 // RoomManager manages rooms and its interaction with participants.
 // It's responsible for creating, deleting rooms, as well as running sessions for participants
@@ -34,6 +41,7 @@ type RoomManager struct {
 
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
+	serverInfo        *livekit.ServerInfo
 	currentNode       routing.LocalNode
 	router            routing.Router
 	roomStore         ObjectStore
@@ -41,6 +49,8 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 
 	rooms map[livekit.RoomName]*rtc.Room
+
+	iceConfigCache map[livekit.ParticipantIdentity]*iceConfigCacheEntry
 }
 
 func NewLocalRoomManager(
@@ -67,6 +77,16 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
+
+		iceConfigCache: make(map[livekit.ParticipantIdentity]*iceConfigCacheEntry),
+
+		serverInfo: &livekit.ServerInfo{
+			Edition:  livekit.ServerInfo_Standard,
+			Version:  version.Version,
+			Protocol: types.CurrentProtocol,
+			Region:   conf.Region,
+			NodeId:   currentNode.Id,
+		},
 	}
 
 	// hook up to router
@@ -260,16 +280,18 @@ func (r *RoomManager) StartSession(
 		ClientConf:              clientConf,
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
+		AllowTCPFallback:        r.config.RTC.AllowTCPFallback,
 	})
 	if err != nil {
 		return err
 	}
+	r.setIceConfig(participant)
 
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom), r.currentNode.Region); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -310,6 +332,14 @@ func (r *RoomManager) StartSession(
 			logger.Errorw("could not refresh token", err)
 		}
 	})
+	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig types.IceConfig) {
+		r.lock.Lock()
+		r.iceConfigCache[participant.Identity()] = &iceConfigCacheEntry{
+			iceConfig:  iceConfig,
+			modifiedAt: time.Now(),
+		}
+		r.lock.Unlock()
+	})
 
 	go r.rtcSessionWorker(room, participant, requestSource)
 	return nil
@@ -346,7 +376,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.telemetry)
+	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry)
 
 	newRoom.OnClose(func() {
 		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
@@ -385,9 +415,6 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
 	defer func() {
-		// give time for the participant to be closed with a proper reason.
-		// if participant is closed from here, we would be obscuring the real reason the participant is closed.
-		time.Sleep(2 * time.Second)
 		logger.Infow("RTC session finishing",
 			"participant", participant.Identity(),
 			"pID", participant.ID(),
@@ -617,6 +644,21 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	}
 	return nil
 }
+
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) {
+	r.lock.Lock()
+	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
+	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
+		delete(r.iceConfigCache, participant.Identity())
+		r.lock.Unlock()
+		return
+	}
+	r.lock.Unlock()
+
+	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
+}
+
+// ------------------------------------
 
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
 	iceServer := &livekit.ICEServer{}
