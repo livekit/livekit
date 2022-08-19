@@ -36,7 +36,7 @@ const (
 	ReliableDataChannel = "_reliable"
 
 	negotiationFrequency       = 150 * time.Millisecond
-	negotiationFailedTimout    = 15 * time.Second
+	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
@@ -718,12 +718,7 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket) error {
 }
 
 func (t *PCTransport) Close() {
-	t.lock.Lock()
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
-	t.lock.Unlock()
+	t.clearSignalStateCheckTimer()
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
@@ -781,10 +776,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	lastState := t.negotiationState
 	t.negotiationState = negotiationStateNone
 
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
+	t.clearSignalStateCheckTimerLocked()
 
 	for _, c := range t.pendingRemoteCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
@@ -1018,6 +1010,37 @@ func (t *PCTransport) CreateAndSendAnswer(enableDTX bool) error {
 	return nil
 }
 
+func (t *PCTransport) clearSignalStateCheckTimer() {
+	t.lock.Lock()
+	t.clearSignalStateCheckTimerLocked()
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) clearSignalStateCheckTimerLocked() {
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+}
+
+func (t *PCTransport) setupSignalStateCheckTimerLocked() {
+	negotiateVersion := t.negotiateCounter.Inc()
+	t.clearSignalStateCheckTimerLocked()
+	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimeout, func() {
+		t.lock.Lock()
+		t.clearSignalStateCheckTimerLocked()
+
+		failed := t.negotiationState != negotiationStateNone
+		t.lock.Unlock()
+
+		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+		}
+	})
+}
+
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -1136,21 +1159,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	t.restartAfterGathering = false
 	t.negotiationPending = make(map[livekit.ParticipantID]bool)
 
-	negotiateVersion := t.negotiateCounter.Inc()
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
-	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
-		t.lock.RLock()
-		failed := t.negotiationState != negotiationStateNone
-		t.lock.RUnlock()
-		if t.negotiateCounter.Load() == negotiateVersion && failed {
-			if t.onNegotiationFailed != nil {
-				t.onNegotiationFailed()
-			}
-		}
-	})
+	t.setupSignalStateCheckTimerLocked()
 
 	go t.onOffer(offer)
 	return nil

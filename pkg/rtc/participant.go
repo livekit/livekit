@@ -485,6 +485,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
+	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 	p.TransportManager.PublisherLocalDescriptionSent()
 
 	if p.isPublisher.Load() != p.CanPublish() {
@@ -500,8 +501,6 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 			}
 		}
 	}
-
-	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
@@ -1076,9 +1075,9 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 	})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
-	} else {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+		return
 	}
+	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
 	p.TransportManager.SubscriberLocalDescriptionSent()
 }
 

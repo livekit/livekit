@@ -268,7 +268,7 @@ func TestNegotiationFailed(t *testing.T) {
 	transportA.CreateAndSendOffer(nil)
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&failed) == 1
-	}, negotiationFailedTimout+time.Second, 10*time.Millisecond, "negotiation failed")
+	}, negotiationFailedTimeout+time.Second, 10*time.Millisecond, "negotiation failed")
 }
 
 func TestFilteringCandidates(t *testing.T) {
