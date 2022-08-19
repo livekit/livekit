@@ -548,6 +548,10 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	return t.pc.AddICECandidate(candidate)
 }
 
+func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
+	return t.pc
+}
+
 func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	sender, err = t.pc.AddTrack(trackLocal)
 	if err != nil {
