@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
-	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
@@ -153,9 +151,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 
 		go subTrack.Bound()
-
-		// when down track is bound, start loop to send reports
-		go t.sendDownTrackBindingReports(sub)
 
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
@@ -383,44 +378,6 @@ func (t *MediaTrackSubscriptions) getAllSubscribedTracksLocked() []types.Subscri
 		subTracks = append(subTracks, subTrack)
 	}
 	return subTracks
-}
-
-// TODO: send for all down tracks from the source participant
-// https://tools.ietf.org/html/rfc7941
-func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalParticipant) {
-	var sd []rtcp.SourceDescriptionChunk
-
-	subTrack := t.getSubscribedTrack(sub.ID())
-	if subTrack == nil {
-		return
-	}
-
-	chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
-	if chunks == nil {
-		return
-	}
-	sd = append(sd, chunks...)
-
-	pkts := []rtcp.Packet{
-		&rtcp.SourceDescription{Chunks: sd},
-	}
-
-	go func() {
-		defer RecoverSilent()
-		batch := pkts
-		i := 0
-		for {
-			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				sub.GetLogger().Errorw("could not write RTCP", err)
-				return
-			}
-			if i > 5 {
-				return
-			}
-			i++
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
 }
 
 func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {

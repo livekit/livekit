@@ -570,8 +570,8 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 func (p *ParticipantImpl) Start() {
 	p.once.Do(func() {
 		p.UpTrackManager.Start()
-		go p.rtcpSendWorker()
-		go p.downTracksRTCPWorker()
+		go p.publisherRTCPWorker()
+		go p.subscriberRTCPWorker()
 	})
 }
 
@@ -1002,6 +1002,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnPublisherGetDTX(p.onPublisherGetDTX)
 	tm.OnPublisherAnswer(p.onPublisherAnswer)
 	tm.OnPublisherTrack(p.onMediaTrack)
+	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
 
 	tm.OnSubscriberOffer(p.onSubscriberOffer)
 	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) {
@@ -1159,7 +1160,13 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 	p.sendICECandidate(c, target)
 }
 
+func (p *ParticipantImpl) onPublisherInitialConnected() {
+	go p.publisherRTCPWorker()
+}
+
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
+	go p.subscriberRTCPWorker()
+
 	p.setDowntracksConnected()
 }
 
@@ -1198,13 +1205,11 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 	p.lock.Unlock()
 }
 
-// downTracksRTCPWorker sends SenderReports periodically when the participant is subscribed to
+// subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
-func (p *ParticipantImpl) downTracksRTCPWorker() {
+func (p *ParticipantImpl) subscriberRTCPWorker() {
 	defer Recover()
 	for {
-		time.Sleep(5 * time.Second)
-
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
@@ -1257,6 +1262,8 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 			pkts = pkts[:0]
 			batchSize = 0
 		}
+
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -1752,7 +1759,7 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) rtcpSendWorker() {
+func (p *ParticipantImpl) publisherRTCPWorker() {
 	defer Recover()
 
 	// read from rtcpChan

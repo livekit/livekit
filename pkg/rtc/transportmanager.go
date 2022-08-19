@@ -49,6 +49,7 @@ type TransportManager struct {
 
 	onPublisherGetDTX func() bool
 
+	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
 	onPrimaryTransportInitialConnected func()
 	onAnyTransportFailed               func()
@@ -94,6 +95,9 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	t.publisher = publisher
 	t.publisher.OnRemoteDescriptionSettled(t.createPublisherAnswerAndSend)
 	t.publisher.OnInitialConnected(func() {
+		if t.onPublisherInitialConnected != nil {
+			t.onPublisherInitialConnected()
+		}
 		if !t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
 			t.onPrimaryTransportInitialConnected()
 		}
@@ -161,6 +165,10 @@ func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescrip
 		t.lastPublisherAnswer.Store(sd)
 		f(sd)
 	})
+}
+
+func (t *TransportManager) OnPublisherInitialConnected(f func()) {
+	t.onPublisherInitialConnected = f
 }
 
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
