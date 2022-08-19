@@ -48,6 +48,8 @@ const (
 
 var (
 	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
+	ErrNoTransceiver             = errors.New("no transceiver")
+	ErrNoSender                  = errors.New("no sender")
 )
 
 const (
@@ -546,8 +548,45 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	return t.pc.AddICECandidate(candidate)
 }
 
-func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
-	return t.pc
+func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+	sender, err = t.pc.AddTrack(trackLocal)
+	if err != nil {
+		return
+	}
+
+	// as there is no way to get transceiver from sender, search
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Sender() == sender {
+			transceiver = tr
+			break
+		}
+	}
+
+	if transceiver == nil {
+		err = ErrNoTransceiver
+		return
+	}
+
+	return
+}
+
+func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+	transceiver, err = t.pc.AddTransceiverFromTrack(trackLocal)
+	if err != nil {
+		return
+	}
+
+	sender = transceiver.Sender()
+	if sender == nil {
+		err = ErrNoSender
+		return
+	}
+
+	return
+}
+
+func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
+	return t.pc.RemoveTrack(sender)
 }
 
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
@@ -1232,7 +1271,7 @@ func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) 
 	t.streamAllocator.OnStreamStateChange(f)
 }
 
-func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}
@@ -1244,7 +1283,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	})
 }
 
-func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}

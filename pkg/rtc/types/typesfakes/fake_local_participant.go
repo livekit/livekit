@@ -56,6 +56,36 @@ type FakeLocalParticipant struct {
 	addTrackArgsForCall []struct {
 		arg1 *livekit.AddTrackRequest
 	}
+	AddTrackToSubscriberStub        func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	addTrackToSubscriberMutex       sync.RWMutex
+	addTrackToSubscriberArgsForCall []struct {
+		arg1 webrtc.TrackLocal
+	}
+	addTrackToSubscriberReturns struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}
+	addTrackToSubscriberReturnsOnCall map[int]struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}
+	AddTransceiverFromTrackToSubscriberStub        func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	addTransceiverFromTrackToSubscriberMutex       sync.RWMutex
+	addTransceiverFromTrackToSubscriberArgsForCall []struct {
+		arg1 webrtc.TrackLocal
+	}
+	addTransceiverFromTrackToSubscriberReturns struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}
+	addTransceiverFromTrackToSubscriberReturnsOnCall map[int]struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}
 	CacheDownTrackStub        func(livekit.TrackID, *webrtc.RTPTransceiver, sfu.ForwarderState)
 	cacheDownTrackMutex       sync.RWMutex
 	cacheDownTrackArgsForCall []struct {
@@ -471,6 +501,17 @@ type FakeLocalParticipant struct {
 		arg2 livekit.TrackID
 		arg3 bool
 	}
+	RemoveTrackFromSubscriberStub        func(*webrtc.RTPSender) error
+	removeTrackFromSubscriberMutex       sync.RWMutex
+	removeTrackFromSubscriberArgsForCall []struct {
+		arg1 *webrtc.RTPSender
+	}
+	removeTrackFromSubscriberReturns struct {
+		result1 error
+	}
+	removeTrackFromSubscriberReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
 	sendConnectionQualityUpdateArgsForCall []struct {
@@ -616,16 +657,6 @@ type FakeLocalParticipant struct {
 	}
 	subscriberAsPrimaryReturnsOnCall map[int]struct {
 		result1 bool
-	}
-	SubscriberPCStub        func() *webrtc.PeerConnection
-	subscriberPCMutex       sync.RWMutex
-	subscriberPCArgsForCall []struct {
-	}
-	subscriberPCReturns struct {
-		result1 *webrtc.PeerConnection
-	}
-	subscriberPCReturnsOnCall map[int]struct {
-		result1 *webrtc.PeerConnection
 	}
 	SubscriptionPermissionStub        func() (*livekit.SubscriptionPermission, *livekit.TimedVersion)
 	subscriptionPermissionMutex       sync.RWMutex
@@ -954,6 +985,140 @@ func (fake *FakeLocalParticipant) AddTrackArgsForCall(i int) *livekit.AddTrackRe
 	defer fake.addTrackMutex.RUnlock()
 	argsForCall := fake.addTrackArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriber(arg1 webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	fake.addTrackToSubscriberMutex.Lock()
+	ret, specificReturn := fake.addTrackToSubscriberReturnsOnCall[len(fake.addTrackToSubscriberArgsForCall)]
+	fake.addTrackToSubscriberArgsForCall = append(fake.addTrackToSubscriberArgsForCall, struct {
+		arg1 webrtc.TrackLocal
+	}{arg1})
+	stub := fake.AddTrackToSubscriberStub
+	fakeReturns := fake.addTrackToSubscriberReturns
+	fake.recordInvocation("AddTrackToSubscriber", []interface{}{arg1})
+	fake.addTrackToSubscriberMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriberCallCount() int {
+	fake.addTrackToSubscriberMutex.RLock()
+	defer fake.addTrackToSubscriberMutex.RUnlock()
+	return len(fake.addTrackToSubscriberArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriberCalls(stub func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
+	fake.addTrackToSubscriberMutex.Lock()
+	defer fake.addTrackToSubscriberMutex.Unlock()
+	fake.AddTrackToSubscriberStub = stub
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriberArgsForCall(i int) webrtc.TrackLocal {
+	fake.addTrackToSubscriberMutex.RLock()
+	defer fake.addTrackToSubscriberMutex.RUnlock()
+	argsForCall := fake.addTrackToSubscriberArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriberReturns(result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
+	fake.addTrackToSubscriberMutex.Lock()
+	defer fake.addTrackToSubscriberMutex.Unlock()
+	fake.AddTrackToSubscriberStub = nil
+	fake.addTrackToSubscriberReturns = struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeLocalParticipant) AddTrackToSubscriberReturnsOnCall(i int, result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
+	fake.addTrackToSubscriberMutex.Lock()
+	defer fake.addTrackToSubscriberMutex.Unlock()
+	fake.AddTrackToSubscriberStub = nil
+	if fake.addTrackToSubscriberReturnsOnCall == nil {
+		fake.addTrackToSubscriberReturnsOnCall = make(map[int]struct {
+			result1 *webrtc.RTPSender
+			result2 *webrtc.RTPTransceiver
+			result3 error
+		})
+	}
+	fake.addTrackToSubscriberReturnsOnCall[i] = struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriber(arg1 webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
+	ret, specificReturn := fake.addTransceiverFromTrackToSubscriberReturnsOnCall[len(fake.addTransceiverFromTrackToSubscriberArgsForCall)]
+	fake.addTransceiverFromTrackToSubscriberArgsForCall = append(fake.addTransceiverFromTrackToSubscriberArgsForCall, struct {
+		arg1 webrtc.TrackLocal
+	}{arg1})
+	stub := fake.AddTransceiverFromTrackToSubscriberStub
+	fakeReturns := fake.addTransceiverFromTrackToSubscriberReturns
+	fake.recordInvocation("AddTransceiverFromTrackToSubscriber", []interface{}{arg1})
+	fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberCallCount() int {
+	fake.addTransceiverFromTrackToSubscriberMutex.RLock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.RUnlock()
+	return len(fake.addTransceiverFromTrackToSubscriberArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberCalls(stub func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
+	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
+	fake.AddTransceiverFromTrackToSubscriberStub = stub
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberArgsForCall(i int) webrtc.TrackLocal {
+	fake.addTransceiverFromTrackToSubscriberMutex.RLock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.RUnlock()
+	argsForCall := fake.addTransceiverFromTrackToSubscriberArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberReturns(result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
+	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
+	fake.AddTransceiverFromTrackToSubscriberStub = nil
+	fake.addTransceiverFromTrackToSubscriberReturns = struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberReturnsOnCall(i int, result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
+	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
+	fake.AddTransceiverFromTrackToSubscriberStub = nil
+	if fake.addTransceiverFromTrackToSubscriberReturnsOnCall == nil {
+		fake.addTransceiverFromTrackToSubscriberReturnsOnCall = make(map[int]struct {
+			result1 *webrtc.RTPSender
+			result2 *webrtc.RTPTransceiver
+			result3 error
+		})
+	}
+	fake.addTransceiverFromTrackToSubscriberReturnsOnCall[i] = struct {
+		result1 *webrtc.RTPSender
+		result2 *webrtc.RTPTransceiver
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeLocalParticipant) CacheDownTrack(arg1 livekit.TrackID, arg2 *webrtc.RTPTransceiver, arg3 sfu.ForwarderState) {
@@ -3221,6 +3386,67 @@ func (fake *FakeLocalParticipant) RemoveSubscriberArgsForCall(i int) (types.Loca
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriber(arg1 *webrtc.RTPSender) error {
+	fake.removeTrackFromSubscriberMutex.Lock()
+	ret, specificReturn := fake.removeTrackFromSubscriberReturnsOnCall[len(fake.removeTrackFromSubscriberArgsForCall)]
+	fake.removeTrackFromSubscriberArgsForCall = append(fake.removeTrackFromSubscriberArgsForCall, struct {
+		arg1 *webrtc.RTPSender
+	}{arg1})
+	stub := fake.RemoveTrackFromSubscriberStub
+	fakeReturns := fake.removeTrackFromSubscriberReturns
+	fake.recordInvocation("RemoveTrackFromSubscriber", []interface{}{arg1})
+	fake.removeTrackFromSubscriberMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriberCallCount() int {
+	fake.removeTrackFromSubscriberMutex.RLock()
+	defer fake.removeTrackFromSubscriberMutex.RUnlock()
+	return len(fake.removeTrackFromSubscriberArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriberCalls(stub func(*webrtc.RTPSender) error) {
+	fake.removeTrackFromSubscriberMutex.Lock()
+	defer fake.removeTrackFromSubscriberMutex.Unlock()
+	fake.RemoveTrackFromSubscriberStub = stub
+}
+
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriberArgsForCall(i int) *webrtc.RTPSender {
+	fake.removeTrackFromSubscriberMutex.RLock()
+	defer fake.removeTrackFromSubscriberMutex.RUnlock()
+	argsForCall := fake.removeTrackFromSubscriberArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriberReturns(result1 error) {
+	fake.removeTrackFromSubscriberMutex.Lock()
+	defer fake.removeTrackFromSubscriberMutex.Unlock()
+	fake.RemoveTrackFromSubscriberStub = nil
+	fake.removeTrackFromSubscriberReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) RemoveTrackFromSubscriberReturnsOnCall(i int, result1 error) {
+	fake.removeTrackFromSubscriberMutex.Lock()
+	defer fake.removeTrackFromSubscriberMutex.Unlock()
+	fake.RemoveTrackFromSubscriberStub = nil
+	if fake.removeTrackFromSubscriberReturnsOnCall == nil {
+		fake.removeTrackFromSubscriberReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.removeTrackFromSubscriberReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
 	fake.sendConnectionQualityUpdateMutex.Lock()
 	ret, specificReturn := fake.sendConnectionQualityUpdateReturnsOnCall[len(fake.sendConnectionQualityUpdateArgsForCall)]
@@ -4055,59 +4281,6 @@ func (fake *FakeLocalParticipant) SubscriberAsPrimaryReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SubscriberPC() *webrtc.PeerConnection {
-	fake.subscriberPCMutex.Lock()
-	ret, specificReturn := fake.subscriberPCReturnsOnCall[len(fake.subscriberPCArgsForCall)]
-	fake.subscriberPCArgsForCall = append(fake.subscriberPCArgsForCall, struct {
-	}{})
-	stub := fake.SubscriberPCStub
-	fakeReturns := fake.subscriberPCReturns
-	fake.recordInvocation("SubscriberPC", []interface{}{})
-	fake.subscriberPCMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) SubscriberPCCallCount() int {
-	fake.subscriberPCMutex.RLock()
-	defer fake.subscriberPCMutex.RUnlock()
-	return len(fake.subscriberPCArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SubscriberPCCalls(stub func() *webrtc.PeerConnection) {
-	fake.subscriberPCMutex.Lock()
-	defer fake.subscriberPCMutex.Unlock()
-	fake.SubscriberPCStub = stub
-}
-
-func (fake *FakeLocalParticipant) SubscriberPCReturns(result1 *webrtc.PeerConnection) {
-	fake.subscriberPCMutex.Lock()
-	defer fake.subscriberPCMutex.Unlock()
-	fake.SubscriberPCStub = nil
-	fake.subscriberPCReturns = struct {
-		result1 *webrtc.PeerConnection
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) SubscriberPCReturnsOnCall(i int, result1 *webrtc.PeerConnection) {
-	fake.subscriberPCMutex.Lock()
-	defer fake.subscriberPCMutex.Unlock()
-	fake.SubscriberPCStub = nil
-	if fake.subscriberPCReturnsOnCall == nil {
-		fake.subscriberPCReturnsOnCall = make(map[int]struct {
-			result1 *webrtc.PeerConnection
-		})
-	}
-	fake.subscriberPCReturnsOnCall[i] = struct {
-		result1 *webrtc.PeerConnection
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion) {
 	fake.subscriptionPermissionMutex.Lock()
 	ret, specificReturn := fake.subscriptionPermissionReturnsOnCall[len(fake.subscriptionPermissionArgsForCall)]
@@ -4646,6 +4819,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.addTrackMutex.RLock()
 	defer fake.addTrackMutex.RUnlock()
+	fake.addTrackToSubscriberMutex.RLock()
+	defer fake.addTrackToSubscriberMutex.RUnlock()
+	fake.addTransceiverFromTrackToSubscriberMutex.RLock()
+	defer fake.addTransceiverFromTrackToSubscriberMutex.RUnlock()
 	fake.cacheDownTrackMutex.RLock()
 	defer fake.cacheDownTrackMutex.RUnlock()
 	fake.canPublishMutex.RLock()
@@ -4742,6 +4919,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()
 	defer fake.removeSubscriberMutex.RUnlock()
+	fake.removeTrackFromSubscriberMutex.RLock()
+	defer fake.removeTrackFromSubscriberMutex.RUnlock()
 	fake.sendConnectionQualityUpdateMutex.RLock()
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataPacketMutex.RLock()
@@ -4776,8 +4955,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.stateMutex.RUnlock()
 	fake.subscriberAsPrimaryMutex.RLock()
 	defer fake.subscriberAsPrimaryMutex.RUnlock()
-	fake.subscriberPCMutex.RLock()
-	defer fake.subscriberPCMutex.RUnlock()
 	fake.subscriptionPermissionMutex.RLock()
 	defer fake.subscriptionPermissionMutex.RUnlock()
 	fake.subscriptionPermissionUpdateMutex.RLock()
