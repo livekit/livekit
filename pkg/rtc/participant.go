@@ -672,6 +672,8 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
+	p.clearDisconnectTimer()
+
 	for _, t := range p.GetPublishedTracks() {
 		t.(types.LocalMediaTrack).Restart()
 	}
@@ -1178,21 +1180,25 @@ func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
 
-func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.closeSignalConnection()
-
-	// detect when participant has actually left.
+func (p *ParticipantImpl) clearDisconnectTimer() {
 	p.lock.Lock()
 	if p.disconnectTimer != nil {
 		p.disconnectTimer.Stop()
 		p.disconnectTimer = nil
 	}
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) onAnyTransportFailed() {
+	// clients support resuming of connections when websocket becomes disconnected
+	p.closeSignalConnection()
+
+	p.clearDisconnectTimer()
+
+	// detect when participant has actually left.
+	p.lock.Lock()
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
-		p.lock.Lock()
-		p.disconnectTimer.Stop()
-		p.disconnectTimer = nil
-		p.lock.Unlock()
+		p.clearDisconnectTimer()
 
 		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
