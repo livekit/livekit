@@ -1763,7 +1763,7 @@ func (p *ParticipantImpl) publisherRTCPWorker() {
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
-			p.params.Logger.Infow("exiting RTCP send worker")
+			p.params.Logger.Infow("exiting publisher RTCP worker")
 			return
 		}
 
