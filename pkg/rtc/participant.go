@@ -570,8 +570,6 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 func (p *ParticipantImpl) Start() {
 	p.once.Do(func() {
 		p.UpTrackManager.Start()
-		go p.publisherRTCPWorker()
-		go p.subscriberRTCPWorker()
 	})
 }
 
