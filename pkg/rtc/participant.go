@@ -483,7 +483,6 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 		},
 	}); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-		p.params.Logger.Errorw("could not send answer", err)
 		return
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
@@ -1076,7 +1075,6 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 	})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
-		p.params.Logger.Errorw("could not send offer", err)
 		return
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
