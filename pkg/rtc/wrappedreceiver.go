@@ -11,7 +11,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/audio"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -33,7 +32,7 @@ func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID,
 
 	codecs := upstreamCodecs
 	// if upstream is opus/red, then add opus to match clients that don't support red
-	if len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, audio.MimeTypeAudioRed) {
+	if len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
 		codecs = append(codecs, webrtc.RTPCodecParameters{
 			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"},
 			PayloadType:        111,
@@ -62,7 +61,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 		if c := receiver.Codec(); c.MimeType == codec.MimeType {
 			r.TrackReceiver = receiver
 			break
-		} else if strings.EqualFold(c.MimeType, audio.MimeTypeAudioRed) && strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {
+		} else if strings.EqualFold(c.MimeType, sfu.MimeTypeAudioRed) && strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {
 			// audio opus/red can match opus only
 			r.TrackReceiver = receiver.GetPrimaryReceiverForRed()
 			break

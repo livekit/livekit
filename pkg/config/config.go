@@ -117,8 +117,6 @@ type AudioConfig struct {
 	// smoothing for audioLevel values sent to the client.
 	// audioLevel will be an average of `smooth_intervals`, 0 to disable
 	SmoothIntervals uint32 `yaml:"smooth_intervals"`
-	// enable opus/red to resist packet loss
-	EnableOpusRed bool `yaml:"enable_red"`
 }
 
 type VideoConfig struct {

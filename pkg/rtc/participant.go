@@ -79,6 +79,7 @@ type ParticipantParams struct {
 	Grants                  *auth.ClaimGrants
 	InitialVersion          uint32
 	ClientConf              *livekit.ClientConfiguration
+	ClientInfo              ClientInfo
 	Region                  string
 	Migration               bool
 	AdaptiveStream          bool
@@ -405,9 +406,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	if p.params.AudioConfig.EnableOpusRed {
-		offer = p.setCodecPreferencesOpusRedForPublisher(offer)
-	}
+	offer = p.setCodecPreferencesOpusRedForPublisher(offer)
 	offer = p.setCodecPreferencesVideoForPublisher(offer)
 	return offer
 }
@@ -1039,6 +1038,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		EnabledCodecs:           p.params.EnabledCodecs,
 		SimTracks:               p.params.SimTracks,
 		ClientConf:              p.params.ClientConf,
+		ClientInfo:              p.params.ClientInfo,
 		Migration:               p.params.Migration,
 		AllowTCPFallback:        p.params.AllowTCPFallback,
 		Logger:                  p.params.Logger,

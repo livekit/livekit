@@ -13,6 +13,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	MimeTypeAudioRed = "audio/red"
+)
+
 var (
 	ErrIncompleteRedHeader = errors.New("incomplete red block header")
 	ErrIncompleteRedBlock  = errors.New("incomplete red block payload")
