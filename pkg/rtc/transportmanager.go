@@ -49,6 +49,7 @@ type TransportManager struct {
 
 	onPublisherGetDTX func() bool
 
+	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
 	onPrimaryTransportInitialConnected func()
 	onAnyTransportFailed               func()
@@ -94,6 +95,9 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	t.publisher = publisher
 	t.publisher.OnRemoteDescriptionSettled(t.createPublisherAnswerAndSend)
 	t.publisher.OnInitialConnected(func() {
+		if t.onPublisherInitialConnected != nil {
+			t.onPublisherInitialConnected()
+		}
 		if !t.params.SubscriberAsPrimary && t.onPrimaryTransportInitialConnected != nil {
 			t.onPrimaryTransportInitialConnected()
 		}
@@ -163,6 +167,10 @@ func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescrip
 	})
 }
 
+func (t *TransportManager) OnPublisherInitialConnected(f func()) {
+	t.onPublisherInitialConnected = f
+}
+
 func (t *TransportManager) OnPublisherTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
 	t.publisher.OnTrack(f)
 }
@@ -215,6 +223,18 @@ func (t *TransportManager) HasSubscriberEverConnected() bool {
 	return t.subscriber.HasEverConnected()
 }
 
+func (t *TransportManager) AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	return t.subscriber.AddTrack(trackLocal)
+}
+
+func (t *TransportManager) AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	return t.subscriber.AddTransceiverFromTrack(trackLocal)
+}
+
+func (t *TransportManager) RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error {
+	return t.subscriber.RemoveTrack(sender)
+}
+
 func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 	return t.subscriber.WriteRTCP(pkts)
 }
@@ -232,11 +252,11 @@ func (t *TransportManager) OnAnyTransportFailed(f func()) {
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	t.subscriber.AddTrack(subTrack)
+	t.subscriber.AddTrackToStreamAllocator(subTrack)
 }
 
 func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	t.subscriber.RemoveTrack(subTrack)
+	t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
 }
 
 func (t *TransportManager) OnDataMessage(f func(kind livekit.DataPacket_Kind, data []byte)) {
@@ -456,10 +476,6 @@ func (t *TransportManager) SetICEConfig(iceConfig types.IceConfig) {
 
 func (t *TransportManager) SubscriberAsPrimary() bool {
 	return t.params.SubscriberAsPrimary
-}
-
-func (t *TransportManager) SubscriberPC() *webrtc.PeerConnection {
-	return t.subscriber.PeerConnection()
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
