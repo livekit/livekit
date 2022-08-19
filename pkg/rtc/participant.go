@@ -1189,13 +1189,9 @@ func (p *ParticipantImpl) clearDisconnectTimer() {
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.closeSignalConnection()
-
+func (p *ParticipantImpl) setupDisconnectTimer() {
 	p.clearDisconnectTimer()
 
-	// detect when participant has actually left.
 	p.lock.Lock()
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
 		p.clearDisconnectTimer()
@@ -1207,6 +1203,14 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 		_ = p.Close(true, types.ParticipantCloseReasonPeerConnectionDisconnected)
 	})
 	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) onAnyTransportFailed() {
+	// clients support resuming of connections when websocket becomes disconnected
+	p.closeSignalConnection()
+
+	// detect when participant has actually left.
+	p.setupDisconnectTimer()
 }
 
 // subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to

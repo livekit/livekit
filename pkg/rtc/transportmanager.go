@@ -53,7 +53,6 @@ type TransportManager struct {
 	onSubscriberInitialConnected       func()
 	onPrimaryTransportInitialConnected func()
 	onAnyTransportFailed               func()
-	onAllTransportConnected            func()
 
 	onICEConfigChanged func(iceConfig types.IceConfig)
 }
@@ -250,10 +249,6 @@ func (t *TransportManager) OnPrimaryTransportFullyEstablished(f func()) {
 
 func (t *TransportManager) OnAnyTransportFailed(f func()) {
 	t.onAnyTransportFailed = f
-}
-
-func (t *TransportManager) OnAllTransportConnected(f func()) {
-	t.onAllTransportConnected = f
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
