@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/pion/webrtc/v3"
@@ -10,6 +11,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/audio"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -29,11 +31,20 @@ func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID,
 		sfuReceivers = append(sfuReceivers, r.TrackReceiver)
 	}
 
+	codecs := upstreamCodecs
+	// if upstream is opus/red, then add opus to match clients that don't support red
+	if len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, audio.MimeTypeAudioRed) {
+		codecs = append(codecs, webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"},
+			PayloadType:        111,
+		})
+	}
+
 	return &WrappedReceiver{
 		receivers: sfuReceivers,
 		trackID:   trackID,
 		streamId:  streamId,
-		codecs:    upstreamCodecs,
+		codecs:    codecs,
 	}
 }
 
@@ -48,15 +59,19 @@ func (r *WrappedReceiver) StreamID() string {
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 	r.determinedCodec = codec
 	for _, receiver := range r.receivers {
-		if receiver.Codec().MimeType == codec.MimeType {
+		if c := receiver.Codec(); c.MimeType == codec.MimeType {
 			r.TrackReceiver = receiver
+			break
+		} else if strings.EqualFold(c.MimeType, audio.MimeTypeAudioRed) && strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {
+			// audio opus/red can match opus only
+			r.TrackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
 		}
 	}
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
-	codecs := make([]webrtc.RTPCodecParameters, len(r.receivers))
+	codecs := make([]webrtc.RTPCodecParameters, len(r.codecs))
 	copy(codecs, r.codecs)
 	return codecs
 }
@@ -230,4 +245,9 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 		return r.TrackInfo()
 	}
 	return nil
+}
+
+func (d *DummyReceiver) GetPrimaryReceiverForRed() sfu.TrackReceiver {
+	// DummyReceiver used for video, it should not have RED codec
+	return d
 }

@@ -55,6 +55,9 @@ type TrackReceiver interface {
 
 	GetLayerDimension(layer int32) (uint32, uint32)
 	TrackInfo() *livekit.TrackInfo
+
+	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
+	GetPrimaryReceiverForRed() TrackReceiver
 }
 
 // WebRTCReceiver receives a media track
@@ -71,6 +74,7 @@ type WebRTCReceiver struct {
 	codec          webrtc.RTPCodecParameters
 	isSimulcast    bool
 	isSVC          bool
+	isRED          bool
 	onCloseHandler func()
 	closeOnce      sync.Once
 	closed         atomic.Bool
@@ -101,6 +105,8 @@ type WebRTCReceiver struct {
 
 	// update layer info
 	onMaxLayerChange func(maxLayer int32)
+
+	primaryReceiver atomic.Value // *RedPrimaryReceiver
 }
 
 func RidToLayer(rid string) int32 {
@@ -186,6 +192,7 @@ func NewWebRTCReceiver(
 		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo),
 		trackInfo:            trackInfo,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
+		isRED:                strings.HasSuffix(strings.ToUpper(track.Codec().MimeType), "RED"),
 	}
 
 	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
@@ -376,7 +383,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 		}
 	}
 
-	w.storeDownTrack(track)
+	w.downTrackSpreader.Store(track)
 	return nil
 }
 
@@ -533,6 +540,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		w.closeOnce.Do(func() {
 			w.closed.Store(true)
 			w.closeTracks()
+			if pr := w.primaryReceiver.Load(); pr != nil {
+				pr.(*RedPrimaryReceiver).Close()
+			}
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)
@@ -565,6 +575,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
+		if pr := w.primaryReceiver.Load(); pr != nil {
+			pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+		}
 	}
 }
 
@@ -579,10 +592,6 @@ func (w *WebRTCReceiver) closeTracks() {
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
 	}
-}
-
-func (w *WebRTCReceiver) storeDownTrack(track TrackSender) {
-	w.downTrackSpreader.Store(track)
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
@@ -606,4 +615,19 @@ func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 	info["UpTracks"] = upTrackInfo
 
 	return info
+}
+
+func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
+	if !w.isRED || w.closed.Load() {
+		return w
+	}
+
+	if w.primaryReceiver.Load() == nil {
+		pr := NewRedPrimaryReceiver(w, DownTrackSpreaderParams{
+			Threshold: w.lbThreshold,
+			Logger:    w.logger,
+		})
+		w.primaryReceiver.CompareAndSwap(nil, pr)
+	}
+	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
 }
