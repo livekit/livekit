@@ -15,8 +15,6 @@ import (
 )
 
 func (t *telemetryServiceInternal) RoomStarted(ctx context.Context, room *livekit.Room) {
-	prometheus.RoomStarted()
-
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event: webhook.EventRoomStarted,
 		Room:  room,
@@ -30,8 +28,6 @@ func (t *telemetryServiceInternal) RoomStarted(ctx context.Context, room *liveki
 }
 
 func (t *telemetryServiceInternal) RoomEnded(ctx context.Context, room *livekit.Room) {
-	prometheus.RoomEnded(time.Unix(room.CreationTime, 0))
-
 	t.notifyEvent(ctx, &livekit.WebhookEvent{
 		Event: webhook.EventRoomFinished,
 		Room:  room,
@@ -53,6 +49,7 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 	clientMeta *livekit.AnalyticsClientMeta,
 ) {
 	prometheus.IncrementParticipantJoin(1)
+	prometheus.AddParticipant()
 
 	newWorker := newStatsWorker(
 		ctx,
@@ -80,8 +77,6 @@ func (t *telemetryServiceInternal) ParticipantJoined(
 		t.workers = append(t.workers, newWorker)
 	}
 	t.workersMu.Unlock()
-
-	prometheus.AddParticipant()
 
 	t.analytics.SendEvent(ctx, &livekit.AnalyticsEvent{
 		Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
