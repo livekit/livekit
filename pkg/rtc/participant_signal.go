@@ -174,10 +174,15 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return nil
 	}
+
 	sink := p.getResponseSink()
 	if sink == nil {
-		return nil
+		err := fmt.Errorf("no response sink")
+		p.params.Logger.Warnw("could not send message to participant", err,
+			"message", fmt.Sprintf("%T", msg.Message))
+		return err
 	}
+
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		p.params.Logger.Warnw("could not send message to participant", err,
