@@ -23,7 +23,6 @@ func (p *ParticipantImpl) getResponseSink() routing.MessageSink {
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 	p.resSinkValid.Store(sink != nil)
-	p.params.Logger.Debugw("RAJA response sink valid", "valid", p.resSinkValid.Load(), "sink", sink) // REMOVE
 	if sink != nil {
 		// cannot store nil into atomic.Value
 		p.resSink.Store(sink)
@@ -198,7 +197,6 @@ func (p *ParticipantImpl) CloseSignalConnection() {
 	sink := p.getResponseSink()
 	if sink != nil {
 		p.params.Logger.Infow("closing signal connection")
-		p.params.Logger.Infow("RAJA closing signal connection") // REMOVE
 		sink.Close()
 		p.SetResponseSink(nil)
 	}
