@@ -612,7 +612,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
-	p.closeSignalConnection()
+	p.CloseSignalConnection()
 	p.lock.RLock()
 	onClose := p.onClose
 	p.lock.RUnlock()
@@ -1206,7 +1206,7 @@ func (p *ParticipantImpl) setupDisconnectTimer() {
 
 func (p *ParticipantImpl) onAnyTransportFailed() {
 	// clients support resuming of connections when websocket becomes disconnected
-	p.closeSignalConnection()
+	p.CloseSignalConnection()
 
 	// detect when participant has actually left.
 	p.setupDisconnectTimer()
@@ -1891,7 +1891,7 @@ func (p *ParticipantImpl) handleSubscriberNegotiationFailed() {
 			},
 		},
 	})
-	p.closeSignalConnection()
+	p.CloseSignalConnection()
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
