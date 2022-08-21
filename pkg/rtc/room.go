@@ -333,9 +333,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 
 func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.MessageSink) error {
 	// close previous sink, and link to new one
-	if prevSink := p.GetResponseSink(); prevSink != nil {
-		prevSink.Close()
-	}
+	p.CloseSignalConnection()
 	p.SetResponseSink(responseSink)
 
 	updates := ToProtoParticipants(r.GetParticipants())

@@ -150,6 +150,10 @@ type FakeLocalParticipant struct {
 	closeReturnsOnCall map[int]struct {
 		result1 error
 	}
+	CloseSignalConnectionStub        func()
+	closeSignalConnectionMutex       sync.RWMutex
+	closeSignalConnectionArgsForCall []struct {
+	}
 	ConnectedAtStub        func() time.Time
 	connectedAtMutex       sync.RWMutex
 	connectedAtArgsForCall []struct {
@@ -268,16 +272,6 @@ type FakeLocalParticipant struct {
 	}
 	getPublishedTracksReturnsOnCall map[int]struct {
 		result1 []types.MediaTrack
-	}
-	GetResponseSinkStub        func() routing.MessageSink
-	getResponseSinkMutex       sync.RWMutex
-	getResponseSinkArgsForCall []struct {
-	}
-	getResponseSinkReturns struct {
-		result1 routing.MessageSink
-	}
-	getResponseSinkReturnsOnCall map[int]struct {
-		result1 routing.MessageSink
 	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
@@ -1461,6 +1455,30 @@ func (fake *FakeLocalParticipant) CloseReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) CloseSignalConnection() {
+	fake.closeSignalConnectionMutex.Lock()
+	fake.closeSignalConnectionArgsForCall = append(fake.closeSignalConnectionArgsForCall, struct {
+	}{})
+	stub := fake.CloseSignalConnectionStub
+	fake.recordInvocation("CloseSignalConnection", []interface{}{})
+	fake.closeSignalConnectionMutex.Unlock()
+	if stub != nil {
+		fake.CloseSignalConnectionStub()
+	}
+}
+
+func (fake *FakeLocalParticipant) CloseSignalConnectionCallCount() int {
+	fake.closeSignalConnectionMutex.RLock()
+	defer fake.closeSignalConnectionMutex.RUnlock()
+	return len(fake.closeSignalConnectionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) CloseSignalConnectionCalls(stub func()) {
+	fake.closeSignalConnectionMutex.Lock()
+	defer fake.closeSignalConnectionMutex.Unlock()
+	fake.CloseSignalConnectionStub = stub
+}
+
 func (fake *FakeLocalParticipant) ConnectedAt() time.Time {
 	fake.connectedAtMutex.Lock()
 	ret, specificReturn := fake.connectedAtReturnsOnCall[len(fake.connectedAtArgsForCall)]
@@ -2077,59 +2095,6 @@ func (fake *FakeLocalParticipant) GetPublishedTracksReturnsOnCall(i int, result1
 	}
 	fake.getPublishedTracksReturnsOnCall[i] = struct {
 		result1 []types.MediaTrack
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) GetResponseSink() routing.MessageSink {
-	fake.getResponseSinkMutex.Lock()
-	ret, specificReturn := fake.getResponseSinkReturnsOnCall[len(fake.getResponseSinkArgsForCall)]
-	fake.getResponseSinkArgsForCall = append(fake.getResponseSinkArgsForCall, struct {
-	}{})
-	stub := fake.GetResponseSinkStub
-	fakeReturns := fake.getResponseSinkReturns
-	fake.recordInvocation("GetResponseSink", []interface{}{})
-	fake.getResponseSinkMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) GetResponseSinkCallCount() int {
-	fake.getResponseSinkMutex.RLock()
-	defer fake.getResponseSinkMutex.RUnlock()
-	return len(fake.getResponseSinkArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) GetResponseSinkCalls(stub func() routing.MessageSink) {
-	fake.getResponseSinkMutex.Lock()
-	defer fake.getResponseSinkMutex.Unlock()
-	fake.GetResponseSinkStub = stub
-}
-
-func (fake *FakeLocalParticipant) GetResponseSinkReturns(result1 routing.MessageSink) {
-	fake.getResponseSinkMutex.Lock()
-	defer fake.getResponseSinkMutex.Unlock()
-	fake.GetResponseSinkStub = nil
-	fake.getResponseSinkReturns = struct {
-		result1 routing.MessageSink
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) GetResponseSinkReturnsOnCall(i int, result1 routing.MessageSink) {
-	fake.getResponseSinkMutex.Lock()
-	defer fake.getResponseSinkMutex.Unlock()
-	fake.GetResponseSinkStub = nil
-	if fake.getResponseSinkReturnsOnCall == nil {
-		fake.getResponseSinkReturnsOnCall = make(map[int]struct {
-			result1 routing.MessageSink
-		})
-	}
-	fake.getResponseSinkReturnsOnCall[i] = struct {
-		result1 routing.MessageSink
 	}{result1}
 }
 
@@ -4837,6 +4802,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.clearInProgressAndProcessSubscriptionRequestsQueueMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.closeSignalConnectionMutex.RLock()
+	defer fake.closeSignalConnectionMutex.RUnlock()
 	fake.connectedAtMutex.RLock()
 	defer fake.connectedAtMutex.RUnlock()
 	fake.debugInfoMutex.RLock()
@@ -4861,8 +4828,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
 	defer fake.getPublishedTracksMutex.RUnlock()
-	fake.getResponseSinkMutex.RLock()
-	defer fake.getResponseSinkMutex.RUnlock()
 	fake.getSubscribedParticipantsMutex.RLock()
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()

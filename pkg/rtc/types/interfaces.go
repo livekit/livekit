@@ -214,8 +214,8 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 
-	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
+	CloseSignalConnection()
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
