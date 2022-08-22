@@ -6,6 +6,7 @@ import (
 
 	"github.com/pion/webrtc/v3"
 
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -24,7 +25,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			return err
 		}
 	}
-	redCodec := webrtc.RTPCodecCapability{MimeType: "audio/red", ClockRate: 48000, Channels: 2}
+	redCodec := webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed, ClockRate: 48000, Channels: 2}
 	if opusPayload != 0 && isCodecEnabled(codecs, redCodec) {
 		redCodec.SDPFmtpLine = fmt.Sprintf("%d/%d", opusPayload, opusPayload)
 		if err := me.RegisterCodec(webrtc.RTPCodecParameters{

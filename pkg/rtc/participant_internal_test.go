@@ -434,6 +434,7 @@ type participantOpts struct {
 	protocolVersion types.ProtocolVersion
 	publisher       bool
 	clientConf      *livekit.ClientConfiguration
+	clientInfo      *livekit.ClientInfo
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -477,6 +478,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Grants:            grants,
 		EnabledCodecs:     enabledCodecs,
 		ClientConf:        opts.clientConf,
+		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 	})
 	p.isPublisher.Store(opts.publisher)
 
