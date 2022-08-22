@@ -34,7 +34,7 @@ func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID,
 	// if upstream is opus/red, then add opus to match clients that don't support red
 	if len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
 		codecs = append(codecs, webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"},
+			RTPCodecCapability: opusCodecCapability,
 			PayloadType:        111,
 		})
 	}

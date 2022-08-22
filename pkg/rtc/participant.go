@@ -389,7 +389,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
-	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER, "sdp", offer.SDP)
+	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
 		shouldPend = true
@@ -453,7 +453,6 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		p.params.Logger.Infow("failed to marshal offer", "error", err)
 		p.params.Logger.Errorw("failed to marshal offer", err)
 		return offer
 	}

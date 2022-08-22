@@ -9,8 +9,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+var opusCodecCapability = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}
+
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig) error {
-	opusCodec := webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: rtcpFeedback.Audio}
+	opusCodec := opusCodecCapability
+	opusCodec.RTCPFeedback = rtcpFeedback.Audio
 	var opusPayload webrtc.PayloadType
 	if isCodecEnabled(codecs, opusCodec) {
 		opusPayload = 111
