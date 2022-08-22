@@ -1045,10 +1045,6 @@ func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	if options != nil && options.ICERestart {
-		t.clearLocalDescriptionSentLocked()
-	}
-
 	return t.createAndSendOffer(options)
 }
 
@@ -1124,6 +1120,10 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.restartAtNextOffer {
 		t.restartAtNextOffer = false
 		options = ensureICERestart(options)
+	}
+
+	if options != nil && options.ICERestart {
+		t.clearLocalDescriptionSentLocked()
 	}
 
 	offer, err := t.pc.CreateOffer(options)
