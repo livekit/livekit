@@ -235,6 +235,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			AutoCreate: true,
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
+				{Mime: "audio/red"},
 				{Mime: webrtc.MimeTypeVP8},
 				{Mime: webrtc.MimeTypeH264},
 				// {Mime: webrtc.MimeTypeAV1},
