@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
-	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
@@ -22,8 +20,6 @@ import (
 
 var (
 	errAlreadySubscribed = errors.New("already subscribed")
-	errNoTransceiver     = errors.New("cannot subscribe without a transceiver in place")
-	errNoSender          = errors.New("cannot subscribe without a sender in place")
 	errNotFound          = errors.New("not found")
 )
 
@@ -154,9 +150,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 		go subTrack.Bound()
 
-		// when down track is bound, start loop to send reports
-		go t.sendDownTrackBindingReports(sub)
-
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
@@ -215,34 +208,16 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			// if the attributes match. This prevents SDP from bloating
 			// because of dormant transceivers building up.
 			//
-			sender, err = sub.SubscriberPC().AddTrack(downTrack)
+			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack)
 			if err != nil {
 				return err
-			}
-
-			// as there is no way to get transceiver from sender, search
-			for _, tr := range sub.SubscriberPC().GetTransceivers() {
-				if tr.Sender() == sender {
-					transceiver = tr
-					break
-				}
 			}
 		} else {
-			transceiver, err = sub.SubscriberPC().AddTransceiverFromTrack(downTrack)
+			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack)
 			if err != nil {
 				return err
 			}
-
-			sender = transceiver.Sender()
 		}
-	}
-	if transceiver == nil {
-		// cannot add, no transceiver
-		return errNoTransceiver
-	}
-	if sender == nil {
-		// cannot add, no sender
-		return errNoSender
 	}
 
 	// wthether re-using or stopping remove transceiver from cache
@@ -385,44 +360,6 @@ func (t *MediaTrackSubscriptions) getAllSubscribedTracksLocked() []types.Subscri
 	return subTracks
 }
 
-// TODO: send for all down tracks from the source participant
-// https://tools.ietf.org/html/rfc7941
-func (t *MediaTrackSubscriptions) sendDownTrackBindingReports(sub types.LocalParticipant) {
-	var sd []rtcp.SourceDescriptionChunk
-
-	subTrack := t.getSubscribedTrack(sub.ID())
-	if subTrack == nil {
-		return
-	}
-
-	chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
-	if chunks == nil {
-		return
-	}
-	sd = append(sd, chunks...)
-
-	pkts := []rtcp.Packet{
-		&rtcp.SourceDescription{Chunks: sd},
-	}
-
-	go func() {
-		defer RecoverSilent()
-		batch := pkts
-		i := 0
-		for {
-			if err := sub.SubscriberPC().WriteRTCP(batch); err != nil {
-				sub.GetLogger().Errorw("could not write RTCP", err)
-				return
-			}
-			if i > 5 {
-				return
-			}
-			i++
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
-}
-
 func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 	subscribedTrackInfo := make([]map[string]interface{}, 0)
 	for _, val := range t.getAllSubscribedTracks() {
@@ -457,11 +394,6 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	if !willBeResumed {
 		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
-		// ignore if the subscribing sub is not connected
-		if sub.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
-			return
-		}
-
 		// if the source has been terminated, we'll need to terminate all the subscribed tracks
 		// however, if the dest sub has disconnected, then we can skip
 		if sender == nil {
@@ -472,7 +404,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 			"publisherID", subTrack.PublisherID(),
 			"kind", t.params.MediaTrack.Kind(),
 		)
-		if err := sub.SubscriberPC().RemoveTrack(sender); err != nil {
+		if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
 			if err == webrtc.ErrConnectionClosed {
 				// sub closing, can skip removing subscribedtracks
 				return

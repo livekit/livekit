@@ -184,7 +184,7 @@ func TestTrackPublishing(t *testing.T) {
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.SetMetadata("initial metadata")
-	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	sink := p.getResponseSink().(*routingfakes.FakeMessageSink)
 	pi1 := p.ToProto()
 	p.SetMetadata("second update")
 	pi2 := p.ToProto()

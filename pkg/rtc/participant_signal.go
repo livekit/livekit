@@ -10,7 +10,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
-func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
+func (p *ParticipantImpl) getResponseSink() routing.MessageSink {
 	if !p.resSinkValid.Load() {
 		return nil
 	}
@@ -174,10 +174,15 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		return nil
 	}
-	sink := p.GetResponseSink()
+
+	sink := p.getResponseSink()
 	if sink == nil {
-		return nil
+		err := fmt.Errorf("no response sink")
+		p.params.Logger.Warnw("could not send message to participant", err,
+			"message", fmt.Sprintf("%T", msg.Message))
+		return err
 	}
+
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		p.params.Logger.Warnw("could not send message to participant", err,
@@ -188,9 +193,10 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 }
 
 // closes signal connection to notify client to resume/reconnect
-func (p *ParticipantImpl) closeSignalConnection() {
-	sink := p.GetResponseSink()
+func (p *ParticipantImpl) CloseSignalConnection() {
+	sink := p.getResponseSink()
 	if sink != nil {
+		p.params.Logger.Infow("closing signal connection")
 		sink.Close()
 		p.SetResponseSink(nil)
 	}

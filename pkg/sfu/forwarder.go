@@ -273,18 +273,19 @@ func (f *Forwarder) SeedState(state ForwarderState) {
 	f.started = true
 }
 
-func (f *Forwarder) Mute(val bool) (bool, VideoLayers) {
+func (f *Forwarder) Mute(muted bool) (bool, VideoLayers) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.muted == val {
+	if f.muted == muted {
 		return false, f.maxLayers
 	}
 
-	f.muted = val
+	f.logger.Infow("setting mute", "muted", muted)
+	f.muted = muted
 
 	// resync when muted so that sequence numbers do not jump on unmute
-	if val {
+	if muted {
 		f.resyncLocked()
 	}
 
@@ -306,6 +307,7 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, VideoLayers, V
 		return false, f.maxLayers, f.currentLayers
 	}
 
+	f.logger.Infow("setting max spatial layer", "layer", spatialLayer)
 	f.maxLayers.Spatial = spatialLayer
 
 	return true, f.maxLayers, f.currentLayers

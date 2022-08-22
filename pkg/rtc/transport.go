@@ -36,7 +36,7 @@ const (
 	ReliableDataChannel = "_reliable"
 
 	negotiationFrequency       = 150 * time.Millisecond
-	negotiationFailedTimout    = 15 * time.Second
+	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
 
 	iceDisconnectedTimeout = 10 * time.Second // compatible for ice-lite with firefox client
@@ -48,6 +48,8 @@ const (
 
 var (
 	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
+	ErrNoTransceiver             = errors.New("no transceiver")
+	ErrNoSender                  = errors.New("no sender")
 )
 
 const (
@@ -557,6 +559,47 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 	return t.pc
 }
 
+func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+	sender, err = t.pc.AddTrack(trackLocal)
+	if err != nil {
+		return
+	}
+
+	// as there is no way to get transceiver from sender, search
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Sender() == sender {
+			transceiver = tr
+			break
+		}
+	}
+
+	if transceiver == nil {
+		err = ErrNoTransceiver
+		return
+	}
+
+	return
+}
+
+func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+	transceiver, err = t.pc.AddTransceiverFromTrack(trackLocal)
+	if err != nil {
+		return
+	}
+
+	sender = transceiver.Sender()
+	if sender == nil {
+		err = ErrNoSender
+		return
+	}
+
+	return
+}
+
+func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
+	return t.pc.RemoveTrack(sender)
+}
+
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Receiver() == rtpReceiver {
@@ -682,12 +725,7 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket) error {
 }
 
 func (t *PCTransport) Close() {
-	t.lock.Lock()
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
-	t.lock.Unlock()
+	t.clearSignalStateCheckTimer()
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
@@ -745,10 +783,7 @@ func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
 	lastState := t.negotiationState
 	t.negotiationState = negotiationStateNone
 
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
+	t.clearSignalStateCheckTimerLocked()
 
 	for _, c := range t.pendingRemoteCandidates {
 		if err := t.pc.AddICECandidate(c); err != nil {
@@ -982,6 +1017,37 @@ func (t *PCTransport) CreateAndSendAnswer(enableDTX bool) error {
 	return nil
 }
 
+func (t *PCTransport) clearSignalStateCheckTimer() {
+	t.lock.Lock()
+	t.clearSignalStateCheckTimerLocked()
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) clearSignalStateCheckTimerLocked() {
+	if t.signalStateCheckTimer != nil {
+		t.signalStateCheckTimer.Stop()
+		t.signalStateCheckTimer = nil
+	}
+}
+
+func (t *PCTransport) setupSignalStateCheckTimerLocked() {
+	negotiateVersion := t.negotiateCounter.Inc()
+	t.clearSignalStateCheckTimerLocked()
+	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimeout, func() {
+		t.lock.Lock()
+		t.clearSignalStateCheckTimerLocked()
+
+		failed := t.negotiationState != negotiationStateNone
+		t.lock.Unlock()
+
+		if t.negotiateCounter.Load() == negotiateVersion && failed {
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+		}
+	})
+}
+
 func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -1100,21 +1166,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	t.restartAfterGathering = false
 	t.negotiationPending = make(map[livekit.ParticipantID]bool)
 
-	negotiateVersion := t.negotiateCounter.Inc()
-	if t.signalStateCheckTimer != nil {
-		t.signalStateCheckTimer.Stop()
-		t.signalStateCheckTimer = nil
-	}
-	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimout, func() {
-		t.lock.RLock()
-		failed := t.negotiationState != negotiationStateNone
-		t.lock.RUnlock()
-		if t.negotiateCounter.Load() == negotiateVersion && failed {
-			if t.onNegotiationFailed != nil {
-				t.onNegotiationFailed()
-			}
-		}
-	})
+	t.setupSignalStateCheckTimerLocked()
 
 	go t.onOffer(offer)
 	return nil
@@ -1239,7 +1291,7 @@ func (t *PCTransport) OnStreamStateChange(f func(update *sfu.StreamStateUpdate) 
 	t.streamAllocator.OnStreamStateChange(f)
 }
 
-func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}
@@ -1251,7 +1303,7 @@ func (t *PCTransport) AddTrack(subTrack types.SubscribedTrack) {
 	})
 }
 
-func (t *PCTransport) RemoveTrack(subTrack types.SubscribedTrack) {
+func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTrack) {
 	if t.streamAllocator == nil {
 		return
 	}

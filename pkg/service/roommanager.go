@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -380,7 +381,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry)
 
 	newRoom.OnClose(func() {
-		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
+		roomInfo := newRoom.ToProto()
+		r.telemetry.RoomEnded(ctx, roomInfo)
+		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger.Errorw("could not delete room", err)
 		}
@@ -409,6 +412,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom.Hold()
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
+	prometheus.RoomStarted()
 
 	return newRoom, nil
 }

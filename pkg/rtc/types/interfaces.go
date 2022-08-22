@@ -214,8 +214,8 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 
-	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
+	CloseSignalConnection()
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -230,12 +230,14 @@ type LocalParticipant interface {
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
 
-	SubscriberPC() *webrtc.PeerConnection
 	HandleAnswer(sdp webrtc.SessionDescription) error
 	Negotiate(force bool)
 	AddNegotiationPending(publisherID livekit.ParticipantID)
 	IsNegotiationPending(publisherID livekit.ParticipantID) bool
 	ICERestart(iceConfig *IceConfig) error
+	AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
 	AddSubscribedTrack(st SubscribedTrack)

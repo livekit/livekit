@@ -545,6 +545,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return
 	}
+	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 	p.TransportManager.PublisherLocalDescriptionSent()
 
 	if p.isPublisher.Load() != p.CanPublish() {
@@ -560,8 +561,6 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 			}
 		}
 	}
-
-	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
@@ -630,8 +629,6 @@ func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescripti
 func (p *ParticipantImpl) Start() {
 	p.once.Do(func() {
 		p.UpTrackManager.Start()
-		go p.rtcpSendWorker()
-		go p.downTracksRTCPWorker()
 	})
 }
 
@@ -675,7 +672,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 
 	// ensure this is synchronized
-	p.closeSignalConnection()
+	p.CloseSignalConnection()
 	p.lock.RLock()
 	onClose := p.onClose
 	p.lock.RUnlock()
@@ -734,6 +731,8 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
+	p.clearDisconnectTimer()
+
 	for _, t := range p.GetPublishedTracks() {
 		t.(types.LocalMediaTrack).Restart()
 	}
@@ -1063,6 +1062,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnPublisherGetDTX(p.onPublisherGetDTX)
 	tm.OnPublisherAnswer(p.onPublisherAnswer)
 	tm.OnPublisherTrack(p.onMediaTrack)
+	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
 
 	tm.OnSubscriberOffer(p.onSubscriberOffer)
 	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) {
@@ -1136,9 +1136,9 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 	})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
-	} else {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+		return
 	}
+	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
 	p.TransportManager.SubscriberLocalDescriptionSent()
 }
 
@@ -1220,7 +1220,13 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 	p.sendICECandidate(c, target)
 }
 
+func (p *ParticipantImpl) onPublisherInitialConnected() {
+	go p.publisherRTCPWorker()
+}
+
 func (p *ParticipantImpl) onSubscriberInitialConnected() {
+	go p.subscriberRTCPWorker()
+
 	p.setDowntracksConnected()
 }
 
@@ -1234,21 +1240,21 @@ func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
 
-func (p *ParticipantImpl) onAnyTransportFailed() {
-	// clients support resuming of connections when websocket becomes disconnected
-	p.closeSignalConnection()
-
-	// detect when participant has actually left.
+func (p *ParticipantImpl) clearDisconnectTimer() {
 	p.lock.Lock()
 	if p.disconnectTimer != nil {
 		p.disconnectTimer.Stop()
 		p.disconnectTimer = nil
 	}
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) setupDisconnectTimer() {
+	p.clearDisconnectTimer()
+
+	p.lock.Lock()
 	p.disconnectTimer = time.AfterFunc(disconnectCleanupDuration, func() {
-		p.lock.Lock()
-		p.disconnectTimer.Stop()
-		p.disconnectTimer = nil
-		p.lock.Unlock()
+		p.clearDisconnectTimer()
 
 		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
@@ -1259,13 +1265,19 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 	p.lock.Unlock()
 }
 
-// downTracksRTCPWorker sends SenderReports periodically when the participant is subscribed to
+func (p *ParticipantImpl) onAnyTransportFailed() {
+	// clients support resuming of connections when websocket becomes disconnected
+	p.CloseSignalConnection()
+
+	// detect when participant has actually left.
+	p.setupDisconnectTimer()
+}
+
+// subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to
 // other publishedTracks in the room.
-func (p *ParticipantImpl) downTracksRTCPWorker() {
+func (p *ParticipantImpl) subscriberRTCPWorker() {
 	defer Recover()
 	for {
-		time.Sleep(5 * time.Second)
-
 		if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
@@ -1318,6 +1330,8 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 			pkts = pkts[:0]
 			batchSize = 0
 		}
+
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -1813,13 +1827,13 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) rtcpSendWorker() {
+func (p *ParticipantImpl) publisherRTCPWorker() {
 	defer Recover()
 
 	// read from rtcpChan
 	for pkts := range p.rtcpCh {
 		if pkts == nil {
-			p.params.Logger.Infow("exiting RTCP send worker")
+			p.params.Logger.Infow("exiting publisher RTCP worker")
 			return
 		}
 
@@ -1938,7 +1952,7 @@ func (p *ParticipantImpl) handleSubscriberNegotiationFailed() {
 			},
 		},
 	})
-	p.closeSignalConnection()
+	p.CloseSignalConnection()
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
