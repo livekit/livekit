@@ -132,6 +132,10 @@ func IsSvcCodec(mime string) bool {
 	return false
 }
 
+func IsRedCodec(mime string) bool {
+	return strings.HasSuffix(strings.ToLower(mime), "red")
+}
+
 type ReceiverOpts func(w *WebRTCReceiver) *WebRTCReceiver
 
 // WithPliThrottleConfig indicates minimum time(ms) between sending PLIs
@@ -192,7 +196,7 @@ func NewWebRTCReceiver(
 		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo),
 		trackInfo:            trackInfo,
 		isSVC:                IsSvcCodec(track.Codec().MimeType),
-		isRED:                strings.HasSuffix(strings.ToUpper(track.Codec().MimeType), "RED"),
+		isRED:                IsRedCodec(track.Codec().MimeType),
 	}
 
 	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
