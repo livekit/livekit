@@ -279,6 +279,7 @@ func (r *RoomManager) StartSession(
 		Grants:                  pi.Grants,
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
+		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        r.config.RTC.AllowTCPFallback,

@@ -30,6 +30,7 @@ type TransportManagerParams struct {
 	EnabledCodecs           []*livekit.Codec
 	SimTracks               map[uint32]SimulcastTrackInfo
 	ClientConf              *livekit.ClientConfiguration
+	ClientInfo              ClientInfo
 	Migration               bool
 	AllowTCPFallback        bool
 	Logger                  logger.Logger
@@ -88,6 +89,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		EnabledCodecs:           enabledCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER),
 		SimTracks:               params.SimTracks,
+		ClientInfo:              params.ClientInfo,
 	})
 	if err != nil {
 		return nil, err
@@ -119,6 +121,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Telemetry:               params.Telemetry,
 		EnabledCodecs:           enabledCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
+		ClientInfo:              params.ClientInfo,
 	})
 	if err != nil {
 		return nil, err

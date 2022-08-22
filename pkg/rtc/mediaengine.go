@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -8,12 +9,27 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+var opusCodecCapability = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}
+
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig) error {
-	opusCodec := webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1", RTCPFeedback: rtcpFeedback.Audio}
+	opusCodec := opusCodecCapability
+	opusCodec.RTCPFeedback = rtcpFeedback.Audio
+	var opusPayload webrtc.PayloadType
 	if isCodecEnabled(codecs, opusCodec) {
+		opusPayload = 111
 		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
 			RTPCodecCapability: opusCodec,
-			PayloadType:        111,
+			PayloadType:        opusPayload,
+		}, webrtc.RTPCodecTypeAudio); err != nil {
+			return err
+		}
+	}
+	redCodec := webrtc.RTPCodecCapability{MimeType: "audio/red", ClockRate: 48000, Channels: 2}
+	if opusPayload != 0 && isCodecEnabled(codecs, redCodec) {
+		redCodec.SDPFmtpLine = fmt.Sprintf("%d/%d", opusPayload, opusPayload)
+		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: redCodec,
+			PayloadType:        63,
 		}, webrtc.RTPCodecTypeAudio); err != nil {
 			return err
 		}

@@ -130,6 +130,7 @@ type TransportParams struct {
 	EnabledCodecs           []*livekit.Codec
 	Logger                  logger.Logger
 	SimTracks               map[uint32]SimulcastTrackInfo
+	ClientInfo              ClientInfo
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -139,6 +140,12 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	} else {
 		directionConfig = params.Config.Subscriber
 	}
+
+	// enable nack if audio red is not support
+	if !isCodecEnabled(params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed}) || !params.ClientInfo.SupportsAudioRED() {
+		directionConfig.RTCPFeedback.Audio = append(directionConfig.RTCPFeedback.Audio, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+	}
+
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig)
 	if err != nil {
 		return nil, nil, err
