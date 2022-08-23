@@ -288,6 +288,7 @@ func (t *telemetryServiceInternal) EgressStarted(ctx context.Context, info *live
 		Timestamp: timestamppb.Now(),
 		EgressId:  info.EgressId,
 		RoomId:    info.RoomId,
+		Egress:    info,
 	})
 }
 
@@ -302,5 +303,6 @@ func (t *telemetryServiceInternal) EgressEnded(ctx context.Context, info *liveki
 		Timestamp: timestamppb.Now(),
 		EgressId:  info.EgressId,
 		RoomId:    info.RoomId,
+		Egress:    info,
 	})
 }
