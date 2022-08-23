@@ -388,7 +388,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
+func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 	p.params.Logger.Infow("received offer", "transport", livekit.SignalTarget_PUBLISHER)
 	shouldPend := false
 	if p.MigrateState() == types.MigrateStateInit {
@@ -397,12 +397,8 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 
 	offer = p.setCodecPreferencesForPublisher(offer)
 
-	if err := p.TransportManager.HandleOffer(offer, shouldPend); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
-		return err
-	}
-
-	return nil
+	p.TransportManager.HandleOffer(offer, shouldPend)
+	// RAJA-TODO prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
@@ -534,7 +530,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 	}
 }
 
-func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
+func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
 	p.params.Logger.Infow("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
@@ -542,10 +538,9 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 		},
 	}); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
-		return
+		return err
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
-	p.TransportManager.PublisherLocalDescriptionSent()
 
 	if p.isPublisher.Load() != p.CanPublish() {
 		p.isPublisher.Store(p.CanPublish())
@@ -564,6 +559,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) {
 	if p.MigrateState() == types.MigrateStateSync {
 		go p.handleMigrateMutedTrack()
 	}
+	return nil
 }
 
 func (p *ParticipantImpl) handleMigrateMutedTrack() {
@@ -717,10 +713,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	if processPendingOffer {
-		err := p.TransportManager.ProcessPendingPublisherOffer()
-		if err != nil {
-			p.params.Logger.Errorw("could not handle pending offer during migration", err)
-		}
+		p.TransportManager.ProcessPendingPublisherOffer()
 	}
 }
 
@@ -729,14 +722,14 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 }
 
 // ICERestart restarts subscriber ICE connections
-func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) error {
+func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) {
 	p.clearDisconnectTimer()
 
 	for _, t := range p.GetPublishedTracks() {
 		t.(types.LocalMediaTrack).Restart()
 	}
 
-	return p.TransportManager.ICERestart(iceConfig)
+	p.TransportManager.ICERestart(iceConfig)
 }
 
 func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParticipant, iceConfig types.IceConfig)) {
@@ -1055,8 +1048,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		}
 	})
 
-	tm.OnPublisherICECandidate(func(c *webrtc.ICECandidate) {
-		p.onICECandidate(c, livekit.SignalTarget_PUBLISHER)
+	tm.OnPublisherICECandidate(func(c *webrtc.ICECandidate) error {
+		return p.onICECandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
 	tm.OnPublisherGetDTX(p.onPublisherGetDTX)
 	tm.OnPublisherAnswer(p.onPublisherAnswer)
@@ -1064,16 +1057,16 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
 
 	tm.OnSubscriberOffer(p.onSubscriberOffer)
-	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) {
-		p.onICECandidate(c, livekit.SignalTarget_SUBSCRIBER)
+	tm.OnSubscriberICECandidate(func(c *webrtc.ICECandidate) error {
+		return p.onICECandidate(c, livekit.SignalTarget_SUBSCRIBER)
 	})
 	tm.OnSubscriberInitialConnected(p.onSubscriberInitialConnected)
-	tm.OnSubscriberNegotiationFailed(p.handleSubscriberNegotiationFailed)
 	tm.OnSubscriberStreamStateChange(p.onStreamStateChange)
 
 	tm.OnPrimaryTransportInitialConnected(p.onPrimaryTransportInitialConnected)
 	tm.OnPrimaryTransportFullyEstablished(p.onPrimaryTransportFullyEstablished)
 	tm.OnAnyTransportFailed(p.onAnyTransportFailed)
+	tm.OnAnyTransportNegotiationFailed(p.onAnyTransportNegotiationFailed)
 
 	tm.OnDataMessage(p.onDataMessage)
 	p.TransportManager = tm
@@ -1121,10 +1114,10 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 }
 
 // when the server has an offer for participant
-func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
+func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED {
 		// skip when disconnected
-		return
+		return nil
 	}
 
 	p.params.Logger.Infow("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
@@ -1135,10 +1128,10 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) {
 	})
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
-		return
+		return err
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
-	p.TransportManager.SubscriberLocalDescriptionSent()
+	return nil
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -1207,16 +1200,16 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	}
 }
 
-func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
+func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
 	if c == nil || p.State() == livekit.ParticipantInfo_DISCONNECTED {
-		return
+		return nil
 	}
 
 	if target == livekit.SignalTarget_SUBSCRIBER && p.MigrateState() == types.MigrateStateInit {
-		return
+		return nil
 	}
 
-	p.sendICECandidate(c, target)
+	return p.sendICECandidate(c, target)
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
@@ -1941,8 +1934,8 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	return nil, sfu.ForwarderState{}
 }
 
-func (p *ParticipantImpl) handleSubscriberNegotiationFailed() {
-	p.params.Logger.Infow("subscriber negotiation failed, starting full reconnect")
+func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
+	p.params.Logger.Infow("negotiation failed, starting full reconnect")
 	_ = p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: &livekit.LeaveRequest{

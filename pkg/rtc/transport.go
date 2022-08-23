@@ -1,7 +1,6 @@
 package rtc
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
+	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
@@ -50,7 +50,58 @@ var (
 	ErrIceRestartWithoutLocalSDP = errors.New("ICE restart without local SDP settled")
 	ErrNoTransceiver             = errors.New("no transceiver")
 	ErrNoSender                  = errors.New("no sender")
+	ErrNoICECandidateHandler     = errors.New("no ICE candidate handler")
+	ErrNoOfferHandler            = errors.New("no offer handler")
+	ErrNoAnswerHandler           = errors.New("no answer handler")
 )
+
+// -------------------------------------------------------------------------
+
+type signal int
+
+const (
+	signalICEGatheringComplete = iota
+	signalLocalICECandidate
+	signalRemoteICECandidate
+	signalSendOffer
+	signalRemoteDescriptionReceived
+	signalICERestart
+	signalPreviousAnswer
+)
+
+func (s signal) String() string {
+	switch s {
+	case signalICEGatheringComplete:
+		return "ICE_GATHERING_COMPLETE"
+	case signalLocalICECandidate:
+		return "LOCAL_ICE_CANDIDATE"
+	case signalRemoteICECandidate:
+		return "REMOTE_ICE_CANDIDATE"
+	case signalSendOffer:
+		return "SEND_OFFER"
+	case signalRemoteDescriptionReceived:
+		return "REMOTE_DESCRIPTION_RECEIVED"
+	case signalICERestart:
+		return "ICE_RESTART"
+	case signalPreviousAnswer:
+		return "PREVIOUS_ANSWER"
+	default:
+		return fmt.Sprintf("%d", int(s))
+	}
+}
+
+// -------------------------------------------------------
+
+type event struct {
+	signal signal
+	data   interface{}
+}
+
+func (e event) String() string {
+	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %+v}", e.signal, e.data)
+}
+
+// -------------------------------------------------------
 
 const (
 	negotiationStateNone = iota
@@ -59,6 +110,8 @@ const (
 	// need to Negotiate again
 	negotiationRetry
 )
+
+// -------------------------------------------------------
 
 type SimulcastTrackInfo struct {
 	Mid string
@@ -84,31 +137,18 @@ type PCTransport struct {
 
 	onFullyEstablished func()
 
-	localDescriptionSent       bool
-	cachedLocalCandidates      []*webrtc.ICECandidate
-	pendingRemoteCandidates    []webrtc.ICECandidateInit
-	debouncedNegotiate         func(func())
-	negotiationPending         map[livekit.ParticipantID]bool
-	onICECandidate             func(c *webrtc.ICECandidate)
-	onOffer                    func(offer webrtc.SessionDescription)
-	onAnswer                   func(offer webrtc.SessionDescription)
-	onRemoteDescriptionSettled func() error
-	onInitialConnected         func()
-	onFailed                   func(isShortLived bool)
-	restartAfterGathering      bool
-	restartAtNextOffer         bool
-	negotiationState           int
-	negotiateCounter           atomic.Int32
-	signalStateCheckTimer      *time.Timer
-	onNegotiationFailed        func()
+	debouncedNegotiate func(func())
+	debouncePending    bool
 
-	// stream allocator for subscriber PC
-	streamAllocator *sfu.StreamAllocator
-
-	previousAnswer *webrtc.SessionDescription
-
-	preferTCP bool
-
+	localDescriptionSent      bool
+	cachedLocalCandidates     []*webrtc.ICECandidate
+	pendingRemoteCandidates   []*webrtc.ICECandidateInit
+	negotiationPending        map[livekit.ParticipantID]bool
+	restartAfterGathering     bool
+	restartAtNextOffer        bool
+	negotiationState          int
+	negotiateCounter          atomic.Int32
+	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
@@ -117,6 +157,26 @@ type PCTransport struct {
 	allowedRemoteCandidates  []string
 	filteredLocalCandidates  []string
 	filteredRemoteCandidates []string
+
+	onICECandidate      func(c *webrtc.ICECandidate) error
+	onOffer             func(offer webrtc.SessionDescription) error
+	onAnswer            func(offer webrtc.SessionDescription) error
+	onInitialConnected  func()
+	onFailed            func(isShortLived bool)
+	onGetDTX            func() bool
+	onNegotiationFailed func()
+
+	// stream allocator for subscriber PC
+	streamAllocator *sfu.StreamAllocator
+
+	previousAnswer *webrtc.SessionDescription
+
+	preferTCP bool
+
+	eventChMu sync.RWMutex
+	eventCh   chan event
+
+	isClosed atomic.Bool
 }
 
 type TransportParams struct {
@@ -244,6 +304,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
 		negotiationPending: make(map[livekit.ParticipantID]bool),
+		eventCh:            make(chan event, 50),
 	}
 	if params.Target == livekit.SignalTarget_SUBSCRIBER {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
@@ -257,7 +318,36 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		return nil, err
 	}
 
+	go t.processEvents()
+
 	return t, nil
+}
+
+func (t *PCTransport) createPeerConnection() error {
+	var bwe cc.BandwidthEstimator
+	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
+		bwe = estimator
+	})
+	if err != nil {
+		return err
+	}
+
+	t.pc = pc
+	t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
+	t.pc.OnICEConnectionStateChange(t.onICEConnectionStateChange)
+	t.pc.OnICECandidate(t.onICECandidateTrickle)
+
+	t.pc.OnConnectionStateChange(t.onPeerConnectionStateChange)
+
+	t.pc.OnDataChannel(t.onDataChannel)
+
+	t.me = me
+
+	if bwe != nil && t.streamAllocator != nil {
+		t.streamAllocator.SetBandwidthEstimator(bwe)
+	}
+
+	return nil
 }
 
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
@@ -335,51 +425,16 @@ func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
 		return
 	}
 
-	go func() {
-		t.lock.Lock()
-		if t.restartAfterGathering {
-			t.params.Logger.Debugw("restarting ICE after ICE gathering")
-			if err := t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true}); err != nil {
-				t.params.Logger.Warnw("could not restart ICE", err)
-			}
-			t.lock.Unlock()
-		} else if t.pendingRestartIceOffer != nil {
-			t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-			offer := t.pendingRestartIceOffer
-			t.pendingRestartIceOffer = nil
-			t.lock.Unlock()
-			if err := t.SetRemoteDescription(*offer); err != nil {
-				t.params.Logger.Warnw("could not accept remote restart ice offer", err)
-			}
-		} else {
-			t.lock.Unlock()
-		}
-	}()
+	t.postEvent(event{
+		signal: signalICEGatheringComplete,
+	})
 }
 
 func (t *PCTransport) onICECandidateTrickle(c *webrtc.ICECandidate) {
-	t.lock.Lock()
-	if t.preferTCP && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
-		cstr := c.String()
-		t.params.Logger.Infow("filtering out local candidate", "candidate", cstr)
-		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
-		t.lock.Unlock()
-		return
-	}
-
-	if c != nil {
-		t.allowedLocalCandidates = append(t.allowedLocalCandidates, c.String())
-	}
-	if !t.localDescriptionSent {
-		t.cachedLocalCandidates = append(t.cachedLocalCandidates, c)
-		t.lock.Unlock()
-		return
-	}
-	t.lock.Unlock()
-
-	if t.onICECandidate != nil {
-		t.onICECandidate(c)
-	}
+	t.postEvent(event{
+		signal: signalLocalICECandidate,
+		data:   c,
+	})
 }
 
 func (t *PCTransport) handleConnectionFailed() {
@@ -474,85 +529,17 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 	}
 }
 
-func (t *PCTransport) LocalDescriptionSent() {
-	var cachedLocalCandidates []*webrtc.ICECandidate
-	t.lock.Lock()
-	t.localDescriptionSent = true
-
-	cachedLocalCandidates = t.cachedLocalCandidates
-	t.cachedLocalCandidates = nil
-	t.lock.Unlock()
-
-	if t.onICECandidate != nil {
-		for _, c := range cachedLocalCandidates {
-			t.onICECandidate(c)
-		}
-	}
-}
-
-func (t *PCTransport) clearLocalDescriptionSentLocked() {
-	t.localDescriptionSent = false
-
-	t.allowedLocalCandidates = nil
-	t.allowedRemoteCandidates = nil
-	t.filteredLocalCandidates = nil
-	t.filteredRemoteCandidates = nil
-}
-
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
 	t.lock.Lock()
 	t.preferTCP = preferTCP
 	t.lock.Unlock()
 }
 
-func (t *PCTransport) createPeerConnection() error {
-	var bwe cc.BandwidthEstimator
-	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
-		bwe = estimator
+func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
+	t.postEvent(event{
+		signal: signalRemoteICECandidate,
+		data:   &candidate,
 	})
-	if err != nil {
-		return err
-	}
-
-	t.pc = pc
-	t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
-	t.pc.OnICEConnectionStateChange(t.onICEConnectionStateChange)
-	t.pc.OnICECandidate(t.onICECandidateTrickle)
-
-	t.pc.OnConnectionStateChange(t.onPeerConnectionStateChange)
-
-	t.pc.OnDataChannel(t.onDataChannel)
-
-	t.me = me
-
-	if bwe != nil && t.streamAllocator != nil {
-		t.streamAllocator.SetBandwidthEstimator(bwe)
-	}
-
-	return nil
-}
-
-func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
-	if t.pc.RemoteDescription() == nil {
-		t.lock.Lock()
-		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, candidate)
-		t.lock.Unlock()
-		return nil
-	}
-
-	t.lock.Lock()
-	if t.preferTCP && !strings.Contains(candidate.Candidate, "tcp") {
-		t.params.Logger.Infow("filtering out remote candidate", "candidate", candidate.Candidate)
-		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, candidate.Candidate)
-		t.lock.Unlock()
-		return nil
-	}
-
-	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, candidate.Candidate)
-	t.lock.Unlock()
-
-	t.params.Logger.Infow("add candidate ", "candidate", candidate.Candidate)
-	return t.pc.AddICECandidate(candidate)
 }
 
 func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
@@ -725,7 +712,14 @@ func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket) error {
 }
 
 func (t *PCTransport) Close() {
-	t.clearSignalStateCheckTimer()
+	t.eventChMu.Lock()
+	if t.isClosed.Swap(true) {
+		t.eventChMu.Unlock()
+		return
+	}
+
+	close(t.eventCh)
+	t.eventChMu.Unlock()
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
@@ -734,98 +728,14 @@ func (t *PCTransport) Close() {
 	_ = t.pc.Close()
 }
 
-func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
-	t.lock.Lock()
-
-	var (
-		iceCredential   string
-		offerRestartICE bool
-	)
-	if sd.Type == webrtc.SDPTypeOffer {
-		var err error
-		iceCredential, offerRestartICE, err = t.isRemoteOfferRestartICE(sd)
-		if err != nil {
-			t.params.Logger.Errorw("check remote offer restart ice failed", err)
-			t.lock.Unlock()
-			return err
-		}
-	}
-
-	if offerRestartICE && t.pendingRestartIceOffer == nil {
-		t.clearLocalDescriptionSentLocked()
-	}
-
-	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
-		t.pendingRestartIceOffer = &sd
-		t.lock.Unlock()
-		return nil
-	}
-
-	// filter before setting remote description so that pion does not see filtered remote candidates
-	if t.preferTCP {
-		t.params.Logger.Infow("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
-	}
-	sd = t.filterCandidates(sd)
-	if t.preferTCP {
-		t.params.Logger.Infow("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
-	}
-	if err := t.pc.SetRemoteDescription(sd); err != nil {
-		t.lock.Unlock()
-		return err
-	}
-
-	if t.currentOfferIceCredential == "" || offerRestartICE {
-		t.currentOfferIceCredential = iceCredential
-	}
-
-	// negotiated, reset flag
-	lastState := t.negotiationState
-	t.negotiationState = negotiationStateNone
-
-	t.clearSignalStateCheckTimerLocked()
-
-	for _, c := range t.pendingRemoteCandidates {
-		if err := t.pc.AddICECandidate(c); err != nil {
-			t.lock.Unlock()
-			return err
-		}
-	}
-	t.pendingRemoteCandidates = nil
-
-	// only initiate when we are the offerer
-	if lastState == negotiationRetry && sd.Type == webrtc.SDPTypeAnswer {
-		t.params.Logger.Debugw("re-negotiate after receiving answer")
-		if err := t.createAndSendOffer(nil); err != nil {
-			t.params.Logger.Errorw("could not negotiate", err)
-		}
-	}
-	onRemoteDescriptionSettled := t.onRemoteDescriptionSettled
-	t.lock.Unlock()
-
-	if onRemoteDescriptionSettled != nil {
-		return onRemoteDescriptionSettled()
-	}
-	return nil
+func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) {
+	t.postEvent(event{
+		signal: signalRemoteDescriptionReceived,
+		data:   &sd,
+	})
 }
 
-func (t *PCTransport) isRemoteOfferRestartICE(sd webrtc.SessionDescription) (string, bool, error) {
-	parsed, err := sd.Unmarshal()
-	if err != nil {
-		return "", false, err
-	}
-	user, pwd, err := lksdp.ExtractICECredential(parsed)
-	if err != nil {
-		return "", false, err
-	}
-
-	credential := fmt.Sprintf("%s:%s", user, pwd)
-	// ice credential changed, remote offer restart ice
-	restartICE := t.currentOfferIceCredential != "" && t.currentOfferIceCredential != credential
-	return credential, restartICE, nil
-}
-
-func (t *PCTransport) OnICECandidate(f func(c *webrtc.ICECandidate)) {
+func (t *PCTransport) OnICECandidate(f func(c *webrtc.ICECandidate) error) {
 	t.onICECandidate = f
 }
 
@@ -841,6 +751,10 @@ func (t *PCTransport) OnFailed(f func(isShortLived bool)) {
 	t.onFailed = f
 }
 
+func (t *PCTransport) OnGetDTX(f func() bool) {
+	t.onGetDTX = f
+}
+
 func (t *PCTransport) OnTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
 	t.pc.OnTrack(f)
 }
@@ -850,18 +764,12 @@ func (t *PCTransport) OnDataPacket(f func(kind livekit.DataPacket_Kind, data []b
 }
 
 // OnOffer is called when the PeerConnection starts negotiation and prepares an offer
-func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription)) {
+func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription) error) {
 	t.onOffer = f
 }
 
-func (t *PCTransport) OnAnswer(f func(sd webrtc.SessionDescription)) {
+func (t *PCTransport) OnAnswer(f func(sd webrtc.SessionDescription) error) {
 	t.onAnswer = f
-}
-
-func (t *PCTransport) OnRemoteDescriptionSettled(f func() error) {
-	t.lock.Lock()
-	t.onRemoteDescriptionSettled = f
-	t.lock.Unlock()
 }
 
 func (t *PCTransport) OnNegotiationFailed(f func()) {
@@ -876,18 +784,31 @@ func (t *PCTransport) AddNegotiationPending(publisherID livekit.ParticipantID) {
 
 func (t *PCTransport) Negotiate(force bool) {
 	if force {
+		t.lock.Lock()
 		t.debouncedNegotiate(func() {
 			// no op to cancel pending negotiation
 		})
-		if err := t.CreateAndSendOffer(nil); err != nil {
-			t.params.Logger.Errorw("could not negotiate", err)
-		}
-	} else {
-		t.debouncedNegotiate(func() {
-			if err := t.CreateAndSendOffer(nil); err != nil {
-				t.params.Logger.Errorw("could not negotiate", err)
-			}
+		t.debouncePending = false
+		t.lock.Unlock()
+
+		t.postEvent(event{
+			signal: signalSendOffer,
 		})
+	} else {
+		t.lock.Lock()
+		if !t.debouncePending {
+			t.debouncedNegotiate(func() {
+				t.lock.Lock()
+				t.debouncePending = false
+				t.lock.Unlock()
+
+				t.postEvent(event{
+					signal: signalSendOffer,
+				})
+			})
+			t.debouncePending = true
+		}
+		t.lock.Unlock()
 	}
 }
 
@@ -981,42 +902,6 @@ func (t *PCTransport) configureReceiverDTX(enableDTX bool) {
 	}
 }
 
-func (t *PCTransport) CreateAndSendAnswer(enableDTX bool) error {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	t.configureReceiverDTX(enableDTX)
-
-	answer, err := t.pc.CreateAnswer(nil)
-	if err != nil {
-		return err
-	}
-
-	if t.preferTCP {
-		t.params.Logger.Infow("local answer (unfiltered)", "sdp", answer.SDP)
-	}
-	if err = t.pc.SetLocalDescription(answer); err != nil {
-		return err
-	}
-
-	//
-	// Filter after setting local description as pion expects the answer
-	// to match between CreateAnswer and SetLocalDescription.
-	// Filtered answer is sent to remote so that remote does not
-	// see filtered candidates.
-	//
-	answer = t.filterCandidates(answer)
-	if t.preferTCP {
-		t.params.Logger.Infow("local answer (filtered)", "sdp", answer.SDP)
-	}
-
-	if t.onAnswer != nil {
-		go t.onAnswer(answer)
-	}
-
-	return nil
-}
-
 func (t *PCTransport) clearSignalStateCheckTimer() {
 	t.lock.Lock()
 	t.clearSignalStateCheckTimerLocked()
@@ -1048,128 +933,10 @@ func (t *PCTransport) setupSignalStateCheckTimerLocked() {
 	})
 }
 
-func (t *PCTransport) CreateAndSendOffer(options *webrtc.OfferOptions) error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	if options != nil && options.ICERestart {
-		t.clearLocalDescriptionSentLocked()
-	}
-
-	return t.createAndSendOffer(options)
-}
-
-// creates and sends offer assuming lock has been acquired
-func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
-	if t.onOffer == nil {
-		return nil
-	}
-	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
-		return nil
-	}
-
-	iceRestart := (options != nil && options.ICERestart) || t.restartAtNextOffer
-
-	// if restart is requested, and we are not ready, then continue afterwards
-	if iceRestart {
-		if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-			t.params.Logger.Debugw("restart ICE after gathering")
-			t.restartAfterGathering = true
-			return nil
-		}
-		t.params.Logger.Debugw("restarting ICE")
-	}
-
-	if iceRestart && t.negotiationState != negotiationStateNone {
-		currentSD := t.pc.CurrentRemoteDescription()
-		if currentSD == nil {
-			// restart without current remote description, send current local description again to try recover
-			offer := t.pc.LocalDescription()
-			if offer == nil {
-				// it should not happen, log just in case
-				t.params.Logger.Warnw("ice restart without local offer", nil)
-				return ErrIceRestartWithoutLocalSDP
-			} else {
-				t.negotiationState = negotiationRetry
-				t.restartAtNextOffer = true
-				go t.onOffer(*offer)
-				return nil
-			}
-		} else {
-			// recover by re-applying the last answer
-			t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
-			if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
-				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
-				return err
-			}
-		}
-	} else {
-		// when there's an ongoing negotiation, let it finish and not disrupt its state
-		if t.negotiationState == negotiationStateClient {
-			t.params.Logger.Infow("skipping negotiation, trying again later")
-			t.negotiationState = negotiationRetry
-			return nil
-		} else if t.negotiationState == negotiationRetry {
-			// already set to retry, we can safely skip this attempt
-			return nil
-		}
-	}
-
-	ensureICERestart := func(options *webrtc.OfferOptions) *webrtc.OfferOptions {
-		if options == nil {
-			options = &webrtc.OfferOptions{}
-		}
-		options.ICERestart = true
-		return options
-	}
-
-	if t.previousAnswer != nil {
-		t.previousAnswer = nil
-		options = ensureICERestart(options)
-	}
-
-	if t.restartAtNextOffer {
-		t.restartAtNextOffer = false
-		options = ensureICERestart(options)
-	}
-
-	offer, err := t.pc.CreateOffer(options)
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
-		t.params.Logger.Errorw("could not create offer", err)
-		return err
-	}
-
-	if t.preferTCP {
-		t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
-	}
-	err = t.pc.SetLocalDescription(offer)
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
-		t.params.Logger.Errorw("could not set local description", err)
-		return err
-	}
-
-	//
-	// Filter after setting local description as pion expects the offer
-	// to match between CreateOffer and SetLocalDescription.
-	// Filtered offer is sent to remote so that remote does not
-	// see filtered candidates.
-	//
-	offer = t.filterCandidates(offer)
-	if t.preferTCP {
-		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
-	}
-
-	// indicate waiting for client
-	t.negotiationState = negotiationStateClient
-	t.restartAfterGathering = false
-	t.negotiationPending = make(map[livekit.ParticipantID]bool)
-
-	t.setupSignalStateCheckTimerLocked()
-
-	go t.onOffer(offer)
-	return nil
+func (t *PCTransport) ICERestart() {
+	t.postEvent(event{
+		signal: signalICERestart,
+	})
 }
 
 func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
@@ -1312,14 +1079,10 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 }
 
 func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = answer
-		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
-		}
-	}
+	t.postEvent(event{
+		signal: signalPreviousAnswer,
+		data:   answer,
+	})
 }
 
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.SessionDescription {
@@ -1360,4 +1123,468 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription) webrtc.Sess
 	}
 	sd.SDP = string(bytes)
 	return sd
+}
+
+func (t *PCTransport) postEvent(event event) {
+	t.eventChMu.RLock()
+	if t.isClosed.Load() {
+		t.eventChMu.RUnlock()
+		return
+	}
+
+	select {
+	case t.eventCh <- event:
+	default:
+		t.params.Logger.Warnw("event queue full", nil)
+	}
+	t.eventChMu.RUnlock()
+}
+
+func (t *PCTransport) processEvents() {
+	for event := range t.eventCh {
+		err := t.handleEvent(&event)
+		if err != nil {
+			t.params.Logger.Errorw("error handling event", err, "event", event.String())
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+			break
+		}
+	}
+
+	t.clearSignalStateCheckTimer()
+	t.params.Logger.Infow("leaving events processor")
+}
+
+func (t *PCTransport) handleEvent(e *event) error {
+	switch e.signal {
+	case signalICEGatheringComplete:
+		return t.handleICEGatheringComplete(e)
+	case signalLocalICECandidate:
+		return t.handleLocalICECandidate(e)
+	case signalRemoteICECandidate:
+		return t.handleRemoteICECandidate(e)
+	case signalSendOffer:
+		return t.handleSendOffer(e)
+	case signalRemoteDescriptionReceived:
+		return t.handleRemoteDescriptionReceived(e)
+	case signalICERestart:
+		return t.handleICERestart(e)
+	case signalPreviousAnswer:
+		return t.handlePreviousAnswer(e)
+	}
+
+	return nil
+}
+
+func (t *PCTransport) handleICEGatheringComplete(e *event) error {
+	if t.params.Target == livekit.SignalTarget_SUBSCRIBER {
+		return t.handleICEGatheringCompleteOfferer()
+	} else {
+		return t.handleICEGatheringCompleteAnswerer()
+	}
+}
+
+func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
+	if !t.restartAfterGathering {
+		return nil
+	}
+
+	t.params.Logger.Debugw("restarting ICE after ICE gathering")
+	t.restartAfterGathering = false
+	return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
+}
+
+func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
+	if t.pendingRestartIceOffer == nil {
+		return nil
+	}
+
+	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+	err := t.setRemoteDescription(*t.pendingRestartIceOffer)
+	t.pendingRestartIceOffer = nil
+	return err
+}
+
+func (t *PCTransport) handleLocalDescriptionSent() error {
+	if t.localDescriptionSent {
+		return nil
+	}
+
+	t.localDescriptionSent = true
+
+	cachedLocalCandidates := t.cachedLocalCandidates
+	t.cachedLocalCandidates = nil
+
+	if t.onICECandidate != nil {
+		for _, c := range cachedLocalCandidates {
+			if err := t.onICECandidate(c); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return ErrNoICECandidateHandler
+}
+
+func (t *PCTransport) clearLocalDescriptionSent() {
+	t.localDescriptionSent = false
+
+	t.allowedLocalCandidates = nil
+	t.allowedRemoteCandidates = nil
+	t.filteredLocalCandidates = nil
+	t.filteredRemoteCandidates = nil
+}
+
+func (t *PCTransport) handleLocalICECandidate(e *event) error {
+	c := e.data.(*webrtc.ICECandidate)
+
+	filtered := false
+	t.lock.RLock()
+	if t.preferTCP && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
+		cstr := c.String()
+		t.params.Logger.Infow("filtering out local candidate", "candidate", cstr)
+		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
+		filtered = true
+	}
+	t.lock.RUnlock()
+
+	if filtered {
+		return nil
+	}
+
+	if c != nil {
+		t.allowedLocalCandidates = append(t.allowedLocalCandidates, c.String())
+	}
+	if !t.localDescriptionSent {
+		t.cachedLocalCandidates = append(t.cachedLocalCandidates, c)
+		return nil
+	}
+
+	if t.onICECandidate != nil {
+		return t.onICECandidate(c)
+	}
+
+	return ErrNoICECandidateHandler
+}
+
+func (t *PCTransport) handleRemoteICECandidate(e *event) error {
+	c := e.data.(*webrtc.ICECandidateInit)
+
+	filtered := false
+	t.lock.RLock()
+	if t.preferTCP && !strings.Contains(c.Candidate, "tcp") {
+		t.params.Logger.Infow("filtering out remote candidate", "candidate", c.Candidate)
+		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, c.Candidate)
+		filtered = true
+	}
+	t.lock.RUnlock()
+
+	if filtered {
+		return nil
+	}
+
+	if t.pc.RemoteDescription() == nil {
+		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
+		return nil
+	}
+
+	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+
+	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
+	if err := t.pc.AddICECandidate(*c); err != nil {
+		return errors.Wrap(err, "add ice candidate failed")
+	}
+
+	return nil
+}
+
+func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		t.params.Logger.Warnw("trying to send offer on closed peer connection", nil)
+		return nil
+	}
+
+	// when there's an ongoing negotiation, let it finish and not disrupt its state
+	if t.negotiationState == negotiationStateClient {
+		t.params.Logger.Infow("skipping negotiation, trying again later")
+		t.negotiationState = negotiationRetry
+		return nil
+	} else if t.negotiationState == negotiationRetry {
+		// already set to retry, we can safely skip this attempt
+		return nil
+	}
+
+	ensureICERestart := func(options *webrtc.OfferOptions) *webrtc.OfferOptions {
+		if options == nil {
+			options = &webrtc.OfferOptions{}
+		}
+		options.ICERestart = true
+		return options
+	}
+
+	if t.previousAnswer != nil {
+		t.previousAnswer = nil
+		options = ensureICERestart(options)
+	}
+
+	if t.restartAtNextOffer {
+		t.restartAtNextOffer = false
+		options = ensureICERestart(options)
+	}
+
+	if options != nil && options.ICERestart {
+		t.clearLocalDescriptionSent()
+	}
+
+	offer, err := t.pc.CreateOffer(options)
+	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
+		return errors.Wrap(err, "create offer failed")
+	}
+
+	t.lock.RLock()
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
+	}
+	t.lock.RUnlock()
+
+	err = t.pc.SetLocalDescription(offer)
+	if err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
+		return errors.Wrap(err, "setting local description failed")
+	}
+
+	t.lock.RLock()
+	//
+	// Filter after setting local description as pion expects the offer
+	// to match between CreateOffer and SetLocalDescription.
+	// Filtered offer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	offer = t.filterCandidates(offer)
+	if t.preferTCP {
+		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
+	}
+	t.lock.RUnlock()
+
+	// indicate waiting for client
+	t.negotiationState = negotiationStateClient
+	t.negotiationPending = make(map[livekit.ParticipantID]bool)
+
+	t.setupSignalStateCheckTimerLocked()
+
+	if t.onOffer != nil {
+		if err := t.onOffer(offer); err != nil {
+			return errors.Wrap(err, "could not send offer")
+		}
+
+		return t.handleLocalDescriptionSent()
+	}
+
+	return ErrNoOfferHandler
+}
+
+func (t *PCTransport) handleSendOffer(e *event) error {
+	return t.createAndSendOffer(nil)
+}
+
+func (t *PCTransport) handleRemoteDescriptionReceived(e *event) error {
+	sd := e.data.(*webrtc.SessionDescription)
+	if sd.Type == webrtc.SDPTypeOffer {
+		return t.handleRemoteOfferReceived(sd)
+	} else {
+		return t.handleRemoteAnswerReceived(sd)
+	}
+}
+
+func (t *PCTransport) isRemoteOfferRestartICE(sd *webrtc.SessionDescription) (string, bool, error) {
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return "", false, err
+	}
+	user, pwd, err := lksdp.ExtractICECredential(parsed)
+	if err != nil {
+		return "", false, err
+	}
+
+	credential := fmt.Sprintf("%s:%s", user, pwd)
+	// ice credential changed, remote offer restart ice
+	restartICE := t.currentOfferIceCredential != "" && t.currentOfferIceCredential != credential
+	return credential, restartICE, nil
+}
+
+func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
+	// filter before setting remote description so that pion does not see filtered remote candidates
+	t.lock.RLock()
+	if t.preferTCP {
+		t.params.Logger.Infow("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
+	}
+	sd = t.filterCandidates(sd)
+	if t.preferTCP {
+		t.params.Logger.Infow("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
+	}
+	t.lock.RUnlock()
+
+	if err := t.pc.SetRemoteDescription(sd); err != nil {
+		return errors.Wrap(err, "setting remote description failed")
+	}
+
+	for _, c := range t.pendingRemoteCandidates {
+		if err := t.pc.AddICECandidate(*c); err != nil {
+			return errors.Wrap(err, "add ice candidate failed")
+		}
+	}
+	t.pendingRemoteCandidates = nil
+
+	return nil
+}
+
+func (t *PCTransport) createAndSendAnswer() error {
+	enableDTX := false
+	if t.onGetDTX != nil {
+		enableDTX = t.onGetDTX()
+	}
+	t.configureReceiverDTX(enableDTX)
+
+	answer, err := t.pc.CreateAnswer(nil)
+	if err != nil {
+		return errors.Wrap(err, "create answer failed")
+	}
+
+	t.lock.RLock()
+	if t.preferTCP {
+		t.params.Logger.Infow("local answer (unfiltered)", "sdp", answer.SDP)
+	}
+	t.lock.RUnlock()
+
+	if err = t.pc.SetLocalDescription(answer); err != nil {
+		return errors.Wrap(err, "setting local description failed")
+	}
+
+	//
+	// Filter after setting local description as pion expects the answer
+	// to match between CreateAnswer and SetLocalDescription.
+	// Filtered answer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	t.lock.RLock()
+	answer = t.filterCandidates(answer)
+	if t.preferTCP {
+		t.params.Logger.Infow("local answer (filtered)", "sdp", answer.SDP)
+	}
+	t.lock.RUnlock()
+
+	if t.onAnswer != nil {
+		if err := t.onAnswer(answer); err != nil {
+			return errors.Wrap(err, "could not send answer")
+		}
+
+		return t.handleLocalDescriptionSent()
+	}
+
+	return ErrNoAnswerHandler
+}
+
+func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) error {
+	iceCredential, offerRestartICE, err := t.isRemoteOfferRestartICE(sd)
+	if err != nil {
+		return errors.Wrap(err, "check remote offer restart ice failed")
+	}
+
+	if offerRestartICE && t.pendingRestartIceOffer == nil {
+		t.clearLocalDescriptionSent()
+	}
+
+	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
+		t.pendingRestartIceOffer = sd
+		return nil
+	}
+
+	if err := t.setRemoteDescription(*sd); err != nil {
+		return err
+	}
+
+	if t.currentOfferIceCredential == "" || offerRestartICE {
+		t.currentOfferIceCredential = iceCredential
+	}
+
+	return t.createAndSendAnswer()
+}
+
+func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) error {
+	if err := t.setRemoteDescription(*sd); err != nil {
+		return err
+	}
+
+	t.clearSignalStateCheckTimerLocked()
+
+	if t.negotiationState == negotiationRetry {
+		t.negotiationState = negotiationStateNone
+		t.params.Logger.Debugw("re-negotiate after receiving answer")
+		return t.createAndSendOffer(nil)
+	}
+
+	t.negotiationState = negotiationStateNone
+	return nil
+}
+
+func (t *PCTransport) handleICERestart(e *event) error {
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		t.params.Logger.Warnw("trying to restart ICE on closed peer connection", nil)
+		return nil
+	}
+
+	// if restart is requested, and we are not ready, then continue afterwards
+	if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
+		t.params.Logger.Debugw("restart ICE after gathering")
+		t.restartAfterGathering = true
+		return nil
+	}
+
+	if t.negotiationState == negotiationStateNone {
+		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
+	}
+
+	currentSD := t.pc.CurrentRemoteDescription()
+	if currentSD == nil {
+		// restart without current remote description, send current local description again to try recover
+		offer := t.pc.LocalDescription()
+		if offer == nil {
+			// it should not happen, log just in case
+			t.params.Logger.Warnw("ice restart without local offer", nil)
+			return ErrIceRestartWithoutLocalSDP
+		} else {
+			t.negotiationState = negotiationRetry
+			t.restartAtNextOffer = true
+			if t.onOffer != nil {
+				return t.onOffer(*offer)
+			}
+			return ErrNoOfferHandler
+		}
+	} else {
+		// recover by re-applying the last answer
+		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
+		if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
+			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
+			return errors.Wrap(err, "set remote description failed")
+		} else {
+			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
+		}
+	}
+}
+
+func (t *PCTransport) handlePreviousAnswer(e *event) error {
+	answer := e.data.(*webrtc.SessionDescription)
+	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
+		t.previousAnswer = answer
+		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+			return errors.Wrap(err, "initPCWithPreviousAnswer failed")
+		}
+	}
+
+	return nil
 }
