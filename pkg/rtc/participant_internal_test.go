@@ -407,8 +407,7 @@ func TestDisableCodecs(t *testing.T) {
 		}
 		return nil
 	}
-	err = participant.HandleOffer(sdp)
-	require.NoError(t, err)
+	participant.HandleOffer(sdp)
 
 	testutils.WithTimeout(t, func() string {
 		if answerReceived.Load() {

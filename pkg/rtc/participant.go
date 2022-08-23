@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -398,7 +397,6 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 	offer = p.setCodecPreferencesForPublisher(offer)
 
 	p.TransportManager.HandleOffer(offer, shouldPend)
-	// RAJA-TODO prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
@@ -537,10 +535,8 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) er
 			Answer: ToProtoSessionDescription(answer),
 		},
 	}); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return err
 	}
-	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 
 	if p.isPublisher.Load() != p.CanPublish() {
 		p.isPublisher.Store(p.CanPublish())
@@ -1121,17 +1117,11 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 	}
 
 	p.params.Logger.Infow("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER)
-	err := p.writeMessage(&livekit.SignalResponse{
+	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
-		return err
-	}
-	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
-	return nil
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
