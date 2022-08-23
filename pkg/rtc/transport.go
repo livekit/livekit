@@ -142,7 +142,7 @@ type PCTransport struct {
 
 	onICECandidate      func(c *webrtc.ICECandidate) error
 	onOffer             func(offer webrtc.SessionDescription) error
-	onAnswer            func(offer webrtc.SessionDescription) error
+	onAnswer            func(answer webrtc.SessionDescription) error
 	onInitialConnected  func()
 	onFailed            func(isShortLived bool)
 	onGetDTX            func() bool
@@ -442,8 +442,8 @@ func (t *PCTransport) handleConnectionFailed() {
 		}
 	}
 
-	if t.onFailed != nil {
-		t.onFailed(isShort)
+	if onFailed := t.getOnFailed(); onFailed != nil {
+		onFailed(isShort)
 	}
 }
 
@@ -469,8 +469,8 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 		t.logICECandidates()
 		isInitialConnection := t.setConnectedAt(time.Now())
 		if isInitialConnection {
-			if t.onInitialConnected != nil {
-				t.onInitialConnected()
+			if onInitialConnected := t.getOnInitialConnected(); onInitialConnected != nil {
+				onInitialConnected()
 			}
 
 			t.maybeNotifyFullyEstablished()
@@ -489,8 +489,8 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		t.reliableDCOpened = true
 		t.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if t.onDataPacket != nil {
-				t.onDataPacket(livekit.DataPacket_RELIABLE, msg.Data)
+			if onDataPacket := t.getOnDataPacket(); onDataPacket != nil {
+				onDataPacket(livekit.DataPacket_RELIABLE, msg.Data)
 			}
 		})
 
@@ -502,8 +502,8 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		t.lossyDCOpened = true
 		t.lock.Unlock()
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if t.onDataPacket != nil {
-				t.onDataPacket(livekit.DataPacket_LOSSY, msg.Data)
+			if onDataPacket := t.getOnDataPacket(); onDataPacket != nil {
+				onDataPacket(livekit.DataPacket_LOSSY, msg.Data)
 			}
 		})
 
@@ -518,8 +518,10 @@ func (t *PCTransport) maybeNotifyFullyEstablished() {
 	fullyEstablished := t.reliableDCOpened && t.lossyDCOpened && !t.connectedAt.IsZero()
 	t.lock.RUnlock()
 
-	if fullyEstablished && t.onFullyEstablished != nil {
-		t.onFullyEstablished()
+	if fullyEstablished {
+		if onFullyEstablished := t.getOnFullyEstablished(); onFullyEstablished != nil {
+			onFullyEstablished()
+		}
 	}
 }
 
@@ -728,23 +730,68 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) {
 }
 
 func (t *PCTransport) OnICECandidate(f func(c *webrtc.ICECandidate) error) {
+	t.lock.Lock()
 	t.onICECandidate = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnICECandidate() func(c *webrtc.ICECandidate) error {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onICECandidate
 }
 
 func (t *PCTransport) OnInitialConnected(f func()) {
+	t.lock.Lock()
 	t.onInitialConnected = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnInitialConnected() func() {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onInitialConnected
 }
 
 func (t *PCTransport) OnFullyEstablished(f func()) {
+	t.lock.Lock()
 	t.onFullyEstablished = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnFullyEstablished() func() {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onFullyEstablished
 }
 
 func (t *PCTransport) OnFailed(f func(isShortLived bool)) {
+	t.lock.Lock()
 	t.onFailed = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnFailed() func(isShortLived bool) {
+	t.lock.RLock()
+	defer t.lock.Unlock()
+
+	return t.onFailed
 }
 
 func (t *PCTransport) OnGetDTX(f func() bool) {
+	t.lock.Lock()
 	t.onGetDTX = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnGetDTX() func() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onGetDTX
 }
 
 func (t *PCTransport) OnTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
@@ -752,20 +799,57 @@ func (t *PCTransport) OnTrack(f func(track *webrtc.TrackRemote, rtpReceiver *web
 }
 
 func (t *PCTransport) OnDataPacket(f func(kind livekit.DataPacket_Kind, data []byte)) {
+	t.lock.Lock()
 	t.onDataPacket = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnDataPacket() func(kind livekit.DataPacket_Kind, data []byte) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onDataPacket
 }
 
 // OnOffer is called when the PeerConnection starts negotiation and prepares an offer
 func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription) error) {
+	t.lock.Lock()
 	t.onOffer = f
+	t.lock.Unlock()
+	t.params.Logger.Infow("set OnOffer", "target", t.params.Target) // REMOVE
+}
+
+func (t *PCTransport) getOnOffer() func(sd webrtc.SessionDescription) error {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onOffer
 }
 
 func (t *PCTransport) OnAnswer(f func(sd webrtc.SessionDescription) error) {
+	t.lock.Lock()
 	t.onAnswer = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnAnswer() func(sd webrtc.SessionDescription) error {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onAnswer
 }
 
 func (t *PCTransport) OnNegotiationFailed(f func()) {
+	t.lock.Lock()
 	t.onNegotiationFailed = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnNegotiationFailed() func() {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onNegotiationFailed
 }
 
 func (t *PCTransport) AddNegotiationPending(publisherID livekit.ParticipantID) {
@@ -928,6 +1012,121 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
+func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
+	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
+	// client's subscribe pc after joining, should change this step
+	parsed, err := previousAnswer.Unmarshal()
+	if err != nil {
+		return err
+	}
+	fp, fpHahs, err := lksdp.ExtractFingerprint(parsed)
+	if err != nil {
+		return err
+	}
+
+	offer, err := t.pc.CreateOffer(nil)
+	if err != nil {
+		return err
+	}
+	if err := t.pc.SetLocalDescription(offer); err != nil {
+		return err
+	}
+
+	//
+	// Simulate client side peer connection and set DTLS role from previous answer.
+	// Role needs to be set properly (one side needs to be server and the other side
+	// needs to be the client) for DTLS connection to form properly. As this is
+	// trying to replicate previous setup, read from previous answer and use that role.
+	//
+	se := webrtc.SettingEngine{}
+	se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
+	api := webrtc.NewAPI(
+		webrtc.WithSettingEngine(se),
+		webrtc.WithMediaEngine(t.me),
+	)
+	pc2, err := api.NewPeerConnection(webrtc.Configuration{
+		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
+	})
+	if err != nil {
+		return err
+	}
+	defer pc2.Close()
+
+	if err := pc2.SetRemoteDescription(offer); err != nil {
+		return err
+	}
+	ans, err := pc2.CreateAnswer(nil)
+	if err != nil {
+		return err
+	}
+
+	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
+	// keep the fingerprint at first call of SetRemoteDescription, if dumb pc and client pc use
+	// different fingerprint, that will cause pion denied dtls data after handshake with client
+	// complete (can't pass fingerprint change).
+	// in this step, we don't established connection with dump pc(no candidate swap), just use
+	// sdp negotiation to sticky data channel and keep client's fingerprint
+	parsedAns, _ := ans.Unmarshal()
+	fpLine := fpHahs + " " + fp
+	replaceFP := func(attrs []sdp.Attribute, fpLine string) {
+		for k := range attrs {
+			if attrs[k].Key == "fingerprint" {
+				attrs[k].Value = fpLine
+			}
+		}
+	}
+	replaceFP(parsedAns.Attributes, fpLine)
+	for _, m := range parsedAns.MediaDescriptions {
+		replaceFP(m.Attributes, fpLine)
+	}
+	bytes, err := parsedAns.Marshal()
+	if err != nil {
+		return err
+	}
+	ans.SDP = string(bytes)
+
+	return t.pc.SetRemoteDescription(ans)
+}
+
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
+	parsed, err := previousAnswer.Unmarshal()
+	if err != nil {
+		return err
+	}
+	for _, m := range parsed.MediaDescriptions {
+		var codecType webrtc.RTPCodecType
+		switch m.MediaName.Media {
+		case "video":
+			codecType = webrtc.RTPCodecTypeVideo
+		case "audio":
+			codecType = webrtc.RTPCodecTypeAudio
+		case "application":
+			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
+			// that not consistent with our previous answer that data channel might at middle-line
+			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
+			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
+			if err := t.preparePC(previousAnswer); err != nil {
+				t.params.Logger.Errorw("prepare pc for migration failed", err)
+				return err
+			}
+			continue
+		default:
+			continue
+		}
+		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
+		if err != nil {
+			return err
+		}
+		tr.Stop()
+		mid := lksdp.GetMidValue(m)
+		if mid == "" {
+			return errors.New("mid value not found")
+		}
+		tr.SetMid(mid)
+	}
+	return nil
+}
+
 func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
@@ -936,8 +1135,8 @@ func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
-			if t.onNegotiationFailed != nil {
-				t.onNegotiationFailed()
+			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
+				onNegotiationFailed()
 			}
 			return
 		}
@@ -962,11 +1161,12 @@ func (t *PCTransport) postEvent(event event) {
 
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
+		t.params.Logger.Infow("processing event", "event", event.String(), "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		err := t.handleEvent(&event)
 		if err != nil {
 			t.params.Logger.Errorw("error handling event", err, "event", event.String())
-			if t.onNegotiationFailed != nil {
-				t.onNegotiationFailed()
+			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
+				onNegotiationFailed()
 			}
 			break
 		}
@@ -1012,6 +1212,7 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
+	t.params.Logger.Infow("casa from ice gathering complete", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 }
 
@@ -1036,9 +1237,9 @@ func (t *PCTransport) localDescriptionSent() error {
 	cachedLocalCandidates := t.cachedLocalCandidates
 	t.cachedLocalCandidates = nil
 
-	if t.onICECandidate != nil {
+	if onICECandidate := t.getOnICECandidate(); onICECandidate != nil {
 		for _, c := range cachedLocalCandidates {
-			if err := t.onICECandidate(c); err != nil {
+			if err := onICECandidate(c); err != nil {
 				return err
 			}
 		}
@@ -1082,8 +1283,8 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 		return nil
 	}
 
-	if t.onICECandidate != nil {
-		return t.onICECandidate(c)
+	if onICECandidate := t.getOnICECandidate(); onICECandidate != nil {
+		return onICECandidate(c)
 	}
 
 	return ErrNoICECandidateHandler
@@ -1187,8 +1388,8 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != negotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
-			if t.onNegotiationFailed != nil {
-				t.onNegotiationFailed()
+			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
+				onNegotiationFailed()
 			}
 		}
 	})
@@ -1203,6 +1404,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if t.negotiationState == negotiationStateClient {
 		t.params.Logger.Infow("skipping negotiation, trying again later")
+		t.params.Logger.Infow("skipping negotiation, trying again later", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		t.negotiationState = negotiationRetry
 		return nil
 	} else if t.negotiationState == negotiationRetry {
@@ -1249,6 +1451,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
+	} else {
+		t.params.Logger.Infow("set local description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	//
@@ -1268,8 +1472,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	t.setupSignalStateCheckTimer()
 
-	if t.onOffer != nil {
-		if err := t.onOffer(offer); err != nil {
+	if onOffer := t.getOnOffer(); onOffer != nil {
+		if err := onOffer(offer); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 			return errors.Wrap(err, "could not send offer")
 		}
@@ -1282,6 +1486,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 }
 
 func (t *PCTransport) handleSendOffer(e *event) error {
+	t.params.Logger.Infow("casa from send offer", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	return t.createAndSendOffer(nil)
 }
 
@@ -1328,6 +1533,8 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		}
 		prometheus.ServiceOperationCounter.WithLabelValues(sdpType, "error", "remote_description").Add(1)
 		return errors.Wrap(err, "setting remote description failed")
+	} else {
+		t.params.Logger.Infow("set remote description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
@@ -1342,8 +1549,8 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 
 func (t *PCTransport) createAndSendAnswer() error {
 	enableDTX := false
-	if t.onGetDTX != nil {
-		enableDTX = t.onGetDTX()
+	if onGetDTX := t.getOnGetDTX(); onGetDTX != nil {
+		enableDTX = onGetDTX()
 	}
 	t.configureReceiverDTX(enableDTX)
 
@@ -1361,6 +1568,8 @@ func (t *PCTransport) createAndSendAnswer() error {
 	if err = t.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
+	} else {
+		t.params.Logger.Infow("set local description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	//
@@ -1374,8 +1583,8 @@ func (t *PCTransport) createAndSendAnswer() error {
 		t.params.Logger.Infow("local answer (filtered)", "sdp", answer.SDP)
 	}
 
-	if t.onAnswer != nil {
-		if err := t.onAnswer(answer); err != nil {
+	if onAnswer := t.getOnAnswer(); onAnswer != nil {
+		if err := onAnswer(answer); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 			return errors.Wrap(err, "could not send answer")
 		}
@@ -1445,6 +1654,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	}
 
 	if t.negotiationState == negotiationStateNone {
+		t.params.Logger.Infow("casa from ice restart", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
@@ -1459,8 +1669,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		} else {
 			t.negotiationState = negotiationRetry
 			t.restartAtNextOffer = true
-			if t.onOffer != nil {
-				err := t.onOffer(*offer)
+			if onOffer := t.getOnOffer(); onOffer != nil {
+				err := onOffer(*offer)
 				if err != nil {
 					prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 				} else {
@@ -1475,120 +1685,13 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
 		if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
+			t.params.Logger.Infow("recovered set remote description failed", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 			return errors.Wrap(err, "set remote description failed")
 		} else {
+			t.params.Logger.Infow("recovered set remote description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
+			t.params.Logger.Infow("casa from recovering ice restart", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
+			t.negotiationState = negotiationStateNone
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
-}
-
-func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
-	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
-	// client's subscribe pc after joining, should change this step
-	parsed, err := previousAnswer.Unmarshal()
-	if err != nil {
-		return err
-	}
-	fp, fpHahs, err := lksdp.ExtractFingerprint(parsed)
-	if err != nil {
-		return err
-	}
-
-	offer, err := t.pc.CreateOffer(nil)
-	if err != nil {
-		return err
-	}
-	t.pc.SetLocalDescription(offer)
-
-	//
-	// Simulate client side peer connection and set DTLS role from previous answer.
-	// Role needs to be set properly (one side needs to be server and the other side
-	// needs to be the client) for DTLS connection to form properly. As this is
-	// trying to replicate previous setup, read from previous answer and use that role.
-	//
-	se := webrtc.SettingEngine{}
-	se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
-	api := webrtc.NewAPI(
-		webrtc.WithSettingEngine(se),
-		webrtc.WithMediaEngine(t.me),
-	)
-	pc2, err := api.NewPeerConnection(webrtc.Configuration{
-		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
-	})
-	if err != nil {
-		return err
-	}
-	defer pc2.Close()
-
-	pc2.SetRemoteDescription(offer)
-	ans, err := pc2.CreateAnswer(nil)
-	if err != nil {
-		return err
-	}
-
-	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
-	// keep the fingerprint at first call of SetRemoteDescription, if dumb pc and client pc use
-	// different fingerprint, that will cause pion denied dtls data after handshake with client
-	// complete (can't pass fingerprint change).
-	// in this step, we don't established connection with dump pc(no candidate swap), just use
-	// sdp negotiation to sticky data channel and keep client's fingerprint
-	parsedAns, _ := ans.Unmarshal()
-	fpLine := fpHahs + " " + fp
-	replaceFP := func(attrs []sdp.Attribute, fpLine string) {
-		for k := range attrs {
-			if attrs[k].Key == "fingerprint" {
-				attrs[k].Value = fpLine
-			}
-		}
-	}
-	replaceFP(parsedAns.Attributes, fpLine)
-	for _, m := range parsedAns.MediaDescriptions {
-		replaceFP(m.Attributes, fpLine)
-	}
-	bytes, err := parsedAns.Marshal()
-	if err != nil {
-		return err
-	}
-	ans.SDP = string(bytes)
-
-	return t.pc.SetRemoteDescription(ans)
-}
-
-func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
-	parsed, err := previousAnswer.Unmarshal()
-	if err != nil {
-		return err
-	}
-	for _, m := range parsed.MediaDescriptions {
-		var codecType webrtc.RTPCodecType
-		switch m.MediaName.Media {
-		case "video":
-			codecType = webrtc.RTPCodecTypeVideo
-		case "audio":
-			codecType = webrtc.RTPCodecTypeAudio
-		case "application":
-			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
-			// that not consistent with our previous answer that data channel might at middle-line
-			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
-			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
-			if err := t.preparePC(previousAnswer); err != nil {
-				t.params.Logger.Errorw("prepare pc for migration failed", err)
-				return err
-			}
-			continue
-		default:
-			continue
-		}
-		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
-		if err != nil {
-			return err
-		}
-		tr.Stop()
-		mid := lksdp.GetMidValue(m)
-		if mid == "" {
-			return errors.New("mid value not found")
-		}
-		tr.SetMid(mid)
-	}
-	return nil
 }
