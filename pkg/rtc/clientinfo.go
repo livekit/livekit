@@ -7,5 +7,5 @@ type ClientInfo struct {
 }
 
 func (c ClientInfo) SupportsAudioRED() bool {
-	return c.ClientInfo.Browser != "firefox" && c.ClientInfo.Browser != "safari"
+	return c.ClientInfo != nil && c.ClientInfo.Browser != "firefox" && c.ClientInfo.Browser != "safari"
 }
