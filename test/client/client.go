@@ -305,12 +305,9 @@ func (c *RTCClient) Run() error {
 				return err
 			}
 			if msg.Trickle.Target == livekit.SignalTarget_PUBLISHER {
-				err = c.publisher.AddICECandidate(candidateInit)
+				c.publisher.AddICECandidate(candidateInit)
 			} else {
-				err = c.subscriber.AddICECandidate(candidateInit)
-			}
-			if err != nil {
-				return err
+				c.subscriber.AddICECandidate(candidateInit)
 			}
 		case *livekit.SignalResponse_Update:
 			c.lock.Lock()
@@ -660,9 +657,8 @@ func (c *RTCClient) handleDataMessage(msg webrtc.DataChannelMessage) {
 
 // handles a server initiated offer, handle on subscriber PC
 func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
-	if err := c.subscriber.SetRemoteDescription(desc); err != nil {
-		return err
-	}
+	c.subscriber.HandleRemoteDescription(desc)
+	// RAJA-TODO: have ot wait for answer
 
 	// if we received an offer, we'd have to answer
 	answer, err := c.subscriber.PeerConnection().CreateAnswer(nil)
@@ -690,10 +686,8 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription) error {
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
 	// remote answered the offer, establish connection
-	err := c.publisher.SetRemoteDescription(desc)
-	if err != nil {
-		return err
-	}
+	c.publisher.HandleRemoteDescription(desc)
+	// RAJA-TODO : have to wait for connected
 
 	if c.connected.Swap(true) {
 		// already connected
@@ -702,7 +696,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription) error {
 	return nil
 }
 
-func (c *RTCClient) onOffer(offer webrtc.SessionDescription) {
+func (c *RTCClient) onOffer(offer webrtc.SessionDescription) error {
 	if c.localParticipant != nil {
 		logger.Infow("starting negotiation", "participant", c.localParticipant.Identity)
 	}
@@ -711,6 +705,8 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription) {
 			Offer: rtc.ToProtoSessionDescription(offer),
 		},
 	})
+
+	return nil
 }
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
