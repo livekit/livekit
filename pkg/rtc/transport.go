@@ -67,7 +67,6 @@ const (
 	signalSendOffer
 	signalRemoteDescriptionReceived
 	signalICERestart
-	signalPreviousAnswer
 )
 
 func (s signal) String() string {
@@ -86,8 +85,6 @@ func (s signal) String() string {
 		return "REMOTE_DESCRIPTION_RECEIVED"
 	case signalICERestart:
 		return "ICE_RESTART"
-	case signalPreviousAnswer:
-		return "PREVIOUS_ANSWER"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -932,10 +929,20 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 }
 
 func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
-	t.postEvent(event{
-		signal: signalPreviousAnswer,
-		data:   answer,
-	})
+	t.lock.Lock()
+	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
+		t.previousAnswer = answer
+		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
+			t.lock.Unlock()
+
+			if t.onNegotiationFailed != nil {
+				t.onNegotiationFailed()
+			}
+			return
+		}
+	}
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) postEvent(event event) {
@@ -985,8 +992,6 @@ func (t *PCTransport) handleEvent(e *event) error {
 		return t.handleRemoteDescriptionReceived(e)
 	case signalICERestart:
 		return t.handleICERestart(e)
-	case signalPreviousAnswer:
-		return t.handlePreviousAnswer(e)
 	}
 
 	return nil
@@ -1213,10 +1218,12 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		return options
 	}
 
+	t.lock.Lock()
 	if t.previousAnswer != nil {
 		t.previousAnswer = nil
 		options = ensureICERestart(options)
 	}
+	t.lock.Unlock()
 
 	if t.restartAtNextOffer {
 		t.restartAtNextOffer = false
@@ -1583,17 +1590,5 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		}
 		tr.SetMid(mid)
 	}
-	return nil
-}
-
-func (t *PCTransport) handlePreviousAnswer(e *event) error {
-	answer := e.data.(*webrtc.SessionDescription)
-	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = answer
-		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			return errors.Wrap(err, "initPCWithPreviousAnswer failed")
-		}
-	}
-
 	return nil
 }
