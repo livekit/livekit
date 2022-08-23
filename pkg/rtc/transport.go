@@ -101,7 +101,7 @@ type event struct {
 }
 
 func (e event) String() string {
-	return fmt.Sprintf("StreamAllocator:Event{signal: %s, data: %+v}", e.signal, e.data)
+	return fmt.Sprintf("PCTransport:Event{signal: %s, data: %+v}", e.signal, e.data)
 }
 
 // -------------------------------------------------------
