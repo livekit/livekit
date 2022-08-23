@@ -10,6 +10,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 // aggregated channel for all participants
@@ -87,8 +88,11 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 		return
 	}
 
+	// create a new connection id
+	connectionID = livekit.ConnectionID(utils.NewGuid("CO_"))
 	// index channels by roomName | identity
 	key := participantKey(roomName, pi.Identity)
+	key = key + "|" + livekit.ParticipantKey(connectionID)
 
 	// close older channels if one already exists
 	reqChan := r.getMessageChannel(r.requestChannels, string(key))
@@ -121,7 +125,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 			)
 		}
 	}()
-	return livekit.ConnectionID(pi.Identity), reqChan, resChan, nil
+	return connectionID, reqChan, resChan, nil
 }
 
 func (r *LocalRouter) WriteParticipantRTC(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, msg *livekit.RTCNodeMessage) error {

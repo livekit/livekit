@@ -226,7 +226,12 @@ func (r *RoomManager) StartSession(
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			return room.ResumeParticipant(participant, responseSink)
+			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
+				return err
+			}
+			go r.rtcSessionWorker(room, participant, requestSource)
+			return nil
 		} else {
 			participant.GetLogger().Infow("removing duplicate participant")
 			// we need to clean up the existing participant, so a new one can join
@@ -426,7 +431,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			"room", room.Name(),
 			"roomID", room.ID(),
 		)
-		_ = participant.Close(true, types.ParticipantCloseReasonRTCSessionFinish)
 		requestSource.Close()
 	}()
 	defer rtc.Recover()
