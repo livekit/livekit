@@ -230,16 +230,14 @@ func (r *RedisRouter) startParticipantRTC(ss *livekit.StartSession, participantK
 		return ErrHandlerNotDefined
 	}
 
-	if !ss.Reconnect {
-		// when it's not reconnecting, we do not want to re-use the same response sink
-		// the previous rtc worker thread is still consuming off of it.
-		// we'll want to sever the connection and switch to the new one
-		r.lock.RLock()
-		requestChan, ok := r.requestChannels[string(participantKey)]
-		r.lock.RUnlock()
-		if ok {
-			requestChan.Close()
-		}
+	// we do not want to re-use the same response sink
+	// the previous rtc worker thread is still consuming off of it.
+	// we'll want to sever the connection and switch to the new one
+	r.lock.RLock()
+	requestChan, ok := r.requestChannels[string(participantKey)]
+	r.lock.RUnlock()
+	if ok {
+		requestChan.Close()
 	}
 
 	pi, err := ParticipantInitFromStartSession(ss, r.currentNode.Region)
