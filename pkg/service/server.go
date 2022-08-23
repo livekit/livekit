@@ -214,8 +214,9 @@ func (s *LivekitServer) Start() error {
 
 	httpGroup := &errgroup.Group{}
 	for _, ln := range listeners {
+		l := ln
 		httpGroup.Go(func() error {
-			return s.httpServer.Serve(ln)
+			return s.httpServer.Serve(l)
 		})
 	}
 	go func() {
