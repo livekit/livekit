@@ -195,9 +195,17 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
+type PreferCandidateType int
+
+const (
+	PreferNone PreferCandidateType = iota
+	PreferTcp
+	PreferTls
+)
+
 type IceConfig struct {
-	PreferSubTcp bool
-	PreferPubTcp bool
+	PreferSub PreferCandidateType
+	PreferPub PreferCandidateType
 }
 
 //counterfeiter:generate . LocalParticipant
