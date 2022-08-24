@@ -11,9 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
@@ -50,12 +49,9 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 		return nil
 	})
 	transportA.Negotiate(true)
-	testutils.WithTimeout(t, func() string {
-		if !offerReceived.Load() {
-			return "transportA offer not yet received"
-		}
-		return ""
-	})
+	require.Eventually(t, func() bool {
+		return offerReceived.Load()
+	}, 10*time.Second, time.Millisecond*10, "transportA offer not received")
 
 	connectTransports(t, transportA, transportB, true, 1, 1)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
@@ -91,20 +87,20 @@ func TestNegotiationTiming(t *testing.T) {
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
 		return transportA.negotiationState == negotiationStateClient
-	}, 10*time.Second, time.Millisecond*10)
+	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateStateClient")
 
 	// second try, should've flipped transport status to retry
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
 		return transportA.negotiationState == negotiationRetry
-	}, 10*time.Second, time.Millisecond*10)
+	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
 
 	// third try, should've stayed at retry
 	transportA.Negotiate(true)
 	time.Sleep(100 * time.Millisecond) // some time to process the negotiate event
 	require.Eventually(t, func() bool {
 		return transportA.negotiationState == negotiationRetry
-	}, 10*time.Second, time.Millisecond*10)
+	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
 
 	time.Sleep(5 * time.Millisecond)
 	actualOffer, ok := offer.Load().(*webrtc.SessionDescription)
@@ -116,15 +112,12 @@ func TestNegotiationTiming(t *testing.T) {
 	})
 	transportB.HandleRemoteDescription(*actualOffer)
 
-	testutils.WithTimeout(t, func() string {
-		if !transportA.IsEstablished() {
-			return "transportA is not established"
-		}
-		if !transportB.IsEstablished() {
-			return "transportB is not established"
-		}
-		return ""
-	})
+	require.Eventually(t, func() bool {
+		return transportA.IsEstablished()
+	}, 10*time.Second, time.Millisecond*10, "transportA is not established")
+	require.Eventually(t, func() bool {
+		return transportB.IsEstablished()
+	}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
 	// it should still be negotiating again
 	require.Equal(t, negotiationStateClient, transportA.negotiationState)
@@ -150,28 +143,41 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
-	//first offer missed
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error { return nil })
-	transportA.Negotiate(true)
-
 	// exchange ICE
 	handleICEExchange(t, transportA, transportB)
+
+	// first offer missed
+	var firstOfferReceived atomic.Bool
+	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+		firstOfferReceived.Store(true)
+		return nil
+	})
+	transportA.Negotiate(true)
+	require.Eventually(t, func() bool {
+		return firstOfferReceived.Load()
+	}, 10*time.Second, 10*time.Millisecond, "first offer not received")
 
 	// set offer/answer with restart ICE, will negotiate twice,
 	// first one is recover from missed offer
 	// second one is restartICE
-	/* RAJA-TODO
-	handleOffer := handleOfferFunc(t, transportA, transportB)
-	var offerCount int32
+	transportB.OnAnswer(func(answer webrtc.SessionDescription) error {
+		transportA.HandleRemoteDescription(answer)
+		return nil
+	})
+
+	var offerCount atomic.Int32
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
-		atomic.AddInt32(&offerCount, 1)
+		offerCount.Inc()
+
 		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
 		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 			require.Eventually(t, func() bool {
 				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete
 			}, 10*time.Second, time.Millisecond*10)
 		}
-		return handleOffer(sd)
+
+		transportB.HandleRemoteDescription(sd)
+		return nil
 	})
 
 	// first establish connection
@@ -181,11 +187,10 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
 			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			atomic.LoadInt32(&offerCount) == 2
+			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 	transportA.Close()
 	transportB.Close()
-	*/
 }
 
 func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
@@ -200,42 +205,51 @@ func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
 	_, err = transportA.pc.CreateDataChannel("test", nil)
 	require.NoError(t, err)
 
-	/* RAJA-TODO
 	paramsB := params
 	paramsB.Target = livekit.SignalTarget_SUBSCRIBER
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
-	//first anwser missed
-	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
-		transportB.HandleRemoteDescription(sd)
-		answer, err := transportB.pc.CreateAnswer(nil)
-		require.NoError(t, err)
-		require.NoError(t, transportB.pc.SetLocalDescription(answer))
-		return nil
-	})
 	// exchange ICE
 	handleICEExchange(t, transportA, transportB)
+
+	// first anwser missed
+	var firstAnswerReceived atomic.Bool
+	transportB.OnAnswer(func(sd webrtc.SessionDescription) error {
+		firstAnswerReceived.Store(true)
+		return nil
+	})
+	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
+		transportB.HandleRemoteDescription(sd)
+		return nil
+	})
 
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
 		return transportB.pc.SignalingState() == webrtc.SignalingStateStable
-	}, time.Second, 10*time.Millisecond)
+	}, time.Second, 10*time.Millisecond, "transportB signaling state did not go to stable")
 
 	// set offer/answer with restart ICE, will negotiate twice,
 	// first one is recover from missed offer
 	// second one is restartICE
-	handleOffer := handleOfferFunc(t, transportA, transportB)
-	var offerCount int32
+	transportB.OnAnswer(func(answer webrtc.SessionDescription) error {
+		transportA.HandleRemoteDescription(answer)
+		return nil
+	})
+
+	var offerCount atomic.Int32
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
-		atomic.AddInt32(&offerCount, 1)
+		offerCount.Inc()
+
 		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
 		if transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 			require.Eventually(t, func() bool {
 				return transportB.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete
 			}, 10*time.Second, time.Millisecond*10)
 		}
-		return handleOffer(sd)
+
+		transportB.HandleRemoteDescription(sd)
+		return nil
 	})
 
 	// first establish connection
@@ -245,11 +259,10 @@ func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
 			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			atomic.LoadInt32(&offerCount) == 2
+			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 	transportA.Close()
 	transportB.Close()
-	*/
 }
 
 func TestNegotiationFailed(t *testing.T) {
@@ -441,23 +454,19 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 		offerer.Negotiate(true)
 	}
 
-	// ensure we are connected the first time
-	testutils.WithTimeout(t, func() string {
-		if offerCount.Load() != expectedOfferCount {
-			return fmt.Sprintf("offer count mismatch, expected: %d, actual: %d", expectedOfferCount, offerCount.Load())
-		}
+	require.Eventually(t, func() bool {
+		return offerCount.Load() == expectedOfferCount
+	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("offer count mismatch, expected: %d, actual: %d", expectedOfferCount, offerCount.Load()))
 
-		if offerer.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
-			return "offerer did not become connected"
-		}
+	require.Eventually(t, func() bool {
+		return offerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	}, 10*time.Second, time.Millisecond*10, "offerer did not become connected")
 
-		if answerCount.Load() != expectedAnswerCount {
-			return fmt.Sprintf("answer count mismatch, expected: %d, actual: %d", expectedAnswerCount, answerCount.Load())
-		}
+	require.Eventually(t, func() bool {
+		return answerCount.Load() == expectedAnswerCount
+	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("answer count mismatch, expected: %d, actual: %d", expectedAnswerCount, answerCount.Load()))
 
-		if answerer.pc.ICEConnectionState() != webrtc.ICEConnectionStateConnected {
-			return "answerer did not become connected"
-		}
-		return ""
-	})
+	require.Eventually(t, func() bool {
+		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 }

@@ -1305,6 +1305,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	}
 
 	if t.pc.RemoteDescription() == nil {
+		t.params.Logger.Infow("caching remote candidate", "target", t.params.Target, "ss", t.pc.SignalingState(), "candidate", c.Candidate) // REMOVE
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
 		return nil
 	}
@@ -1424,12 +1425,14 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.previousAnswer != nil {
 		t.previousAnswer = nil
 		options = ensureICERestart(options)
+		t.params.Logger.Infow("ice restart due to previous answer")
 	}
 	t.lock.Unlock()
 
 	if t.restartAtNextOffer {
 		t.restartAtNextOffer = false
 		options = ensureICERestart(options)
+		t.params.Logger.Infow("ice restart at next offer")
 	}
 
 	if options != nil && options.ICERestart {
@@ -1667,6 +1670,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 			t.params.Logger.Warnw("ice restart without local offer", nil)
 			return ErrIceRestartWithoutLocalSDP
 		} else {
+			t.params.Logger.Infow("deferring ice restart to next offer")
 			t.negotiationState = negotiationRetry
 			t.restartAtNextOffer = true
 			if onOffer := t.getOnOffer(); onOffer != nil {
