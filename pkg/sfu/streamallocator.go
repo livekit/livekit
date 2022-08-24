@@ -83,7 +83,7 @@ func (s State) String() string {
 type Signal int
 
 const (
-	SignalAllocateTrack = iota
+	SignalAllocateTrack Signal = iota
 	SignalAllocateAllTracks
 	SignalAdjustState
 	SignalEstimate

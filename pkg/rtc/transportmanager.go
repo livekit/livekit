@@ -3,18 +3,17 @@ package rtc
 import (
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -47,8 +46,6 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
-
-	onPublisherGetDTX func() bool
 
 	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
@@ -95,7 +92,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		return nil, err
 	}
 	t.publisher = publisher
-	t.publisher.OnRemoteDescriptionSettled(t.createPublisherAnswerAndSend)
 	t.publisher.OnInitialConnected(func() {
 		if t.onPublisherInitialConnected != nil {
 			t.onPublisherInitialConnected()
@@ -155,18 +151,18 @@ func (t *TransportManager) Close() {
 	t.subscriber.Close()
 }
 
-func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate)) {
+func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate) error) {
 	t.publisher.OnICECandidate(f)
 }
 
 func (t *TransportManager) OnPublisherGetDTX(f func() bool) {
-	t.onPublisherGetDTX = f
+	t.publisher.OnGetDTX(f)
 }
 
-func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription)) {
-	t.publisher.OnAnswer(func(sd webrtc.SessionDescription) {
+func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription) error) {
+	t.publisher.OnAnswer(func(sd webrtc.SessionDescription) error {
 		t.lastPublisherAnswer.Store(sd)
-		f(sd)
+		return f(sd)
 	})
 }
 
@@ -190,19 +186,15 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 	return t.publisher.GetRTPReceiver(mid)
 }
 
-func (t *TransportManager) PublisherLocalDescriptionSent() {
-	t.publisher.LocalDescriptionSent()
-}
-
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	return t.publisher.WriteRTCP(pkts)
 }
 
-func (t *TransportManager) OnSubscriberICECandidate(f func(c *webrtc.ICECandidate)) {
+func (t *TransportManager) OnSubscriberICECandidate(f func(c *webrtc.ICECandidate) error) {
 	t.subscriber.OnICECandidate(f)
 }
 
-func (t *TransportManager) OnSubscriberOffer(f func(offer webrtc.SessionDescription)) {
+func (t *TransportManager) OnSubscriberOffer(f func(offer webrtc.SessionDescription) error) {
 	t.subscriber.OnOffer(f)
 }
 
@@ -210,16 +202,8 @@ func (t *TransportManager) OnSubscriberInitialConnected(f func()) {
 	t.onSubscriberInitialConnected = f
 }
 
-func (t *TransportManager) OnSubscriberNegotiationFailed(f func()) {
-	t.subscriber.OnNegotiationFailed(f)
-}
-
 func (t *TransportManager) OnSubscriberStreamStateChange(f func(update *sfu.StreamStateUpdate) error) {
 	t.subscriber.OnStreamStateChange(f)
-}
-
-func (t *TransportManager) SubscriberLocalDescriptionSent() {
-	t.subscriber.LocalDescriptionSent()
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
@@ -252,6 +236,11 @@ func (t *TransportManager) OnPrimaryTransportFullyEstablished(f func()) {
 
 func (t *TransportManager) OnAnyTransportFailed(f func()) {
 	t.onAnyTransportFailed = f
+}
+
+func (t *TransportManager) OnAnyTransportNegotiationFailed(f func()) {
+	t.publisher.OnNegotiationFailed(f)
+	t.subscriber.OnNegotiationFailed(f)
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
@@ -362,71 +351,46 @@ func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDes
 	return
 }
 
-func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) error {
+func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) {
 	t.lock.Lock()
 	if shouldPend {
 		t.pendingOfferPublisher = &offer
 		t.lock.Unlock()
-		return nil
+		return
 	}
 	t.lock.Unlock()
 
-	return t.publisher.SetRemoteDescription(offer)
+	t.publisher.HandleRemoteDescription(offer)
 }
 
-func (t *TransportManager) ProcessPendingPublisherOffer() error {
+func (t *TransportManager) ProcessPendingPublisherOffer() {
 	t.lock.Lock()
 	pendingOffer := t.pendingOfferPublisher
 	t.pendingOfferPublisher = nil
 	t.lock.Unlock()
 
 	if pendingOffer != nil {
-		return t.HandleOffer(*pendingOffer, false)
+		t.HandleOffer(*pendingOffer, false)
 	}
-
-	return nil
-}
-
-func (t *TransportManager) createPublisherAnswerAndSend() error {
-	enableDTX := false
-	if t.onPublisherGetDTX != nil {
-		enableDTX = t.onPublisherGetDTX()
-	}
-	err := t.publisher.CreateAndSendAnswer(enableDTX)
-	if err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
-		return errors.Wrap(err, "could not create answer")
-	}
-
-	return nil
 }
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) error {
-	if answer.Type != webrtc.SDPTypeAnswer {
-		return ErrUnexpectedOffer
-	}
-
+func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) {
 	t.params.Logger.Infow("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
-	if err := t.subscriber.SetRemoteDescription(answer); err != nil {
-		return errors.Wrap(err, "could not set answer")
-	}
-
-	return nil
+	t.subscriber.HandleRemoteDescription(answer)
 }
 
 // AddICECandidate adds candidates for remote peer
-func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error {
+func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) {
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
-		return t.publisher.AddICECandidate(candidate)
+		t.publisher.AddICECandidate(candidate)
 	case livekit.SignalTarget_SUBSCRIBER:
-		return t.subscriber.AddICECandidate(candidate)
+		t.subscriber.AddICECandidate(candidate)
 	default:
 		err := errors.New("unknown signal target")
 		t.params.Logger.Errorw("ice candidate for unknown signal target", err, "target", target)
-		return err
 	}
 }
 
@@ -442,14 +406,12 @@ func (t *TransportManager) IsNegotiationPending(publisherID livekit.ParticipantI
 	return t.subscriber.IsNegotiationPending(publisherID)
 }
 
-func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) error {
+func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) {
 	if iceConfig != nil {
 		t.SetICEConfig(*iceConfig)
 	}
 
-	return t.subscriber.CreateAndSendOffer(&webrtc.OfferOptions{
-		ICERestart: true,
-	})
+	t.subscriber.ICERestart()
 }
 
 func (t *TransportManager) OnICEConfigChanged(f func(iceConfig types.IceConfig)) {

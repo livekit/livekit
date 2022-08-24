@@ -225,16 +225,16 @@ type LocalParticipant interface {
 	CanPublishData() bool
 
 	// PeerConnection
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	HandleOffer(sdp webrtc.SessionDescription) error
+	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
+	HandleOffer(sdp webrtc.SessionDescription)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
 
-	HandleAnswer(sdp webrtc.SessionDescription) error
+	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
 	AddNegotiationPending(publisherID livekit.ParticipantID)
 	IsNegotiationPending(publisherID livekit.ParticipantID) bool
-	ICERestart(iceConfig *IceConfig) error
+	ICERestart(iceConfig *IceConfig)
 	AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error

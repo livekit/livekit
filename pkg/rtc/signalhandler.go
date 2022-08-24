@@ -10,30 +10,19 @@ import (
 func HandleParticipantSignal(room types.Room, participant types.LocalParticipant, req *livekit.SignalRequest, pLogger logger.Logger) error {
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
-		err := participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
-		if err != nil {
-			pLogger.Errorw("could not handle offer", err)
-			return err
-		}
+		participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
 	case *livekit.SignalRequest_AddTrack:
 		pLogger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
 		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Answer:
-		sd := FromProtoSessionDescription(msg.Answer)
-		if err := participant.HandleAnswer(sd); err != nil {
-			pLogger.Errorw("could not handle answer", err)
-			// connection cannot be successful if we can't answer
-			return err
-		}
+		participant.HandleAnswer(FromProtoSessionDescription(msg.Answer))
 	case *livekit.SignalRequest_Trickle:
 		candidateInit, err := FromProtoTrickle(msg.Trickle)
 		if err != nil {
 			pLogger.Warnw("could not decode trickle", err)
 			return nil
 		}
-		if err := participant.AddICECandidate(candidateInit, msg.Trickle.Target); err != nil {
-			pLogger.Warnw("could not add ICE candidate", err)
-		}
+		participant.AddICECandidate(candidateInit, msg.Trickle.Target)
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
