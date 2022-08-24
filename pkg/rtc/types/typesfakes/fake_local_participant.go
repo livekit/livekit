@@ -15,17 +15,11 @@ import (
 )
 
 type FakeLocalParticipant struct {
-	AddICECandidateStub        func(webrtc.ICECandidateInit, livekit.SignalTarget) error
+	AddICECandidateStub        func(webrtc.ICECandidateInit, livekit.SignalTarget)
 	addICECandidateMutex       sync.RWMutex
 	addICECandidateArgsForCall []struct {
 		arg1 webrtc.ICECandidateInit
 		arg2 livekit.SignalTarget
-	}
-	addICECandidateReturns struct {
-		result1 error
-	}
-	addICECandidateReturnsOnCall map[int]struct {
-		result1 error
 	}
 	AddNegotiationPendingStub        func(livekit.ParticipantID)
 	addNegotiationPendingMutex       sync.RWMutex
@@ -293,27 +287,15 @@ type FakeLocalParticipant struct {
 	getSubscribedTracksReturnsOnCall map[int]struct {
 		result1 []types.SubscribedTrack
 	}
-	HandleAnswerStub        func(webrtc.SessionDescription) error
+	HandleAnswerStub        func(webrtc.SessionDescription)
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 	}
-	handleAnswerReturns struct {
-		result1 error
-	}
-	handleAnswerReturnsOnCall map[int]struct {
-		result1 error
-	}
-	HandleOfferStub        func(webrtc.SessionDescription) error
+	HandleOfferStub        func(webrtc.SessionDescription)
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
-	}
-	handleOfferReturns struct {
-		result1 error
-	}
-	handleOfferReturnsOnCall map[int]struct {
-		result1 error
 	}
 	HiddenStub        func() bool
 	hiddenMutex       sync.RWMutex
@@ -325,16 +307,10 @@ type FakeLocalParticipant struct {
 	hiddenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ICERestartStub        func(*types.IceConfig) error
+	ICERestartStub        func(*types.IceConfig)
 	iCERestartMutex       sync.RWMutex
 	iCERestartArgsForCall []struct {
 		arg1 *types.IceConfig
-	}
-	iCERestartReturns struct {
-		result1 error
-	}
-	iCERestartReturnsOnCall map[int]struct {
-		result1 error
 	}
 	IDStub        func() livekit.ParticipantID
 	iDMutex       sync.RWMutex
@@ -758,24 +734,18 @@ type FakeLocalParticipant struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeLocalParticipant) AddICECandidate(arg1 webrtc.ICECandidateInit, arg2 livekit.SignalTarget) error {
+func (fake *FakeLocalParticipant) AddICECandidate(arg1 webrtc.ICECandidateInit, arg2 livekit.SignalTarget) {
 	fake.addICECandidateMutex.Lock()
-	ret, specificReturn := fake.addICECandidateReturnsOnCall[len(fake.addICECandidateArgsForCall)]
 	fake.addICECandidateArgsForCall = append(fake.addICECandidateArgsForCall, struct {
 		arg1 webrtc.ICECandidateInit
 		arg2 livekit.SignalTarget
 	}{arg1, arg2})
 	stub := fake.AddICECandidateStub
-	fakeReturns := fake.addICECandidateReturns
 	fake.recordInvocation("AddICECandidate", []interface{}{arg1, arg2})
 	fake.addICECandidateMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		fake.AddICECandidateStub(arg1, arg2)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) AddICECandidateCallCount() int {
@@ -784,7 +754,7 @@ func (fake *FakeLocalParticipant) AddICECandidateCallCount() int {
 	return len(fake.addICECandidateArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) AddICECandidateCalls(stub func(webrtc.ICECandidateInit, livekit.SignalTarget) error) {
+func (fake *FakeLocalParticipant) AddICECandidateCalls(stub func(webrtc.ICECandidateInit, livekit.SignalTarget)) {
 	fake.addICECandidateMutex.Lock()
 	defer fake.addICECandidateMutex.Unlock()
 	fake.AddICECandidateStub = stub
@@ -795,29 +765,6 @@ func (fake *FakeLocalParticipant) AddICECandidateArgsForCall(i int) (webrtc.ICEC
 	defer fake.addICECandidateMutex.RUnlock()
 	argsForCall := fake.addICECandidateArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeLocalParticipant) AddICECandidateReturns(result1 error) {
-	fake.addICECandidateMutex.Lock()
-	defer fake.addICECandidateMutex.Unlock()
-	fake.AddICECandidateStub = nil
-	fake.addICECandidateReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) AddICECandidateReturnsOnCall(i int, result1 error) {
-	fake.addICECandidateMutex.Lock()
-	defer fake.addICECandidateMutex.Unlock()
-	fake.AddICECandidateStub = nil
-	if fake.addICECandidateReturnsOnCall == nil {
-		fake.addICECandidateReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.addICECandidateReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) AddNegotiationPending(arg1 livekit.ParticipantID) {
@@ -2204,23 +2151,17 @@ func (fake *FakeLocalParticipant) GetSubscribedTracksReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription) {
 	fake.handleAnswerMutex.Lock()
-	ret, specificReturn := fake.handleAnswerReturnsOnCall[len(fake.handleAnswerArgsForCall)]
 	fake.handleAnswerArgsForCall = append(fake.handleAnswerArgsForCall, struct {
 		arg1 webrtc.SessionDescription
 	}{arg1})
 	stub := fake.HandleAnswerStub
-	fakeReturns := fake.handleAnswerReturns
 	fake.recordInvocation("HandleAnswer", []interface{}{arg1})
 	fake.handleAnswerMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		fake.HandleAnswerStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) HandleAnswerCallCount() int {
@@ -2229,7 +2170,7 @@ func (fake *FakeLocalParticipant) HandleAnswerCallCount() int {
 	return len(fake.handleAnswerArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription)) {
 	fake.handleAnswerMutex.Lock()
 	defer fake.handleAnswerMutex.Unlock()
 	fake.HandleAnswerStub = stub
@@ -2242,46 +2183,17 @@ func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionD
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerReturns(result1 error) {
-	fake.handleAnswerMutex.Lock()
-	defer fake.handleAnswerMutex.Unlock()
-	fake.HandleAnswerStub = nil
-	fake.handleAnswerReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) HandleAnswerReturnsOnCall(i int, result1 error) {
-	fake.handleAnswerMutex.Lock()
-	defer fake.handleAnswerMutex.Unlock()
-	fake.HandleAnswerStub = nil
-	if fake.handleAnswerReturnsOnCall == nil {
-		fake.handleAnswerReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.handleAnswerReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) {
 	fake.handleOfferMutex.Lock()
-	ret, specificReturn := fake.handleOfferReturnsOnCall[len(fake.handleOfferArgsForCall)]
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
 		arg1 webrtc.SessionDescription
 	}{arg1})
 	stub := fake.HandleOfferStub
-	fakeReturns := fake.handleOfferReturns
 	fake.recordInvocation("HandleOffer", []interface{}{arg1})
 	fake.handleOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		fake.HandleOfferStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
@@ -2290,7 +2202,7 @@ func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
 	return len(fake.handleOfferArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription)) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = stub
@@ -2301,29 +2213,6 @@ func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) webrtc.SessionDe
 	defer fake.handleOfferMutex.RUnlock()
 	argsForCall := fake.handleOfferArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) HandleOfferReturns(result1 error) {
-	fake.handleOfferMutex.Lock()
-	defer fake.handleOfferMutex.Unlock()
-	fake.HandleOfferStub = nil
-	fake.handleOfferReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) HandleOfferReturnsOnCall(i int, result1 error) {
-	fake.handleOfferMutex.Lock()
-	defer fake.handleOfferMutex.Unlock()
-	fake.HandleOfferStub = nil
-	if fake.handleOfferReturnsOnCall == nil {
-		fake.handleOfferReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.handleOfferReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) Hidden() bool {
@@ -2379,23 +2268,17 @@ func (fake *FakeLocalParticipant) HiddenReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) ICERestart(arg1 *types.IceConfig) error {
+func (fake *FakeLocalParticipant) ICERestart(arg1 *types.IceConfig) {
 	fake.iCERestartMutex.Lock()
-	ret, specificReturn := fake.iCERestartReturnsOnCall[len(fake.iCERestartArgsForCall)]
 	fake.iCERestartArgsForCall = append(fake.iCERestartArgsForCall, struct {
 		arg1 *types.IceConfig
 	}{arg1})
 	stub := fake.ICERestartStub
-	fakeReturns := fake.iCERestartReturns
 	fake.recordInvocation("ICERestart", []interface{}{arg1})
 	fake.iCERestartMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		fake.ICERestartStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) ICERestartCallCount() int {
@@ -2404,7 +2287,7 @@ func (fake *FakeLocalParticipant) ICERestartCallCount() int {
 	return len(fake.iCERestartArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*types.IceConfig) error) {
+func (fake *FakeLocalParticipant) ICERestartCalls(stub func(*types.IceConfig)) {
 	fake.iCERestartMutex.Lock()
 	defer fake.iCERestartMutex.Unlock()
 	fake.ICERestartStub = stub
@@ -2415,29 +2298,6 @@ func (fake *FakeLocalParticipant) ICERestartArgsForCall(i int) *types.IceConfig 
 	defer fake.iCERestartMutex.RUnlock()
 	argsForCall := fake.iCERestartArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) ICERestartReturns(result1 error) {
-	fake.iCERestartMutex.Lock()
-	defer fake.iCERestartMutex.Unlock()
-	fake.ICERestartStub = nil
-	fake.iCERestartReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) ICERestartReturnsOnCall(i int, result1 error) {
-	fake.iCERestartMutex.Lock()
-	defer fake.iCERestartMutex.Unlock()
-	fake.ICERestartStub = nil
-	if fake.iCERestartReturnsOnCall == nil {
-		fake.iCERestartReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.iCERestartReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) ID() livekit.ParticipantID {
