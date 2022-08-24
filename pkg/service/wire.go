@@ -47,6 +47,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewEgressService,
 		ingress.NewRedisRPC,
 		getIngressStore,
+		getIngressConfig,
+		getIngressRPCClient,
+		getIngressRPCServer,
 		NewIngressService,
 		NewRoomAllocator,
 		NewRoomService,
@@ -186,6 +189,18 @@ func getIngressStore(s ObjectStore) IngressStore {
 	default:
 		return nil
 	}
+}
+
+func getIngressConfig(conf *config.Config) *config.IngressConfig {
+	return &conf.Ingress
+}
+
+func getIngressRPCClient(rpc ingress.RPC) ingress.RPCClient {
+	return rpc
+}
+
+func getIngressRPCServer(rpc ingress.RPC) ingress.RPCServer {
+	return rpc
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
