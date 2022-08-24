@@ -39,11 +39,16 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
 
+	var negotiationState atomic.Value
+	transportA.OnNegotiationStateChanged(func(state NegotiationState) {
+		negotiationState.Store(state)
+	})
+
 	// offer again, but missed
 	var offerReceived atomic.Bool
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
 		require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
-		require.Equal(t, negotiationStateRemote, transportA.negotiationState)
+		require.Equal(t, NegotiationStateRemote, negotiationState.Load().(NegotiationState))
 		offerReceived.Store(true)
 		return nil
 	})
@@ -82,24 +87,29 @@ func TestNegotiationTiming(t *testing.T) {
 		return nil
 	})
 
+	var negotiationState atomic.Value
+	transportA.OnNegotiationStateChanged(func(state NegotiationState) {
+		negotiationState.Store(state)
+	})
+
 	// initial offer
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationStateRemote
-	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateStateClient")
+		return negotiationState.Load().(NegotiationState) == NegotiationStateRemote
+	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRemote")
 
 	// second try, should've flipped transport status to retry
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationStateRetry
-	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
+		return negotiationState.Load().(NegotiationState) == NegotiationStateRetry
+	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	// third try, should've stayed at retry
 	transportA.Negotiate(true)
 	time.Sleep(100 * time.Millisecond) // some time to process the negotiate event
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationStateRetry
-	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
+		return negotiationState.Load().(NegotiationState) == NegotiationStateRetry
+	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	time.Sleep(5 * time.Millisecond)
 	actualOffer, ok := offer.Load().(*webrtc.SessionDescription)
@@ -119,7 +129,7 @@ func TestNegotiationTiming(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
 	// it should still be negotiating again
-	require.Equal(t, negotiationStateRemote, transportA.negotiationState)
+	require.Equal(t, NegotiationStateRemote, negotiationState.Load().(NegotiationState))
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
 	require.False(t, offer2 == actualOffer)

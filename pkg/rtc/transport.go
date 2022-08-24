@@ -103,23 +103,23 @@ func (e event) String() string {
 
 // -------------------------------------------------------
 
-type negotiationState int
+type NegotiationState int
 
 const (
-	negotiationStateNone negotiationState = iota
+	NegotiationStateNone NegotiationState = iota
 	// waiting for remote description
-	negotiationStateRemote
+	NegotiationStateRemote
 	// need to Negotiate again
-	negotiationStateRetry
+	NegotiationStateRetry
 )
 
-func (n negotiationState) String() string {
+func (n NegotiationState) String() string {
 	switch n {
-	case negotiationStateNone:
+	case NegotiationStateNone:
 		return "NONE"
-	case negotiationStateRemote:
+	case NegotiationStateRemote:
 		return "WAITING_FOR_REMOTE"
-	case negotiationStateRetry:
+	case NegotiationStateRetry:
 		return "RETRY"
 	default:
 		return fmt.Sprintf("%d", int(n))
@@ -155,13 +155,14 @@ type PCTransport struct {
 	debouncedNegotiate func(func())
 	debouncePending    bool
 
-	onICECandidate      func(c *webrtc.ICECandidate) error
-	onOffer             func(offer webrtc.SessionDescription) error
-	onAnswer            func(answer webrtc.SessionDescription) error
-	onInitialConnected  func()
-	onFailed            func(isShortLived bool)
-	onGetDTX            func() bool
-	onNegotiationFailed func()
+	onICECandidate            func(c *webrtc.ICECandidate) error
+	onOffer                   func(offer webrtc.SessionDescription) error
+	onAnswer                  func(answer webrtc.SessionDescription) error
+	onInitialConnected        func()
+	onFailed                  func(isShortLived bool)
+	onGetDTX                  func() bool
+	onNegotiationStateChanged func(state NegotiationState)
+	onNegotiationFailed       func()
 
 	// stream allocator for subscriber PC
 	streamAllocator *sfu.StreamAllocator
@@ -181,7 +182,7 @@ type PCTransport struct {
 	negotiationPending        map[livekit.ParticipantID]bool
 	restartAfterGathering     bool
 	restartAtNextOffer        bool
-	negotiationState          negotiationState
+	negotiationState          NegotiationState
 	negotiateCounter          atomic.Int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
@@ -317,7 +318,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	t := &PCTransport{
 		params:             params,
 		debouncedNegotiate: debounce.New(negotiationFrequency),
-		negotiationState:   negotiationStateNone,
+		negotiationState:   NegotiationStateNone,
 		negotiationPending: make(map[livekit.ParticipantID]bool),
 		eventCh:            make(chan event, 50),
 	}
@@ -849,6 +850,19 @@ func (t *PCTransport) getOnAnswer() func(sd webrtc.SessionDescription) error {
 	return t.onAnswer
 }
 
+func (t *PCTransport) OnNegotiationStateChanged(f func(state NegotiationState)) {
+	t.lock.Lock()
+	t.onNegotiationStateChanged = f
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) getOnNegotiationStateChanged() func(state NegotiationState) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.onNegotiationStateChanged
+}
+
 func (t *PCTransport) OnNegotiationFailed(f func()) {
 	t.lock.Lock()
 	t.onNegotiationFailed = f
@@ -1339,6 +1353,13 @@ func (t *PCTransport) handleLogICECandidates(e *event) error {
 	return nil
 }
 
+func (t *PCTransport) setNegotiationState(state NegotiationState) {
+	t.negotiationState = state
+	if onNegotiationStateChanged := t.getOnNegotiationStateChanged(); onNegotiationStateChanged != nil {
+		onNegotiationStateChanged(t.negotiationState)
+	}
+}
+
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP bool) webrtc.SessionDescription {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
@@ -1393,7 +1414,7 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimeout, func() {
 		t.clearSignalStateCheckTimer()
 
-		failed := t.negotiationState != negotiationStateNone
+		failed := t.negotiationState != NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed {
 			if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
@@ -1410,11 +1431,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
-	if t.negotiationState == negotiationStateRemote {
+	if t.negotiationState == NegotiationStateRemote {
 		t.params.Logger.Infow("skipping negotiation, trying again later")
-		t.negotiationState = negotiationStateRetry
+		t.setNegotiationState(NegotiationStateRetry)
 		return nil
-	} else if t.negotiationState == negotiationStateRetry {
+	} else if t.negotiationState == NegotiationStateRetry {
 		// already set to retry, we can safely skip this attempt
 		return nil
 	}
@@ -1473,8 +1494,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
 	}
 
-	// indicate waiting for client
-	t.negotiationState = negotiationStateRemote
+	// indicate waiting for remote
+	t.setNegotiationState(NegotiationStateRemote)
+
 	t.negotiationPending = make(map[livekit.ParticipantID]bool)
 
 	t.setupSignalStateCheckTimer()
@@ -1632,13 +1654,14 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) 
 
 	t.clearSignalStateCheckTimer()
 
-	if t.negotiationState == negotiationStateRetry {
-		t.negotiationState = negotiationStateNone
+	if t.negotiationState == NegotiationStateRetry {
+		t.setNegotiationState(NegotiationStateNone)
+
 		t.params.Logger.Debugw("re-negotiate after receiving answer")
 		return t.createAndSendOffer(nil)
 	}
 
-	t.negotiationState = negotiationStateNone
+	t.setNegotiationState(NegotiationStateNone)
 	return nil
 }
 
@@ -1655,7 +1678,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		return nil
 	}
 
-	if t.negotiationState == negotiationStateNone {
+	if t.negotiationState == NegotiationStateNone {
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
@@ -1669,7 +1692,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 			return ErrIceRestartWithoutLocalSDP
 		} else {
 			t.params.Logger.Infow("deferring ice restart to next offer")
-			t.negotiationState = negotiationStateRetry
+			t.setNegotiationState(NegotiationStateRetry)
 			t.restartAtNextOffer = true
 			if onOffer := t.getOnOffer(); onOffer != nil {
 				err := onOffer(*offer)
@@ -1689,7 +1712,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 			return errors.Wrap(err, "set remote description failed")
 		} else {
-			t.negotiationState = negotiationStateNone
+			t.setNegotiationState(NegotiationStateNone)
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
