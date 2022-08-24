@@ -78,7 +78,7 @@ func BuildLinux() error {
 	if err := os.MkdirAll("bin", 0755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", "../../bin/livekit-server-amd64")
+	cmd := exec.Command("go", "build", "-o", "../../bin/livekit-server-amd64")
 	cmd.Env = []string{
 		"GOOS=linux",
 		"GOARCH=amd64",

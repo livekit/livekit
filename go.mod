@@ -16,7 +16,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/protocol v1.0.2-0.20220819200418-cd39f4ca4d10
+	github.com/livekit/protocol v1.0.2-0.20220824112019-a1c2809ddc67
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.2
 	github.com/magefile/mage v1.13.0
@@ -96,3 +96,5 @@ require (
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/livekit/protocol => ../protocol

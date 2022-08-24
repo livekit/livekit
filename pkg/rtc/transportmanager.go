@@ -47,6 +47,7 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
+	iceConfig                    types.IceConfig
 
 	onPublisherGetDTX func() bool
 
@@ -105,7 +106,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 	})
 	t.publisher.OnFailed(func(isShortLived bool) {
-		t.handleConnectionFailed(isShortLived)
 		if t.onAnyTransportFailed != nil {
 			t.onAnyTransportFailed()
 		}
@@ -460,17 +460,14 @@ func (t *TransportManager) OnICEConfigChanged(f func(iceConfig types.IceConfig))
 
 func (t *TransportManager) SetICEConfig(iceConfig types.IceConfig) {
 	t.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
-	if iceConfig.PreferPubTcp {
-		t.publisher.SetPreferTCP(true)
-	}
 
-	if iceConfig.PreferSubTcp {
-		t.subscriber.SetPreferTCP(true)
-	}
+	t.publisher.SetPreferTCP(iceConfig.PreferPub == types.PreferTcp)
+	t.subscriber.SetPreferTCP(iceConfig.PreferSub == types.PreferTcp)
 
-	t.lock.RLock()
+	t.lock.Lock()
 	onICEConfigChanged := t.onICEConfigChanged
-	t.lock.RUnlock()
+	t.iceConfig = iceConfig
+	t.lock.Unlock()
 
 	if onICEConfigChanged != nil {
 		onICEConfigChanged(iceConfig)
@@ -494,14 +491,33 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	if !t.params.AllowTCPFallback || !isShortLived {
 		return
 	}
+	t.lock.RLock()
+	iceConfig := t.iceConfig
+	t.lock.RUnlock()
 
-	// irrespective of which one fails, force TCP on both as the other one might
+	var nextConfig types.IceConfig
+	// irrespective of which one fails, force prefer candidate on both as the other one might
 	// fail at a different time and cause another disruption
-	t.params.Logger.Infow("restricting transport to TCP on both peer connections")
-	t.SetICEConfig(types.IceConfig{
-		PreferPubTcp: true,
-		PreferSubTcp: true,
-	})
+	switch iceConfig.PreferSub {
+	case types.PreferNone:
+		t.params.Logger.Infow("restricting transport to TCP on both peer connections")
+		nextConfig = types.IceConfig{
+			PreferPub: types.PreferTcp,
+			PreferSub: types.PreferTcp,
+		}
+
+	case types.PreferTcp:
+		t.params.Logger.Infow("prefer transport to TLS on both peer connections")
+		nextConfig = types.IceConfig{
+			PreferPub: types.PreferTls,
+			PreferSub: types.PreferTls,
+		}
+
+	default:
+		return
+	}
+
+	t.SetICEConfig(nextConfig)
 }
 
 func (t *TransportManager) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {

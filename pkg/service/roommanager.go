@@ -292,13 +292,13 @@ func (r *RoomManager) StartSession(
 	if err != nil {
 		return err
 	}
-	r.setIceConfig(participant)
+	iceConfig := r.setIceConfig(participant)
 
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferSub == types.PreferTls)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -577,9 +577,14 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	}
 }
 
-func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
+func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
+
+	if tlsOnly && r.config.TURN.TLSPort == 0 {
+		logger.Warnw("tls only enabled but no turn tls config", nil)
+		tlsOnly = false
+	}
 
 	hasSTUN := false
 	if r.config.TURN.Enabled {
@@ -590,7 +595,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
 			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
 		}
 		if r.config.TURN.TLSPort > 0 {
-			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
+			urls = append(urls, fmt.Sprintf("turns:%s:%d?transport=tcp", r.config.TURN.Domain, r.config.TURN.TLSPort))
 		}
 		if len(urls) > 0 {
 			iceServers = append(iceServers, &livekit.ICEServer{
@@ -654,17 +659,18 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(participant types.LocalParticipant) {
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) types.IceConfig {
 	r.lock.Lock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
 		r.lock.Unlock()
-		return
+		return types.IceConfig{}
 	}
 	r.lock.Unlock()
 
 	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
+	return iceConfigCacheEntry.iceConfig
 }
 
 // ------------------------------------

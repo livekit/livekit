@@ -639,8 +639,8 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
 		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
 		if err := participant.ICERestart(&types.IceConfig{
-			PreferSubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
-			PreferPubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
+			PreferSub: types.PreferCandidateType(scenario.SwitchCandidateProtocol),
+			PreferPub: types.PreferCandidateType(scenario.SwitchCandidateProtocol),
 		}); err != nil {
 			return err
 		}

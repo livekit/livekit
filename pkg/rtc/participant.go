@@ -234,6 +234,8 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 }
 
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
 	return p.params.ClientConf
 }
 
@@ -1046,9 +1048,15 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	}
 
 	tm.OnICEConfigChanged(func(iceConfig types.IceConfig) {
-		p.lock.RLock()
+		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
-		p.lock.RUnlock()
+		if iceConfig.PreferSub == types.PreferTls {
+			if p.params.ClientConf == nil {
+				p.params.ClientConf = &livekit.ClientConfiguration{}
+			}
+			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+		}
+		p.lock.Unlock()
 
 		if onICEConfigChanged != nil {
 			onICEConfigChanged(p, iceConfig)
