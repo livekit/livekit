@@ -1178,7 +1178,7 @@ func (t *PCTransport) postEvent(event event) {
 	select {
 	case t.eventCh <- event:
 	default:
-		t.params.Logger.Warnw("event queue full", nil)
+		t.params.Logger.Warnw("event queue full", nil, "event", event.String())
 	}
 	t.eventChMu.RUnlock()
 }
