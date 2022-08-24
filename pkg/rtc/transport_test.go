@@ -60,6 +60,9 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	connectTransports(t, transportA, transportB, true, 1, 1)
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
 	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+
+	transportA.Close()
+	transportB.Close()
 }
 
 func TestNegotiationTiming(t *testing.T) {
@@ -133,6 +136,9 @@ func TestNegotiationTiming(t *testing.T) {
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
 	require.False(t, offer2 == actualOffer)
+
+	transportA.Close()
+	transportB.Close()
 }
 
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
@@ -198,6 +204,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
+
 	transportA.Close()
 	transportB.Close()
 }
@@ -270,6 +277,7 @@ func TestFirstAnwserMissedDuringICERestart(t *testing.T) {
 			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
+
 	transportA.Close()
 	transportB.Close()
 }
@@ -301,6 +309,8 @@ func TestNegotiationFailed(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return failed.Load() == 1
 	}, negotiationFailedTimeout+time.Second, 10*time.Millisecond, "negotiation failed")
+
+	transportA.Close()
 }
 
 func TestFilteringCandidates(t *testing.T) {
@@ -420,6 +430,8 @@ func TestFilteringCandidates(t *testing.T) {
 	udp, tcp = getNumTransportTypeCandidates(parsed)
 	require.Zero(t, udp)
 	require.Equal(t, 2, tcp)
+
+	transport.Close()
 }
 
 func handleICEExchange(t *testing.T, a, b *PCTransport) {

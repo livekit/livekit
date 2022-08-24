@@ -46,11 +46,10 @@ type UpTrackManager struct {
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
 	return &UpTrackManager{
-		params:                        params,
-		publishedTracks:               make(map[livekit.TrackID]types.MediaTrack),
-		subscriptionPermissionVersion: utils.NewTimedVersion(time.Now(), 0),
-		pendingSubscriptions:          make(map[livekit.TrackID][]livekit.ParticipantIdentity),
-		opsQueue:                      utils.NewOpsQueue(params.Logger, "utm", 20),
+		params:               params,
+		publishedTracks:      make(map[livekit.TrackID]types.MediaTrack),
+		pendingSubscriptions: make(map[livekit.TrackID][]livekit.ParticipantIdentity),
+		opsQueue:             utils.NewOpsQueue(params.Logger, "utm", 20),
 	}
 }
 
@@ -206,27 +205,35 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 ) error {
 	u.lock.Lock()
 	if timedVersion != nil {
-		tv := utils.NewTimedVersionFromProto(timedVersion)
-		// ignore older version
-		if !tv.After(u.subscriptionPermissionVersion) {
-			perms := ""
-			if u.subscriptionPermission != nil {
-				perms = u.subscriptionPermission.String()
+		if u.subscriptionPermissionVersion != nil {
+			tv := utils.NewTimedVersionFromProto(timedVersion)
+			// ignore older version
+			if !tv.After(u.subscriptionPermissionVersion) {
+				perms := ""
+				if u.subscriptionPermission != nil {
+					perms = u.subscriptionPermission.String()
+				}
+				u.params.Logger.Infow(
+					"skipping older subscription permission version",
+					"existingValue", perms,
+					"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
+					"requestingValue", subscriptionPermission.String(),
+					"requestingVersion", timedVersion.String(),
+				)
+				u.lock.Unlock()
+				return nil
 			}
-			u.params.Logger.Infow(
-				"skipping older subscription permission version",
-				"existingValue", perms,
-				"existingVersion", u.subscriptionPermissionVersion.ToProto().String(),
-				"requestingValue", subscriptionPermission.String(),
-				"requestingVersion", timedVersion.String(),
-			)
-			u.lock.Unlock()
-			return nil
+			u.subscriptionPermissionVersion.Update(time.UnixMicro(timedVersion.UnixMicro))
+		} else {
+			u.subscriptionPermissionVersion = utils.NewTimedVersionFromProto(timedVersion)
 		}
-		u.subscriptionPermissionVersion.Update(time.UnixMicro(timedVersion.UnixMicro))
 	} else {
-		// ignore older version
-		u.subscriptionPermissionVersion.Update(time.Now())
+		// use current time as the new/updated version
+		if u.subscriptionPermissionVersion == nil {
+			u.subscriptionPermissionVersion = utils.NewTimedVersion(time.Now(), 0)
+		} else {
+			u.subscriptionPermissionVersion.Update(time.Now())
+		}
 	}
 
 	// store as is for use when migrating
@@ -263,6 +270,10 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 func (u *UpTrackManager) SubscriptionPermission() (*livekit.SubscriptionPermission, *livekit.TimedVersion) {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
+
+	if u.subscriptionPermissionVersion == nil {
+		return nil, nil
+	}
 
 	return u.subscriptionPermission, u.subscriptionPermissionVersion.ToProto()
 }
