@@ -43,7 +43,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	var offerReceived atomic.Bool
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
 		require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
-		require.Equal(t, negotiationStateClient, transportA.negotiationState)
+		require.Equal(t, negotiationStateRemote, transportA.negotiationState)
 		offerReceived.Store(true)
 		return nil
 	})
@@ -85,20 +85,20 @@ func TestNegotiationTiming(t *testing.T) {
 	// initial offer
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationStateClient
+		return transportA.negotiationState == negotiationStateRemote
 	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateStateClient")
 
 	// second try, should've flipped transport status to retry
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationRetry
+		return transportA.negotiationState == negotiationStateRetry
 	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
 
 	// third try, should've stayed at retry
 	transportA.Negotiate(true)
 	time.Sleep(100 * time.Millisecond) // some time to process the negotiate event
 	require.Eventually(t, func() bool {
-		return transportA.negotiationState == negotiationRetry
+		return transportA.negotiationState == negotiationStateRetry
 	}, 10*time.Second, time.Millisecond*10, "negotiation state does not match negotiateRetry")
 
 	time.Sleep(5 * time.Millisecond)
@@ -119,7 +119,7 @@ func TestNegotiationTiming(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
 	// it should still be negotiating again
-	require.Equal(t, negotiationStateClient, transportA.negotiationState)
+	require.Equal(t, negotiationStateRemote, transportA.negotiationState)
 	offer2, ok := offer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
 	require.False(t, offer2 == actualOffer)
