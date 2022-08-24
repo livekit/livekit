@@ -473,8 +473,6 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 		} else {
 			t.params.Logger.Infow("selected ICE candidate pair", "pair", pair)
 		}
-	case webrtc.ICEConnectionStateFailed:
-		t.handleConnectionFailed()
 	}
 }
 
