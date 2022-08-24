@@ -615,7 +615,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		case <-ctx.Done():
 			return fmt.Errorf("could not connect publisher after timeout")
 		case <-time.After(10 * time.Millisecond):
-			if c.publisher.HasEverConnected() {
+			if c.publisherFullyEstablished.Load() {
 				return nil
 			}
 		}
