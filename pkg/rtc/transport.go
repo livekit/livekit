@@ -1237,10 +1237,15 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 		return nil
 	}
 
-	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-	err := t.setRemoteDescription(*t.pendingRestartIceOffer)
+	offer := *t.pendingRestartIceOffer
 	t.pendingRestartIceOffer = nil
-	return err
+
+	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+	if err := t.setRemoteDescription(offer); err != nil {
+		return err
+	}
+
+	return t.createAndSendAnswer()
 }
 
 func (t *PCTransport) localDescriptionSent() error {
