@@ -42,7 +42,6 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	// offer again, but missed
 	var offerReceived atomic.Bool
 	transportA.OnOffer(func(sd webrtc.SessionDescription) error {
-		t.Logf("got offer 1") // REMOVE
 		require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
 		require.Equal(t, negotiationStateClient, transportA.negotiationState)
 		offerReceived.Store(true)
@@ -442,7 +441,6 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, isICERestar
 	})
 
 	offerer.OnOffer(func(offer webrtc.SessionDescription) error {
-		t.Logf("got offer 2") // REMOVE
 		offerCount.Inc()
 		answerer.HandleRemoteDescription(offer)
 		return nil

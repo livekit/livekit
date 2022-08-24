@@ -536,10 +536,6 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
 	})
 }
 
-func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
-	return t.pc
-}
-
 func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	sender, err = t.pc.AddTrack(trackLocal)
 	if err != nil {
@@ -776,7 +772,7 @@ func (t *PCTransport) OnFailed(f func(isShortLived bool)) {
 
 func (t *PCTransport) getOnFailed() func(isShortLived bool) {
 	t.lock.RLock()
-	defer t.lock.Unlock()
+	defer t.lock.RUnlock()
 
 	return t.onFailed
 }
@@ -816,7 +812,6 @@ func (t *PCTransport) OnOffer(f func(sd webrtc.SessionDescription) error) {
 	t.lock.Lock()
 	t.onOffer = f
 	t.lock.Unlock()
-	t.params.Logger.Infow("set OnOffer", "target", t.params.Target) // REMOVE
 }
 
 func (t *PCTransport) getOnOffer() func(sd webrtc.SessionDescription) error {
@@ -1161,7 +1156,6 @@ func (t *PCTransport) postEvent(event event) {
 
 func (t *PCTransport) processEvents() {
 	for event := range t.eventCh {
-		t.params.Logger.Infow("processing event", "event", event.String(), "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		err := t.handleEvent(&event)
 		if err != nil {
 			t.params.Logger.Errorw("error handling event", err, "event", event.String())
@@ -1212,7 +1206,6 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
-	t.params.Logger.Infow("casa from ice gathering complete", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 }
 
@@ -1305,7 +1298,6 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 	}
 
 	if t.pc.RemoteDescription() == nil {
-		t.params.Logger.Infow("caching remote candidate", "target", t.params.Target, "ss", t.pc.SignalingState(), "candidate", c.Candidate) // REMOVE
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
 		return nil
 	}
@@ -1405,7 +1397,6 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
 	if t.negotiationState == negotiationStateClient {
 		t.params.Logger.Infow("skipping negotiation, trying again later")
-		t.params.Logger.Infow("skipping negotiation, trying again later", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		t.negotiationState = negotiationRetry
 		return nil
 	} else if t.negotiationState == negotiationRetry {
@@ -1454,8 +1445,6 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
-	} else {
-		t.params.Logger.Infow("set local description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	//
@@ -1489,7 +1478,6 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 }
 
 func (t *PCTransport) handleSendOffer(e *event) error {
-	t.params.Logger.Infow("casa from send offer", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	return t.createAndSendOffer(nil)
 }
 
@@ -1536,8 +1524,6 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		}
 		prometheus.ServiceOperationCounter.WithLabelValues(sdpType, "error", "remote_description").Add(1)
 		return errors.Wrap(err, "setting remote description failed")
-	} else {
-		t.params.Logger.Infow("set remote description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
@@ -1571,8 +1557,6 @@ func (t *PCTransport) createAndSendAnswer() error {
 	if err = t.pc.SetLocalDescription(answer); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
 		return errors.Wrap(err, "setting local description failed")
-	} else {
-		t.params.Logger.Infow("set local description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 	}
 
 	//
@@ -1657,7 +1641,6 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	}
 
 	if t.negotiationState == negotiationStateNone {
-		t.params.Logger.Infow("casa from ice restart", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
@@ -1689,11 +1672,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
 		if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
-			t.params.Logger.Infow("recovered set remote description failed", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 			return errors.Wrap(err, "set remote description failed")
 		} else {
-			t.params.Logger.Infow("recovered set remote description", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
-			t.params.Logger.Infow("casa from recovering ice restart", "target", t.params.Target, "ss", t.pc.SignalingState()) // REMOVE
 			t.negotiationState = negotiationStateNone
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
