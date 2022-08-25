@@ -19,8 +19,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              &WebRTCConfig{},
+		IsOfferer:           true,
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	require.NoError(t, err)
 
 	paramsB := params
-	paramsB.Target = livekit.SignalTarget_PUBLISHER
+	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
@@ -69,8 +69,8 @@ func TestNegotiationTiming(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              &WebRTCConfig{},
+		IsOfferer:           true,
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestNegotiationTiming(t *testing.T) {
 	require.NoError(t, err)
 
 	paramsB := params
-	paramsB.Target = livekit.SignalTarget_PUBLISHER
+	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(params)
 	require.NoError(t, err)
 
@@ -147,8 +147,8 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              &WebRTCConfig{},
+		IsOfferer:           true,
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	require.NoError(t, err)
 
 	paramsB := params
-	paramsB.Target = livekit.SignalTarget_PUBLISHER
+	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
@@ -215,8 +215,8 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              &WebRTCConfig{},
+		IsOfferer:           true,
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	require.NoError(t, err)
 
 	paramsB := params
-	paramsB.Target = livekit.SignalTarget_PUBLISHER
+	paramsB.IsOfferer = false
 	transportB, err := NewPCTransport(paramsB)
 	require.NoError(t, err)
 
@@ -288,8 +288,8 @@ func TestNegotiationFailed(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_SUBSCRIBER,
 		Config:              &WebRTCConfig{},
+		IsOfferer:           true,
 	}
 	transportA, err := NewPCTransport(params)
 	require.NoError(t, err)
@@ -319,7 +319,6 @@ func TestFilteringCandidates(t *testing.T) {
 	params := TransportParams{
 		ParticipantID:       "id",
 		ParticipantIdentity: "identity",
-		Target:              livekit.SignalTarget_PUBLISHER,
 		Config:              &WebRTCConfig{},
 		EnabledCodecs: []*livekit.Codec{
 			{Mime: webrtc.MimeTypeOpus},

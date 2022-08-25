@@ -141,17 +141,19 @@ func NewRTCClient(conn *websocket.Conn) (*RTCClient, error) {
 	// Same applies for subscriber transport also
 	//
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
-		Target:        livekit.SignalTarget_SUBSCRIBER,
-		Config:        &conf,
-		EnabledCodecs: codecs,
+		Config:          &conf,
+		DirectionConfig: conf.Subscriber,
+		EnabledCodecs:   codecs,
+		IsOfferer:       true,
+		IsSendSide:      true,
 	})
 	if err != nil {
 		return nil, err
 	}
 	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
-		Target:        livekit.SignalTarget_PUBLISHER,
-		Config:        &conf,
-		EnabledCodecs: codecs,
+		Config:          &conf,
+		DirectionConfig: conf.Publisher,
+		EnabledCodecs:   codecs,
 	})
 	if err != nil {
 		return nil, err

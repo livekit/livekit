@@ -80,8 +80,8 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ParticipantID:           params.SID,
 		ParticipantIdentity:     params.Identity,
 		ProtocolVersion:         params.ProtocolVersion,
-		Target:                  livekit.SignalTarget_PUBLISHER,
 		Config:                  params.Config,
+		DirectionConfig:         params.Config.Publisher,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
 		EnabledCodecs:           enabledCodecs,
@@ -111,13 +111,15 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ParticipantID:           params.SID,
 		ParticipantIdentity:     params.Identity,
 		ProtocolVersion:         params.ProtocolVersion,
-		Target:                  livekit.SignalTarget_SUBSCRIBER,
 		Config:                  params.Config,
+		DirectionConfig:         params.Config.Subscriber,
 		CongestionControlConfig: params.CongestionControlConfig,
 		Telemetry:               params.Telemetry,
 		EnabledCodecs:           enabledCodecs,
 		Logger:                  LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER),
 		ClientInfo:              params.ClientInfo,
+		IsOfferer:               true,
+		IsSendSide:              true,
 	})
 	if err != nil {
 		return nil, err

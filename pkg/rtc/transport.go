@@ -199,24 +199,20 @@ type TransportParams struct {
 	ParticipantID           livekit.ParticipantID
 	ParticipantIdentity     livekit.ParticipantIdentity
 	ProtocolVersion         types.ProtocolVersion
-	Target                  livekit.SignalTarget
 	Config                  *WebRTCConfig
+	DirectionConfig         DirectionConfig
 	CongestionControlConfig config.CongestionControlConfig
 	Telemetry               telemetry.TelemetryService
 	EnabledCodecs           []*livekit.Codec
 	Logger                  logger.Logger
 	SimTracks               map[uint32]SimulcastTrackInfo
 	ClientInfo              ClientInfo
+	IsOfferer               bool
+	IsSendSide              bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
-	var directionConfig DirectionConfig
-	if params.Target == livekit.SignalTarget_PUBLISHER {
-		directionConfig = params.Config.Publisher
-	} else {
-		directionConfig = params.Config.Subscriber
-	}
-
+	directionConfig := params.DirectionConfig
 	// enable nack if audio red is not support
 	if !isCodecEnabled(params.EnabledCodecs, webrtc.RTPCodecCapability{MimeType: sfu.MimeTypeAudioRed}) || !params.ClientInfo.SupportsAudioRED() {
 		directionConfig.RTCPFeedback.Audio = append(directionConfig.RTCPFeedback.Audio, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
@@ -260,7 +256,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	ir := &interceptor.Registry{}
-	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+	if params.IsSendSide {
 		isSendSideBWE := false
 		for _, ext := range directionConfig.RTPHeaderExtension.Video {
 			if ext == sdp.TransportCCURI {
@@ -322,7 +318,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		negotiationPending: make(map[livekit.ParticipantID]bool),
 		eventCh:            make(chan event, 50),
 	}
-	if params.Target == livekit.SignalTarget_SUBSCRIBER {
+	if params.IsSendSide {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
 			Config: params.CongestionControlConfig,
 			Logger: params.Logger,
@@ -1219,7 +1215,7 @@ func (t *PCTransport) handleEvent(e *event) error {
 }
 
 func (t *PCTransport) handleICEGatheringComplete(e *event) error {
-	if t.params.Target == livekit.SignalTarget_SUBSCRIBER {
+	if t.params.IsOfferer {
 		return t.handleICEGatheringCompleteOfferer()
 	} else {
 		return t.handleICEGatheringCompleteAnswerer()
@@ -1241,10 +1237,15 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 		return nil
 	}
 
-	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
-	err := t.setRemoteDescription(*t.pendingRestartIceOffer)
+	offer := *t.pendingRestartIceOffer
 	t.pendingRestartIceOffer = nil
-	return err
+
+	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+	if err := t.setRemoteDescription(offer); err != nil {
+		return err
+	}
+
+	return t.createAndSendAnswer()
 }
 
 func (t *PCTransport) localDescriptionSent() error {
