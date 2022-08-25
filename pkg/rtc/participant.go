@@ -1039,11 +1039,14 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnICEConfigChanged(func(iceConfig types.IceConfig) {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
+
+		if p.params.ClientConf == nil {
+			p.params.ClientConf = &livekit.ClientConfiguration{}
+		}
 		if iceConfig.PreferSub == types.PreferTls {
-			if p.params.ClientConf == nil {
-				p.params.ClientConf = &livekit.ClientConfiguration{}
-			}
 			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+		} else {
+			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
 		}
 		p.lock.Unlock()
 
