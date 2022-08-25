@@ -244,7 +244,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return transportB.pc.SignalingState() == webrtc.SignalingStateStable
+		return transportB.pc.SignalingState() == webrtc.SignalingStateStable && firstAnswerReceived.Load()
 	}, time.Second, 10*time.Millisecond, "transportB signaling state did not go to stable")
 
 	// set offer/answer with restart ICE, will negotiate twice,
