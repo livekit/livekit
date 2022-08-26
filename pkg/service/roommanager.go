@@ -268,6 +268,10 @@ func (r *RoomManager) StartSession(
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
 	protoRoom := room.ToProto()
+	allowFallback := false
+	if r.config.RTC.AllowTCPFallback != nil {
+		allowFallback = *r.config.RTC.AllowTCPFallback
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -287,7 +291,7 @@ func (r *RoomManager) StartSession(
 		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
-		AllowTCPFallback:        r.config.RTC.AllowTCPFallback,
+		AllowTCPFallback:        allowFallback,
 	})
 	if err != nil {
 		return err
