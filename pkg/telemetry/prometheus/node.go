@@ -5,10 +5,10 @@ import (
 
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 )
 
 const (
@@ -16,6 +16,8 @@ const (
 )
 
 var (
+	initialized atomic.Bool
+
 	MessageCounter          *prometheus.CounterVec
 	ServiceOperationCounter *prometheus.CounterVec
 
@@ -25,8 +27,11 @@ var (
 	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
-func init() {
-	nodeID, _ := utils.LocalNodeID()
+func Init(nodeID string) {
+	if initialized.Swap(true) {
+		return
+	}
+
 	MessageCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,

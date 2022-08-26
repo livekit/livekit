@@ -14,6 +14,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -215,6 +216,8 @@ func startServer(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	prometheus.Init(currentNode.Id)
 
 	server, err := service.InitializeServer(conf, currentNode)
 	if err != nil {
