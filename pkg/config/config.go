@@ -75,7 +75,7 @@ type RTCConfig struct {
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
 
-	// allow TCP fallback
+	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback bool `yaml:"allow_tcp_fallback,omitempty"`
 }
 
