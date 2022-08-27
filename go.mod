@@ -18,7 +18,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/livekit/protocol v1.0.2-0.20220824112019-a1c2809ddc67
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
-	github.com/mackerelio/go-osstat v0.2.2
+	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.13.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.5.0
 	github.com/mitchellh/go-homedir v1.1.0
