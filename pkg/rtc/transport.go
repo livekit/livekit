@@ -8,6 +8,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
+	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -1039,8 +1040,28 @@ func (t *PCTransport) getICEConnectionType() types.ICEConnectionType {
 	if err != nil {
 		return unknown
 	}
+
 	if p.Remote.Typ == webrtc.ICECandidateTypeRelay {
 		return types.ICEConnectionTypeTURN
+	} else if p.Remote.Typ == webrtc.ICECandidateTypePrflx {
+		// if the remote relay candidate pings us *before* we get a relay candidate,
+		// Pion would have created a prflx candidate with the same address as the relay candidate.
+		// to report an accurate connection type, we'll compare to see if existing relay candidates match
+		t.lock.RLock()
+		allowedRemoteCandidates := t.allowedRemoteCandidates
+		t.lock.RUnlock()
+
+		for _, ci := range allowedRemoteCandidates {
+			candidateValue := strings.TrimPrefix(ci, "candidate:")
+			candidate, err := ice.UnmarshalCandidate(candidateValue)
+			if err == nil && candidate.Type() == ice.CandidateTypeRelay {
+				if p.Remote.Address == candidate.Address() &&
+					p.Remote.Port == uint16(candidate.Port()) &&
+					p.Remote.Protocol.String() == candidate.NetworkType().NetworkShort() {
+					return types.ICEConnectionTypeTURN
+				}
+			}
+		}
 	}
 	if p.Remote.Protocol == webrtc.ICEProtocolTCP {
 		return types.ICEConnectionTypeTCP
@@ -1294,7 +1315,9 @@ func (t *PCTransport) clearLocalDescriptionSent() {
 	t.cachedLocalCandidates = nil
 
 	t.allowedLocalCandidates = nil
+	t.lock.Lock()
 	t.allowedRemoteCandidates = nil
+	t.lock.Unlock()
 	t.filteredLocalCandidates = nil
 	t.filteredRemoteCandidates = nil
 }
@@ -1348,7 +1371,9 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		return nil
 	}
 
+	t.lock.Lock()
 	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+	t.lock.Unlock()
 
 	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
 	if err := t.pc.AddICECandidate(*c); err != nil {
@@ -1581,7 +1606,10 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
-		if err := t.pc.AddICECandidate(*c); err != nil {
+		err := t.handleRemoteICECandidate(&event{
+			data: c,
+		})
+		if err != nil {
 			return errors.Wrap(err, "add ice candidate failed")
 		}
 	}
