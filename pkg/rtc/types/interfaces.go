@@ -240,7 +240,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
-	ICEConnectionType() ICEConnectionType
+	GetICEConnectionType() ICEConnectionType
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()

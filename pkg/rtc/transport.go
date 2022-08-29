@@ -1030,7 +1030,7 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
-func (t *PCTransport) ICEConnectionType() types.ICEConnectionType {
+func (t *PCTransport) getICEConnectionType() types.ICEConnectionType {
 	unknown := types.ICEConnectionTypeUnknown
 	if t.pc == nil {
 		return unknown
