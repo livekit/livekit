@@ -1030,6 +1030,24 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
+func (t *PCTransport) ICEConnectionType() types.ICEConnectionType {
+	unknown := types.ICEConnectionTypeUnknown
+	if t.pc == nil {
+		return unknown
+	}
+	p, err := t.getSelectedPair()
+	if err != nil {
+		return unknown
+	}
+	if p.Remote.Typ == webrtc.ICECandidateTypeRelay {
+		return types.ICEConnectionTypeTURN
+	}
+	if p.Remote.Protocol == webrtc.ICEProtocolTCP {
+		return types.ICEConnectionTypeTCP
+	}
+	return types.ICEConnectionTypeUDP
+}
+
 func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
 	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
 	// client's subscribe pc after joining, should change this step

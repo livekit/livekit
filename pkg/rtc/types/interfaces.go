@@ -216,6 +216,17 @@ type IceConfig struct {
 	PreferPub PreferCandidateType
 }
 
+// -------------------------------------------------------
+
+type ICEConnectionType string
+
+const (
+	ICEConnectionTypeUDP     ICEConnectionType = "udp"
+	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
+	ICEConnectionTypeTURN    ICEConnectionType = "turn"
+	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
+)
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
@@ -229,6 +240,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
+	ICEConnectionType() ICEConnectionType
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()

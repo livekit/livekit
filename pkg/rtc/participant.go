@@ -238,6 +238,14 @@ func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration 
 	return p.params.ClientConf
 }
 
+func (p *ParticipantImpl) ICEConnectionType() types.ICEConnectionType {
+	transport := p.TransportManager.getTransport(true)
+	if transport != nil {
+		return transport.ICEConnectionType()
+	}
+	return types.ICEConnectionTypeUnknown
+}
+
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
