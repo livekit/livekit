@@ -1229,7 +1229,7 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
-	return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
+	return t.doICERestart()
 }
 
 func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
@@ -1664,7 +1664,7 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) 
 	return nil
 }
 
-func (t *PCTransport) handleICERestart(e *event) error {
+func (t *PCTransport) doICERestart() error {
 	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 		t.params.Logger.Warnw("trying to restart ICE on closed peer connection", nil)
 		return nil
@@ -1672,7 +1672,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("restart ICE after gathering")
+		t.params.Logger.Debugw("deferring ICE restart to after gathering")
 		t.restartAfterGathering = true
 		return nil
 	}
@@ -1681,8 +1681,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
-	currentSD := t.pc.CurrentRemoteDescription()
-	if currentSD == nil {
+	currentRemoteDescription := t.pc.CurrentRemoteDescription()
+	if currentRemoteDescription == nil {
 		// restart without current remote description, send current local description again to try recover
 		offer := t.pc.LocalDescription()
 		if offer == nil {
@@ -1707,7 +1707,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	} else {
 		// recover by re-applying the last answer
 		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
-		if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
+		if err := t.pc.SetRemoteDescription(*currentRemoteDescription); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 			return errors.Wrap(err, "set remote description failed")
 		} else {
@@ -1715,4 +1715,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
+}
+
+func (t *PCTransport) handleICERestart(e *event) error {
+	return t.doICERestart()
 }
