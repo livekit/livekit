@@ -14,6 +14,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 const (
@@ -39,13 +40,13 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		AuthHandler:   authHandler,
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
-	relayAddrGen := &turn.RelayAddressGeneratorPortRange{
+	relayAddrGen := telemetry.NewRelayAddressGenerator(&turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 		Address:      "0.0.0.0",
 		MinPort:      turnConf.RelayPortRangeStart,
 		MaxPort:      turnConf.RelayPortRangeEnd,
 		MaxRetries:   allocateRetries,
-	}
+	})
 	var logValues []interface{}
 
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
@@ -76,7 +77,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			}
 
 			listenerConfig := turn.ListenerConfig{
-				Listener:              tlsListener,
+				Listener:              telemetry.NewListener(tlsListener),
 				RelayAddressGenerator: relayAddrGen,
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
@@ -87,7 +88,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			}
 
 			listenerConfig := turn.ListenerConfig{
-				Listener:              tcpListener,
+				Listener:              telemetry.NewListener(tcpListener),
 				RelayAddressGenerator: relayAddrGen,
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
@@ -102,7 +103,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		}
 
 		packetConfig := turn.PacketConnConfig{
-			PacketConn:            udpListener,
+			PacketConn:            telemetry.NewPacketConn(udpListener),
 			RelayAddressGenerator: relayAddrGen,
 		}
 		serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
