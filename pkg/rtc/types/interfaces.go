@@ -178,6 +178,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
