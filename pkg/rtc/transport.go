@@ -8,6 +8,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
+	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -1030,6 +1031,44 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
+func (t *PCTransport) getICEConnectionType() types.ICEConnectionType {
+	unknown := types.ICEConnectionTypeUnknown
+	if t.pc == nil {
+		return unknown
+	}
+	p, err := t.getSelectedPair()
+	if err != nil {
+		return unknown
+	}
+
+	if p.Remote.Typ == webrtc.ICECandidateTypeRelay {
+		return types.ICEConnectionTypeTURN
+	} else if p.Remote.Typ == webrtc.ICECandidateTypePrflx {
+		// if the remote relay candidate pings us *before* we get a relay candidate,
+		// Pion would have created a prflx candidate with the same address as the relay candidate.
+		// to report an accurate connection type, we'll compare to see if existing relay candidates match
+		t.lock.RLock()
+		allowedRemoteCandidates := t.allowedRemoteCandidates
+		t.lock.RUnlock()
+
+		for _, ci := range allowedRemoteCandidates {
+			candidateValue := strings.TrimPrefix(ci, "candidate:")
+			candidate, err := ice.UnmarshalCandidate(candidateValue)
+			if err == nil && candidate.Type() == ice.CandidateTypeRelay {
+				if p.Remote.Address == candidate.Address() &&
+					p.Remote.Port == uint16(candidate.Port()) &&
+					p.Remote.Protocol.String() == candidate.NetworkType().NetworkShort() {
+					return types.ICEConnectionTypeTURN
+				}
+			}
+		}
+	}
+	if p.Remote.Protocol == webrtc.ICEProtocolTCP {
+		return types.ICEConnectionTypeTCP
+	}
+	return types.ICEConnectionTypeUDP
+}
+
 func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
 	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
 	// client's subscribe pc after joining, should change this step
@@ -1229,7 +1268,7 @@ func (t *PCTransport) handleICEGatheringCompleteOfferer() error {
 
 	t.params.Logger.Debugw("restarting ICE after ICE gathering")
 	t.restartAfterGathering = false
-	return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
+	return t.doICERestart()
 }
 
 func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
@@ -1276,7 +1315,9 @@ func (t *PCTransport) clearLocalDescriptionSent() {
 	t.cachedLocalCandidates = nil
 
 	t.allowedLocalCandidates = nil
+	t.lock.Lock()
 	t.allowedRemoteCandidates = nil
+	t.lock.Unlock()
 	t.filteredLocalCandidates = nil
 	t.filteredRemoteCandidates = nil
 }
@@ -1325,12 +1366,14 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		return nil
 	}
 
+	t.lock.Lock()
+	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+	t.lock.Unlock()
+
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
 		return nil
 	}
-
-	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
 
 	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
 	if err := t.pc.AddICECandidate(*c); err != nil {
@@ -1664,7 +1707,7 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) 
 	return nil
 }
 
-func (t *PCTransport) handleICERestart(e *event) error {
+func (t *PCTransport) doICERestart() error {
 	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 		t.params.Logger.Warnw("trying to restart ICE on closed peer connection", nil)
 		return nil
@@ -1672,7 +1715,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 
 	// if restart is requested, and we are not ready, then continue afterwards
 	if t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
-		t.params.Logger.Debugw("restart ICE after gathering")
+		t.params.Logger.Debugw("deferring ICE restart to after gathering")
 		t.restartAfterGathering = true
 		return nil
 	}
@@ -1681,8 +1724,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
-	currentSD := t.pc.CurrentRemoteDescription()
-	if currentSD == nil {
+	currentRemoteDescription := t.pc.CurrentRemoteDescription()
+	if currentRemoteDescription == nil {
 		// restart without current remote description, send current local description again to try recover
 		offer := t.pc.LocalDescription()
 		if offer == nil {
@@ -1707,7 +1750,7 @@ func (t *PCTransport) handleICERestart(e *event) error {
 	} else {
 		// recover by re-applying the last answer
 		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
-		if err := t.pc.SetRemoteDescription(*currentSD); err != nil {
+		if err := t.pc.SetRemoteDescription(*currentRemoteDescription); err != nil {
 			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
 			return errors.Wrap(err, "set remote description failed")
 		} else {
@@ -1715,4 +1758,8 @@ func (t *PCTransport) handleICERestart(e *event) error {
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
+}
+
+func (t *PCTransport) handleICERestart(e *event) error {
+	return t.doICERestart()
 }

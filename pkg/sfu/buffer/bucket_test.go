@@ -88,6 +88,34 @@ func Test_queue(t *testing.T) {
 	// ask for something ahead of headSN
 	_, err = q.GetPacket(buff, 11)
 	require.ErrorIs(t, err, ErrPacketNotFound)
+
+	q.ResyncOnNextPacket()
+
+	// should be able to get packets before adding a packet which will resync
+	expectedSN = 8
+	i, err = q.GetPacket(buff, expectedSN)
+	require.NoError(t, err)
+	err = np.Unmarshal(buff[:i])
+	require.NoError(t, err)
+	require.Equal(t, expectedSN, np.SequenceNumber)
+
+	// adding a packet will resync and invalidate all existing
+	buf, err = TestPackets[1].Marshal()
+	require.NoError(t, err)
+	_, err = q.AddPacket(buf)
+	require.NoError(t, err)
+
+	// try to get a valid packet before resync, should not be found
+	_, err = q.GetPacket(buff, 8)
+	require.ErrorIs(t, err, ErrPacketNotFound)
+
+	// getting a packet added after resync should succeed
+	expectedSN = TestPackets[1].Header.SequenceNumber
+	i, err = q.GetPacket(buff, expectedSN)
+	require.NoError(t, err)
+	err = np.Unmarshal(buff[:i])
+	require.NoError(t, err)
+	require.Equal(t, expectedSN, np.SequenceNumber)
 }
 
 func Test_queue_edges(t *testing.T) {

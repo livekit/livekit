@@ -236,6 +236,16 @@ type FakeLocalParticipant struct {
 	getConnectionQualityReturnsOnCall map[int]struct {
 		result1 *livekit.ConnectionQualityInfo
 	}
+	GetICEConnectionTypeStub        func() types.ICEConnectionType
+	getICEConnectionTypeMutex       sync.RWMutex
+	getICEConnectionTypeArgsForCall []struct {
+	}
+	getICEConnectionTypeReturns struct {
+		result1 types.ICEConnectionType
+	}
+	getICEConnectionTypeReturnsOnCall map[int]struct {
+		result1 types.ICEConnectionType
+	}
 	GetLoggerStub        func() logger.Logger
 	getLoggerMutex       sync.RWMutex
 	getLoggerArgsForCall []struct {
@@ -458,6 +468,12 @@ type FakeLocalParticipant struct {
 	}
 	protocolVersionReturnsOnCall map[int]struct {
 		result1 types.ProtocolVersion
+	}
+	RemovePublishedTrackStub        func(types.MediaTrack, bool)
+	removePublishedTrackMutex       sync.RWMutex
+	removePublishedTrackArgsForCall []struct {
+		arg1 types.MediaTrack
+		arg2 bool
 	}
 	RemoveSubscribedTrackStub        func(types.SubscribedTrack)
 	removeSubscribedTrackMutex       sync.RWMutex
@@ -1878,6 +1894,59 @@ func (fake *FakeLocalParticipant) GetConnectionQualityReturnsOnCall(i int, resul
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) GetICEConnectionType() types.ICEConnectionType {
+	fake.getICEConnectionTypeMutex.Lock()
+	ret, specificReturn := fake.getICEConnectionTypeReturnsOnCall[len(fake.getICEConnectionTypeArgsForCall)]
+	fake.getICEConnectionTypeArgsForCall = append(fake.getICEConnectionTypeArgsForCall, struct {
+	}{})
+	stub := fake.GetICEConnectionTypeStub
+	fakeReturns := fake.getICEConnectionTypeReturns
+	fake.recordInvocation("GetICEConnectionType", []interface{}{})
+	fake.getICEConnectionTypeMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetICEConnectionTypeCallCount() int {
+	fake.getICEConnectionTypeMutex.RLock()
+	defer fake.getICEConnectionTypeMutex.RUnlock()
+	return len(fake.getICEConnectionTypeArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetICEConnectionTypeCalls(stub func() types.ICEConnectionType) {
+	fake.getICEConnectionTypeMutex.Lock()
+	defer fake.getICEConnectionTypeMutex.Unlock()
+	fake.GetICEConnectionTypeStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetICEConnectionTypeReturns(result1 types.ICEConnectionType) {
+	fake.getICEConnectionTypeMutex.Lock()
+	defer fake.getICEConnectionTypeMutex.Unlock()
+	fake.GetICEConnectionTypeStub = nil
+	fake.getICEConnectionTypeReturns = struct {
+		result1 types.ICEConnectionType
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetICEConnectionTypeReturnsOnCall(i int, result1 types.ICEConnectionType) {
+	fake.getICEConnectionTypeMutex.Lock()
+	defer fake.getICEConnectionTypeMutex.Unlock()
+	fake.GetICEConnectionTypeStub = nil
+	if fake.getICEConnectionTypeReturnsOnCall == nil {
+		fake.getICEConnectionTypeReturnsOnCall = make(map[int]struct {
+			result1 types.ICEConnectionType
+		})
+	}
+	fake.getICEConnectionTypeReturnsOnCall[i] = struct {
+		result1 types.ICEConnectionType
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) GetLogger() logger.Logger {
 	fake.getLoggerMutex.Lock()
 	ret, specificReturn := fake.getLoggerReturnsOnCall[len(fake.getLoggerArgsForCall)]
@@ -3143,6 +3212,39 @@ func (fake *FakeLocalParticipant) ProtocolVersionReturnsOnCall(i int, result1 ty
 	fake.protocolVersionReturnsOnCall[i] = struct {
 		result1 types.ProtocolVersion
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool) {
+	fake.removePublishedTrackMutex.Lock()
+	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
+		arg1 types.MediaTrack
+		arg2 bool
+	}{arg1, arg2})
+	stub := fake.RemovePublishedTrackStub
+	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2})
+	fake.removePublishedTrackMutex.Unlock()
+	if stub != nil {
+		fake.RemovePublishedTrackStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedTrackCallCount() int {
+	fake.removePublishedTrackMutex.RLock()
+	defer fake.removePublishedTrackMutex.RUnlock()
+	return len(fake.removePublishedTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool)) {
+	fake.removePublishedTrackMutex.Lock()
+	defer fake.removePublishedTrackMutex.Unlock()
+	fake.RemovePublishedTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool) {
+	fake.removePublishedTrackMutex.RLock()
+	defer fake.removePublishedTrackMutex.RUnlock()
+	argsForCall := fake.removePublishedTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) RemoveSubscribedTrack(arg1 types.SubscribedTrack) {
@@ -4682,6 +4784,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getClientConfigurationMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()
 	defer fake.getConnectionQualityMutex.RUnlock()
+	fake.getICEConnectionTypeMutex.RLock()
+	defer fake.getICEConnectionTypeMutex.RUnlock()
 	fake.getLoggerMutex.RLock()
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getPublishedTrackMutex.RLock()
@@ -4740,6 +4844,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.processSubscriptionRequestsQueueMutex.RUnlock()
 	fake.protocolVersionMutex.RLock()
 	defer fake.protocolVersionMutex.RUnlock()
+	fake.removePublishedTrackMutex.RLock()
+	defer fake.removePublishedTrackMutex.RUnlock()
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	fake.removeSubscriberMutex.RLock()

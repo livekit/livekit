@@ -81,6 +81,8 @@ const (
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
 	ParticipantCloseReasonNegotiateFailed
+	ParticipantCloseReasonMigrationRequested
+	ParticipantCloseReasonOvercommitted
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -121,6 +123,10 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_SERVER_LEAVE"
 	case ParticipantCloseReasonNegotiateFailed:
 		return "NEGOTIATE_FAILED"
+	case ParticipantCloseReasonOvercommitted:
+		return "OVERCOMMITTED"
+	case ParticipantCloseReasonMigrationRequested:
+		return "MIGRATION_REQUESTED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -149,6 +155,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonSimulateServerLeave:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonOvercommitted:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
@@ -170,6 +178,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -208,6 +217,17 @@ type IceConfig struct {
 	PreferPub PreferCandidateType
 }
 
+// -------------------------------------------------------
+
+type ICEConnectionType string
+
+const (
+	ICEConnectionTypeUDP     ICEConnectionType = "udp"
+	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
+	ICEConnectionTypeTURN    ICEConnectionType = "turn"
+	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
+)
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
@@ -221,6 +241,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
+	GetICEConnectionType() ICEConnectionType
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()

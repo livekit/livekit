@@ -442,6 +442,10 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 	return t.params.SubscriberAsPrimary
 }
 
+func (t *TransportManager) GetICEConnectionType() types.ICEConnectionType {
+	return t.getTransport(true).getICEConnectionType()
+}
+
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
 	pcTransport := t.publisher
 	if (isPrimary && t.params.SubscriberAsPrimary) || (!isPrimary && !t.params.SubscriberAsPrimary) {
