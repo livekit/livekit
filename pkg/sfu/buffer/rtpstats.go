@@ -92,7 +92,8 @@ type RTPStats struct {
 
 	lock sync.RWMutex
 
-	initialized bool
+	initialized        bool
+	resyncOnNextPacket bool
 
 	startTime time.Time
 	endTime   time.Time
@@ -233,6 +234,14 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 		}
 	}
 
+	if r.resyncOnNextPacket {
+		r.resyncOnNextPacket = false
+
+		r.highestSN = rtph.SequenceNumber - 1
+		r.highestTS = rtph.Timestamp
+		r.highestTime = packetTime
+	}
+
 	hdrSize := uint64(rtph.MarshalSize())
 	pktSize := hdrSize + uint64(payloadSize+paddingSize)
 	isDuplicate := false
@@ -303,13 +312,11 @@ func (r *RTPStats) Update(rtph *rtp.Header, payloadSize int, paddingSize int, pa
 	return
 }
 
-func (r *RTPStats) ForceUpdateLastPacket(rtph *rtp.Header, packetTime int64) {
+func (r *RTPStats) ResyncOnNextPacket() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.highestSN = rtph.SequenceNumber - 1
-	r.highestTS = rtph.Timestamp
-	r.highestTime = packetTime
+	r.resyncOnNextPacket = true
 }
 
 func (r *RTPStats) maybeAdjustStartSN(rtph *rtp.Header, packetTime int64, pktSize uint64, hdrSize uint64, payloadSize int) bool {

@@ -251,7 +251,10 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 			// start the workers once connectivity is established
 			p.Start()
 
-			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds())})
+			r.telemetry.ParticipantActive(context.Background(), r.ToProto(), p.ToProto(), &livekit.AnalyticsClientMeta{
+				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+				ConnectionType:    string(p.GetICEConnectionType()),
+			})
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
@@ -341,9 +344,7 @@ func (r *Room) ResumeParticipant(p types.LocalParticipant, responseSink routing.
 		return err
 	}
 
-	if err := p.ICERestart(nil); err != nil {
-		return err
-	}
+	p.ICERestart(nil)
 	return nil
 }
 
@@ -638,12 +639,10 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
 		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
-		if err := participant.ICERestart(&types.IceConfig{
-			PreferSubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
-			PreferPubTcp: scenario.SwitchCandidateProtocol == livekit.CandidateProtocol_TCP,
-		}); err != nil {
-			return err
-		}
+		participant.ICERestart(&types.IceConfig{
+			PreferSub: types.PreferCandidateType(scenario.SwitchCandidateProtocol),
+			PreferPub: types.PreferCandidateType(scenario.SwitchCandidateProtocol),
+		})
 	}
 	return nil
 }

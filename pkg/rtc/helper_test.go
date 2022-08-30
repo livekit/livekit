@@ -6,7 +6,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
+
+func init() {
+	prometheus.Init("test")
+}
 
 func newMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}

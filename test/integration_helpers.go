@@ -20,6 +20,7 @@ import (
 	serverlogger "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
@@ -39,14 +40,14 @@ const (
 	// connectTimeout = 5000 * time.Second
 )
 
-var (
-	roomClient livekit.RoomService
-)
+var roomClient livekit.RoomService
 
 func init() {
 	serverlogger.InitFromConfig(config.LoggingConfig{
 		Config: logger.Config{Level: "debug"},
 	})
+
+	prometheus.Init("test")
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
@@ -222,6 +223,7 @@ func createRTCClientWithToken(token string, port int, opts *testclient.Options) 
 
 	return c
 }
+
 func redisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",

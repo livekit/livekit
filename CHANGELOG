@@ -2,6 +2,39 @@
 
 Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2022-08-25
+### Added
+- Support for NACK with audio tracks (#829)
+- Allow binding HTTP server to specific address, binds to localhost in dev mode(#831)
+- Packet stats from TC (#832)
+- Automatic connectivity fallback to TCP & TURN (#872 #873 #874 #901 #950)
+- Support for client-side ping/pong messages (#871)
+- Support for setCodecPreferences for clients that don't implement it (#916)
+- Opus/RED support: redundant audio transmission is enabled by default (#938 #940)
+
+### Fixed
+- Fixed timing issue in DownTrack.Bind/Close (#833)
+- Fixed TCPMux potentially blocking operations (#840)
+- Fixed ICE restart while still in ICE gathering (#895)
+- Fixed Websocket connection hanging if node isn't available to accept connection (#923)
+- Fixed ICE restart/resume in single node mode (#930)
+- Fixed client disconnected in certain conditions after ICE restart (#932)
+
+### Changed
+- Move to synchronously handle subscriber dynacast status (#834)
+- Retransmit DD extension in case packets were missed (#837)
+- Clean up stats workers (#836)
+- Use TimedVersion for subscription permission updates (#839)
+- Cleaned up logging (#843 #865 #910 #921)
+- track_published event now includes the participant's ID and identity (#846)
+- Improve synchronization of track publishing/unpublish path (#857)
+- Don't re-use transceiver when pending negotiation (#862)
+- Dynacast and media loss proxy refactor (#894 #902)
+- PCTransport refactor (#907 #944)
+- Improve accuracy of connection quality score (#912 #913)
+- Docker image now builds with Go v1.19
+
+
 ## [1.1.2] - 2022-07-11
 ### Added
 - Returns reason when server disconnects a client (#801 #806)

@@ -386,6 +386,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 			track.UpTrackLayersChange(layers)
 		}
 	}
+	track.TrackInfoAvailable()
 
 	w.downTrackSpreader.Store(track)
 	return nil
