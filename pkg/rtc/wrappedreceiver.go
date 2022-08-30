@@ -113,7 +113,6 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downtrackLock.Lock()
 	for _, t := range d.downtracks {
 		receiver.AddDownTrack(t)
-		t.TrackInfoAvailable()
 	}
 	d.downtracks = make(map[livekit.ParticipantID]sfu.TrackSender)
 	d.downtrackLock.Unlock()
