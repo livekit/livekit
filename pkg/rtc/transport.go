@@ -8,6 +8,7 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/go-logr/logr"
+	"github.com/pion/ice/v2"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -1030,6 +1031,44 @@ func (t *PCTransport) RemoveTrackFromStreamAllocator(subTrack types.SubscribedTr
 	t.streamAllocator.RemoveTrack(subTrack.DownTrack())
 }
 
+func (t *PCTransport) getICEConnectionType() types.ICEConnectionType {
+	unknown := types.ICEConnectionTypeUnknown
+	if t.pc == nil {
+		return unknown
+	}
+	p, err := t.getSelectedPair()
+	if err != nil {
+		return unknown
+	}
+
+	if p.Remote.Typ == webrtc.ICECandidateTypeRelay {
+		return types.ICEConnectionTypeTURN
+	} else if p.Remote.Typ == webrtc.ICECandidateTypePrflx {
+		// if the remote relay candidate pings us *before* we get a relay candidate,
+		// Pion would have created a prflx candidate with the same address as the relay candidate.
+		// to report an accurate connection type, we'll compare to see if existing relay candidates match
+		t.lock.RLock()
+		allowedRemoteCandidates := t.allowedRemoteCandidates
+		t.lock.RUnlock()
+
+		for _, ci := range allowedRemoteCandidates {
+			candidateValue := strings.TrimPrefix(ci, "candidate:")
+			candidate, err := ice.UnmarshalCandidate(candidateValue)
+			if err == nil && candidate.Type() == ice.CandidateTypeRelay {
+				if p.Remote.Address == candidate.Address() &&
+					p.Remote.Port == uint16(candidate.Port()) &&
+					p.Remote.Protocol.String() == candidate.NetworkType().NetworkShort() {
+					return types.ICEConnectionTypeTURN
+				}
+			}
+		}
+	}
+	if p.Remote.Protocol == webrtc.ICEProtocolTCP {
+		return types.ICEConnectionTypeTCP
+	}
+	return types.ICEConnectionTypeUDP
+}
+
 func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error {
 	// sticky data channel to first m-lines, if someday we don't send sdp without media streams to
 	// client's subscribe pc after joining, should change this step
@@ -1276,7 +1315,9 @@ func (t *PCTransport) clearLocalDescriptionSent() {
 	t.cachedLocalCandidates = nil
 
 	t.allowedLocalCandidates = nil
+	t.lock.Lock()
 	t.allowedRemoteCandidates = nil
+	t.lock.Unlock()
 	t.filteredLocalCandidates = nil
 	t.filteredRemoteCandidates = nil
 }
@@ -1325,12 +1366,14 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		return nil
 	}
 
+	t.lock.Lock()
+	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+	t.lock.Unlock()
+
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
 		return nil
 	}
-
-	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
 
 	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
 	if err := t.pc.AddICECandidate(*c); err != nil {
