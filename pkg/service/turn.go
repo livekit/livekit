@@ -15,6 +15,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	logging "github.com/livekit/livekit-server/pkg/logger"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -103,7 +104,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		}
 
 		packetConfig := turn.PacketConnConfig{
-			PacketConn:            telemetry.NewPacketConn(udpListener),
+			PacketConn:            telemetry.NewPacketConn(udpListener, prometheus.Incoming),
 			RelayAddressGenerator: relayAddrGen,
 		}
 		serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)

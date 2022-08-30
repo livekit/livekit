@@ -22,15 +22,17 @@ func (l *Listener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
-	return NewConn(conn), nil
+	return NewConn(conn, prometheus.Incoming), nil
 }
 
 type Conn struct {
 	net.Conn
+	direction prometheus.Direction
 }
 
-func NewConn(c net.Conn) *Conn {
-	return &Conn{Conn: c}
+func NewConn(c net.Conn, direction prometheus.Direction) *Conn {
+	prometheus.AddConnection(direction)
+	return &Conn{Conn: c, direction: direction}
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
@@ -49,12 +51,19 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	return
 }
 
-type PacketConn struct {
-	net.PacketConn
+func (c *Conn) Close() error {
+	prometheus.SubConnection(c.direction)
+	return c.Conn.Close()
 }
 
-func NewPacketConn(c net.PacketConn) *PacketConn {
-	return &PacketConn{PacketConn: c}
+type PacketConn struct {
+	net.PacketConn
+	direction prometheus.Direction
+}
+
+func NewPacketConn(c net.PacketConn, direction prometheus.Direction) *PacketConn {
+	prometheus.AddConnection(direction)
+	return &PacketConn{PacketConn: c, direction: direction}
 }
 
 func (c *PacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
@@ -75,6 +84,11 @@ func (c *PacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return
 }
 
+func (c *PacketConn) Close() error {
+	prometheus.SubConnection(c.direction)
+	return c.PacketConn.Close()
+}
+
 type RelayAddressGenerator struct {
 	turn.RelayAddressGenerator
 }
@@ -89,7 +103,7 @@ func (g *RelayAddressGenerator) AllocatePacketConn(network string, requestedPort
 		return nil, addr, err
 	}
 
-	return NewPacketConn(conn), addr, err
+	return NewPacketConn(conn, prometheus.Outgoing), addr, err
 }
 
 func (g *RelayAddressGenerator) AllocateConn(network string, requestedPort int) (net.Conn, net.Addr, error) {
@@ -98,5 +112,5 @@ func (g *RelayAddressGenerator) AllocateConn(network string, requestedPort int) 
 		return nil, addr, err
 	}
 
-	return NewConn(conn), addr, err
+	return NewConn(conn, prometheus.Outgoing), addr, err
 }
