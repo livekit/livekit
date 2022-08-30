@@ -1366,14 +1366,14 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		return nil
 	}
 
+	t.lock.Lock()
+	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
+	t.lock.Unlock()
+
 	if t.pc.RemoteDescription() == nil {
 		t.pendingRemoteCandidates = append(t.pendingRemoteCandidates, c)
 		return nil
 	}
-
-	t.lock.Lock()
-	t.allowedRemoteCandidates = append(t.allowedRemoteCandidates, c.Candidate)
-	t.lock.Unlock()
 
 	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
 	if err := t.pc.AddICECandidate(*c); err != nil {
@@ -1606,10 +1606,7 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	}
 
 	for _, c := range t.pendingRemoteCandidates {
-		err := t.handleRemoteICECandidate(&event{
-			data: c,
-		})
-		if err != nil {
+		if err := t.pc.AddICECandidate(*c); err != nil {
 			return errors.Wrap(err, "add ice candidate failed")
 		}
 	}
