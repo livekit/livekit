@@ -32,6 +32,7 @@ var (
 	promPliTotal        *prometheus.CounterVec
 	promFirTotal        *prometheus.CounterVec
 	promParticipantJoin *prometheus.CounterVec
+	promConnections     *prometheus.GaugeVec
 )
 
 func initPacketStats(nodeID string) {
@@ -71,6 +72,12 @@ func initPacketStats(nodeID string) {
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID},
 	}, nil)
+	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "connection",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID},
+	}, []string{"kind"})
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
@@ -78,6 +85,7 @@ func initPacketStats(nodeID string) {
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
 	prometheus.MustRegister(promParticipantJoin)
+	prometheus.MustRegister(promConnections)
 }
 
 func IncrementPackets(direction Direction, count uint64, retransmit bool) {
@@ -128,6 +136,14 @@ func IncrementParticipantJoin(join uint32) {
 		promParticipantJoin.WithLabelValues().Add(float64(join))
 		participantJoin.Add(uint64(join))
 	}
+}
+
+func AddConnection(direction Direction) {
+	promConnections.WithLabelValues(string(direction)).Add(1)
+}
+
+func SubConnection(direction Direction) {
+	promConnections.WithLabelValues(string(direction)).Sub(1)
 }
 
 func transmissionLabel(retransmit bool) string {
