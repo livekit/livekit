@@ -26,7 +26,7 @@ const (
 	turnMaxPort     = 30000
 )
 
-func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
+func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
 		return nil, nil
@@ -41,13 +41,16 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 		AuthHandler:   authHandler,
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
-	relayAddrGen := telemetry.NewRelayAddressGenerator(&turn.RelayAddressGeneratorPortRange{
+	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
 		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 		Address:      "0.0.0.0",
 		MinPort:      turnConf.RelayPortRangeStart,
 		MaxPort:      turnConf.RelayPortRangeEnd,
 		MaxRetries:   allocateRetries,
-	})
+	}
+	if standalone {
+		relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
+	}
 	var logValues []interface{}
 
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
@@ -76,9 +79,12 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
+			if standalone {
+				tlsListener = telemetry.NewListener(tlsListener)
+			}
 
 			listenerConfig := turn.ListenerConfig{
-				Listener:              telemetry.NewListener(tlsListener),
+				Listener:              tlsListener,
 				RelayAddressGenerator: relayAddrGen,
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
@@ -87,9 +93,12 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
+			if standalone {
+				tcpListener = telemetry.NewListener(tcpListener)
+			}
 
 			listenerConfig := turn.ListenerConfig{
-				Listener:              telemetry.NewListener(tcpListener),
+				Listener:              tcpListener,
 				RelayAddressGenerator: relayAddrGen,
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
@@ -103,8 +112,12 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Ser
 			return nil, errors.Wrap(err, "could not listen on TURN UDP port")
 		}
 
+		if standalone {
+			udpListener = telemetry.NewPacketConn(udpListener, prometheus.Incoming)
+		}
+
 		packetConfig := turn.PacketConnConfig{
-			PacketConn:            telemetry.NewPacketConn(udpListener, prometheus.Incoming),
+			PacketConn:            udpListener,
 			RelayAddressGenerator: relayAddrGen,
 		}
 		serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
