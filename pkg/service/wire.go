@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
+	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 
@@ -53,7 +54,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRTCService,
 		NewLocalRoomManager,
 		newTurnAuthHandler,
-		NewTurnServer,
+		newInProcessTurnServer,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -194,4 +195,8 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getRoomConf(config *config.Config) config.RoomConfig {
 	return config.Room
+}
+
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false)
 }
