@@ -18,7 +18,6 @@ import (
 type IngressService struct {
 	conf        *config.IngressConfig
 	rpcClient   ingress.RPCClient
-	rpcServer   ingress.RPCServer
 	store       IngressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
@@ -28,7 +27,6 @@ type IngressService struct {
 func NewIngressService(
 	conf *config.IngressConfig,
 	rpcClient ingress.RPCClient,
-	rpcServer ingress.RPCServer,
 	store IngressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
@@ -37,7 +35,6 @@ func NewIngressService(
 	return &IngressService{
 		conf:        conf,
 		rpcClient:   rpcClient,
-		rpcServer:   rpcServer,
 		store:       store,
 		roomService: rs,
 		telemetry:   ts,
@@ -48,8 +45,6 @@ func NewIngressService(
 func (s *IngressService) Start() {
 	if s.rpcClient != nil {
 		go s.updateWorker()
-	}
-	if s.rpcServer != nil {
 		go s.entitiesWorker()
 	}
 }
@@ -216,7 +211,7 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 
 func (s *IngressService) updateWorker() {
 	if s.rpcClient == nil {
-		logger.Errorw("can't start update worker", errors.New("RPC Server object not set"))
+		logger.Errorw("can't start update worker", errors.New("RPC Client object not set"))
 		return
 	}
 
@@ -252,12 +247,12 @@ func (s *IngressService) updateWorker() {
 }
 
 func (s *IngressService) entitiesWorker() {
-	if s.rpcServer == nil {
-		logger.Errorw("can't start entities worker", errors.New("RPC Server object not set"))
+	if s.rpcClient == nil {
+		logger.Errorw("can't start entities worker", errors.New("RPC Client object not set"))
 		return
 	}
 
-	sub, err := s.rpcServer.GetEntityChannel(context.Background())
+	sub, err := s.rpcClient.GetEntityChannel(context.Background())
 	if err != nil {
 		logger.Errorw("failed to subscribe to entities channel", err)
 		return
@@ -284,7 +279,7 @@ func (s *IngressService) entitiesWorker() {
 			} else {
 				err = errors.New("request needs to specity either IngressId or StreamKey")
 			}
-			err = s.rpcServer.SendResponse(context.Background(), req, info, err)
+			err = s.rpcClient.SendGetIngressInfoResponse(context.Background(), req, &livekit.GetIngressInfoResponse{Info: info}, err)
 			if err != nil {
 				logger.Errorw("could not send response", err)
 			}
