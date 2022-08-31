@@ -50,7 +50,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getIngressStore,
 		getIngressConfig,
 		getIngressRPCClient,
-		getIngressRPCServer,
 		NewIngressService,
 		NewRoomAllocator,
 		NewRoomService,
@@ -197,10 +196,6 @@ func getIngressConfig(conf *config.Config) *config.IngressConfig {
 }
 
 func getIngressRPCClient(rpc ingress.RPC) ingress.RPCClient {
-	return rpc
-}
-
-func getIngressRPCServer(rpc ingress.RPC) ingress.RPCServer {
 	return rpc
 }
 
