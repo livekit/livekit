@@ -63,9 +63,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService)
+	ingressConfig := getIngressConfig(conf)
 	rpc := ingress.NewRedisRPC(nodeID, client)
+	ingressRPCClient := getIngressRPCClient(rpc)
+	rpcServer := getIngressRPCServer(rpc)
 	ingressStore := getIngressStore(objectStore)
-	ingressService := NewIngressService(conf, rpc, ingressStore, roomService, telemetryService)
+	ingressService := NewIngressService(ingressConfig, ingressRPCClient, rpcServer, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
@@ -213,6 +216,18 @@ func getIngressStore(s ObjectStore) IngressStore {
 	default:
 		return nil
 	}
+}
+
+func getIngressConfig(conf *config.Config) *config.IngressConfig {
+	return &conf.Ingress
+}
+
+func getIngressRPCClient(rpc ingress.RPC) ingress.RPCClient {
+	return rpc
+}
+
+func getIngressRPCServer(rpc ingress.RPC) ingress.RPCServer {
+	return rpc
 }
 
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
