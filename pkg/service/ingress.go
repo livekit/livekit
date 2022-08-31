@@ -210,11 +210,6 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 }
 
 func (s *IngressService) updateWorker() {
-	if s.rpcClient == nil {
-		logger.Errorw("can't start update worker", errors.New("RPC Client object not set"))
-		return
-	}
-
 	sub, err := s.rpcClient.GetUpdateChannel(context.Background())
 	if err != nil {
 		logger.Errorw("failed to subscribe to results channel", err)
@@ -247,11 +242,6 @@ func (s *IngressService) updateWorker() {
 }
 
 func (s *IngressService) entitiesWorker() {
-	if s.rpcClient == nil {
-		logger.Errorw("can't start entities worker", errors.New("RPC Client object not set"))
-		return
-	}
-
 	sub, err := s.rpcClient.GetEntityChannel(context.Background())
 	if err != nil {
 		logger.Errorw("failed to subscribe to entities channel", err)
