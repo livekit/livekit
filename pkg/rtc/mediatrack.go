@@ -267,7 +267,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			)
 		}
 
-		newWR.OnMaxLayerChange(t.OnMaxLayerChange)
+		newWR.OnMaxLayerChange(t.onMaxLayerChange)
 
 		t.buffer = buff
 
@@ -315,7 +315,7 @@ func (t *MediaTrack) HasPendingCodec() bool {
 	return t.MediaTrackReceiver.PrimaryReceiver() == nil
 }
 
-func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {
+func (t *MediaTrack) onMaxLayerChange(maxLayer int32) {
 	ti := &livekit.TrackInfo{
 		Sid:  t.trackInfo.Sid,
 		Type: t.trackInfo.Type,
