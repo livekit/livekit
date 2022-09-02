@@ -394,6 +394,18 @@ type FakeLocalParticipant struct {
 	isSubscribedToReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	MaybeStartMigrationStub        func(bool, func()) bool
+	maybeStartMigrationMutex       sync.RWMutex
+	maybeStartMigrationArgsForCall []struct {
+		arg1 bool
+		arg2 func()
+	}
+	maybeStartMigrationReturns struct {
+		result1 bool
+	}
+	maybeStartMigrationReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	MigrateStateStub        func() types.MigrateState
 	migrateStateMutex       sync.RWMutex
 	migrateStateArgsForCall []struct {
@@ -2756,6 +2768,68 @@ func (fake *FakeLocalParticipant) IsSubscribedToReturnsOnCall(i int, result1 boo
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) MaybeStartMigration(arg1 bool, arg2 func()) bool {
+	fake.maybeStartMigrationMutex.Lock()
+	ret, specificReturn := fake.maybeStartMigrationReturnsOnCall[len(fake.maybeStartMigrationArgsForCall)]
+	fake.maybeStartMigrationArgsForCall = append(fake.maybeStartMigrationArgsForCall, struct {
+		arg1 bool
+		arg2 func()
+	}{arg1, arg2})
+	stub := fake.MaybeStartMigrationStub
+	fakeReturns := fake.maybeStartMigrationReturns
+	fake.recordInvocation("MaybeStartMigration", []interface{}{arg1, arg2})
+	fake.maybeStartMigrationMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) MaybeStartMigrationCallCount() int {
+	fake.maybeStartMigrationMutex.RLock()
+	defer fake.maybeStartMigrationMutex.RUnlock()
+	return len(fake.maybeStartMigrationArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) MaybeStartMigrationCalls(stub func(bool, func()) bool) {
+	fake.maybeStartMigrationMutex.Lock()
+	defer fake.maybeStartMigrationMutex.Unlock()
+	fake.MaybeStartMigrationStub = stub
+}
+
+func (fake *FakeLocalParticipant) MaybeStartMigrationArgsForCall(i int) (bool, func()) {
+	fake.maybeStartMigrationMutex.RLock()
+	defer fake.maybeStartMigrationMutex.RUnlock()
+	argsForCall := fake.maybeStartMigrationArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) MaybeStartMigrationReturns(result1 bool) {
+	fake.maybeStartMigrationMutex.Lock()
+	defer fake.maybeStartMigrationMutex.Unlock()
+	fake.MaybeStartMigrationStub = nil
+	fake.maybeStartMigrationReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) MaybeStartMigrationReturnsOnCall(i int, result1 bool) {
+	fake.maybeStartMigrationMutex.Lock()
+	defer fake.maybeStartMigrationMutex.Unlock()
+	fake.MaybeStartMigrationStub = nil
+	if fake.maybeStartMigrationReturnsOnCall == nil {
+		fake.maybeStartMigrationReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.maybeStartMigrationReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) MigrateState() types.MigrateState {
 	fake.migrateStateMutex.Lock()
 	ret, specificReturn := fake.migrateStateReturnsOnCall[len(fake.migrateStateArgsForCall)]
@@ -4818,6 +4892,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.isRecorderMutex.RUnlock()
 	fake.isSubscribedToMutex.RLock()
 	defer fake.isSubscribedToMutex.RUnlock()
+	fake.maybeStartMigrationMutex.RLock()
+	defer fake.maybeStartMigrationMutex.RUnlock()
 	fake.migrateStateMutex.RLock()
 	defer fake.migrateStateMutex.RUnlock()
 	fake.negotiateMutex.RLock()
