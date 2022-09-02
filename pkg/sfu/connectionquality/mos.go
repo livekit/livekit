@@ -115,7 +115,7 @@ func VideoTrackScore(params TrackScoreParams, normFactor float32) float32 {
 // the resolution is high. Till rtcmos model can be adapted to that
 // scenario, use loss based scoring.
 //
-func ScreenshareTrackScore(params TrackScoreParams) float32 {
+func LossBasedTrackScore(params TrackScoreParams) float32 {
 	pctLoss := getLossPercentage(params.PacketsExpected, params.PacketsLost)
 	// No Loss, excellent
 	if pctLoss == 0.0 && !params.IsReducedQuality {
