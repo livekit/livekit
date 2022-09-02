@@ -34,6 +34,7 @@ const (
 	rttUpdateInterval = 5 * time.Second
 
 	disconnectCleanupDuration = 15 * time.Second
+	migrationWaitDuration     = 3 * time.Second
 )
 
 type pendingTrackInfo struct {
@@ -100,6 +101,7 @@ type ParticipantImpl struct {
 	connectedAt time.Time
 	// timer that's set when disconnect is detected on primary PC
 	disconnectTimer *time.Timer
+	migrationTimer  *time.Timer
 
 	rtcpCh chan []rtcp.Packet
 
@@ -697,6 +699,54 @@ func (p *ParticipantImpl) Negotiate(force bool) {
 	}
 }
 
+func (p *ParticipantImpl) clearMigrationTimer() {
+	p.lock.Lock()
+	if p.migrationTimer != nil {
+		p.migrationTimer.Stop()
+		p.migrationTimer = nil
+	}
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
+	if !force && p.TransportManager.HaveAllTransportEverConnected() {
+		return false
+	}
+
+	if onStart != nil {
+		onStart()
+	}
+
+	p.CloseSignalConnection()
+
+	//
+	// On subscriber peer connection, remote side will try ICE on both
+	// pre- and post-migration ICE candidates as the migrating out
+	// peer connection leaves itself open to enable transition of
+	// media with as less disruption as possible.
+	//
+	// But, sometimes clients could delay the migration because of
+	// pinging the incorrect ICE candidates. Give the remote some time
+	// to try and succeed. If not, close the subscriber peer connection
+	// and help the remote side to narrow down its ICE candidate pool.
+	//
+	p.clearMigrationTimer()
+
+	p.lock.Lock()
+	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
+		p.clearMigrationTimer()
+
+		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+			return
+		}
+		p.params.Logger.Infow("closing subscriber peer connection to aid migration")
+		p.TransportManager.SubscriberClose()
+	})
+	p.lock.Unlock()
+
+	return true
+}
+
 func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	preState := p.MigrateState()
 	if preState == types.MigrateStateComplete || preState == s {
@@ -726,6 +776,7 @@ func (p *ParticipantImpl) MigrateState() types.MigrateState {
 // ICERestart restarts subscriber ICE connections
 func (p *ParticipantImpl) ICERestart(iceConfig *types.IceConfig) {
 	p.clearDisconnectTimer()
+	p.clearMigrationTimer()
 
 	for _, t := range p.GetPublishedTracks() {
 		t.(types.LocalMediaTrack).Restart()

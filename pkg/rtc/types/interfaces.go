@@ -306,6 +306,7 @@ type LocalParticipant interface {
 	OnClaimsChanged(callback func(LocalParticipant))
 
 	// session migration
+	MaybeStartMigration(force bool, onStart func()) bool
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo)
