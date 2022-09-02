@@ -35,17 +35,14 @@ rtc:
   # this is useful for cloud environments such as AWS & Google where hosts have an internal IP
   # that maps to an external one
   use_external_ip: true
-  # when set to true, server will use a lite ice agent, that will speed up ice connection, but 
-  # might cause connect issue if server running behind NAT.
-  # use_ice_lite: true
-  # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
-  # a single port. This simplifies deployment, but mux will become an overhead for
-  # highly trafficked deployments.
-  # port_range_start & end must not be set for this config to take effect
+  # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
+  # # a single port. This simplifies deployment, but mux will become an overhead for
+  # # highly trafficked deployments.
+  # # port_range_start & end must not be set for this config to take effect
   # udp_port: 7882
-  # optional settings
-  # # number of packets to buffer in the SFU, defaults to 500
-  # packet_buffer_size: 500
+  # # when set to true, server will use a lite ice agent, that will speed up ice connection, but
+  # # might cause connect issue if server running behind NAT.
+  # use_ice_lite: true
   # # optional STUN servers for LiveKit clients to use. Clients will be configured to use these STUN servers automatically.
   # # by default LiveKit clients use Google's public STUN servers
   # stun_servers:
@@ -65,6 +62,10 @@ rtc:
   #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
   #   # in order to allow others to stream smoothly. You can disable this behavior here
   #   allow_pause: true
+  # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable
+  # allow_tcp_fallback: false
+  # # number of packets to buffer in the SFU, defaults to 500
+  # packet_buffer_size: 500
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
   # # producer. Increasing these times can lead to longer black screens when new participants join,
   # # while reducing them can lead to higher stream bitrate.

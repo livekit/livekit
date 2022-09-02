@@ -81,6 +81,8 @@ const (
 	ParticipantCloseReasonSimulateNodeFailure
 	ParticipantCloseReasonSimulateServerLeave
 	ParticipantCloseReasonNegotiateFailed
+	ParticipantCloseReasonMigrationRequested
+	ParticipantCloseReasonOvercommitted
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -121,6 +123,10 @@ func (p ParticipantCloseReason) String() string {
 		return "SIMULATE_SERVER_LEAVE"
 	case ParticipantCloseReasonNegotiateFailed:
 		return "NEGOTIATE_FAILED"
+	case ParticipantCloseReasonOvercommitted:
+		return "OVERCOMMITTED"
+	case ParticipantCloseReasonMigrationRequested:
+		return "MIGRATION_REQUESTED"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -149,6 +155,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonSimulateServerLeave:
 		return livekit.DisconnectReason_SERVER_SHUTDOWN
+	case ParticipantCloseReasonOvercommitted:
+		return livekit.DisconnectReason_SERVER_SHUTDOWN
 	case ParticipantCloseReasonNegotiateFailed:
 		return livekit.DisconnectReason_STATE_MISMATCH
 	default:
@@ -170,6 +178,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -195,10 +204,29 @@ type Participant interface {
 	DebugInfo() map[string]interface{}
 }
 
+type PreferCandidateType int
+
+const (
+	PreferNone PreferCandidateType = iota
+	PreferTcp
+	PreferTls
+)
+
 type IceConfig struct {
-	PreferSubTcp bool
-	PreferPubTcp bool
+	PreferSub PreferCandidateType
+	PreferPub PreferCandidateType
 }
+
+// -------------------------------------------------------
+
+type ICEConnectionType string
+
+const (
+	ICEConnectionTypeUDP     ICEConnectionType = "udp"
+	ICEConnectionTypeTCP     ICEConnectionType = "tcp"
+	ICEConnectionTypeTURN    ICEConnectionType = "turn"
+	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
+)
 
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
@@ -213,9 +241,10 @@ type LocalParticipant interface {
 	IsReady() bool
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
+	GetICEConnectionType() ICEConnectionType
 
-	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
+	CloseSignalConnection()
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
@@ -225,17 +254,19 @@ type LocalParticipant interface {
 	CanPublishData() bool
 
 	// PeerConnection
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) error
-	HandleOffer(sdp webrtc.SessionDescription) error
+	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
+	HandleOffer(sdp webrtc.SessionDescription)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool)
 
-	SubscriberPC() *webrtc.PeerConnection
-	HandleAnswer(sdp webrtc.SessionDescription) error
+	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
 	AddNegotiationPending(publisherID livekit.ParticipantID)
 	IsNegotiationPending(publisherID livekit.ParticipantID) bool
-	ICERestart(iceConfig *IceConfig) error
+	ICERestart(iceConfig *IceConfig)
+	AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
 	AddSubscribedTrack(st SubscribedTrack)

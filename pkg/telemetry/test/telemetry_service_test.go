@@ -9,8 +9,13 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 )
+
+func init() {
+	prometheus.Init("test")
+}
 
 type telemetryServiceFixture struct {
 	sut       telemetry.TelemetryServiceInternal

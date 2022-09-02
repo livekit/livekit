@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -225,7 +226,12 @@ func (r *RoomManager) StartSession(
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
 			)
-			return room.ResumeParticipant(participant, responseSink)
+			if err = room.ResumeParticipant(participant, responseSink); err != nil {
+				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
+				return err
+			}
+			go r.rtcSessionWorker(room, participant, requestSource)
+			return nil
 		} else {
 			participant.GetLogger().Infow("removing duplicate participant")
 			// we need to clean up the existing participant, so a new one can join
@@ -262,6 +268,10 @@ func (r *RoomManager) StartSession(
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
 	protoRoom := room.ToProto()
+	allowFallback := false
+	if r.config.RTC.AllowTCPFallback != nil {
+		allowFallback = *r.config.RTC.AllowTCPFallback
+	}
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -278,20 +288,21 @@ func (r *RoomManager) StartSession(
 		Grants:                  pi.Grants,
 		Logger:                  pLogger,
 		ClientConf:              clientConf,
+		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
-		AllowTCPFallback:        r.config.RTC.AllowTCPFallback,
+		AllowTCPFallback:        allowFallback,
 	})
 	if err != nil {
 		return err
 	}
-	r.setIceConfig(participant)
+	iceConfig := r.setIceConfig(participant)
 
 	// join room
 	opts := rtc.ParticipantOptions{
 		AutoSubscribe: pi.AutoSubscribe,
 	}
-	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom)); err != nil {
+	if err = room.Join(participant, &opts, r.iceServersForRoom(protoRoom, iceConfig.PreferSub == types.PreferTls)); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed)
 		return err
@@ -379,7 +390,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry)
 
 	newRoom.OnClose(func() {
-		r.telemetry.RoomEnded(ctx, newRoom.ToProto())
+		roomInfo := newRoom.ToProto()
+		r.telemetry.RoomEnded(ctx, roomInfo)
+		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.DeleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger.Errorw("could not delete room", err)
 		}
@@ -408,6 +421,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom.Hold()
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
+	prometheus.RoomStarted()
 
 	return newRoom, nil
 }
@@ -421,7 +435,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			"room", room.Name(),
 			"roomID", room.ID(),
 		)
-		_ = participant.Close(true, types.ParticipantCloseReasonRTCSessionFinish)
 		requestSource.Close()
 	}()
 	defer rtc.Recover()
@@ -568,14 +581,19 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 	}
 }
 
-func (r *RoomManager) iceServersForRoom(ri *livekit.Room) []*livekit.ICEServer {
+func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livekit.ICEServer {
 	var iceServers []*livekit.ICEServer
 	rtcConf := r.config.RTC
+
+	if tlsOnly && r.config.TURN.TLSPort == 0 {
+		logger.Warnw("tls only enabled but no turn tls config", nil)
+		tlsOnly = false
+	}
 
 	hasSTUN := false
 	if r.config.TURN.Enabled {
 		var urls []string
-		if r.config.TURN.UDPPort > 0 {
+		if r.config.TURN.UDPPort > 0 && !tlsOnly {
 			// UDP TURN is used as STUN
 			hasSTUN = true
 			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
@@ -645,17 +663,18 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	return nil
 }
 
-func (r *RoomManager) setIceConfig(participant types.LocalParticipant) {
+func (r *RoomManager) setIceConfig(participant types.LocalParticipant) types.IceConfig {
 	r.lock.Lock()
 	iceConfigCacheEntry, ok := r.iceConfigCache[participant.Identity()]
 	if !ok || time.Since(iceConfigCacheEntry.modifiedAt) > iceConfigTTL {
 		delete(r.iceConfigCache, participant.Identity())
 		r.lock.Unlock()
-		return
+		return types.IceConfig{}
 	}
 	r.lock.Unlock()
 
 	participant.SetICEConfig(iceConfigCacheEntry.iceConfig)
+	return iceConfigCacheEntry.iceConfig
 }
 
 // ------------------------------------

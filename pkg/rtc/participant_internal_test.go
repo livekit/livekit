@@ -184,7 +184,7 @@ func TestTrackPublishing(t *testing.T) {
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.SetMetadata("initial metadata")
-	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+	sink := p.getResponseSink().(*routingfakes.FakeMessageSink)
 	pi1 := p.ToProto()
 	p.SetMetadata("second update")
 	pi2 := p.ToProto()
@@ -407,8 +407,7 @@ func TestDisableCodecs(t *testing.T) {
 		}
 		return nil
 	}
-	err = participant.HandleOffer(sdp)
-	require.NoError(t, err)
+	participant.HandleOffer(sdp)
 
 	testutils.WithTimeout(t, func() string {
 		if answerReceived.Load() {
@@ -434,6 +433,7 @@ type participantOpts struct {
 	protocolVersion types.ProtocolVersion
 	publisher       bool
 	clientConf      *livekit.ClientConfiguration
+	clientInfo      *livekit.ClientInfo
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -477,6 +477,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Grants:            grants,
 		EnabledCodecs:     enabledCodecs,
 		ClientConf:        opts.clientConf,
+		ClientInfo:        ClientInfo{ClientInfo: opts.clientInfo},
 	})
 	p.isPublisher.Store(opts.publisher)
 

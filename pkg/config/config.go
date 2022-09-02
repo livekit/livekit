@@ -72,11 +72,11 @@ type RTCConfig struct {
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
+	// allow TCP and TURN/TLS fallback
+	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
+
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
-
-	// allow TCP fallback
-	AllowTCPFallback bool `yaml:"allow_tcp_fallback,omitempty"`
 }
 
 type TURNServer struct {
@@ -235,6 +235,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 			AutoCreate: true,
 			EnabledCodecs: []CodecSpec{
 				{Mime: webrtc.MimeTypeOpus},
+				{Mime: "audio/red"},
 				{Mime: webrtc.MimeTypeVP8},
 				{Mime: webrtc.MimeTypeH264},
 				// {Mime: webrtc.MimeTypeAV1},

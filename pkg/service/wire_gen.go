@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
+	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -62,9 +63,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService)
+	ingressConfig := getIngressConfig(conf)
 	rpc := ingress.NewRedisRPC(nodeID, client)
+	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
-	ingressService := NewIngressService(conf, rpc, ingressStore, roomService, telemetryService)
+	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
@@ -72,7 +75,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	authHandler := newTurnAuthHandler(objectStore)
-	server, err := NewTurnServer(conf, authHandler)
+	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -214,10 +217,22 @@ func getIngressStore(s ObjectStore) IngressStore {
 	}
 }
 
+func getIngressConfig(conf *config.Config) *config.IngressConfig {
+	return &conf.Ingress
+}
+
+func getIngressRPCClient(rpc ingress.RPC) ingress.RPCClient {
+	return rpc
+}
+
 func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
 	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }
 
 func getRoomConf(config2 *config.Config) config.RoomConfig {
 	return config2.Room
+}
+
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false)
 }

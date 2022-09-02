@@ -18,10 +18,11 @@ type Bucket struct {
 	buf []byte
 	src *[]byte
 
-	init     bool
-	step     int
-	headSN   uint16
-	maxSteps int
+	init               bool
+	resyncOnNextPacket bool
+	step               int
+	headSN             uint16
+	maxSteps           int
 }
 
 func NewBucket(buf *[]byte) *Bucket {
@@ -35,11 +36,22 @@ func NewBucket(buf *[]byte) *Bucket {
 	return b
 }
 
+func (b *Bucket) ResyncOnNextPacket() {
+	b.resyncOnNextPacket = true
+}
+
 func (b *Bucket) AddPacket(pkt []byte) ([]byte, error) {
 	sn := binary.BigEndian.Uint16(pkt[seqNumOffset : seqNumOffset+seqNumSize])
 	if !b.init {
 		b.headSN = sn - 1
 		b.init = true
+	}
+
+	if b.resyncOnNextPacket {
+		b.resyncOnNextPacket = false
+
+		b.headSN = sn - 1
+		b.invalidate(0, b.maxSteps)
 	}
 
 	diff := sn - b.headSN
