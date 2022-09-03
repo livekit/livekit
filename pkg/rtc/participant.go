@@ -662,7 +662,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 
 	// remove all down tracks
-	var downTracksToClose []*sfu.DownTrack
+	downTracksToClose := make([]*sfu.DownTrack, 0, len(p.subscribedTracks))
 	for _, st := range p.subscribedTracks {
 		downTracksToClose = append(downTracksToClose, st.DownTrack())
 	}
@@ -740,6 +740,24 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 			return
 		}
 		p.params.Logger.Infow("closing subscriber peer connection to aid migration")
+
+		//
+		// Close all down track before closing subscriber peer connection.
+		// Closing subscriber peer connection will call `Unbind` on all down tracks.
+		// DownTrack close has checks to handle the case of closing before bind.
+		// So, an `Unbind` before close would bypass that logic.
+		//
+		p.lock.Lock()
+		downTracksToClose := make([]*sfu.DownTrack, 0, len(p.subscribedTracks))
+		for _, st := range p.subscribedTracks {
+			downTracksToClose = append(downTracksToClose, st.DownTrack())
+		}
+		p.lock.Unlock()
+
+		for _, dt := range downTracksToClose {
+			dt.CloseWithFlush(false)
+		}
+
 		p.TransportManager.SubscriberClose()
 	})
 	p.lock.Unlock()
