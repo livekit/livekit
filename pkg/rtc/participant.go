@@ -742,7 +742,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		p.params.Logger.Infow("closing subscriber peer connection to aid migration")
 
 		//
-		// Close all down track before closing subscriber peer connection.
+		// Close all down tracks before closing subscriber peer connection.
 		// Closing subscriber peer connection will call `Unbind` on all down tracks.
 		// DownTrack close has checks to handle the case of closing before bind.
 		// So, an `Unbind` before close would bypass that logic.
