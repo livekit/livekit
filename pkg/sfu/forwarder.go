@@ -494,7 +494,7 @@ func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers)
 	if !found && targetLayers.IsValid() {
 		distance = 0
 		for s := targetLayers.Spatial; s > f.maxLayers.Spatial; s-- {
-			for t := DefaultMaxLayerTemporal; t >= f.maxLayers.Temporal; t-- {
+			for t := f.maxLayers.Temporal; t >= 0; t-- {
 				if brs[s][t] == 0 {
 					continue
 				}
@@ -930,9 +930,22 @@ func (f *Forwarder) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 		}
 	}
 
-	// RAJA-TODO: need to exempted layers maybe?
-
 	if maxReachableLayerTemporal == InvalidLayerTemporal {
+		// stick to an exempted layer if available
+		if f.currentLayers.IsValid() {
+			for _, s := range f.provisional.exemptedLayers {
+				if s <= f.provisional.maxLayers.Spatial && f.currentLayers.Spatial == s {
+					f.provisional.allocatedLayers = f.currentLayers
+					return VideoTransition{
+						from:           f.targetLayers,
+						to:             f.provisional.allocatedLayers,
+						bandwidthDelta: 0 - f.lastAllocation.bandwidthRequested,
+						// LK-TODO should this take current bitrate of current target layers?
+					}
+				}
+			}
+		}
+
 		// feed has gone dry,
 		f.provisional.allocatedLayers = InvalidLayers
 		return VideoTransition{
