@@ -215,19 +215,18 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		// using the current and maximum is a reasonable approximation.
 		if cs.params.GetCurrentLayerSpatial != nil {
 			maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
+			if maxAvailableLayer == buffer.InvalidLayerSpatial {
+				// retain old score as stats will not be available if not forwarding
+				return cs.score
+			}
 		}
 		params.Width, params.Height = cs.getLayerDimensions(maxAvailableLayer)
-		if params.Width == 0 || params.Height == 0 {
-			cs.params.Logger.Warnw("could not get dimensions", nil, "maxAvailableLayer", maxAvailableLayer)
-			return cs.score
-		}
-
-		if cs.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE {
+		if cs.trackInfo.Source == livekit.TrackSource_SCREEN_SHARE || params.Width == 0 || params.Height == 0 {
 			if cs.params.GetIsReducedQuality != nil {
 				_, params.IsReducedQuality = cs.params.GetIsReducedQuality()
 			}
 
-			cs.score = ScreenshareTrackScore(params)
+			cs.score = LossBasedTrackScore(params)
 		} else {
 			normFactor := float32(1)
 			if int(maxAvailableLayer) < len(cs.normFactors) {

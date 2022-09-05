@@ -25,7 +25,7 @@ import (
 
 // TrackSender defines an interface send media to remote peer
 type TrackSender interface {
-	UpTrackLayersChange(availableLayers []int32)
+	UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32)
 	UpTrackBitrateAvailabilityChange()
 	WriteRTP(p *buffer.ExtPacket, layer int32) error
 	Close()
@@ -755,8 +755,8 @@ func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
 	return d.forwarder.GetForwardingStatus()
 }
 
-func (d *DownTrack) UpTrackLayersChange(availableLayers []int32) {
-	d.forwarder.UpTrackLayersChange(availableLayers)
+func (d *DownTrack) UpTrackLayersChange(availableLayers []int32, exemptedLayers []int32) {
+	d.forwarder.UpTrackLayersChange(availableLayers, exemptedLayers)
 
 	if onAvailableLayersChanged, ok := d.onAvailableLayersChanged.Load().(func(dt *DownTrack)); ok {
 		onAvailableLayersChanged(d)
@@ -841,8 +841,8 @@ func (d *DownTrack) DistanceToDesired() int32 {
 	return d.forwarder.DistanceToDesired()
 }
 
-func (d *DownTrack) AllocateOptimal() VideoAllocation {
-	allocation := d.forwarder.AllocateOptimal(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
+	allocation := d.forwarder.AllocateOptimal(d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
 	d.logger.Debugw("stream: allocation optimal available", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
@@ -852,12 +852,12 @@ func (d *DownTrack) ProvisionalAllocatePrepare() {
 	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateTemporalCumulative())
 }
 
-func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
-	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause)
+func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
+	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
 }
 
-func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
-	transition := d.forwarder.ProvisionalAllocateGetCooperativeTransition()
+func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
+	transition := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
 	d.logger.Debugw("stream: cooperative transition", "transition", transition)
 	return transition
 }
@@ -875,15 +875,15 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	return allocation
 }
 
-func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
-	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
 	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
 	d.maybeStartKeyFrameRequester()
 	return allocation, available
 }
 
-func (d *DownTrack) GetNextHigherTransition() (VideoTransition, bool) {
-	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative())
+func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
+	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
 	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
 	return transition, available
 }

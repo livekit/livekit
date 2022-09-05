@@ -153,6 +153,14 @@ func (t *TransportManager) Close() {
 	t.subscriber.Close()
 }
 
+func (t *TransportManager) HaveAllTransportEverConnected() bool {
+	return t.publisher.HasEverConnected() && t.subscriber.HasEverConnected()
+}
+
+func (t *TransportManager) SubscriberClose() {
+	t.subscriber.Close()
+}
+
 func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate) error) {
 	t.publisher.OnICECandidate(f)
 }
@@ -443,7 +451,7 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 }
 
 func (t *TransportManager) GetICEConnectionType() types.ICEConnectionType {
-	return t.getTransport(true).getICEConnectionType()
+	return t.getTransport(true).GetICEConnectionType()
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
