@@ -709,7 +709,7 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 }
 
 func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	if !force && p.TransportManager.HaveAllTransportEverConnected() {
+	if !force && !p.TransportManager.HaveAllTransportEverConnected() {
 		return false
 	}
 
