@@ -1,6 +1,7 @@
 package sfu
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -426,8 +427,152 @@ func TestForwarderProvisionalAllocate(t *testing.T) {
 	require.Equal(t, expectedResult, f.lastAllocation)
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 
-	// RAJA-TODO - test allowOvershoot
-	// RAJA-TODO - test exempted layer choice (when current layer matches and current layer does not match)
+	//
+	// Test allowOvershoot.
+	// Max spatial set to 0 and layer 0 bit rates are not available.
+	// Layer 0 is exempted layer.
+	//
+	f.SetMaxSpatialLayer(0)
+	availableLayers = []int32{0, 1, 2}
+	exemptedLayers := []int32{0}
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{5, 6, 7, 8},
+		{9, 10, 11, 12},
+	}
+
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 0, Temporal: 0}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// overshoot should succeed
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 2, Temporal: 3}, false, true)
+	require.Equal(t, bitrates[2][3], usedBitrate)
+
+	// overshoot should succeed - this should win as this is lesser overshoot
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 1, Temporal: 3}, false, true)
+	require.Equal(t, bitrates[1][3]-bitrates[2][3], usedBitrate)
+
+	// committing should set target to (1, 3)
+	expectedTargetLayers = VideoLayers{
+		Spatial:  1,
+		Temporal: 3,
+	}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: bitrates[1][3],
+		bandwidthDelta:     bitrates[1][3] - 1, // 1 is the last allocation bandwith requested
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       expectedTargetLayers,
+		distanceToDesired:  -4,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+
+	//
+	// Test exemptedLayers
+	// Even if overshoot is allowed, but higher layers do not have bit rates and the current layer is empted,,
+	// should continue with current layer.
+	//
+	f.SetMaxSpatialLayer(0)
+	availableLayers = []int32{0, 1, 2}
+	exemptedLayers = []int32{0}
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+	}
+
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 2}
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// all the provisional allocations below should fall back to exempted layer
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 0, Temporal: 0}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// overshoot should not succeed
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 2, Temporal: 3}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// overshoot should not succeed
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 1, Temporal: 3}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// committing should set target to (0, 2)
+	expectedTargetLayers = VideoLayers{
+		Spatial:  0,
+		Temporal: 2,
+	}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateDeficient,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: bitrates[0][2],
+		bandwidthDelta:     bitrates[0][2] - 8, // 8 is the last allocation bandwith requested
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       expectedTargetLayers,
+		distanceToDesired:  0,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+
+	//
+	// Test currentLayers not in exemptedLayers
+	//
+	f.SetMaxSpatialLayer(0)
+	availableLayers = []int32{0, 1, 2}
+	exemptedLayers = []int32{0}
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+	}
+
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.currentLayers = VideoLayers{Spatial: 1, Temporal: 2}
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// all the provisional allocations below should fall back to exempted layer
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 0, Temporal: 0}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// overshoot should not succeed
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 2, Temporal: 3}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	// overshoot should not succeed
+	usedBitrate = f.ProvisionalAllocate(bitrates[2][3], VideoLayers{Spatial: 1, Temporal: 3}, false, true)
+	require.Equal(t, int64(0), usedBitrate)
+
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateDeficient,
+		change:             VideoStreamingChangePausing,
+		bandwidthRequested: 0,
+		bandwidthDelta:     0,
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       InvalidLayers,
+		distanceToDesired:  0,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, InvalidLayers, f.TargetLayers())
 }
 
 func TestForwarderProvisionalAllocateMute(t *testing.T) {
@@ -561,7 +706,130 @@ func TestForwarderProvisionalAllocateGetCooperativeTransition(t *testing.T) {
 	transition = f.ProvisionalAllocateGetCooperativeTransition(false)
 	require.Equal(t, expectedTransition, transition)
 
-	// RAJA-TODO - test allowOvershoot and exempted layers
+	f.ProvisionalAllocateCommit()
+
+	//
+	// Test allowOvershoot
+	//
+	f.Mute(false)
+	f.SetMaxSpatialLayer(0)
+
+	availableLayers = []int32{0, 1, 2}
+	exemptedLayers := []int32{0}
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{5, 6, 7, 8},
+		{9, 10, 0, 0},
+	}
+
+	f.targetLayers = InvalidLayers
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// from scratch (InvalidLayers) should go to a layer past maximum as overshoot is allowed
+	expectedTransition = VideoTransition{
+		from:           InvalidLayers,
+		to:             VideoLayers{Spatial: 1, Temporal: 0},
+		bandwidthDelta: 5,
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition(true)
+	require.Equal(t, expectedTransition, transition)
+
+	// committing should set target to (1, 0)
+	expectedLayers = VideoLayers{Spatial: 1, Temporal: 0}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeResuming,
+		bandwidthRequested: 5,
+		bandwidthDelta:     5,
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       expectedLayers,
+		distanceToDesired:  -1,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedLayers, f.TargetLayers())
+
+	// Test exemptedLayers matching current layers
+	f.SetMaxSpatialLayer(0)
+
+	availableLayers = []int32{0, 1, 2}
+	exemptedLayers = []int32{0}
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+		{0, 0, 0, 0},
+	}
+
+	f.currentLayers = VideoLayers{Spatial: 0, Temporal: 2}
+	f.targetLayers = InvalidLayers
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	// from scratch (InvalidLayers) should go to an exempted layer
+	// NOTE: targetLayer is set to InvalidLayers for testing, but in practice current layers valid and target layers invalid should not happen
+	expectedTransition = VideoTransition{
+		from:           InvalidLayers,
+		to:             VideoLayers{Spatial: 0, Temporal: 2},
+		bandwidthDelta: -5, // 5 was the bandwidth needed for the last allocation
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition(true)
+	require.Equal(t, expectedTransition, transition)
+
+	// committing should set target to (0, 2)
+	expectedLayers = VideoLayers{Spatial: 0, Temporal: 2}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateDeficient,
+		change:             VideoStreamingChangeResuming,
+		bandwidthRequested: 0,
+		bandwidthDelta:     -5,
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       expectedLayers,
+		distanceToDesired:  0,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedLayers, f.TargetLayers())
+
+	// Test exemptedLayers not matching current layers
+	f.currentLayers = VideoLayers{Spatial: 2, Temporal: 2}
+	f.targetLayers = f.currentLayers
+	f.availableLayers = availableLayers
+	f.exemptedLayers = exemptedLayers
+	f.ProvisionalAllocatePrepare(bitrates)
+
+	expectedTransition = VideoTransition{
+		from:           VideoLayers{Spatial: 2, Temporal: 2},
+		to:             InvalidLayers,
+		bandwidthDelta: 0,
+	}
+	transition = f.ProvisionalAllocateGetCooperativeTransition(true)
+	require.Equal(t, expectedTransition, transition)
+
+	// committing should set target to InvalidLayers
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateDeficient,
+		change:             VideoStreamingChangePausing,
+		bandwidthRequested: 0,
+		bandwidthDelta:     0,
+		availableLayers:    availableLayers,
+		exemptedLayers:     exemptedLayers,
+		bitrates:           bitrates,
+		targetLayers:       InvalidLayers,
+		distanceToDesired:  0,
+	}
+	result = f.ProvisionalAllocateCommit()
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, InvalidLayers, f.TargetLayers())
 }
 
 func TestForwarderProvisionalAllocateGetBestWeightedTransition(t *testing.T) {
@@ -797,7 +1065,39 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.Equal(t, expectedTargetLayers, f.TargetLayers())
 	require.False(t, boosted)
 
-	// RAJA-TODO test allowOvershoot
+	// test allowOvershoot
+	fmt.Printf("test start\n") // REMOVE
+	f.SetMaxSpatialLayer(0)
+
+	bitrates = Bitrates{
+		{0, 0, 0, 0},
+		{5, 6, 7, 8},
+		{9, 10, 11, 12},
+	}
+
+	f.currentLayers = f.targetLayers
+
+	expectedTargetLayers = VideoLayers{
+		Spatial:  1,
+		Temporal: 0,
+	}
+	expectedResult = VideoAllocation{
+		state:              VideoAllocationStateOptimal,
+		change:             VideoStreamingChangeNone,
+		bandwidthRequested: bitrates[1][0],
+		bandwidthDelta:     bitrates[1][0],
+		availableLayers:    nil,
+		exemptedLayers:     nil,
+		bitrates:           bitrates,
+		targetLayers:       expectedTargetLayers,
+		distanceToDesired:  -1,
+	}
+	// overshoot should return (1, 0) even if there is not enough capacity
+	result, boosted = f.AllocateNextHigher(bitrates[1][0]-1, bitrates, true)
+	require.Equal(t, expectedResult, result)
+	require.Equal(t, expectedResult, f.lastAllocation)
+	require.Equal(t, expectedTargetLayers, f.TargetLayers())
+	require.True(t, boosted)
 }
 
 func TestForwarderPause(t *testing.T) {

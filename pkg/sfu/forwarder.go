@@ -413,9 +413,13 @@ func (f *Forwarder) UpTrackLayersChange(availableLayers []int32, exemptedLayers 
 	}
 }
 
-func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates) int64 {
-	for i := f.maxLayers.Spatial; i >= 0; i-- {
-		for j := f.maxLayers.Temporal; j >= 0; j-- {
+func (f *Forwarder) getOptimalBandwidthNeeded(brs Bitrates, maxLayers VideoLayers) int64 {
+	if f.muted {
+		return 0
+	}
+
+	for i := maxLayers.Spatial; i >= 0; i-- {
+		for j := maxLayers.Temporal; j >= 0; j-- {
 			if brs[i][j] == 0 {
 				continue
 			}
@@ -465,15 +469,15 @@ func (f *Forwarder) bitrateAvailable(brs Bitrates) bool {
 	return bitrateAvailableLayers == neededLayers
 }
 
-func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers) int32 {
+func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers, maxLayers VideoLayers) int32 {
 	if f.muted {
 		return 0
 	}
 
 	found := false
 	distance := int32(0)
-	for s := f.maxLayers.Spatial; s >= 0; s-- {
-		for t := f.maxLayers.Temporal; t >= 0; t-- {
+	for s := maxLayers.Spatial; s >= 0; s-- {
+		for t := maxLayers.Temporal; t >= 0; t-- {
 			if brs[s][t] == 0 {
 				continue
 			}
@@ -495,7 +499,7 @@ func (f *Forwarder) getDistanceToDesired(brs Bitrates, targetLayers VideoLayers)
 		distance = 0
 		for s := targetLayers.Spatial; s > f.maxLayers.Spatial; s-- {
 			for t := f.maxLayers.Temporal; t >= 0; t-- {
-				if brs[s][t] == 0 {
+				if targetLayers.Temporal < t || brs[s][t] == 0 {
 					continue
 				}
 				distance--
@@ -657,7 +661,7 @@ func (f *Forwarder) AllocateOptimal(brs Bitrates, allowOvershoot bool) VideoAllo
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
 		bitrates:           brs,
 		targetLayers:       targetLayers,
-		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
+		distanceToDesired:  f.getDistanceToDesired(brs, targetLayers, f.maxLayers),
 	}
 	if len(f.availableLayers) > 0 {
 		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
@@ -704,7 +708,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		return 0
 	}
 
-	maybeAdoptExempt := func() int64 {
+	maybeAdoptExempted := func() int64 {
 		br := int64(0)
 		if f.currentLayers.IsValid() {
 			for _, s := range f.provisional.exemptedLayers {
@@ -720,7 +724,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 
 	requiredBitrate := f.provisional.bitrates[layers.Spatial][layers.Temporal]
 	if requiredBitrate == 0 {
-		return maybeAdoptExempt()
+		return maybeAdoptExempted()
 	}
 
 	alreadyAllocatedBitrate := int64(0)
@@ -735,8 +739,10 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 	}
 
 	//
-	// Given layer does not fit.
-	// Could be a layer below maximum that does not fit OR it could be a layer above maximum which may or may not fit.
+	// Given layer does not fit. But overshoot is allowed.
+	// Could be one of
+	//  1. a layer below maximum that does not fit
+	//  2. a layer above maximum which may or may not fit.
 	// In any of those cases, take the lowest possible layer if pause is not allowed
 	//
 	if !allowPause && (f.provisional.allocatedLayers == InvalidLayers || !layers.GreaterThan(f.provisional.allocatedLayers)) {
@@ -744,7 +750,7 @@ func (f *Forwarder) ProvisionalAllocate(availableChannelCapacity int64, layers V
 		return requiredBitrate - alreadyAllocatedBitrate
 	}
 
-	return maybeAdoptExempt()
+	return maybeAdoptExempted()
 }
 
 func (f *Forwarder) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
@@ -1017,9 +1023,9 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 			change = VideoStreamingChangePausing
 		}
 	default:
-		optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(f.provisional.bitrates)
+		optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(f.provisional.bitrates, f.provisional.maxLayers)
 		bandwidthRequested = f.provisional.bitrates[f.provisional.allocatedLayers.Spatial][f.provisional.allocatedLayers.Temporal]
-		if optimalBandwidthNeeded > 0 && bandwidthRequested >= optimalBandwidthNeeded {
+		if f.provisional.allocatedLayers.GreaterThan(f.provisional.maxLayers) || (optimalBandwidthNeeded > 0 && bandwidthRequested >= optimalBandwidthNeeded) {
 			// could be greater than optimal if overshooting
 			state = VideoAllocationStateOptimal
 		} else {
@@ -1042,14 +1048,14 @@ func (f *Forwarder) ProvisionalAllocateCommit() VideoAllocation {
 		bandwidthDelta:     bandwidthRequested - f.lastAllocation.bandwidthRequested,
 		bitrates:           f.provisional.bitrates,
 		targetLayers:       f.provisional.allocatedLayers,
-		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.allocatedLayers),
+		distanceToDesired:  f.getDistanceToDesired(f.provisional.bitrates, f.provisional.allocatedLayers, f.provisional.maxLayers),
 	}
-	if len(f.availableLayers) > 0 {
-		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
+	if len(f.provisional.availableLayers) > 0 {
+		f.lastAllocation.availableLayers = make([]int32, len(f.provisional.availableLayers))
 		copy(f.lastAllocation.availableLayers, f.provisional.availableLayers)
 	}
-	if len(f.exemptedLayers) > 0 {
-		f.lastAllocation.exemptedLayers = make([]int32, len(f.exemptedLayers))
+	if len(f.provisional.exemptedLayers) > 0 {
+		f.lastAllocation.exemptedLayers = make([]int32, len(f.provisional.exemptedLayers))
 		copy(f.lastAllocation.exemptedLayers, f.provisional.exemptedLayers)
 	}
 
@@ -1082,7 +1088,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 		return f.lastAllocation, false
 	}
 
-	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs)
+	optimalBandwidthNeeded := f.getOptimalBandwidthNeeded(brs, f.maxLayers)
 
 	alreadyAllocated := int64(0)
 	if f.targetLayers != InvalidLayers {
@@ -1100,14 +1106,15 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 					continue
 				}
 
-				if bandwidthRequested-alreadyAllocated > availableChannelCapacity {
+				if !allowOvershoot && bandwidthRequested-alreadyAllocated > availableChannelCapacity {
 					// next higher available layer does not fit, return
 					f.lastAllocation.change = VideoStreamingChangeNone
 					return true, f.lastAllocation, false
 				}
 
+				targetLayers := VideoLayers{Spatial: s, Temporal: t}
 				state := VideoAllocationStateDeficient
-				if optimalBandwidthNeeded > 0 && bandwidthRequested >= optimalBandwidthNeeded {
+				if targetLayers.GreaterThan(f.maxLayers) || (optimalBandwidthNeeded > 0 && bandwidthRequested >= optimalBandwidthNeeded) {
 					state = VideoAllocationStateOptimal
 				}
 
@@ -1116,7 +1123,6 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 					change = VideoStreamingChangeResuming
 				}
 
-				targetLayers := VideoLayers{Spatial: s, Temporal: t}
 				f.lastAllocation = VideoAllocation{
 					state:              state,
 					change:             change,
@@ -1124,7 +1130,7 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, brs Bitra
 					bandwidthDelta:     bandwidthRequested - alreadyAllocated,
 					bitrates:           brs,
 					targetLayers:       targetLayers,
-					distanceToDesired:  f.getDistanceToDesired(brs, targetLayers),
+					distanceToDesired:  f.getDistanceToDesired(brs, targetLayers, f.maxLayers),
 				}
 				if len(f.availableLayers) > 0 {
 					f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
@@ -1294,7 +1300,7 @@ func (f *Forwarder) Pause(brs Bitrates) VideoAllocation {
 		bandwidthDelta:     0 - f.lastAllocation.bandwidthRequested,
 		bitrates:           brs,
 		targetLayers:       InvalidLayers,
-		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers),
+		distanceToDesired:  f.getDistanceToDesired(brs, InvalidLayers, f.maxLayers),
 	}
 	if len(f.availableLayers) > 0 {
 		f.lastAllocation.availableLayers = make([]int32, len(f.availableLayers))
