@@ -38,6 +38,12 @@ const (
 	PriorityMax                = uint8(255)
 	PriorityDefaultScreenshare = PriorityMax
 	PriorityDefaultVideo       = PriorityMin
+
+	FlagAllowOvershootWhileOptimal              = true
+	FlagAllowOvershootWhileDeficient            = false
+	FlagAllowOvershootExemptTrackWhileDeficient = true
+	FlagAllowOvershootInProbe                   = true
+	FlagAllowOvershootInCatchup                 = true
 )
 
 var (
@@ -707,7 +713,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	// if not deficient, free pass allocate track
 	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal()
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
 		update.HandleStreamingChange(allocation.change, track)
 		s.maybeSendUpdate(update)
 		return
@@ -721,7 +727,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	//   4. If this track needs more, ask for best offer from others and try to use it.
 	//
 	track.ProvisionalAllocatePrepare()
-	transition := track.ProvisionalAllocateGetCooperativeTransition()
+	transition := track.ProvisionalAllocateGetCooperativeTransition(FlagAllowOvershootWhileDeficient)
 
 	// track is currently streaming at minimum
 	if transition.bandwidthDelta == 0 {
@@ -848,7 +854,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	update := NewStreamStateUpdate()
 
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		allocation, boosted := track.AllocateNextHigher(availableChannelCapacity)
+		allocation, boosted := track.AllocateNextHigher(availableChannelCapacity, FlagAllowOvershootInCatchup)
 		if !boosted {
 			continue
 		}
@@ -898,7 +904,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 
 	//
 	// This pass is to find out if there is any leftover channel capacity after allocating exempt tracks.
-	// Infinite channel capacity is given so that exempt tracks do not stall
+	// Exempt tracks are given optimal allocation (i. e. no bandwidth constraint) so that they do not fail allocation.
 	//
 	videoTracks := s.getTracks()
 	for _, track := range videoTracks {
@@ -906,7 +912,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.AllocateOptimal()
+		allocation := track.AllocateOptimal(FlagAllowOvershootExemptTrackWhileDeficient)
 		update.HandleStreamingChange(allocation.change, track)
 
 		// LK-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?
@@ -940,7 +946,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 				}
 
 				for _, track := range sorted {
-					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers, s.params.Config.AllowPause)
+					usedChannelCapacity := track.ProvisionalAllocate(availableChannelCapacity, layers, s.params.Config.AllowPause, FlagAllowOvershootWhileDeficient)
 					availableChannelCapacity -= usedChannelCapacity
 					if availableChannelCapacity < 0 {
 						availableChannelCapacity = 0
@@ -1090,7 +1096,7 @@ func (s *StreamAllocator) maybeProbe() {
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layers
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity)
+		allocation, boosted := track.AllocateNextHigher(ChannelCapacityInfinity, FlagAllowOvershootInCatchup)
 		if !boosted {
 			continue
 		}
@@ -1107,7 +1113,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 func (s *StreamAllocator) maybeProbeWithPadding() {
 	// use deficient track farthest from desired layers to find how much to probe
 	for _, track := range s.getMaxDistanceSortedDeficient() {
-		transition, available := track.GetNextHigherTransition()
+		transition, available := track.GetNextHigherTransition(FlagAllowOvershootInProbe)
 		if !available || transition.bandwidthDelta < 0 {
 			continue
 		}
@@ -1326,20 +1332,20 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 	return t.downTrack.WritePaddingRTP(bytesToSend)
 }
 
-func (t *Track) AllocateOptimal() VideoAllocation {
-	return t.downTrack.AllocateOptimal()
+func (t *Track) AllocateOptimal(allowOvershoot bool) VideoAllocation {
+	return t.downTrack.AllocateOptimal(allowOvershoot)
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {
 	t.downTrack.ProvisionalAllocatePrepare()
 }
 
-func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool) int64 {
-	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers, allowPause)
+func (t *Track) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
+	return t.downTrack.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
 }
 
-func (t *Track) ProvisionalAllocateGetCooperativeTransition() VideoTransition {
-	return t.downTrack.ProvisionalAllocateGetCooperativeTransition()
+func (t *Track) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
+	return t.downTrack.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
 }
 
 func (t *Track) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
@@ -1350,12 +1356,12 @@ func (t *Track) ProvisionalAllocateCommit() VideoAllocation {
 	return t.downTrack.ProvisionalAllocateCommit()
 }
 
-func (t *Track) AllocateNextHigher(availableChannelCapacity int64) (VideoAllocation, bool) {
-	return t.downTrack.AllocateNextHigher(availableChannelCapacity)
+func (t *Track) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
+	return t.downTrack.AllocateNextHigher(availableChannelCapacity, allowOvershoot)
 }
 
-func (t *Track) GetNextHigherTransition() (VideoTransition, bool) {
-	return t.downTrack.GetNextHigherTransition()
+func (t *Track) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
+	return t.downTrack.GetNextHigherTransition(allowOvershoot)
 }
 
 func (t *Track) Pause() VideoAllocation {
