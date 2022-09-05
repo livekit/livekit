@@ -437,7 +437,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 			break
 		}
 	}
-	if !found {
+	if !found && exempt {
 		s.exemptedLayers = append(s.exemptedLayers, layer)
 		sort.Slice(s.exemptedLayers, func(i, j int) bool { return s.exemptedLayers[i] < s.exemptedLayers[j] })
 	}
