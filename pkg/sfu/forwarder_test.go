@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -1066,7 +1065,6 @@ func TestForwarderAllocateNextHigher(t *testing.T) {
 	require.False(t, boosted)
 
 	// test allowOvershoot
-	fmt.Printf("test start\n") // REMOVE
 	f.SetMaxSpatialLayer(0)
 
 	bitrates = Bitrates{
