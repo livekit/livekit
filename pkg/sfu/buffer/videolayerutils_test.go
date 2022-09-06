@@ -204,9 +204,9 @@ func TestQualityConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]QualityAndLayer{
-				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
+				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 0},
+				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 0},
+				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 0},
 			},
 		},
 		{
@@ -217,9 +217,9 @@ func TestQualityConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]QualityAndLayer{
-				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
+				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 0},
+				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 0},
+				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 0},
 			},
 		},
 		{
@@ -246,8 +246,8 @@ func TestQualityConversion(t *testing.T) {
 			},
 			map[livekit.VideoQuality]QualityAndLayer{
 				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 1},
-				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 1},
+				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 1},
+				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 1},
 			},
 		},
 		{
@@ -259,9 +259,9 @@ func TestQualityConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]QualityAndLayer{
-				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_LOW, layer: 0},
-				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 1},
+				livekit.VideoQuality_LOW:    QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 0},
+				livekit.VideoQuality_MEDIUM: QualityAndLayer{quality: livekit.VideoQuality_MEDIUM, layer: 0},
+				livekit.VideoQuality_HIGH:   QualityAndLayer{quality: livekit.VideoQuality_HIGH, layer: 1},
 			},
 		},
 		{
@@ -305,8 +305,8 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 			nil,
 			map[livekit.VideoQuality]string{
 				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   QuarterResolution,
+				livekit.VideoQuality_MEDIUM: HalfResolution,
+				livekit.VideoQuality_HIGH:   FullResolution,
 			},
 		},
 		{
@@ -314,8 +314,8 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 			&livekit.TrackInfo{},
 			map[livekit.VideoQuality]string{
 				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   QuarterResolution,
+				livekit.VideoQuality_MEDIUM: HalfResolution,
+				livekit.VideoQuality_HIGH:   FullResolution,
 			},
 		},
 		{
@@ -395,7 +395,7 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 			},
 			map[livekit.VideoQuality]string{
 				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
+				livekit.VideoQuality_MEDIUM: QuarterResolution,
 				livekit.VideoQuality_HIGH:   HalfResolution,
 			},
 		},
