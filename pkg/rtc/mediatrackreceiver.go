@@ -18,7 +18,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -116,7 +115,7 @@ func (t *MediaTrackReceiver) Restart() {
 	t.lock.Unlock()
 
 	for _, receiver := range receivers {
-		receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(livekit.VideoQuality_HIGH))
+		receiver.SetMaxExpectedSpatialLayer(buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.TrackInfo))
 	}
 }
 
@@ -219,7 +218,7 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	layer := sfu.RidToLayer(rid)
+	layer := buffer.RidToSpatialLayer(rid, t.params.TrackInfo)
 	if layer == sfu.InvalidLayerSpatial {
 		// non-simulcast case will not have `rid`
 		layer = 0
@@ -774,14 +773,3 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 }
 
 // ---------------------------
-
-func VideoQualityToRID(q livekit.VideoQuality) string {
-	switch q {
-	case livekit.VideoQuality_HIGH:
-		return sfu.FullResolution
-	case livekit.VideoQuality_MEDIUM:
-		return sfu.HalfResolution
-	default:
-		return sfu.QuarterResolution
-	}
-}
