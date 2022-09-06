@@ -376,7 +376,12 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	exemptedLayers = append(exemptedLayers, s.exemptedLayers...)
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer seen", "added", layer, "availableLayers", availableLayers, "exemptedLayers", exemptedLayers)
+	s.logger.Debugw(
+		"available layers changed - layer seen",
+		"added", layer,
+		"availableLayers", availableLayers,
+		"exemptedLayers", exemptedLayers,
+	)
 
 	if s.onAvailableLayersChanged != nil {
 		s.onAvailableLayersChanged(availableLayers, exemptedLayers)
@@ -430,16 +435,18 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	//
 	// add to exempt if not already present
 	//
-	found := false
-	for _, el := range s.exemptedLayers {
-		if el == layer {
-			found = true
-			break
+	if exempt {
+		found := false
+		for _, el := range s.exemptedLayers {
+			if el == layer {
+				found = true
+				break
+			}
 		}
-	}
-	if !found && exempt {
-		s.exemptedLayers = append(s.exemptedLayers, layer)
-		sort.Slice(s.exemptedLayers, func(i, j int) bool { return s.exemptedLayers[i] < s.exemptedLayers[j] })
+		if !found {
+			s.exemptedLayers = append(s.exemptedLayers, layer)
+			sort.Slice(s.exemptedLayers, func(i, j int) bool { return s.exemptedLayers[i] < s.exemptedLayers[j] })
+		}
 	}
 
 	var exemptedLayers []int32
@@ -451,7 +458,12 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 	s.lock.Unlock()
 
-	s.logger.Debugw("available layers changed - layer gone", "removed", layer, "layers", newLayers)
+	s.logger.Debugw(
+		"available layers changed - layer gone",
+		"removed", layer,
+		"availableLayers", newLayers,
+		"exeptedLayers", exemptedLayers,
+	)
 
 	// need to immediately switch off unavailable layers
 	if s.onAvailableLayersChanged != nil {
