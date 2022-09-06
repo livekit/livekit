@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/version"
+	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -474,7 +475,7 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
 			if info.State.StartedAt < oldStartedAt {
 				// Do not overwrite the info and state of a more recent session
-				return ErrIngressOutOfDate
+				return ingress.ErrIngressOutOfDate
 			}
 
 			p.HSet(s.ctx, IngressKey, info.IngressId, data)
