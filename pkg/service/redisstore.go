@@ -474,7 +474,7 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		results, err := tx.TxPipelined(s.ctx, func(p redis.Pipeliner) error {
 			if info.State.StartedAt < oldStartedAt {
 				// Do not overwrite the info and state of a more recent session
-				return ErrIngressOutOfDate
+				return errors.ErrIngressOutOfDate
 			}
 
 			p.HSet(s.ctx, IngressKey, info.IngressId, data)
