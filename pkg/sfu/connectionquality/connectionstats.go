@@ -11,7 +11,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -82,7 +81,7 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 		cs.normFactors[0] = MaxScore / AudioTrackScore(params, 1)
 	} else {
 		for _, layer := range cs.trackInfo.Layers {
-			spatial := utils.SpatialLayerForQuality(layer.Quality)
+			spatial := buffer.VideoQualityToSpatialLayer(layer.Quality, cs.trackInfo)
 			// LK-TODO: would be good to have expected frame rate in Trackinfo
 			frameRate := uint32(30)
 			switch spatial {
@@ -99,7 +98,7 @@ func (cs *ConnectionStats) Start(trackInfo *livekit.TrackInfo) {
 				Height:   layer.Height,
 				Frames:   frameRate,
 			}
-			cs.normFactors[utils.SpatialLayerForQuality(layer.Quality)] = MaxScore / VideoTrackScore(params, 1)
+			cs.normFactors[spatial] = MaxScore / VideoTrackScore(params, 1)
 		}
 	}
 	cs.lock.Unlock()
@@ -132,7 +131,7 @@ func (cs *ConnectionStats) getLayerDimensions(layer int32) (uint32, uint32) {
 	}
 
 	for _, l := range cs.trackInfo.Layers {
-		if layer == utils.SpatialLayerForQuality(l.Quality) {
+		if layer == buffer.VideoQualityToSpatialLayer(l.Quality, cs.trackInfo) {
 			return l.Width, l.Height
 		}
 	}
