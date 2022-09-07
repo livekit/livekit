@@ -38,6 +38,7 @@ type ParticipantInit struct {
 	Grants         *auth.ClaimGrants
 	Region         string
 	AdaptiveStream bool
+	ID             livekit.ParticipantID
 }
 
 type NewParticipantCallback func(
@@ -119,6 +120,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		Client:         pi.Client,
 		GrantsJson:     string(claims),
 		AdaptiveStream: pi.AdaptiveStream,
+		ParticipantId:  string(pi.ID),
 	}, nil
 }
 
@@ -137,5 +139,6 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		Grants:         claims,
 		Region:         region,
 		AdaptiveStream: ss.AdaptiveStream,
+		ID:             livekit.ParticipantID(ss.ParticipantId),
 	}, nil
 }
