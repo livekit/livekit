@@ -11,17 +11,17 @@ const (
 	FullResolution    = "f"
 )
 
-func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) map[livekit.VideoQuality]bool {
+func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
 	if trackInfo == nil || len(trackInfo.Layers) == 0 {
 		return nil
 	}
 
-	layerPresence := make(map[livekit.VideoQuality]bool, livekit.VideoQuality_HIGH+1)
+	var layerPresence [livekit.VideoQuality_HIGH + 1]bool
 	for _, layer := range trackInfo.Layers {
 		layerPresence[layer.Quality] = true
 	}
 
-	return layerPresence
+	return &layerPresence
 }
 
 func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
