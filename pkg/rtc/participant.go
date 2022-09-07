@@ -1226,13 +1226,15 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 			"kind", track.Kind().String(),
 			"trackID", publishedTrack.ID(),
 			"rid", track.RID(),
-			"SSRC", track.SSRC())
+			"SSRC", track.SSRC(),
+			"mime", track.Codec().MimeType)
 	} else {
 		p.params.Logger.Warnw("webrtc Track published but can't find MediaTrack", nil,
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
-			"SSRC", track.SSRC())
+			"SSRC", track.SSRC(),
+			"mime", track.Codec().MimeType)
 	}
 
 	if !isNewTrack && publishedTrack != nil && !publishedTrack.HasPendingCodec() && p.IsReady() {

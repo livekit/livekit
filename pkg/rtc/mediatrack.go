@@ -19,7 +19,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/utils"
 )
 
 // MediaTrack represents a WebRTC track that needs to be forwarded
@@ -106,28 +105,45 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
 			t.dynacastManager.AddCodec(mime)
 		})
-		t.MediaTrackReceiver.OnSubscriberMaxQualityChange(func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
-			t.dynacastManager.NotifySubscriberMaxQuality(subscriberID, codec.MimeType, utils.QualityForSpatialLayer(layer))
-		})
+		t.MediaTrackReceiver.OnSubscriberMaxQualityChange(
+			func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
+				t.dynacastManager.NotifySubscriberMaxQuality(
+					subscriberID,
+					codec.MimeType,
+					buffer.SpatialLayerToVideoQuality(layer, t.params.TrackInfo),
+				)
+			},
+		)
 	}
 
 	return t
 }
 
-func (t *MediaTrack) OnSubscribedMaxQualityChange(f func(trackID livekit.TrackID, subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) error) {
-	if t.dynacastManager != nil {
-		t.dynacastManager.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
-			if f != nil && !t.IsMuted() {
-				_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
-			}
-			for _, q := range maxSubscribedQualities {
-				receiver := t.Receiver(q.CodecMime)
-				if receiver != nil {
-					receiver.SetMaxExpectedSpatialLayer(utils.SpatialLayerForQuality(q.Quality))
-				}
-			}
-		})
+func (t *MediaTrack) OnSubscribedMaxQualityChange(
+	f func(
+		trackID livekit.TrackID,
+		subscribedQualities []*livekit.SubscribedCodec,
+		maxSubscribedQualities []types.SubscribedCodecQuality,
+	) error,
+) {
+	if t.dynacastManager == nil {
+		return
 	}
+
+	handler := func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
+		if f != nil && !t.IsMuted() {
+			_ = f(t.ID(), subscribedQualities, maxSubscribedQualities)
+		}
+
+		for _, q := range maxSubscribedQualities {
+			receiver := t.Receiver(q.CodecMime)
+			if receiver != nil {
+				receiver.SetMaxExpectedSpatialLayer(buffer.VideoQualityToSpatialLayer(q.Quality, t.params.TrackInfo))
+			}
+		}
+	}
+
+	t.dynacastManager.OnSubscribedMaxQualityChange(handler)
 }
 
 func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -267,7 +283,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			)
 		}
 
-		newWR.OnMaxLayerChange(t.OnMaxLayerChange)
+		newWR.OnMaxLayerChange(t.onMaxLayerChange)
 
 		t.buffer = buff
 
@@ -315,7 +331,7 @@ func (t *MediaTrack) HasPendingCodec() bool {
 	return t.MediaTrackReceiver.PrimaryReceiver() == nil
 }
 
-func (t *MediaTrack) OnMaxLayerChange(maxLayer int32) {
+func (t *MediaTrack) onMaxLayerChange(maxLayer int32) {
 	ti := &livekit.TrackInfo{
 		Sid:  t.trackInfo.Sid,
 		Type: t.trackInfo.Type,

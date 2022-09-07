@@ -10,6 +10,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 
@@ -256,7 +257,7 @@ func TestIngressStore(t *testing.T) {
 	info.RoomName = "room2"
 	info.State.StartedAt = 1
 	err = rs.UpdateIngress(ctx, info)
-	require.Equal(t, service.ErrIngressOutOfDate, err)
+	require.Equal(t, ingress.ErrIngressOutOfDate, err)
 
 	info.RoomName = "room2"
 	info.State.StartedAt = 3

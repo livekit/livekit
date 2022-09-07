@@ -11,12 +11,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-const (
-	QuarterResolution = "q"
-	HalfResolution    = "h"
-	FullResolution    = "f"
-)
-
 // Do a fuzzy find for a codec in the list of codecs
 // Used for lookup up a codec in an existing list to find a match
 func codecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []webrtc.RTPCodecParameters) (webrtc.RTPCodecParameters, error) {

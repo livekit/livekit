@@ -12,7 +12,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
-	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -107,19 +106,6 @@ type WebRTCReceiver struct {
 	onMaxLayerChange func(maxLayer int32)
 
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
-}
-
-func RidToLayer(rid string) int32 {
-	switch rid {
-	case FullResolution:
-		return 2
-	case HalfResolution:
-		return 1
-	case QuarterResolution:
-		return 0
-	default:
-		return InvalidLayerSpatial
-	}
 }
 
 func IsSvcCodec(mime string) bool {
@@ -312,14 +298,9 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 		return
 	}
 
-	layer := RidToLayer(track.RID())
-	if layer == InvalidLayerSpatial {
-		// check if there is only one layer and if so, assign it to that
-		if len(w.trackInfo.Layers) == 1 {
-			layer = utils.SpatialLayerForQuality(w.trackInfo.Layers[0].Quality)
-		} else {
-			layer = 0
-		}
+	layer := int32(0)
+	if w.Kind() == webrtc.RTPCodecTypeVideo {
+		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo)
 	}
 	buff.SetLogger(logger.Logger(logr.Logger(w.logger).WithValues("layer", layer)))
 	buff.SetTWCC(w.twcc)
@@ -332,12 +313,12 @@ func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buff
 	buff.OnRtcpFeedback(w.sendRTCP)
 
 	var duration time.Duration
-	switch track.RID() {
-	case FullResolution:
+	switch layer {
+	case 2:
 		duration = w.pliThrottleConfig.HighQuality
-	case HalfResolution:
+	case 1:
 		duration = w.pliThrottleConfig.MidQuality
-	case QuarterResolution:
+	case 0:
 		duration = w.pliThrottleConfig.LowQuality
 	default:
 		duration = w.pliThrottleConfig.MidQuality
@@ -549,6 +530,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)
+		if w.isSVC {
+			w.streamTrackerManager.RemoveAllTrackers()
+		}
 	}()
 
 	for {
