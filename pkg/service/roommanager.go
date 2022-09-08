@@ -321,7 +321,7 @@ func (r *RoomManager) StartSession(
 	}
 
 	// update room store with new numParticipants
-	updateParticipantCount(protoRoom)
+	updateParticipantCount(room.ToProto())
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta)
