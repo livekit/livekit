@@ -201,13 +201,14 @@ func (s *StreamTrackerManager) SetPaused(paused bool) {
 	}
 }
 
-func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
+func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
 	s.lock.Lock()
+	prev := s.maxExpectedLayer
 	if layer <= s.maxExpectedLayer {
 		// some higher layer(s) expected to stop, nothing else to do
 		s.maxExpectedLayer = layer
 		s.lock.Unlock()
-		return
+		return prev
 	}
 
 	//
@@ -237,6 +238,8 @@ func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) {
 	for _, tracker := range trackersToReset {
 		tracker.Reset()
 	}
+
+	return prev
 }
 
 func (s *StreamTrackerManager) DistanceToDesired() int32 {
