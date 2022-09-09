@@ -54,6 +54,10 @@ func (s *IngressService) Stop() {
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
+	return s.CreateIngressWithUrlPrefix(ctx, s.conf.RTMPBaseURL, req)
+}
+
+func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPrefix string, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
 	roomName, err := EnsureJoinPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
@@ -68,7 +72,7 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 		IngressId:           utils.NewGuid(utils.IngressPrefix),
 		Name:                req.Name,
 		StreamKey:           sk,
-		Url:                 newRtmpUrl(s.conf.RTMPBaseURL, sk),
+		Url:                 newRtmpUrl(urlPrefix, sk),
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
