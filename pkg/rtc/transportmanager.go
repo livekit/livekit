@@ -464,7 +464,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	iceConfig := t.iceConfig
 	t.lock.RUnlock()
 
-	preferNext := iceConfig.PreferSub
+	var preferNext types.PreferCandidateType
 	if iceConfig.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
 		preferNext = types.PreferTcp
 	} else if iceConfig.PreferSub != types.PreferTls && t.params.TURNSEnabled {
