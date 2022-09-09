@@ -258,11 +258,6 @@ func (w *WebRTCReceiver) SetRTT(rtt uint32) {
 	}
 }
 
-func (w *WebRTCReceiver) SetTrackMeta(trackID livekit.TrackID, streamID string) {
-	w.streamID = streamID
-	w.trackID = trackID
-}
-
 func (w *WebRTCReceiver) StreamID() string {
 	return w.streamID
 }
