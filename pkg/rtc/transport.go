@@ -54,6 +54,7 @@ var (
 	ErrNoICECandidateHandler     = errors.New("no ICE candidate handler")
 	ErrNoOfferHandler            = errors.New("no offer handler")
 	ErrNoAnswerHandler           = errors.New("no answer handler")
+	ErrMidNotFound               = errors.New("mid not found")
 )
 
 // -------------------------------------------------------------------------
@@ -134,6 +135,11 @@ type SimulcastTrackInfo struct {
 	Rid string
 }
 
+type trackDescription struct {
+	mid    string
+	sender *webrtc.RTPSender
+}
+
 // PCTransport is a wrapper around PeerConnection, with some helper methods
 type PCTransport struct {
 	params TransportParams
@@ -169,6 +175,9 @@ type PCTransport struct {
 	streamAllocator *sfu.StreamAllocator
 
 	previousAnswer *webrtc.SessionDescription
+	// track id -> description map in previous offer sdp
+	previousTrackDescription map[string]*trackDescription
+	canReuseTransceiver      bool
 
 	preferTCP atomic.Bool
 	isClosed  atomic.Bool
@@ -180,7 +189,6 @@ type PCTransport struct {
 	cacheLocalCandidates      bool
 	cachedLocalCandidates     []*webrtc.ICECandidate
 	pendingRemoteCandidates   []*webrtc.ICECandidateInit
-	negotiationPending        map[livekit.ParticipantID]bool
 	restartAfterGathering     bool
 	restartAtNextOffer        bool
 	negotiationState          NegotiationState
@@ -313,11 +321,12 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	t := &PCTransport{
-		params:             params,
-		debouncedNegotiate: debounce.New(negotiationFrequency),
-		negotiationState:   NegotiationStateNone,
-		negotiationPending: make(map[livekit.ParticipantID]bool),
-		eventCh:            make(chan event, 50),
+		params:                   params,
+		debouncedNegotiate:       debounce.New(negotiationFrequency),
+		negotiationState:         NegotiationStateNone,
+		eventCh:                  make(chan event, 50),
+		previousTrackDescription: make(map[string]*trackDescription),
+		canReuseTransceiver:      true,
 	}
 	if params.IsSendSide {
 		t.streamAllocator = sfu.NewStreamAllocator(sfu.StreamAllocatorParams{
@@ -548,6 +557,28 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
 }
 
 func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+	t.lock.Lock()
+	canReuse := t.canReuseTransceiver
+	td, ok := t.previousTrackDescription[trackLocal.ID()]
+	if ok {
+		delete(t.previousTrackDescription, trackLocal.ID())
+	}
+	t.lock.Unlock()
+
+	// keep track use same mid after migration if possible
+	if td != nil && td.sender != nil {
+		for _, tr := range t.pc.GetTransceivers() {
+			if tr.Mid() == td.mid {
+				return td.sender, tr, tr.SetSender(td.sender, trackLocal)
+			}
+		}
+	}
+
+	// if never negotiated with client, can't reuse transeiver for track not subscribed before migration
+	if !canReuse {
+		return t.AddTransceiverFromTrack(trackLocal)
+	}
+
 	sender, err = t.pc.AddTrack(trackLocal)
 	if err != nil {
 		return
@@ -871,12 +902,6 @@ func (t *PCTransport) getOnNegotiationFailed() func() {
 	return t.onNegotiationFailed
 }
 
-func (t *PCTransport) AddNegotiationPending(publisherID livekit.ParticipantID) {
-	t.lock.Lock()
-	t.negotiationPending[publisherID] = true
-	t.lock.Unlock()
-}
-
 func (t *PCTransport) Negotiate(force bool) {
 	if force {
 		t.lock.Lock()
@@ -905,12 +930,6 @@ func (t *PCTransport) Negotiate(force bool) {
 		}
 		t.lock.Unlock()
 	}
-}
-
-func (t *PCTransport) IsNegotiationPending(publisherID livekit.ParticipantID) bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-	return t.negotiationPending[publisherID]
 }
 
 func (t *PCTransport) configureReceiverDTX(enableDTX bool) {
@@ -1145,10 +1164,11 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) error {
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) (map[string]*webrtc.RTPSender, error) {
+	senders := make(map[string]*webrtc.RTPSender)
 	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
-		return err
+		return senders, err
 	}
 	for _, m := range parsed.MediaDescriptions {
 		var codecType webrtc.RTPCodecType
@@ -1164,31 +1184,37 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			// so use a dumb pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
 			if err := t.preparePC(previousAnswer); err != nil {
 				t.params.Logger.Errorw("prepare pc for migration failed", err)
-				return err
+				return senders, err
 			}
 			continue
 		default:
 			continue
 		}
-		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly})
+		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 		if err != nil {
-			return err
+			return senders, err
 		}
-		tr.Stop()
 		mid := lksdp.GetMidValue(m)
 		if mid == "" {
-			return errors.New("mid value not found")
+			return senders, ErrMidNotFound
 		}
 		tr.SetMid(mid)
+
+		// save mid -> senders for migration resue
+		sender := tr.Sender()
+		senders[mid] = sender
+
+		// set transceiver to inactive
+		tr.SetSender(tr.Sender(), nil)
 	}
-	return nil
+	return senders, nil
 }
 
-func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
-		if err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
 			t.params.Logger.Errorw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
@@ -1196,9 +1222,43 @@ func (t *PCTransport) SetPreviousAnswer(answer *webrtc.SessionDescription) {
 				onNegotiationFailed()
 			}
 			return
+		} else if offer != nil {
+			// in migration case, can't reuse tranceiver before negotiated except track subscribed at previous node
+			t.canReuseTransceiver = false
+			if err := t.parseTrackMid(*offer, senders); err != nil {
+				t.params.Logger.Errorw("parse previous offer failed", err, "offer", offer.SDP)
+			}
 		}
 	}
 	t.lock.Unlock()
+}
+
+func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map[string]*webrtc.RTPSender) error {
+	parsed, err := offer.Unmarshal()
+	if err != nil {
+		return err
+	}
+
+	t.previousTrackDescription = make(map[string]*trackDescription)
+	for _, m := range parsed.MediaDescriptions {
+		msid, ok := m.Attribute(sdp.AttrKeyMsid)
+		if !ok {
+			continue
+		}
+
+		if split := strings.Split(msid, " "); len(split) == 2 {
+			trackid := split[1]
+			mid := lksdp.GetMidValue(m)
+			if mid == "" {
+				return ErrMidNotFound
+			}
+			t.previousTrackDescription[trackid] = &trackDescription{
+				mid:    mid,
+				sender: senders[mid],
+			}
+		}
+	}
+	return nil
 }
 
 func (t *PCTransport) postEvent(event event) {
@@ -1539,8 +1599,6 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// indicate waiting for remote
 	t.setNegotiationState(NegotiationStateRemote)
 
-	t.negotiationPending = make(map[livekit.ParticipantID]bool)
-
 	t.setupSignalStateCheckTimer()
 
 	if onOffer := t.getOnOffer(); onOffer != nil {
@@ -1603,6 +1661,13 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		}
 		prometheus.ServiceOperationCounter.WithLabelValues(sdpType, "error", "remote_description").Add(1)
 		return errors.Wrap(err, "setting remote description failed")
+	} else if sd.Type == webrtc.SDPTypeAnswer {
+		t.lock.Lock()
+		if !t.canReuseTransceiver {
+			t.canReuseTransceiver = true
+			t.previousTrackDescription = make(map[string]*trackDescription)
+		}
+		t.lock.Unlock()
 	}
 
 	for _, c := range t.pendingRemoteCandidates {

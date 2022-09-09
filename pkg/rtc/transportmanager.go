@@ -408,14 +408,6 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 	t.subscriber.Negotiate(force)
 }
 
-func (t *TransportManager) AddNegotiationPending(publisherID livekit.ParticipantID) {
-	t.subscriber.AddNegotiationPending(publisherID)
-}
-
-func (t *TransportManager) IsNegotiationPending(publisherID livekit.ParticipantID) bool {
-	return t.subscriber.IsNegotiationPending(publisherID)
-}
-
 func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) {
 	if iceConfig != nil {
 		t.SetICEConfig(*iceConfig)
@@ -496,7 +488,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	t.SetICEConfig(nextConfig)
 }
 
-func (t *TransportManager) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
+func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
 	t.lock.Lock()
 	t.pendingDataChannelsPublisher = make([]*livekit.DataChannelInfo, 0, len(dataChannels))
 	pendingDataChannelsSubscriber := make([]*livekit.DataChannelInfo, 0, len(dataChannels))
@@ -515,7 +507,7 @@ func (t *TransportManager) SetMigrateInfo(previousAnswer *webrtc.SessionDescript
 		}
 	}
 
-	t.subscriber.SetPreviousAnswer(previousAnswer)
+	t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
 }
 
 func (t *TransportManager) ProcessPendingPublisherDataChannels() {

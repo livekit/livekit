@@ -615,14 +615,18 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.sendTrackPublished(req.Cid, ti)
 }
 
-func (p *ParticipantImpl) SetMigrateInfo(previousAnswer *webrtc.SessionDescription, mediaTracks []*livekit.TrackPublishedResponse, dataChannels []*livekit.DataChannelInfo) {
+func (p *ParticipantImpl) SetMigrateInfo(
+	previousOffer, previousAnswer *webrtc.SessionDescription,
+	mediaTracks []*livekit.TrackPublishedResponse,
+	dataChannels []*livekit.DataChannelInfo,
+) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{t.GetTrack()}, migrated: true}
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.TransportManager.SetMigrateInfo(previousAnswer, dataChannels)
+	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
 
 func (p *ParticipantImpl) Start() {
