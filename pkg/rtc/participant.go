@@ -84,6 +84,7 @@ type ParticipantParams struct {
 	Migration               bool
 	AdaptiveStream          bool
 	AllowTCPFallback        bool
+	TURNSEnabled            bool
 }
 
 type ParticipantImpl struct {
@@ -1107,6 +1108,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		ClientInfo:              p.params.ClientInfo,
 		Migration:               p.params.Migration,
 		AllowTCPFallback:        p.params.AllowTCPFallback,
+		TURNSEnabled:            p.params.TURNSEnabled,
 		Logger:                  p.params.Logger,
 	})
 	if err != nil {
