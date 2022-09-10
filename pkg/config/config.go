@@ -324,6 +324,18 @@ func (conf *Config) UseSentinel() bool {
 	return conf.Redis.SentinelAddresses != nil
 }
 
+func (conf *Config) IsTURNSEnabled() bool {
+	if conf.TURN.Enabled && conf.TURN.TLSPort != 0 {
+		return true
+	}
+	for _, s := range conf.RTC.TURNServers {
+		if s.Protocol == "tls" {
+			return true
+		}
+	}
+	return false
+}
+
 func (conf *Config) updateFromCLI(c *cli.Context) error {
 	if c.IsSet("dev") {
 		conf.Development = c.Bool("dev")

@@ -32,6 +32,7 @@ type TransportManagerParams struct {
 	ClientInfo              ClientInfo
 	Migration               bool
 	AllowTCPFallback        bool
+	TURNSEnabled            bool
 	Logger                  logger.Logger
 }
 
@@ -463,29 +464,36 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	iceConfig := t.iceConfig
 	t.lock.RUnlock()
 
-	var nextConfig types.IceConfig
-	// irrespective of which one fails, force prefer candidate on both as the other one might
-	// fail at a different time and cause another disruption
-	switch iceConfig.PreferSub {
-	case types.PreferNone:
-		t.params.Logger.Infow("restricting transport to TCP on both peer connections")
-		nextConfig = types.IceConfig{
-			PreferPub: types.PreferTcp,
-			PreferSub: types.PreferTcp,
-		}
+	var preferNext types.PreferCandidateType
+	if iceConfig.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
+		preferNext = types.PreferTcp
+	} else if iceConfig.PreferSub != types.PreferTls && t.params.TURNSEnabled {
+		preferNext = types.PreferTls
+	} else {
+		preferNext = types.PreferNone
+	}
 
-	case types.PreferTcp:
-		t.params.Logger.Infow("prefer transport to TLS on both peer connections")
-		nextConfig = types.IceConfig{
-			PreferPub: types.PreferTls,
-			PreferSub: types.PreferTls,
-		}
-
-	default:
+	if preferNext == iceConfig.PreferSub {
 		return
 	}
 
-	t.SetICEConfig(nextConfig)
+	switch preferNext {
+	case types.PreferTcp:
+		t.params.Logger.Infow("restricting transport to TCP on both peer connections")
+
+	case types.PreferTls:
+		t.params.Logger.Infow("prefer transport to TLS on both peer connections")
+
+	case types.PreferNone:
+		t.params.Logger.Infow("allowing all transports on both peer connections")
+	}
+
+	// irrespective of which one fails, force prefer candidate on both as the other one might
+	// fail at a different time and cause another disruption
+	t.SetICEConfig(types.IceConfig{
+		PreferPub: preferNext,
+		PreferSub: preferNext,
+	})
 }
 
 func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {

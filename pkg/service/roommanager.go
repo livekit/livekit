@@ -292,6 +292,7 @@ func (r *RoomManager) StartSession(
 		Region:                  pi.Region,
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
+		TURNSEnabled:            r.config.IsTURNSEnabled(),
 	})
 	if err != nil {
 		return err
