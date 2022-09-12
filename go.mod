@@ -41,11 +41,10 @@ require (
 	github.com/thoas/go-funk v0.9.2
 	github.com/twitchtv/twirp v8.1.2+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
-	github.com/urfave/cli/v2 v2.15.0
+	github.com/urfave/cli/v2 v2.16.3
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.23.0
-	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -86,6 +85,7 @@ require (
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
+	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/net v0.0.0-20220728211354-c7608f3a8462 // indirect
 	golang.org/x/sys v0.0.0-20220728004956-3c1f35247d10 // indirect
 	golang.org/x/text v0.3.7 // indirect
