@@ -1,8 +1,0 @@
-log_level: info
-port: 7880
-rtc:
-  use_external_ip: true
-  tcp_port: 7881
-  udp_port: 7882
-keys:
-  APIkey: secret
