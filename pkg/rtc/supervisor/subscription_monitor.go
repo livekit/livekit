@@ -117,10 +117,8 @@ func (s *SubscriptionMonitor) update() {
 
 	switch {
 	case tx.isSubscribed && s.subscribedTrack != nil:
-		s.params.Logger.Debugw("RAJA clearing op on set", "trackID", s.params.TrackID) // REMOVE
 		return
 	case !tx.isSubscribed && s.subscribedTrack == nil:
-		s.params.Logger.Debugw("RAJA clearing op on clear", "trackID", s.params.TrackID) // REMOVE
 		return
 	default:
 		// put it back as the condition is not satisfied
