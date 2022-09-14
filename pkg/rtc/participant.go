@@ -627,7 +627,12 @@ func (p *ParticipantImpl) SetMigrateInfo(
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
-		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{t.GetTrack()}, migrated: true}
+		ti := t.GetTrack()
+
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+
+		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
 	}
 	p.pendingTracksLock.Unlock()
 
@@ -1542,6 +1547,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 		} else {
@@ -1550,6 +1558,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		p.params.Logger.Debugw("pending track queued", "track", ti.String(), "request", req.String())
 		return nil
 	}
+
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 	p.params.Logger.Debugw("pending track added", "track", ti.String(), "request", req.String())
@@ -1578,6 +1589,8 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 }
 
 func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
+	p.supervisor.SetPublicationMute(trackID, muted)
+
 	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
 
 	isPending := false
@@ -1730,7 +1743,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	})
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+
 	// add to published and clean up pending
+	p.supervisor.SetPublishedTrack(livekit.TrackID(ti.Sid), mt)
 	p.UpTrackManager.AddPublishedTrack(mt)
 
 	p.pendingTracks[signalCid].trackInfos = p.pendingTracks[signalCid].trackInfos[1:]
@@ -1739,6 +1754,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	mt.AddOnClose(func() {
+		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
+
 		// re-use track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
