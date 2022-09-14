@@ -118,7 +118,7 @@ keys:
 #   max_participants: 0
 #   # only accept specific codecs for clients publishing to this room
 #   # this is useful to standardize codecs across clients
-#   # other supported codecs are video/h264, video/vp9
+#   # other supported codecs are video/h264
 #   enabled_codecs:
 #     - mime: audio/opus
 #     - mime: video/vp8
