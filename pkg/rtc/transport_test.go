@@ -100,20 +100,35 @@ func TestNegotiationTiming(t *testing.T) {
 	// initial offer
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return negotiationState.Load().(NegotiationState) == NegotiationStateRemote
+		state, ok := negotiationState.Load().(NegotiationState)
+		if !ok {
+			return false
+		}
+
+		return state == NegotiationStateRemote
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRemote")
 
 	// second try, should've flipped transport status to retry
 	transportA.Negotiate(true)
 	require.Eventually(t, func() bool {
-		return negotiationState.Load().(NegotiationState) == NegotiationStateRetry
+		state, ok := negotiationState.Load().(NegotiationState)
+		if !ok {
+			return false
+		}
+
+		return state == NegotiationStateRetry
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	// third try, should've stayed at retry
 	transportA.Negotiate(true)
 	time.Sleep(100 * time.Millisecond) // some time to process the negotiate event
 	require.Eventually(t, func() bool {
-		return negotiationState.Load().(NegotiationState) == NegotiationStateRetry
+		state, ok := negotiationState.Load().(NegotiationState)
+		if !ok {
+			return false
+		}
+
+		return state == NegotiationStateRetry
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
 	time.Sleep(5 * time.Millisecond)
