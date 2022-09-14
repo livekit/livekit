@@ -288,7 +288,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if _, ok := req.Message.(*livekit.SignalRequest_Ping); ok {
 			_ = sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
-					Pong: 1,
+					Pong: time.Now().UnixNano(),
 				},
 			})
 			continue

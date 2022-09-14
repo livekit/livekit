@@ -18,6 +18,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -153,6 +154,8 @@ type ParticipantImpl struct {
 	subscriptionInProgress    map[livekit.TrackID]bool
 	subscriptionRequestsQueue map[livekit.TrackID][]SubscribeRequest
 	trackPublisherVersion     map[livekit.TrackID]uint32
+
+	supervisor *supervisor.ParticipantSupervisor
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -179,6 +182,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscriptionInProgress:    make(map[livekit.TrackID]bool),
 		subscriptionRequestsQueue: make(map[livekit.TrackID][]SubscribeRequest),
 		trackPublisherVersion:     make(map[livekit.TrackID]uint32),
+		supervisor:                supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -654,6 +658,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		})
 	}
 
+	p.supervisor.Stop()
+
 	p.UpTrackManager.Close(!sendLeave)
 
 	p.pendingTracksLock.Lock()
@@ -963,6 +969,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	onSubscribedTo := p.onSubscribedTo
 
 	p.subscribedTracks[subTrack.ID()] = subTrack
+	p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack)
 
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
@@ -1004,6 +1011,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
 
 	delete(p.subscribedTracks, subTrack.ID())
+	p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack)
 
 	// remove from subscribed map
 	numRemaining := 0
@@ -1015,7 +1023,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 
 	//
 	// NOTE
-	// subscribedTrackSettings should not be deleted on removal as it is needed if corresponding publisher migrated
+	// subscribedTracksSettings should not be deleted on removal as it is needed if corresponding publisher migrated
 	// LK-TODO: find a way to clean these up
 	//
 
@@ -2032,6 +2040,8 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
 	p.params.Logger.Infow("queuing subscribe", "trackID", trackID)
 
+	p.supervisor.UpdateSubscription(trackID, true)
+
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
 		requestType: SubscribeRequestTypeAdd,
@@ -2044,6 +2054,8 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
 	p.params.Logger.Infow("queuing unsubscribe", "trackID", trackID)
+
+	p.supervisor.UpdateSubscription(trackID, false)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
