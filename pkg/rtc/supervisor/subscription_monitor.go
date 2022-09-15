@@ -117,23 +117,20 @@ func (s *SubscriptionMonitor) IsIdle() bool {
 }
 
 func (s *SubscriptionMonitor) update() {
-	var tx *transition
-	if s.desiredTransitions.Len() > 0 {
-		tx = s.desiredTransitions.PopFront().(*transition)
-	}
+	for {
+		var tx *transition
+		if s.desiredTransitions.Len() > 0 {
+			tx = s.desiredTransitions.PopFront().(*transition)
+		}
 
-	if tx == nil {
-		return
-	}
+		if tx == nil {
+			return
+		}
 
-	switch {
-	case tx.isSubscribed && s.subscribedTrack != nil:
-		return
-	case !tx.isSubscribed && s.subscribedTrack == nil:
-		return
-	default:
-		// put it back as the condition is not satisfied
-		s.desiredTransitions.PushFront(tx)
-		return
+		if (tx.isSubscribed && s.subscribedTrack == nil) || (!tx.isSubscribed && s.subscribedTrack != nil) {
+			// put it back as the condition is not satisfied
+			s.desiredTransitions.PushFront(tx)
+			return
+		}
 	}
 }
