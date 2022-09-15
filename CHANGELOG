@@ -2,6 +2,22 @@
 
 Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2022-09-13
+### Added
+- Accepts existing participant ID on reconnection attempts #988
+
+### Fixed
+- Fixed ICE restart during candidate gathering #963
+- Ensure TrackInfoAvailable is fired after information is known to be ready #967
+- Fixed layer handling when publisher pauses layer 0 (FireFox is has a tendency to pause lowest layer) #984
+- Fixed inaccurate participant count due to storing stale data #992
+
+### Changed
+- Protect against looking up dimensions for invalid spatial layer #977
+- Improvements around migration handling #979 #981 #982 #995
+- Consistent mapping between VideoQuality, rid, and video layers #986
+- Only enable TCP/TURN fallback for supported clients #997
+
 ## [1.2.0] - 2022-08-25
 ### Added
 - Support for NACK with audio tracks (#829)

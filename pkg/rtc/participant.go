@@ -18,6 +18,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -153,6 +154,8 @@ type ParticipantImpl struct {
 	subscriptionInProgress    map[livekit.TrackID]bool
 	subscriptionRequestsQueue map[livekit.TrackID][]SubscribeRequest
 	trackPublisherVersion     map[livekit.TrackID]uint32
+
+	supervisor *supervisor.ParticipantSupervisor
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -179,6 +182,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscriptionInProgress:    make(map[livekit.TrackID]bool),
 		subscriptionRequestsQueue: make(map[livekit.TrackID][]SubscribeRequest),
 		trackPublisherVersion:     make(map[livekit.TrackID]uint32),
+		supervisor:                supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)
@@ -623,7 +627,12 @@ func (p *ParticipantImpl) SetMigrateInfo(
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
-		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{t.GetTrack()}, migrated: true}
+		ti := t.GetTrack()
+
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+
+		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true}
 	}
 	p.pendingTracksLock.Unlock()
 
@@ -653,6 +662,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 			},
 		})
 	}
+
+	p.supervisor.Stop()
 
 	p.UpTrackManager.Close(!sendLeave)
 
@@ -963,6 +974,7 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 	onSubscribedTo := p.onSubscribedTo
 
 	p.subscribedTracks[subTrack.ID()] = subTrack
+	p.supervisor.SetSubscribedTrack(subTrack.ID(), subTrack)
 
 	settings := p.subscribedTracksSettings[subTrack.ID()]
 	p.lock.Unlock()
@@ -1004,6 +1016,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
 
 	delete(p.subscribedTracks, subTrack.ID())
+	p.supervisor.ClearSubscribedTrack(subTrack.ID(), subTrack)
 
 	// remove from subscribed map
 	numRemaining := 0
@@ -1015,7 +1028,7 @@ func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) 
 
 	//
 	// NOTE
-	// subscribedTrackSettings should not be deleted on removal as it is needed if corresponding publisher migrated
+	// subscribedTracksSettings should not be deleted on removal as it is needed if corresponding publisher migrated
 	// LK-TODO: find a way to clean these up
 	//
 
@@ -1534,6 +1547,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 		} else {
@@ -1542,6 +1558,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		p.params.Logger.Debugw("pending track queued", "track", ti.String(), "request", req.String())
 		return nil
 	}
+
+	p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+	p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 	p.params.Logger.Debugw("pending track added", "track", ti.String(), "request", req.String())
@@ -1570,6 +1589,8 @@ func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fro
 }
 
 func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) {
+	p.supervisor.SetPublicationMute(trackID, muted)
+
 	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
 
 	isPending := false
@@ -1722,7 +1743,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	})
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+
 	// add to published and clean up pending
+	p.supervisor.SetPublishedTrack(livekit.TrackID(ti.Sid), mt)
 	p.UpTrackManager.AddPublishedTrack(mt)
 
 	p.pendingTracks[signalCid].trackInfos = p.pendingTracks[signalCid].trackInfos[1:]
@@ -1731,6 +1754,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	mt.AddOnClose(func() {
+		p.supervisor.ClearPublishedTrack(livekit.TrackID(ti.Sid), mt)
+
 		// re-use track sid
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2032,6 +2057,8 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
 	p.params.Logger.Infow("queuing subscribe", "trackID", trackID)
 
+	p.supervisor.UpdateSubscription(trackID, true)
+
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{
 		requestType: SubscribeRequestTypeAdd,
@@ -2044,6 +2071,8 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
 	p.params.Logger.Infow("queuing unsubscribe", "trackID", trackID)
+
+	p.supervisor.UpdateSubscription(trackID, false)
 
 	p.lock.Lock()
 	p.subscriptionRequestsQueue[trackID] = append(p.subscriptionRequestsQueue[trackID], SubscribeRequest{

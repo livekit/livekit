@@ -11,9 +11,6 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 	switch msg := req.Message.(type) {
 	case *livekit.SignalRequest_Offer:
 		participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
-	case *livekit.SignalRequest_AddTrack:
-		pLogger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
-		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Answer:
 		participant.HandleAnswer(FromProtoSessionDescription(msg.Answer))
 	case *livekit.SignalRequest_Trickle:
@@ -23,6 +20,9 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			return nil
 		}
 		participant.AddICECandidate(candidateInit, msg.Trickle.Target)
+	case *livekit.SignalRequest_AddTrack:
+		pLogger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
+		participant.AddTrack(msg.AddTrack)
 	case *livekit.SignalRequest_Mute:
 		participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
 	case *livekit.SignalRequest_Subscription:
@@ -60,6 +60,9 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 
 			pLogger.Infow("updated subscribed track settings", "trackID", sid, "settings", msg.TrackSetting)
 		}
+	case *livekit.SignalRequest_Leave:
+		pLogger.Infow("client leaving room")
+		room.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonClientRequestLeave)
 	case *livekit.SignalRequest_UpdateLayers:
 		err := room.UpdateVideoLayers(participant, msg.UpdateLayers)
 		if err != nil {
@@ -67,9 +70,6 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 				"update", msg.UpdateLayers)
 			return nil
 		}
-	case *livekit.SignalRequest_Leave:
-		pLogger.Infow("client leaving room")
-		room.RemoveParticipant(participant.Identity(), types.ParticipantCloseReasonClientRequestLeave)
 	case *livekit.SignalRequest_SubscriptionPermission:
 		err := room.UpdateSubscriptionPermission(participant, msg.SubscriptionPermission)
 		if err != nil {
