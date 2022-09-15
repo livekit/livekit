@@ -876,6 +876,7 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 	if avgScore < 4.5 {
 		p.params.Logger.Infow(
 			"low connection quality score",
+			"avgScore", avgScore,
 			"publisherScores", publisherScores,
 			"subscriberScores", subscriberScores,
 		)
