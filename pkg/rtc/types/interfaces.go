@@ -419,3 +419,8 @@ type SubscribedTrack interface {
 	// selects appropriate video layer according to subscriber preferences
 	UpdateVideoLayer()
 }
+
+type OperationMonitor interface {
+	Check() error
+	IsIdle() bool
+}
