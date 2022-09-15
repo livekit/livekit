@@ -152,21 +152,22 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 
 	cs.lastUpdate = time.Now()
 
+	var params TrackScoreParams
 	switch {
 	case cs.trackInfo.Type == livekit.TrackType_AUDIO:
 		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, 0)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
-			return cs.score
+			break
 		}
 
-		params := getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
+		params = getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
 		packetRate := float64(params.PacketsExpected) / maxAvailableLayerStats.Duration.Seconds()
 		if packetRate < audioPacketRateThreshold {
 			// With DTX, it is possible to have fewer packets per second.
 			// A loss with reduced packet rate has amplified negative effect on quality.
 			// Opus uses 20 ms packetisation (50 pps). Calculate score only if packet rate is at least half of that.
-			return cs.score
+			break
 		}
 
 		normFactor := float32(1)
@@ -193,7 +194,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 				// if not expecting data, reset the score to maximum
 				cs.score = MaxScore
 			}
-			return cs.score
+			break
 		}
 
 		cs.maxExpectedLayer = maxExpectedLayer
@@ -201,10 +202,10 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		maxAvailableLayer, maxAvailableLayerStats := getMaxAvailableLayerStats(streams, maxExpectedLayer)
 		if maxAvailableLayerStats == nil {
 			// retain old score as stats will not be available when muted
-			return cs.score
+			break
 		}
 
-		params := getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
+		params = getTrackScoreParams(cs.codecName, maxAvailableLayerStats)
 
 		// for muxed tracks, i. e. simulcast publisher muxed into a single track,
 		// use the current spatial layer.
@@ -216,7 +217,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 			maxAvailableLayer = cs.params.GetCurrentLayerSpatial()
 			if maxAvailableLayer == buffer.InvalidLayerSpatial {
 				// retain old score as stats will not be available if not forwarding
-				return cs.score
+				break
 			}
 		}
 		params.Width, params.Height = cs.getLayerDimensions(maxAvailableLayer)
@@ -241,15 +242,15 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 				cs.score = float32(clamp(float64(cs.score), float64(MinScore), float64(MaxScore)))
 			}
 		}
+	}
 
-		if cs.score < 3.5 {
-			if !cs.isLowQuality.Swap(true) {
-				// changed from good to low quality, log
-				cs.params.Logger.Debugw("low connection quality", "score", cs.score, "params", params)
-			}
-		} else {
-			cs.isLowQuality.Store(false)
+	if cs.score < 4.5 {
+		if !cs.isLowQuality.Swap(true) {
+			// changed from good to low quality, log
+			cs.params.Logger.Infow("low connection quality", "score", cs.score, "params", params)
 		}
+	} else {
+		cs.isLowQuality.Store(false)
 	}
 
 	return cs.score
