@@ -289,7 +289,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = sigConn.WriteResponse(&livekit.SignalResponse{
 				Message: &livekit.SignalResponse_Pong{
 					//
-					// Although this field is int64, some clients (like JS) cause overflow.
+					// Although this field is int64, some clients (like JS) cause overflow if nanosecond granularity is used.
 					// So. use UnixMillis().
 					//
 					Pong: time.Now().UnixMilli(),
