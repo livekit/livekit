@@ -46,7 +46,18 @@ func NewSubscriptionMonitor(params SubscriptionMonitorParams) *SubscriptionMonit
 	return s
 }
 
-func (s *SubscriptionMonitor) UpdateSubscription(isSubscribed bool) {
+func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd types.OperationMonitorData) {
+	switch ome {
+	case types.OperationMonitorEventUpdateSubscription:
+		s.updateSubscription(omd.(bool))
+	case types.OperationMonitorEventSetSubscribedTrack:
+		s.setSubscribedTrack(omd.(types.SubscribedTrack))
+	case types.OperationMonitorEventClearSubscribedTrack:
+		s.clearSubscribedTrack(omd.(types.SubscribedTrack))
+	}
+}
+
+func (s *SubscriptionMonitor) updateSubscription(isSubscribed bool) {
 	s.lock.Lock()
 	s.desiredTransitions.PushBack(
 		&transition{
@@ -58,14 +69,14 @@ func (s *SubscriptionMonitor) UpdateSubscription(isSubscribed bool) {
 	s.lock.Unlock()
 }
 
-func (s *SubscriptionMonitor) SetSubscribedTrack(subTrack types.SubscribedTrack) {
+func (s *SubscriptionMonitor) setSubscribedTrack(subTrack types.SubscribedTrack) {
 	s.lock.Lock()
 	s.subscribedTrack = subTrack
 	s.update()
 	s.lock.Unlock()
 }
 
-func (s *SubscriptionMonitor) ClearSubscribedTrack(subTrack types.SubscribedTrack) {
+func (s *SubscriptionMonitor) clearSubscribedTrack(subTrack types.SubscribedTrack) {
 	s.lock.Lock()
 	if s.subscribedTrack == subTrack {
 		s.subscribedTrack = nil

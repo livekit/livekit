@@ -47,7 +47,20 @@ func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor 
 	return p
 }
 
-func (p *PublicationMonitor) AddPending() {
+func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd types.OperationMonitorData) {
+	switch ome {
+	case types.OperationMonitorEventAddPendingPublication:
+		p.addPending()
+	case types.OperationMonitorEventSetPublicationMute:
+		p.setMute(omd.(bool))
+	case types.OperationMonitorEventSetPublishedTrack:
+		p.setPublishedTrack(omd.(types.LocalMediaTrack))
+	case types.OperationMonitorEventClearPublishedTrack:
+		p.clearPublishedTrack(omd.(types.LocalMediaTrack))
+	}
+}
+
+func (p *PublicationMonitor) addPending() {
 	p.lock.Lock()
 	p.desiredPublishes.PushBack(
 		&publish{
@@ -65,7 +78,7 @@ func (p *PublicationMonitor) AddPending() {
 	p.lock.Unlock()
 }
 
-func (p *PublicationMonitor) SetMute(isMuted bool) {
+func (p *PublicationMonitor) setMute(isMuted bool) {
 	p.lock.Lock()
 	p.isMuted = isMuted
 	if !p.isMuted {
@@ -74,14 +87,14 @@ func (p *PublicationMonitor) SetMute(isMuted bool) {
 	p.lock.Unlock()
 }
 
-func (p *PublicationMonitor) SetPublishedTrack(pubTrack types.LocalMediaTrack) {
+func (p *PublicationMonitor) setPublishedTrack(pubTrack types.LocalMediaTrack) {
 	p.lock.Lock()
 	p.publishedTrack = pubTrack
 	p.update()
 	p.lock.Unlock()
 }
 
-func (p *PublicationMonitor) ClearPublishedTrack(pubTrack types.LocalMediaTrack) {
+func (p *PublicationMonitor) clearPublishedTrack(pubTrack types.LocalMediaTrack) {
 	p.lock.Lock()
 	if p.publishedTrack == pubTrack {
 		p.publishedTrack = nil
