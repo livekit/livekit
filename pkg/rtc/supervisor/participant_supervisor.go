@@ -51,7 +51,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 		pm = NewPublicationMonitor(PublicationMonitorParams{TrackID: trackID, Logger: p.params.Logger})
 		p.publications[trackID] = pm
 	}
-	pm.(*PublicationMonitor).AddPending()
+	pm.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
 	p.lock.Unlock()
 }
 
@@ -59,7 +59,7 @@ func (p *ParticipantSupervisor) SetPublicationMute(trackID livekit.TrackID, isMu
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if ok {
-		pm.(*PublicationMonitor).SetMute(isMuted)
+		pm.PostEvent(types.OperationMonitorEventSetPublicationMute, isMuted)
 	}
 	p.lock.Unlock()
 }
@@ -68,7 +68,7 @@ func (p *ParticipantSupervisor) SetPublishedTrack(trackID livekit.TrackID, pubTr
 	p.lock.RLock()
 	pm, ok := p.publications[trackID]
 	if ok {
-		pm.(*PublicationMonitor).SetPublishedTrack(pubTrack)
+		pm.PostEvent(types.OperationMonitorEventSetPublishedTrack, pubTrack)
 	}
 	p.lock.RUnlock()
 }
@@ -77,7 +77,7 @@ func (p *ParticipantSupervisor) ClearPublishedTrack(trackID livekit.TrackID, pub
 	p.lock.RLock()
 	pm, ok := p.publications[trackID]
 	if ok {
-		pm.(*PublicationMonitor).ClearPublishedTrack(pubTrack)
+		pm.PostEvent(types.OperationMonitorEventClearPublishedTrack, pubTrack)
 	}
 	p.lock.RUnlock()
 }
@@ -89,7 +89,7 @@ func (p *ParticipantSupervisor) UpdateSubscription(trackID livekit.TrackID, isSu
 		sm = NewSubscriptionMonitor(SubscriptionMonitorParams{TrackID: trackID, Logger: p.params.Logger})
 		p.subscriptions[trackID] = sm
 	}
-	sm.(*SubscriptionMonitor).UpdateSubscription(isSubscribed)
+	sm.PostEvent(types.OperationMonitorEventUpdateSubscription, isSubscribed)
 	p.lock.Unlock()
 }
 
@@ -97,7 +97,7 @@ func (p *ParticipantSupervisor) SetSubscribedTrack(trackID livekit.TrackID, subT
 	p.lock.RLock()
 	sm, ok := p.subscriptions[trackID]
 	if ok {
-		sm.(*SubscriptionMonitor).SetSubscribedTrack(subTrack)
+		sm.PostEvent(types.OperationMonitorEventSetSubscribedTrack, subTrack)
 	}
 	p.lock.RUnlock()
 }
@@ -106,7 +106,7 @@ func (p *ParticipantSupervisor) ClearSubscribedTrack(trackID livekit.TrackID, su
 	p.lock.RLock()
 	sm, ok := p.subscriptions[trackID]
 	if ok {
-		sm.(*SubscriptionMonitor).ClearSubscribedTrack(subTrack)
+		sm.PostEvent(types.OperationMonitorEventClearSubscribedTrack, subTrack)
 	}
 	p.lock.RUnlock()
 }

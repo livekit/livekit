@@ -420,7 +420,46 @@ type SubscribedTrack interface {
 	UpdateVideoLayer()
 }
 
+//
+// Supervisor/operation monitor related definitions
+//
+type OperationMonitorEvent int
+
+const (
+	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
+	OperationMonitorEventSetSubscribedTrack
+	OperationMonitorEventClearSubscribedTrack
+	OperationMonitorEventAddPendingPublication
+	OperationMonitorEventSetPublicationMute
+	OperationMonitorEventSetPublishedTrack
+	OperationMonitorEventClearPublishedTrack
+)
+
+func (o OperationMonitorEvent) String() string {
+	switch o {
+	case OperationMonitorEventUpdateSubscription:
+		return "UPDATE_SUBSCRIPTION"
+	case OperationMonitorEventSetSubscribedTrack:
+		return "SET_SUBSCRIBED_TRACK"
+	case OperationMonitorEventClearSubscribedTrack:
+		return "CLEAR_SUBSCRIBED_TRACK"
+	case OperationMonitorEventAddPendingPublication:
+		return "ADD_PENDING_PUBLICATION"
+	case OperationMonitorEventSetPublicationMute:
+		return "SET_PUBLICATION_MUTE"
+	case OperationMonitorEventSetPublishedTrack:
+		return "SET_PUBLISHED_TRACK"
+	case OperationMonitorEventClearPublishedTrack:
+		return "CLEAR_PUBLISHED_TRACK"
+	default:
+		return fmt.Sprintf("%d", int(o))
+	}
+}
+
+type OperationMonitorData interface{}
+
 type OperationMonitor interface {
+	PostEvent(ome OperationMonitorEvent, omd OperationMonitorData)
 	Check() error
 	IsIdle() bool
 }
