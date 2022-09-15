@@ -139,23 +139,20 @@ func (p *PublicationMonitor) IsIdle() bool {
 }
 
 func (p *PublicationMonitor) update() {
-	var pub *publish
-	if p.desiredPublishes.Len() > 0 {
-		pub = p.desiredPublishes.PopFront().(*publish)
-	}
+	for {
+		var pub *publish
+		if p.desiredPublishes.Len() > 0 {
+			pub = p.desiredPublishes.PopFront().(*publish)
+		}
 
-	if pub == nil {
-		return
-	}
+		if pub == nil {
+			return
+		}
 
-	switch {
-	case pub.isStart && p.publishedTrack != nil:
-		return
-	case !pub.isStart && p.publishedTrack == nil:
-		return
-	default:
-		// put it back as the condition is not satisfied
-		p.desiredPublishes.PushFront(pub)
-		return
+		if (pub.isStart && p.publishedTrack == nil) || (!pub.isStart && p.publishedTrack != nil) {
+			// put it back as the condition is not satisfied
+			p.desiredPublishes.PushFront(pub)
+			return
+		}
 	}
 }
