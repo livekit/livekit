@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
@@ -34,7 +35,7 @@ func StartTrackEgress(
 		if strings.HasSuffix(prefix, "/") {
 			output.File.Filepath = prefix
 		} else {
-			output.File.Filepath = fmt.Sprintf("%s_%s", prefix, track.ID())
+			output.File.Filepath = fmt.Sprintf("%s_%s_%d", prefix, track.ID(), time.Now().UnixNano())
 		}
 	}
 
