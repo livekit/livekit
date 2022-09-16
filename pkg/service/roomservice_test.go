@@ -107,7 +107,7 @@ func newTestRoomService(conf config.RoomConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
 	store := &servicefakes.FakeServiceStore{}
-	svc, err := service.NewRoomService(allocator, store, router, conf)
+	svc, err := service.NewRoomService(conf, router, allocator, store, nil)
 	if err != nil {
 		panic(err)
 	}
