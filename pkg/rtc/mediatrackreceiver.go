@@ -571,8 +571,10 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 					ssrcFound := false
 					for _, l := range originLayers {
 						if l.Quality == ci.Layers[layerIdx].Quality {
-							ci.Layers[layerIdx].Ssrc = l.Ssrc
-							ssrcFound = true
+							if l.Ssrc != 0 {
+								ci.Layers[layerIdx].Ssrc = l.Ssrc
+								ssrcFound = true
+							}
 							break
 						}
 					}
@@ -601,8 +603,10 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 			ssrcFound := false
 			for _, l := range originLayers {
 				if l.Quality == ti.Layers[layerIdx].Quality {
-					ti.Layers[layerIdx].Ssrc = l.Ssrc
-					ssrcFound = true
+					if l.Ssrc != 0 {
+						ti.Layers[layerIdx].Ssrc = l.Ssrc
+						ssrcFound = true
+					}
 					break
 				}
 			}
