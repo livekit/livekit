@@ -932,7 +932,7 @@ func (t *PCTransport) Negotiate(force bool) {
 	}
 }
 
-func (t *PCTransport) configureReceiverDTX(enableDTX bool) {
+func (t *PCTransport) configureReceiverDTXAndStereo(enableDTX bool) {
 	//
 	// DTX (Discontinuous Transmission) allows audio bandwidth saving
 	// by not sending packets during silence periods.
@@ -993,6 +993,14 @@ func (t *PCTransport) configureReceiverDTX(enableDTX bool) {
 				if enableDTX {
 					sdpFmtpLine += ";" + fmtpUseDTX
 				}
+
+				fmtpStereo := "stereo=1"
+				// remove occurrence in the middle
+				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpStereo+";", "")
+				// remove occurrence at the end
+				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpStereo, "")
+				sdpFmtpLine += ";" + fmtpStereo
+
 				receiverCodec.SDPFmtpLine = sdpFmtpLine
 			}
 			modifiedReceiverCodecs = append(modifiedReceiverCodecs, receiverCodec)
@@ -1685,7 +1693,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	if onGetDTX := t.getOnGetDTX(); onGetDTX != nil {
 		enableDTX = onGetDTX()
 	}
-	t.configureReceiverDTX(enableDTX)
+	t.configureReceiverDTXAndStereo(enableDTX)
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
