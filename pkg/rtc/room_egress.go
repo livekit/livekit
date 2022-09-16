@@ -33,7 +33,7 @@ func StartTrackEgress(
 
 	if prefix := opts.FilePrefix; prefix != "" {
 		if strings.HasSuffix(prefix, "/") {
-			output.File.Filepath = prefix
+			output.File.Filepath = fmt.Sprintf("%s%s_%d", prefix, track.ID(), time.Now().UnixNano())
 		} else {
 			output.File.Filepath = fmt.Sprintf("%s_%s_%d", prefix, track.ID(), time.Now().UnixNano())
 		}
