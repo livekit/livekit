@@ -728,8 +728,10 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.RUnlock()
 
 	// auto track egress
-	if r.protoRoom.Egress != nil && r.protoRoom.Egress.Tracks != nil {
-		r.startTrackEgress(track)
+	if egress := r.protoRoom.Egress; egress != nil && egress.Tracks != nil {
+		if err := StartTrackEgress(context.Background(), r.egressLauncher, track, egress.Tracks, r.Name(), r.ID()); err != nil {
+			r.Logger.Errorw("could not start track egress", err)
+		}
 	}
 }
 

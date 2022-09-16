@@ -2,6 +2,7 @@ package rtc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,17 +14,23 @@ type EgressLauncher interface {
 	StartEgress(context.Context, *livekit.StartEgressRequest) (*livekit.EgressInfo, error)
 }
 
-func (r *Room) startTrackEgress(track types.MediaTrack) {
-	if r.egressLauncher == nil {
-		r.Logger.Errorw("egress launcher not found", nil)
-		return
+func StartTrackEgress(
+	ctx context.Context,
+	launcher EgressLauncher,
+	track types.MediaTrack,
+	opts *livekit.AutoTrackEgress,
+	roomName livekit.RoomName,
+	roomID livekit.RoomID,
+) error {
+	if launcher == nil {
+		return errors.New("egress launcher not found")
 	}
 
 	output := &livekit.TrackEgressRequest_File{
 		File: &livekit.DirectFileOutput{},
 	}
 
-	if prefix := r.protoRoom.Egress.Tracks.FilePrefix; prefix != "" {
+	if prefix := opts.FilePrefix; prefix != "" {
 		if strings.HasSuffix(prefix, "/") {
 			output.File.Filepath = prefix
 		} else {
@@ -31,7 +38,7 @@ func (r *Room) startTrackEgress(track types.MediaTrack) {
 		}
 	}
 
-	switch out := r.protoRoom.Egress.Tracks.Output.(type) {
+	switch out := opts.Output.(type) {
 	case *livekit.AutoTrackEgress_Azure:
 		output.File.Output = &livekit.DirectFileOutput_Azure{Azure: out.Azure}
 	case *livekit.AutoTrackEgress_Gcp:
@@ -40,19 +47,15 @@ func (r *Room) startTrackEgress(track types.MediaTrack) {
 		output.File.Output = &livekit.DirectFileOutput_S3{S3: out.S3}
 	}
 
-	_, err := r.egressLauncher.StartEgress(context.Background(), &livekit.StartEgressRequest{
+	_, err := launcher.StartEgress(ctx, &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_Track{
 			Track: &livekit.TrackEgressRequest{
-				RoomName: string(r.Name()),
+				RoomName: string(roomName),
 				TrackId:  string(track.ID()),
 				Output:   output,
 			},
 		},
-		RoomId: string(r.ID()),
+		RoomId: string(roomID),
 	})
-	if err != nil {
-		r.Logger.Errorw("failed to launch track egress", err,
-			"trackID", track.ID(),
-		)
-	}
+	return err
 }
