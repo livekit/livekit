@@ -41,10 +41,11 @@ type Room struct {
 	protoRoom *livekit.Room
 	Logger    logger.Logger
 
-	config      WebRTCConfig
-	audioConfig *config.AudioConfig
-	serverInfo  *livekit.ServerInfo
-	telemetry   telemetry.TelemetryService
+	config         WebRTCConfig
+	audioConfig    *config.AudioConfig
+	serverInfo     *livekit.ServerInfo
+	telemetry      telemetry.TelemetryService
+	egressLauncher EgressLauncher
 
 	// map of identity -> Participant
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -77,6 +78,7 @@ func NewRoom(
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
+	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
@@ -84,6 +86,7 @@ func NewRoom(
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
+		egressLauncher:  egressLauncher,
 		serverInfo:      serverInfo,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
@@ -693,8 +696,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
 	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	// subscribe all existing participants to this MediaTrack
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
@@ -723,6 +724,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
+	}
+	r.lock.RUnlock()
+
+	// auto track egress
+	if r.protoRoom.Egress != nil && r.protoRoom.Egress.Tracks != nil {
+		r.startTrackEgress(track)
 	}
 }
 

@@ -696,6 +696,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 			Region:   "testregion",
 		},
 		telemetry.NewTelemetryService(webhook.NewNotifier("", "", nil), &telemetryfakes.FakeAnalyticsService{}),
+		nil,
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))

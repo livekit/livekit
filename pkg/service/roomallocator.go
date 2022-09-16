@@ -68,6 +68,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Metadata != "" {
 		rm.Metadata = req.Metadata
 	}
+	if req.Egress != nil && req.Egress.Tracks != nil {
+		rm.Egress = &livekit.AutoEgress{
+			Tracks: req.Egress.Tracks,
+		}
+	}
+
 	if err := r.roomStore.StoreRoom(ctx, rm); err != nil {
 		return nil, err
 	}
