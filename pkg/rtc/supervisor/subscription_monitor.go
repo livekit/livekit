@@ -37,6 +37,8 @@ type SubscriptionMonitor struct {
 	desiredTransitions deque.Deque
 
 	subscribedTrack types.SubscribedTrack
+
+	lastError error
 }
 
 func NewSubscriptionMonitor(params SubscriptionMonitorParams) *SubscriptionMonitor {
@@ -91,6 +93,12 @@ func (s *SubscriptionMonitor) clearSubscribedTrack(subTrack types.SubscribedTrac
 
 func (s *SubscriptionMonitor) Check() error {
 	s.lock.RLock()
+	if s.lastError != nil {
+		s.lock.RUnlock()
+		// return an error only once
+		return nil
+	}
+
 	var tx *transition
 	if s.desiredTransitions.Len() > 0 {
 		tx = s.desiredTransitions.Front().(*transition)
@@ -103,11 +111,18 @@ func (s *SubscriptionMonitor) Check() error {
 
 	if time.Since(tx.at) > transitionWaitDuration {
 		// timed out waiting for transition
+		var err error
 		if tx.isSubscribe {
-			return errSubscribeTimeout
+			err = errSubscribeTimeout
 		} else {
-			return errUnsubscribeTimeout
+			err = errUnsubscribeTimeout
 		}
+
+		s.lock.Lock()
+		s.lastError = err
+		s.lock.Unlock()
+
+		return err
 	}
 
 	// give more time for transition to happen
@@ -137,5 +152,7 @@ func (s *SubscriptionMonitor) update() {
 			s.desiredTransitions.PushFront(tx)
 			return
 		}
+
+		s.lastError = nil
 	}
 }
