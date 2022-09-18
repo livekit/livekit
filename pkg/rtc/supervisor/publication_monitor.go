@@ -83,8 +83,6 @@ func (p *PublicationMonitor) setMute(isMuted bool) {
 	p.isMuted = isMuted
 	if !p.isMuted {
 		p.unmutedAt = time.Now()
-	} else {
-		p.unmutedAt = time.Time{}
 	}
 	p.lock.Unlock()
 }
