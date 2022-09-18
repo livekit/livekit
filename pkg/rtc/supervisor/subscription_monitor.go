@@ -16,12 +16,13 @@ const (
 )
 
 var (
-	errTransitionTimeout = errors.New("transition time out")
+	errSubscribeTimeout   = errors.New("subscribe time out")
+	errUnsubscribeTimeout = errors.New("unsubscribe time out")
 )
 
 type transition struct {
-	isSubscribed bool
-	at           time.Time
+	isSubscribe bool
+	at          time.Time
 }
 
 type SubscriptionMonitorParams struct {
@@ -57,12 +58,12 @@ func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd typ
 	}
 }
 
-func (s *SubscriptionMonitor) updateSubscription(isSubscribed bool) {
+func (s *SubscriptionMonitor) updateSubscription(isSubscribe bool) {
 	s.lock.Lock()
 	s.desiredTransitions.PushBack(
 		&transition{
-			isSubscribed: isSubscribed,
-			at:           time.Now(),
+			isSubscribe: isSubscribe,
+			at:          time.Now(),
 		},
 	)
 	s.update()
@@ -102,7 +103,11 @@ func (s *SubscriptionMonitor) Check() error {
 
 	if time.Since(tx.at) > transitionWaitDuration {
 		// timed out waiting for transition
-		return errTransitionTimeout
+		if tx.isSubscribe {
+			return errSubscribeTimeout
+		} else {
+			return errUnsubscribeTimeout
+		}
 	}
 
 	// give more time for transition to happen
@@ -127,7 +132,7 @@ func (s *SubscriptionMonitor) update() {
 			return
 		}
 
-		if (tx.isSubscribed && s.subscribedTrack == nil) || (!tx.isSubscribed && s.subscribedTrack != nil) {
+		if (tx.isSubscribe && s.subscribedTrack == nil) || (!tx.isSubscribe && s.subscribedTrack != nil) {
 			// put it back as the condition is not satisfied
 			s.desiredTransitions.PushFront(tx)
 			return
