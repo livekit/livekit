@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	publishWaitDuration = 10 * time.Second
+	publishWaitDuration = 30 * time.Second
 )
 
 var (
