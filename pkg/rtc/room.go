@@ -261,6 +261,19 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
 				ConnectionType:    string(p.GetICEConnectionType()),
 			})
+
+			// egress
+			if r.internal != nil && r.internal.ParticipantEgress != nil {
+				StartParticipantEgress(
+					context.Background(),
+					r.egressLauncher,
+					r.telemetry,
+					r.internal.ParticipantEgress,
+					participant,
+					r.Name(),
+					r.ID(),
+				)
+			}
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			go r.RemoveParticipant(p.Identity(), types.ParticipantCloseReasonStateDisconnected)
@@ -736,8 +749,8 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			context.Background(),
 			r.egressLauncher,
 			r.telemetry,
-			track,
 			r.internal.TrackEgress,
+			track,
 			r.Name(),
 			r.ID(),
 		)
