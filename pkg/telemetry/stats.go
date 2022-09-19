@@ -50,18 +50,6 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 	})
 }
 
-func (t *telemetryService) FlushStats() {
-	t.workersMu.RLock()
-	workers := t.workers
-	t.workersMu.RUnlock()
-
-	for _, worker := range workers {
-		if worker != nil {
-			worker.Flush()
-		}
-	}
-}
-
 func (t *telemetryService) getStatsWorker(participantID livekit.ParticipantID) *StatsWorker {
 	t.workersMu.RLock()
 	defer t.workersMu.RUnlock()

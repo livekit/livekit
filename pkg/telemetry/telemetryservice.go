@@ -74,6 +74,18 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 	return t
 }
 
+func (t *telemetryService) FlushStats() {
+	t.workersMu.RLock()
+	workers := t.workers
+	t.workersMu.RUnlock()
+
+	for _, worker := range workers {
+		if worker != nil {
+			worker.Flush()
+		}
+	}
+}
+
 func (t *telemetryService) run() {
 	ticker := time.NewTicker(config.StatsUpdateInterval)
 	defer ticker.Stop()

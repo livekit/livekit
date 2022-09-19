@@ -17,6 +17,7 @@ import (
 func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
 	if t.notifier == nil {
 		logger.Warnw("failed to notify webhook", errors.New("no notifier"), "event", event.Event)
+		return
 	}
 
 	event.CreatedAt = time.Now().Unix()
@@ -60,8 +61,13 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	})
 }
 
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo,
-	clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta) {
+func (t *telemetryService) ParticipantJoined(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	clientInfo *livekit.ClientInfo,
+	clientMeta *livekit.AnalyticsClientMeta,
+) {
 	t.enqueue(func() {
 		prometheus.IncrementParticipantJoin(1)
 		prometheus.AddParticipant()
@@ -93,6 +99,7 @@ func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 		}
 		t.workersMu.Unlock()
 
+		logger.Errorw("sending event", nil)
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
 			Timestamp:     timestamppb.Now(),
@@ -106,7 +113,12 @@ func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.
 	})
 }
 
-func (t *telemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta) {
+func (t *telemetryService) ParticipantActive(
+	ctx context.Context,
+	room *livekit.Room,
+	participant *livekit.ParticipantInfo,
+	clientMeta *livekit.AnalyticsClientMeta,
+) {
 	t.enqueue(func() {
 		// consider participant joined only when they became active
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
@@ -152,7 +164,12 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Ro
 	})
 }
 
-func (t *telemetryService) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
+func (t *telemetryService) TrackPublished(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
+	track *livekit.TrackInfo,
+) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
 
@@ -199,7 +216,13 @@ func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participant
 	})
 }
 
-func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality) {
+func (t *telemetryService) TrackMaxSubscribedVideoQuality(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+	mime string,
+	maxQuality livekit.VideoQuality,
+) {
 	t.enqueue(func() {
 		roomID, roomName := t.getRoomDetails(participantID)
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
@@ -215,7 +238,12 @@ func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, p
 	})
 }
 
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo) {
+func (t *telemetryService) TrackSubscribed(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	track *livekit.TrackInfo,
+	publisher *livekit.ParticipantInfo,
+) {
 	t.enqueue(func() {
 		prometheus.AddSubscribedTrack(track.Type.String())
 
@@ -248,7 +276,13 @@ func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID 
 	})
 }
 
-func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, ssrc uint32) {
+func (t *telemetryService) TrackUnpublished(
+	ctx context.Context,
+	participantID livekit.ParticipantID,
+	identity livekit.ParticipantIdentity,
+	track *livekit.TrackInfo,
+	ssrc uint32,
+) {
 	t.enqueue(func() {
 		roomID := livekit.RoomID("")
 		roomName := livekit.RoomName("")
