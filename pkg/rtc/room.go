@@ -39,6 +39,7 @@ type Room struct {
 	lock sync.RWMutex
 
 	protoRoom *livekit.Room
+	internal  *livekit.RoomInternal
 	Logger    logger.Logger
 
 	config         WebRTCConfig
@@ -74,6 +75,7 @@ type ParticipantOptions struct {
 
 func NewRoom(
 	room *livekit.Room,
+	internal *livekit.RoomInternal,
 	config WebRTCConfig,
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
@@ -82,6 +84,7 @@ func NewRoom(
 ) *Room {
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
+		internal:        internal,
 		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
@@ -728,13 +731,13 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.lock.RUnlock()
 
 	// auto track egress
-	if egress := r.protoRoom.Egress; egress != nil && egress.Tracks != nil {
+	if r.internal != nil && r.internal.TrackEgress != nil {
 		StartTrackEgress(
 			context.Background(),
 			r.egressLauncher,
 			r.telemetry,
 			track,
-			egress.Tracks,
+			r.internal.TrackEgress,
 			r.Name(),
 			r.ID(),
 		)

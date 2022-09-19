@@ -683,6 +683,7 @@ type testRoomOpts struct {
 func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	rm := NewRoom(
 		&livekit.Room{Name: "room"},
+		nil,
 		WebRTCConfig{},
 		&config.AudioConfig{
 			UpdateInterval:  audioUpdateInterval,

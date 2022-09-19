@@ -68,14 +68,22 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Metadata != "" {
 		rm.Metadata = req.Metadata
 	}
-	if req.Egress != nil && req.Egress.Tracks != nil {
-		rm.Egress = &livekit.AutoEgress{
-			Tracks: req.Egress.Tracks,
-		}
+
+	if err = r.roomStore.StoreRoom(ctx, rm); err != nil {
+		return nil, err
 	}
 
-	if err := r.roomStore.StoreRoom(ctx, rm); err != nil {
-		return nil, err
+	if req.Egress != nil && (req.Egress.Tracks != nil || req.Egress.Participants != nil) {
+		internal := &livekit.RoomInternal{}
+		if req.Egress.Tracks != nil {
+			internal.TrackEgress = req.Egress.Tracks
+		}
+		if req.Egress.Participants != nil {
+			internal.ParticipantEgress = req.Egress.Participants
+		}
+		if err = r.roomStore.StoreRoomInternal(ctx, livekit.RoomName(req.Name), internal); err != nil {
+			return nil, err
+		}
 	}
 
 	// check if room already assigned

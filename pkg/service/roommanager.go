@@ -376,6 +376,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 		return nil, err
 	}
 
+	internal, err := r.roomStore.LoadRoomInternal(ctx, roomName)
+	if err != nil {
+		return nil, err
+	}
+
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomName]
@@ -391,7 +396,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()

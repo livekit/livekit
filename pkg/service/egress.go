@@ -103,6 +103,14 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 	})
 }
 
+func (s *EgressService) StartParticipantCompositeEgress(ctx context.Context, req *livekit.ParticipantCompositeEgressRequest) (*livekit.EgressInfo, error) {
+	return s.StartEgress(ctx, livekit.RoomName(req.RoomName), &livekit.StartEgressRequest{
+		Request: &livekit.StartEgressRequest_ParticipantComposite{
+			ParticipantComposite: req,
+		},
+	})
+}
+
 func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
