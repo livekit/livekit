@@ -150,7 +150,7 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName) (*li
 }
 
 func (s *RedisStore) LoadRoomInternal(_ context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error) {
-	data, err := s.rc.HGet(s.ctx, RoomsKey, string(roomName)).Result()
+	data, err := s.rc.HGet(s.ctx, RoomInternalKey, string(roomName)).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return nil, nil
