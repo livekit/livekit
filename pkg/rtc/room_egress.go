@@ -134,7 +134,6 @@ func startParticipantEgress(
 		ParticipantIdentity: string(participant.Identity()),
 		AudioOnly:           opts.AudioOnly,
 		VideoOnly:           opts.VideoOnly,
-		CustomTemplateUrl:   opts.CustomTemplateUrl,
 		Output: &livekit.ParticipantCompositeEgressRequest_File{
 			File: output,
 		},
