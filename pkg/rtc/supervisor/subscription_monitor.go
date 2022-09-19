@@ -16,12 +16,13 @@ const (
 )
 
 var (
-	errTransitionTimeout = errors.New("transition time out")
+	errSubscribeTimeout   = errors.New("subscribe time out")
+	errUnsubscribeTimeout = errors.New("unsubscribe time out")
 )
 
 type transition struct {
-	isSubscribed bool
-	at           time.Time
+	isSubscribe bool
+	at          time.Time
 }
 
 type SubscriptionMonitorParams struct {
@@ -36,6 +37,8 @@ type SubscriptionMonitor struct {
 	desiredTransitions deque.Deque
 
 	subscribedTrack types.SubscribedTrack
+
+	lastError error
 }
 
 func NewSubscriptionMonitor(params SubscriptionMonitorParams) *SubscriptionMonitor {
@@ -57,12 +60,12 @@ func (s *SubscriptionMonitor) PostEvent(ome types.OperationMonitorEvent, omd typ
 	}
 }
 
-func (s *SubscriptionMonitor) updateSubscription(isSubscribed bool) {
+func (s *SubscriptionMonitor) updateSubscription(isSubscribe bool) {
 	s.lock.Lock()
 	s.desiredTransitions.PushBack(
 		&transition{
-			isSubscribed: isSubscribed,
-			at:           time.Now(),
+			isSubscribe: isSubscribe,
+			at:          time.Now(),
 		},
 	)
 	s.update()
@@ -90,6 +93,12 @@ func (s *SubscriptionMonitor) clearSubscribedTrack(subTrack types.SubscribedTrac
 
 func (s *SubscriptionMonitor) Check() error {
 	s.lock.RLock()
+	if s.lastError != nil {
+		s.lock.RUnlock()
+		// return an error only once
+		return nil
+	}
+
 	var tx *transition
 	if s.desiredTransitions.Len() > 0 {
 		tx = s.desiredTransitions.Front().(*transition)
@@ -102,7 +111,18 @@ func (s *SubscriptionMonitor) Check() error {
 
 	if time.Since(tx.at) > transitionWaitDuration {
 		// timed out waiting for transition
-		return errTransitionTimeout
+		var err error
+		if tx.isSubscribe {
+			err = errSubscribeTimeout
+		} else {
+			err = errUnsubscribeTimeout
+		}
+
+		s.lock.Lock()
+		s.lastError = err
+		s.lock.Unlock()
+
+		return err
 	}
 
 	// give more time for transition to happen
@@ -127,10 +147,12 @@ func (s *SubscriptionMonitor) update() {
 			return
 		}
 
-		if (tx.isSubscribed && s.subscribedTrack == nil) || (!tx.isSubscribed && s.subscribedTrack != nil) {
+		if (tx.isSubscribe && s.subscribedTrack == nil) || (!tx.isSubscribe && s.subscribedTrack != nil) {
 			// put it back as the condition is not satisfied
 			s.desiredTransitions.PushFront(tx)
 			return
 		}
+
+		s.lastError = nil
 	}
 }
