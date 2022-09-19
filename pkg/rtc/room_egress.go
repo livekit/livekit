@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
 )
 
 type EgressLauncher interface {
@@ -18,45 +20,71 @@ type EgressLauncher interface {
 func StartTrackEgress(
 	ctx context.Context,
 	launcher EgressLauncher,
+	ts telemetry.TelemetryService,
 	track types.MediaTrack,
 	opts *livekit.AutoTrackEgress,
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
-) error {
-	if launcher == nil {
-		return errors.New("egress launcher not found")
+) {
+	if req, err := startTrackEgress(ctx, launcher, track, opts, roomName, roomID); err != nil {
+		// send egress failed webhook
+		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: webhook.EventEgressEnded,
+			EgressInfo: &livekit.EgressInfo{
+				RoomId:   string(roomID),
+				RoomName: string(roomName),
+				Status:   livekit.EgressStatus_EGRESS_FAILED,
+				Error:    err.Error(),
+				Request:  &livekit.EgressInfo_Track{Track: req},
+			},
+		})
 	}
+}
 
-	output := &livekit.TrackEgressRequest_File{
-		File: &livekit.DirectFileOutput{},
-	}
+func startTrackEgress(
+	ctx context.Context,
+	launcher EgressLauncher,
+	track types.MediaTrack,
+	opts *livekit.AutoTrackEgress,
+	roomName livekit.RoomName,
+	roomID livekit.RoomID,
+) (*livekit.TrackEgressRequest, error) {
 
+	output := &livekit.DirectFileOutput{}
 	if prefix := opts.FilePrefix; prefix != "" {
 		if strings.HasSuffix(prefix, "/") {
-			output.File.Filepath = fmt.Sprintf("%s%s_%d", prefix, track.ID(), time.Now().UnixNano())
+			output.Filepath = fmt.Sprintf("%s%s_%s", prefix, track.ID(), time.Now().Format("2006-01-02T150405"))
 		} else {
-			output.File.Filepath = fmt.Sprintf("%s_%s_%d", prefix, track.ID(), time.Now().UnixNano())
+			output.Filepath = fmt.Sprintf("%s_%s_%s", prefix, track.ID(), time.Now().Format("2006-01-02T150405"))
 		}
 	}
 
 	switch out := opts.Output.(type) {
 	case *livekit.AutoTrackEgress_Azure:
-		output.File.Output = &livekit.DirectFileOutput_Azure{Azure: out.Azure}
+		output.Output = &livekit.DirectFileOutput_Azure{Azure: out.Azure}
 	case *livekit.AutoTrackEgress_Gcp:
-		output.File.Output = &livekit.DirectFileOutput_Gcp{Gcp: out.Gcp}
+		output.Output = &livekit.DirectFileOutput_Gcp{Gcp: out.Gcp}
 	case *livekit.AutoTrackEgress_S3:
-		output.File.Output = &livekit.DirectFileOutput_S3{S3: out.S3}
+		output.Output = &livekit.DirectFileOutput_S3{S3: out.S3}
+	}
+
+	req := &livekit.TrackEgressRequest{
+		RoomName: string(roomName),
+		TrackId:  string(track.ID()),
+		Output: &livekit.TrackEgressRequest_File{
+			File: output,
+		},
+	}
+
+	if launcher == nil {
+		return req, errors.New("egress launcher not found")
 	}
 
 	_, err := launcher.StartEgress(ctx, &livekit.StartEgressRequest{
 		Request: &livekit.StartEgressRequest_Track{
-			Track: &livekit.TrackEgressRequest{
-				RoomName: string(roomName),
-				TrackId:  string(track.ID()),
-				Output:   output,
-			},
+			Track: req,
 		},
 		RoomId: string(roomID),
 	})
-	return err
+	return req, err
 }

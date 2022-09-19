@@ -18,14 +18,14 @@ func init() {
 }
 
 type telemetryServiceFixture struct {
-	sut       telemetry.TelemetryServiceInternal
+	sut       telemetry.TelemetryService
 	analytics *telemetryfakes.FakeAnalyticsService
 }
 
 func createFixture() *telemetryServiceFixture {
 	fixture := &telemetryServiceFixture{}
 	fixture.analytics = &telemetryfakes.FakeAnalyticsService{}
-	fixture.sut = telemetry.NewTelemetryServiceInternal(nil, fixture.analytics)
+	fixture.sut = telemetry.NewTelemetryService(nil, fixture.analytics)
 	return fixture
 }
 
@@ -43,7 +43,7 @@ func Test_ParticipantAndRoomDataAreSentWithAnalytics(t *testing.T) {
 	packet := 33
 	stat := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packet)}}}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "", stat)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -74,7 +74,7 @@ func Test_OnDownstreamPackets(t *testing.T) {
 		stat := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packets[i]), PrimaryPackets: uint32(1)}}}
 		fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat)
 	}
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -106,7 +106,7 @@ func Test_OnDownstreamPackets_SeveralTracks(t *testing.T) {
 	trackID2 := livekit.TrackID("trackID2")
 	stat2 := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packet2), PrimaryPackets: 1}}}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat2)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -172,7 +172,7 @@ func Test_OnDownStreamStat(t *testing.T) {
 	}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
 
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -209,7 +209,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat1) // there should be bytes reported so that stats are sent
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -221,10 +221,10 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
-	require.Equal(t, 2, fixture.analytics.SendStatsCallCount()) // 2 calls to fixture.sut.SendAnalytics()
+	require.Equal(t, 2, fixture.analytics.SendStatsCallCount()) // 2 calls to fixture.sut.FlushStats()
 	_, stats := fixture.analytics.SendStatsArgsForCall(0)
 	require.Equal(t, 1, len(stats))
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[0].Kind)
@@ -279,7 +279,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat3)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -346,7 +346,7 @@ func Test_OnUpstreamStat(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat2)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -413,7 +413,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID2, stat3)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -440,7 +440,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 
 	// remove 1 track - track stats were flushed above, so no more calls to SendStats
 	fixture.sut.TrackUnpublished(context.Background(), partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 }
 
@@ -483,7 +483,7 @@ func Test_AddUpTrack(t *testing.T) {
 	}
 	trackID := livekit.TrackID("trackID")
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -519,7 +519,7 @@ func Test_AddUpTrack_SeveralBuffers_Simulcast(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat1)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -562,7 +562,7 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 		},
 	}
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "trackID1", stat2)
-	fixture.sut.SendAnalytics()
+	fixture.sut.FlushStats()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())

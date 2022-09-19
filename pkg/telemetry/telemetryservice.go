@@ -2,7 +2,10 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 	"time"
+
+	"github.com/gammazero/workerpool"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
@@ -29,20 +32,41 @@ type TelemetryService interface {
 	TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality)
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
 	EgressEnded(ctx context.Context, info *livekit.EgressInfo)
+
+	// helpers
+	AnalyticsService
+	NotifyEvent(ctx context.Context, event *livekit.WebhookEvent)
+	FlushStats()
 }
+
+const (
+	maxWebhookWorkers  = 50
+	workerCleanupWait  = 3 * time.Minute
+	jobQueueBufferSize = 10000
+)
 
 type telemetryService struct {
-	internalService TelemetryServiceInternal
-	jobsChan        chan func()
-}
+	AnalyticsService
 
-// queue should be sufficiently large to avoid blocking
-const jobQueueBufferSize = 10000
+	notifier    webhook.Notifier
+	webhookPool *workerpool.WorkerPool
+	jobsChan    chan func()
+
+	// one worker per participant
+	workersMu  sync.RWMutex
+	workers    []*StatsWorker
+	workersIdx map[livekit.ParticipantID]int
+}
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
-		internalService: NewTelemetryServiceInternal(notifier, analytics),
-		jobsChan:        make(chan func(), jobQueueBufferSize),
+		AnalyticsService: analytics,
+
+		notifier:    notifier,
+		webhookPool: workerpool.New(maxWebhookWorkers),
+		jobsChan:    make(chan func(), jobQueueBufferSize),
+
+		workersIdx: make(map[livekit.ParticipantID]int),
 	}
 
 	go t.run()
@@ -60,9 +84,9 @@ func (t *telemetryService) run() {
 	for {
 		select {
 		case <-ticker.C:
-			t.internalService.SendAnalytics()
+			t.FlushStats()
 		case <-cleanupTicker.C:
-			t.internalService.CleanupWorkers()
+			t.cleanupWorkers()
 		case op := <-t.jobsChan:
 			op()
 		}
@@ -78,87 +102,26 @@ func (t *telemetryService) enqueue(op func()) {
 	}
 }
 
-func (t *telemetryService) TrackStats(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, stats *livekit.AnalyticsStat) {
-	t.enqueue(func() {
-		t.internalService.TrackStats(streamType, participantID, trackID, stats)
-	})
-}
+func (t *telemetryService) cleanupWorkers() {
+	t.workersMu.RLock()
+	workers := t.workers
+	t.workersMu.RUnlock()
 
-func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
-	t.enqueue(func() {
-		t.internalService.RoomStarted(ctx, room)
-	})
-}
+	for _, worker := range workers {
+		if worker == nil {
+			continue
+		}
 
-func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
-	t.enqueue(func() {
-		t.internalService.RoomEnded(ctx, room)
-	})
-}
-
-func (t *telemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo,
-	clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta) {
-	t.enqueue(func() {
-		t.internalService.ParticipantJoined(ctx, room, participant, clientInfo, clientMeta)
-	})
-}
-
-func (t *telemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta) {
-	t.enqueue(func() {
-		t.internalService.ParticipantActive(ctx, room, participant, clientMeta)
-	})
-}
-
-func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
-	t.enqueue(func() {
-		t.internalService.ParticipantLeft(ctx, room, participant)
-	})
-}
-
-func (t *telemetryService) TrackPublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
-	t.enqueue(func() {
-		t.internalService.TrackPublished(ctx, participantID, identity, track)
-	})
-}
-
-func (t *telemetryService) TrackUnpublished(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, ssrc uint32) {
-	t.enqueue(func() {
-		t.internalService.TrackUnpublished(ctx, participantID, identity, track, ssrc)
-	})
-}
-
-func (t *telemetryService) TrackSubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo) {
-	t.enqueue(func() {
-		t.internalService.TrackSubscribed(ctx, participantID, track, publisher)
-	})
-}
-
-func (t *telemetryService) TrackUnsubscribed(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
-	t.enqueue(func() {
-		t.internalService.TrackUnsubscribed(ctx, participantID, track)
-	})
-}
-
-func (t *telemetryService) TrackPublishedUpdate(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
-	t.enqueue(func() {
-		t.internalService.TrackPublishedUpdate(ctx, participantID, track)
-	})
-}
-
-func (t *telemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime string, maxQuality livekit.VideoQuality) {
-	t.enqueue(func() {
-		t.internalService.TrackMaxSubscribedVideoQuality(ctx, participantID, track, mime, maxQuality)
-	})
-}
-
-func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
-	t.enqueue(func() {
-		t.internalService.EgressStarted(ctx, info)
-	})
-}
-
-func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
-	t.enqueue(func() {
-		t.internalService.EgressEnded(ctx, info)
-	})
+		closedAt := worker.ClosedAt()
+		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
+			pID := worker.ParticipantID()
+			logger.Debugw("reaping analytics worker for participant", "pID", pID)
+			t.workersMu.Lock()
+			if idx, ok := t.workersIdx[pID]; ok {
+				delete(t.workersIdx, pID)
+				t.workers[idx] = nil
+			}
+			t.workersMu.Unlock()
+		}
+	}
 }
