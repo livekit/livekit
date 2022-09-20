@@ -44,19 +44,9 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 			prometheus.IncrementBytes(direction, retransmitBytes, true)
 		}
 
-		if w := t.getStatsWorker(participantID); w != nil {
-			w.OnTrackStat(trackID, streamType, stat)
+		if w, ok := t.workers.Load(participantID); ok {
+			worker := w.(*StatsWorker)
+			worker.OnTrackStat(trackID, streamType, stat)
 		}
 	})
-}
-
-func (t *telemetryService) getStatsWorker(participantID livekit.ParticipantID) *StatsWorker {
-	t.workersMu.RLock()
-	defer t.workersMu.RUnlock()
-
-	if idx, ok := t.workersIdx[participantID]; ok {
-		return t.workers[idx]
-	}
-
-	return nil
 }

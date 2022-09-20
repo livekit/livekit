@@ -52,10 +52,7 @@ type telemetryService struct {
 	webhookPool *workerpool.WorkerPool
 	jobsChan    chan func()
 
-	// one worker per participant
-	workersMu  sync.RWMutex
-	workers    []*StatsWorker
-	workersIdx map[livekit.ParticipantID]int
+	workers sync.Map // map[livekit.ParticipantID]*StatsWorker
 }
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
@@ -65,8 +62,6 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 		notifier:    notifier,
 		webhookPool: workerpool.New(maxWebhookWorkers),
 		jobsChan:    make(chan func(), jobQueueBufferSize),
-
-		workersIdx: make(map[livekit.ParticipantID]int),
 	}
 
 	go t.run()
@@ -75,15 +70,11 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 }
 
 func (t *telemetryService) FlushStats() {
-	t.workersMu.RLock()
-	workers := t.workers
-	t.workersMu.RUnlock()
-
-	for _, worker := range workers {
-		if worker != nil {
-			worker.Flush()
-		}
-	}
+	t.workers.Range(func(key, value interface{}) bool {
+		worker := value.(*StatsWorker)
+		worker.Flush()
+		return true
+	})
 }
 
 func (t *telemetryService) run() {
@@ -115,25 +106,21 @@ func (t *telemetryService) enqueue(op func()) {
 }
 
 func (t *telemetryService) cleanupWorkers() {
-	t.workersMu.RLock()
-	workers := t.workers
-	t.workersMu.RUnlock()
+	remove := make([]livekit.ParticipantID, 0)
 
-	for _, worker := range workers {
-		if worker == nil {
-			continue
-		}
-
+	t.workers.Range(func(key, value interface{}) bool {
+		participantID := key.(livekit.ParticipantID)
+		worker := value.(*StatsWorker)
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
-			pID := worker.ParticipantID()
-			logger.Debugw("reaping analytics worker for participant", "pID", pID)
-			t.workersMu.Lock()
-			if idx, ok := t.workersIdx[pID]; ok {
-				delete(t.workersIdx, pID)
-				t.workers[idx] = nil
-			}
-			t.workersMu.Unlock()
+			remove = append(remove, participantID)
+			logger.Debugw("reaping analytics worker for participant", "pID", participantID)
 		}
+
+		return true
+	})
+
+	for _, participantID := range remove {
+		t.workers.Delete(participantID)
 	}
 }

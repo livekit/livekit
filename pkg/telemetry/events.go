@@ -72,7 +72,7 @@ func (t *telemetryService) ParticipantJoined(
 		prometheus.IncrementParticipantJoin(1)
 		prometheus.AddParticipant()
 
-		newWorker := newStatsWorker(
+		worker := newStatsWorker(
 			ctx,
 			t,
 			livekit.RoomID(room.Sid),
@@ -80,26 +80,8 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
-		t.workersMu.Lock()
-		var free = false
-		for idx, worker := range t.workers {
-			if worker != nil {
-				continue
-			}
+		t.workers.Store(livekit.ParticipantID(participant.Sid), worker)
 
-			free = true
-			t.workersIdx[livekit.ParticipantID(participant.Sid)] = idx
-			t.workers[idx] = newWorker
-			break
-		}
-
-		if !free {
-			t.workersIdx[livekit.ParticipantID(participant.Sid)] = len(t.workers)
-			t.workers = append(t.workers, newWorker)
-		}
-		t.workersMu.Unlock()
-
-		logger.Errorw("sending event", nil)
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
 			Timestamp:     timestamppb.Now(),
@@ -140,9 +122,9 @@ func (t *telemetryService) ParticipantActive(
 
 func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
 	t.enqueue(func() {
-		w := t.getStatsWorker(livekit.ParticipantID(participant.Sid))
-		if w != nil {
-			w.Close()
+		if w, ok := t.workers.Load(livekit.ParticipantID(participant.Sid)); ok {
+			worker := w.(*StatsWorker)
+			worker.Close()
 		}
 
 		prometheus.SubParticipant()
@@ -284,13 +266,7 @@ func (t *telemetryService) TrackUnpublished(
 	ssrc uint32,
 ) {
 	t.enqueue(func() {
-		roomID := livekit.RoomID("")
-		roomName := livekit.RoomName("")
-		w := t.getStatsWorker(participantID)
-		if w != nil {
-			roomID = w.roomID
-			roomName = w.roomName
-		}
+		roomID, roomName := t.getRoomDetails(participantID)
 
 		prometheus.SubPublishedTrack(track.Type.String())
 
@@ -353,8 +329,10 @@ func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.Egress
 }
 
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
-	if w := t.getStatsWorker(participantID); w != nil {
-		return w.roomID, w.roomName
+	if w, ok := t.workers.Load(participantID); ok {
+		worker := w.(*StatsWorker)
+		return worker.roomID, worker.roomName
 	}
+
 	return "", ""
 }
