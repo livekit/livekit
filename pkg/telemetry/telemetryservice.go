@@ -52,7 +52,8 @@ type telemetryService struct {
 	webhookPool *workerpool.WorkerPool
 	jobsChan    chan func()
 
-	workers sync.Map // map[livekit.ParticipantID]*StatsWorker
+	lock    sync.RWMutex
+	workers map[livekit.ParticipantID]*StatsWorker
 }
 
 func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) TelemetryService {
@@ -62,6 +63,7 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 		notifier:    notifier,
 		webhookPool: workerpool.New(maxWebhookWorkers),
 		jobsChan:    make(chan func(), jobQueueBufferSize),
+		workers:     make(map[livekit.ParticipantID]*StatsWorker),
 	}
 
 	go t.run()
@@ -70,11 +72,12 @@ func NewTelemetryService(notifier webhook.Notifier, analytics AnalyticsService) 
 }
 
 func (t *telemetryService) FlushStats() {
-	t.workers.Range(func(key, value interface{}) bool {
-		worker := value.(*StatsWorker)
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	for _, worker := range t.workers {
 		worker.Flush()
-		return true
-	})
+	}
 }
 
 func (t *telemetryService) run() {
@@ -105,22 +108,23 @@ func (t *telemetryService) enqueue(op func()) {
 	}
 }
 
-func (t *telemetryService) cleanupWorkers() {
-	remove := make([]livekit.ParticipantID, 0)
+func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worker *StatsWorker, ok bool) {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
 
-	t.workers.Range(func(key, value interface{}) bool {
-		participantID := key.(livekit.ParticipantID)
-		worker := value.(*StatsWorker)
+	worker, ok = t.workers[participantID]
+	return
+}
+
+func (t *telemetryService) cleanupWorkers() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	for participantID, worker := range t.workers {
 		closedAt := worker.ClosedAt()
 		if !closedAt.IsZero() && time.Since(closedAt) > workerCleanupWait {
-			remove = append(remove, participantID)
 			logger.Debugw("reaping analytics worker for participant", "pID", participantID)
+			delete(t.workers, participantID)
 		}
-
-		return true
-	})
-
-	for _, participantID := range remove {
-		t.workers.Delete(participantID)
 	}
 }

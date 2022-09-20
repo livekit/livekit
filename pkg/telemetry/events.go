@@ -80,7 +80,10 @@ func (t *telemetryService) ParticipantJoined(
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
-		t.workers.Store(livekit.ParticipantID(participant.Sid), worker)
+
+		t.lock.Lock()
+		t.workers[livekit.ParticipantID(participant.Sid)] = worker
+		t.lock.Unlock()
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
@@ -122,8 +125,7 @@ func (t *telemetryService) ParticipantActive(
 
 func (t *telemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo) {
 	t.enqueue(func() {
-		if w, ok := t.workers.Load(livekit.ParticipantID(participant.Sid)); ok {
-			worker := w.(*StatsWorker)
+		if worker, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); ok {
 			worker.Close()
 		}
 
@@ -329,8 +331,7 @@ func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.Egress
 }
 
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) (livekit.RoomID, livekit.RoomName) {
-	if w, ok := t.workers.Load(participantID); ok {
-		worker := w.(*StatsWorker)
+	if worker, ok := t.getWorker(participantID); ok {
 		return worker.roomID, worker.roomName
 	}
 

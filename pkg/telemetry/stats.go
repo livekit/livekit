@@ -44,8 +44,7 @@ func (t *telemetryService) TrackStats(streamType livekit.StreamType, participant
 			prometheus.IncrementBytes(direction, retransmitBytes, true)
 		}
 
-		if w, ok := t.workers.Load(participantID); ok {
-			worker := w.(*StatsWorker)
+		if worker, ok := t.getWorker(participantID); ok {
 			worker.OnTrackStat(trackID, streamType, stat)
 		}
 	})
