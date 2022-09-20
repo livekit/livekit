@@ -47,15 +47,22 @@ const (
 )
 
 type RedisStore struct {
-	rc   *redis.Client
-	ctx  context.Context
-	done chan struct{}
+	rc           *redis.Client
+	unlockScript *redis.Script
+	ctx          context.Context
+	done         chan struct{}
 }
 
 func NewRedisStore(rc *redis.Client) *RedisStore {
+	unlockScript := `if redis.call("get", KEYS[1]) == ARGV[1] then
+						return redis.call("del", KEYS[1])
+					 else return 0 
+					 end`
+
 	return &RedisStore{
-		ctx: context.Background(),
-		rc:  rc,
+		ctx:          context.Background(),
+		rc:           rc,
+		unlockScript: redis.NewScript(unlockScript),
 	}
 }
 
@@ -242,21 +249,19 @@ func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, dura
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
+func (s *RedisStore) UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error {
 	key := RoomLockPrefix + string(roomName)
-
-	val, err := s.rc.Get(s.ctx, key).Result()
-	if err == redis.Nil {
-		// already unlocked
-		return nil
-	} else if err != nil {
+	res, err := s.unlockScript.Run(ctx, s.rc, []string{key}, uid).Result()
+	if err != nil {
 		return err
 	}
 
-	if val != uid {
+	// uid does not match
+	if i, ok := res.(int64); !ok || i != 1 {
 		return ErrRoomUnlockFailed
 	}
-	return s.rc.Del(s.ctx, key).Err()
+
+	return nil
 }
 
 func (s *RedisStore) StoreParticipant(_ context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error {
