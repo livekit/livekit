@@ -439,8 +439,8 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		Arrival:   arrivalTime,
 		RawPacket: rawPacket,
 		VideoLayer: VideoLayer{
-			Spatial:  -1,
-			Temporal: -1,
+			Spatial:  InvalidLayerSpatial,
+			Temporal: InvalidLayerTemporal,
 		},
 	}
 
@@ -472,7 +472,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = -1 // vp8 don't have spatial scalability, reset to -1
+			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
