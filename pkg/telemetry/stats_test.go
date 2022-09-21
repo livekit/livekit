@@ -46,8 +46,7 @@ func Test_ParticipantAndRoomDataAreSentWithAnalytics(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "", stat)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -80,8 +79,7 @@ func Test_OnDownstreamPackets(t *testing.T) {
 	}
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -115,8 +113,7 @@ func Test_OnDownstreamPackets_SeveralTracks(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat2)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -183,8 +180,7 @@ func Test_OnDownStreamStat(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -223,8 +219,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat1) // there should be bytes reported so that stats are sent
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -238,8 +233,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID, stat2)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 2, fixture.analytics.SendStatsCallCount()) // 2 calls to fixture.sut.FlushStats()
@@ -299,8 +293,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, trackID2, stat3)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -369,8 +362,7 @@ func Test_OnUpstreamStat(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat2)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -439,8 +431,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID2, stat3)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -469,8 +460,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	fixture.sut.TrackUnpublished(context.Background(), partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, 0)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 }
@@ -517,8 +507,7 @@ func Test_AddUpTrack(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -556,8 +545,7 @@ func Test_AddUpTrack_SeveralBuffers_Simulcast(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_UPSTREAM, partSID, trackID, stat1)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -602,8 +590,7 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 	fixture.sut.TrackStats(livekit.StreamType_DOWNSTREAM, partSID, "trackID1", stat2)
 
 	// flush
-	time.Sleep(time.Millisecond * 500)
-	fixture.sut.FlushStats()
+	fixture.flush()
 
 	// test
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
@@ -611,4 +598,9 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 	require.Equal(t, 2, len(stats))
 	require.Equal(t, livekit.StreamType_UPSTREAM, stats[0].Kind)
 	require.Equal(t, livekit.StreamType_DOWNSTREAM, stats[1].Kind)
+}
+
+func (f *telemetryServiceFixture) flush() {
+	time.Sleep(time.Millisecond * 500)
+	f.sut.FlushStats()
 }
