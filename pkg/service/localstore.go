@@ -13,7 +13,8 @@ import (
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	// map of roomName => room
-	rooms map[livekit.RoomName]*livekit.Room
+	rooms        map[livekit.RoomName]*livekit.Room
+	roomInternal map[livekit.RoomName]*livekit.RoomInternal
 	// map of roomName => { identity: participant }
 	participants map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo
 
@@ -39,31 +40,45 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	return nil
 }
 
-func (s *LocalStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
+func (s *LocalStore) StoreRoomInternal(_ context.Context, roomName livekit.RoomName, internal *livekit.RoomInternal) error {
+	s.lock.Lock()
+	s.roomInternal[roomName] = internal
+	s.lock.Unlock()
+	return nil
+}
+
+func (s *LocalStore) LoadRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	room := s.rooms[name]
+	room := s.rooms[roomName]
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
 	return room, nil
 }
 
-func (s *LocalStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
+func (s *LocalStore) LoadRoomInternal(_ context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.roomInternal[roomName], nil
+}
+
+func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	rooms := make([]*livekit.Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		if names == nil || funk.Contains(names, livekit.RoomName(r.Name)) {
+		if roomNames == nil || funk.Contains(roomNames, livekit.RoomName(r.Name)) {
 			rooms = append(rooms, r)
 		}
 	}
 	return rooms, nil
 }
 
-func (s *LocalStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
-	room, err := s.LoadRoom(ctx, name)
+func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+	room, err := s.LoadRoom(ctx, roomName)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {

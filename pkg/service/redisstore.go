@@ -23,7 +23,8 @@ const (
 	VersionKey = "livekit_version"
 
 	// RoomsKey is hash of room_name => Room proto
-	RoomsKey = "rooms"
+	RoomsKey        = "rooms"
+	RoomInternalKey = "room_internal"
 
 	// EgressKey is a hash of egressID => egress info
 	EgressKey                  = "egress"
@@ -115,8 +116,23 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	return nil
 }
 
-func (s *RedisStore) LoadRoom(_ context.Context, name livekit.RoomName) (*livekit.Room, error) {
-	data, err := s.rc.HGet(s.ctx, RoomsKey, string(name)).Result()
+func (s *RedisStore) StoreRoomInternal(_ context.Context, roomName livekit.RoomName, internal *livekit.RoomInternal) error {
+	data, err := proto.Marshal(internal)
+	if err != nil {
+		return err
+	}
+
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, RoomInternalKey, roomName, data)
+
+	if _, err = pp.Exec(s.ctx); err != nil {
+		return errors.Wrap(err, "could not create room")
+	}
+	return nil
+}
+
+func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Room, error) {
+	data, err := s.rc.HGet(s.ctx, RoomsKey, string(roomName)).Result()
 	if err != nil {
 		if err == redis.Nil {
 			err = ErrRoomNotFound
@@ -133,18 +149,36 @@ func (s *RedisStore) LoadRoom(_ context.Context, name livekit.RoomName) (*liveki
 	return &room, nil
 }
 
-func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*livekit.Room, error) {
+func (s *RedisStore) LoadRoomInternal(_ context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error) {
+	data, err := s.rc.HGet(s.ctx, RoomInternalKey, string(roomName)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	internal := &livekit.RoomInternal{}
+	err = proto.Unmarshal([]byte(data), internal)
+	if err != nil {
+		return nil, err
+	}
+
+	return internal, nil
+}
+
+func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	var items []string
 	var err error
-	if names == nil {
+	if roomNames == nil {
 		items, err = s.rc.HVals(s.ctx, RoomsKey).Result()
 		if err != nil && err != redis.Nil {
 			return nil, errors.Wrap(err, "could not get rooms")
 		}
 	} else {
-		roomNames := livekit.RoomNamesAsStrings(names)
+		names := livekit.RoomNamesAsStrings(roomNames)
 		var results []interface{}
-		results, err = s.rc.HMGet(s.ctx, RoomsKey, roomNames...).Result()
+		results, err = s.rc.HMGet(s.ctx, RoomsKey, names...).Result()
 		if err != nil && err != redis.Nil {
 			return nil, errors.Wrap(err, "could not get rooms by names")
 		}
@@ -168,23 +202,24 @@ func (s *RedisStore) ListRooms(_ context.Context, names []livekit.RoomName) ([]*
 	return rooms, nil
 }
 
-func (s *RedisStore) DeleteRoom(ctx context.Context, name livekit.RoomName) error {
-	_, err := s.LoadRoom(ctx, name)
+func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+	_, err := s.LoadRoom(ctx, roomName)
 	if err == ErrRoomNotFound {
 		return nil
 	}
 
 	pp := s.rc.Pipeline()
-	pp.HDel(s.ctx, RoomsKey, string(name))
-	pp.Del(s.ctx, RoomParticipantsPrefix+string(name))
+	pp.HDel(s.ctx, RoomsKey, string(roomName))
+	pp.HDel(s.ctx, RoomInternalKey, string(roomName))
+	pp.Del(s.ctx, RoomParticipantsPrefix+string(roomName))
 
 	_, err = pp.Exec(s.ctx)
 	return err
 }
 
-func (s *RedisStore) LockRoom(_ context.Context, name livekit.RoomName, duration time.Duration) (string, error) {
+func (s *RedisStore) LockRoom(_ context.Context, roomName livekit.RoomName, duration time.Duration) (string, error) {
 	token := utils.NewGuid("LOCK")
-	key := RoomLockPrefix + string(name)
+	key := RoomLockPrefix + string(roomName)
 
 	startTime := time.Now()
 	for {
@@ -207,8 +242,8 @@ func (s *RedisStore) LockRoom(_ context.Context, name livekit.RoomName, duration
 	return "", ErrRoomLockFailed
 }
 
-func (s *RedisStore) UnlockRoom(_ context.Context, name livekit.RoomName, uid string) error {
-	key := RoomLockPrefix + string(name)
+func (s *RedisStore) UnlockRoom(_ context.Context, roomName livekit.RoomName, uid string) error {
+	key := RoomLockPrefix + string(roomName)
 
 	val, err := s.rc.Get(s.ctx, key).Result()
 	if err == redis.Nil {

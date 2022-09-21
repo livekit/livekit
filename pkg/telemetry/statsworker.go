@@ -15,7 +15,7 @@ import (
 // StatsWorker handles participant stats
 type StatsWorker struct {
 	ctx                 context.Context
-	t                   TelemetryReporter
+	t                   TelemetryService
 	roomID              livekit.RoomID
 	roomName            livekit.RoomName
 	participantID       livekit.ParticipantID
@@ -29,7 +29,7 @@ type StatsWorker struct {
 
 func newStatsWorker(
 	ctx context.Context,
-	t TelemetryReporter,
+	t TelemetryService,
 	roomID livekit.RoomID,
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
@@ -58,7 +58,11 @@ func (s *StatsWorker) OnTrackStat(trackID livekit.TrackID, direction livekit.Str
 	s.lock.Unlock()
 }
 
-func (s *StatsWorker) Update() {
+func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
+	return s.participantID
+}
+
+func (s *StatsWorker) Flush() {
 	ts := timestamppb.Now()
 
 	s.lock.Lock()
@@ -79,57 +83,12 @@ func (s *StatsWorker) Update() {
 	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
 	stats = s.collectStats(ts, livekit.StreamType_DOWNSTREAM, outgoingPerTrack, stats)
 	if len(stats) > 0 {
-		s.t.Report(s.ctx, stats)
+		s.t.SendStats(s.ctx, stats)
 	}
-}
-
-func (s *StatsWorker) collectStats(
-	ts *timestamppb.Timestamp,
-	streamType livekit.StreamType,
-	perTrack map[livekit.TrackID][]*livekit.AnalyticsStat,
-	stats []*livekit.AnalyticsStat,
-) []*livekit.AnalyticsStat {
-	for trackID, analyticsStats := range perTrack {
-		analyticsStat := s.getDeltaStats(analyticsStats, ts, trackID, streamType)
-		if analyticsStat != nil {
-			stats = append(stats, analyticsStat)
-		}
-	}
-	return stats
-}
-
-func (s *StatsWorker) getDeltaStats(
-	stats []*livekit.AnalyticsStat,
-	ts *timestamppb.Timestamp,
-	trackID livekit.TrackID,
-	kind livekit.StreamType,
-) *livekit.AnalyticsStat {
-	// merge all streams stats of track
-	analyticsStat := coalesce(stats)
-	if analyticsStat == nil {
-		return nil
-	}
-
-	s.patch(analyticsStat, ts, trackID, kind)
-	return analyticsStat
-}
-
-func (s *StatsWorker) patch(
-	analyticsStat *livekit.AnalyticsStat,
-	ts *timestamppb.Timestamp,
-	trackID livekit.TrackID,
-	kind livekit.StreamType,
-) {
-	analyticsStat.TimeStamp = ts
-	analyticsStat.TrackId = string(trackID)
-	analyticsStat.Kind = kind
-	analyticsStat.RoomId = string(s.roomID)
-	analyticsStat.ParticipantId = string(s.participantID)
-	analyticsStat.RoomName = string(s.roomName)
 }
 
 func (s *StatsWorker) Close() {
-	s.Update()
+	s.Flush()
 
 	s.lock.Lock()
 	s.closedAt = time.Now()
@@ -143,11 +102,30 @@ func (s *StatsWorker) ClosedAt() time.Time {
 	return s.closedAt
 }
 
-func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
-	return s.participantID
-}
-
 // -------------------------------------------------------------------------
+
+func (s *StatsWorker) collectStats(
+	ts *timestamppb.Timestamp,
+	streamType livekit.StreamType,
+	perTrack map[livekit.TrackID][]*livekit.AnalyticsStat,
+	stats []*livekit.AnalyticsStat,
+) []*livekit.AnalyticsStat {
+	for trackID, analyticsStats := range perTrack {
+		coalesced := coalesce(analyticsStats)
+		if coalesced == nil {
+			continue
+		}
+
+		coalesced.TimeStamp = ts
+		coalesced.TrackId = string(trackID)
+		coalesced.Kind = streamType
+		coalesced.RoomId = string(s.roomID)
+		coalesced.ParticipantId = string(s.participantID)
+		coalesced.RoomName = string(s.roomName)
+		stats = append(stats, coalesced)
+	}
+	return stats
+}
 
 // create a single stream and single video layer post aggregation
 func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {

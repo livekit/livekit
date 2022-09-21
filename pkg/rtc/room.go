@@ -39,12 +39,14 @@ type Room struct {
 	lock sync.RWMutex
 
 	protoRoom *livekit.Room
+	internal  *livekit.RoomInternal
 	Logger    logger.Logger
 
-	config      WebRTCConfig
-	audioConfig *config.AudioConfig
-	serverInfo  *livekit.ServerInfo
-	telemetry   telemetry.TelemetryService
+	config         WebRTCConfig
+	audioConfig    *config.AudioConfig
+	serverInfo     *livekit.ServerInfo
+	telemetry      telemetry.TelemetryService
+	egressLauncher EgressLauncher
 
 	// map of identity -> Participant
 	participants    map[livekit.ParticipantIdentity]types.LocalParticipant
@@ -73,17 +75,21 @@ type ParticipantOptions struct {
 
 func NewRoom(
 	room *livekit.Room,
+	internal *livekit.RoomInternal,
 	config WebRTCConfig,
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
+	egressLauncher EgressLauncher,
 ) *Room {
 	r := &Room{
 		protoRoom:       proto.Clone(room).(*livekit.Room),
+		internal:        internal,
 		Logger:          LoggerWithRoom(logger.GetDefaultLogger(), livekit.RoomName(room.Name), livekit.RoomID(room.Sid)),
 		config:          config,
 		audioConfig:     audioConfig,
 		telemetry:       telemetry,
+		egressLauncher:  egressLauncher,
 		serverInfo:      serverInfo,
 		participants:    make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts: make(map[livekit.ParticipantIdentity]*ParticipantOptions),
@@ -693,8 +699,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
 	r.lock.RLock()
-	defer r.lock.RUnlock()
-
 	// subscribe all existing participants to this MediaTrack
 	for _, existingParticipant := range r.participants {
 		if existingParticipant == participant {
@@ -723,6 +727,20 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
+	}
+	r.lock.RUnlock()
+
+	// auto track egress
+	if r.internal != nil && r.internal.TrackEgress != nil {
+		StartTrackEgress(
+			context.Background(),
+			r.egressLauncher,
+			r.telemetry,
+			r.internal.TrackEgress,
+			track,
+			r.Name(),
+			r.ID(),
+		)
 	}
 }
 

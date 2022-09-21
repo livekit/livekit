@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -21,7 +22,26 @@ type EgressService struct {
 	es          EgressStore
 	roomService livekit.RoomService
 	telemetry   telemetry.TelemetryService
+	launcher    rtc.EgressLauncher
 	shutdown    chan struct{}
+}
+
+type egressLauncher struct {
+	rpcClient egress.RPCClient
+	es        EgressStore
+	telemetry telemetry.TelemetryService
+}
+
+func NewEgressLauncher(rpcClient egress.RPCClient, es EgressStore, ts telemetry.TelemetryService) rtc.EgressLauncher {
+	if rpcClient == nil {
+		return nil
+	}
+
+	return &egressLauncher{
+		rpcClient: rpcClient,
+		es:        es,
+		telemetry: ts,
+	}
 }
 
 func NewEgressService(
@@ -30,14 +50,15 @@ func NewEgressService(
 	es EgressStore,
 	rs livekit.RoomService,
 	ts telemetry.TelemetryService,
+	launcher rtc.EgressLauncher,
 ) *EgressService {
-
 	return &EgressService{
 		rpcClient:   rpcClient,
 		store:       store,
 		es:          es,
 		roomService: rs,
 		telemetry:   ts,
+		launcher:    launcher,
 	}
 }
 
@@ -85,8 +106,7 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if s.rpcClient == nil {
+	} else if s.launcher == nil {
 		return nil, ErrEgressNotConnected
 	}
 
@@ -96,6 +116,10 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 	}
 	req.RoomId = room.Sid
 
+	return s.launcher.StartEgress(ctx, req)
+}
+
+func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	info, err := s.rpcClient.SendRequest(ctx, req)
 	if err != nil {
 		return nil, err

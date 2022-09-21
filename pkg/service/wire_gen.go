@@ -34,6 +34,7 @@ import (
 // Injectors from wire.go:
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
+	roomConfig := getRoomConf(conf)
 	client, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -41,11 +42,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	router := routing.CreateRouter(client, currentNode)
 	objectStore := createStore(client)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
-	if err != nil {
-		return nil, err
-	}
-	roomConfig := getRoomConf(conf)
-	roomService, err := NewRoomService(roomAllocator, objectStore, router, roomConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +58,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
-	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService)
+	rtcEgressLauncher := NewEgressLauncher(rpcClient, egressStore, telemetryService)
+	roomService, err := NewRoomService(roomConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
+	if err != nil {
+		return nil, err
+	}
+	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
 	rpc := ingress.NewRedisRPC(nodeID, client)
 	ingressRPCClient := getIngressRPCClient(rpc)
@@ -70,7 +71,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher)
 	if err != nil {
 		return nil, err
 	}
