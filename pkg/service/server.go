@@ -75,6 +75,8 @@ func NewLivekitServer(conf *config.Config,
 				return true
 			},
 			AllowedHeaders: []string{"*"},
+			// allow preflight to be cached for a day
+			MaxAge: 86400,
 		}),
 	}
 	if keyProvider != nil {

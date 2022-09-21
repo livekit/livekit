@@ -676,11 +676,12 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	}
 
 	var estimateToCommit int64
+	var packets, repeatedNacks uint32
 	var nackRatio float64
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 	switch reason {
 	case ChannelCongestionReasonLoss:
-		nackRatio = s.channelObserver.GetNackRatio()
+		packets, repeatedNacks, nackRatio = s.channelObserver.GetNackRatio()
 		estimateToCommit = int64(float64(expectedBandwidthUsage) * (1.0 - NackRatioAttenuator*nackRatio))
 	default:
 		estimateToCommit = s.lastReceivedEstimate
@@ -693,6 +694,8 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 		"new(bps)", estimateToCommit,
 		"lastReceived(bps)", s.lastReceivedEstimate,
 		"expectedUsage(bps)", expectedBandwidthUsage,
+		"packets", packets,
+		"repeatedNacks", repeatedNacks,
 		"nackRatio", nackRatio,
 	)
 	s.committedChannelCapacity = estimateToCommit
@@ -1591,7 +1594,7 @@ func (c *ChannelObserver) GetHighestEstimate() int64 {
 	return c.estimateTrend.GetHighest()
 }
 
-func (c *ChannelObserver) GetNackRatio() float64 {
+func (c *ChannelObserver) GetNackRatio() (uint32, uint32, float64) {
 	ratio := 0.0
 	if c.packets != 0 {
 		ratio = float64(c.repeatedNacks) / float64(c.packets)
@@ -1600,12 +1603,12 @@ func (c *ChannelObserver) GetNackRatio() float64 {
 		}
 	}
 
-	return ratio
+	return c.packets, c.repeatedNacks, ratio
 }
 
 func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
-	nackRatio := c.GetNackRatio()
+	packets, repeatedNacks, nackRatio := c.GetNackRatio()
 
 	switch {
 	case estimateDirection == TrendDirectionDownward:
@@ -1613,6 +1616,8 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 			"channel observer: estimate is trending downward",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
+			"packets", packets,
+			"repeatedNacks", repeatedNacks,
 			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
@@ -1621,6 +1626,8 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 			"channel observer: high rate of repeated NACKs",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
+			"packets", packets,
+			"repeatedNacks", repeatedNacks,
 			"ratio", nackRatio,
 		)
 		return ChannelTrendCongesting, ChannelCongestionReasonLoss
