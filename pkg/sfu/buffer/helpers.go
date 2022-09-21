@@ -223,7 +223,7 @@ func IsH264Keyframe(payload []byte) bool {
 		return false
 	} else if nalu <= 23 {
 		// simple NALU
-		return nalu == 5
+		return nalu == 7
 	} else if nalu == 24 || nalu == 25 || nalu == 26 || nalu == 27 {
 		// STAP-A, STAP-B, MTAP16 or MTAP24
 		i := 1
