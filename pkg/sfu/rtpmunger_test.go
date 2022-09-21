@@ -278,6 +278,129 @@ func TestGapInSequenceNumber(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, uint16(0), offset)
 	}
+
+	// a padding only packet should be dropped
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 2,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering: SequenceNumberOrderingContiguous,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 2)
+	require.True(t, r.lastSN == 1)
+	require.Equal(t, uint16(1), r.snOffset)
+
+	// a packet with a gap should be adding to missing cache
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 4,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    22,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering:     SequenceNumberOrderingGap,
+		sequenceNumber: 3,
+		timestamp:      0xabcdef,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.NoError(t, err)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 4)
+	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(1), r.snOffset)
+
+	// another contiguous padding only packet should be dropped
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 5,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering: SequenceNumberOrderingContiguous,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 5)
+	require.True(t, r.lastSN == 3)
+	require.Equal(t, uint16(2), r.snOffset)
+
+	// a packet with a gap should be adding to missing cache
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 7,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    22,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering:     SequenceNumberOrderingGap,
+		sequenceNumber: 5,
+		timestamp:      0xabcdef,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.NoError(t, err)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 7)
+	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(2), r.snOffset)
+
+	// check the missing packets
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 6,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering:     SequenceNumberOrderingOutOfOrder,
+		sequenceNumber: 4,
+		timestamp:      0xabcdef,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.NoError(t, err)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 7)
+	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(2), r.snOffset)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 3,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+	}
+	extPkt, _ = testutils.GetTestExtPacket(params)
+
+	tpExpected = TranslationParamsRTP{
+		snOrdering:     SequenceNumberOrderingOutOfOrder,
+		sequenceNumber: 2,
+		timestamp:      0xabcdef,
+	}
+
+	tp, err = r.UpdateAndGetSnTs(extPkt)
+	require.NoError(t, err)
+	require.Equal(t, tpExpected, *tp)
+	require.True(t, r.highestIncomingSN == 7)
+	require.True(t, r.lastSN == 5)
+	require.Equal(t, uint16(2), r.snOffset)
 }
 
 func TestUpdateAndGetPaddingSnTs(t *testing.T) {
