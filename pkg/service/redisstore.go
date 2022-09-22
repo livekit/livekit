@@ -107,18 +107,18 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room, internal *
 		return err
 	}
 
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, RoomsKey, room.Name, roomData)
+
 	var internalData []byte
 	if internal != nil {
 		internalData, err = proto.Marshal(internal)
 		if err != nil {
 			return err
 		}
-	}
-
-	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, RoomsKey, room.Name, roomData)
-	if internalData != nil {
 		pp.HSet(s.ctx, RoomInternalKey, room.Name, internalData)
+	} else {
+		pp.HDel(s.ctx, RoomInternalKey, room.Name)
 	}
 
 	if _, err = pp.Exec(s.ctx); err != nil {
@@ -128,38 +128,41 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room, internal *
 }
 
 func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error) {
-	room := &livekit.Room{}
-	var internal *livekit.RoomInternal
-	_, err := s.rc.Pipelined(s.ctx, func(pp redis.Pipeliner) error {
-		roomData, err := pp.HGet(s.ctx, RoomsKey, string(roomName)).Result()
-		if err != nil {
-			if err == redis.Nil {
-				err = ErrRoomNotFound
-			}
-			return err
-		}
+	pp := s.rc.Pipeline()
+	pp.HGet(s.ctx, RoomsKey, string(roomName))
+	if includeInternal {
+		pp.HGet(s.ctx, RoomInternalKey, string(roomName))
+	}
 
-		err = proto.Unmarshal([]byte(roomData), room)
-		if err != nil {
-			return err
-		}
-
-		if includeInternal {
-			internalData, err := pp.HGet(s.ctx, RoomInternalKey, string(roomName)).Result()
-			if err == nil {
-				internal = &livekit.RoomInternal{}
-				if err = proto.Unmarshal([]byte(internalData), internal); err != nil {
-					return err
-				}
-			} else if err != redis.Nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
+	res, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		// if the room exists but internal does not, the pipeline will still return redis.Nil
 		return nil, nil, err
+	}
+
+	room := &livekit.Room{}
+	roomData, err := res[0].(*redis.StringCmd).Result()
+	if err != nil {
+		if err == redis.Nil {
+			err = ErrRoomNotFound
+		}
+		return nil, nil, err
+	}
+	if err = proto.Unmarshal([]byte(roomData), room); err != nil {
+		return nil, nil, err
+	}
+
+	var internal *livekit.RoomInternal
+	if includeInternal {
+		internalData, err := res[1].(*redis.StringCmd).Result()
+		if err == nil {
+			internal = &livekit.RoomInternal{}
+			if err = proto.Unmarshal([]byte(internalData), internal); err != nil {
+				return nil, nil, err
+			}
+		} else if err != redis.Nil {
+			return nil, nil, err
+		}
 	}
 
 	return room, internal, nil
