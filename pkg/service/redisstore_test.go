@@ -40,6 +40,9 @@ func TestRoomInternal(t *testing.T) {
 	_, actualInternal, err = rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
 	require.NoError(t, err)
 	require.Nil(t, actualInternal)
+
+	// clean up
+	require.NoError(t, rs.DeleteRoom(ctx, "test_room"))
 }
 
 func TestParticipantPersistence(t *testing.T) {
