@@ -139,13 +139,14 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		info, err = s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
+		i, err := s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Update{Update: req},
 		})
 		if err != nil {
-			logger.Errorw("could not update active ingress", err)
-			return nil, err
+			logger.Warnw("could not update active ingress", err)
+		} else {
+			info = i
 		}
 	}
 
@@ -193,13 +194,14 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		info, err = s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
+		i, err := s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Delete{Delete: req},
 		})
 		if err != nil {
-			logger.Errorw("could not stop active ingress", err)
-			return nil, err
+			logger.Warnw("could not stop active ingress", err)
+		} else {
+			info = i
 		}
 	}
 
@@ -235,7 +237,7 @@ func (s *IngressService) updateWorker() {
 			// save updated info to store
 			err = s.store.UpdateIngress(context.Background(), res)
 			if err != nil {
-				logger.Errorw("could not update egress", err)
+				logger.Errorw("could not update ingress", err)
 			}
 
 		case <-s.shutdown:
