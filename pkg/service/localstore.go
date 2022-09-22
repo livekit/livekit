@@ -25,6 +25,7 @@ type LocalStore struct {
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
 		rooms:        make(map[livekit.RoomName]*livekit.Room),
+		roomInternal: make(map[livekit.RoomName]*livekit.RoomInternal),
 		participants: make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		lock:         sync.RWMutex{},
 	}
