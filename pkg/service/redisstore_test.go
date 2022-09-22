@@ -17,6 +17,34 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
+func TestRoomInternal(t *testing.T) {
+	ctx := context.Background()
+	rs := service.NewRedisStore(redisClient())
+
+	room := &livekit.Room{
+		Sid:  "123",
+		Name: "test_room",
+	}
+	internal := &livekit.RoomInternal{
+		TrackEgress: &livekit.AutoTrackEgress{FilePrefix: "egress"},
+	}
+
+	require.NoError(t, rs.StoreRoom(ctx, room, internal))
+	actualRoom, actualInternal, err := rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Equal(t, room.Sid, actualRoom.Sid)
+	require.Equal(t, internal.TrackEgress.FilePrefix, actualInternal.TrackEgress.FilePrefix)
+
+	// remove internal
+	require.NoError(t, rs.StoreRoom(ctx, room, nil))
+	_, actualInternal, err = rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Nil(t, actualInternal)
+
+	// clean up
+	require.NoError(t, rs.DeleteRoom(ctx, "test_room"))
+}
+
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisStore(redisClient())

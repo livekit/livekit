@@ -79,33 +79,22 @@ type FakeObjectStore struct {
 		result1 *livekit.ParticipantInfo
 		result2 error
 	}
-	LoadRoomStub        func(context.Context, livekit.RoomName) (*livekit.Room, error)
+	LoadRoomStub        func(context.Context, livekit.RoomName, bool) (*livekit.Room, *livekit.RoomInternal, error)
 	loadRoomMutex       sync.RWMutex
 	loadRoomArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
+		arg3 bool
 	}
 	loadRoomReturns struct {
 		result1 *livekit.Room
-		result2 error
+		result2 *livekit.RoomInternal
+		result3 error
 	}
 	loadRoomReturnsOnCall map[int]struct {
 		result1 *livekit.Room
-		result2 error
-	}
-	LoadRoomInternalStub        func(context.Context, livekit.RoomName) (*livekit.RoomInternal, error)
-	loadRoomInternalMutex       sync.RWMutex
-	loadRoomInternalArgsForCall []struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-	}
-	loadRoomInternalReturns struct {
-		result1 *livekit.RoomInternal
-		result2 error
-	}
-	loadRoomInternalReturnsOnCall map[int]struct {
-		result1 *livekit.RoomInternal
-		result2 error
+		result2 *livekit.RoomInternal
+		result3 error
 	}
 	LockRoomStub        func(context.Context, livekit.RoomName, time.Duration) (string, error)
 	lockRoomMutex       sync.RWMutex
@@ -135,29 +124,17 @@ type FakeObjectStore struct {
 	storeParticipantReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StoreRoomStub        func(context.Context, *livekit.Room) error
+	StoreRoomStub        func(context.Context, *livekit.Room, *livekit.RoomInternal) error
 	storeRoomMutex       sync.RWMutex
 	storeRoomArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.Room
+		arg3 *livekit.RoomInternal
 	}
 	storeRoomReturns struct {
 		result1 error
 	}
 	storeRoomReturnsOnCall map[int]struct {
-		result1 error
-	}
-	StoreRoomInternalStub        func(context.Context, livekit.RoomName, *livekit.RoomInternal) error
-	storeRoomInternalMutex       sync.RWMutex
-	storeRoomInternalArgsForCall []struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-		arg3 *livekit.RoomInternal
-	}
-	storeRoomInternalReturns struct {
-		result1 error
-	}
-	storeRoomInternalReturnsOnCall map[int]struct {
 		result1 error
 	}
 	UnlockRoomStub        func(context.Context, livekit.RoomName, string) error
@@ -503,24 +480,25 @@ func (fake *FakeObjectStore) LoadParticipantReturnsOnCall(i int, result1 *liveki
 	}{result1, result2}
 }
 
-func (fake *FakeObjectStore) LoadRoom(arg1 context.Context, arg2 livekit.RoomName) (*livekit.Room, error) {
+func (fake *FakeObjectStore) LoadRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 bool) (*livekit.Room, *livekit.RoomInternal, error) {
 	fake.loadRoomMutex.Lock()
 	ret, specificReturn := fake.loadRoomReturnsOnCall[len(fake.loadRoomArgsForCall)]
 	fake.loadRoomArgsForCall = append(fake.loadRoomArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.LoadRoomStub
 	fakeReturns := fake.loadRoomReturns
-	fake.recordInvocation("LoadRoom", []interface{}{arg1, arg2})
+	fake.recordInvocation("LoadRoom", []interface{}{arg1, arg2, arg3})
 	fake.loadRoomMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1, ret.result2, ret.result3
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
 }
 
 func (fake *FakeObjectStore) LoadRoomCallCount() int {
@@ -529,108 +507,46 @@ func (fake *FakeObjectStore) LoadRoomCallCount() int {
 	return len(fake.loadRoomArgsForCall)
 }
 
-func (fake *FakeObjectStore) LoadRoomCalls(stub func(context.Context, livekit.RoomName) (*livekit.Room, error)) {
+func (fake *FakeObjectStore) LoadRoomCalls(stub func(context.Context, livekit.RoomName, bool) (*livekit.Room, *livekit.RoomInternal, error)) {
 	fake.loadRoomMutex.Lock()
 	defer fake.loadRoomMutex.Unlock()
 	fake.LoadRoomStub = stub
 }
 
-func (fake *FakeObjectStore) LoadRoomArgsForCall(i int) (context.Context, livekit.RoomName) {
+func (fake *FakeObjectStore) LoadRoomArgsForCall(i int) (context.Context, livekit.RoomName, bool) {
 	fake.loadRoomMutex.RLock()
 	defer fake.loadRoomMutex.RUnlock()
 	argsForCall := fake.loadRoomArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeObjectStore) LoadRoomReturns(result1 *livekit.Room, result2 error) {
+func (fake *FakeObjectStore) LoadRoomReturns(result1 *livekit.Room, result2 *livekit.RoomInternal, result3 error) {
 	fake.loadRoomMutex.Lock()
 	defer fake.loadRoomMutex.Unlock()
 	fake.LoadRoomStub = nil
 	fake.loadRoomReturns = struct {
 		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
+		result2 *livekit.RoomInternal
+		result3 error
+	}{result1, result2, result3}
 }
 
-func (fake *FakeObjectStore) LoadRoomReturnsOnCall(i int, result1 *livekit.Room, result2 error) {
+func (fake *FakeObjectStore) LoadRoomReturnsOnCall(i int, result1 *livekit.Room, result2 *livekit.RoomInternal, result3 error) {
 	fake.loadRoomMutex.Lock()
 	defer fake.loadRoomMutex.Unlock()
 	fake.LoadRoomStub = nil
 	if fake.loadRoomReturnsOnCall == nil {
 		fake.loadRoomReturnsOnCall = make(map[int]struct {
 			result1 *livekit.Room
-			result2 error
+			result2 *livekit.RoomInternal
+			result3 error
 		})
 	}
 	fake.loadRoomReturnsOnCall[i] = struct {
 		result1 *livekit.Room
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeObjectStore) LoadRoomInternal(arg1 context.Context, arg2 livekit.RoomName) (*livekit.RoomInternal, error) {
-	fake.loadRoomInternalMutex.Lock()
-	ret, specificReturn := fake.loadRoomInternalReturnsOnCall[len(fake.loadRoomInternalArgsForCall)]
-	fake.loadRoomInternalArgsForCall = append(fake.loadRoomInternalArgsForCall, struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-	}{arg1, arg2})
-	stub := fake.LoadRoomInternalStub
-	fakeReturns := fake.loadRoomInternalReturns
-	fake.recordInvocation("LoadRoomInternal", []interface{}{arg1, arg2})
-	fake.loadRoomInternalMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fakeReturns.result1, fakeReturns.result2
-}
-
-func (fake *FakeObjectStore) LoadRoomInternalCallCount() int {
-	fake.loadRoomInternalMutex.RLock()
-	defer fake.loadRoomInternalMutex.RUnlock()
-	return len(fake.loadRoomInternalArgsForCall)
-}
-
-func (fake *FakeObjectStore) LoadRoomInternalCalls(stub func(context.Context, livekit.RoomName) (*livekit.RoomInternal, error)) {
-	fake.loadRoomInternalMutex.Lock()
-	defer fake.loadRoomInternalMutex.Unlock()
-	fake.LoadRoomInternalStub = stub
-}
-
-func (fake *FakeObjectStore) LoadRoomInternalArgsForCall(i int) (context.Context, livekit.RoomName) {
-	fake.loadRoomInternalMutex.RLock()
-	defer fake.loadRoomInternalMutex.RUnlock()
-	argsForCall := fake.loadRoomInternalArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeObjectStore) LoadRoomInternalReturns(result1 *livekit.RoomInternal, result2 error) {
-	fake.loadRoomInternalMutex.Lock()
-	defer fake.loadRoomInternalMutex.Unlock()
-	fake.LoadRoomInternalStub = nil
-	fake.loadRoomInternalReturns = struct {
-		result1 *livekit.RoomInternal
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeObjectStore) LoadRoomInternalReturnsOnCall(i int, result1 *livekit.RoomInternal, result2 error) {
-	fake.loadRoomInternalMutex.Lock()
-	defer fake.loadRoomInternalMutex.Unlock()
-	fake.LoadRoomInternalStub = nil
-	if fake.loadRoomInternalReturnsOnCall == nil {
-		fake.loadRoomInternalReturnsOnCall = make(map[int]struct {
-			result1 *livekit.RoomInternal
-			result2 error
-		})
-	}
-	fake.loadRoomInternalReturnsOnCall[i] = struct {
-		result1 *livekit.RoomInternal
-		result2 error
-	}{result1, result2}
+		result2 *livekit.RoomInternal
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeObjectStore) LockRoom(arg1 context.Context, arg2 livekit.RoomName, arg3 time.Duration) (string, error) {
@@ -762,19 +678,20 @@ func (fake *FakeObjectStore) StoreParticipantReturnsOnCall(i int, result1 error)
 	}{result1}
 }
 
-func (fake *FakeObjectStore) StoreRoom(arg1 context.Context, arg2 *livekit.Room) error {
+func (fake *FakeObjectStore) StoreRoom(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.RoomInternal) error {
 	fake.storeRoomMutex.Lock()
 	ret, specificReturn := fake.storeRoomReturnsOnCall[len(fake.storeRoomArgsForCall)]
 	fake.storeRoomArgsForCall = append(fake.storeRoomArgsForCall, struct {
 		arg1 context.Context
 		arg2 *livekit.Room
-	}{arg1, arg2})
+		arg3 *livekit.RoomInternal
+	}{arg1, arg2, arg3})
 	stub := fake.StoreRoomStub
 	fakeReturns := fake.storeRoomReturns
-	fake.recordInvocation("StoreRoom", []interface{}{arg1, arg2})
+	fake.recordInvocation("StoreRoom", []interface{}{arg1, arg2, arg3})
 	fake.storeRoomMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -788,17 +705,17 @@ func (fake *FakeObjectStore) StoreRoomCallCount() int {
 	return len(fake.storeRoomArgsForCall)
 }
 
-func (fake *FakeObjectStore) StoreRoomCalls(stub func(context.Context, *livekit.Room) error) {
+func (fake *FakeObjectStore) StoreRoomCalls(stub func(context.Context, *livekit.Room, *livekit.RoomInternal) error) {
 	fake.storeRoomMutex.Lock()
 	defer fake.storeRoomMutex.Unlock()
 	fake.StoreRoomStub = stub
 }
 
-func (fake *FakeObjectStore) StoreRoomArgsForCall(i int) (context.Context, *livekit.Room) {
+func (fake *FakeObjectStore) StoreRoomArgsForCall(i int) (context.Context, *livekit.Room, *livekit.RoomInternal) {
 	fake.storeRoomMutex.RLock()
 	defer fake.storeRoomMutex.RUnlock()
 	argsForCall := fake.storeRoomArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeObjectStore) StoreRoomReturns(result1 error) {
@@ -820,69 +737,6 @@ func (fake *FakeObjectStore) StoreRoomReturnsOnCall(i int, result1 error) {
 		})
 	}
 	fake.storeRoomReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeObjectStore) StoreRoomInternal(arg1 context.Context, arg2 livekit.RoomName, arg3 *livekit.RoomInternal) error {
-	fake.storeRoomInternalMutex.Lock()
-	ret, specificReturn := fake.storeRoomInternalReturnsOnCall[len(fake.storeRoomInternalArgsForCall)]
-	fake.storeRoomInternalArgsForCall = append(fake.storeRoomInternalArgsForCall, struct {
-		arg1 context.Context
-		arg2 livekit.RoomName
-		arg3 *livekit.RoomInternal
-	}{arg1, arg2, arg3})
-	stub := fake.StoreRoomInternalStub
-	fakeReturns := fake.storeRoomInternalReturns
-	fake.recordInvocation("StoreRoomInternal", []interface{}{arg1, arg2, arg3})
-	fake.storeRoomInternalMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2, arg3)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeObjectStore) StoreRoomInternalCallCount() int {
-	fake.storeRoomInternalMutex.RLock()
-	defer fake.storeRoomInternalMutex.RUnlock()
-	return len(fake.storeRoomInternalArgsForCall)
-}
-
-func (fake *FakeObjectStore) StoreRoomInternalCalls(stub func(context.Context, livekit.RoomName, *livekit.RoomInternal) error) {
-	fake.storeRoomInternalMutex.Lock()
-	defer fake.storeRoomInternalMutex.Unlock()
-	fake.StoreRoomInternalStub = stub
-}
-
-func (fake *FakeObjectStore) StoreRoomInternalArgsForCall(i int) (context.Context, livekit.RoomName, *livekit.RoomInternal) {
-	fake.storeRoomInternalMutex.RLock()
-	defer fake.storeRoomInternalMutex.RUnlock()
-	argsForCall := fake.storeRoomInternalArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
-}
-
-func (fake *FakeObjectStore) StoreRoomInternalReturns(result1 error) {
-	fake.storeRoomInternalMutex.Lock()
-	defer fake.storeRoomInternalMutex.Unlock()
-	fake.StoreRoomInternalStub = nil
-	fake.storeRoomInternalReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeObjectStore) StoreRoomInternalReturnsOnCall(i int, result1 error) {
-	fake.storeRoomInternalMutex.Lock()
-	defer fake.storeRoomInternalMutex.Unlock()
-	fake.StoreRoomInternalStub = nil
-	if fake.storeRoomInternalReturnsOnCall == nil {
-		fake.storeRoomInternalReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.storeRoomInternalReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -965,16 +819,12 @@ func (fake *FakeObjectStore) Invocations() map[string][][]interface{} {
 	defer fake.loadParticipantMutex.RUnlock()
 	fake.loadRoomMutex.RLock()
 	defer fake.loadRoomMutex.RUnlock()
-	fake.loadRoomInternalMutex.RLock()
-	defer fake.loadRoomInternalMutex.RUnlock()
 	fake.lockRoomMutex.RLock()
 	defer fake.lockRoomMutex.RUnlock()
 	fake.storeParticipantMutex.RLock()
 	defer fake.storeParticipantMutex.RUnlock()
 	fake.storeRoomMutex.RLock()
 	defer fake.storeRoomMutex.RUnlock()
-	fake.storeRoomInternalMutex.RLock()
-	defer fake.storeRoomInternalMutex.RUnlock()
 	fake.unlockRoomMutex.RLock()
 	defer fake.unlockRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

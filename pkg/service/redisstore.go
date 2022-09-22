@@ -97,18 +97,29 @@ func (s *RedisStore) Stop() {
 	}
 }
 
-func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room) error {
+func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
 
-	data, err := proto.Marshal(room)
+	roomData, err := proto.Marshal(room)
 	if err != nil {
 		return err
 	}
 
 	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, RoomsKey, room.Name, data)
+	pp.HSet(s.ctx, RoomsKey, room.Name, roomData)
+
+	var internalData []byte
+	if internal != nil {
+		internalData, err = proto.Marshal(internal)
+		if err != nil {
+			return err
+		}
+		pp.HSet(s.ctx, RoomInternalKey, room.Name, internalData)
+	} else {
+		pp.HDel(s.ctx, RoomInternalKey, room.Name)
+	}
 
 	if _, err = pp.Exec(s.ctx); err != nil {
 		return errors.Wrap(err, "could not create room")
@@ -116,55 +127,45 @@ func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room) error {
 	return nil
 }
 
-func (s *RedisStore) StoreRoomInternal(_ context.Context, roomName livekit.RoomName, internal *livekit.RoomInternal) error {
-	data, err := proto.Marshal(internal)
-	if err != nil {
-		return err
-	}
-
+func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error) {
 	pp := s.rc.Pipeline()
-	pp.HSet(s.ctx, RoomInternalKey, roomName, data)
-
-	if _, err = pp.Exec(s.ctx); err != nil {
-		return errors.Wrap(err, "could not create room")
+	pp.HGet(s.ctx, RoomsKey, string(roomName))
+	if includeInternal {
+		pp.HGet(s.ctx, RoomInternalKey, string(roomName))
 	}
-	return nil
-}
 
-func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Room, error) {
-	data, err := s.rc.HGet(s.ctx, RoomsKey, string(roomName)).Result()
+	res, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		// if the room exists but internal does not, the pipeline will still return redis.Nil
+		return nil, nil, err
+	}
+
+	room := &livekit.Room{}
+	roomData, err := res[0].(*redis.StringCmd).Result()
 	if err != nil {
 		if err == redis.Nil {
 			err = ErrRoomNotFound
 		}
-		return nil, err
+		return nil, nil, err
+	}
+	if err = proto.Unmarshal([]byte(roomData), room); err != nil {
+		return nil, nil, err
 	}
 
-	room := livekit.Room{}
-	err = proto.Unmarshal([]byte(data), &room)
-	if err != nil {
-		return nil, err
-	}
-
-	return &room, nil
-}
-
-func (s *RedisStore) LoadRoomInternal(_ context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error) {
-	data, err := s.rc.HGet(s.ctx, RoomInternalKey, string(roomName)).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, nil
+	var internal *livekit.RoomInternal
+	if includeInternal {
+		internalData, err := res[1].(*redis.StringCmd).Result()
+		if err == nil {
+			internal = &livekit.RoomInternal{}
+			if err = proto.Unmarshal([]byte(internalData), internal); err != nil {
+				return nil, nil, err
+			}
+		} else if err != redis.Nil {
+			return nil, nil, err
 		}
-		return nil, err
 	}
 
-	internal := &livekit.RoomInternal{}
-	err = proto.Unmarshal([]byte(data), internal)
-	if err != nil {
-		return nil, err
-	}
-
-	return internal, nil
+	return room, internal, nil
 }
 
 func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
@@ -203,7 +204,7 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 }
 
 func (s *RedisStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	_, err := s.LoadRoom(ctx, roomName)
+	_, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
 	}

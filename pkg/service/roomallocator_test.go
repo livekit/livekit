@@ -66,7 +66,7 @@ func TestCreateRoom(t *testing.T) {
 
 func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node) (service.RoomAllocator, *config.Config) {
 	store := &servicefakes.FakeObjectStore{}
-	store.LoadRoomReturns(nil, service.ErrRoomNotFound)
+	store.LoadRoomReturns(nil, nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
 
 	router.GetNodeForRoomReturns(node, nil)

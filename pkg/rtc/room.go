@@ -194,6 +194,10 @@ func (r *Room) LastLeftAt() int64 {
 	return r.leftAt.Load()
 }
 
+func (r *Room) Internal() *livekit.RoomInternal {
+	return r.internal
+}
+
 func (r *Room) Hold() bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()

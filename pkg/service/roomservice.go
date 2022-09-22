@@ -115,7 +115,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	// we should not return until when the room is confirmed deleted
 	err = confirmExecution(func() error {
-		_, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err == nil {
 			return ErrOperationFailed
 		} else if err != ErrRoomNotFound {
@@ -308,7 +308,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	err = confirmExecution(func() error {
-		room, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err != nil {
 			return err
 		}

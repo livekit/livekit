@@ -317,7 +317,7 @@ func (r *RoomManager) StartSession(
 
 	updateParticipantCount := func(proto *livekit.Room) {
 		if !participant.Hidden() {
-			err = r.roomStore.StoreRoom(ctx, proto)
+			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
 			if err != nil {
 				logger.Errorw("could not store room", err)
 			}
@@ -371,12 +371,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// create new room, get details first
-	ri, err := r.roomStore.LoadRoom(ctx, roomName)
-	if err != nil {
-		return nil, err
-	}
-
-	internal, err := r.roomStore.LoadRoomInternal(ctx, roomName)
+	ri, internal, err := r.roomStore.LoadRoom(ctx, roomName, true)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +405,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	})
 
 	newRoom.OnMetadataUpdate(func(metadata string) {
-		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto()); err != nil {
+		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}
 	})
