@@ -25,7 +25,7 @@ func StartTrackEgress(
 	track types.MediaTrack,
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
-) {
+) error {
 	if req, err := startTrackEgress(ctx, launcher, opts, track, roomName, roomID); err != nil {
 		// send egress failed webhook
 		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
@@ -38,7 +38,9 @@ func StartTrackEgress(
 				Request:  &livekit.EgressInfo_Track{Track: req},
 			},
 		})
+		return err
 	}
+	return nil
 }
 
 func startTrackEgress(
