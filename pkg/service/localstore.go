@@ -30,39 +30,35 @@ func NewLocalStore() *LocalStore {
 	}
 }
 
-func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room) error {
+func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
-	s.lock.Lock()
-	s.rooms[livekit.RoomName(room.Name)] = room
-	s.lock.Unlock()
-	return nil
-}
+	roomName := livekit.RoomName(room.Name)
 
-func (s *LocalStore) StoreRoomInternal(_ context.Context, roomName livekit.RoomName, internal *livekit.RoomInternal) error {
 	s.lock.Lock()
+	s.rooms[roomName] = room
 	s.roomInternal[roomName] = internal
 	s.lock.Unlock()
+
 	return nil
 }
 
-func (s *LocalStore) LoadRoom(_ context.Context, roomName livekit.RoomName) (*livekit.Room, error) {
+func (s *LocalStore) LoadRoom(_ context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
 	room := s.rooms[roomName]
 	if room == nil {
-		return nil, ErrRoomNotFound
+		return nil, nil, ErrRoomNotFound
 	}
-	return room, nil
-}
 
-func (s *LocalStore) LoadRoomInternal(_ context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
+	var internal *livekit.RoomInternal
+	if includeInternal {
+		internal = s.roomInternal[roomName]
+	}
 
-	return s.roomInternal[roomName], nil
+	return room, internal, nil
 }
 
 func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
@@ -78,7 +74,7 @@ func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 }
 
 func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	room, err := s.LoadRoom(ctx, roomName)
+	room, _, err := s.LoadRoom(ctx, roomName, false)
 	if err == ErrRoomNotFound {
 		return nil
 	} else if err != nil {
@@ -90,6 +86,7 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomName livekit.RoomName) 
 
 	delete(s.participants, livekit.RoomName(room.Name))
 	delete(s.rooms, livekit.RoomName(room.Name))
+	delete(s.roomInternal, livekit.RoomName(room.Name))
 	return nil
 }
 

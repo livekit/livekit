@@ -110,7 +110,7 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 		return nil, ErrEgressNotConnected
 	}
 
-	room, err := s.store.LoadRoom(ctx, roomName)
+	room, _, err := s.store.LoadRoom(ctx, roomName, false)
 	if err != nil {
 		return nil, err
 	}
