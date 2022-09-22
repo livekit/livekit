@@ -10,6 +10,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
 )
 
@@ -27,6 +28,7 @@ func StartTrackEgress(
 	roomID livekit.RoomID,
 ) {
 	if req, err := startTrackEgress(ctx, launcher, opts, track, roomName, roomID); err != nil {
+		logger.Errorw("failed to launch track egress", err)
 		// send egress failed webhook
 		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event: webhook.EventEgressEnded,
