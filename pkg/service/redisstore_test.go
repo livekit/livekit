@@ -38,6 +38,7 @@ func TestRoomInternal(t *testing.T) {
 	// remove internal
 	require.NoError(t, rs.StoreRoom(ctx, room, nil))
 	_, actualInternal, err = rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
 	require.Nil(t, actualInternal)
 }
 
