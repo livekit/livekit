@@ -732,7 +732,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	// auto track egress
 	if r.internal != nil && r.internal.TrackEgress != nil {
-		StartTrackEgress(
+		if err := StartTrackEgress(
 			context.Background(),
 			r.egressLauncher,
 			r.telemetry,
@@ -740,7 +740,9 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			track,
 			r.Name(),
 			r.ID(),
-		)
+		); err != nil {
+			r.Logger.Errorw("failed to launch track egress", err)
+		}
 	}
 }
 
