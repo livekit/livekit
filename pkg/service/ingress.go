@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -13,6 +14,11 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+)
+
+var (
+	initialTimeout = time.Second * 3
+	retryTimeout   = time.Minute * 1
 )
 
 type IngressService struct {
@@ -93,6 +99,40 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 	return info, nil
 }
 
+func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.IngressRequest) (*livekit.IngressInfo, error) {
+	type result struct {
+		info *livekit.IngressInfo
+		err  error
+	}
+
+	resChan := make(chan result, 1)
+
+	go func() {
+		cctx, _ := context.WithTimeout(context.Background(), retryTimeout)
+
+		for {
+			select {
+			case <-cctx.Done():
+				resChan <- result{nil, ingress.ErrNoResponse}
+				return
+			default:
+			}
+
+			i, err := s.rpcClient.SendRequest(cctx, req)
+			if err != ingress.ErrNoResponse {
+				resChan <- result{i, err}
+			}
+		}
+	}()
+
+	select {
+	case res := <-resChan:
+		return res.info, res.err
+	case <-time.After(initialTimeout):
+		return nil, ingress.ErrNoResponse
+	}
+}
+
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
 	roomName, err := EnsureJoinPermission(ctx)
 	if err != nil {
@@ -139,7 +179,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		i, err := s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
+		i, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Update{Update: req},
 		})
@@ -194,7 +234,7 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		i, err := s.rpcClient.SendRequest(ctx, &livekit.IngressRequest{
+		i, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Delete{Delete: req},
 		})
