@@ -62,8 +62,8 @@ rtc:
   #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
   #   # in order to allow others to stream smoothly. You can disable this behavior here
   #   allow_pause: true
-  # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable
-  # allow_tcp_fallback: false
+  # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
+  # allow_tcp_fallback: true
   # # number of packets to buffer in the SFU, defaults to 500
   # packet_buffer_size: 500
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
