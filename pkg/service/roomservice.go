@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -22,18 +23,27 @@ const (
 
 // A rooms service that supports a single node
 type RoomService struct {
-	router        routing.MessageRouter
-	roomAllocator RoomAllocator
-	roomStore     ServiceStore
-	conf          config.RoomConfig
+	conf           config.RoomConfig
+	router         routing.MessageRouter
+	roomAllocator  RoomAllocator
+	roomStore      ServiceStore
+	egressLauncher rtc.EgressLauncher
 }
 
-func NewRoomService(ra RoomAllocator, rs ServiceStore, router routing.MessageRouter, conf config.RoomConfig) (svc *RoomService, err error) {
+func NewRoomService(
+	conf config.RoomConfig,
+	router routing.MessageRouter,
+	roomAllocator RoomAllocator,
+	serviceStore ServiceStore,
+	egressLauncher rtc.EgressLauncher,
+) (svc *RoomService, err error) {
+
 	svc = &RoomService{
-		router:        router,
-		roomAllocator: ra,
-		roomStore:     rs,
-		conf:          conf,
+		conf:           conf,
+		router:         router,
+		roomAllocator:  roomAllocator,
+		roomStore:      serviceStore,
+		egressLauncher: egressLauncher,
 	}
 	return
 }
@@ -41,11 +51,28 @@ func NewRoomService(ra RoomAllocator, rs ServiceStore, router routing.MessageRou
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (rm *livekit.Room, err error) {
 	if err = EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
+	} else if req.Egress != nil {
+		if s.egressLauncher == nil {
+			return nil, ErrEgressNotConnected
+		} else if err = EnsureRecordPermission(ctx); err != nil {
+			return nil, twirpAuthError(err)
+		}
 	}
 
 	rm, err = s.roomAllocator.CreateRoom(ctx, req)
 	if err != nil {
 		err = errors.Wrap(err, "could not create room")
+		return
+	}
+
+	if req.Egress != nil && req.Egress.Room != nil {
+		egress := &livekit.StartEgressRequest{
+			Request: &livekit.StartEgressRequest_RoomComposite{
+				RoomComposite: req.Egress.Room,
+			},
+			RoomId: rm.Sid,
+		}
+		_, err = s.egressLauncher.StartEgress(ctx, egress)
 	}
 
 	return
@@ -88,7 +115,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	// we should not return until when the room is confirmed deleted
 	err = confirmExecution(func() error {
-		_, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err == nil {
 			return ErrOperationFailed
 		} else if err != ErrRoomNotFound {
@@ -281,7 +308,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	room, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+	room, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +333,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	}
 
 	err = confirmExecution(func() error {
-		room, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room))
+		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err != nil {
 			return err
 		}

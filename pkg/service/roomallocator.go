@@ -46,7 +46,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}()
 
 	// find existing room and update it
-	rm, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name))
+	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 	if err == ErrRoomNotFound {
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -68,7 +68,11 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Metadata != "" {
 		rm.Metadata = req.Metadata
 	}
-	if err := r.roomStore.StoreRoom(ctx, rm); err != nil {
+	if req.Egress != nil && req.Egress.Tracks != nil {
+		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
+	}
+
+	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
 		return nil, err
 	}
 

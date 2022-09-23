@@ -24,6 +24,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
+const (
+	maxInitialResponseWait = 10 * time.Second
+)
+
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
@@ -167,7 +171,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
-		_, err := s.store.LoadRoom(context.Background(), roomName)
+		_, _, err := s.store.LoadRoom(context.Background(), roomName, false)
 		if err == ErrRoomNotFound {
 			handleError(w, 404, err, loggerFields...)
 			return
@@ -203,7 +207,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// wait for the first message before upgrading to websocket. If no one is
 	// responding to our connection attempt, we should terminate the connection
 	// instead of waiting forever on the WebSocket
-	initialResponse, err := readInitialResponse(resSource, 5*time.Second)
+	initialResponse, err := readInitialResponse(resSource, maxInitialResponseWait)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("signal_ws", "error", "initial_response").Add(1)
 		handleError(w, http.StatusInternalServerError, err, loggerFields...)

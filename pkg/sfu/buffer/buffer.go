@@ -197,7 +197,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		case webrtc.TypeRTCPFBNACK:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 			b.nacker = NewNACKQueue()
-			b.nacker.SetRTT(70) // default till it is updated
 		}
 	}
 
@@ -439,8 +438,8 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		Arrival:   arrivalTime,
 		RawPacket: rawPacket,
 		VideoLayer: VideoLayer{
-			Spatial:  -1,
-			Temporal: -1,
+			Spatial:  InvalidLayerSpatial,
+			Temporal: InvalidLayerTemporal,
 		},
 	}
 
@@ -472,7 +471,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
-			ep.Spatial = -1 // vp8 don't have spatial scalability, reset to -1
+			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
@@ -521,15 +520,11 @@ func (b *Buffer) doReports(arrivalTime int64) {
 
 func (b *Buffer) buildNACKPacket() ([]rtcp.Packet, int) {
 	if nacks, numSeqNumsNacked := b.nacker.Pairs(); len(nacks) > 0 {
-		var pkts []rtcp.Packet
-		if len(nacks) > 0 {
-			pkts = []rtcp.Packet{&rtcp.TransportLayerNack{
-				SenderSSRC: b.mediaSSRC,
-				MediaSSRC:  b.mediaSSRC,
-				Nacks:      nacks,
-			}}
-		}
-
+		pkts := []rtcp.Packet{&rtcp.TransportLayerNack{
+			SenderSSRC: b.mediaSSRC,
+			MediaSSRC:  b.mediaSSRC,
+			Nacks:      nacks,
+		}}
 		return pkts, numSeqNumsNacked
 	}
 	return nil, 0

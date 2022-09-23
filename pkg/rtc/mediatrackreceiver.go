@@ -568,9 +568,17 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 					ci.Layers = append(ci.Layers, proto.Clone(layer).(*livekit.VideoLayer))
 
 					// if origin layer has ssrc, don't override it
-					if layerIdx < len(originLayers) && originLayers[layerIdx].Ssrc != 0 {
-						ci.Layers[layerIdx].Ssrc = originLayers[layerIdx].Ssrc
-					} else if int(layer.Quality) < len(receiver.layerSSRCs) {
+					ssrcFound := false
+					for _, l := range originLayers {
+						if l.Quality == ci.Layers[layerIdx].Quality {
+							if l.Ssrc != 0 {
+								ci.Layers[layerIdx].Ssrc = l.Ssrc
+								ssrcFound = true
+							}
+							break
+						}
+					}
+					if !ssrcFound && int(layer.Quality) < len(receiver.layerSSRCs) {
 						ci.Layers[layerIdx].Ssrc = receiver.layerSSRCs[layer.Quality]
 					}
 				}
@@ -592,9 +600,17 @@ func (t *MediaTrackReceiver) TrackInfo(generateLayer bool) *livekit.TrackInfo {
 			ti.Layers = append(ti.Layers, proto.Clone(layer).(*livekit.VideoLayer))
 
 			// if origin layer has ssrc, don't override it
-			if layerIdx < len(originLayers) && originLayers[layerIdx].Ssrc != 0 {
-				ti.Layers[layerIdx].Ssrc = originLayers[layerIdx].Ssrc
-			} else if int(layer.Quality) < len(receiver.layerSSRCs) {
+			ssrcFound := false
+			for _, l := range originLayers {
+				if l.Quality == ti.Layers[layerIdx].Quality {
+					if l.Ssrc != 0 {
+						ti.Layers[layerIdx].Ssrc = l.Ssrc
+						ssrcFound = true
+					}
+					break
+				}
+			}
+			if !ssrcFound && int(layer.Quality) < len(receiver.layerSSRCs) {
 				ti.Layers[layerIdx].Ssrc = receiver.layerSSRCs[layer.Quality]
 			}
 		}

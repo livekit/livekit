@@ -24,6 +24,7 @@ type NackQueue struct {
 func NewNACKQueue() *NackQueue {
 	return &NackQueue{
 		nacks: make([]*nack, 0, cacheSize),
+		rtt:   70,
 	}
 }
 
