@@ -121,6 +121,7 @@ func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.Ingr
 			i, err := s.rpcClient.SendRequest(cctx, req)
 			if err != ingress.ErrNoResponse {
 				resChan <- result{i, err}
+				return
 			}
 		}
 	}()
