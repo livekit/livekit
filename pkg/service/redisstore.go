@@ -475,7 +475,11 @@ func parseEgressEnded(value string) (roomName string, endedAt int64, err error) 
 	return
 }
 
-func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) error {
+func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo) error {
+	return s.storeIngress(ctx, info, false)
+}
+
+func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo, updateOnly bool) error {
 	if info.IngressId == "" {
 		return errors.New("Missing IngressId")
 	}
@@ -501,6 +505,9 @@ func (s *RedisStore) StoreIngress(_ context.Context, info *livekit.IngressInfo) 
 		switch err {
 		case ErrIngressNotFound:
 			// Ingress doesn't exist yet
+			if updateOnly {
+				return err
+			}
 		case nil:
 			oldRoom = oldInfo.RoomName
 			oldStartedAt = oldInfo.State.StartedAt
@@ -640,8 +647,8 @@ func (s *RedisStore) ListIngress(_ context.Context, roomName livekit.RoomName) (
 	return infos, nil
 }
 
-func (s *RedisStore) UpdateIngress(_ context.Context, info *livekit.IngressInfo) error {
-	return s.StoreIngress(s.ctx, info)
+func (s *RedisStore) UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error {
+	return s.storeIngress(ctx, info, true)
 }
 
 func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo) error {
