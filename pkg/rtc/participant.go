@@ -308,7 +308,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	// publish permission has been revoked then remove all published tracks
 	if !canPublish {
 		for _, track := range p.GetPublishedTracks() {
-			p.RemovePublishedTrack(track, false)
+			p.RemovePublishedTrack(track, false, false)
 			if p.ProtocolVersion().SupportsUnpublish() {
 				p.sendTrackUnpublished(track.ID())
 			} else {
