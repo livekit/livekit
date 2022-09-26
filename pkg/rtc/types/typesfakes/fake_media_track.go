@@ -26,6 +26,10 @@ type FakeMediaTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	CloseStub        func()
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct {
+	}
 	GetAllSubscribersStub        func() []livekit.ParticipantID
 	getAllSubscribersMutex       sync.RWMutex
 	getAllSubscribersArgsForCall []struct {
@@ -306,6 +310,30 @@ func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
 	fake.addSubscriberReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeMediaTrack) Close() {
+	fake.closeMutex.Lock()
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
+	}{})
+	stub := fake.CloseStub
+	fake.recordInvocation("Close", []interface{}{})
+	fake.closeMutex.Unlock()
+	if stub != nil {
+		fake.CloseStub()
+	}
+}
+
+func (fake *FakeMediaTrack) CloseCallCount() int {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	return len(fake.closeArgsForCall)
+}
+
+func (fake *FakeMediaTrack) CloseCalls(stub func()) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = stub
 }
 
 func (fake *FakeMediaTrack) GetAllSubscribers() []livekit.ParticipantID {
@@ -1327,6 +1355,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
 	fake.getAllSubscribersMutex.RLock()
 	defer fake.getAllSubscribersMutex.RUnlock()
 	fake.getNumSubscribersMutex.RLock()
