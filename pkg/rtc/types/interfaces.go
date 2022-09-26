@@ -178,7 +178,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -362,6 +362,8 @@ type MediaTrack interface {
 
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
+
+	Close()
 
 	// callbacks
 	AddOnClose(func())
