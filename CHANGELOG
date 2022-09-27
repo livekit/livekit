@@ -2,7 +2,7 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2] - 2022-09-13
+## [1.2.3] - 2022-09-13
 ### Added
 - Supervisor framework to improve edge case & error handling #1005 #1006 #1010 #1017
 - Support for stereo Opus tracks #1013
