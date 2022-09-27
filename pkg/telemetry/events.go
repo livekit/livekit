@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,7 +15,6 @@ import (
 
 func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
 	if t.notifier == nil {
-		logger.Warnw("failed to notify webhook", errors.New("no notifier"), "event", event.Event)
 		return
 	}
 

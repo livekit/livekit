@@ -308,7 +308,7 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	// publish permission has been revoked then remove all published tracks
 	if !canPublish {
 		for _, track := range p.GetPublishedTracks() {
-			p.RemovePublishedTrack(track, false)
+			p.RemovePublishedTrack(track, false, false)
 			if p.ProtocolVersion().SupportsUnpublish() {
 				p.sendTrackUnpublished(track.ID())
 			} else {
@@ -1317,6 +1317,7 @@ func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.
 }
 
 func (p *ParticipantImpl) onPublisherInitialConnected() {
+	p.supervisor.SetPublisherPeerConnectionConnected(true)
 	go p.publisherRTCPWorker()
 }
 
@@ -2061,6 +2062,9 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 		},
 	})
 	p.CloseSignalConnection()
+
+	// on a full reconnect, no need to supervise this participant anymore
+	p.supervisor.Stop()
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {

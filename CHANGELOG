@@ -1,6 +1,26 @@
 # Changelog
 
-Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.2] - 2022-09-13
+### Added
+- Supervisor framework to improve edge case & error handling #1005 #1006 #1010 #1017
+- Support for stereo Opus tracks #1013
+- Allow CORS responses to be cached to allow faster initial connection #1027
+
+### Fixed
+- Fixed SSRC mix-up for simulcasted tracks during session resume #1014
+- Fixed screen corruption for non-simulcasted tracks, caused by probing packets #1020
+- Fixed Handling of Simple NALU keyframes for H.264 #1016
+- Fixed TCPMux & UDPMux mixup when multiple host candidates are offered #1036
+
+### Changed
+- Webhook requests are now using Content-Type application/webhook+json to avoid eager JSON parsing #1025
+- Don't automatically add STUN servers when explicit Node IP has been set #1023
+- Automatic TCP and TURN/TLS fallback is now enabled by default #1033
+
+### Removed
+- Fully removed references to VP9. LiveKit is focused on AV1. #1004
 
 ## [1.2.1] - 2022-09-13
 ### Added

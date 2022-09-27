@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/bep/debounce v1.2.1
-	github.com/d5/tengo/v2 v2.12.2
+	github.com/d5/tengo/v2 v2.13.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elliotchance/orderedmap v1.5.0
 	github.com/florianl/go-tc v0.4.1
@@ -17,14 +17,14 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/livekit/mageutil v0.0.0-20220927212651-6191b6d61a6f
-	github.com/livekit/protocol v1.1.2
+	github.com/livekit/protocol v1.1.3-0.20220926180122-bafacf7041a5
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.5.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/pion/ice/v2 v2.2.7
+	github.com/pion/ice/v2 v2.2.8
 	github.com/pion/interceptor v0.1.12
 	github.com/pion/logging v0.2.2
 	github.com/pion/rtcp v1.2.10
@@ -33,7 +33,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.1
 	github.com/pion/turn/v2 v2.0.8
-	github.com/pion/webrtc/v3 v3.1.44
+	github.com/pion/webrtc/v3 v3.1.45
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.13.0
 	github.com/rs/cors v1.8.2
@@ -85,10 +85,10 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
+	golang.org/x/crypto v0.0.0-20220924013350-4ba4fb4dd9e7 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
-	golang.org/x/net v0.0.0-20220909164309-bea034e7d591 // indirect
-	golang.org/x/sys v0.0.0-20220913175220-63ea55921009 // indirect
+	golang.org/x/net v0.0.0-20220923203811-8be639271d50 // indirect
+	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.10 // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect

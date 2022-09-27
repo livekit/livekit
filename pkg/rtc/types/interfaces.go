@@ -178,7 +178,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -363,6 +363,8 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
+	Close()
+
 	// callbacks
 	AddOnClose(func())
 
@@ -429,6 +431,7 @@ const (
 	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
 	OperationMonitorEventSetSubscribedTrack
 	OperationMonitorEventClearSubscribedTrack
+	OperationMonitorEventPublisherPeerConnectionConnected
 	OperationMonitorEventAddPendingPublication
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
@@ -443,6 +446,8 @@ func (o OperationMonitorEvent) String() string {
 		return "SET_SUBSCRIBED_TRACK"
 	case OperationMonitorEventClearSubscribedTrack:
 		return "CLEAR_SUBSCRIBED_TRACK"
+	case OperationMonitorEventPublisherPeerConnectionConnected:
+		return "PUBLISHER_PEER_CONNECTION_CONNECTED"
 	case OperationMonitorEventAddPendingPublication:
 		return "ADD_PENDING_PUBLICATION"
 	case OperationMonitorEventSetPublicationMute:
