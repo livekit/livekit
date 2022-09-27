@@ -431,6 +431,7 @@ const (
 	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
 	OperationMonitorEventSetSubscribedTrack
 	OperationMonitorEventClearSubscribedTrack
+	OperationMonitorEventPublisherPeerConnectionConnected
 	OperationMonitorEventAddPendingPublication
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
@@ -445,6 +446,8 @@ func (o OperationMonitorEvent) String() string {
 		return "SET_SUBSCRIBED_TRACK"
 	case OperationMonitorEventClearSubscribedTrack:
 		return "CLEAR_SUBSCRIBED_TRACK"
+	case OperationMonitorEventPublisherPeerConnectionConnected:
+		return "PUBLISHER_PEER_CONNECTION_CONNECTED"
 	case OperationMonitorEventAddPendingPublication:
 		return "ADD_PENDING_PUBLICATION"
 	case OperationMonitorEventSetPublicationMute:

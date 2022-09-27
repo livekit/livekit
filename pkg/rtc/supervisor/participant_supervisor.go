@@ -21,9 +21,10 @@ type ParticipantSupervisorParams struct {
 type ParticipantSupervisor struct {
 	params ParticipantSupervisorParams
 
-	lock          sync.RWMutex
-	publications  map[livekit.TrackID]types.OperationMonitor
-	subscriptions map[livekit.TrackID]types.OperationMonitor
+	lock                 sync.RWMutex
+	isPublisherConnected bool
+	publications         map[livekit.TrackID]types.OperationMonitor
+	subscriptions        map[livekit.TrackID]types.OperationMonitor
 
 	isStopped atomic.Bool
 }
@@ -44,11 +45,27 @@ func (p *ParticipantSupervisor) Stop() {
 	p.isStopped.Store(true)
 }
 
+func (p *ParticipantSupervisor) SetPublisherPeerConnectionConnected(isConnected bool) {
+	p.lock.Lock()
+	p.isPublisherConnected = isConnected
+
+	for _, pm := range p.publications {
+		pm.PostEvent(types.OperationMonitorEventPublisherPeerConnectionConnected, p.isPublisherConnected)
+	}
+	p.lock.Unlock()
+}
+
 func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
 	if !ok {
-		pm = NewPublicationMonitor(PublicationMonitorParams{TrackID: trackID, Logger: p.params.Logger})
+		pm = NewPublicationMonitor(
+			PublicationMonitorParams{
+				TrackID:                   trackID,
+				IsPeerConnectionConnected: p.isPublisherConnected,
+				Logger:                    p.params.Logger,
+			},
+		)
 		p.publications[trackID] = pm
 	}
 	pm.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
