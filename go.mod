@@ -16,6 +16,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
+	github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093
 	github.com/livekit/protocol v1.1.3-0.20220926180122-bafacf7041a5
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
@@ -45,7 +46,7 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.23.0
-	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde
+	golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
 )
