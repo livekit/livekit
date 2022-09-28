@@ -379,7 +379,7 @@ func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	exemptedLayers = append(exemptedLayers, s.exemptedLayers...)
 	s.lock.Unlock()
 
-	s.logger.Debugw(
+	s.logger.Infow(
 		"available layers changed - layer seen",
 		"added", layer,
 		"availableLayers", availableLayers,
@@ -461,7 +461,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 	s.lock.Unlock()
 
-	s.logger.Debugw(
+	s.logger.Infow(
 		"available layers changed - layer gone",
 		"removed", layer,
 		"availableLayers", newLayers,

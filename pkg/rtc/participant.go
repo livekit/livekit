@@ -1503,7 +1503,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(trackID livekit.TrackID, 
 		)
 	}
 
-	p.params.Logger.Debugw(
+	p.params.Logger.Infow(
 		"sending max subscribed quality",
 		"trackID", trackID,
 		"qualities", subscribedQualities,
@@ -2068,7 +2068,7 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
-	p.params.Logger.Infow("queuing subscribe", "trackID", trackID)
+	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID)
 
 	p.supervisor.UpdateSubscription(trackID, true)
 
@@ -2083,7 +2083,7 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 }
 
 func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
-	p.params.Logger.Infow("queuing unsubscribe", "trackID", trackID)
+	p.params.Logger.Debugw("queuing unsubscribe", "trackID", trackID)
 
 	p.supervisor.UpdateSubscription(trackID, false)
 
