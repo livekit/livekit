@@ -843,7 +843,6 @@ func (d *DownTrack) DistanceToDesired() int32 {
 
 func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
 	allocation := d.forwarder.AllocateOptimal(d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
-	d.logger.Debugw("stream: allocation optimal available", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
@@ -870,14 +869,12 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
-	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
 	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
-	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
 	d.maybeStartKeyFrameRequester()
 	return allocation, available
 }
@@ -890,7 +887,6 @@ func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransitio
 
 func (d *DownTrack) Pause() VideoAllocation {
 	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
-	d.logger.Debugw("stream: pause", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }

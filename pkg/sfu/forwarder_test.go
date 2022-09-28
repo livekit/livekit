@@ -1153,7 +1153,7 @@ func TestForwarderPauseMute(t *testing.T) {
 	f.Mute(true)
 	expectedResult := VideoAllocation{
 		state:              VideoAllocationStateMuted,
-		change:             VideoStreamingChangeNone,
+		change:             VideoStreamingChangePausing,
 		bandwidthRequested: 0,
 		bandwidthDelta:     0 - bitrates[0][0],
 		availableLayers:    availableLayers,
