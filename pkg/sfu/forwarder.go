@@ -1257,7 +1257,7 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 	}
 
 	if alloc.state != f.lastAllocation.state || alloc.targetLayers != f.lastAllocation.targetLayers {
-		f.logger.Infow("stream allocation", "reason", reason, "allocation", alloc)
+		f.logger.Infow(fmt.Sprintf("stream allocation: %s", reason), "allocation", alloc)
 	}
 
 	f.lastAllocation = alloc
