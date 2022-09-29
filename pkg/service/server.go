@@ -327,6 +327,7 @@ func (s *LivekitServer) backgroundWorker() {
 			return
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
+			s.roomManager.CloseTimeoutRooms()
 		}
 	}
 }

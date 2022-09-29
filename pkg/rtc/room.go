@@ -542,6 +542,30 @@ func (r *Room) CloseIfEmpty() {
 	}
 }
 
+// CloseIfTimeout closes the room if it is past timeout
+func (r *Room) CloseIfTimeout() {
+	r.lock.Lock()
+
+	if r.IsClosed() {
+		r.lock.Unlock()
+		return
+	}
+
+	timeout := r.protoRoom.RoomTimeout
+	if timeout == 0 {
+		r.lock.Unlock()
+		return
+	}
+
+	var elapsed int64
+	elapsed = time.Now().Unix() - r.protoRoom.CreationTime
+	r.lock.Unlock()
+
+	if elapsed >= int64(timeout) {
+		r.Close()
+	}
+}
+
 func (r *Room) Close() {
 	r.lock.Lock()
 	select {

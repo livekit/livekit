@@ -167,6 +167,19 @@ func (r *RoomManager) CloseIdleRooms() {
 	}
 }
 
+func (r *RoomManager) CloseTimeoutRooms() {
+	r.lock.RLock()
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, rm := range r.rooms {
+		rooms = append(rooms, rm)
+	}
+	r.lock.RUnlock()
+
+	for _, room := range rooms {
+		room.CloseIfTimeout()
+	}
+}
+
 func (r *RoomManager) HasParticipants() bool {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
