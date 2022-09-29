@@ -63,6 +63,7 @@ type RTCConfig struct {
 	UseExternalIP     bool             `yaml:"use_external_ip"`
 	UseICELite        bool             `yaml:"use_ice_lite,omitempty"`
 	Interfaces        InterfacesConfig `yaml:"interfaces"`
+	IPs               IPsConfig        `yaml:"ips"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -102,6 +103,11 @@ type CongestionControlConfig struct {
 }
 
 type InterfacesConfig struct {
+	Includes []string `yaml:"includes"`
+	Excludes []string `yaml:"excludes"`
+}
+
+type IPsConfig struct {
 	Includes []string `yaml:"includes"`
 	Excludes []string `yaml:"excludes"`
 }
