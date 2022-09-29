@@ -22,3 +22,11 @@ func TestConfig_DefaultsKept(t *testing.T) {
 	require.Equal(t, true, conf.Room.AutoCreate)
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
 }
+
+func TestConfig_UnknownKeys(t *testing.T) {
+	const content = `unknown: 10
+room:
+  empty_timeout: 10`
+	_, err := NewConfig(content, nil)
+	require.Error(t, err)
+}

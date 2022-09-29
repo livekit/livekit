@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
@@ -258,7 +259,9 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 		Keys: map[string]string{},
 	}
 	if confString != "" {
-		if err := yaml.Unmarshal([]byte(confString), conf); err != nil {
+		decoder := yaml.NewDecoder(strings.NewReader(confString))
+		decoder.KnownFields(true)
+		if err := decoder.Decode(conf); err != nil {
 			return nil, fmt.Errorf("could not parse config: %v", err)
 		}
 	}
