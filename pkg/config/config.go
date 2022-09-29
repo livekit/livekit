@@ -205,7 +205,7 @@ type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
 }
 
-func NewConfig(confString string, c *cli.Context) (*Config, error) {
+func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, error) {
 	// start with defaults
 	conf := &Config{
 		Port: 7880,
@@ -266,7 +266,7 @@ func NewConfig(confString string, c *cli.Context) (*Config, error) {
 	}
 	if confString != "" {
 		decoder := yaml.NewDecoder(strings.NewReader(confString))
-		decoder.KnownFields(true)
+		decoder.KnownFields(strictMode)
 		if err := decoder.Decode(conf); err != nil {
 			return nil, fmt.Errorf("could not parse config: %v", err)
 		}

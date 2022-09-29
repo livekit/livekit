@@ -156,7 +156,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	conf, err := config.NewConfig(confString, c)
+	conf, err := config.NewConfig(confString, true, c)
 	if err != nil {
 		return nil, err
 	}
