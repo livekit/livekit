@@ -299,7 +299,6 @@ func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	// LK-TODO: For SVC tracks, need to accumulate across spatial layers also
 	var br Bitrates
 
 	for i, tracker := range s.trackers {
