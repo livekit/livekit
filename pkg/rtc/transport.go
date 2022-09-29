@@ -1007,17 +1007,50 @@ func (t *PCTransport) configureReceiverDTXAndStereo(enableDTX bool) {
 		}
 
 		//
-		// As `SetCodecPreferences` on a transceiver replaces all codecs,
-		// cycle through sender codecs also and add them before calling
-		// `SetCodecPreferences`
+		// As peer connection is used in only in send or receive mode,
+		// can modify the relevant direct and set codec preferences.
 		//
-		var senderCodecs []webrtc.RTPCodecParameters
-		sender := transceiver.Sender()
-		if sender != nil {
-			senderCodecs = sender.GetParameters().Codecs
+		err := transceiver.SetCodecPreferences(modifiedReceiverCodecs)
+		if err != nil {
+			t.params.Logger.Warnw("failed to SetCodecPreferences", err)
+		}
+	}
+}
+
+func (t *PCTransport) configureSenderStereo() {
+	transceivers := t.pc.GetTransceivers()
+	for _, transceiver := range transceivers {
+		if transceiver.Kind() != webrtc.RTPCodecTypeAudio {
+			continue
 		}
 
-		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
+		sender := transceiver.Sender()
+		if sender == nil {
+			continue
+		}
+
+		var modifiedSenderCodecs []webrtc.RTPCodecParameters
+
+		senderCodecs := sender.GetParameters().Codecs
+		for _, senderCodec := range senderCodecs {
+			if senderCodec.MimeType == webrtc.MimeTypeOpus {
+				fmtpStereo := "stereo=1"
+				// remove occurrence in the middle
+				sdpFmtpLine := strings.ReplaceAll(senderCodec.SDPFmtpLine, fmtpStereo+";", "")
+				// remove occurrence at the end
+				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpStereo, "")
+				sdpFmtpLine += ";" + fmtpStereo
+
+				senderCodec.SDPFmtpLine = sdpFmtpLine
+			}
+			modifiedSenderCodecs = append(modifiedSenderCodecs, senderCodec)
+		}
+
+		//
+		// As peer connection is used in only in send or receive mode,
+		// can modify the relevant direct and set codec preferences.
+		//
+		err := transceiver.SetCodecPreferences(modifiedSenderCodecs)
 		if err != nil {
 			t.params.Logger.Warnw("failed to SetCodecPreferences", err)
 		}
@@ -1575,6 +1608,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if options != nil && options.ICERestart {
 		t.clearLocalDescriptionSent()
 	}
+
+	t.configureSenderStereo()
 
 	offer, err := t.pc.CreateOffer(options)
 	if err != nil {
