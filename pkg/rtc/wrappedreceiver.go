@@ -159,9 +159,9 @@ func (d *DummyReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
 	return 0, errors.New("no receiver")
 }
 
-func (d *DummyReceiver) GetBitrateTemporalCumulative() sfu.Bitrates {
+func (d *DummyReceiver) GetLayeredBitrate() sfu.Bitrates {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
-		return r.GetBitrateTemporalCumulative()
+		return r.GetLayeredBitrate()
 	}
 	return sfu.Bitrates{}
 }
