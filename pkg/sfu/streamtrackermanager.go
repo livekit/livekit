@@ -65,6 +65,7 @@ var (
 type StreamTrackerManager struct {
 	logger            logger.Logger
 	trackInfo         *livekit.TrackInfo
+	isSVC             bool
 	maxPublishedLayer int32
 
 	lock sync.RWMutex
@@ -81,10 +82,11 @@ type StreamTrackerManager struct {
 	onMaxLayerChanged            func(maxLayer int32)
 }
 
-func NewStreamTrackerManager(logger logger.Logger, trackInfo *livekit.TrackInfo) *StreamTrackerManager {
+func NewStreamTrackerManager(logger logger.Logger, trackInfo *livekit.TrackInfo, isSVC bool) *StreamTrackerManager {
 	s := &StreamTrackerManager{
 		logger:            logger,
 		trackInfo:         trackInfo,
+		isSVC:             isSVC,
 		maxPublishedLayer: 0,
 	}
 
@@ -293,7 +295,7 @@ func (s *StreamTrackerManager) GetMaxExpectedLayer() int32 {
 	return maxExpectedLayer
 }
 
-func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {
+func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
@@ -309,6 +311,18 @@ func (s *StreamTrackerManager) GetBitrateTemporalCumulative() Bitrates {
 
 			for j := 0; j < len(br[i]); j++ {
 				br[i][j] = tls[j]
+			}
+		}
+	}
+
+	if s.isSVC {
+		for i := len(br) - 1; i >= 1; i-- {
+			for j := len(br[i]) - 1; j >= 1; j-- {
+				if br[i][j] != 0 {
+					for k := i - 1; k >= 0; k-- {
+						br[i][j] += br[k][j]
+					}
+				}
 			}
 		}
 	}

@@ -38,7 +38,7 @@ type TrackReceiver interface {
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetBitrateTemporalCumulative() Bitrates
+	GetLayeredBitrate() Bitrates
 
 	GetAudioLevel() (float64, bool)
 
@@ -177,14 +177,14 @@ func NewWebRTCReceiver(
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
-		isSimulcast:          len(track.RID()) > 0,
-		twcc:                 twcc,
-		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo),
-		trackInfo:            trackInfo,
-		isSVC:                IsSvcCodec(track.Codec().MimeType),
-		isRED:                IsRedCodec(track.Codec().MimeType),
+		isSimulcast: len(track.RID()) > 0,
+		twcc:        twcc,
+		trackInfo:   trackInfo,
+		isSVC:       IsSvcCodec(track.Codec().MimeType),
+		isRED:       IsRedCodec(track.Codec().MimeType),
 	}
 
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC)
 	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
@@ -382,8 +382,8 @@ func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
 	}
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
-	return w.streamTrackerManager.GetBitrateTemporalCumulative()
+func (w *WebRTCReceiver) GetLayeredBitrate() Bitrates {
+	return w.streamTrackerManager.GetLayeredBitrate()
 }
 
 // OnCloseHandler method to be called on remote tracked removed
