@@ -316,7 +316,7 @@ func (s *StreamTrackerManager) GetLayeredBitrate() Bitrates {
 
 	if s.isSVC {
 		for i := len(br) - 1; i >= 1; i-- {
-			for j := len(br[i]) - 1; j >= 1; j-- {
+			for j := len(br[i]) - 1; j >= 0; j-- {
 				if br[i][j] != 0 {
 					for k := i - 1; k >= 0; k-- {
 						br[i][j] += br[k][j]
