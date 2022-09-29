@@ -70,18 +70,13 @@ func (t *telemetryService) ParticipantJoined(
 		prometheus.IncrementParticipantJoin(1)
 		prometheus.AddParticipant()
 
-		worker := newStatsWorker(
+		t.createWorker(
 			ctx,
-			t,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
-
-		t.lock.Lock()
-		t.workers[livekit.ParticipantID(participant.Sid)] = worker
-		t.lock.Unlock()
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
@@ -109,6 +104,16 @@ func (t *telemetryService) ParticipantActive(
 			Room:        room,
 			Participant: participant,
 		})
+
+		if _, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); !ok {
+			t.createWorker(
+				ctx,
+				livekit.RoomID(room.Sid),
+				livekit.RoomName(room.Name),
+				livekit.ParticipantID(participant.Sid),
+				livekit.ParticipantIdentity(participant.Identity),
+			)
+		}
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,

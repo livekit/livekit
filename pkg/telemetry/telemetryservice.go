@@ -116,6 +116,22 @@ func (t *telemetryService) getWorker(participantID livekit.ParticipantID) (worke
 	return
 }
 
+func (t *telemetryService) createWorker(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName,
+	participantID livekit.ParticipantID, participantIdentity livekit.ParticipantIdentity) {
+	worker := newStatsWorker(
+		ctx,
+		t,
+		roomID,
+		roomName,
+		participantID,
+		participantIdentity,
+	)
+
+	t.lock.Lock()
+	t.workers[participantID] = worker
+	t.lock.Unlock()
+}
+
 func (t *telemetryService) cleanupWorkers() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
