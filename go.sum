@@ -306,6 +306,8 @@ github.com/pion/dtls/v2 v2.1.5/go.mod h1:BqCE7xPZbPSubGasRoDFJeTsyJtdD1FanJYL0JG
 github.com/pion/ice/v2 v2.2.6/go.mod h1:SWuHiOGP17lGromHTFadUe1EuPgFh/oCU6FCMZHooVE=
 github.com/pion/ice/v2 v2.2.10 h1:i8rn0iIN8wHlS9wosoHS3Du4hYwx+TjBEluisXYtQVE=
 github.com/pion/ice/v2 v2.2.10/go.mod h1:J6HhupoMLTOv0yALipuOHEPoSMk7dm1ofwUI1KHVHk8=
+github.com/pion/ice/v2 v2.2.11-0.20220930060022-8527775e5017 h1:EyZ0s64KXwTPZoisEsexH9b3G5xyZZcZ13Sk7t5d3Ic=
+github.com/pion/ice/v2 v2.2.11-0.20220930060022-8527775e5017/go.mod h1:J6HhupoMLTOv0yALipuOHEPoSMk7dm1ofwUI1KHVHk8=
 github.com/pion/interceptor v0.1.11/go.mod h1:tbtKjZY14awXd7Bq0mmWvgtHB5MDaRN7HV3OZ/uy7s8=
 github.com/pion/interceptor v0.1.12 h1:CslaNriCFUItiXS5o+hh5lpL0t0ytQkFnUcbbCs2Zq8=
 github.com/pion/interceptor v0.1.12/go.mod h1:bDtgAD9dRkBZpWHGKaoKb42FhDHTG2rX8Ii9LRALLVA=
