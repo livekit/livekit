@@ -1234,10 +1234,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
 		if err != nil {
-			nackMisses++
 			if err == io.EOF {
 				break
 			}
+			nackMisses++
 			continue
 		}
 
