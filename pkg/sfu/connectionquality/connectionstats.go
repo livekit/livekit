@@ -244,7 +244,7 @@ func (cs *ConnectionStats) updateScore(streams map[uint32]*buffer.StreamStatsWit
 		}
 	}
 
-	if cs.score < 4.5 {
+	if cs.score < 4.2 {
 		if !cs.isLowQuality.Swap(true) {
 			// changed from good to low quality, log
 			cs.params.Logger.Infow("low connection quality", "score", cs.score, "params", params)
