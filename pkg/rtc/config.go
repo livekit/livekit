@@ -78,7 +78,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		rtcConf.PacketBufferSize = 500
 	}
 
-	var udpMux *ice.UDPMuxDefault
+	var udpMux ice.UDPMux
 	var udpMuxConn *net.UDPConn
 	var err error
 	networkTypes := make([]webrtc.NetworkType, 0, 4)
