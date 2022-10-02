@@ -53,7 +53,7 @@ type IngressStore interface {
 	LoadIngressFromStreamKey(ctx context.Context, streamKey string) (*livekit.IngressInfo, error)
 	ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error)
 	UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error
-	UpdateIngressState(ctx context.Context, ingressId string, state *livekit.IngressState)
+	UpdateIngressState(ctx context.Context, ingressId string, state *livekit.IngressState) error
 	DeleteIngress(ctx context.Context, info *livekit.IngressInfo) error
 }
 

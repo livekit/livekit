@@ -268,7 +268,7 @@ func (s *IngressService) updateWorker() {
 		case msg := <-resChan:
 			b := sub.Payload(msg)
 
-			res := &livekit.IngressStateUpdateRequest{}
+			res := &livekit.UpdateIngressStateRequest{}
 			if err = proto.Unmarshal(b, res); err != nil {
 				logger.Errorw("failed to read results", err)
 				continue
