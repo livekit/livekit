@@ -86,12 +86,9 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
 		Reusable:            req.InputType == livekit.IngressInput_RTMP_INPUT,
-		State: &livekit.IngressState{
-			Status: livekit.IngressState_ENDPOINT_INACTIVE,
-		},
 	}
 
-	if err := s.store.StoreIngress(ctx, info); err != nil {
+	if err := s.store.CreateIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}
@@ -99,10 +96,10 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 	return info, nil
 }
 
-func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.IngressRequest) (*livekit.IngressInfo, error) {
+func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.IngressRequest) (*livekit.IngressState, error) {
 	type result struct {
-		info *livekit.IngressInfo
-		err  error
+		state *livekit.IngressState
+		err   error
 	}
 
 	resChan := make(chan result, 1)
@@ -118,9 +115,9 @@ func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.Ingr
 			default:
 			}
 
-			i, err := s.rpcClient.SendRequest(cctx, req)
+			s, err := s.rpcClient.SendRequest(cctx, req)
 			if err != ingress.ErrNoResponse {
-				resChan <- result{i, err}
+				resChan <- result{s, err}
 				return
 			}
 		}
@@ -128,7 +125,7 @@ func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.Ingr
 
 	select {
 	case res := <-resChan:
-		return res.info, res.err
+		return res.state, res.err
 	case <-time.After(initialTimeout):
 		return nil, ingress.ErrNoResponse
 	}
@@ -156,6 +153,7 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_ERROR:
 		info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
+		err = s.store.UpdateIngressState(ctx, req.IngressId, info.State)
 		fallthrough
 
 	case livekit.IngressState_ENDPOINT_INACTIVE:
@@ -180,14 +178,15 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		i, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
+		// Do not update store the returned state as the ingress service will do it
+		s, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Update{Update: req},
 		})
 		if err != nil {
 			logger.Warnw("could not update active ingress", err)
 		} else {
-			info = i
+			info.State = s
 		}
 	}
 
@@ -235,14 +234,14 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	switch info.State.Status {
 	case livekit.IngressState_ENDPOINT_BUFFERING,
 		livekit.IngressState_ENDPOINT_PUBLISHING:
-		i, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
+		s, err := s.sendRPCWithRetry(ctx, &livekit.IngressRequest{
 			IngressId: req.IngressId,
 			Request:   &livekit.IngressRequest_Delete{Delete: req},
 		})
 		if err != nil {
 			logger.Warnw("could not stop active ingress", err)
 		} else {
-			info = i
+			info.State = s
 		}
 	}
 
@@ -269,14 +268,14 @@ func (s *IngressService) updateWorker() {
 		case msg := <-resChan:
 			b := sub.Payload(msg)
 
-			res := &livekit.IngressInfo{}
+			res := &livekit.IngressStateUpdateRequest{}
 			if err = proto.Unmarshal(b, res); err != nil {
 				logger.Errorw("failed to read results", err)
 				continue
 			}
 
 			// save updated info to store
-			err = s.store.UpdateIngress(context.Background(), res)
+			err = s.store.UpdateIngressState(context.Background(), res.IngressId, res.State)
 			if err != nil {
 				logger.Errorw("could not update ingress", err)
 			}
