@@ -360,7 +360,7 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
-	Close()
+	Close(willBeResumed bool)
 
 	// callbacks
 	AddOnClose(func())
@@ -369,7 +369,6 @@ type MediaTrack interface {
 	AddSubscriber(participant LocalParticipant) error
 	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
-	InitiateClose(willBeResumed bool)
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
@@ -378,6 +377,7 @@ type MediaTrack interface {
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
 	Receivers() []sfu.TrackReceiver
+	ClearAllReceivers(willBeResumed bool)
 }
 
 //counterfeiter:generate . LocalMediaTrack

@@ -241,7 +241,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		)
 		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
-			t.MediaTrackReceiver.ClearReceiver(mime)
+			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
@@ -256,6 +256,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			}
 		})
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+			// LK-TODO: this needs to be receiver/mime aware
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
 		if t.PrimaryReceiver() == nil {
@@ -353,11 +354,12 @@ func (t *MediaTrack) Restart() {
 	}
 }
 
-func (t *MediaTrack) Close() {
+func (t *MediaTrack) Close(willBeResumed bool) {
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
 
+	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
 	t.MediaTrackReceiver.Close()
 }
 
