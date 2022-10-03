@@ -154,6 +154,9 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 	case livekit.IngressState_ENDPOINT_ERROR:
 		info.State.Status = livekit.IngressState_ENDPOINT_INACTIVE
 		err = s.store.UpdateIngressState(ctx, req.IngressId, info.State)
+		if err != nil {
+			logger.Warnw("could not store ingress state", err)
+		}
 		fallthrough
 
 	case livekit.IngressState_ENDPOINT_INACTIVE:
