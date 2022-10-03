@@ -10,18 +10,6 @@ import (
 )
 
 type FakeIngressStore struct {
-	CreateIngressStub        func(context.Context, *livekit.IngressInfo) error
-	createIngressMutex       sync.RWMutex
-	createIngressArgsForCall []struct {
-		arg1 context.Context
-		arg2 *livekit.IngressInfo
-	}
-	createIngressReturns struct {
-		result1 error
-	}
-	createIngressReturnsOnCall map[int]struct {
-		result1 error
-	}
 	DeleteIngressStub        func(context.Context, *livekit.IngressInfo) error
 	deleteIngressMutex       sync.RWMutex
 	deleteIngressArgsForCall []struct {
@@ -76,6 +64,18 @@ type FakeIngressStore struct {
 		result1 *livekit.IngressInfo
 		result2 error
 	}
+	StoreIngressStub        func(context.Context, *livekit.IngressInfo) error
+	storeIngressMutex       sync.RWMutex
+	storeIngressArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}
+	storeIngressReturns struct {
+		result1 error
+	}
+	storeIngressReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateIngressStub        func(context.Context, *livekit.IngressInfo) error
 	updateIngressMutex       sync.RWMutex
 	updateIngressArgsForCall []struct {
@@ -103,68 +103,6 @@ type FakeIngressStore struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeIngressStore) CreateIngress(arg1 context.Context, arg2 *livekit.IngressInfo) error {
-	fake.createIngressMutex.Lock()
-	ret, specificReturn := fake.createIngressReturnsOnCall[len(fake.createIngressArgsForCall)]
-	fake.createIngressArgsForCall = append(fake.createIngressArgsForCall, struct {
-		arg1 context.Context
-		arg2 *livekit.IngressInfo
-	}{arg1, arg2})
-	stub := fake.CreateIngressStub
-	fakeReturns := fake.createIngressReturns
-	fake.recordInvocation("CreateIngress", []interface{}{arg1, arg2})
-	fake.createIngressMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeIngressStore) CreateIngressCallCount() int {
-	fake.createIngressMutex.RLock()
-	defer fake.createIngressMutex.RUnlock()
-	return len(fake.createIngressArgsForCall)
-}
-
-func (fake *FakeIngressStore) CreateIngressCalls(stub func(context.Context, *livekit.IngressInfo) error) {
-	fake.createIngressMutex.Lock()
-	defer fake.createIngressMutex.Unlock()
-	fake.CreateIngressStub = stub
-}
-
-func (fake *FakeIngressStore) CreateIngressArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
-	fake.createIngressMutex.RLock()
-	defer fake.createIngressMutex.RUnlock()
-	argsForCall := fake.createIngressArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeIngressStore) CreateIngressReturns(result1 error) {
-	fake.createIngressMutex.Lock()
-	defer fake.createIngressMutex.Unlock()
-	fake.CreateIngressStub = nil
-	fake.createIngressReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeIngressStore) CreateIngressReturnsOnCall(i int, result1 error) {
-	fake.createIngressMutex.Lock()
-	defer fake.createIngressMutex.Unlock()
-	fake.CreateIngressStub = nil
-	if fake.createIngressReturnsOnCall == nil {
-		fake.createIngressReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.createIngressReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeIngressStore) DeleteIngress(arg1 context.Context, arg2 *livekit.IngressInfo) error {
@@ -424,6 +362,68 @@ func (fake *FakeIngressStore) LoadIngressFromStreamKeyReturnsOnCall(i int, resul
 	}{result1, result2}
 }
 
+func (fake *FakeIngressStore) StoreIngress(arg1 context.Context, arg2 *livekit.IngressInfo) error {
+	fake.storeIngressMutex.Lock()
+	ret, specificReturn := fake.storeIngressReturnsOnCall[len(fake.storeIngressArgsForCall)]
+	fake.storeIngressArgsForCall = append(fake.storeIngressArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.IngressInfo
+	}{arg1, arg2})
+	stub := fake.StoreIngressStub
+	fakeReturns := fake.storeIngressReturns
+	fake.recordInvocation("StoreIngress", []interface{}{arg1, arg2})
+	fake.storeIngressMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeIngressStore) StoreIngressCallCount() int {
+	fake.storeIngressMutex.RLock()
+	defer fake.storeIngressMutex.RUnlock()
+	return len(fake.storeIngressArgsForCall)
+}
+
+func (fake *FakeIngressStore) StoreIngressCalls(stub func(context.Context, *livekit.IngressInfo) error) {
+	fake.storeIngressMutex.Lock()
+	defer fake.storeIngressMutex.Unlock()
+	fake.StoreIngressStub = stub
+}
+
+func (fake *FakeIngressStore) StoreIngressArgsForCall(i int) (context.Context, *livekit.IngressInfo) {
+	fake.storeIngressMutex.RLock()
+	defer fake.storeIngressMutex.RUnlock()
+	argsForCall := fake.storeIngressArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeIngressStore) StoreIngressReturns(result1 error) {
+	fake.storeIngressMutex.Lock()
+	defer fake.storeIngressMutex.Unlock()
+	fake.StoreIngressStub = nil
+	fake.storeIngressReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeIngressStore) StoreIngressReturnsOnCall(i int, result1 error) {
+	fake.storeIngressMutex.Lock()
+	defer fake.storeIngressMutex.Unlock()
+	fake.StoreIngressStub = nil
+	if fake.storeIngressReturnsOnCall == nil {
+		fake.storeIngressReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.storeIngressReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeIngressStore) UpdateIngress(arg1 context.Context, arg2 *livekit.IngressInfo) error {
 	fake.updateIngressMutex.Lock()
 	ret, specificReturn := fake.updateIngressReturnsOnCall[len(fake.updateIngressArgsForCall)]
@@ -552,8 +552,6 @@ func (fake *FakeIngressStore) UpdateIngressStateReturnsOnCall(i int, result1 err
 func (fake *FakeIngressStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.createIngressMutex.RLock()
-	defer fake.createIngressMutex.RUnlock()
 	fake.deleteIngressMutex.RLock()
 	defer fake.deleteIngressMutex.RUnlock()
 	fake.listIngressMutex.RLock()
@@ -562,6 +560,8 @@ func (fake *FakeIngressStore) Invocations() map[string][][]interface{} {
 	defer fake.loadIngressMutex.RUnlock()
 	fake.loadIngressFromStreamKeyMutex.RLock()
 	defer fake.loadIngressFromStreamKeyMutex.RUnlock()
+	fake.storeIngressMutex.RLock()
+	defer fake.storeIngressMutex.RUnlock()
 	fake.updateIngressMutex.RLock()
 	defer fake.updateIngressMutex.RUnlock()
 	fake.updateIngressStateMutex.RLock()

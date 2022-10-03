@@ -48,7 +48,7 @@ type EgressStore interface {
 
 //counterfeiter:generate . IngressStore
 type IngressStore interface {
-	CreateIngress(ctx context.Context, info *livekit.IngressInfo) error
+	StoreIngress(ctx context.Context, info *livekit.IngressInfo) error
 	LoadIngress(ctx context.Context, ingressID string) (*livekit.IngressInfo, error)
 	LoadIngressFromStreamKey(ctx context.Context, streamKey string) (*livekit.IngressInfo, error)
 	ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error)

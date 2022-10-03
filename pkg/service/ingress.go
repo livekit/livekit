@@ -88,7 +88,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		Reusable:            req.InputType == livekit.IngressInput_RTMP_INPUT,
 	}
 
-	if err := s.store.CreateIngress(ctx, info); err != nil {
+	if err := s.store.StoreIngress(ctx, info); err != nil {
 		logger.Errorw("could not write ingress info", err)
 		return nil, err
 	}

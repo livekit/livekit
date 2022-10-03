@@ -248,7 +248,7 @@ func TestIngressStore(t *testing.T) {
 		},
 	}
 
-	err := rs.CreateIngress(ctx, info)
+	err := rs.StoreIngress(ctx, info)
 	require.NoError(t, err)
 
 	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)

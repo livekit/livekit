@@ -476,7 +476,7 @@ func parseEgressEnded(value string) (roomName string, endedAt int64, err error) 
 	return
 }
 
-func (s *RedisStore) CreateIngress(ctx context.Context, info *livekit.IngressInfo) error {
+func (s *RedisStore) StoreIngress(ctx context.Context, info *livekit.IngressInfo) error {
 	err := s.storeIngress(ctx, info)
 	if err != nil {
 		return err
