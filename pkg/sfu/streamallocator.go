@@ -976,7 +976,13 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 		return
 	}
 
-	s.params.Logger.Debugw("streamed tracks changed", "update", update)
+	// logging individual changes to make it easier for logging systems
+	for _, streamState := range update.StreamStates {
+		s.params.Logger.Debugw("streamed tracks changed",
+			"trackID", streamState.TrackID,
+			"state", streamState.State,
+		)
+	}
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
@@ -1203,6 +1209,17 @@ const (
 	StreamStateActive StreamState = iota
 	StreamStatePaused
 )
+
+func (s StreamState) String() string {
+	switch s {
+	case StreamStateActive:
+		return "active"
+	case StreamStatePaused:
+		return "paused"
+	default:
+		return "unknown"
+	}
+}
 
 type StreamStateInfo struct {
 	ParticipantID livekit.ParticipantID

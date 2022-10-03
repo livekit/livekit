@@ -16,8 +16,8 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/livekit/mageutil v0.0.0-20220927214055-ff37ecf1f093
-	github.com/livekit/protocol v1.1.3-0.20221003181058-44a5ed6b4d13
+	github.com/livekit/mageutil v0.0.0-20221002073820-d9198083cfdc
+	github.com/livekit/protocol v1.1.3-0.20220926180122-bafacf7041a5
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -42,7 +42,7 @@ require (
 	github.com/thoas/go-funk v0.9.2
 	github.com/twitchtv/twirp v8.1.2+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
-	github.com/urfave/cli/v2 v2.16.3
+	github.com/urfave/cli/v2 v2.17.1
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.23.0
