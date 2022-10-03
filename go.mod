@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/livekit/mageutil v0.0.0-20221002073820-d9198083cfdc
-	github.com/livekit/protocol v1.1.3-0.20220926180122-bafacf7041a5
+	github.com/livekit/protocol v1.1.3-0.20221003181058-44a5ed6b4d13
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
