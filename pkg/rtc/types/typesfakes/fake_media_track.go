@@ -26,9 +26,15 @@ type FakeMediaTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
-	CloseStub        func()
+	ClearAllReceiversStub        func(bool)
+	clearAllReceiversMutex       sync.RWMutex
+	clearAllReceiversArgsForCall []struct {
+		arg1 bool
+	}
+	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
+		arg1 bool
 	}
 	GetAllSubscribersStub        func() []livekit.ParticipantID
 	getAllSubscribersMutex       sync.RWMutex
@@ -71,11 +77,6 @@ type FakeMediaTrack struct {
 	}
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
-	}
-	InitiateCloseStub        func(bool)
-	initiateCloseMutex       sync.RWMutex
-	initiateCloseArgsForCall []struct {
-		arg1 bool
 	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
@@ -312,15 +313,48 @@ func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) Close() {
+func (fake *FakeMediaTrack) ClearAllReceivers(arg1 bool) {
+	fake.clearAllReceiversMutex.Lock()
+	fake.clearAllReceiversArgsForCall = append(fake.clearAllReceiversArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.ClearAllReceiversStub
+	fake.recordInvocation("ClearAllReceivers", []interface{}{arg1})
+	fake.clearAllReceiversMutex.Unlock()
+	if stub != nil {
+		fake.ClearAllReceiversStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversCallCount() int {
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
+	return len(fake.clearAllReceiversArgsForCall)
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversCalls(stub func(bool)) {
+	fake.clearAllReceiversMutex.Lock()
+	defer fake.clearAllReceiversMutex.Unlock()
+	fake.ClearAllReceiversStub = stub
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversArgsForCall(i int) bool {
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
+	argsForCall := fake.clearAllReceiversArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) Close(arg1 bool) {
 	fake.closeMutex.Lock()
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
-	}{})
+		arg1 bool
+	}{arg1})
 	stub := fake.CloseStub
-	fake.recordInvocation("Close", []interface{}{})
+	fake.recordInvocation("Close", []interface{}{arg1})
 	fake.closeMutex.Unlock()
 	if stub != nil {
-		fake.CloseStub()
+		fake.CloseStub(arg1)
 	}
 }
 
@@ -330,10 +364,17 @@ func (fake *FakeMediaTrack) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *FakeMediaTrack) CloseCalls(stub func()) {
+func (fake *FakeMediaTrack) CloseCalls(stub func(bool)) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
+}
+
+func (fake *FakeMediaTrack) CloseArgsForCall(i int) bool {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	argsForCall := fake.closeArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) GetAllSubscribers() []livekit.ParticipantID {
@@ -555,38 +596,6 @@ func (fake *FakeMediaTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.TrackID
 	}{result1}
-}
-
-func (fake *FakeMediaTrack) InitiateClose(arg1 bool) {
-	fake.initiateCloseMutex.Lock()
-	fake.initiateCloseArgsForCall = append(fake.initiateCloseArgsForCall, struct {
-		arg1 bool
-	}{arg1})
-	stub := fake.InitiateCloseStub
-	fake.recordInvocation("InitiateClose", []interface{}{arg1})
-	fake.initiateCloseMutex.Unlock()
-	if stub != nil {
-		fake.InitiateCloseStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) InitiateCloseCallCount() int {
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
-	return len(fake.initiateCloseArgsForCall)
-}
-
-func (fake *FakeMediaTrack) InitiateCloseCalls(stub func(bool)) {
-	fake.initiateCloseMutex.Lock()
-	defer fake.initiateCloseMutex.Unlock()
-	fake.InitiateCloseStub = stub
-}
-
-func (fake *FakeMediaTrack) InitiateCloseArgsForCall(i int) bool {
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
-	argsForCall := fake.initiateCloseArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) IsMuted() bool {
@@ -1355,6 +1364,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.getAllSubscribersMutex.RLock()
@@ -1365,8 +1376,6 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()
