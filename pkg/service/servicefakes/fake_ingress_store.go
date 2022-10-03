@@ -88,6 +88,19 @@ type FakeIngressStore struct {
 	updateIngressReturnsOnCall map[int]struct {
 		result1 error
 	}
+	UpdateIngressStateStub        func(context.Context, string, *livekit.IngressState) error
+	updateIngressStateMutex       sync.RWMutex
+	updateIngressStateArgsForCall []struct {
+		arg1 context.Context
+		arg2 string
+		arg3 *livekit.IngressState
+	}
+	updateIngressStateReturns struct {
+		result1 error
+	}
+	updateIngressStateReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -473,6 +486,69 @@ func (fake *FakeIngressStore) UpdateIngressReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeIngressStore) UpdateIngressState(arg1 context.Context, arg2 string, arg3 *livekit.IngressState) error {
+	fake.updateIngressStateMutex.Lock()
+	ret, specificReturn := fake.updateIngressStateReturnsOnCall[len(fake.updateIngressStateArgsForCall)]
+	fake.updateIngressStateArgsForCall = append(fake.updateIngressStateArgsForCall, struct {
+		arg1 context.Context
+		arg2 string
+		arg3 *livekit.IngressState
+	}{arg1, arg2, arg3})
+	stub := fake.UpdateIngressStateStub
+	fakeReturns := fake.updateIngressStateReturns
+	fake.recordInvocation("UpdateIngressState", []interface{}{arg1, arg2, arg3})
+	fake.updateIngressStateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeIngressStore) UpdateIngressStateCallCount() int {
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
+	return len(fake.updateIngressStateArgsForCall)
+}
+
+func (fake *FakeIngressStore) UpdateIngressStateCalls(stub func(context.Context, string, *livekit.IngressState) error) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = stub
+}
+
+func (fake *FakeIngressStore) UpdateIngressStateArgsForCall(i int) (context.Context, string, *livekit.IngressState) {
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
+	argsForCall := fake.updateIngressStateArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeIngressStore) UpdateIngressStateReturns(result1 error) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = nil
+	fake.updateIngressStateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeIngressStore) UpdateIngressStateReturnsOnCall(i int, result1 error) {
+	fake.updateIngressStateMutex.Lock()
+	defer fake.updateIngressStateMutex.Unlock()
+	fake.UpdateIngressStateStub = nil
+	if fake.updateIngressStateReturnsOnCall == nil {
+		fake.updateIngressStateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateIngressStateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeIngressStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -488,6 +564,8 @@ func (fake *FakeIngressStore) Invocations() map[string][][]interface{} {
 	defer fake.storeIngressMutex.RUnlock()
 	fake.updateIngressMutex.RLock()
 	defer fake.updateIngressMutex.RUnlock()
+	fake.updateIngressStateMutex.RLock()
+	defer fake.updateIngressStateMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
