@@ -86,6 +86,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		ParticipantIdentity: req.ParticipantIdentity,
 		ParticipantName:     req.ParticipantName,
 		Reusable:            req.InputType == livekit.IngressInput_RTMP_INPUT,
+		State:               &livekit.IngressState{},
 	}
 
 	if err := s.store.StoreIngress(ctx, info); err != nil {
