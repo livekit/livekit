@@ -15,6 +15,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/nack"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -548,7 +549,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 		return
 	}
 
-	b.rtpStats.SetRtcpSenderReportData(rtpTime, NtpTime(ntpTime), time.Now())
+	b.rtpStats.SetRtcpSenderReportData(rtpTime, mediatransportutil.NtpTime(ntpTime), time.Now())
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
