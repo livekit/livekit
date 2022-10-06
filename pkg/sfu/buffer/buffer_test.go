@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/mediatransportutil/pkg/nack"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
@@ -67,7 +68,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}
@@ -126,7 +127,7 @@ func TestNack(t *testing.T) {
 				continue
 			}
 			if i < 14 {
-				time.Sleep(time.Duration(float64(rtt)*math.Pow(backoffFactor, float64(i))+10) * time.Millisecond)
+				time.Sleep(time.Duration(float64(rtt)*math.Pow(nack.BackoffFactor, float64(i))+10) * time.Millisecond)
 			} else {
 				time.Sleep(500 * time.Millisecond) // even a long wait should not exceed max retries
 			}

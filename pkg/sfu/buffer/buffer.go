@@ -15,7 +15,10 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
+	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/mediatransportutil/pkg/nack"
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -44,8 +47,8 @@ type ExtPacket struct {
 // Buffer contains all packets
 type Buffer struct {
 	sync.RWMutex
-	bucket        *Bucket
-	nacker        *NackQueue
+	bucket        *bucket.Bucket
+	nacker        *nack.NackQueue
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
@@ -156,10 +159,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	switch {
 	case strings.HasPrefix(b.mime, "audio/"):
 		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = NewBucket(b.audioPool.Get().(*[]byte))
+		b.bucket = bucket.NewBucket(b.audioPool.Get().(*[]byte))
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = NewBucket(b.videoPool.Get().(*[]byte))
+		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
 	default:
 		b.codecType = webrtc.RTPCodecType(0)
 	}
@@ -196,7 +199,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			}
 		case webrtc.TypeRTCPFBNACK:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = NewNACKQueue()
+			b.nacker = nack.NewNACKQueue()
 		}
 	}
 
@@ -277,10 +280,10 @@ func (b *Buffer) Close() error {
 
 	b.closeOnce.Do(func() {
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeVideo {
-			b.videoPool.Put(b.bucket.src)
+			b.videoPool.Put(b.bucket.Src())
 		}
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeAudio {
-			b.audioPool.Put(b.bucket.src)
+			b.audioPool.Put(b.bucket.Src())
 		}
 
 		b.closed.Store(true)
@@ -546,7 +549,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 		return
 	}
 
-	b.rtpStats.SetRtcpSenderReportData(rtpTime, NtpTime(ntpTime), time.Now())
+	b.rtpStats.SetRtcpSenderReportData(rtpTime, mediatransportutil.NtpTime(ntpTime), time.Now())
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {

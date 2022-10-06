@@ -4,6 +4,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/pion/transport/packetio"
 )
 
@@ -19,13 +20,13 @@ func NewBufferFactory(trackingPackets int) *Factory {
 	return &Factory{
 		videoPool: &sync.Pool{
 			New: func() interface{} {
-				b := make([]byte, trackingPackets*maxPktSize)
+				b := make([]byte, trackingPackets*bucket.MaxPktSize)
 				return &b
 			},
 		},
 		audioPool: &sync.Pool{
 			New: func() interface{} {
-				b := make([]byte, maxPktSize*200)
+				b := make([]byte, bucket.MaxPktSize*200)
 				return &b
 			},
 		},

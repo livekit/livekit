@@ -9,6 +9,7 @@ import (
 	"github.com/pion/rtp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -157,7 +158,7 @@ type RTPStats struct {
 	maxRtt uint32
 
 	rtpSR     uint32
-	ntpSR     NtpTime
+	ntpSR     mediatransportutil.NtpTime
 	arrivalSR int64
 
 	nextSnapshotId uint32
@@ -552,7 +553,7 @@ func (r *RTPStats) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS NtpTime, arrival time.Time) {
+func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS mediatransportutil.NtpTime, arrival time.Time) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -570,7 +571,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	}
 
 	now := time.Now()
-	nowNTP := ToNtpTime(now)
+	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTP := r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
 
 	return &rtcp.SenderReport{
