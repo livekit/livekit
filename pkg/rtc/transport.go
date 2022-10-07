@@ -496,6 +496,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
+		t.logICECandidates()
 		t.handleConnectionFailed()
 	}
 }
@@ -1297,7 +1298,7 @@ func (t *PCTransport) processEvents() {
 	}
 
 	t.clearSignalStateCheckTimer()
-	t.params.Logger.Infow("leaving events processor")
+	t.params.Logger.Debugw("leaving events processor")
 }
 
 func (t *PCTransport) handleEvent(e *event) error {
@@ -1396,7 +1397,7 @@ func (t *PCTransport) handleLocalICECandidate(e *event) error {
 	filtered := false
 	if t.preferTCP.Load() && c != nil && c.Protocol != webrtc.ICEProtocolTCP {
 		cstr := c.String()
-		t.params.Logger.Infow("filtering out local candidate", "candidate", cstr)
+		t.params.Logger.Debugw("filtering out local candidate", "candidate", cstr)
 		t.filteredLocalCandidates = append(t.filteredLocalCandidates, cstr)
 		filtered = true
 	}
@@ -1425,7 +1426,7 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 
 	filtered := false
 	if t.preferTCP.Load() && !strings.Contains(c.Candidate, "tcp") {
-		t.params.Logger.Infow("filtering out remote candidate", "candidate", c.Candidate)
+		t.params.Logger.Debugw("filtering out remote candidate", "candidate", c.Candidate)
 		t.filteredRemoteCandidates = append(t.filteredRemoteCandidates, c.Candidate)
 		filtered = true
 	}
@@ -1443,7 +1444,6 @@ func (t *PCTransport) handleRemoteICECandidate(e *event) error {
 		return nil
 	}
 
-	t.params.Logger.Infow("add candidate ", "candidate", c.Candidate)
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		return errors.Wrap(err, "add ice candidate failed")
 	}
@@ -1584,7 +1584,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	preferTCP := t.preferTCP.Load()
 	if preferTCP {
-		t.params.Logger.Infow("local offer (unfiltered)", "sdp", offer.SDP)
+		t.params.Logger.Debugw("local offer (unfiltered)", "sdp", offer.SDP)
 	}
 
 	err = t.pc.SetLocalDescription(offer)
@@ -1601,7 +1601,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	//
 	offer = t.filterCandidates(offer, preferTCP)
 	if preferTCP {
-		t.params.Logger.Infow("local offer (filtered)", "sdp", offer.SDP)
+		t.params.Logger.Debugw("local offer (filtered)", "sdp", offer.SDP)
 	}
 
 	// indicate waiting for remote
@@ -1655,11 +1655,11 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	// filter before setting remote description so that pion does not see filtered remote candidates
 	preferTCP := t.preferTCP.Load()
 	if preferTCP {
-		t.params.Logger.Infow("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
+		t.params.Logger.Debugw("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
 	}
 	sd = t.filterCandidates(sd, preferTCP)
 	if preferTCP {
-		t.params.Logger.Infow("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
+		t.params.Logger.Debugw("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
 	}
 
 	if err := t.pc.SetRemoteDescription(sd); err != nil {
@@ -1703,7 +1703,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 
 	preferTCP := t.preferTCP.Load()
 	if preferTCP {
-		t.params.Logger.Infow("local answer (unfiltered)", "sdp", answer.SDP)
+		t.params.Logger.Debugw("local answer (unfiltered)", "sdp", answer.SDP)
 	}
 
 	if err = t.pc.SetLocalDescription(answer); err != nil {
@@ -1719,7 +1719,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	//
 	answer = t.filterCandidates(answer, preferTCP)
 	if preferTCP {
-		t.params.Logger.Infow("local answer (filtered)", "sdp", answer.SDP)
+		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
 
 	if onAnswer := t.getOnAnswer(); onAnswer != nil {

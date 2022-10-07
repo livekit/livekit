@@ -289,7 +289,7 @@ func (f *Forwarder) Mute(muted bool) (bool, VideoLayers) {
 		return false, f.maxLayers
 	}
 
-	f.logger.Infow("setting mute", "muted", muted)
+	f.logger.Infow("setting forwarder mute", "muted", muted)
 	f.muted = muted
 
 	// resync when muted so that sequence numbers do not jump on unmute

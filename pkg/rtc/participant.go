@@ -530,7 +530,6 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
-		p.params.Logger.Infow("failed to marshal offer", "error", err)
 		p.params.Logger.Errorw("failed to marshal offer", err)
 		return offer
 	}
@@ -646,7 +645,7 @@ func (p *ParticipantImpl) Start() {
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
-	p.params.Logger.Infow("try close participant", "sendLeave", sendLeave, "reason", reason.String())
+	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String())
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
@@ -755,6 +754,7 @@ func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
 		if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
 			return
 		}
+		// TODO: change to debug once we are confident
 		p.params.Logger.Infow("closing subscriber peer connection to aid migration")
 
 		//
@@ -968,16 +968,20 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
 func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
+	p.lock.Lock()
+	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.lock.Unlock()
+		p.params.Logger.Infow("ignoring add subscribedTrack from older version",
+			"current", v,
+			"requesting", subTrack.PublisherVersion(),
+			"trackID", subTrack.ID(),
+		)
+		return
+	}
 	p.params.Logger.Infow("added subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID())
-	p.lock.Lock()
-	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
-		p.lock.Unlock()
-		p.params.Logger.Infow("ignoring add subscribedTrack from older version", "current", v, "requesting", subTrack.PublisherVersion())
-		return
-	}
 	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
 
 	onSubscribedTo := p.onSubscribedTo
@@ -1011,17 +1015,20 @@ func (p *ParticipantImpl) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
 func (p *ParticipantImpl) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
+	p.lock.Lock()
+	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
+		p.lock.Unlock()
+		p.params.Logger.Infow("ignoring remove subscribedTrack from older version",
+			"current", v,
+			"requesting", subTrack.PublisherVersion(),
+			"trackID", subTrack.ID(),
+		)
+		return
+	}
 	p.params.Logger.Infow("removed subscribedTrack",
 		"publisherID", subTrack.PublisherID(),
 		"publisherIdentity", subTrack.PublisherIdentity(),
 		"trackID", subTrack.ID(), "kind", subTrack.DownTrack().Kind())
-
-	p.lock.Lock()
-	if v, ok := p.trackPublisherVersion[subTrack.ID()]; ok && v > subTrack.PublisherVersion() {
-		p.lock.Unlock()
-		p.params.Logger.Infow("ignoring remove subscribedTrack from older version", "current", v, "requesting", subTrack.PublisherVersion())
-		return
-	}
 	p.trackPublisherVersion[subTrack.ID()] = subTrack.PublisherVersion()
 
 	delete(p.subscribedTracks, subTrack.ID())

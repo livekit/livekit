@@ -352,7 +352,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	}
 
 	if w.downTrackSpreader.HasDownTrack(track.SubscriberID()) {
-		w.logger.Infow("subscriberID already exists, replace the downtrack", "subscriberID", track.SubscriberID())
+		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {

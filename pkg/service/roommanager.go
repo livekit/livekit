@@ -577,7 +577,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 				"subscribe", rm.UpdateSubscriptions.Subscribe)
 		}
 	case *livekit.RTCNodeMessage_SendData:
-		pLogger.Debugw("SendData", "size", len(rm.SendData.Data))
+		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
 		up := &livekit.UserPacket{
 			Payload:         rm.SendData.Data,
 			DestinationSids: rm.SendData.DestinationSids,

@@ -108,7 +108,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		nodeID = livekit.NodeID(node.Id)
 	}
 
-	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeID)
+	logger.Infow("selected node for room", "room", rm.Name, "roomID", rm.Sid, "selectedNodeID", nodeID)
 	err = r.router.SetNodeForRoom(ctx, livekit.RoomName(rm.Name), nodeID)
 	if err != nil {
 		return nil, err
