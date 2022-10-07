@@ -169,7 +169,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Infow("mute status changed", "trackID", trackID, "muted", track.IsMuted())
+			u.params.Logger.Infow("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track, false)
 			}
