@@ -477,8 +477,9 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	//
 	// Checking only `PreferSub` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
-	// flow through here as both transport types are switch on failure.
-	// So, checking just subscriber should be fine.
+	// flow through here.
+	//
+	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
 	//
 	getNext := func(ic types.IceConfig) types.PreferCandidateType {
 		if ic.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
