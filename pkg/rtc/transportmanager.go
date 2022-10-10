@@ -18,6 +18,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	failureCountThreshold = 2
+)
+
 type TransportManagerParams struct {
 	Identity                livekit.ParticipantIdentity
 	SID                     livekit.ParticipantID
@@ -39,8 +43,9 @@ type TransportManagerParams struct {
 type TransportManager struct {
 	params TransportManagerParams
 
-	publisher  *PCTransport
-	subscriber *PCTransport
+	publisher    *PCTransport
+	subscriber   *PCTransport
+	failureCount int
 
 	lock sync.RWMutex
 
@@ -103,6 +108,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 	})
 	t.publisher.OnFailed(func(isShortLived bool) {
+		t.handleConnectionFailed(isShortLived)
 		if t.onAnyTransportFailed != nil {
 			t.onAnyTransportFailed()
 		}
@@ -411,6 +417,10 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 
 func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) {
 	if iceConfig != nil {
+		t.lock.Lock()
+		t.failureCount = 0
+		t.lock.Unlock()
+
 		t.SetICEConfig(*iceConfig)
 	}
 
@@ -457,25 +467,54 @@ func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
 }
 
 func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
-	if !t.params.AllowTCPFallback || !isShortLived {
+	if !t.params.AllowTCPFallback {
 		return
 	}
+
 	t.lock.RLock()
 	iceConfig := t.iceConfig
 	t.lock.RUnlock()
 
+	//
+	// Checking only `PreferSub` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
+	// flow through here.
+	//
+	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
+	//
+	getNext := func(ic types.IceConfig) types.PreferCandidateType {
+		if ic.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
+			return types.PreferTcp
+		} else if ic.PreferSub != types.PreferTls && t.params.TURNSEnabled {
+			return types.PreferTls
+		} else {
+			return types.PreferNone
+		}
+	}
+
 	var preferNext types.PreferCandidateType
-	if iceConfig.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
-		preferNext = types.PreferTcp
-	} else if iceConfig.PreferSub != types.PreferTls && t.params.TURNSEnabled {
-		preferNext = types.PreferTls
+	if isShortLived {
+		preferNext = getNext(iceConfig)
 	} else {
-		preferNext = types.PreferNone
+		t.lock.Lock()
+		t.failureCount++
+		failureCount := t.failureCount
+		t.lock.Unlock()
+
+		if failureCount < failureCountThreshold {
+			return
+		}
+
+		preferNext = getNext(iceConfig)
 	}
 
 	if preferNext == iceConfig.PreferSub {
 		return
 	}
+
+	// reset failed count on transport switch
+	t.lock.Lock()
+	t.failureCount = 0
+	t.lock.Unlock()
 
 	switch preferNext {
 	case types.PreferTcp:
