@@ -26,14 +26,14 @@ func TestRoomInternal(t *testing.T) {
 		Name: "test_room",
 	}
 	internal := &livekit.RoomInternal{
-		TrackEgress: &livekit.AutoTrackEgress{FilePrefix: "egress"},
+		TrackEgress: &livekit.AutoTrackEgress{Filepath: "egress"},
 	}
 
 	require.NoError(t, rs.StoreRoom(ctx, room, internal))
 	actualRoom, actualInternal, err := rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
 	require.NoError(t, err)
 	require.Equal(t, room.Sid, actualRoom.Sid)
-	require.Equal(t, internal.TrackEgress.FilePrefix, actualInternal.TrackEgress.FilePrefix)
+	require.Equal(t, internal.TrackEgress.Filepath, actualInternal.TrackEgress.Filepath)
 
 	// remove internal
 	require.NoError(t, rs.StoreRoom(ctx, room, nil))
