@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	subscriberFailedCountThreshold = 2
+	failureCountThreshold = 2
 )
 
 type TransportManagerParams struct {
@@ -43,8 +43,9 @@ type TransportManagerParams struct {
 type TransportManager struct {
 	params TransportManagerParams
 
-	publisher  *PCTransport
-	subscriber *PCTransport
+	publisher    *PCTransport
+	subscriber   *PCTransport
+	failureCount int
 
 	lock sync.RWMutex
 
@@ -52,7 +53,6 @@ type TransportManager struct {
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
 	iceConfig                    types.IceConfig
-	subscriberFailedCount        int
 
 	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
@@ -108,6 +108,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 	})
 	t.publisher.OnFailed(func(isShortLived bool) {
+		t.handleConnectionFailed(isShortLived)
 		if t.onAnyTransportFailed != nil {
 			t.onAnyTransportFailed()
 		}
@@ -417,7 +418,7 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) {
 	if iceConfig != nil {
 		t.lock.Lock()
-		t.subscriberFailedCount = 0
+		t.failureCount = 0
 		t.lock.Unlock()
 
 		t.SetICEConfig(*iceConfig)
@@ -474,6 +475,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	iceConfig := t.iceConfig
 	t.lock.RUnlock()
 
+	//
+	// Checking only `PreferSub` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
+	// flow through here as both transport types are switch on failure.
+	// So, checking just subscriber should be fine.
+	//
 	getNext := func(ic types.IceConfig) types.PreferCandidateType {
 		if ic.PreferSub == types.PreferNone && t.params.ClientInfo.SupportsICETCP() {
 			return types.PreferTcp
@@ -489,11 +495,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		preferNext = getNext(iceConfig)
 	} else {
 		t.lock.Lock()
-		t.subscriberFailedCount++
-		subscriberFailedCount := t.subscriberFailedCount
+		t.failureCount++
+		failureCount := t.failureCount
 		t.lock.Unlock()
 
-		if subscriberFailedCount < subscriberFailedCountThreshold {
+		if failureCount < failureCountThreshold {
 			return
 		}
 
@@ -506,7 +512,7 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	// reset failed count on transport switch
 	t.lock.Lock()
-	t.subscriberFailedCount = 0
+	t.failureCount = 0
 	t.lock.Unlock()
 
 	switch preferNext {
