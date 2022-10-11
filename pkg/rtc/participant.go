@@ -45,7 +45,7 @@ type pendingTrackInfo struct {
 
 type downTrackState struct {
 	transceiver *webrtc.RTPTransceiver
-	forwarder   sfu.ForwarderState
+	downTrack   sfu.DownTrackState
 }
 
 type SubscribeRequestType int
@@ -1754,7 +1754,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		AudioConfig:         p.params.AudioConfig,
 		VideoConfig:         p.params.VideoConfig,
 		Telemetry:           p.params.Telemetry,
-		Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid)),
+		Logger:              LoggerWithTrack(p.params.Logger, livekit.TrackID(ti.Sid), false),
 		SubscriberConfig:    p.params.Config.Subscriber,
 		PLIThrottleConfig:   p.params.PLIThrottleConfig,
 		SimTracks:           p.params.SimTracks,
@@ -2027,12 +2027,12 @@ func (p *ParticipantImpl) setDowntracksConnected() {
 	}
 }
 
-func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState) {
+func (p *ParticipantImpl) CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrack sfu.DownTrackState) {
 	p.lock.Lock()
 	if existing := p.cachedDownTracks[trackID]; existing != nil && existing.transceiver != rtpTransceiver {
 		p.params.Logger.Infow("cached transceiver changed", "trackID", trackID)
 	}
-	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, forwarder: forwarderState}
+	p.cachedDownTracks[trackID] = &downTrackState{transceiver: rtpTransceiver, downTrack: downTrack}
 	p.lock.Unlock()
 }
 
@@ -2047,16 +2047,16 @@ func (p *ParticipantImpl) UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState) {
+func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
 	dts := p.cachedDownTracks[trackID]
 	if dts != nil {
-		return dts.transceiver, dts.forwarder
+		return dts.transceiver, dts.downTrack
 	}
 
-	return nil, sfu.ForwarderState{}
+	return nil, sfu.DownTrackState{}
 }
 
 func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
@@ -2075,8 +2075,8 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 	p.supervisor.Stop()
 }
 
-func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub types.LocalParticipant) error) {
-	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID)
+func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) {
+	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID, "relayed", isRelayed)
 
 	p.supervisor.UpdateSubscription(trackID, true)
 
@@ -2090,8 +2090,8 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, f func(
 	go p.ProcessSubscriptionRequestsQueue(trackID)
 }
 
-func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
-	p.params.Logger.Debugw("queuing unsubscribe", "trackID", trackID)
+func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRelayed bool, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+	p.params.Logger.Debugw("queuing unsubscribe", "trackID", trackID, "relayed", isRelayed)
 
 	p.supervisor.UpdateSubscription(trackID, false)
 

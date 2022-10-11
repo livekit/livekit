@@ -65,6 +65,7 @@ func (r *simulcastReceiver) Priority() int {
 type MediaTrackReceiverParams struct {
 	TrackInfo           *livekit.TrackInfo
 	MediaTrack          types.MediaTrack
+	IsRelayed           bool
 	ParticipantID       livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	ParticipantVersion  uint32
@@ -108,6 +109,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams) *MediaTrackReceiver 
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
 		MediaTrack:       params.MediaTrack,
+		IsRelayed:        params.IsRelayed,
 		BufferFactory:    params.BufferFactory,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
@@ -429,7 +431,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
 	t.addPendingSubscribeOp(sub.ID())
 
 	trackID := t.ID()
-	sub.EnqueueSubscribeTrack(trackID, t.addSubscriber)
+	sub.EnqueueSubscribeTrack(trackID, t.params.IsRelayed, t.addSubscriber)
 	return nil
 }
 
@@ -499,7 +501,7 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	sub := subTrack.Subscriber()
 	t.addPendingSubscribeOp(sub.ID())
 
-	sub.EnqueueUnsubscribeTrack(subTrack.ID(), willBeResumed, t.removeSubscriber)
+	sub.EnqueueUnsubscribeTrack(subTrack.ID(), t.params.IsRelayed, willBeResumed, t.removeSubscriber)
 }
 
 func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) (err error) {

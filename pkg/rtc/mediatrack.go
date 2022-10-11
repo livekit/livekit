@@ -64,6 +64,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
 		TrackInfo:           params.TrackInfo,
 		MediaTrack:          t,
+		IsRelayed:           false,
 		ParticipantID:       params.ParticipantID,
 		ParticipantIdentity: params.ParticipantIdentity,
 		ParticipantVersion:  params.ParticipantVersion,

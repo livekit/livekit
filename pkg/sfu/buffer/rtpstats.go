@@ -174,6 +174,86 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 	}
 }
 
+func (r *RTPStats) Seed(from *RTPStats) {
+	if from == nil {
+		return
+	}
+
+	r.initialized = from.initialized
+	r.resyncOnNextPacket = from.resyncOnNextPacket
+
+	r.startTime = from.startTime
+	// do not clone endTime as a non-zero endTime indiacates an ended object
+
+	r.extStartSN = from.extStartSN
+	r.highestSN = from.highestSN
+	r.cycles = from.cycles
+
+	r.isRRSeen = from.isRRSeen
+	r.extHighestSNOverridden = from.extHighestSNOverridden
+
+	r.highestTS = from.highestTS
+	r.highestTime = from.highestTime
+
+	r.lastTransit = from.lastTransit
+
+	r.bytes = from.bytes
+	r.headerBytes = from.headerBytes
+	r.bytesDuplicate = from.bytesDuplicate
+	r.headerBytesDuplicate = from.headerBytesDuplicate
+	r.bytesPadding = from.bytesPadding
+	r.headerBytesPadding = from.headerBytesPadding
+	r.packetsDuplicate = from.packetsDuplicate
+	r.packetsPadding = from.packetsPadding
+
+	r.packetsOutOfOrder = from.packetsOutOfOrder
+
+	r.packetsLost = from.packetsLost
+	r.packetsLostOverridden = from.packetsLostOverridden
+
+	r.frames = from.frames
+
+	r.jitter = from.jitter
+	r.maxJitter = from.maxJitter
+	r.jitterOverridden = from.jitterOverridden
+	r.maxJitterOverridden = from.maxJitterOverridden
+
+	for idx := range from.snInfos {
+		r.snInfos[idx] = from.snInfos[idx]
+	}
+	r.snInfoWritePtr = from.snInfoWritePtr
+
+	for idx := range from.gapHistogram {
+		r.gapHistogram[idx] = from.gapHistogram[idx]
+	}
+
+	r.nacks = from.nacks
+	r.nackAcks = from.nackAcks
+	r.nackMisses = from.nackMisses
+	r.nackRepeated = from.nackRepeated
+
+	r.plis = from.plis
+	r.lastPli = from.lastPli
+
+	r.layerLockPlis = from.layerLockPlis
+	r.lastLayerLockPli = from.lastLayerLockPli
+
+	r.firs = from.firs
+	r.lastFir = from.lastFir
+
+	r.keyFrames = from.keyFrames
+	r.lastKeyFrame = from.lastKeyFrame
+
+	r.rtt = from.rtt
+	r.maxRtt = from.maxRtt
+
+	r.rtpSR = from.rtpSR
+	r.ntpSR = from.ntpSR
+	r.arrivalSR = from.arrivalSR
+
+	// snapshots are not cloned and should be recreated
+}
+
 func (r *RTPStats) SetLogger(logger logger.Logger) {
 	r.logger = logger
 }
