@@ -218,14 +218,10 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.jitterOverridden = from.jitterOverridden
 	r.maxJitterOverridden = from.maxJitterOverridden
 
-	for idx := range from.snInfos {
-		r.snInfos[idx] = from.snInfos[idx]
-	}
+	r.snInfos = from.snInfos
 	r.snInfoWritePtr = from.snInfoWritePtr
 
-	for idx := range from.gapHistogram {
-		r.gapHistogram[idx] = from.gapHistogram[idx]
-	}
+	r.gapHistogram = from.gapHistogram
 
 	r.nacks = from.nacks
 	r.nackAcks = from.nackAcks
