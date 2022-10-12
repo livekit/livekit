@@ -3,6 +3,7 @@ package sfu
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -98,6 +99,20 @@ var (
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
 )
+
+// -------------------------------------------------------------------
+
+type DownTrackState struct {
+	RTPStats       *buffer.RTPStats
+	ForwarderState ForwarderState
+}
+
+func (d DownTrackState) String() string {
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, forwarder: %s}",
+		d.RTPStats.ToString(), d.ForwarderState.String())
+}
+
+// -------------------------------------------------------------------
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
@@ -744,12 +759,16 @@ func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
 }
 
-func (d *DownTrack) GetForwarderState() ForwarderState {
-	return d.forwarder.GetState()
+func (d *DownTrack) GetState() DownTrackState {
+	return DownTrackState{
+		RTPStats:       d.rtpStats,
+		ForwarderState: d.forwarder.GetState(),
+	}
 }
 
-func (d *DownTrack) SeedForwarderState(state ForwarderState) {
-	d.forwarder.SeedState(state)
+func (d *DownTrack) SeedState(state DownTrackState) {
+	d.rtpStats.Seed(state.RTPStats)
+	d.forwarder.SeedState(state.ForwarderState)
 }
 
 func (d *DownTrack) GetForwardingStatus() ForwardingStatus {

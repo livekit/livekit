@@ -152,10 +152,11 @@ func LoggerWithRoom(l logger.Logger, name livekit.RoomName, roomID livekit.RoomI
 	return logger.Logger(lr)
 }
 
-func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID) logger.Logger {
+func LoggerWithTrack(l logger.Logger, trackID livekit.TrackID, isRelayed bool) logger.Logger {
 	lr := logr.Logger(l)
 	if trackID != "" {
 		lr = lr.WithValues("trackID", trackID)
+		lr = lr.WithValues("relayed", isRelayed)
 	}
 	return logger.Logger(lr)
 }

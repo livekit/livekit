@@ -308,12 +308,12 @@ type LocalParticipant interface {
 
 	UpdateRTT(rtt uint32)
 
-	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
+	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrackState sfu.DownTrackState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
-	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
+	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
-	EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub LocalParticipant) error)
-	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error)
+	EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRelayed bool, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 

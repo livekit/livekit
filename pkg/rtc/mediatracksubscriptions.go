@@ -37,6 +37,7 @@ type MediaTrackSubscriptions struct {
 
 type MediaTrackSubscriptionsParams struct {
 	MediaTrack types.MediaTrack
+	IsRelayed  bool
 
 	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
@@ -111,7 +112,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		t.params.BufferFactory,
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
-		LoggerWithTrack(sub.GetLogger(), trackID),
+		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {
 		return err
@@ -133,11 +134,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
-	var forwarderState sfu.ForwarderState
+	var dtState sfu.DownTrackState
 	downTrack.OnBind(func() {
 		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
-			downTrack.SeedForwarderState(forwarderState)
+			downTrack.SeedState(dtState)
 		}
 		if err = wr.AddDownTrack(downTrack); err != nil {
 			sub.GetLogger().Errorw(
@@ -173,7 +174,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// try cached RTP senders for a chance to replace track
 	var existingTransceiver *webrtc.RTPTransceiver
 	replacedTrack := false
-	existingTransceiver, forwarderState = sub.GetCachedDownTrack(trackID)
+	existingTransceiver, dtState = sub.GetCachedDownTrack(trackID)
 	if existingTransceiver != nil {
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
@@ -286,7 +287,7 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 		tr := dt.GetTransceiver()
 		if tr != nil {
 			sub := subTrack.Subscriber()
-			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetForwarderState())
+			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
 	}
 }

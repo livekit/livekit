@@ -176,6 +176,11 @@ type ForwarderState struct {
 	VP8        VP8MungerState
 }
 
+func (f ForwarderState) String() string {
+	return fmt.Sprintf("ForwarderState{lTSCalc: %d, rtp: %s, vp8: %s}",
+		f.LastTSCalc, f.RTP.String(), f.VP8.String())
+}
+
 // -------------------------------------------------------------------
 
 type Forwarder struct {
