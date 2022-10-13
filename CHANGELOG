@@ -2,6 +2,26 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2022-10-13
+### Added
+- Ability to filter IP addresses from being used #1052
+- AutoEgress templates during room creation
+- Allow TCP  fallback on multiple connection failures #1077
+
+### Fixed
+- Fixed stream allocator with SVC codecs #1053
+- Fixed UDPMux connectivity issues when machine has multiple interfaces #1081
+- Ensure sender reports are in sync after transceiver is re-used #1080
+- Fixed simulcast codec blocking track closure #1082
+
+### Changed
+- Config validation has been enabled. Server will not start if there are invalid config values #1051
+- Improves NACK stats to count as a miss only if i t's not EOF #1061
+- Store track MIME type during publishing #1065
+- Minor cleanup of media track & friends module #1067
+- Split out shared media transport code into livekit/mediatransportutil #1071
+- Cleaned up logging, improved consistency of debug vs info #1073
+
 ## [1.2.3] - 2022-09-13
 ### Added
 - Supervisor framework to improve edge case & error handling #1005 #1006 #1010 #1017
