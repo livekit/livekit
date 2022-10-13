@@ -304,9 +304,11 @@ func (t *MediaTrackReceiver) TryClose() bool {
 		return true
 	}
 
-	if len(t.receiversShadow) > 0 {
-		t.lock.RUnlock()
-		return false
+	for _, receiver := range t.receiversShadow {
+		if dr, _ := receiver.TrackReceiver.(*DummyReceiver); dr != nil && dr.Receiver() != nil {
+			t.lock.RUnlock()
+			return false
+		}
 	}
 	t.lock.RUnlock()
 	t.Close()
@@ -482,7 +484,8 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 		streamId = PackStreamID(t.PublisherID(), t.ID())
 	}
 
-	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs))
+	tLogger := LoggerWithTrack(sub.GetLogger(), t.ID(), t.params.IsRelayed)
+	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs, tLogger))
 	if err != nil {
 		return
 	}
