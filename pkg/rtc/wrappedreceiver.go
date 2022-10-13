@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 )
@@ -22,9 +23,11 @@ type WrappedReceiver struct {
 	streamId        string
 	codecs          []webrtc.RTPCodecParameters
 	determinedCodec webrtc.RTPCodecCapability
+
+	logger logger.Logger
 }
 
-func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID, streamId string, upstreamCodecs []webrtc.RTPCodecParameters) *WrappedReceiver {
+func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID, streamId string, upstreamCodecs []webrtc.RTPCodecParameters, logger logger.Logger) *WrappedReceiver {
 	sfuReceivers := make([]sfu.TrackReceiver, 0, len(receivers))
 	for _, r := range receivers {
 		sfuReceivers = append(sfuReceivers, r.TrackReceiver)
@@ -44,6 +47,7 @@ func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID,
 		trackID:   trackID,
 		streamId:  streamId,
 		codecs:    codecs,
+		logger:    logger,
 	}
 }
 
@@ -65,6 +69,12 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 			// audio opus/red can match opus only
 			r.TrackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
+		}
+	}
+	if r.TrackReceiver == nil {
+		r.logger.Errorw("can't determine receiver for codec", nil, "codec", codec.MimeType)
+		if len(r.receivers) > 0 {
+			r.TrackReceiver = r.receivers[0]
 		}
 	}
 }
