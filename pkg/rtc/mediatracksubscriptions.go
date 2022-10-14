@@ -203,18 +203,22 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
+		info := t.params.MediaTrack.ToProto()
+		addTrackParams := types.AddTrackParams{
+			Stereo: info.Stereo,
+		}
 		if sub.ProtocolVersion().SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating
 			// because of dormant transceivers building up.
 			//
-			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack)
+			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
 				return err
 			}
 		} else {
-			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack)
+			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
 				return err
 			}

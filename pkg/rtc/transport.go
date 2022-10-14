@@ -167,7 +167,6 @@ type PCTransport struct {
 	onAnswer                  func(answer webrtc.SessionDescription) error
 	onInitialConnected        func()
 	onFailed                  func(isShortLived bool)
-	onGetDTX                  func() bool
 	onNegotiationStateChanged func(state NegotiationState)
 	onNegotiationFailed       func()
 
@@ -557,7 +556,7 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
 	})
 }
 
-func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	t.lock.Lock()
 	canReuse := t.canReuseTransceiver
 	td, ok := t.previousTrackDescription[trackLocal.ID()]
@@ -577,7 +576,7 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTP
 
 	// if never negotiated with client, can't reuse transeiver for track not subscribed before migration
 	if !canReuse {
-		return t.AddTransceiverFromTrack(trackLocal)
+		return t.AddTransceiverFromTrack(trackLocal, params)
 	}
 
 	sender, err = t.pc.AddTrack(trackLocal)
@@ -598,10 +597,12 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTP
 		return
 	}
 
+	configureTransceiverStereo(transceiver, params.Stereo)
+
 	return
 }
 
-func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	transceiver, err = t.pc.AddTransceiverFromTrack(trackLocal)
 	if err != nil {
 		return
@@ -612,6 +613,8 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal) (sen
 		err = ErrNoSender
 		return
 	}
+
+	configureTransceiverStereo(transceiver, params.Stereo)
 
 	return
 }
@@ -820,19 +823,6 @@ func (t *PCTransport) getOnFailed() func(isShortLived bool) {
 	return t.onFailed
 }
 
-func (t *PCTransport) OnGetDTX(f func() bool) {
-	t.lock.Lock()
-	t.onGetDTX = f
-	t.lock.Unlock()
-}
-
-func (t *PCTransport) getOnGetDTX() func() bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return t.onGetDTX
-}
-
 func (t *PCTransport) OnTrack(f func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)) {
 	t.pc.OnTrack(f)
 }
@@ -930,98 +920,6 @@ func (t *PCTransport) Negotiate(force bool) {
 			t.debouncePending = true
 		}
 		t.lock.Unlock()
-	}
-}
-
-func (t *PCTransport) configureReceiverDTXAndStereo(enableDTX bool) {
-	//
-	// DTX (Discontinuous Transmission) allows audio bandwidth saving
-	// by not sending packets during silence periods.
-	//
-	// Publisher side DTX can enabled by including `usedtx=1` in
-	// the `fmtp` line corresponding to audio codec (Opus) in SDP.
-	// By doing this in the SDP `answer`, it can be controlled from
-	// server side and avoid doing it in all the client SDKs.
-	//
-	// Ideally, a publisher should be able to specify per audio
-	// track if DTX should be enabled. But, translating the
-	// DTX preference of publisher to the correct transceiver
-	// is non-deterministic due to the lack of a synchronizing id
-	// like the track id.
-	//
-	// The codec preference to set DTX needs to be done
-	//   - after calling `SetRemoteDescription` which sets up
-	//     the transceivers, but only if there are no tracks in the
-	//     transceiver yet
-	//   - before calling `CreateAnswer`
-	// Due to the absence of tracks when it is required to set DTX,
-	// it is not possible to cross reference against a pending track
-	// with the same track id.
-	//
-	// Due to the restriction above and given that in practice
-	// most of the time there is going to be only one audio track
-	// that is published, do the following
-	//    - if there is no pending audio track, no-op
-	//    - if there are no audio transceivers without tracks, no-op
-	//    - else, apply the DTX setting from pending audio track
-	//      to the audio transceiver without any track
-	//
-	// NOTE: The above logic will fail if there is an `offer` SDP with
-	// multiple audio tracks. At that point, there might be a need to
-	// rely on something like order of tracks. TODO
-	//
-	transceivers := t.pc.GetTransceivers()
-	for _, transceiver := range transceivers {
-		if transceiver.Kind() != webrtc.RTPCodecTypeAudio {
-			continue
-		}
-
-		receiver := transceiver.Receiver()
-		if receiver == nil || receiver.Track() != nil {
-			continue
-		}
-
-		var modifiedReceiverCodecs []webrtc.RTPCodecParameters
-
-		receiverCodecs := receiver.GetParameters().Codecs
-		for _, receiverCodec := range receiverCodecs {
-			if receiverCodec.MimeType == webrtc.MimeTypeOpus {
-				fmtpUseDTX := "usedtx=1"
-				// remove occurrence in the middle
-				sdpFmtpLine := strings.ReplaceAll(receiverCodec.SDPFmtpLine, fmtpUseDTX+";", "")
-				// remove occurrence at the end
-				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpUseDTX, "")
-				if enableDTX {
-					sdpFmtpLine += ";" + fmtpUseDTX
-				}
-
-				fmtpStereo := "stereo=1"
-				// remove occurrence in the middle
-				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpStereo+";", "")
-				// remove occurrence at the end
-				sdpFmtpLine = strings.ReplaceAll(sdpFmtpLine, fmtpStereo, "")
-				sdpFmtpLine += ";" + fmtpStereo
-
-				receiverCodec.SDPFmtpLine = sdpFmtpLine
-			}
-			modifiedReceiverCodecs = append(modifiedReceiverCodecs, receiverCodec)
-		}
-
-		//
-		// As `SetCodecPreferences` on a transceiver replaces all codecs,
-		// cycle through sender codecs also and add them before calling
-		// `SetCodecPreferences`
-		//
-		var senderCodecs []webrtc.RTPCodecParameters
-		sender := transceiver.Sender()
-		if sender != nil {
-			senderCodecs = sender.GetParameters().Codecs
-		}
-
-		err := transceiver.SetCodecPreferences(append(modifiedReceiverCodecs, senderCodecs...))
-		if err != nil {
-			t.params.Logger.Warnw("failed to SetCodecPreferences", err)
-		}
 	}
 }
 
@@ -1689,12 +1587,6 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 }
 
 func (t *PCTransport) createAndSendAnswer() error {
-	enableDTX := false
-	if onGetDTX := t.getOnGetDTX(); onGetDTX != nil {
-		enableDTX = onGetDTX()
-	}
-	t.configureReceiverDTXAndStereo(enableDTX)
-
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
@@ -1835,4 +1727,26 @@ func (t *PCTransport) doICERestart() error {
 
 func (t *PCTransport) handleICERestart(e *event) error {
 	return t.doICERestart()
+}
+
+// configure subscriber tranceiver for audio stereo
+func configureTransceiverStereo(tr *webrtc.RTPTransceiver, stereo bool) {
+	sender := tr.Sender()
+	if sender == nil {
+		return
+	}
+	// enable stereo
+	codecs := sender.GetParameters().Codecs
+	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
+	for _, c := range codecs {
+		if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
+			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
+			if stereo {
+				c.SDPFmtpLine += ";sprop-stereo=1"
+			}
+		}
+		configCodecs = append(configCodecs, c)
+	}
+
+	tr.SetCodecPreferences(configCodecs)
 }

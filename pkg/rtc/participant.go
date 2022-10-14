@@ -412,136 +412,9 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 	p.TransportManager.HandleOffer(offer, shouldPend)
 }
 
-func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	offer = p.setCodecPreferencesOpusRedForPublisher(offer)
-	offer = p.setCodecPreferencesVideoForPublisher(offer)
-	return offer
-}
-
-func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, lastAudio, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "audio")
-	if err != nil || lastAudio == nil {
-		return offer
-	}
-
-	codecs, err := codecsFromMediaDescription(lastAudio)
-	if err != nil {
-		return offer
-	}
-
-	var opusPayload uint8
-	for _, codec := range codecs {
-		if strings.EqualFold(codec.Name, "opus") {
-			opusPayload = codec.PayloadType
-			break
-		}
-	}
-	if opusPayload == 0 {
-		return offer
-	}
-
-	var preferredCodecs, leftCodecs []string
-	for _, codec := range codecs {
-		// codec contain opus/red
-		if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
-			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
-		} else {
-			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
-		}
-	}
-
-	// no opus/red found
-	if len(preferredCodecs) == 0 {
-		return offer
-	}
-
-	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats[:0], preferredCodecs...)
-	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats, leftCodecs...)
-
-	bytes, err := parsed.Marshal()
-	if err != nil {
-		p.params.Logger.Errorw("failed to marshal offer", err)
-		return offer
-	}
-
-	return webrtc.SessionDescription{
-		Type: offer.Type,
-		SDP:  string(bytes),
-	}
-}
-
-func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, lastVideo, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "video")
-	if err != nil || lastVideo == nil {
-		return offer
-	}
-	// last video is pending for publish, set codec preference
-	var streamID string
-	msid, ok := lastVideo.Attribute(sdp.AttrKeyMsid)
-	if !ok {
-		return offer
-	}
-	ids := strings.Split(msid, " ")
-	if len(ids) < 2 {
-		streamID = msid
-	} else {
-		streamID = ids[1]
-	}
-
-	p.pendingTracksLock.RLock()
-	_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
-	if info == nil {
-		p.pendingTracksLock.RUnlock()
-		return offer
-	}
-	var mime string
-	for _, c := range info.Codecs {
-		if c.Cid == streamID {
-			mime = c.MimeType
-			break
-		}
-	}
-	if mime == "" && len(info.Codecs) > 0 {
-		mime = info.Codecs[0].MimeType
-	}
-	p.pendingTracksLock.RUnlock()
-
-	if mime == "" {
-		return offer
-	}
-
-	codecs, err := codecsFromMediaDescription(lastVideo)
-	if err != nil {
-		return offer
-	}
-
-	mime = strings.ToUpper(mime)
-	var preferredCodecs, leftCodecs []string
-	for _, c := range codecs {
-		if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
-			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-		} else {
-			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-		}
-	}
-
-	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats[:0], preferredCodecs...)
-	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats, leftCodecs...)
-
-	bytes, err := parsed.Marshal()
-	if err != nil {
-		p.params.Logger.Errorw("failed to marshal offer", err)
-		return offer
-	}
-
-	return webrtc.SessionDescription{
-		Type: offer.Type,
-		SDP:  string(bytes),
-	}
-}
-
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
 	p.params.Logger.Infow("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
+	answer = p.configurePublisherAnswer(answer)
 	if err := p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: ToProtoSessionDescription(answer),
@@ -1166,7 +1039,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	tm.OnPublisherICECandidate(func(c *webrtc.ICECandidate) error {
 		return p.onICECandidate(c, livekit.SignalTarget_PUBLISHER)
 	})
-	tm.OnPublisherGetDTX(p.onPublisherGetDTX)
 	tm.OnPublisherAnswer(p.onPublisherAnswer)
 	tm.OnPublisherTrack(p.onMediaTrack)
 	tm.OnPublisherInitialConnected(p.onPublisherInitialConnected)
@@ -1548,6 +1420,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		DisableDtx: req.DisableDtx,
 		Source:     req.Source,
 		Layers:     req.Layers,
+		DisableRed: req.DisableRed,
+		Stereo:     req.Stereo,
 	}
 	p.setStableTrackID(req.Cid, ti)
 	for _, codec := range req.SimulcastCodecs {
@@ -1638,30 +1512,6 @@ func (p *ParticipantImpl) getPublisherConnectionQuality() map[livekit.TrackID]fl
 	}
 
 	return scores
-}
-
-func (p *ParticipantImpl) onPublisherGetDTX() bool {
-	p.pendingTracksLock.RLock()
-	defer p.pendingTracksLock.RUnlock()
-
-	//
-	// Although DTX is set per track, there are cases where
-	// pending track has to be looked up by kind. This happens
-	// when clients change track id between signalling and SDP.
-	// In that case, look at all pending tracks by kind and
-	// enable DTX even if one has it enabled.
-	//
-	// Most of the time in practice, there is going to be one
-	// audio kind track and hence this is fine.
-	//
-	for _, pti := range p.pendingTracks {
-		ti := pti.trackInfos[0]
-		if ti != nil && ti.Type == livekit.TrackType_AUDIO {
-			return !ti.DisableDtx
-		}
-	}
-
-	return false
 }
 
 func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {

@@ -52,6 +52,7 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
+	lastPublisherOffer           atomic.Value
 	iceConfig                    types.IceConfig
 
 	onPublisherInitialConnected        func()
@@ -172,10 +173,6 @@ func (t *TransportManager) OnPublisherICECandidate(f func(c *webrtc.ICECandidate
 	t.publisher.OnICECandidate(f)
 }
 
-func (t *TransportManager) OnPublisherGetDTX(f func() bool) {
-	t.publisher.OnGetDTX(f)
-}
-
 func (t *TransportManager) OnPublisherAnswer(f func(answer webrtc.SessionDescription) error) {
 	t.publisher.OnAnswer(func(sd webrtc.SessionDescription) error {
 		t.lastPublisherAnswer.Store(sd)
@@ -227,12 +224,12 @@ func (t *TransportManager) HasSubscriberEverConnected() bool {
 	return t.subscriber.HasEverConnected()
 }
 
-func (t *TransportManager) AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	return t.subscriber.AddTrack(trackLocal)
+func (t *TransportManager) AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	return t.subscriber.AddTrack(trackLocal, params)
 }
 
-func (t *TransportManager) AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	return t.subscriber.AddTransceiverFromTrack(trackLocal)
+func (t *TransportManager) AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	return t.subscriber.AddTransceiverFromTrack(trackLocal, params)
 }
 
 func (t *TransportManager) RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error {
@@ -368,6 +365,13 @@ func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDes
 	return
 }
 
+func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
+	if sd := t.lastPublisherOffer.Load(); sd != nil {
+		return sd.(webrtc.SessionDescription)
+	}
+	return webrtc.SessionDescription{}
+}
+
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) {
 	t.lock.Lock()
 	if shouldPend {
@@ -376,6 +380,7 @@ func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPe
 		return
 	}
 	t.lock.Unlock()
+	t.lastPublisherOffer.Store(offer)
 
 	t.publisher.HandleRemoteDescription(offer)
 }
