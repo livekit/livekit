@@ -99,7 +99,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle("/rtc", rtcService)
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
-	mux.HandleFunc("/", s.healthCheck)
+	mux.HandleFunc("/", s.defaultHandler)
 
 	s.httpServer = &http.Server{
 		Handler: configureMiddlewares(mux, middlewares...),
@@ -299,6 +299,14 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(err.Error()))
 	} else {
 		_, _ = w.Write(b)
+	}
+}
+
+func (s *LivekitServer) defaultHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		s.healthCheck(w, r)
+	} else {
+		http.NotFound(w, r)
 	}
 }
 
