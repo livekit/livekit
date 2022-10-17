@@ -51,12 +51,8 @@ func NewRoomService(
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (rm *livekit.Room, err error) {
 	if err = EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
-	} else if req.Egress != nil {
-		if s.egressLauncher == nil {
-			return nil, ErrEgressNotConnected
-		} else if err = EnsureRecordPermission(ctx); err != nil {
-			return nil, twirpAuthError(err)
-		}
+	} else if req.Egress != nil && s.egressLauncher == nil {
+		return nil, ErrEgressNotConnected
 	}
 
 	rm, err = s.roomAllocator.CreateRoom(ctx, req)
