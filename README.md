@@ -153,6 +153,7 @@ enabling you to build automations that behave like end-users.
 | Go                      | [server-sdk-go](https://github.com/livekit/server-sdk-go)                                           | [docs](https://pkg.go.dev/github.com/livekit/server-sdk-go) |
 | JavaScript (TypeScript) | [server-sdk-js](https://github.com/livekit/server-sdk-js)                                           | [docs](https://docs.livekit.io/server-sdk-js/)              |
 | Ruby                    | [server-sdk-ruby](https://github.com/livekit/server-sdk-ruby)                                       |                                                             |
+| Java (Kotlin)           | [server-sdk-kotlin](https://github.com/livekit/server-sdk-kotlin)                                   |                                                             |
 | Python (community)      | [tradablebits/livekit-server-sdk-python](https://github.com/tradablebits/livekit-server-sdk-python) |                                                             |
 | PHP (community)         | [agence104/livekit-server-sdk-php](https://github.com/agence104/livekit-server-sdk-php)             |                                                             |
 
