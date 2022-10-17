@@ -45,10 +45,11 @@ type FakeLocalParticipant struct {
 	addTrackArgsForCall []struct {
 		arg1 *livekit.AddTrackRequest
 	}
-	AddTrackToSubscriberStub        func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTrackToSubscriberStub        func(webrtc.TrackLocal, types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	addTrackToSubscriberMutex       sync.RWMutex
 	addTrackToSubscriberArgsForCall []struct {
 		arg1 webrtc.TrackLocal
+		arg2 types.AddTrackParams
 	}
 	addTrackToSubscriberReturns struct {
 		result1 *webrtc.RTPSender
@@ -60,10 +61,11 @@ type FakeLocalParticipant struct {
 		result2 *webrtc.RTPTransceiver
 		result3 error
 	}
-	AddTransceiverFromTrackToSubscriberStub        func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTransceiverFromTrackToSubscriberStub        func(webrtc.TrackLocal, types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	addTransceiverFromTrackToSubscriberMutex       sync.RWMutex
 	addTransceiverFromTrackToSubscriberArgsForCall []struct {
 		arg1 webrtc.TrackLocal
+		arg2 types.AddTrackParams
 	}
 	addTransceiverFromTrackToSubscriberReturns struct {
 		result1 *webrtc.RTPSender
@@ -912,18 +914,19 @@ func (fake *FakeLocalParticipant) AddTrackArgsForCall(i int) *livekit.AddTrackRe
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) AddTrackToSubscriber(arg1 webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+func (fake *FakeLocalParticipant) AddTrackToSubscriber(arg1 webrtc.TrackLocal, arg2 types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
 	fake.addTrackToSubscriberMutex.Lock()
 	ret, specificReturn := fake.addTrackToSubscriberReturnsOnCall[len(fake.addTrackToSubscriberArgsForCall)]
 	fake.addTrackToSubscriberArgsForCall = append(fake.addTrackToSubscriberArgsForCall, struct {
 		arg1 webrtc.TrackLocal
-	}{arg1})
+		arg2 types.AddTrackParams
+	}{arg1, arg2})
 	stub := fake.AddTrackToSubscriberStub
 	fakeReturns := fake.addTrackToSubscriberReturns
-	fake.recordInvocation("AddTrackToSubscriber", []interface{}{arg1})
+	fake.recordInvocation("AddTrackToSubscriber", []interface{}{arg1, arg2})
 	fake.addTrackToSubscriberMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2, ret.result3
@@ -937,17 +940,17 @@ func (fake *FakeLocalParticipant) AddTrackToSubscriberCallCount() int {
 	return len(fake.addTrackToSubscriberArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) AddTrackToSubscriberCalls(stub func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
+func (fake *FakeLocalParticipant) AddTrackToSubscriberCalls(stub func(webrtc.TrackLocal, types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
 	fake.addTrackToSubscriberMutex.Lock()
 	defer fake.addTrackToSubscriberMutex.Unlock()
 	fake.AddTrackToSubscriberStub = stub
 }
 
-func (fake *FakeLocalParticipant) AddTrackToSubscriberArgsForCall(i int) webrtc.TrackLocal {
+func (fake *FakeLocalParticipant) AddTrackToSubscriberArgsForCall(i int) (webrtc.TrackLocal, types.AddTrackParams) {
 	fake.addTrackToSubscriberMutex.RLock()
 	defer fake.addTrackToSubscriberMutex.RUnlock()
 	argsForCall := fake.addTrackToSubscriberArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) AddTrackToSubscriberReturns(result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
@@ -979,18 +982,19 @@ func (fake *FakeLocalParticipant) AddTrackToSubscriberReturnsOnCall(i int, resul
 	}{result1, result2, result3}
 }
 
-func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriber(arg1 webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriber(arg1 webrtc.TrackLocal, arg2 types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
 	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
 	ret, specificReturn := fake.addTransceiverFromTrackToSubscriberReturnsOnCall[len(fake.addTransceiverFromTrackToSubscriberArgsForCall)]
 	fake.addTransceiverFromTrackToSubscriberArgsForCall = append(fake.addTransceiverFromTrackToSubscriberArgsForCall, struct {
 		arg1 webrtc.TrackLocal
-	}{arg1})
+		arg2 types.AddTrackParams
+	}{arg1, arg2})
 	stub := fake.AddTransceiverFromTrackToSubscriberStub
 	fakeReturns := fake.addTransceiverFromTrackToSubscriberReturns
-	fake.recordInvocation("AddTransceiverFromTrackToSubscriber", []interface{}{arg1})
+	fake.recordInvocation("AddTransceiverFromTrackToSubscriber", []interface{}{arg1, arg2})
 	fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2, ret.result3
@@ -1004,17 +1008,17 @@ func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberCallCount()
 	return len(fake.addTransceiverFromTrackToSubscriberArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberCalls(stub func(webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberCalls(stub func(webrtc.TrackLocal, types.AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)) {
 	fake.addTransceiverFromTrackToSubscriberMutex.Lock()
 	defer fake.addTransceiverFromTrackToSubscriberMutex.Unlock()
 	fake.AddTransceiverFromTrackToSubscriberStub = stub
 }
 
-func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberArgsForCall(i int) webrtc.TrackLocal {
+func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberArgsForCall(i int) (webrtc.TrackLocal, types.AddTrackParams) {
 	fake.addTransceiverFromTrackToSubscriberMutex.RLock()
 	defer fake.addTransceiverFromTrackToSubscriberMutex.RUnlock()
 	argsForCall := fake.addTransceiverFromTrackToSubscriberArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) AddTransceiverFromTrackToSubscriberReturns(result1 *webrtc.RTPSender, result2 *webrtc.RTPTransceiver, result3 error) {
