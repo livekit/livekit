@@ -555,6 +555,9 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 				pLogger.Errorw("could not update permissions", err)
 			}
 		}
+		if rm.UpdateParticipant.Name != "" {
+			participant.SetName(rm.UpdateParticipant.Name)
+		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("deleting room")
 		for _, p := range room.GetParticipants() {

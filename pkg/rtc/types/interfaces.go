@@ -171,6 +171,7 @@ type Participant interface {
 
 	ToProto() *livekit.ParticipantInfo
 
+	SetName(name string)
 	SetMetadata(metadata string)
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
