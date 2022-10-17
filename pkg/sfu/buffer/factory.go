@@ -4,8 +4,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/pion/transport/packetio"
+
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 )
 
 type Factory struct {

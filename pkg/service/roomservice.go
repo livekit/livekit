@@ -90,7 +90,7 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 	}
 	rooms, err := s.roomStore.ListRooms(ctx, names)
 	if err != nil {
-		// TODO: translate error codes to twirp
+		// TODO: translate error codes to Twirp
 		return
 	}
 

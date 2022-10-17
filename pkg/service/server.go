@@ -83,9 +83,10 @@ func NewLivekitServer(conf *config.Config,
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
-	roomServer := livekit.NewRoomServiceServer(roomService)
-	egressServer := livekit.NewEgressServer(egressService)
-	ingressServer := livekit.NewIngressServer(ingressService)
+	twirpLoggingHook := TwirpLogger(logger.GetDefaultLogger())
+	roomServer := livekit.NewRoomServiceServer(roomService, twirpLoggingHook)
+	egressServer := livekit.NewEgressServer(egressService, twirpLoggingHook)
+	ingressServer := livekit.NewIngressServer(ingressService, twirpLoggingHook)
 
 	mux := http.NewServeMux()
 	if conf.Development {
