@@ -43,11 +43,12 @@ type TransportManagerParams struct {
 type TransportManager struct {
 	params TransportManagerParams
 
-	publisher    *PCTransport
-	subscriber   *PCTransport
-	failureCount int
-
 	lock sync.RWMutex
+
+	publisher               *PCTransport
+	subscriber              *PCTransport
+	failureCount            int
+	isTransportReconfigured bool
 
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
@@ -422,10 +423,6 @@ func (t *TransportManager) NegotiateSubscriber(force bool) {
 
 func (t *TransportManager) ICERestart(iceConfig *types.IceConfig) {
 	if iceConfig != nil {
-		t.lock.Lock()
-		t.failureCount = 0
-		t.lock.Unlock()
-
 		t.SetICEConfig(*iceConfig)
 	}
 
@@ -439,15 +436,25 @@ func (t *TransportManager) OnICEConfigChanged(f func(iceConfig types.IceConfig))
 }
 
 func (t *TransportManager) SetICEConfig(iceConfig types.IceConfig) {
+	t.configureICE(iceConfig, true)
+}
+
+func (t *TransportManager) configureICE(iceConfig types.IceConfig, reset bool) {
+	t.lock.Lock()
+	if t.iceConfig == iceConfig {
+		t.lock.Unlock()
+		return
+	}
+
 	t.params.Logger.Infow("setting ICE config", "iceConfig", iceConfig)
+	onICEConfigChanged := t.onICEConfigChanged
+	t.iceConfig = iceConfig
+	t.failureCount = 0
+	t.isTransportReconfigured = !reset
+	t.lock.Unlock()
 
 	t.publisher.SetPreferTCP(iceConfig.PreferPub == types.PreferTcp)
 	t.subscriber.SetPreferTCP(iceConfig.PreferSub == types.PreferTcp)
-
-	t.lock.Lock()
-	onICEConfigChanged := t.onICEConfigChanged
-	t.iceConfig = iceConfig
-	t.lock.Unlock()
 
 	if onICEConfigChanged != nil {
 		onICEConfigChanged(iceConfig)
@@ -476,9 +483,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
-	t.lock.RLock()
-	iceConfig := t.iceConfig
-	t.lock.RUnlock()
+	t.lock.Lock()
+	if t.isTransportReconfigured {
+		t.lock.Unlock()
+		return
+	}
 
 	//
 	// Checking only `PreferSub` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
@@ -498,35 +507,31 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	var preferNext types.PreferCandidateType
 	if isShortLived {
-		preferNext = getNext(iceConfig)
+		preferNext = getNext(t.iceConfig)
 	} else {
-		t.lock.Lock()
 		t.failureCount++
-		failureCount := t.failureCount
-		t.lock.Unlock()
-
-		if failureCount < failureCountThreshold {
+		if t.failureCount < failureCountThreshold {
+			t.lock.Unlock()
 			return
 		}
 
-		preferNext = getNext(iceConfig)
+		preferNext = getNext(t.iceConfig)
 	}
 
-	if preferNext == iceConfig.PreferSub {
+	if preferNext == t.iceConfig.PreferSub {
+		t.lock.Unlock()
 		return
 	}
 
-	// reset failed count on transport switch
-	t.lock.Lock()
-	t.failureCount = 0
+	t.isTransportReconfigured = true
 	t.lock.Unlock()
 
 	switch preferNext {
 	case types.PreferTcp:
-		t.params.Logger.Infow("restricting transport to TCP on both peer connections")
+		t.params.Logger.Infow("prefer TCP transport on both peer connections")
 
 	case types.PreferTls:
-		t.params.Logger.Infow("prefer transport to TLS on both peer connections")
+		t.params.Logger.Infow("prefer TLS transport both peer connections")
 
 	case types.PreferNone:
 		t.params.Logger.Infow("allowing all transports on both peer connections")
@@ -534,10 +539,10 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 
 	// irrespective of which one fails, force prefer candidate on both as the other one might
 	// fail at a different time and cause another disruption
-	t.SetICEConfig(types.IceConfig{
+	t.configureICE(types.IceConfig{
 		PreferPub: preferNext,
 		PreferSub: preferNext,
-	})
+	}, false)
 }
 
 func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
