@@ -46,6 +46,7 @@ func TwirpLogger(logger logger.Logger) *twirp.ServerHooks {
 			return requestReceived(ctx, loggerPool)
 		},
 		RequestRouted: responseRouted,
+		Error:         errorReceived,
 		ResponseSent: func(ctx context.Context) {
 			responseSent(ctx, loggerPool)
 		},
@@ -56,6 +57,7 @@ type requestLogger struct {
 	logger     logger.Logger
 	service    string
 	method     string
+	error      twirp.Error
 	fieldsOrig []interface{}
 	fields     []interface{}
 	startedAt  time.Time
@@ -65,6 +67,7 @@ func requestReceived(ctx context.Context, requestLoggerPool *sync.Pool) (context
 	r := requestLoggerPool.Get().(*requestLogger)
 	r.startedAt = time.Now()
 	r.fields = r.fieldsOrig
+	r.error = nil
 
 	if svc, ok := twirp.ServiceName(ctx); ok {
 		r.service = svc
@@ -94,18 +97,32 @@ func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
 		return
 	}
 
-	duration := time.Since(r.startedAt)
-
-	r.fields = append(r.fields, "duration", duration)
+	r.fields = append(r.fields, "duration", time.Since(r.startedAt))
 
 	if status, ok := twirp.StatusCode(ctx); ok {
 		r.fields = append(r.fields, "status", status)
 	}
-
+	if r.error != nil {
+		r.fields = append(r.fields, "error", r.error.Msg())
+		r.fields = append(r.fields, "code", r.error.Code())
+	}
+	
 	serviceMethod := "API " + r.service + "." + r.method
 	r.logger.Infow(serviceMethod, r.fields...)
 
 	r.fields = r.fieldsOrig
+	r.error = nil
 
 	requestLoggerPool.Put(r)
+}
+
+func errorReceived(ctx context.Context, e twirp.Error) context.Context {
+	r, ok := ctx.Value(logKey).(*requestLogger)
+	if !ok || r == nil {
+		return ctx
+	}
+
+	r.error = e
+
+	return ctx
 }
