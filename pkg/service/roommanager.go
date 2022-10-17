@@ -199,9 +199,6 @@ func (r *RoomManager) Stop() {
 		if r.rtcConfig.UDPMux != nil {
 			_ = r.rtcConfig.UDPMux.Close()
 		}
-		if r.rtcConfig.UDPMuxConn != nil {
-			_ = r.rtcConfig.UDPMuxConn.Close()
-		}
 		if r.rtcConfig.TCPMuxListener != nil {
 			_ = r.rtcConfig.TCPMuxListener.Close()
 		}
