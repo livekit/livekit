@@ -894,6 +894,10 @@ func (t *PCTransport) getOnNegotiationFailed() func() {
 }
 
 func (t *PCTransport) Negotiate(force bool) {
+	if t.isClosed.Load() {
+		return
+	}
+
 	if force {
 		t.lock.Lock()
 		t.debouncedNegotiate(func() {

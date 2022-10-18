@@ -399,29 +399,23 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	if !willBeResumed {
 		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
-		// if the source has been terminated, we'll need to terminate all the subscribed tracks
-		// however, if the dest sub has disconnected, then we can skip
-		if sender == nil {
-			return
-		}
-		sub.GetLogger().Debugw("removing PeerConnection track",
-			"publisher", subTrack.PublisherIdentity(),
-			"publisherID", subTrack.PublisherID(),
-			"kind", t.params.MediaTrack.Kind(),
-		)
-		if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
-			if err == webrtc.ErrConnectionClosed {
-				// sub closing, can skip removing subscribedtracks
-				return
-			}
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				// most of these are safe to ignore, since the track state might have already
-				// been set to Inactive
-				sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
-					"error", err,
-					"publisher", subTrack.PublisherIdentity(),
-					"publisherID", subTrack.PublisherID(),
-				)
+		if sender != nil {
+			sub.GetLogger().Debugw("removing PeerConnection track",
+				"publisher", subTrack.PublisherIdentity(),
+				"publisherID", subTrack.PublisherID(),
+				"kind", t.params.MediaTrack.Kind(),
+			)
+
+			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
+				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+					// most of these are safe to ignore, since the track state might have already
+					// been set to Inactive
+					sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
+						"error", err,
+						"publisher", subTrack.PublisherIdentity(),
+						"publisherID", subTrack.PublisherID(),
+					)
+				}
 			}
 		}
 	}
