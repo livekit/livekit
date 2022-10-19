@@ -81,7 +81,7 @@ rtc:
   #     - en0
   #   excludes:
   #     - docker0
-  # # ip address filter. If the machine has more than one ip address and you'd like it to use or skip specific ips, 
+  # # ip address filter. If the machine has more than one ip address and you'd like it to use or skip specific ips,
   # # both inclusion and exclusion CIDR filters can be used together. If neither is defined (default), all ip on the machine will be used.
   # # If both of them are set, then only include takes effect.
   # ips:
@@ -102,7 +102,7 @@ keys:
 
 # Logging config
 # logging:
-#   # log level, valid values: debug, info, warning, error
+#   # log level, valid values: debug, info, warn, error
 #   level: info
 #   # log level for pion, default error
 #   pion_level: error
