@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -206,7 +207,7 @@ type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
 }
 
-func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, error) {
+func NewConfig(c *cli.Context, strictMode bool) (*Config, error) {
 	// start with defaults
 	conf := &Config{
 		Port: 7880,
@@ -265,6 +266,12 @@ func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, err
 		},
 		Keys: map[string]string{},
 	}
+
+	confString, err := getConfigString(c.String("config"), c.String("config-body"))
+	if err != nil {
+		return nil, err
+	}
+
 	if confString != "" {
 		decoder := yaml.NewDecoder(strings.NewReader(confString))
 		decoder.KnownFields(strictMode)
@@ -400,4 +407,17 @@ func (conf *Config) unmarshalKeys(keys string) error {
 		}
 	}
 	return nil
+}
+
+func getConfigString(configFile string, inConfigBody string) (string, error) {
+	if inConfigBody != "" || configFile == "" {
+		return inConfigBody, nil
+	}
+
+	outConfigBody, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return "", err
+	}
+
+	return string(outConfigBody), nil
 }

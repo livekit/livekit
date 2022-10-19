@@ -43,6 +43,7 @@ require (
 	github.com/thoas/go-funk v0.9.2
 	github.com/twitchtv/twirp v8.1.2+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
+	github.com/urfave/cli v1.22.10
 	github.com/urfave/cli/v2 v2.20.2
 	github.com/urfave/negroni v1.0.0
 	go.uber.org/atomic v1.10.0
@@ -53,6 +54,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
