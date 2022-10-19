@@ -450,7 +450,7 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 		return
 	}
 
-	if !r.isRRSeen || r.extHighestSNOverridden < extHighestSN {
+	if !r.isRRSeen || r.extHighestSNOverridden <= extHighestSN {
 		r.extHighestSNOverridden = extHighestSN
 		r.packetsLostOverridden = packetsLost
 
