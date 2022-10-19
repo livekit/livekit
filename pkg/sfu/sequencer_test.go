@@ -13,7 +13,7 @@ import (
 )
 
 func Test_sequencer(t *testing.T) {
-	seq := newSequencer(500, logger.GetDefaultLogger())
+	seq := newSequencer(500, 0, logger.GetDefaultLogger())
 	off := uint16(15)
 
 	for i := uint16(1); i < 518; i++ {
@@ -57,8 +57,9 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		seqNo []uint16
 	}
 	type fields struct {
-		input  []uint16
-		offset uint16
+		input   []uint16
+		padding []uint16
+		offset  uint16
 	}
 
 	tests := []struct {
@@ -70,11 +71,12 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		{
 			name: "Should get correct seq numbers",
 			fields: fields{
-				input:  []uint16{2, 3, 4, 7, 8},
-				offset: 5,
+				input:   []uint16{2, 3, 4, 7, 8},
+				padding: []uint16{9, 10},
+				offset:  5,
 			},
 			args: args{
-				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5},
+				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5},
 			},
 			want: []uint16{4, 8},
 		},
@@ -82,10 +84,13 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := newSequencer(500, logger.GetDefaultLogger())
+			n := newSequencer(500, 0, logger.GetDefaultLogger())
 
 			for _, i := range tt.fields.input {
 				n.push(i, i+tt.fields.offset, 123, 3)
+			}
+			for _, i := range tt.fields.padding {
+				n.pushPadding(i + tt.fields.offset)
 			}
 
 			g := n.getPacketsMeta(tt.args.seqNo)

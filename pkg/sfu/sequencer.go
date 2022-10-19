@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	maxPadding           = 2000
 	defaultRtt           = 70
 	ignoreRetransmission = 100 // Ignore packet retransmission after ignoreRetransmission milliseconds
 )
@@ -96,7 +95,7 @@ type sequencer struct {
 	sync.Mutex
 	init      bool
 	max       int
-	seq       []packetMeta
+	seq       []*packetMeta
 	step      int
 	headSN    uint16
 	startTime int64
@@ -104,11 +103,11 @@ type sequencer struct {
 	logger    logger.Logger
 }
 
-func newSequencer(maxTrack int, logger logger.Logger) *sequencer {
+func newSequencer(maxTrack int, maxPadding int, logger logger.Logger) *sequencer {
 	return &sequencer{
 		startTime: time.Now().UnixNano() / 1e6,
 		max:       maxTrack + maxPadding,
-		seq:       make([]packetMeta, maxTrack+maxPadding),
+		seq:       make([]*packetMeta, maxTrack+maxPadding),
 		rtt:       defaultRtt,
 		logger:    logger,
 	}
@@ -129,6 +128,33 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 	s.Lock()
 	defer s.Unlock()
 
+	slot, isValid := s.getSlot(offSn)
+	if !isValid {
+		return nil
+	}
+
+	s.seq[slot] = &packetMeta{
+		sourceSeqNo: sn,
+		targetSeqNo: offSn,
+		timestamp:   timeStamp,
+		layer:       layer,
+	}
+	return s.seq[slot]
+}
+
+func (s *sequencer) pushPadding(offSn uint16) {
+	s.Lock()
+	defer s.Unlock()
+
+	slot, isValid := s.getSlot(offSn)
+	if !isValid {
+		return
+	}
+
+	s.seq[slot] = nil
+}
+
+func (s *sequencer) getSlot(offSn uint16) (int, bool) {
 	if !s.init {
 		s.headSN = offSn - 1
 		s.init = true
@@ -137,7 +163,7 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 	diff := offSn - s.headSN
 	if diff == 0 {
 		// duplicate
-		return nil
+		return 0, false
 	}
 
 	slot := 0
@@ -145,33 +171,32 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 		// out-of-order
 		back := int(s.headSN - offSn)
 		if back >= s.max {
-			s.logger.Debugw("old packet, can not be sequenced", "head", sn, "received", offSn)
-			return nil
+			s.logger.Debugw("old packet, can not be sequenced", "head", s.headSN, "received", offSn)
+			return 0, false
 		}
 		slot = s.step - back - 1
 	} else {
+		s.headSN = offSn
+
+		// invalidate intervening slots
+		for idx := 0; idx < int(diff)-1; idx++ {
+			s.seq[s.wrap(s.step+idx)] = nil
+		}
+
 		slot = s.step + int(diff) - 1
 
-		s.headSN = offSn
 		// for next packet
 		s.step = s.wrap(s.step + int(diff))
 	}
 
-	slot = s.wrap(slot)
-	s.seq[slot] = packetMeta{
-		sourceSeqNo: sn,
-		targetSeqNo: offSn,
-		timestamp:   timeStamp,
-		layer:       layer,
-	}
-	return &s.seq[slot]
+	return s.wrap(slot), true
 }
 
-func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
+func (s *sequencer) getPacketsMeta(seqNo []uint16) []*packetMeta {
 	s.Lock()
 	defer s.Unlock()
 
-	meta := make([]packetMeta, 0, len(seqNo))
+	meta := make([]*packetMeta, 0, len(seqNo))
 	refTime := uint32(time.Now().UnixNano()/1e6 - s.startTime)
 	for _, sn := range seqNo {
 		diff := s.headSN - sn
@@ -181,15 +206,15 @@ func (s *sequencer) getPacketsMeta(seqNo []uint16) []packetMeta {
 		}
 
 		slot := s.wrap(s.step - int(diff) - 1)
-		seq := &s.seq[slot]
-		if seq.targetSeqNo != sn {
+		seq := s.seq[slot]
+		if seq == nil || seq.targetSeqNo != sn {
 			continue
 		}
 
 		if seq.lastNack == 0 || refTime-seq.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
 			seq.nacked++
 			seq.lastNack = refTime
-			meta = append(meta, *seq)
+			meta = append(meta, seq)
 		}
 	}
 

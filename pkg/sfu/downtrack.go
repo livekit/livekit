@@ -49,6 +49,8 @@ const (
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
 	flushTimeout        = 1 * time.Second
+
+	maxPadding = 2000
 )
 
 var (
@@ -307,7 +309,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.handleRTCP(pkt)
 		})
 	}
-	d.sequencer = newSequencer(d.maxTrack, d.logger)
+
+	if d.kind == webrtc.RTPCodecTypeAudio {
+		d.sequencer = newSequencer(d.maxTrack, 0, d.logger)
+	} else {
+		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
+	}
+
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
@@ -615,7 +623,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// So, retransmitting padding packets is only going to make matters worse.
 		//
 		if d.sequencer != nil {
-			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(InvalidLayerSpatial))
+			d.sequencer.pushPadding(hdr.SequenceNumber)
 		}
 
 		bytesSent += size
@@ -1235,11 +1243,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == int8(InvalidLayerSpatial) {
-			// padding packet, no RTX for those
-			continue
-		}
-
 		if disallowedLayers[meta.layer] {
 			continue
 		}
