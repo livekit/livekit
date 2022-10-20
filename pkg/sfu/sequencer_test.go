@@ -84,7 +84,7 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := newSequencer(500, 0, logger.GetDefaultLogger())
+			n := newSequencer(5, 10, logger.GetDefaultLogger())
 
 			for _, i := range tt.fields.input {
 				n.push(i, i+tt.fields.offset, 123, 3)
