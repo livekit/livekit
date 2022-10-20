@@ -71,14 +71,14 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		{
 			name: "Should get correct seq numbers",
 			fields: fields{
-				input:   []uint16{2, 3, 4, 7, 8},
+				input:   []uint16{2, 3, 4, 7, 8, 11},
 				padding: []uint16{9, 10},
 				offset:  5,
 			},
 			args: args{
-				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5},
+				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5, 11 + 5},
 			},
-			want: []uint16{4, 8},
+			want: []uint16{4, 8, 11},
 		},
 	}
 	for _, tt := range tests {
