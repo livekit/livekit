@@ -93,23 +93,27 @@ func (p *packetMeta) unpackVP8() *buffer.VP8 {
 // Sequencer stores the packet sequence received by the down track
 type sequencer struct {
 	sync.Mutex
-	init      bool
-	max       int
-	seq       []*packetMeta
-	step      int
-	headSN    uint16
-	startTime int64
-	rtt       uint32
-	logger    logger.Logger
+	init         bool
+	max          int
+	seq          []*packetMeta
+	meta         []packetMeta
+	metaWritePtr int
+	step         int
+	headSN       uint16
+	startTime    int64
+	rtt          uint32
+	logger       logger.Logger
 }
 
 func newSequencer(maxTrack int, maxPadding int, logger logger.Logger) *sequencer {
 	return &sequencer{
-		startTime: time.Now().UnixNano() / 1e6,
-		max:       maxTrack + maxPadding,
-		seq:       make([]*packetMeta, maxTrack+maxPadding),
-		rtt:       defaultRtt,
-		logger:    logger,
+		startTime:    time.Now().UnixNano() / 1e6,
+		max:          maxTrack + maxPadding,
+		seq:          make([]*packetMeta, maxTrack+maxPadding),
+		meta:         make([]packetMeta, maxTrack),
+		metaWritePtr: 0,
+		rtt:          defaultRtt,
+		logger:       logger,
 	}
 }
 
@@ -133,12 +137,20 @@ func (s *sequencer) push(sn, offSn uint16, timeStamp uint32, layer int8) *packet
 		return nil
 	}
 
-	s.seq[slot] = &packetMeta{
+	s.meta[s.metaWritePtr] = packetMeta{
 		sourceSeqNo: sn,
 		targetSeqNo: offSn,
 		timestamp:   timeStamp,
 		layer:       layer,
 	}
+
+	s.seq[slot] = &s.meta[s.metaWritePtr]
+
+	s.metaWritePtr++
+	if s.metaWritePtr >= len(s.meta) {
+		s.metaWritePtr -= len(s.meta)
+	}
+
 	return s.seq[slot]
 }
 
