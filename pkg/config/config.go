@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -354,7 +355,76 @@ func (conf *Config) IsTURNSEnabled() bool {
 	return false
 }
 
+type configNode struct {
+	TypeNode  reflect.Type
+	TagPrefix string
+}
+
+func (conf *Config) toCLIFlagNames(c *cli.Context) map[string]*reflect.StructField {
+	appFlagNames := map[string]bool{}
+	for _, flag := range c.App.Flags {
+		for _, flagName := range flag.Names() {
+			appFlagNames[flagName] = true
+		}
+	}
+
+	flagNames := map[string]*reflect.StructField{}
+	var currNode configNode
+	nodes := []configNode{{reflect.TypeOf(*conf), ""}}
+	for len(nodes) > 0 {
+		currNode, nodes = nodes[0], nodes[1:]
+		for i := 0; i < currNode.TypeNode.NumField(); i++ {
+			field := currNode.TypeNode.Field(i)
+			yamlTag := strings.SplitN(field.Tag.Get("yaml"), ",", 2)[0]
+			if yamlTag == "" || yamlTag == "-" {
+				continue
+			}
+			yamlPath := yamlTag
+			if currNode.TagPrefix != "" {
+				yamlPath = fmt.Sprintf("%s.%s", currNode.TagPrefix, yamlTag)
+			}
+
+			if appFlagNames[yamlPath] {
+				continue
+			}
+
+			if field.Type.Kind() == reflect.Struct {
+				nodes = append(nodes, configNode{field.Type, yamlPath})
+			} else {
+				flagNames[yamlPath] = &field
+				fmt.Println(yamlPath) // debug
+			}
+		}
+	}
+
+	os.Exit(0) // debug
+
+	return flagNames
+}
+
 func (conf *Config) updateFromCLI(c *cli.Context) error {
+	generatedFlagNames := conf.toCLIFlagNames(c)
+
+	for _, flag := range c.App.Flags {
+		if !flag.IsSet() {
+			continue
+		}
+
+		// TODO(mk): only consider hidden flags
+		// switch v := flag.(type) {
+		// case *cli.StringFlag:
+		// 	_ = v.Hidden
+		// }
+
+		flagName := flag.Names()[0]
+		configField := generatedFlagNames[flagName]
+		if configField == nil {
+			continue
+		}
+
+		// confNode.Set(c.Generic(flag.Names()[0]))
+	}
+
 	if c.IsSet("dev") {
 		conf.Development = c.Bool("dev")
 	}
