@@ -68,6 +68,19 @@ type FakeMediaTrack struct {
 	getQualityForDimensionReturnsOnCall map[int]struct {
 		result1 livekit.VideoQuality
 	}
+	GetTemporalLayerForSpatialFpsStub        func(int32, uint32, string) int32
+	getTemporalLayerForSpatialFpsMutex       sync.RWMutex
+	getTemporalLayerForSpatialFpsArgsForCall []struct {
+		arg1 int32
+		arg2 uint32
+		arg3 string
+	}
+	getTemporalLayerForSpatialFpsReturns struct {
+		result1 int32
+	}
+	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
+		result1 int32
+	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -542,6 +555,69 @@ func (fake *FakeMediaTrack) GetQualityForDimensionReturnsOnCall(i int, result1 l
 	}
 	fake.getQualityForDimensionReturnsOnCall[i] = struct {
 		result1 livekit.VideoQuality
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFps(arg1 int32, arg2 uint32, arg3 string) int32 {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	ret, specificReturn := fake.getTemporalLayerForSpatialFpsReturnsOnCall[len(fake.getTemporalLayerForSpatialFpsArgsForCall)]
+	fake.getTemporalLayerForSpatialFpsArgsForCall = append(fake.getTemporalLayerForSpatialFpsArgsForCall, struct {
+		arg1 int32
+		arg2 uint32
+		arg3 string
+	}{arg1, arg2, arg3})
+	stub := fake.GetTemporalLayerForSpatialFpsStub
+	fakeReturns := fake.getTemporalLayerForSpatialFpsReturns
+	fake.recordInvocation("GetTemporalLayerForSpatialFps", []interface{}{arg1, arg2, arg3})
+	fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsCallCount() int {
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	return len(fake.getTemporalLayerForSpatialFpsArgsForCall)
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsCalls(stub func(int32, uint32, string) int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = stub
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsArgsForCall(i int) (int32, uint32, string) {
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	argsForCall := fake.getTemporalLayerForSpatialFpsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturns(result1 int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = nil
+	fake.getTemporalLayerForSpatialFpsReturns = struct {
+		result1 int32
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, result1 int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = nil
+	if fake.getTemporalLayerForSpatialFpsReturnsOnCall == nil {
+		fake.getTemporalLayerForSpatialFpsReturnsOnCall = make(map[int]struct {
+			result1 int32
+		})
+	}
+	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
+		result1 int32
 	}{result1}
 }
 
@@ -1374,6 +1450,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getNumSubscribersMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
 	defer fake.getQualityForDimensionMutex.RUnlock()
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()

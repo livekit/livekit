@@ -65,6 +65,7 @@ type StreamTracker struct {
 	lastBitrateReport time.Time
 	bytesForBitrate   [4]int64
 	bitrate           [4]int64
+	frameRate         [4]float32
 
 	isStopped bool
 }
@@ -184,7 +185,7 @@ func (s *StreamTracker) SetPaused(paused bool) {
 }
 
 // Observe a packet that's received
-func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, payloadSize int) {
+func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

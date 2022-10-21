@@ -7,7 +7,7 @@ const (
 	InvalidLayerTemporal = int32(-1)
 
 	DefaultMaxLayerSpatial  = int32(2)
-	DefaultMaxLayerTemporal = int32(3)
+	DefaultMaxLayerTemporal = int32(2)
 )
 
 var (

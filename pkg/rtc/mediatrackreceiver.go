@@ -809,4 +809,24 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	}
 }
 
+func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32 {
+	receiver := t.Receiver(mime)
+	if receiver == nil {
+		return buffer.DefaultMaxLayerTemporal
+	}
+
+	layerFps := receiver.GetTemporalLayerFpsForSpatial(spatial)
+	requestFps := float32(fps) * layerSelectionTolerance
+	for i, f := range layerFps {
+		if requestFps <= f {
+			return int32(i)
+		}
+	}
+	return buffer.DefaultMaxLayerTemporal
+}
+
+func (t *MediaTrackReceiver) onFpsUpdated() {
+	t.MediaTrackSubscriptions.UpdateVideoLayers()
+}
+
 // ---------------------------
