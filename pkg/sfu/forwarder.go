@@ -161,7 +161,7 @@ const (
 	InvalidLayerTemporal = buffer.InvalidLayerTemporal
 
 	DefaultMaxLayerSpatial  = buffer.DefaultMaxLayerSpatial
-	DefaultMaxLayerTemporal = buffer.DefaultMaxLayerTemporal + 1
+	DefaultMaxLayerTemporal = buffer.DefaultMaxLayerTemporal
 )
 
 var (

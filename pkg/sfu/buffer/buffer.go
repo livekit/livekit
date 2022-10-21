@@ -164,13 +164,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		switch ext.URI {
 		case dd.ExtensionUrl:
 			b.ddExt = uint8(ext.ID)
-			// var frc *FrameRateCalculatorForDD
-			// if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeAV1) {
 			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 			for i := range b.frameRateCalculator {
 				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 			}
-			// }
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
 				if b.maxLayerChangedCB != nil {
 					b.maxLayerChangedCB(spatial, temporal)
