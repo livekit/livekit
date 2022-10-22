@@ -51,7 +51,7 @@ func writeConfigFile(test testStruct, t *testing.T) {
 }
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
-	conf, err := NewConfig(nil, true)
+	conf, err := NewConfig(nil, nil, true)
 	require.NoError(t, err)
 
 	require.NoError(t, conf.unmarshalKeys("key1: secret1"))
@@ -61,10 +61,11 @@ func TestConfig_UnmarshalKeys(t *testing.T) {
 func TestConfig_DefaultsKept(t *testing.T) {
 	const content = `room:
   empty_timeout: 10`
+	app := cli.NewApp()
 	set := flag.NewFlagSet("test", 0)
-	c := cli.NewContext(nil, set, nil)
+	c := cli.NewContext(app, set, nil)
 	set.String("config-body", string(content), "")
-	conf, err := NewConfig(c, true)
+	conf, err := NewConfig(c, nil, true)
 	require.NoError(t, err)
 	require.Equal(t, true, conf.Room.AutoCreate)
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
@@ -74,9 +75,10 @@ func TestConfig_UnknownKeys(t *testing.T) {
 	const content = `unknown: 10
 room:
   empty_timeout: 10`
+	app := cli.NewApp()
 	set := flag.NewFlagSet("test", 0)
-	c := cli.NewContext(nil, set, nil)
+	c := cli.NewContext(app, set, nil)
 	set.String("config-body", string(content), "")
-	_, err := NewConfig(c, true)
+	_, err := NewConfig(c, nil, true)
 	require.Error(t, err)
 }
