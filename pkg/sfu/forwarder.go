@@ -1462,7 +1462,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// if f.ddLayerSelector != nil {
 				// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
 				// }
-				if f.currentLayers.Spatial == f.maxLayers.Spatial {
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
 			}
