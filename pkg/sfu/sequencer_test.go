@@ -144,7 +144,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 		IsKeyFrame:       true,
 	}
 	unpackedVP8 := p.unpackVP8()
-	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
+	require.Equal(t, expectedVP8, unpackedVP8)
 
 	// short picture id and no TL0PICIDX
 	vp8 = &buffer.VP8{
@@ -181,6 +181,5 @@ func Test_packetMeta_VP8(t *testing.T) {
 		IsKeyFrame:       true,
 	}
 	unpackedVP8 = p.unpackVP8()
-	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
-
+	require.Equal(t, expectedVP8, unpackedVP8)
 }

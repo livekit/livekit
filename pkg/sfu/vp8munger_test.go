@@ -216,7 +216,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
-	require.True(t, reflect.DeepEqual(tpExpected, *tp))
+	require.Equal(t, tpExpected, *tp)
 
 	// all three, the last, the current and the in-between should have been added to missing picture id cache
 	value, ok := v.PictureIdOffset(13467)
@@ -255,7 +255,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingOutOfOrder, 2)
 	require.NoError(t, err)
 	require.NotNil(t, tp)
-	require.True(t, reflect.DeepEqual(tpExpected, *tp))
+	require.Equal(t, tpExpected, *tp)
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
@@ -363,7 +363,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	tp, err := v.UpdateAndGet(extPkt, SequenceNumberOrderingContiguous, 2)
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*tp, tpExpected))
+	require.Equal(t, tpExpected, *tp)
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
 	tpExpected = TranslationParamsVP8{
@@ -385,7 +385,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	tp, err = v.UpdateAndGet(extPkt, SequenceNumberOrderingGap, 2)
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*tp, tpExpected))
+	require.Equal(t, tpExpected, *tp)
 
 	value, ok := v.PictureIdOffset(13467)
 	require.True(t, ok)
@@ -437,7 +437,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 		HeaderSize:       6,
 		IsKeyFrame:       true,
 	}
-	require.True(t, reflect.DeepEqual(expectedVP8, *blankVP8))
+	require.Equal(t, expectedVP8, *blankVP8)
 
 	// getting padding with new picture
 	blankVP8 = v.UpdateAndGetPadding(true)
@@ -456,7 +456,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 		HeaderSize:       6,
 		IsKeyFrame:       true,
 	}
-	require.True(t, reflect.DeepEqual(expectedVP8, *blankVP8))
+	require.Equal(t, expectedVP8, *blankVP8)
 }
 
 func TestVP8PictureIdWrapHandler(t *testing.T) {
