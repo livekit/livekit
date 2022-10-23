@@ -139,9 +139,9 @@ func (f *FrameRateCalculatorVP8) calc() bool {
 			continue
 		}
 
-		frameCount := 1
+		var frameCount int
 		lastTs := ff.ts
-		for j := ff.fn - f.baseFrame.fn + 1; j < sf.fn-f.baseFrame.fn; j++ {
+		for j := ff.fn - f.baseFrame.fn + 1; j < sf.fn-f.baseFrame.fn+1; j++ {
 			if f := f.fnReceived[j]; f == nil {
 				break
 			} else if f.temporal <= currentTemporal {
@@ -230,6 +230,11 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 	if ep.Temporal >= int32(len(f.frameRates)) {
 		f.logger.Warnw("invalid temporal layer", nil, "temporal", ep.Temporal)
+		return false
+	}
+
+	if ep.DependencyDescriptor == nil {
+		f.logger.Infow("dependency descriptor is nil", nil)
 		return false
 	}
 
@@ -344,9 +349,6 @@ func (f *FrameRateCalculatorDD) calc() bool {
 			}
 
 			chain := &f.targetFrames[currentSpatial][currentTemporal]
-			if chain.Len() < minFramesForCalculation[currentTemporal] {
-				continue
-			}
 
 			// find last decodable frame (no dependency frame is lost)
 			var lastFrame *frameInfo

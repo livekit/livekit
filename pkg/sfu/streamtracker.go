@@ -65,7 +65,6 @@ type StreamTracker struct {
 	lastBitrateReport time.Time
 	bytesForBitrate   [4]int64
 	bitrate           [4]int64
-	frameRate         [4]float32
 
 	isStopped bool
 }
