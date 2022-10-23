@@ -825,8 +825,4 @@ func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps ui
 	return buffer.DefaultMaxLayerTemporal
 }
 
-func (t *MediaTrackReceiver) onFpsUpdated() {
-	t.MediaTrackSubscriptions.UpdateVideoLayers()
-}
-
 // ---------------------------
