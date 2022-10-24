@@ -405,13 +405,23 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
+	var b bool
+	blankConfig := &Config{
+		RTC: RTCConfig{
+			AllowTCPFallback: &b, // a valid pointer value is required for reflection
+		},
+	}
+
 	flags := []cli.Flag{}
-	blankConfig := &Config{}
 	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
+		kind := value.Kind()
+		if kind == reflect.Pointer {
+			kind = value.Elem().Kind()
+		}
+
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.Replace(name, ".", "_", -1)))
 
-		kind := value.Kind()
 		switch kind {
 		case reflect.Bool:
 			flag = &cli.BoolFlag{
@@ -457,9 +467,6 @@ func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
 		case reflect.Slice:
 			// TODO
 			continue
-		case reflect.Ptr:
-			// TODO
-			continue
 		default:
 			return flags, fmt.Errorf("cli flag generation unsupported for config type: %s is a %s", name, kind.String())
 		}
@@ -485,6 +492,14 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 
 		var flagValue interface{}
 		kind := configValue.Kind()
+		if kind == reflect.Pointer {
+			// instantiate value to be set
+			configValue.Set(reflect.New(configValue.Type().Elem()))
+
+			kind = configValue.Type().Elem().Kind()
+			configValue = configValue.Elem()
+		}
+
 		switch kind {
 		case reflect.Bool:
 			flagValue = c.Bool(flagName)
@@ -492,27 +507,19 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 			flagValue = c.String(flagName)
 		case reflect.Int:
 			flagValue = c.Int(flagName)
-		// case reflect.Int32:
-		// 	// TODO
-		// 	continue
-		// case reflect.Int64:
-		// 	// TODO
-		// 	continue
-		// case reflect.Uint8:
-		// 	// TODO
-		// 	continue
-		// case reflect.Uint16:
-		// 	// TODO
-		// 	continue
+		case reflect.Int32:
+			flagValue = int32(c.Int(flagName))
+		case reflect.Int64:
+			flagValue = c.Int64(flagName)
+		case reflect.Uint8:
+			flagValue = uint8(c.Uint(flagName))
+		case reflect.Uint16:
+			flagValue = uint16(c.Uint(flagName))
 		case reflect.Uint32:
 			flagValue = uint32(c.Uint(flagName))
-		// case reflect.Float32:
-		// 	// TODO
-		// 	continue
+		case reflect.Float32:
+			flagValue = uint64(c.Float64(flagName))
 		// case reflect.Slice:
-		// 	// TODO
-		// 	continue
-		// case reflect.Ptr:
 		// 	// TODO
 		// 	continue
 		default:
