@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/auth"
@@ -303,6 +304,7 @@ type LocalParticipant interface {
 	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
 	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(callback func(LocalParticipant))
+	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool

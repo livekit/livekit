@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"math/bits"
 	"strings"
 	"sync"
 
@@ -20,6 +21,12 @@ import (
 
 const (
 	failureCountThreshold = 2
+
+	// when RR report loss frac over this threshold, we consider it is a unstable event
+	udpLossFracUnstable = 25
+	// if in last 32 times RR, the unstable report count over this threshold, the connection is unstable
+	udpLossUnstableCountThreshold = 20
+	tcpGoodRTT                    = 80
 )
 
 type TransportManagerParams struct {
@@ -56,6 +63,10 @@ type TransportManager struct {
 	lastPublisherOffer           atomic.Value
 	iceConfig                    types.IceConfig
 
+	mediaLossProxy       *MediaLossProxy
+	udpLossUnstableCount uint32
+	tcpRTT, udpRTT       uint32
+
 	onPublisherInitialConnected        func()
 	onSubscriberInitialConnected       func()
 	onPrimaryTransportInitialConnected func()
@@ -66,8 +77,10 @@ type TransportManager struct {
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
 	t := &TransportManager{
-		params: params,
+		params:         params,
+		mediaLossProxy: NewMediaLossProxy(MediaLossProxyParams{Logger: params.Logger}),
 	}
+	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
 	enabledCodecs := make([]*livekit.Codec, 0, len(params.EnabledCodecs))
 	for _, c := range params.EnabledCodecs {
@@ -397,10 +410,7 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 	}
 }
 
-// HandleAnswer handles a client answer response, with subscriber PC, server initiates the
-// offer and client answers
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) {
-	t.params.Logger.Infow("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
 	t.subscriber.HandleRemoteDescription(answer)
 }
 
@@ -452,6 +462,10 @@ func (t *TransportManager) configureICE(iceConfig types.IceConfig, reset bool) {
 	t.failureCount = 0
 	t.isTransportReconfigured = !reset
 	t.lock.Unlock()
+
+	if iceConfig.PreferSub != types.PreferNone {
+		t.mediaLossProxy.OnMediaLossUpdate(nil)
+	}
 
 	t.publisher.SetPreferTCP(iceConfig.PreferPub == types.PreferTcp)
 	t.subscriber.SetPreferTCP(iceConfig.PreferSub == types.PreferTcp)
@@ -607,5 +621,34 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 		} else {
 			t.params.Logger.Debugw("create migrated data channel", "label", dcLabel, "id", dcID)
 		}
+	}
+}
+
+func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
+	t.mediaLossProxy.HandleMaxLossFeedback(dt, report)
+}
+
+func (t *TransportManager) onMediaLossUpdate(loss uint8) {
+	t.udpLossUnstableCount <<= 1
+	if loss >= uint8(255*udpLossFracUnstable/100) {
+		t.udpLossUnstableCount |= 1
+		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
+			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT {
+				t.udpLossUnstableCount = 0
+				t.params.Logger.Debugw("udp connection unstable, switch to tcp")
+				t.handleConnectionFailed(true)
+				if t.onAnyTransportFailed != nil {
+					t.onAnyTransportFailed()
+				}
+			}
+		}
+	}
+}
+
+func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
+	if isUDP {
+		t.udpRTT = rtt
+	} else {
+		t.tcpRTT = rtt
 	}
 }

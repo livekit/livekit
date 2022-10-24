@@ -412,6 +412,22 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) {
 	p.TransportManager.HandleOffer(offer, shouldPend)
 }
 
+// HandleAnswer handles a client answer response, with subscriber PC, server initiates the
+// offer and client answers
+func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
+	p.params.Logger.Infow("received answer", "transport", livekit.SignalTarget_SUBSCRIBER)
+
+	/* from server received join request to client answer
+	 * 1. server send join response & offer
+	 * ... swap candidates
+	 * 2. client send answer
+	 */
+	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
+	p.TransportManager.UpdateRTT(uint32(signalConnCost), false)
+
+	p.TransportManager.HandleAnswer(answer)
+}
+
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
 	p.params.Logger.Infow("sending answer", "transport", livekit.SignalTarget_PUBLISHER)
 	answer = p.configurePublisherAnswer(answer)
@@ -990,6 +1006,7 @@ func (p *ParticipantImpl) UpdateRTT(rtt uint32) {
 	p.rttUpdatedAt = now
 	p.lastRTT = rtt
 	p.lock.Unlock()
+	p.TransportManager.UpdateRTT(rtt, true)
 
 	for _, pt := range p.GetPublishedTracks() {
 		pt.(types.LocalMediaTrack).SetRTT(rtt)

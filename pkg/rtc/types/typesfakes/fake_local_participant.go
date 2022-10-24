@@ -11,6 +11,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v3"
 )
 
@@ -433,6 +434,12 @@ type FakeLocalParticipant struct {
 	onParticipantUpdateMutex       sync.RWMutex
 	onParticipantUpdateArgsForCall []struct {
 		arg1 func(types.LocalParticipant)
+	}
+	OnReceiverReportStub        func(*sfu.DownTrack, *rtcp.ReceiverReport)
+	onReceiverReportMutex       sync.RWMutex
+	onReceiverReportArgsForCall []struct {
+		arg1 *sfu.DownTrack
+		arg2 *rtcp.ReceiverReport
 	}
 	OnStateChangeStub        func(func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State))
 	onStateChangeMutex       sync.RWMutex
@@ -2976,6 +2983,39 @@ func (fake *FakeLocalParticipant) OnParticipantUpdateArgsForCall(i int) func(typ
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) OnReceiverReport(arg1 *sfu.DownTrack, arg2 *rtcp.ReceiverReport) {
+	fake.onReceiverReportMutex.Lock()
+	fake.onReceiverReportArgsForCall = append(fake.onReceiverReportArgsForCall, struct {
+		arg1 *sfu.DownTrack
+		arg2 *rtcp.ReceiverReport
+	}{arg1, arg2})
+	stub := fake.OnReceiverReportStub
+	fake.recordInvocation("OnReceiverReport", []interface{}{arg1, arg2})
+	fake.onReceiverReportMutex.Unlock()
+	if stub != nil {
+		fake.OnReceiverReportStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnReceiverReportCallCount() int {
+	fake.onReceiverReportMutex.RLock()
+	defer fake.onReceiverReportMutex.RUnlock()
+	return len(fake.onReceiverReportArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnReceiverReportCalls(stub func(*sfu.DownTrack, *rtcp.ReceiverReport)) {
+	fake.onReceiverReportMutex.Lock()
+	defer fake.onReceiverReportMutex.Unlock()
+	fake.OnReceiverReportStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnReceiverReportArgsForCall(i int) (*sfu.DownTrack, *rtcp.ReceiverReport) {
+	fake.onReceiverReportMutex.RLock()
+	defer fake.onReceiverReportMutex.RUnlock()
+	argsForCall := fake.onReceiverReportArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakeLocalParticipant) OnStateChange(arg1 func(p types.LocalParticipant, oldState livekit.ParticipantInfo_State)) {
 	fake.onStateChangeMutex.Lock()
 	fake.onStateChangeArgsForCall = append(fake.onStateChangeArgsForCall, struct {
@@ -4807,6 +4847,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onICEConfigChangedMutex.RUnlock()
 	fake.onParticipantUpdateMutex.RLock()
 	defer fake.onParticipantUpdateMutex.RUnlock()
+	fake.onReceiverReportMutex.RLock()
+	defer fake.onReceiverReportMutex.RUnlock()
 	fake.onStateChangeMutex.RLock()
 	defer fake.onStateChangeMutex.RUnlock()
 	fake.onSubscribedToMutex.RLock()
