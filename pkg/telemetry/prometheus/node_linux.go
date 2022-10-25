@@ -9,6 +9,7 @@ import (
 
 	"github.com/florianl/go-tc"
 	"github.com/mackerelio/go-osstat/cpu"
+	"github.com/mackerelio/go-osstat/memory"
 )
 
 var (
@@ -33,6 +34,16 @@ func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
 
 	numCPUs = uint32(cpuInfo.CPUCount)
 
+	return
+}
+
+func getMemoryStats() (memoryLoad float32, err error) {
+	memInfo, err := memory.Get()
+	if err != nil {
+		return
+	}
+
+	memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
 	return
 }
 
