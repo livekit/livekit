@@ -82,3 +82,27 @@ room:
 	_, err := NewConfig(c, nil, true)
 	require.Error(t, err)
 }
+
+func TestGeneratedFlags(t *testing.T) {
+	generatedFlags, err := GenerateCLIFlags(nil)
+	require.NoError(t, err)
+
+	app := cli.NewApp()
+	app.Flags = append(app.Flags, generatedFlags...)
+
+	set := flag.NewFlagSet("test", 0)
+	c := cli.NewContext(app, set, nil)
+	set.Bool("rtc.use_ice_lite", true, "")            // bool
+	set.String("redis.address", "localhost:6379", "") // string
+	set.Uint("prometheus_port", 9999, "")             // uint32
+	set.Bool("rtc.allow_tcp_fallback", true, "")      // pointer
+
+	conf, err := NewConfig(c, nil, true)
+	require.NoError(t, err)
+
+	require.True(t, conf.RTC.UseICELite)
+	require.Equal(t, "localhost:6379", conf.Redis.Address)
+	require.Equal(t, uint32(9999), conf.PrometheusPort)
+	require.NotNil(t, conf.RTC.AllowTCPFallback)
+	require.True(t, *conf.RTC.AllowTCPFallback)
+}

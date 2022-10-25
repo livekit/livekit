@@ -467,6 +467,9 @@ func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
 		case reflect.Slice:
 			// TODO
 			continue
+		case reflect.Map:
+			// TODO
+			continue
 		default:
 			return flags, fmt.Errorf("cli flag generation unsupported for config type: %s is a %s", name, kind.String())
 		}
@@ -490,7 +493,6 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 			continue
 		}
 
-		var flagValue interface{}
 		kind := configValue.Kind()
 		if kind == reflect.Pointer {
 			// instantiate value to be set
@@ -502,31 +504,22 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 
 		switch kind {
 		case reflect.Bool:
-			flagValue = c.Bool(flagName)
+			configValue.SetBool(c.Bool(flagName))
 		case reflect.String:
-			flagValue = c.String(flagName)
-		case reflect.Int:
-			flagValue = c.Int(flagName)
-		case reflect.Int32:
-			flagValue = int32(c.Int(flagName))
-		case reflect.Int64:
-			flagValue = c.Int64(flagName)
-		case reflect.Uint8:
-			flagValue = uint8(c.Uint(flagName))
-		case reflect.Uint16:
-			flagValue = uint16(c.Uint(flagName))
-		case reflect.Uint32:
-			flagValue = uint32(c.Uint(flagName))
+			configValue.SetString(c.String(flagName))
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			configValue.SetInt(c.Int64(flagName))
+		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+			configValue.SetUint(c.Uint64(flagName))
 		case reflect.Float32:
-			flagValue = uint64(c.Float64(flagName))
+			configValue.SetFloat(c.Float64(flagName))
 		// case reflect.Slice:
 		// 	// TODO
-		// 	continue
+		// case reflect.Map:
+		// 	// TODO
 		default:
 			return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
 		}
-
-		configValue.Set(reflect.ValueOf(flagValue))
 	}
 
 	if c.IsSet("dev") {
