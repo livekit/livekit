@@ -650,7 +650,7 @@ func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
 		if t.udpRTT == 0 {
 			t.udpRTT = rtt
 		} else {
-			t.udpRTT += uint32((int(rtt) - int(t.udpRTT)) / 2)
+			t.udpRTT = uint32(int(t.udpRTT) + (int(rtt)-int(t.udpRTT))/2)
 		}
 	} else {
 		t.tcpRTT = rtt
