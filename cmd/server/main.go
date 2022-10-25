@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -162,12 +163,17 @@ func main() {
 }
 
 func getConfig(c *cli.Context) (*config.Config, error) {
+	confString, err := getConfigString(c.String("config"), c.String("config-body"))
+	if err != nil {
+		return nil, err
+	}
+
 	strictMode := true
 	if c.Bool("disable-strict-config") {
 		strictMode = false
 	}
 
-	conf, err := config.NewConfig(c, baseFlags, strictMode)
+	conf, err := config.NewConfig(confString, strictMode, c, baseFlags)
 	if err != nil {
 		return nil, err
 	}
@@ -245,4 +251,17 @@ func startServer(c *cli.Context) error {
 	}()
 
 	return server.Start()
+}
+
+func getConfigString(configFile string, inConfigBody string) (string, error) {
+	if inConfigBody != "" || configFile == "" {
+		return inConfigBody, nil
+	}
+
+	outConfigBody, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return "", err
+	}
+
+	return string(outConfigBody), nil
 }

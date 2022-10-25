@@ -2,56 +2,14 @@ package config
 
 import (
 	"flag"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
 )
 
-type testStruct struct {
-	configFileName string
-	configBody     string
-
-	expectedError      error
-	expectedConfigBody string
-}
-
-func TestGetConfigString(t *testing.T) {
-	tests := []testStruct{
-		{"", "", nil, ""},
-		{"", "configBody", nil, "configBody"},
-		{"file", "configBody", nil, "configBody"},
-		{"file", "", nil, "fileContent"},
-	}
-	for _, test := range tests {
-		func() {
-			writeConfigFile(test, t)
-			defer os.Remove(test.configFileName)
-
-			configBody, err := getConfigString(test.configFileName, test.configBody)
-			require.Equal(t, test.expectedError, err)
-			require.Equal(t, test.expectedConfigBody, configBody)
-		}()
-	}
-}
-
-func TestShouldReturnErrorIfConfigFileDoesNotExist(t *testing.T) {
-	configBody, err := getConfigString("notExistingFile", "")
-	require.Error(t, err)
-	require.Empty(t, configBody)
-}
-
-func writeConfigFile(test testStruct, t *testing.T) {
-	if test.configFileName != "" {
-		d1 := []byte(test.expectedConfigBody)
-		err := os.WriteFile(test.configFileName, d1, 0o644)
-		require.NoError(t, err)
-	}
-}
-
 func TestConfig_UnmarshalKeys(t *testing.T) {
-	conf, err := NewConfig(nil, nil, true)
+	conf, err := NewConfig("", true, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, conf.unmarshalKeys("key1: secret1"))
@@ -61,11 +19,7 @@ func TestConfig_UnmarshalKeys(t *testing.T) {
 func TestConfig_DefaultsKept(t *testing.T) {
 	const content = `room:
   empty_timeout: 10`
-	app := cli.NewApp()
-	set := flag.NewFlagSet("test", 0)
-	c := cli.NewContext(app, set, nil)
-	set.String("config-body", string(content), "")
-	conf, err := NewConfig(c, nil, true)
+	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, true, conf.Room.AutoCreate)
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
@@ -75,11 +29,7 @@ func TestConfig_UnknownKeys(t *testing.T) {
 	const content = `unknown: 10
 room:
   empty_timeout: 10`
-	app := cli.NewApp()
-	set := flag.NewFlagSet("test", 0)
-	c := cli.NewContext(app, set, nil)
-	set.String("config-body", string(content), "")
-	_, err := NewConfig(c, nil, true)
+	_, err := NewConfig(content, true, nil, nil)
 	require.Error(t, err)
 }
 
@@ -97,7 +47,7 @@ func TestGeneratedFlags(t *testing.T) {
 	set.Bool("rtc.allow_tcp_fallback", true, "")      // pointer
 
 	c := cli.NewContext(app, set, nil)
-	conf, err := NewConfig(c, nil, true)
+	conf, err := NewConfig("", true, c, nil)
 	require.NoError(t, err)
 
 	require.True(t, conf.RTC.UseICELite)
