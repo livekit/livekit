@@ -161,6 +161,14 @@ func EnsureRecordPermission(ctx context.Context) error {
 	return nil
 }
 
+func EnsureIngressAdminPermission(ctx context.Context) error {
+	claims := GetGrants(ctx)
+	if claims == nil || !claims.Video.IngressAdmin {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())
