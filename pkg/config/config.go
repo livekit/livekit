@@ -399,18 +399,12 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
-	var b bool
-	blankConfig := &Config{
-		RTC: RTCConfig{
-			AllowTCPFallback: &b, // a valid pointer value is required for reflection
-		},
-	}
-
+	blankConfig := &Config{}
 	flags := []cli.Flag{}
 	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
 		kind := value.Kind()
 		if kind == reflect.Ptr {
-			kind = value.Elem().Kind()
+			kind = value.Type().Elem().Kind()
 		}
 
 		var flag cli.Flag
