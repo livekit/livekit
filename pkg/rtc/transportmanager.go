@@ -22,7 +22,7 @@ import (
 const (
 	failureCountThreshold = 2
 
-	// when RR report loss frac over this threshold, we consider it is a unstable event
+	// when RR report loss percentage over this threshold, we consider it is a unstable event
 	udpLossFracUnstable = 25
 	// if in last 32 times RR, the unstable report count over this threshold, the connection is unstable
 	udpLossUnstableCountThreshold = 20
@@ -647,7 +647,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 
 func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
 	if isUDP {
-		t.udpRTT = rtt
+		if t.udpRTT == 0 {
+			t.udpRTT = rtt
+		} else {
+			t.udpRTT += uint32((int(rtt) - int(t.udpRTT)) / 2)
+		}
 	} else {
 		t.tcpRTT = rtt
 	}
