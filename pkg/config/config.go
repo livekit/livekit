@@ -415,7 +415,7 @@ func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
 	flags := []cli.Flag{}
 	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
 		kind := value.Kind()
-		if kind == reflect.Pointer {
+		if kind == reflect.Ptr {
 			kind = value.Elem().Kind()
 		}
 
@@ -496,7 +496,7 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		}
 
 		kind := configValue.Kind()
-		if kind == reflect.Pointer {
+		if kind == reflect.Ptr {
 			// instantiate value to be set
 			configValue.Set(reflect.New(configValue.Type().Elem()))
 
