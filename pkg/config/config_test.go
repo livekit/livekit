@@ -91,12 +91,12 @@ func TestGeneratedFlags(t *testing.T) {
 	app.Flags = append(app.Flags, generatedFlags...)
 
 	set := flag.NewFlagSet("test", 0)
-	c := cli.NewContext(app, set, nil)
 	set.Bool("rtc.use_ice_lite", true, "")            // bool
 	set.String("redis.address", "localhost:6379", "") // string
 	set.Uint("prometheus_port", 9999, "")             // uint32
 	set.Bool("rtc.allow_tcp_fallback", true, "")      // pointer
 
+	c := cli.NewContext(app, set, nil)
 	conf, err := NewConfig(c, nil, true)
 	require.NoError(t, err)
 

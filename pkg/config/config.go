@@ -484,7 +484,9 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 	generatedFlagNames := conf.ToCLIFlagNames(baseFlags)
 	for _, flag := range c.App.Flags {
 		flagName := flag.Names()[0]
-		if !c.IsSet(flagName) {
+
+		// the `len(baseFlags) > 0` check is needed because `c.IsSet(...)` is always false in unit tests
+		if !c.IsSet(flagName) && len(baseFlags) > 0 {
 			continue
 		}
 
