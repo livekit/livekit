@@ -19,7 +19,7 @@ jobs:
       - run: redis-cli ping
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: WillAbides/setup-go-faster@v1.7.0
         with:
           go-version: '>=1.18'
 
@@ -47,6 +47,7 @@ jobs:
         with:
           version: "2022.1"
           install-go: false
+          cache-key: "1.18"
 
       - name: Test
         run: |
