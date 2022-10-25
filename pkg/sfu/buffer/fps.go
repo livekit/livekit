@@ -76,20 +76,13 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	baseDiff := fn - f.baseFrame.fn
-	if baseDiff == 0 || baseDiff > 0x8000 {
+	if baseDiff == 0 || baseDiff > 0x4000 {
 		return false
 	}
 
 	if baseDiff >= uint16(len(f.fnReceived)) {
 		// frame number is not continuous, reset
-		f.baseFrame = nil
-		for i := range f.firstFrames {
-			f.firstFrames[i] = nil
-			f.secondFrames[i] = nil
-		}
-		for i := range f.fnReceived {
-			f.fnReceived[i] = nil
-		}
+		f.reset()
 
 		return false
 	}
@@ -112,7 +105,7 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 		f.firstFrames[temporal] = fi
 		firstFrame = fi
 	} else {
-		if (secondFrame == nil || secondFrame.fn < fn) && fn != firstFrame.fn && (fn-firstFrame.fn) < 0x8000 {
+		if (secondFrame == nil || secondFrame.fn < fn) && fn != firstFrame.fn && (fn-firstFrame.fn) < 0x4000 {
 			f.secondFrames[temporal] = fi
 		}
 	}
@@ -158,20 +151,19 @@ func (f *FrameRateCalculatorVP8) calc() bool {
 	if rateCounter == len(f.frameRates) {
 		f.completed = true
 
-		// normalize frame rates, Microsoft Edge use 3 temporal layers for vp8 but the lower layer has high chance to
-		// get a very low frame rate, so we need to normalize the frame rate(use fixed ration of highest layer for that layer)
-
+		// normalize frame rates, Microsoft Edge use 3 temporal layers for vp8 but the middle layer has chance to
+		// get a very low frame rate, so we need to normalize the frame rate(use fixed ration 1:2 of highest layer for that layer)
 		if f.frameRates[2] > 0 && f.frameRates[2] > f.frameRates[1]*3 {
 			f.frameRates[1] = f.frameRates[2] / 2
 		}
 		f.logger.Debugw("frame rate calculated", "rate", f.frameRates)
-		f.close()
+		f.reset()
 		return true
 	}
 	return false
 }
 
-func (f *FrameRateCalculatorVP8) close() {
+func (f *FrameRateCalculatorVP8) reset() {
 	for i := range f.firstFrames {
 		f.firstFrames[i] = nil
 		f.secondFrames[i] = nil
@@ -227,10 +219,6 @@ func (f *FrameRateCalculatorDD) SetMaxLayer(spatial, temporal int32) {
 func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	if f.completed {
 		return true
-	}
-	if ep.Temporal >= int32(len(f.frameRates)) {
-		f.logger.Warnw("invalid temporal layer", nil, "temporal", ep.Temporal)
-		return false
 	}
 
 	if ep.DependencyDescriptor == nil {

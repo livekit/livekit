@@ -66,7 +66,6 @@ func createFrames(startFrameNumber uint16, startTs uint32, totalFramesPerSpatial
 	for i := 0; i < spatials; i++ {
 		currentTs[i] = startTs
 	}
-	// currentTs := startTs
 	for i := 0; i < totalFramesPerSpatial; i++ {
 		for s := 0; s < spatials; s++ {
 			frame := &testFrameInfo{
