@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -23,6 +24,9 @@ var DefaultStunServers = []string{
 type CongestionControlProbeMode string
 
 const (
+	generatedCLIFlagsHidden = true
+	generatedCLIFlagUsage   = "generated"
+
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
 
@@ -206,7 +210,7 @@ type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
 }
 
-func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, error) {
+func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
 	// start with defaults
 	conf := &Config{
 		Port: 7880,
@@ -265,6 +269,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, err
 		},
 		Keys: map[string]string{},
 	}
+
 	if confString != "" {
 		decoder := yaml.NewDecoder(strings.NewReader(confString))
 		decoder.KnownFields(strictMode)
@@ -274,7 +279,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context) (*Config, err
 	}
 
 	if c != nil {
-		if err := conf.updateFromCLI(c); err != nil {
+		if err := conf.updateFromCLI(c, baseFlags); err != nil {
 			return nil, err
 		}
 	}
@@ -347,7 +352,166 @@ func (conf *Config) IsTURNSEnabled() bool {
 	return false
 }
 
-func (conf *Config) updateFromCLI(c *cli.Context) error {
+type configNode struct {
+	TypeNode  reflect.Value
+	TagPrefix string
+}
+
+func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.Value {
+	existingFlagNames := map[string]bool{}
+	for _, flag := range existingFlags {
+		for _, flagName := range flag.Names() {
+			existingFlagNames[flagName] = true
+		}
+	}
+
+	flagNames := map[string]reflect.Value{}
+	var currNode configNode
+	nodes := []configNode{{reflect.ValueOf(conf).Elem(), ""}}
+	for len(nodes) > 0 {
+		currNode, nodes = nodes[0], nodes[1:]
+		for i := 0; i < currNode.TypeNode.NumField(); i++ {
+			// inspect yaml tag from struct field to get path
+			field := currNode.TypeNode.Type().Field(i)
+			yamlTag := strings.SplitN(field.Tag.Get("yaml"), ",", 2)[0]
+			if yamlTag == "" || yamlTag == "-" {
+				continue
+			}
+			yamlPath := yamlTag
+			if currNode.TagPrefix != "" {
+				yamlPath = fmt.Sprintf("%s.%s", currNode.TagPrefix, yamlTag)
+			}
+			if existingFlagNames[yamlPath] {
+				continue
+			}
+
+			// map flag name to value
+			value := currNode.TypeNode.Field(i)
+			if value.Kind() == reflect.Struct {
+				nodes = append(nodes, configNode{value, yamlPath})
+			} else {
+				flagNames[yamlPath] = value
+			}
+		}
+	}
+
+	return flagNames
+}
+
+func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
+	blankConfig := &Config{}
+	flags := []cli.Flag{}
+	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
+		kind := value.Kind()
+		if kind == reflect.Ptr {
+			kind = value.Type().Elem().Kind()
+		}
+
+		var flag cli.Flag
+		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.Replace(name, ".", "_", -1)))
+
+		switch kind {
+		case reflect.Bool:
+			flag = &cli.BoolFlag{
+				Name:   name,
+				Usage:  generatedCLIFlagUsage,
+				Hidden: generatedCLIFlagsHidden,
+			}
+		case reflect.String:
+			flag = &cli.StringFlag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  generatedCLIFlagsHidden,
+			}
+		case reflect.Int, reflect.Int32:
+			flag = &cli.IntFlag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  generatedCLIFlagsHidden,
+			}
+		case reflect.Int64:
+			flag = &cli.Int64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  generatedCLIFlagsHidden,
+			}
+		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+			flag = &cli.UintFlag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  generatedCLIFlagsHidden,
+			}
+		case reflect.Float32:
+			flag = &cli.Float64Flag{
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  generatedCLIFlagsHidden,
+			}
+		case reflect.Slice:
+			// TODO
+			continue
+		case reflect.Map:
+			// TODO
+			continue
+		default:
+			return flags, fmt.Errorf("cli flag generation unsupported for config type: %s is a %s", name, kind.String())
+		}
+
+		flags = append(flags, flag)
+	}
+
+	return flags, nil
+}
+
+func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
+	generatedFlagNames := conf.ToCLIFlagNames(baseFlags)
+	for _, flag := range c.App.Flags {
+		flagName := flag.Names()[0]
+
+		// the `len(baseFlags) > 0` check is needed because `c.IsSet(...)` is always false in unit tests
+		if !c.IsSet(flagName) && len(baseFlags) > 0 {
+			continue
+		}
+
+		configValue, ok := generatedFlagNames[flagName]
+		if !ok {
+			continue
+		}
+
+		kind := configValue.Kind()
+		if kind == reflect.Ptr {
+			// instantiate value to be set
+			configValue.Set(reflect.New(configValue.Type().Elem()))
+
+			kind = configValue.Type().Elem().Kind()
+			configValue = configValue.Elem()
+		}
+
+		switch kind {
+		case reflect.Bool:
+			configValue.SetBool(c.Bool(flagName))
+		case reflect.String:
+			configValue.SetString(c.String(flagName))
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			configValue.SetInt(c.Int64(flagName))
+		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
+			configValue.SetUint(c.Uint64(flagName))
+		case reflect.Float32:
+			configValue.SetFloat(c.Float64(flagName))
+		// case reflect.Slice:
+		// 	// TODO
+		// case reflect.Map:
+		// 	// TODO
+		default:
+			return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
+		}
+	}
+
 	if c.IsSet("dev") {
 		conf.Development = c.Bool("dev")
 	}
