@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/mackerelio/go-osstat/loadavg"
+	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -82,6 +83,18 @@ func Init(nodeID string) {
 
 	initPacketStats(nodeID)
 	initRoomStats(nodeID)
+}
+
+func getMemoryStats() (memoryLoad float32, err error) {
+	memInfo, err := memory.Get()
+	if err != nil {
+		return
+	}
+
+	if memInfo.Total != 0 {
+		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
+	}
+	return
 }
 
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
