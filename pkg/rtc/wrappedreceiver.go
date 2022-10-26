@@ -248,6 +248,13 @@ func (d *DummyReceiver) GetLayerDimension(quality int32) (uint32, uint32) {
 	return 0, 0
 }
 
+func (d *DummyReceiver) GetTemporalLayerFpsForSpatial(spatial int32) []float32 {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetTemporalLayerFpsForSpatial(spatial)
+	}
+	return nil
+}
+
 func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.TrackInfo()

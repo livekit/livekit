@@ -524,6 +524,9 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
+	p.clearDisconnectTimer()
+	p.clearMigrationTimer()
+
 	// send leave message
 	if sendLeave {
 		_ = p.writeMessage(&livekit.SignalResponse{

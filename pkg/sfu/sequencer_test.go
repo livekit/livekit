@@ -71,20 +71,20 @@ func Test_sequencer_getNACKSeqNo(t *testing.T) {
 		{
 			name: "Should get correct seq numbers",
 			fields: fields{
-				input:   []uint16{2, 3, 4, 7, 8},
+				input:   []uint16{2, 3, 4, 7, 8, 11},
 				padding: []uint16{9, 10},
 				offset:  5,
 			},
 			args: args{
-				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5},
+				seqNo: []uint16{4 + 5, 5 + 5, 8 + 5, 9 + 5, 10 + 5, 11 + 5},
 			},
-			want: []uint16{4, 8},
+			want: []uint16{4, 8, 11},
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			n := newSequencer(500, 0, logger.GetDefaultLogger())
+			n := newSequencer(5, 10, logger.GetDefaultLogger())
 
 			for _, i := range tt.fields.input {
 				n.push(i, i+tt.fields.offset, 123, 3)
@@ -144,7 +144,7 @@ func Test_packetMeta_VP8(t *testing.T) {
 		IsKeyFrame:       true,
 	}
 	unpackedVP8 := p.unpackVP8()
-	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
+	require.Equal(t, expectedVP8, unpackedVP8)
 
 	// short picture id and no TL0PICIDX
 	vp8 = &buffer.VP8{
@@ -181,6 +181,5 @@ func Test_packetMeta_VP8(t *testing.T) {
 		IsKeyFrame:       true,
 	}
 	unpackedVP8 = p.unpackVP8()
-	require.True(t, reflect.DeepEqual(expectedVP8, unpackedVP8))
-
+	require.Equal(t, expectedVP8, unpackedVP8)
 }

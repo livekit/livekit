@@ -102,7 +102,7 @@ type VideoAllocation struct {
 }
 
 func (v VideoAllocation) String() string {
-	return fmt.Sprintf("VideoAllocation{state: %s, change: %s, bw: %d, del: %d, avail: %+v, exmpt: %+v, rates: %+v, target: %s, dist: %d}",
+	return fmt.Sprintf("VideoAllocation{state: %s, change: %s, bw: %d, del: %d, avail: %+v, exempt: %+v, rates: %+v, target: %s, dist: %d}",
 		v.state, v.change, v.bandwidthRequested, v.bandwidthDelta, v.availableLayers, v.exemptedLayers, v.bitrates, v.targetLayers, v.distanceToDesired)
 }
 
@@ -334,6 +334,7 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers,
 		return false, f.maxLayers, f.currentLayers
 	}
 
+	f.logger.Infow("setting max temporal layer", "layer", temporalLayer)
 	f.maxLayers.Temporal = temporalLayer
 
 	return true, f.maxLayers, f.currentLayers
@@ -1462,7 +1463,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				// if f.ddLayerSelector != nil {
 				// 	f.ddLayerSelector.SelectLayer(f.currentLayers)
 				// }
-				if f.currentLayers.Spatial == f.maxLayers.Spatial {
+				if f.currentLayers.Spatial >= f.maxLayers.Spatial {
 					tp.isSwitchingToMaxLayer = true
 				}
 			}

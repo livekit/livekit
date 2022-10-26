@@ -57,6 +57,8 @@ type TrackReceiver interface {
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
+
+	GetTemporalLayerFpsForSpatial(layer int32) []float32
 }
 
 // WebRTCReceiver receives a media track
@@ -101,9 +103,6 @@ type WebRTCReceiver struct {
 
 	// update stats
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
-
-	// update layer info
-	onMaxLayerChange func(maxLayer int32)
 
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
 }
@@ -185,7 +184,6 @@ func NewWebRTCReceiver(
 	}
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC)
-	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
@@ -551,7 +549,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if spatialTracker != nil {
-			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
+			spatialTracker.Observe(pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
 		}
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
@@ -612,4 +610,11 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 		w.primaryReceiver.CompareAndSwap(nil, pr)
 	}
 	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+}
+
+func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if !w.isSVC {
+		return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(0)
+	}
+	return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(layer)
 }

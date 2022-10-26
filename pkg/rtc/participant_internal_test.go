@@ -443,7 +443,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	if opts.protocolVersion == 0 {
 		opts.protocolVersion = 6
 	}
-	conf, _ := config.NewConfig("", true, nil)
+	conf, _ := config.NewConfig("", true, nil, nil)
 	// disable mux, it doesn't play too well with unit test
 	conf.RTC.UDPPort = 0
 	conf.RTC.TCPPort = 0

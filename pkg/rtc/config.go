@@ -329,6 +329,7 @@ func getNAT1to1IPsForConf(conf *config.Config) ([]string, error) {
 	var firstResloved bool
 	natMapping := make(map[string]string)
 	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
 
 done:
 	for {
