@@ -2,8 +2,6 @@ module github.com/livekit/livekit-server
 
 go 1.17
 
-replace github.com/livekit/protocol => ../protocol
-
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.13.0
@@ -20,7 +18,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/livekit/mageutil v0.0.0-20221002073820-d9198083cfdc
 	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b
-	github.com/livekit/protocol v1.1.3-0.20221017182541-cd9e72d48a05
+	github.com/livekit/protocol v1.1.3-0.20221026061756-e5d7144e26da
 	github.com/livekit/rtcscore-go v0.0.0-20220815072451-20ee10ae1995
 	github.com/mackerelio/go-osstat v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -41,7 +39,7 @@ require (
 	github.com/prometheus/client_golang v1.13.0
 	github.com/rs/cors v1.8.2
 	github.com/sebest/xff v0.0.0-20210106013422-671bd2870b3a
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	github.com/thoas/go-funk v0.9.2
 	github.com/twitchtv/twirp v8.1.2+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
