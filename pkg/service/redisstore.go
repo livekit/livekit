@@ -420,6 +420,8 @@ func (s *RedisStore) UpdateEgress(_ context.Context, info *livekit.EgressInfo) e
 // Deletes egress info 24h after the egress has ended
 func (s *RedisStore) egressWorker() {
 	ticker := time.NewTicker(time.Minute * 30)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.done:

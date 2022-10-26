@@ -99,6 +99,11 @@ func main() {
 				Name:  "dev",
 				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
 			},
+			&cli.BoolFlag{
+				Name:   "disable-strict-config",
+				Usage:  "disables strict config parsing",
+				Hidden: true,
+			},
 		},
 		Action: startServer,
 		Commands: []*cli.Command{
@@ -156,7 +161,11 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	conf, err := config.NewConfig(confString, true, c)
+	strictMode := true
+	if c.Bool("disable-strict-config") {
+		strictMode = false
+	}
+	conf, err := config.NewConfig(confString, strictMode, c)
 	if err != nil {
 		return nil, err
 	}

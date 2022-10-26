@@ -257,7 +257,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = ErrBufferTooSmall
+				err = bucket.ErrBufferTooSmall
 				b.Unlock()
 				return
 			}
@@ -378,7 +378,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			b.processHeaderExtensions(&rtpPacket, arrivalTime)
 		}
 
-		if err != ErrRTXPacket {
+		if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
 		}
 		return

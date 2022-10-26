@@ -95,6 +95,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		return nil, false, err
 	}
 
+	memoryLoad, _ := getMemoryStats()
+	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
+	// So, do not error out. Use the information if it is available.
+
 	sysPackets, sysDroppedPackets, err := getTCStats()
 	if err != nil {
 		return nil, false, err
@@ -154,6 +158,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
 		SysPacketsOut:              sysPackets,
 		SysPacketsDropped:          sysDroppedPackets,
+		MemoryLoad:                 memoryLoad,
 	}
 
 	// update stats

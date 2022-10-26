@@ -450,30 +450,37 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 		return
 	}
 
+	if !r.isRRSeen || r.extHighestSNOverridden <= extHighestSN {
+		r.extHighestSNOverridden = extHighestSN
+		r.packetsLostOverridden = packetsLost
+
+		r.rtt = rtt
+		if rtt > r.maxRtt {
+			r.maxRtt = rtt
+		}
+
+		r.jitterOverridden = jitter
+		if jitter > r.maxJitterOverridden {
+			r.maxJitterOverridden = jitter
+		}
+
+		// update snapshots
+		for _, s := range r.snapshots {
+			if rtt > s.maxRtt {
+				s.maxRtt = rtt
+			}
+
+			if jitter > s.maxJitterOverridden {
+				s.maxJitterOverridden = jitter
+			}
+		}
+	} else {
+		r.logger.Warnw(
+			"receiver report potentially out of order",
+			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, extHighestSN),
+		)
+	}
 	r.isRRSeen = true
-	r.extHighestSNOverridden = extHighestSN
-	r.packetsLostOverridden = packetsLost
-
-	r.rtt = rtt
-	if rtt > r.maxRtt {
-		r.maxRtt = rtt
-	}
-
-	r.jitterOverridden = jitter
-	if jitter > r.maxJitterOverridden {
-		r.maxJitterOverridden = jitter
-	}
-
-	// update snapshots
-	for _, s := range r.snapshots {
-		if rtt > s.maxRtt {
-			s.maxRtt = rtt
-		}
-
-		if jitter > s.maxJitterOverridden {
-			s.maxJitterOverridden = jitter
-		}
-	}
 }
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
