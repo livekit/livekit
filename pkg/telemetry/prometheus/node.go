@@ -91,7 +91,9 @@ func getMemoryStats() (memoryLoad float32, err error) {
 		return
 	}
 
-	memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
+	if memInfo.Total != 0 {
+		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
+	}
 	return
 }
 
