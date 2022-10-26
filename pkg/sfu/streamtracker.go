@@ -184,7 +184,7 @@ func (s *StreamTracker) SetPaused(paused bool) {
 }
 
 // Observe a packet that's received
-func (s *StreamTracker) Observe(sn uint16, temporalLayer int32, pktSize int, payloadSize int) {
+func (s *StreamTracker) Observe(temporalLayer int32, pktSize int, payloadSize int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

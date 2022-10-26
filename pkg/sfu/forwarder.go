@@ -334,6 +334,7 @@ func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, VideoLayers,
 		return false, f.maxLayers, f.currentLayers
 	}
 
+	f.logger.Infow("setting max temporal layer", "layer", temporalLayer)
 	f.maxLayers.Temporal = temporalLayer
 
 	return true, f.maxLayers, f.currentLayers

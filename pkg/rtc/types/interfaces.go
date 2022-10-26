@@ -380,6 +380,9 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
+	// returns temporal layer that's appropriate for fps
+	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
+
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(willBeResumed bool)
 }

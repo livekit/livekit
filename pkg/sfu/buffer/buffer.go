@@ -85,6 +85,7 @@ type Buffer struct {
 	// callbacks
 	onClose        func()
 	onRtcpFeedback func([]rtcp.Packet)
+	onFpsChanged   func()
 
 	// logger
 	logger logger.Logger
@@ -93,6 +94,9 @@ type Buffer struct {
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
+
+	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
+	frameRateCalculated bool
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -156,6 +160,27 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.lastReport = time.Now().UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 
+	for _, ext := range params.HeaderExtensions {
+		switch ext.URI {
+		case dd.ExtensionUrl:
+			b.ddExt = uint8(ext.ID)
+			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
+			for i := range b.frameRateCalculator {
+				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+			}
+			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
+				if b.maxLayerChangedCB != nil {
+					b.maxLayerChangedCB(spatial, temporal)
+				}
+				frc.SetMaxLayer(spatial, temporal)
+			})
+
+		case sdp.AudioLevelURI:
+			b.audioLevelExt = uint8(ext.ID)
+			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
+		}
+	}
+
 	switch {
 	case strings.HasPrefix(b.mime, "audio/"):
 		b.codecType = webrtc.RTPCodecTypeAudio
@@ -163,23 +188,12 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	case strings.HasPrefix(b.mime, "video/"):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
+		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		}
+
 	default:
 		b.codecType = webrtc.RTPCodecType(0)
-	}
-	for _, ext := range params.HeaderExtensions {
-		switch ext.URI {
-		case dd.ExtensionUrl:
-			b.ddExt = uint8(ext.ID)
-			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
-				if b.maxLayerChangedCB != nil {
-					b.maxLayerChangedCB(spatial, temporal)
-				}
-			})
-
-		case sdp.AudioLevelURI:
-			b.audioLevelExt = uint8(ext.ID)
-			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
-		}
 	}
 
 	for _, fb := range codec.RTCPFeedback {
@@ -389,6 +403,35 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.doNACKs()
 
 	b.doReports(arrivalTime)
+
+	b.doFpsCalc(ep)
+}
+
+func (b *Buffer) doFpsCalc(ep *ExtPacket) {
+	if b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+		return
+	}
+	spatial := ep.Spatial
+	if spatial < 0 || int(spatial) >= len(b.frameRateCalculator) {
+		spatial = 0
+	}
+	if fr := b.frameRateCalculator[spatial]; fr != nil {
+		if fr.RecvPacket(ep) {
+			complete := true
+			for _, fr2 := range b.frameRateCalculator {
+				if fr2 != nil && !fr2.Completed() {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				b.frameRateCalculated = true
+				if f := b.onFpsChanged; f != nil {
+					go f()
+				}
+			}
+		}
+	}
 }
 
 func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
@@ -643,4 +686,21 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 // work for that too. Do we keep it unchange or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
+}
+
+func (b *Buffer) OnFpsChanged(f func()) {
+	b.Lock()
+	b.onFpsChanged = f
+	b.Unlock()
+}
+
+func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if int(layer) >= len(b.frameRateCalculator) {
+		return nil
+	}
+
+	if fc := b.frameRateCalculator[layer]; fc != nil {
+		return fc.GetFrameRate()
+	}
+	return nil
 }

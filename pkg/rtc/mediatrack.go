@@ -314,6 +314,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+
+	// if subscriber request fps before fps calculated, update them after fps updated.
+	buff.OnFpsChanged(func() {
+		t.MediaTrackSubscriptions.UpdateVideoLayers()
+	})
 	return newCodec
 }
 

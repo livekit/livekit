@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/bep/debounce v1.2.1
+	github.com/bits-and-blooms/bitset v1.3.3
 	github.com/d5/tengo/v2 v2.13.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elliotchance/orderedmap v1.5.0
