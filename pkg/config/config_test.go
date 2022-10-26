@@ -38,6 +38,7 @@ func TestGeneratedFlags(t *testing.T) {
 	require.NoError(t, err)
 
 	app := cli.NewApp()
+	app.Name = "test"
 	app.Flags = append(app.Flags, generatedFlags...)
 
 	set := flag.NewFlagSet("test", 0)
