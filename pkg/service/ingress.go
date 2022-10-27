@@ -64,12 +64,9 @@ func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateI
 }
 
 func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPrefix string, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	sk := utils.NewGuid("")
@@ -133,12 +130,9 @@ func (s *IngressService) sendRPCWithRetry(ctx context.Context, req *livekit.Ingr
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	if s.rpcClient == nil {
@@ -204,12 +198,9 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 }
 
 func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngressRequest) (*livekit.ListIngressResponse, error) {
-	roomName, err := EnsureJoinPermission(ctx)
+	err := EnsureIngressAdminPermission(ctx)
 	if err != nil {
 		return nil, twirpAuthError(err)
-	}
-	if req.RoomName != "" && req.RoomName != string(roomName) {
-		return nil, twirpAuthError(ErrPermissionDenied)
 	}
 
 	infos, err := s.store.ListIngress(ctx, livekit.RoomName(req.RoomName))
@@ -222,7 +213,7 @@ func (s *IngressService) ListIngress(ctx context.Context, req *livekit.ListIngre
 }
 
 func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteIngressRequest) (*livekit.IngressInfo, error) {
-	if _, err := EnsureJoinPermission(ctx); err != nil {
+	if err := EnsureIngressAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
