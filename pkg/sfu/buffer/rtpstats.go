@@ -103,8 +103,9 @@ type RTPStats struct {
 	highestSN  uint16
 	cycles     uint16
 
-	isRRSeen               bool
 	extHighestSNOverridden uint32
+	lastRRTime             time.Time
+	lastRR                 rtcp.ReceptionReport
 
 	highestTS   uint32
 	highestTime int64
@@ -175,6 +176,9 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 }
 
 func (r *RTPStats) Seed(from *RTPStats) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	if from == nil {
 		return
 	}
@@ -189,8 +193,9 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.highestSN = from.highestSN
 	r.cycles = from.cycles
 
-	r.isRRSeen = from.isRRSeen
 	r.extHighestSNOverridden = from.extHighestSNOverridden
+	r.lastRRTime = from.lastRRTime
+	r.lastRR = from.lastRR
 
 	r.highestTS = from.highestTS
 	r.highestTime = from.highestTime
@@ -248,6 +253,10 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.arrivalSR = from.arrivalSR
 
 	// snapshots are not cloned and should be recreated
+	r.nextSnapshotId = from.nextSnapshotId
+	for id, ss := range from.snapshots {
+		r.snapshots[id] = ss
+	}
 }
 
 func (r *RTPStats) SetLogger(logger logger.Logger) {
@@ -442,7 +451,7 @@ func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	return packetsSeen - r.packetsPadding
 }
 
-func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uint32, rtt uint32, jitter float64) {
+func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -450,18 +459,18 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 		return
 	}
 
-	if !r.isRRSeen || r.extHighestSNOverridden <= extHighestSN {
-		r.extHighestSNOverridden = extHighestSN
-		r.packetsLostOverridden = packetsLost
+	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
+		r.extHighestSNOverridden = rr.LastSequenceNumber
+		r.packetsLostOverridden = rr.TotalLost
 
 		r.rtt = rtt
 		if rtt > r.maxRtt {
 			r.maxRtt = rtt
 		}
 
-		r.jitterOverridden = jitter
-		if jitter > r.maxJitterOverridden {
-			r.maxJitterOverridden = jitter
+		r.jitterOverridden = float64(rr.Jitter)
+		if r.jitterOverridden > r.maxJitterOverridden {
+			r.maxJitterOverridden = r.jitterOverridden
 		}
 
 		// update snapshots
@@ -470,17 +479,21 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 				s.maxRtt = rtt
 			}
 
-			if jitter > s.maxJitterOverridden {
-				s.maxJitterOverridden = jitter
+			if r.jitterOverridden > s.maxJitterOverridden {
+				s.maxJitterOverridden = r.jitterOverridden
 			}
 		}
+
+		r.lastRRTime = time.Now()
+		r.lastRR = rr
 	} else {
 		r.logger.Warnw(
 			"receiver report potentially out of order",
-			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, extHighestSN),
+			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, rr.LastSequenceNumber),
+			"lastRRTime", r.lastRRTime,
+			"lastRR", r.lastRR,
 		)
 	}
-	r.isRRSeen = true
 }
 
 func (r *RTPStats) UpdateNack(nackCount uint32) {
@@ -977,7 +990,7 @@ func (r *RTPStats) getExtHighestSN() uint32 {
 }
 
 func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
-	if r.params.IsReceiverReportDriven && r.isRRSeen {
+	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.extHighestSNOverridden
 	}
 
@@ -985,7 +998,7 @@ func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
 }
 
 func (r *RTPStats) getPacketsLost() uint32 {
-	if r.params.IsReceiverReportDriven && r.isRRSeen {
+	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.packetsLostOverridden
 	}
 
@@ -1137,7 +1150,7 @@ func (r *RTPStats) updateGapHistogram(gap int) {
 }
 
 func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot) {
-	if !r.initialized || (r.params.IsReceiverReportDriven && !r.isRRSeen) {
+	if !r.initialized || (r.params.IsReceiverReportDriven && r.lastRRTime.IsZero()) {
 		return nil, nil
 	}
 
