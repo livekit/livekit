@@ -8,6 +8,7 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 
+	dd "github.com/livekit/livekit-server/pkg/sfu/dependencydescriptor"
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
 )
@@ -113,27 +114,36 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 	}
 	p.pendingTracksLock.RUnlock()
 
-	if mime == "" {
-		return offer
-	}
-
-	codecs, err := codecsFromMediaDescription(lastVideo)
-	if err != nil {
-		return offer
-	}
-
 	mime = strings.ToUpper(mime)
-	var preferredCodecs, leftCodecs []string
-	for _, c := range codecs {
-		if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
-			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-		} else {
-			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+	// remove dd extension if av1 not preferred
+	if !strings.Contains(mime, "AV1") {
+		for i, attr := range lastVideo.Attributes {
+			if strings.Contains(attr.Value, dd.ExtensionUrl) {
+				lastVideo.Attributes[i] = lastVideo.Attributes[len(lastVideo.Attributes)-1]
+				lastVideo.Attributes = lastVideo.Attributes[:len(lastVideo.Attributes)-1]
+				break
+			}
 		}
 	}
 
-	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats[:0], preferredCodecs...)
-	lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats, leftCodecs...)
+	if mime != "" {
+		codecs, err := codecsFromMediaDescription(lastVideo)
+		if err != nil {
+			return offer
+		}
+
+		var preferredCodecs, leftCodecs []string
+		for _, c := range codecs {
+			if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
+				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+			} else {
+				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+			}
+		}
+
+		lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats[:0], preferredCodecs...)
+		lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats, leftCodecs...)
+	}
 
 	bytes, err := parsed.Marshal()
 	if err != nil {

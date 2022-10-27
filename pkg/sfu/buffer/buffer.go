@@ -510,7 +510,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return nil
 		}
-		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
 			ep.Temporal = int32(vp8Packet.TID)
@@ -519,6 +518,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			vp8Packet.TID = uint8(ep.Temporal)
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
+		ep.Payload = vp8Packet
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":
