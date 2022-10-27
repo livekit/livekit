@@ -491,6 +491,8 @@ func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32)
 			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, rr.LastSequenceNumber),
 			"lastRRTime", r.lastRRTime,
 			"lastRR", r.lastRR,
+			"sinceLastRR", time.Since(r.lastRRTime),
+			"receivedRR", rr,
 		)
 	}
 }
