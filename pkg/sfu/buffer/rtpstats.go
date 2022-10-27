@@ -252,7 +252,6 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.ntpSR = from.ntpSR
 	r.arrivalSR = from.arrivalSR
 
-	// snapshots are not cloned and should be recreated
 	r.nextSnapshotId = from.nextSnapshotId
 	for id, ss := range from.snapshots {
 		r.snapshots[id] = ss
