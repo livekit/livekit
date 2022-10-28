@@ -105,13 +105,14 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats       *buffer.RTPStats
-	ForwarderState ForwarderState
+	RTPStats             *buffer.RTPStats
+	DeltaStatsSnapshotId uint32
+	ForwarderState       ForwarderState
 }
 
 func (d DownTrackState) String() string {
-	return fmt.Sprintf("DownTrackState{rtpStats: %s, forwarder: %s}",
-		d.RTPStats.ToString(), d.ForwarderState.String())
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.ForwarderState.String())
 }
 
 // -------------------------------------------------------------------
@@ -769,13 +770,15 @@ func (d *DownTrack) MaxLayers() VideoLayers {
 
 func (d *DownTrack) GetState() DownTrackState {
 	return DownTrackState{
-		RTPStats:       d.rtpStats,
-		ForwarderState: d.forwarder.GetState(),
+		RTPStats:             d.rtpStats,
+		DeltaStatsSnapshotId: d.deltaStatsSnapshotId,
+		ForwarderState:       d.forwarder.GetState(),
 	}
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
 	d.rtpStats.Seed(state.RTPStats)
+	d.deltaStatsSnapshotId = state.DeltaStatsSnapshotId
 	d.forwarder.SeedState(state.ForwarderState)
 }
 
@@ -1162,7 +1165,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					rttToReport = rtt
 				}
 
-				d.rtpStats.UpdateFromReceiverReport(r.LastSequenceNumber, r.TotalLost, rtt, float64(r.Jitter))
+				d.rtpStats.UpdateFromReceiverReport(r, rtt)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
