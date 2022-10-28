@@ -369,7 +369,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, reason ty
 		}
 	}
 
-	if p != nil && p.IsRecorder() {
+	if (p != nil && p.IsRecorder()) || r.protoRoom.ActiveRecording {
 		activeRecording := false
 		for _, op := range r.participants {
 			if op.IsRecorder() {
