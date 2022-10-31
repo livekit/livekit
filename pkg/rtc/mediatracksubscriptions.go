@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
@@ -166,6 +167,10 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack.OnRttUpdate(func(_ *sfu.DownTrack, rtt uint32) {
 		go sub.UpdateRTT(rtt)
+	})
+
+	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
+		sub.OnReceiverReport(dt, report)
 	})
 
 	var transceiver *webrtc.RTPTransceiver
