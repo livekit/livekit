@@ -629,20 +629,24 @@ func (t *TransportManager) OnReceiverReport(dt *sfu.DownTrack, report *rtcp.Rece
 }
 
 func (t *TransportManager) onMediaLossUpdate(loss uint8) {
+	t.lock.Lock()
 	t.udpLossUnstableCount <<= 1
 	if loss >= uint8(255*udpLossFracUnstable/100) {
 		t.udpLossUnstableCount |= 1
 		if bits.OnesCount32(t.udpLossUnstableCount) >= udpLossUnstableCountThreshold {
 			if t.udpRTT > 0 && t.tcpRTT < uint32(float32(t.udpRTT)*1.3) && t.tcpRTT < tcpGoodRTT {
 				t.udpLossUnstableCount = 0
-				t.params.Logger.Debugw("udp connection unstable, switch to tcp")
+				t.lock.Unlock()
+				t.params.Logger.Infow("udp connection unstable, switch to tcp")
 				t.handleConnectionFailed(true)
 				if t.onAnyTransportFailed != nil {
 					t.onAnyTransportFailed()
 				}
+				return
 			}
 		}
 	}
+	t.lock.Unlock()
 }
 
 func (t *TransportManager) UpdateRTT(rtt uint32, isUDP bool) {
