@@ -17,10 +17,10 @@ const (
 	maxRedCount = 2
 	mtuSize     = 1500
 
-	// the RedReceiver is only for chrome / native webrtc now, we always negotiate opus payload to 63 with those clients,
-	// so it is safe to use a fixed payload 63 here for performance(avoid encoding red blocks for each downtrack that
+	// the RedReceiver is only for chrome / native webrtc now, we always negotiate opus payload to 111 with those clients,
+	// so it is safe to use a fixed payload 111 here for performance(avoid encoding red blocks for each downtrack that
 	// have a different opus payload type).
-	opusPT = 63
+	opusPT = 111
 )
 
 type RedReceiver struct {
@@ -32,8 +32,8 @@ type RedReceiver struct {
 	redPayloadBuf     [mtuSize]byte
 }
 
-func NewRedReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedPrimaryReceiver {
-	return &RedPrimaryReceiver{
+func NewRedReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedReceiver {
+	return &RedReceiver{
 		TrackReceiver:     receiver,
 		downTrackSpreader: NewDownTrackSpreader(dsp),
 		logger:            dsp.Logger,
@@ -97,7 +97,7 @@ func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 }
 
 func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (int, error) {
-	redPkts := make([]*rtp.Packet, 0, maxRedCount)
+	redPkts := make([]*rtp.Packet, 0, maxRedCount+1)
 	for _, prev := range r.pktBuff {
 		if prev == nil || pkt.SequenceNumber == prev.SequenceNumber ||
 			(pkt.SequenceNumber-prev.SequenceNumber) > uint16(maxRedCount) {
@@ -106,7 +106,7 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 		redPkts = append(redPkts, prev)
 	}
 
-	if r.pktBuff[1] == nil || r.pktBuff[1].SequenceNumber < pkt.SequenceNumber {
+	if r.pktBuff[1] == nil || pkt.SequenceNumber-r.pktBuff[1].SequenceNumber < 0x8000 {
 		/* update packet, not copy the rtp packet here since we only hold two packets for red encoding,
 		the upstream buffer size is much larger than two, so it is safe to use packet directly
 		*/
@@ -132,19 +132,19 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 		header |= uint32(len(p.Payload)) & 0x3FF
 		binary.BigEndian.PutUint32(redPayload[index:], header)
 		index += 4
+	}
+	// last block header
+	redPayload[index] = uint8(opusPT)
+	index++
+
+	// append data blocks
+	redPkts = append(redPkts, pkt)
+	for _, p := range redPkts {
 		if copy(redPayload[index:], p.Payload) < len(p.Payload) {
 			r.logger.Errorw("red payload don't have enough space", nil, "needsize", p.Payload)
 			return 0, bucket.ErrBufferTooSmall
 		}
 		index += len(p.Payload)
 	}
-
-	if len(redPayload[index:]) < 1+len(pkt.Payload) {
-		return 0, bucket.ErrBufferTooSmall
-	}
-	// append primary encoding data
-	redPayload[index] = uint8(opusPT)
-	index++
-	index += copy(redPayload[index:], pkt.Payload)
 	return index, nil
 }
