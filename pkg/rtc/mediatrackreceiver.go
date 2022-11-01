@@ -485,7 +485,14 @@ func (t *MediaTrackReceiver) addSubscriber(sub types.LocalParticipant) (err erro
 	}
 
 	tLogger := LoggerWithTrack(sub.GetLogger(), t.ID(), t.params.IsRelayed)
-	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(receivers, t.ID(), streamId, potentialCodecs, tLogger))
+	err = t.MediaTrackSubscriptions.AddSubscriber(sub, NewWrappedReceiver(WrappedReceiverParams{
+		Receivers:      receivers,
+		TrackID:        t.ID(),
+		StreamId:       streamId,
+		UpstreamCodecs: potentialCodecs,
+		Logger:         tLogger,
+		DisableRed:     t.trackInfo.GetDisableRed(),
+	}))
 	if err != nil {
 		return
 	}

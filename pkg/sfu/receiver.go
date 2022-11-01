@@ -58,6 +58,9 @@ type TrackReceiver interface {
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
 
+	// Get red receiver for primary codec, used by forward red encodings for opus only codec
+	GetRedReceiver() TrackReceiver
+
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 }
 
@@ -105,6 +108,7 @@ type WebRTCReceiver struct {
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
+	redReceiver     atomic.Value // *RedReceiver
 }
 
 func IsSvcCodec(mime string) bool {
@@ -520,6 +524,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if pr := w.primaryReceiver.Load(); pr != nil {
 				pr.(*RedPrimaryReceiver).Close()
 			}
+			if pr := w.redReceiver.Load(); pr != nil {
+				pr.(*RedReceiver).Close()
+			}
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)
@@ -555,8 +562,12 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
-		if pr := w.primaryReceiver.Load(); pr != nil {
-			pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+		if w.isRED {
+			if pr := w.primaryReceiver.Load(); pr != nil {
+				pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+			}
+		} else if pr := w.redReceiver.Load(); pr != nil {
+			pr.(*RedReceiver).ForwardRTP(pkt, spatialLayer)
 		}
 	}
 }
@@ -610,6 +621,23 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 		w.primaryReceiver.CompareAndSwap(nil, pr)
 	}
 	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+}
+
+func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
+	if w.isRED || w.closed.Load() {
+		return w
+	}
+
+	if w.redReceiver.Load() == nil {
+		pr := NewRedReceiver(w, DownTrackSpreaderParams{
+			Threshold: w.lbThreshold,
+			Logger:    w.logger,
+		})
+		w.redReceiver.CompareAndSwap(nil, pr)
+	}
+
+	return w.redReceiver.Load().(*RedReceiver)
+
 }
 
 func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
