@@ -27,14 +27,10 @@ type WrappedReceiverParams struct {
 
 type WrappedReceiver struct {
 	sfu.TrackReceiver
-	params    WrappedReceiverParams
-	receivers []sfu.TrackReceiver
-	// trackID         livekit.TrackID
-	// streamId        string
+	params          WrappedReceiverParams
+	receivers       []sfu.TrackReceiver
 	codecs          []webrtc.RTPCodecParameters
 	determinedCodec webrtc.RTPCodecCapability
-
-	// logger logger.Logger
 }
 
 func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {

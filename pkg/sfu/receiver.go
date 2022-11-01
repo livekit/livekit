@@ -562,12 +562,14 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
-		if w.isRED {
-			if pr := w.primaryReceiver.Load(); pr != nil {
-				pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+		if w.kind == webrtc.RTPCodecTypeAudio {
+			if w.isRED {
+				if pr := w.primaryReceiver.Load(); pr != nil {
+					pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+				}
+			} else if pr := w.redReceiver.Load(); pr != nil {
+				pr.(*RedReceiver).ForwardRTP(pkt, spatialLayer)
 			}
-		} else if pr := w.redReceiver.Load(); pr != nil {
-			pr.(*RedReceiver).ForwardRTP(pkt, spatialLayer)
 		}
 	}
 }

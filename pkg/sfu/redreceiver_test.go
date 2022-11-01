@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -26,7 +27,7 @@ func TestRedReceiver(t *testing.T) {
 	tsStep := uint32(48000 / 1000 * 10)
 
 	t.Run("normal", func(t *testing.T) {
-		w := &WebRTCReceiver{isRED: true}
+		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
 		require.Equal(t, w.GetRedReceiver(), w)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
@@ -55,7 +56,7 @@ func TestRedReceiver(t *testing.T) {
 	})
 
 	t.Run("packet lost and jump", func(t *testing.T) {
-		w := &WebRTCReceiver{}
+		w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NoError(t, red.AddDownTrack(dt))
 
@@ -110,7 +111,7 @@ func TestRedReceiver(t *testing.T) {
 
 	})
 	t.Run("unorder and repeat", func(t *testing.T) {
-		w := &WebRTCReceiver{}
+		w := &WebRTCReceiver{kind: webrtc.RTPCodecTypeAudio}
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NoError(t, red.AddDownTrack(dt))
 
@@ -174,17 +175,6 @@ type block struct {
 }
 
 func extractPktsFromRed(redPkt *rtp.Packet) ([]*rtp.Packet, error) {
-	/* RED payload https://datatracker.ietf.org/doc/html/rfc2198#section-3
-		0                   1                    2                   3
-	    0 1 2 3 4 5 6 7 8 9 0 1 2 3  4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	   |F|   block PT  |  timestamp offset         |   block length    |
-	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	   F: 1 bit First bit in header indicates whether another header block
-	       follows.  If 1 further header blocks follow, if 0 this is the
-	       last header block.
-	*/
-
 	payload := redPkt.Payload
 	var blocks []block
 	var blockLength int
