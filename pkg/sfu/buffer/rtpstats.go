@@ -1187,6 +1187,10 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 // ----------------------------------
 
 func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
+	if len(statsList) == 0 {
+		return nil
+	}
+
 	startTime := time.Time{}
 	endTime := time.Time{}
 
