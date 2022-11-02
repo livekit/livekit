@@ -404,6 +404,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
 	newRoom.OnGetDataStream(r.dataStreamManager.GetAll)
+	newRoom.OnDataStreamSave(r.dataStreamManager.Put)
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)

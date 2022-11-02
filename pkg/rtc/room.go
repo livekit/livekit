@@ -68,6 +68,7 @@ type Room struct {
 	onMetadataUpdate     func(metadata string)
 	onClose              func()
 	onGetDataStream      func(bucket string) ([]*livekit.DataPacket_Stream, error)
+	onDataStreamSave     func(bucket string, key string, value *livekit.DataPacket_Stream) error
 }
 
 type ParticipantOptions struct {
@@ -112,10 +113,20 @@ func NewRoom(
 	return r
 }
 
+func (r *Room) getBucketName(name string) string {
+	return string(r.ID()) + "_" + name
+}
+
 func (r *Room) OnGetDataStream(callback func(bucket string) ([]*livekit.DataPacket_Stream, error)) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	r.onGetDataStream = callback
+}
+
+func (r *Room) OnDataStreamSave(callback func(bucket string, key string, value *livekit.DataPacket_Stream) error) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.onDataStreamSave = callback
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -226,12 +237,14 @@ func (r *Room) OnDataStreamRequest(request *livekit.GetDataStreamRequest) (*live
 	if handler == nil {
 		return nil, errNotFound
 	}
-	data, err := handler(request.GetName())
+	data, err := handler(r.getBucketName(request.GetName()))
 	if err != nil {
 		return nil, err
 	}
 	var packets []*livekit.StreamPacket
 	for _, d := range data {
+		//logger.Infow("PACKETS sending", "name", d.Stream.GetName(),
+		//	"key", d.Stream.GetKey())
 		packets = append(packets, &livekit.StreamPacket{
 			Name:  d.Stream.GetName(),
 			Key:   d.Stream.GetKey(),
@@ -823,6 +836,16 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 		err := op.SendDataPacket(dp)
 		if err != nil {
 			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
+		}
+	}
+
+	switch v := dp.GetValue().(type) {
+	case *livekit.DataPacket_Stream:
+		if v.Stream.Persistent {
+			err := r.onDataStreamSave(r.getBucketName(v.Stream.GetName()), v.Stream.GetKey(), v)
+			if err != nil {
+				logger.Errorw("failed to save dataStream", err)
+			}
 		}
 	}
 }

@@ -31,7 +31,7 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 
 func (p *ParticipantImpl) HandleDataStreamRequest(request *livekit.GetDataStreamRequest) error {
 	handler := p.onDataStreamRequest
-	if handler == nil {
+	if handler != nil {
 		rsp, err := handler(request)
 		if err != nil {
 			return err

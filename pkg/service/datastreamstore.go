@@ -58,7 +58,8 @@ func (ds *LocalDataStreamStore) Get(bucket string, key string) (*livekit.DataPac
 	if err != nil {
 		return nil, err
 	}
-	return v.(*livekit.DataPacket_Stream), nil
+	s := v.(livekit.DataPacket_Stream)
+	return &s, nil
 }
 
 func (ds *LocalDataStreamStore) GetAll(bucket string) ([]*livekit.DataPacket_Stream, error) {
@@ -66,12 +67,15 @@ func (ds *LocalDataStreamStore) GetAll(bucket string) ([]*livekit.DataPacket_Str
 	ds.RLock()
 	defer ds.RUnlock()
 	for _, key := range ds.Cache.GetKeys() {
+		//logger.Infow("==========GET FOUND", "key", key, "bucket", bucket)
 		if bucket == getBucketNameFromKey(key) {
+			//	logger.Infow("==========GOT MATCHED", "key", key, "bucket", bucket)
 			d, err := ds.Cache.Get(key)
 			if err != nil {
 				continue
 			}
-			rsp = append(rsp, d.(*livekit.DataPacket_Stream))
+			s := d.(livekit.DataPacket_Stream)
+			rsp = append(rsp, &s)
 		}
 	}
 	return rsp, nil
@@ -80,5 +84,7 @@ func (ds *LocalDataStreamStore) GetAll(bucket string) ([]*livekit.DataPacket_Str
 func (ds *LocalDataStreamStore) Put(bucket string, key string, value *livekit.DataPacket_Stream) error {
 	ds.Lock()
 	defer ds.Unlock()
+	//	logger.Infow("==========PUT", "key", value.Stream.GetKey(), "name", value.Stream.GetName(),
+	//		"bucket", bucket)
 	return ds.Cache.SetWithTTL(generateKeyName(bucket, key), *value, ds.ttl)
 }
