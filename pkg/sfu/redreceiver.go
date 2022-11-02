@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"go.uber.org/atomic"
 
@@ -98,8 +99,17 @@ func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, error) {
 
 func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (int, error) {
 	redPkts := make([]*rtp.Packet, 0, maxRedCount+1)
-	for _, prev := range r.pktBuff {
-		if prev == nil || pkt.SequenceNumber == prev.SequenceNumber ||
+	lastNilPkt := -1
+	for i := len(r.pktBuff) - 1; i >= 0; i-- {
+		if r.pktBuff[i] == nil {
+			lastNilPkt = i
+			break
+		}
+
+	}
+
+	for _, prev := range r.pktBuff[lastNilPkt+1:] {
+		if pkt.SequenceNumber == prev.SequenceNumber ||
 			(pkt.SequenceNumber-prev.SequenceNumber) > uint16(maxRedCount) {
 			continue
 		}
@@ -113,6 +123,10 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 		r.pktBuff[0], r.pktBuff[1] = r.pktBuff[1], pkt
 	}
 
+	return encodeRedForPrimary(redPkts, pkt, redPayload)
+}
+
+func encodeRedForPrimary(redPkts []*rtp.Packet, primary *rtp.Packet, redPayload []byte) (int, error) {
 	var index int
 	for _, p := range redPkts {
 		/* RED payload https://datatracker.ietf.org/doc/html/rfc2198#section-3
@@ -127,7 +141,7 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 		*/
 		header := uint32(0x80 | uint8(opusPT))
 		header <<= 14
-		header |= (pkt.Timestamp - p.Timestamp) & 0x3FFF
+		header |= (primary.Timestamp - p.Timestamp) & 0x3FFF
 		header <<= 10
 		header |= uint32(len(p.Payload)) & 0x3FF
 		binary.BigEndian.PutUint32(redPayload[index:], header)
@@ -138,11 +152,10 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 	index++
 
 	// append data blocks
-	redPkts = append(redPkts, pkt)
+	redPkts = append(redPkts, primary)
 	for _, p := range redPkts {
 		if copy(redPayload[index:], p.Payload) < len(p.Payload) {
-			r.logger.Errorw("red payload don't have enough space", nil, "needsize", p.Payload)
-			return 0, bucket.ErrBufferTooSmall
+			return 0, fmt.Errorf("red payload don't have enough space, needsize %d", len(p.Payload))
 		}
 		index += len(p.Payload)
 	}
