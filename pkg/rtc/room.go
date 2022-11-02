@@ -67,6 +67,7 @@ type Room struct {
 	onParticipantChanged func(p types.LocalParticipant)
 	onMetadataUpdate     func(metadata string)
 	onClose              func()
+	onGetDataStream      func(bucket string) ([]*livekit.DataPacket_Stream, error)
 }
 
 type ParticipantOptions struct {
@@ -109,6 +110,12 @@ func NewRoom(
 	go r.subscriberBroadcastWorker()
 
 	return r
+}
+
+func (r *Room) OnGetDataStream(callback func(bucket string) ([]*livekit.DataPacket_Stream, error)) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.onGetDataStream = callback
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -214,6 +221,26 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
+func (r *Room) OnDataStreamRequest(request *livekit.GetDataStreamRequest) (*livekit.GetDataStreamResponse, error) {
+	handler := r.onGetDataStream
+	if handler == nil {
+		return nil, errNotFound
+	}
+	data, err := handler(request.GetName())
+	if err != nil {
+		return nil, err
+	}
+	var packets []*livekit.StreamPacket
+	for _, d := range data {
+		packets = append(packets, &livekit.StreamPacket{
+			Name:  d.Stream.GetName(),
+			Key:   d.Stream.GetKey(),
+			Value: d.Stream.GetValue(),
+		})
+	}
+	return &livekit.GetDataStreamResponse{Packets: packets}, nil
+}
+
 func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -273,6 +300,7 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
+	participant.OnDataStreamRequest(r.OnDataStreamRequest)
 	participant.OnSubscribedTo(func(p types.LocalParticipant, publisherID livekit.ParticipantID) {
 		go func() {
 			// when a participant subscribes to another participant,

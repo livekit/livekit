@@ -49,6 +49,7 @@ type RoomManager struct {
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
+	dataStreamManager DataStreamStore
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -63,6 +64,7 @@ func NewLocalRoomManager(
 	telemetry telemetry.TelemetryService,
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
+	dataStreamStore DataStreamStore,
 ) (*RoomManager, error) {
 
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
@@ -79,6 +81,7 @@ func NewLocalRoomManager(
 		telemetry:         telemetry,
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
+		dataStreamManager: dataStreamStore,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -114,7 +117,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName)
 
 	var err, err2 error
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(3)
 	// clear routing information
 	go func() {
 		defer wg.Done()
@@ -124,6 +127,12 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomName livekit.RoomName)
 	go func() {
 		defer wg.Done()
 		err2 = r.roomStore.DeleteRoom(ctx, roomName)
+	}()
+
+	// clear dataStore
+	go func() {
+		defer wg.Done()
+		r.dataStreamManager.DeleteBucket(string(roomName))
 	}()
 
 	wg.Wait()
@@ -394,6 +403,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	// construct ice servers
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
+	newRoom.OnGetDataStream(r.dataStreamManager.GetAll)
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo)
@@ -425,6 +435,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 	newRoom.Hold()
 
+	// create room datastore
+	r.dataStreamManager.CreateBucket(string(roomName), time.Hour)
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
 

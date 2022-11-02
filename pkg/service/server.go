@@ -27,19 +27,20 @@ import (
 )
 
 type LivekitServer struct {
-	config         *config.Config
-	egressService  *EgressService
-	ingressService *IngressService
-	rtcService     *RTCService
-	httpServer     *http.Server
-	promServer     *http.Server
-	router         routing.Router
-	roomManager    *RoomManager
-	turnServer     *turn.Server
-	currentNode    routing.LocalNode
-	running        atomic.Bool
-	doneChan       chan struct{}
-	closedChan     chan struct{}
+	config            *config.Config
+	egressService     *EgressService
+	ingressService    *IngressService
+	rtcService        *RTCService
+	httpServer        *http.Server
+	promServer        *http.Server
+	router            routing.Router
+	roomManager       *RoomManager
+	turnServer        *turn.Server
+	currentNode       routing.LocalNode
+	running           atomic.Bool
+	doneChan          chan struct{}
+	closedChan        chan struct{}
+	dataStreamManager DataStreamStore
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -52,6 +53,7 @@ func NewLivekitServer(conf *config.Config,
 	roomManager *RoomManager,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
+	dataStreamStore DataStreamStore,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:         conf,
@@ -61,9 +63,10 @@ func NewLivekitServer(conf *config.Config,
 		router:         router,
 		roomManager:    roomManager,
 		// turn server starts automatically
-		turnServer:  turnServer,
-		currentNode: currentNode,
-		closedChan:  make(chan struct{}),
+		turnServer:        turnServer,
+		currentNode:       currentNode,
+		closedChan:        make(chan struct{}),
+		dataStreamManager: dataStreamStore,
 	}
 
 	middlewares := []negroni.Handler{

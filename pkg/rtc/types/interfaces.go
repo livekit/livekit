@@ -305,6 +305,7 @@ type LocalParticipant interface {
 	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
+	OnDataStreamRequest(callback func(request *livekit.GetDataStreamRequest) (*livekit.GetDataStreamResponse, error))
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -328,6 +329,8 @@ type LocalParticipant interface {
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
+
+	HandleDataStreamRequest(request *livekit.GetDataStreamRequest) error
 }
 
 // Room is a container of participants, and can provide room-level actions

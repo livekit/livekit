@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 	"os"
+	"time"
 )
 
 import (
@@ -71,7 +72,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
 	clientConfigurationManager := createClientConfiguration()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher)
+	dataStreamStore := createDataStreamStore()
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, dataStreamStore)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +82,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProvider, router, roomManager, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProvider, router, roomManager, server, currentNode, dataStreamStore)
 	if err != nil {
 		return nil, err
 	}
@@ -236,4 +238,8 @@ func getRoomConf(config2 *config.Config) config.RoomConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func createDataStreamStore() DataStreamStore {
+	return NewLocalDataStreamStore(60 * time.Minute)
 }

@@ -29,6 +29,24 @@ func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
 	}
 }
 
+func (p *ParticipantImpl) HandleDataStreamRequest(request *livekit.GetDataStreamRequest) error {
+	handler := p.onDataStreamRequest
+	if handler == nil {
+		rsp, err := handler(request)
+		if err != nil {
+			return err
+		}
+		return p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_DataStreamResponse{
+				DataStreamResponse: &livekit.GetDataStreamResponse{
+					Packets: rsp.GetPackets(),
+				},
+			},
+		})
+	}
+	return errNotFound
+}
+
 func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) error {
 	if p.State() == livekit.ParticipantInfo_JOINING {
 		p.updateState(livekit.ParticipantInfo_JOINED)

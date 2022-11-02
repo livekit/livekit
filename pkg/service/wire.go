@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/wire"
@@ -33,6 +34,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getNodeID,
 		createRedisClient,
 		createStore,
+		createDataStreamStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
 		createKeyProvider,
 		createWebhookNotifier,
@@ -210,4 +212,8 @@ func getRoomConf(config *config.Config) config.RoomConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func createDataStreamStore() DataStreamStore {
+	return NewLocalDataStreamStore(60 * time.Minute)
 }

@@ -142,6 +142,7 @@ type ParticipantImpl struct {
 	onParticipantUpdate func(types.LocalParticipant)
 	onDataPacket        func(types.LocalParticipant, *livekit.DataPacket)
 	onSubscribedTo      func(types.LocalParticipant, livekit.ParticipantID)
+	onDataStreamRequest func(request *livekit.GetDataStreamRequest) (*livekit.GetDataStreamResponse, error)
 
 	migrateState atomic.Value // types.MigrateState
 
@@ -384,6 +385,12 @@ func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, *li
 func (p *ParticipantImpl) OnSubscribedTo(callback func(types.LocalParticipant, livekit.ParticipantID)) {
 	p.lock.Lock()
 	p.onSubscribedTo = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) OnDataStreamRequest(callback func(request *livekit.GetDataStreamRequest) (*livekit.GetDataStreamResponse, error)) {
+	p.lock.Lock()
+	p.onDataStreamRequest = callback
 	p.lock.Unlock()
 }
 
@@ -1196,6 +1203,13 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		p.lock.RUnlock()
 		if onDataPacket != nil {
 			payload.User.ParticipantSid = string(p.params.SID)
+			onDataPacket(p, &dp)
+		}
+	case *livekit.DataPacket_Stream:
+		p.lock.RLock()
+		onDataPacket := p.onDataPacket
+		p.lock.RUnlock()
+		if onDataPacket != nil {
 			onDataPacket(p, &dp)
 		}
 	default:

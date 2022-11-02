@@ -61,3 +61,11 @@ type IngressStore interface {
 type RoomAllocator interface {
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error)
 }
+
+type DataStreamStore interface {
+	CreateBucket(bucket string, ttl time.Duration) error
+	DeleteBucket(bucket string) error
+	Get(bucket string, key string) (*livekit.DataPacket_Stream, error)
+	GetAll(bucket string) ([]*livekit.DataPacket_Stream, error)
+	Put(bucket string, key string, value *livekit.DataPacket_Stream) error
+}

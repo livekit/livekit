@@ -88,6 +88,9 @@ func HandleParticipantSignal(room types.Room, participant types.LocalParticipant
 			pLogger.Warnw("could not simulate scenario", err,
 				"simulate", msg.Simulate)
 		}
+	case *livekit.SignalRequest_DataStreamRequest:
+		pLogger.Infow("DataStream request")
+		participant.HandleDataStreamRequest(msg.DataStreamRequest)
 	}
 	return nil
 }
