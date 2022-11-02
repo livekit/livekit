@@ -49,7 +49,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		return
 	}
 
-	pkts, err := r.GetSendPktsFromRed(pkt.Packet)
+	pkts, err := r.getSendPktsFromRed(pkt.Packet)
 	if err != nil {
 		r.logger.Errorw("get encoding for red failed", err, "payloadtype", pkt.Packet.PayloadType)
 		return
@@ -112,7 +112,7 @@ func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, sn uint16) (int, e
 	return pkt.MarshalTo(buf)
 }
 
-func (r *RedPrimaryReceiver) GetSendPktsFromRed(rtp *rtp.Packet) ([]*rtp.Packet, error) {
+func (r *RedPrimaryReceiver) getSendPktsFromRed(rtp *rtp.Packet) ([]*rtp.Packet, error) {
 	var needRecover bool
 	if !r.firstPktReceived {
 		r.lastSeq = rtp.SequenceNumber
