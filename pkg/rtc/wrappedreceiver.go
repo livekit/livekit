@@ -16,47 +16,61 @@ import (
 
 // wrapper around WebRTC receiver, overriding its ID
 
-type WrappedReceiver struct {
-	sfu.TrackReceiver
-	receivers       []sfu.TrackReceiver
-	trackID         livekit.TrackID
-	streamId        string
-	codecs          []webrtc.RTPCodecParameters
-	determinedCodec webrtc.RTPCodecCapability
-
-	logger logger.Logger
+type WrappedReceiverParams struct {
+	Receivers      []*simulcastReceiver
+	TrackID        livekit.TrackID
+	StreamId       string
+	UpstreamCodecs []webrtc.RTPCodecParameters
+	Logger         logger.Logger
+	DisableRed     bool
 }
 
-func NewWrappedReceiver(receivers []*simulcastReceiver, trackID livekit.TrackID, streamId string, upstreamCodecs []webrtc.RTPCodecParameters, logger logger.Logger) *WrappedReceiver {
-	sfuReceivers := make([]sfu.TrackReceiver, 0, len(receivers))
-	for _, r := range receivers {
+type WrappedReceiver struct {
+	sfu.TrackReceiver
+	params          WrappedReceiverParams
+	receivers       []sfu.TrackReceiver
+	codecs          []webrtc.RTPCodecParameters
+	determinedCodec webrtc.RTPCodecCapability
+}
+
+func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
+	sfuReceivers := make([]sfu.TrackReceiver, 0, len(params.Receivers))
+	for _, r := range params.Receivers {
 		sfuReceivers = append(sfuReceivers, r.TrackReceiver)
 	}
 
-	codecs := upstreamCodecs
-	// if upstream is opus/red, then add opus to match clients that don't support red
-	if len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
-		codecs = append(codecs, webrtc.RTPCodecParameters{
-			RTPCodecCapability: opusCodecCapability,
-			PayloadType:        111,
-		})
+	codecs := params.UpstreamCodecs
+	if len(codecs) == 1 {
+		if strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
+			// if upstream is opus/red, then add opus to match clients that don't support red
+			codecs = append(codecs, webrtc.RTPCodecParameters{
+				RTPCodecCapability: opusCodecCapability,
+				PayloadType:        111,
+			})
+		} else if !params.DisableRed && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) {
+			// if upstream is opus only and red eanbled, add red to match clients that supoort red
+			codecs = append(codecs, webrtc.RTPCodecParameters{
+				RTPCodecCapability: redCodecCapability,
+				PayloadType:        63,
+			})
+			// prefer red codec
+			codecs[0], codecs[1] = codecs[1], codecs[0]
+		}
 	}
 
 	return &WrappedReceiver{
+		params:    params,
 		receivers: sfuReceivers,
-		trackID:   trackID,
-		streamId:  streamId,
 		codecs:    codecs,
-		logger:    logger,
 	}
 }
 
 func (r *WrappedReceiver) TrackID() livekit.TrackID {
-	return r.trackID
+	return r.params.TrackID
 }
 
 func (r *WrappedReceiver) StreamID() string {
-	return r.streamId
+	return r.params.StreamId
 }
 
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
@@ -69,10 +83,13 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) {
 			// audio opus/red can match opus only
 			r.TrackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
+		} else if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) && strings.EqualFold(codec.MimeType, sfu.MimeTypeAudioRed) {
+			r.TrackReceiver = receiver.GetRedReceiver()
+			break
 		}
 	}
 	if r.TrackReceiver == nil {
-		r.logger.Errorw("can't determine receiver for codec", nil, "codec", codec.MimeType)
+		r.params.Logger.Errorw("can't determine receiver for codec", nil, "codec", codec.MimeType)
 		if len(r.receivers) > 0 {
 			r.TrackReceiver = r.receivers[0]
 		}
@@ -264,5 +281,9 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 
 func (d *DummyReceiver) GetPrimaryReceiverForRed() sfu.TrackReceiver {
 	// DummyReceiver used for video, it should not have RED codec
+	return d
+}
+
+func (d *DummyReceiver) GetRedReceiver() sfu.TrackReceiver {
 	return d
 }

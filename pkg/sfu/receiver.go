@@ -58,6 +58,9 @@ type TrackReceiver interface {
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
 
+	// Get red receiver for primary codec, used by forward red encodings for opus only codec
+	GetRedReceiver() TrackReceiver
+
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
 }
 
@@ -105,6 +108,8 @@ type WebRTCReceiver struct {
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
+	redReceiver     atomic.Value // *RedReceiver
+	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
 func IsSvcCodec(mime string) bool {
@@ -520,6 +525,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if pr := w.primaryReceiver.Load(); pr != nil {
 				pr.(*RedPrimaryReceiver).Close()
 			}
+			if pr := w.redReceiver.Load(); pr != nil {
+				pr.(*RedReceiver).Close()
+			}
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)
@@ -531,6 +539,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	for {
 		w.bufferMu.RLock()
 		buf := w.buffers[layer]
+		redPktWriter := w.redPktWriter
 		w.bufferMu.RUnlock()
 		pkt, err := buf.ReadExtended()
 		if err == io.EOF {
@@ -555,8 +564,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
-		if pr := w.primaryReceiver.Load(); pr != nil {
-			pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+
+		if redPktWriter != nil {
+			redPktWriter(pkt, spatialLayer)
 		}
 	}
 }
@@ -607,9 +617,32 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		w.primaryReceiver.CompareAndSwap(nil, pr)
+		if w.primaryReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
 	}
 	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+}
+
+func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
+	if w.isRED || w.closed.Load() {
+		return w
+	}
+
+	if w.redReceiver.Load() == nil {
+		pr := NewRedReceiver(w, DownTrackSpreaderParams{
+			Threshold: w.lbThreshold,
+			Logger:    w.logger,
+		})
+		if w.redReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
+	}
+	return w.redReceiver.Load().(*RedReceiver)
 }
 
 func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
