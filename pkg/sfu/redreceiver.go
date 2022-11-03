@@ -85,6 +85,10 @@ func (r *RedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	r.downTrackSpreader.Free(subscriberID)
 }
 
+func (r *RedReceiver) CanClose() bool {
+	return r.closed.Load() || r.downTrackSpreader.DownTrackCount() == 0
+}
+
 func (r *RedReceiver) Close() {
 	r.closed.Store(true)
 	for _, dt := range r.downTrackSpreader.ResetAndGetDownTracks() {
