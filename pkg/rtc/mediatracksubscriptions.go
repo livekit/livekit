@@ -212,6 +212,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		addTrackParams := types.AddTrackParams{
 			Stereo: info.Stereo,
 		}
+		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		if sub.ProtocolVersion().SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one

@@ -86,6 +86,7 @@ type ParticipantParams struct {
 	AdaptiveStream          bool
 	AllowTCPFallback        bool
 	TURNSEnabled            bool
+	GetParticipantInfo      func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 }
 
 type ParticipantImpl struct {
@@ -192,7 +193,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	var err error
 	// keep last participants and when updates were sent
-	if p.updateCache, err = lru.New(32); err != nil {
+	if p.updateCache, err = lru.New(128); err != nil {
 		return nil, err
 	}
 
@@ -856,6 +857,18 @@ func (p *ParticipantImpl) UpdateSubscribedTrackSettings(trackID livekit.TrackID,
 
 	subTrack.UpdateSubscriberSettings(settings)
 	return nil
+}
+
+func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
+	if v, ok := p.updateCache.Get(pID); ok && v.(uint32) >= version {
+		return
+	}
+
+	if f := p.params.GetParticipantInfo; f != nil {
+		if info := f(pID); info != nil {
+			p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
+		}
+	}
 }
 
 // AddSubscribedTrack adds a track to the participant's subscribed list
