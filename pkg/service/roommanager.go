@@ -297,6 +297,12 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+			if p := room.GetParticipantBySid(pID); p != nil {
+				return p.ToProto()
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		return err

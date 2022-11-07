@@ -273,6 +273,7 @@ type LocalParticipant interface {
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
+	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID

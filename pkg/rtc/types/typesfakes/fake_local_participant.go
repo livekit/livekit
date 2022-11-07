@@ -755,6 +755,12 @@ type FakeLocalParticipant struct {
 	updateVideoLayersReturnsOnCall map[int]struct {
 		result1 error
 	}
+	VerifySubscribeParticipantInfoStub        func(livekit.ParticipantID, uint32)
+	verifySubscribeParticipantInfoMutex       sync.RWMutex
+	verifySubscribeParticipantInfoArgsForCall []struct {
+		arg1 livekit.ParticipantID
+		arg2 uint32
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -4750,6 +4756,39 @@ func (fake *FakeLocalParticipant) UpdateVideoLayersReturnsOnCall(i int, result1 
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfo(arg1 livekit.ParticipantID, arg2 uint32) {
+	fake.verifySubscribeParticipantInfoMutex.Lock()
+	fake.verifySubscribeParticipantInfoArgsForCall = append(fake.verifySubscribeParticipantInfoArgsForCall, struct {
+		arg1 livekit.ParticipantID
+		arg2 uint32
+	}{arg1, arg2})
+	stub := fake.VerifySubscribeParticipantInfoStub
+	fake.recordInvocation("VerifySubscribeParticipantInfo", []interface{}{arg1, arg2})
+	fake.verifySubscribeParticipantInfoMutex.Unlock()
+	if stub != nil {
+		fake.VerifySubscribeParticipantInfoStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCallCount() int {
+	fake.verifySubscribeParticipantInfoMutex.RLock()
+	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
+	return len(fake.verifySubscribeParticipantInfoArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCalls(stub func(livekit.ParticipantID, uint32)) {
+	fake.verifySubscribeParticipantInfoMutex.Lock()
+	defer fake.verifySubscribeParticipantInfoMutex.Unlock()
+	fake.VerifySubscribeParticipantInfoStub = stub
+}
+
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoArgsForCall(i int) (livekit.ParticipantID, uint32) {
+	fake.verifySubscribeParticipantInfoMutex.RLock()
+	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
+	argsForCall := fake.verifySubscribeParticipantInfoArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -4923,6 +4962,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.updateSubscriptionPermissionMutex.RUnlock()
 	fake.updateVideoLayersMutex.RLock()
 	defer fake.updateVideoLayersMutex.RUnlock()
+	fake.verifySubscribeParticipantInfoMutex.RLock()
+	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
