@@ -20,58 +20,61 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDe
 }
 
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, lastAudio, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "audio")
-	if err != nil || lastAudio == nil {
+	parsed, unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "audio")
+	if err != nil || len(unmatchAudios) == 0 {
 		return offer
 	}
 
-	streamID, ok := lksdp.ExtractStreamID(lastAudio)
-	if !ok {
-		return offer
-	}
+	for _, unmatchAudio := range unmatchAudios {
+		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+		if !ok {
+			continue
+		}
 
-	p.pendingTracksLock.RLock()
-	_, info := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
-	// if RED is disabled for this track, don't prefer RED codec in offer
-	if info != nil && info.DisableRed {
+		p.pendingTracksLock.RLock()
+		_, info := p.getPendingTrack(streamID, livekit.TrackType_AUDIO)
+		// if RED is disabled for this track, don't prefer RED codec in offer
+		if info != nil && info.DisableRed {
+			p.pendingTracksLock.RUnlock()
+			continue
+		}
 		p.pendingTracksLock.RUnlock()
-		return offer
-	}
-	p.pendingTracksLock.RUnlock()
 
-	codecs, err := codecsFromMediaDescription(lastAudio)
-	if err != nil {
-		return offer
-	}
-
-	var opusPayload uint8
-	for _, codec := range codecs {
-		if strings.EqualFold(codec.Name, "opus") {
-			opusPayload = codec.PayloadType
-			break
+		codecs, err := codecsFromMediaDescription(unmatchAudio)
+		if err != nil {
+			p.params.Logger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio)
+			continue
 		}
-	}
-	if opusPayload == 0 {
-		return offer
-	}
 
-	var preferredCodecs, leftCodecs []string
-	for _, codec := range codecs {
-		// codec contain opus/red
-		if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
-			preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
-		} else {
-			leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+		var opusPayload uint8
+		for _, codec := range codecs {
+			if strings.EqualFold(codec.Name, "opus") {
+				opusPayload = codec.PayloadType
+				break
+			}
 		}
-	}
+		if opusPayload == 0 {
+			continue
+		}
 
-	// no opus/red found
-	if len(preferredCodecs) == 0 {
-		return offer
-	}
+		var preferredCodecs, leftCodecs []string
+		for _, codec := range codecs {
+			// codec contain opus/red
+			if strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+			} else {
+				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+			}
+		}
 
-	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats[:0], preferredCodecs...)
-	lastAudio.MediaName.Formats = append(lastAudio.MediaName.Formats, leftCodecs...)
+		// no opus/red found
+		if len(preferredCodecs) == 0 {
+			continue
+		}
+
+		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats[:0], preferredCodecs...)
+		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats, leftCodecs...)
+	}
 
 	bytes, err := parsed.Marshal()
 	if err != nil {
@@ -86,63 +89,66 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 }
 
 func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, lastVideo, err := p.TransportManager.GetLastUnmatchedMediaForOffer(offer, "video")
-	if err != nil || lastVideo == nil {
+	parsed, unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "video")
+	if err != nil || len(unmatchVideos) == 0 {
 		return offer
 	}
-	// last video is pending for publish, set codec preference
-	streamID, ok := lksdp.ExtractStreamID(lastVideo)
-	if !ok {
-		return offer
-	}
-
-	p.pendingTracksLock.RLock()
-	_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
-	if info == nil {
-		p.pendingTracksLock.RUnlock()
-		return offer
-	}
-	var mime string
-	for _, c := range info.Codecs {
-		if c.Cid == streamID {
-			mime = c.MimeType
-			break
+	// unmatched video is pending for publish, set codec preference
+	for _, unmatchVideo := range unmatchVideos {
+		streamID, ok := lksdp.ExtractStreamID(unmatchVideo)
+		if !ok {
+			continue
 		}
-	}
-	if mime == "" && len(info.Codecs) > 0 {
-		mime = info.Codecs[0].MimeType
-	}
-	p.pendingTracksLock.RUnlock()
 
-	mime = strings.ToUpper(mime)
-	// remove dd extension if av1 not preferred
-	if !strings.Contains(mime, "AV1") {
-		for i, attr := range lastVideo.Attributes {
-			if strings.Contains(attr.Value, dd.ExtensionUrl) {
-				lastVideo.Attributes[i] = lastVideo.Attributes[len(lastVideo.Attributes)-1]
-				lastVideo.Attributes = lastVideo.Attributes[:len(lastVideo.Attributes)-1]
+		p.pendingTracksLock.RLock()
+		_, info := p.getPendingTrack(streamID, livekit.TrackType_VIDEO)
+		if info == nil {
+			p.pendingTracksLock.RUnlock()
+			continue
+		}
+		var mime string
+		for _, c := range info.Codecs {
+			if c.Cid == streamID {
+				mime = c.MimeType
 				break
 			}
 		}
-	}
-
-	if mime != "" {
-		codecs, err := codecsFromMediaDescription(lastVideo)
-		if err != nil {
-			return offer
+		if mime == "" && len(info.Codecs) > 0 {
+			mime = info.Codecs[0].MimeType
 		}
+		p.pendingTracksLock.RUnlock()
 
-		var preferredCodecs, leftCodecs []string
-		for _, c := range codecs {
-			if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
-				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-			} else {
-				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+		mime = strings.ToUpper(mime)
+		// remove dd extension if av1 not preferred
+		if !strings.Contains(mime, "AV1") {
+			for i, attr := range unmatchVideo.Attributes {
+				if strings.Contains(attr.Value, dd.ExtensionUrl) {
+					unmatchVideo.Attributes[i] = unmatchVideo.Attributes[len(unmatchVideo.Attributes)-1]
+					unmatchVideo.Attributes = unmatchVideo.Attributes[:len(unmatchVideo.Attributes)-1]
+					break
+				}
 			}
 		}
 
-		lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats[:0], preferredCodecs...)
-		lastVideo.MediaName.Formats = append(lastVideo.MediaName.Formats, leftCodecs...)
+		if mime != "" {
+			codecs, err := codecsFromMediaDescription(unmatchVideo)
+			if err != nil {
+				p.params.Logger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo)
+				continue
+			}
+
+			var preferredCodecs, leftCodecs []string
+			for _, c := range codecs {
+				if strings.HasSuffix(mime, strings.ToUpper(c.Name)) {
+					preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+				} else {
+					leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+				}
+			}
+
+			unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats[:0], preferredCodecs...)
+			unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats, leftCodecs...)
+		}
 	}
 
 	bytes, err := parsed.Marshal()

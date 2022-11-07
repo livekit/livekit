@@ -336,7 +336,7 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	return nil
 }
 
-func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDescription, mediaType string) (parsed *sdp.SessionDescription, unmatched *sdp.MediaDescription, err error) {
+func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescription, mediaType string) (parsed *sdp.SessionDescription, unmatched []*sdp.MediaDescription, err error) {
 	// prefer codec from offer for clients that don't support setCodecPreferences
 	parsed, err = offer.Unmarshal()
 	if err != nil {
@@ -344,18 +344,7 @@ func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDes
 		return
 	}
 
-	for i := len(parsed.MediaDescriptions) - 1; i >= 0; i-- {
-		media := parsed.MediaDescriptions[i]
-		if media.MediaName.Media == mediaType {
-			unmatched = media
-			break
-		}
-	}
-
-	if unmatched == nil {
-		return
-	}
-
+	var lastMatchedMid string
 	lastAnswer := t.lastPublisherAnswer.Load()
 	if lastAnswer != nil {
 		answer := lastAnswer.(webrtc.SessionDescription)
@@ -366,13 +355,23 @@ func (t *TransportManager) GetLastUnmatchedMediaForOffer(offer webrtc.SessionDes
 			return
 		}
 
-		for _, m := range parsedAnswer.MediaDescriptions {
-			mid, _ := m.Attribute(sdp.AttrKeyMID)
-			if lastMid, _ := unmatched.Attribute(sdp.AttrKeyMID); lastMid == mid {
-				// mid matched, return
-				unmatched = nil
-				return
+		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
+			media := parsedAnswer.MediaDescriptions[i]
+			if media.MediaName.Media == mediaType {
+				lastMatchedMid, _ = media.Attribute(sdp.AttrKeyMID)
+				break
 			}
+		}
+	}
+
+	for i := len(parsed.MediaDescriptions) - 1; i >= 0; i-- {
+		media := parsed.MediaDescriptions[i]
+		if media.MediaName.Media == mediaType {
+			mid, _ := media.Attribute(sdp.AttrKeyMID)
+			if mid == lastMatchedMid {
+				break
+			}
+			unmatched = append(unmatched, media)
 		}
 	}
 
