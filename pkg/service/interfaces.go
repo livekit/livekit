@@ -20,8 +20,7 @@ type ObjectStore interface {
 	LockRoom(ctx context.Context, roomName livekit.RoomName, duration time.Duration) (string, error)
 	UnlockRoom(ctx context.Context, roomName livekit.RoomName, uid string) error
 
-	StoreRoom(ctx context.Context, room *livekit.Room) error
-	StoreRoomInternal(ctx context.Context, roomName livekit.RoomName, internal *livekit.RoomInternal) error
+	StoreRoom(ctx context.Context, room *livekit.Room, internal *livekit.RoomInternal) error
 	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 
 	StoreParticipant(ctx context.Context, roomName livekit.RoomName, participant *livekit.ParticipantInfo) error
@@ -30,8 +29,7 @@ type ObjectStore interface {
 
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
-	LoadRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Room, error)
-	LoadRoomInternal(ctx context.Context, roomName livekit.RoomName) (*livekit.RoomInternal, error)
+	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
 
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
@@ -55,6 +53,7 @@ type IngressStore interface {
 	LoadIngressFromStreamKey(ctx context.Context, streamKey string) (*livekit.IngressInfo, error)
 	ListIngress(ctx context.Context, roomName livekit.RoomName) ([]*livekit.IngressInfo, error)
 	UpdateIngress(ctx context.Context, info *livekit.IngressInfo) error
+	UpdateIngressState(ctx context.Context, ingressId string, state *livekit.IngressState) error
 	DeleteIngress(ctx context.Context, info *livekit.IngressInfo) error
 }
 

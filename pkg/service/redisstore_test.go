@@ -17,6 +17,34 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
+func TestRoomInternal(t *testing.T) {
+	ctx := context.Background()
+	rs := service.NewRedisStore(redisClient())
+
+	room := &livekit.Room{
+		Sid:  "123",
+		Name: "test_room",
+	}
+	internal := &livekit.RoomInternal{
+		TrackEgress: &livekit.AutoTrackEgress{Filepath: "egress"},
+	}
+
+	require.NoError(t, rs.StoreRoom(ctx, room, internal))
+	actualRoom, actualInternal, err := rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Equal(t, room.Sid, actualRoom.Sid)
+	require.Equal(t, internal.TrackEgress.Filepath, actualInternal.TrackEgress.Filepath)
+
+	// remove internal
+	require.NoError(t, rs.StoreRoom(ctx, room, nil))
+	_, actualInternal, err = rs.LoadRoom(ctx, livekit.RoomName(room.Name), true)
+	require.NoError(t, err)
+	require.Nil(t, actualInternal)
+
+	// clean up
+	require.NoError(t, rs.DeleteRoom(ctx, "test_room"))
+}
+
 func TestParticipantPersistence(t *testing.T) {
 	ctx := context.Background()
 	rs := service.NewRedisStore(redisClient())
@@ -223,6 +251,9 @@ func TestIngressStore(t *testing.T) {
 	err := rs.StoreIngress(ctx, info)
 	require.NoError(t, err)
 
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		rs.DeleteIngress(ctx, info)
 	})
@@ -254,20 +285,18 @@ func TestIngressStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(infos))
 
-	info.RoomName = "room2"
 	info.State.StartedAt = 1
-	err = rs.UpdateIngress(ctx, info)
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
 	require.Equal(t, ingress.ErrIngressOutOfDate, err)
 
-	info.RoomName = "room2"
 	info.State.StartedAt = 3
-	err = rs.UpdateIngress(ctx, info)
+	err = rs.UpdateIngressState(ctx, info.IngressId, info.State)
 	require.NoError(t, err)
 
 	infos, err = rs.ListIngress(ctx, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(infos))
-	require.Equal(t, "room2", infos[0].RoomName)
+	require.Equal(t, "", infos[0].RoomName)
 }
 
 func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {

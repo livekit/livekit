@@ -1,6 +1,8 @@
 package sfu
 
 import (
+	"fmt"
+
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -36,10 +38,18 @@ type SnTs struct {
 	timestamp      uint32
 }
 
+// ----------------------------------------------------------------------
+
 type RTPMungerState struct {
 	LastSN uint16
 	LastTS uint32
 }
+
+func (r RTPMungerState) String() string {
+	return fmt.Sprintf("RTPMungerState{lastSN: %d, lastTS: %d)", r.LastSN, r.LastTS)
+}
+
+// ----------------------------------------------------------------------
 
 type RTPMungerParams struct {
 	highestIncomingSN uint16

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"go.uber.org/atomic"
@@ -37,6 +38,7 @@ type MediaTrackSubscriptions struct {
 
 type MediaTrackSubscriptionsParams struct {
 	MediaTrack types.MediaTrack
+	IsRelayed  bool
 
 	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
@@ -111,7 +113,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		t.params.BufferFactory,
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
-		LoggerWithTrack(sub.GetLogger(), trackID),
+		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
 	)
 	if err != nil {
 		return err
@@ -133,11 +135,11 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// Bind callback can happen from replaceTrack, so set it up early
 	var reusingTransceiver atomic.Bool
-	var forwarderState sfu.ForwarderState
+	var dtState sfu.DownTrackState
 	downTrack.OnBind(func() {
 		wr.DetermineReceiver(downTrack.Codec())
 		if reusingTransceiver.Load() {
-			downTrack.SeedForwarderState(forwarderState)
+			downTrack.SeedState(dtState)
 		}
 		if err = wr.AddDownTrack(downTrack); err != nil {
 			sub.GetLogger().Errorw(
@@ -167,13 +169,17 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		go sub.UpdateRTT(rtt)
 	})
 
+	downTrack.AddReceiverReportListener(func(dt *sfu.DownTrack, report *rtcp.ReceiverReport) {
+		sub.OnReceiverReport(dt, report)
+	})
+
 	var transceiver *webrtc.RTPTransceiver
 	var sender *webrtc.RTPSender
 
 	// try cached RTP senders for a chance to replace track
 	var existingTransceiver *webrtc.RTPTransceiver
 	replacedTrack := false
-	existingTransceiver, forwarderState = sub.GetCachedDownTrack(trackID)
+	existingTransceiver, dtState = sub.GetCachedDownTrack(trackID)
 	if existingTransceiver != nil {
 		reusingTransceiver.Store(true)
 		rtpSender := existingTransceiver.Sender()
@@ -202,18 +208,23 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	// if cannot replace, find an unused transceiver or add new one
 	if transceiver == nil {
+		info := t.params.MediaTrack.ToProto()
+		addTrackParams := types.AddTrackParams{
+			Stereo: info.Stereo,
+		}
+		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		if sub.ProtocolVersion().SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating
 			// because of dormant transceivers building up.
 			//
-			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack)
+			sender, transceiver, err = sub.AddTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
 				return err
 			}
 		} else {
-			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack)
+			sender, transceiver, err = sub.AddTransceiverFromTrackToSubscriber(downTrack, addTrackParams)
 			if err != nil {
 				return err
 			}
@@ -286,7 +297,7 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 		tr := dt.GetTransceiver()
 		if tr != nil {
 			sub := subTrack.Subscriber()
-			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetForwarderState())
+			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
 		}
 	}
 }
@@ -394,29 +405,23 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	if !willBeResumed {
 		t.params.Telemetry.TrackUnsubscribed(context.Background(), subscriberID, t.params.MediaTrack.ToProto())
 
-		// if the source has been terminated, we'll need to terminate all the subscribed tracks
-		// however, if the dest sub has disconnected, then we can skip
-		if sender == nil {
-			return
-		}
-		sub.GetLogger().Debugw("removing PeerConnection track",
-			"publisher", subTrack.PublisherIdentity(),
-			"publisherID", subTrack.PublisherID(),
-			"kind", t.params.MediaTrack.Kind(),
-		)
-		if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
-			if err == webrtc.ErrConnectionClosed {
-				// sub closing, can skip removing subscribedtracks
-				return
-			}
-			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
-				// most of these are safe to ignore, since the track state might have already
-				// been set to Inactive
-				sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
-					"error", err,
-					"publisher", subTrack.PublisherIdentity(),
-					"publisherID", subTrack.PublisherID(),
-				)
+		if sender != nil {
+			sub.GetLogger().Debugw("removing PeerConnection track",
+				"publisher", subTrack.PublisherIdentity(),
+				"publisherID", subTrack.PublisherID(),
+				"kind", t.params.MediaTrack.Kind(),
+			)
+
+			if err := sub.RemoveTrackFromSubscriber(sender); err != nil {
+				if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+					// most of these are safe to ignore, since the track state might have already
+					// been set to Inactive
+					sub.GetLogger().Debugw("could not remove remoteTrack from forwarder",
+						"error", err,
+						"publisher", subTrack.PublisherIdentity(),
+						"publisherID", subTrack.PublisherID(),
+					)
+				}
 			}
 		}
 	}

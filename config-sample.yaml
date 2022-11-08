@@ -62,8 +62,8 @@ rtc:
   #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
   #   # in order to allow others to stream smoothly. You can disable this behavior here
   #   allow_pause: true
-  # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable
-  # allow_tcp_fallback: false
+  # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
+  # allow_tcp_fallback: true
   # # number of packets to buffer in the SFU, defaults to 500
   # packet_buffer_size: 500
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
@@ -75,13 +75,20 @@ rtc:
   #   high_quality: 1s
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
   # # both inclusion and exclusion filters can be used together. If neither is defined (default), all interfaces on the machine will be used.
-  # # If both of them are set, then only interfaces that satisfy both filters will be used.
-  # # If an interface is present in both lists, include takes precedence.
+  # # If both of them are set, then only include takes effect.
   # interfaces:
   #   includes:
   #     - en0
   #   excludes:
   #     - docker0
+  # # ip address filter. If the machine has more than one ip address and you'd like it to use or skip specific ips,
+  # # both inclusion and exclusion CIDR filters can be used together. If neither is defined (default), all ip on the machine will be used.
+  # # If both of them are set, then only include takes effect.
+  # ips:
+  #   includes:
+  #     - 10.0.0.0/16
+  #   excludes:
+  #     - 192.168.1.0/24
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
@@ -95,7 +102,7 @@ keys:
 
 # Logging config
 # logging:
-#   # log level, valid values: debug, info, warning, error
+#   # log level, valid values: debug, info, warn, error
 #   level: info
 #   # log level for pion, default error
 #   pion_level: error

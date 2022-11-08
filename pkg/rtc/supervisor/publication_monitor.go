@@ -24,8 +24,9 @@ type publish struct {
 }
 
 type PublicationMonitorParams struct {
-	TrackID livekit.TrackID
-	Logger  logger.Logger
+	TrackID                   livekit.TrackID
+	IsPeerConnectionConnected bool
+	Logger                    logger.Logger
 }
 
 type PublicationMonitor struct {
@@ -33,6 +34,8 @@ type PublicationMonitor struct {
 
 	lock             sync.RWMutex
 	desiredPublishes deque.Deque
+
+	isConnected bool
 
 	publishedTrack types.LocalMediaTrack
 	isMuted        bool
@@ -43,7 +46,8 @@ type PublicationMonitor struct {
 
 func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor {
 	p := &PublicationMonitor{
-		params: params,
+		params:      params,
+		isConnected: params.IsPeerConnectionConnected,
 	}
 	p.desiredPublishes.SetMinCapacity(2)
 	return p
@@ -51,6 +55,8 @@ func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor 
 
 func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd types.OperationMonitorData) {
 	switch ome {
+	case types.OperationMonitorEventPublisherPeerConnectionConnected:
+		p.setConnected(omd.(bool))
 	case types.OperationMonitorEventAddPendingPublication:
 		p.addPending()
 	case types.OperationMonitorEventSetPublicationMute:
@@ -80,12 +86,23 @@ func (p *PublicationMonitor) addPending() {
 	p.lock.Unlock()
 }
 
+func (p *PublicationMonitor) maybeStartMonitor() {
+	if p.isConnected && !p.isMuted {
+		p.unmutedAt = time.Now()
+	}
+}
+
+func (p *PublicationMonitor) setConnected(isConnected bool) {
+	p.lock.Lock()
+	p.isConnected = isConnected
+	p.maybeStartMonitor()
+	p.lock.Unlock()
+}
+
 func (p *PublicationMonitor) setMute(isMuted bool) {
 	p.lock.Lock()
 	p.isMuted = isMuted
-	if !p.isMuted {
-		p.unmutedAt = time.Now()
-	}
+	p.maybeStartMonitor()
 	p.lock.Unlock()
 }
 

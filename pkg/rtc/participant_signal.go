@@ -139,7 +139,6 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 }
 
 func (p *ParticipantImpl) sendICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
-	p.params.Logger.Infow("sending ice candidate", "candidate", c.String(), "target", target)
 	trickle := ToProtoTrickle(c.ToJSON())
 	trickle.Target = target
 	return p.writeMessage(&livekit.SignalResponse{

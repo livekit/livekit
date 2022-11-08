@@ -23,84 +23,96 @@ import (
 	"github.com/livekit/livekit-server/version"
 )
 
+var baseFlags = []cli.Flag{
+	&cli.StringSliceFlag{
+		Name:  "bind",
+		Usage: "IP address to listen on, use flag multiple times to specify multiple addresses",
+	},
+	&cli.StringFlag{
+		Name:  "config",
+		Usage: "path to LiveKit config file",
+	},
+	&cli.StringFlag{
+		Name:    "config-body",
+		Usage:   "LiveKit config in YAML, typically passed in as an environment var in a container",
+		EnvVars: []string{"LIVEKIT_CONFIG"},
+	},
+	&cli.StringFlag{
+		Name:  "key-file",
+		Usage: "path to file that contains API keys/secrets",
+	},
+	&cli.StringFlag{
+		Name:    "keys",
+		Usage:   "api keys (key: secret\\n)",
+		EnvVars: []string{"LIVEKIT_KEYS"},
+	},
+	&cli.StringFlag{
+		Name:    "region",
+		Usage:   "region of the current node. Used by regionaware node selector",
+		EnvVars: []string{"LIVEKIT_REGION"},
+	},
+	&cli.StringFlag{
+		Name:    "node-ip",
+		Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
+		EnvVars: []string{"NODE_IP"},
+	},
+	&cli.IntFlag{
+		Name:    "udp-port",
+		Usage:   "Single UDP port to use for WebRTC traffic",
+		EnvVars: []string{"UDP_PORT"},
+	},
+	&cli.StringFlag{
+		Name:    "redis-host",
+		Usage:   "host (incl. port) to redis server",
+		EnvVars: []string{"REDIS_HOST"},
+	},
+	&cli.StringFlag{
+		Name:    "redis-password",
+		Usage:   "password to redis",
+		EnvVars: []string{"REDIS_PASSWORD"},
+	},
+	&cli.StringFlag{
+		Name:    "turn-cert",
+		Usage:   "tls cert file for TURN server",
+		EnvVars: []string{"LIVEKIT_TURN_CERT"},
+	},
+	&cli.StringFlag{
+		Name:    "turn-key",
+		Usage:   "tls key file for TURN server",
+		EnvVars: []string{"LIVEKIT_TURN_KEY"},
+	},
+	// debugging flags
+	&cli.StringFlag{
+		Name:  "memprofile",
+		Usage: "write memory profile to `file`",
+	},
+	&cli.BoolFlag{
+		Name:  "dev",
+		Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
+	},
+	&cli.BoolFlag{
+		Name:   "disable-strict-config",
+		Usage:  "disables strict config parsing",
+		Hidden: true,
+	},
+}
+
 func init() {
 	rand.Seed(time.Now().Unix())
 }
 
 func main() {
+	generatedFlags, err := config.GenerateCLIFlags(baseFlags)
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	app := &cli.App{
 		Name:        "livekit-server",
 		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
-		Flags: []cli.Flag{
-			&cli.StringSliceFlag{
-				Name:  "bind",
-				Usage: "IP address to listen on, use flag multiple times to specify multiple addresses",
-			},
-			&cli.StringFlag{
-				Name:  "config",
-				Usage: "path to LiveKit config file",
-			},
-			&cli.StringFlag{
-				Name:    "config-body",
-				Usage:   "LiveKit config in YAML, typically passed in as an environment var in a container",
-				EnvVars: []string{"LIVEKIT_CONFIG"},
-			},
-			&cli.StringFlag{
-				Name:  "key-file",
-				Usage: "path to file that contains API keys/secrets",
-			},
-			&cli.StringFlag{
-				Name:    "keys",
-				Usage:   "api keys (key: secret\\n)",
-				EnvVars: []string{"LIVEKIT_KEYS"},
-			},
-			&cli.StringFlag{
-				Name:    "region",
-				Usage:   "region of the current node. Used by regionaware node selector",
-				EnvVars: []string{"LIVEKIT_REGION"},
-			},
-			&cli.StringFlag{
-				Name:    "node-ip",
-				Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
-				EnvVars: []string{"NODE_IP"},
-			},
-			&cli.IntFlag{
-				Name:    "udp-port",
-				Usage:   "Single UDP port to use for WebRTC traffic",
-				EnvVars: []string{"UDP_PORT"},
-			},
-			&cli.StringFlag{
-				Name:    "redis-host",
-				Usage:   "host (incl. port) to redis server",
-				EnvVars: []string{"REDIS_HOST"},
-			},
-			&cli.StringFlag{
-				Name:    "redis-password",
-				Usage:   "password to redis",
-				EnvVars: []string{"REDIS_PASSWORD"},
-			},
-			&cli.StringFlag{
-				Name:    "turn-cert",
-				Usage:   "tls cert file for TURN server",
-				EnvVars: []string{"LIVEKIT_TURN_CERT"},
-			},
-			&cli.StringFlag{
-				Name:    "turn-key",
-				Usage:   "tls key file for TURN server",
-				EnvVars: []string{"LIVEKIT_TURN_KEY"},
-			},
-			// debugging flags
-			&cli.StringFlag{
-				Name:  "memprofile",
-				Usage: "write memory profile to `file`",
-			},
-			&cli.BoolFlag{
-				Name:  "dev",
-				Usage: "sets log-level to debug, console formatter, and /debug/pprof. insecure for production",
-			},
-		},
-		Action: startServer,
+		Flags:       append(baseFlags, generatedFlags...),
+		Action:      startServer,
 		Commands: []*cli.Command{
 			{
 				Name:   "generate-keys",
@@ -156,7 +168,12 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 		return nil, err
 	}
 
-	conf, err := config.NewConfig(confString, c)
+	strictMode := true
+	if c.Bool("disable-strict-config") {
+		strictMode = false
+	}
+
+	conf, err := config.NewConfig(confString, strictMode, c, baseFlags)
 	if err != nil {
 		return nil, err
 	}

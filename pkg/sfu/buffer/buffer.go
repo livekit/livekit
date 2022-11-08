@@ -15,7 +15,10 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
+	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/mediatransportutil/pkg/nack"
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -44,8 +47,8 @@ type ExtPacket struct {
 // Buffer contains all packets
 type Buffer struct {
 	sync.RWMutex
-	bucket        *Bucket
-	nacker        *NackQueue
+	bucket        *bucket.Bucket
+	nacker        *nack.NackQueue
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
@@ -82,6 +85,7 @@ type Buffer struct {
 	// callbacks
 	onClose        func()
 	onRtcpFeedback func([]rtcp.Packet)
+	onFpsChanged   func()
 
 	// logger
 	logger logger.Logger
@@ -90,6 +94,9 @@ type Buffer struct {
 	ddExt             uint8
 	ddParser          *DependencyDescriptorParser
 	maxLayerChangedCB func(int32, int32)
+
+	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
+	frameRateCalculated bool
 }
 
 // BufferOptions provides configuration options for the buffer
@@ -153,30 +160,40 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.lastReport = time.Now().UnixNano()
 	b.mime = strings.ToLower(codec.MimeType)
 
-	switch {
-	case strings.HasPrefix(b.mime, "audio/"):
-		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = NewBucket(b.audioPool.Get().(*[]byte))
-	case strings.HasPrefix(b.mime, "video/"):
-		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = NewBucket(b.videoPool.Get().(*[]byte))
-	default:
-		b.codecType = webrtc.RTPCodecType(0)
-	}
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionUrl:
 			b.ddExt = uint8(ext.ID)
+			frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
+			for i := range b.frameRateCalculator {
+				b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
+			}
 			b.ddParser = NewDependencyDescriptorParser(b.ddExt, b.logger, func(spatial, temporal int32) {
 				if b.maxLayerChangedCB != nil {
 					b.maxLayerChangedCB(spatial, temporal)
 				}
+				frc.SetMaxLayer(spatial, temporal)
 			})
 
 		case sdp.AudioLevelURI:
 			b.audioLevelExt = uint8(ext.ID)
 			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
 		}
+	}
+
+	switch {
+	case strings.HasPrefix(b.mime, "audio/"):
+		b.codecType = webrtc.RTPCodecTypeAudio
+		b.bucket = bucket.NewBucket(b.audioPool.Get().(*[]byte))
+	case strings.HasPrefix(b.mime, "video/"):
+		b.codecType = webrtc.RTPCodecTypeVideo
+		b.bucket = bucket.NewBucket(b.videoPool.Get().(*[]byte))
+		if b.frameRateCalculator[0] == nil && strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
+			b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
+		}
+
+	default:
+		b.codecType = webrtc.RTPCodecType(0)
 	}
 
 	for _, fb := range codec.RTCPFeedback {
@@ -196,7 +213,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			}
 		case webrtc.TypeRTCPFBNACK:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = NewNACKQueue()
+			b.nacker = nack.NewNACKQueue()
 		}
 	}
 
@@ -240,7 +257,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 		b.Lock()
 		if b.pPackets != nil && len(b.pPackets) > b.lastPacketRead {
 			if len(buff) < len(b.pPackets[b.lastPacketRead].packet) {
-				err = ErrBufferTooSmall
+				err = bucket.ErrBufferTooSmall
 				b.Unlock()
 				return
 			}
@@ -277,10 +294,10 @@ func (b *Buffer) Close() error {
 
 	b.closeOnce.Do(func() {
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeVideo {
-			b.videoPool.Put(b.bucket.src)
+			b.videoPool.Put(b.bucket.Src())
 		}
 		if b.bucket != nil && b.codecType == webrtc.RTPCodecTypeAudio {
-			b.audioPool.Put(b.bucket.src)
+			b.audioPool.Put(b.bucket.Src())
 		}
 
 		b.closed.Store(true)
@@ -361,7 +378,7 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 			b.processHeaderExtensions(&rtpPacket, arrivalTime)
 		}
 
-		if err != ErrRTXPacket {
+		if err != bucket.ErrRTXPacket {
 			b.logger.Warnw("could not add RTP packet to bucket", err)
 		}
 		return
@@ -386,6 +403,35 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	b.doNACKs()
 
 	b.doReports(arrivalTime)
+
+	b.doFpsCalc(ep)
+}
+
+func (b *Buffer) doFpsCalc(ep *ExtPacket) {
+	if b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+		return
+	}
+	spatial := ep.Spatial
+	if spatial < 0 || int(spatial) >= len(b.frameRateCalculator) {
+		spatial = 0
+	}
+	if fr := b.frameRateCalculator[spatial]; fr != nil {
+		if fr.RecvPacket(ep) {
+			complete := true
+			for _, fr2 := range b.frameRateCalculator {
+				if fr2 != nil && !fr2.Completed() {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				b.frameRateCalculated = true
+				if f := b.onFpsChanged; f != nil {
+					go f()
+				}
+			}
+		}
+	}
 }
 
 func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) {
@@ -464,7 +510,6 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return nil
 		}
-		ep.Payload = vp8Packet
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
 			ep.Temporal = int32(vp8Packet.TID)
@@ -473,6 +518,7 @@ func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTi
 			vp8Packet.TID = uint8(ep.Temporal)
 			ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to -1
 		}
+		ep.Payload = vp8Packet
 	case "video/h264":
 		ep.KeyFrame = IsH264Keyframe(rtpPacket.Payload)
 	case "video/av1":
@@ -546,7 +592,7 @@ func (b *Buffer) SetSenderReportData(rtpTime uint32, ntpTime uint64) {
 		return
 	}
 
-	b.rtpStats.SetRtcpSenderReportData(rtpTime, NtpTime(ntpTime), time.Now())
+	b.rtpStats.SetRtcpSenderReportData(rtpTime, mediatransportutil.NtpTime(ntpTime), time.Now())
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
@@ -640,4 +686,21 @@ func (b *Buffer) GetAudioLevel() (float64, bool) {
 // work for that too. Do we keep it unchange or use both methods?
 func (b *Buffer) OnMaxLayerChanged(fn func(int32, int32)) {
 	b.maxLayerChangedCB = fn
+}
+
+func (b *Buffer) OnFpsChanged(f func()) {
+	b.Lock()
+	b.onFpsChanged = f
+	b.Unlock()
+}
+
+func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if int(layer) >= len(b.frameRateCalculator) {
+		return nil
+	}
+
+	if fc := b.frameRateCalculator[layer]; fc != nil {
+		return fc.GetFrameRate()
+	}
+	return nil
 }

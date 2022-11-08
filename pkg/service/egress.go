@@ -103,6 +103,14 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 	})
 }
 
+func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
+	return s.StartEgress(ctx, "", &livekit.StartEgressRequest{
+		Request: &livekit.StartEgressRequest_Web{
+			Web: req,
+		},
+	})
+}
+
 func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomName, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -110,11 +118,13 @@ func (s *EgressService) StartEgress(ctx context.Context, roomName livekit.RoomNa
 		return nil, ErrEgressNotConnected
 	}
 
-	room, err := s.store.LoadRoom(ctx, roomName)
-	if err != nil {
-		return nil, err
+	if roomName != "" {
+		room, _, err := s.store.LoadRoom(ctx, roomName, false)
+		if err != nil {
+			return nil, err
+		}
+		req.RoomId = room.Sid
 	}
-	req.RoomId = room.Sid
 
 	return s.launcher.StartEgress(ctx, req)
 }
@@ -124,8 +134,6 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *livekit.StartEgre
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	s.telemetry.EgressStarted(ctx, info)
 	go func() {
@@ -153,8 +161,6 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
 	if err != nil {
@@ -194,8 +200,6 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 	if err != nil {
 		return nil, err
 	}
-
-	ensureRoomName(info)
 
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
@@ -240,8 +244,6 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, err
 	}
 
-	ensureRoomName(info)
-
 	go func() {
 		if err := s.es.UpdateEgress(ctx, info); err != nil {
 			logger.Errorw("could not write egress info", err)
@@ -276,8 +278,6 @@ func (s *EgressService) startWorker() error {
 					logger.Errorw("failed to read results", err)
 					continue
 				}
-
-				ensureRoomName(res)
 
 				switch res.Status {
 				case livekit.EgressStatus_EGRESS_COMPLETE,
@@ -319,18 +319,4 @@ func (s *EgressService) startWorker() error {
 	}()
 
 	return nil
-}
-
-// Ensure compatibility with Egress <= v1.0.5
-func ensureRoomName(info *livekit.EgressInfo) {
-	if info.RoomName == "" {
-		switch r := info.Request.(type) {
-		case *livekit.EgressInfo_RoomComposite:
-			info.RoomName = r.RoomComposite.RoomName
-		case *livekit.EgressInfo_TrackComposite:
-			info.RoomName = r.TrackComposite.RoomName
-		case *livekit.EgressInfo_Track:
-			info.RoomName = r.Track.RoomName
-		}
-	}
 }

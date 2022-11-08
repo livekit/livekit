@@ -68,51 +68,51 @@ var (
 	}
 )
 
-type State int
+type streamAllocatorState int
 
 const (
-	StateStable State = iota
-	StateDeficient
+	streamAllocatorStateStable streamAllocatorState = iota
+	streamAllocatorStateDeficient
 )
 
-func (s State) String() string {
+func (s streamAllocatorState) String() string {
 	switch s {
-	case StateStable:
+	case streamAllocatorStateStable:
 		return "STABLE"
-	case StateDeficient:
+	case streamAllocatorStateDeficient:
 		return "DEFICIENT"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
 }
 
-type Signal int
+type streamAllocatorSignal int
 
 const (
-	SignalAllocateTrack Signal = iota
-	SignalAllocateAllTracks
-	SignalAdjustState
-	SignalEstimate
-	SignalPeriodicPing
-	SignalSendProbe
-	SignalProbeClusterDone
+	streamAllocatorSignalAllocateTrack streamAllocatorSignal = iota
+	streamAllocatorSignalAllocateAllTracks
+	streamAllocatorSignalAdjustState
+	streamAllocatorSignalEstimate
+	streamAllocatorSignalPeriodicPing
+	streamAllocatorSignalSendProbe
+	streamAllocatorSignalProbeClusterDone
 )
 
-func (s Signal) String() string {
+func (s streamAllocatorSignal) String() string {
 	switch s {
-	case SignalAllocateTrack:
+	case streamAllocatorSignalAllocateTrack:
 		return "ALLOCATE_TRACK"
-	case SignalAllocateAllTracks:
+	case streamAllocatorSignalAllocateAllTracks:
 		return "ALLOCATE_ALL_TRACKS"
-	case SignalAdjustState:
+	case streamAllocatorSignalAdjustState:
 		return "ADJUST_STATE"
-	case SignalEstimate:
+	case streamAllocatorSignalEstimate:
 		return "ESTIMATE"
-	case SignalPeriodicPing:
+	case streamAllocatorSignalPeriodicPing:
 		return "PERIODIC_PING"
-	case SignalSendProbe:
+	case streamAllocatorSignalSendProbe:
 		return "SEND_PROBE"
-	case SignalProbeClusterDone:
+	case streamAllocatorSignalProbeClusterDone:
 		return "PROBE_CLUSTER_DONE"
 	default:
 		return fmt.Sprintf("%d", int(s))
@@ -120,7 +120,7 @@ func (s Signal) String() string {
 }
 
 type Event struct {
-	Signal  Signal
+	Signal  streamAllocatorSignal
 	TrackID livekit.TrackID
 	Data    interface{}
 }
@@ -161,7 +161,7 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state State
+	state streamAllocatorState
 
 	eventChMu sync.RWMutex
 	eventCh   chan Event
@@ -253,7 +253,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *DownTrack) {
 
 	// LK-TODO: use any saved bandwidth to re-distribute
 	s.postEvent(Event{
-		Signal: SignalAdjustState,
+		Signal: streamAllocatorSignalAdjustState,
 	})
 }
 
@@ -265,7 +265,7 @@ func (s *StreamAllocator) SetTrackPriority(downTrack *DownTrack, priority uint8)
 			// do a full allocation on a track priority change to keep it simple
 			s.isAllocateAllPending = true
 			s.postEvent(Event{
-				Signal: SignalAllocateAllTracks,
+				Signal: streamAllocatorSignalAllocateAllTracks,
 			})
 		}
 	}
@@ -276,7 +276,7 @@ func (s *StreamAllocator) resetState() {
 	s.channelObserver = s.newChannelObserverNonProbe()
 	s.resetProbe()
 
-	s.state = StateStable
+	s.state = streamAllocatorStateStable
 }
 
 // called when a new REMB is received (receive side bandwidth estimation)
@@ -326,7 +326,7 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 	}
 	if !found {
 		if len(remb.SSRCs) == 0 {
-			s.params.Logger.Warnw("no SSRC to track REMB", nil)
+			s.params.Logger.Warnw("stream allocator: no SSRC to track REMB", nil)
 			s.videoTracksMu.Unlock()
 			return
 		}
@@ -354,7 +354,7 @@ func (s *StreamAllocator) onREMB(downTrack *DownTrack, remb *rtcp.ReceiverEstima
 	s.videoTracksMu.Unlock()
 
 	s.postEvent(Event{
-		Signal: SignalEstimate,
+		Signal: streamAllocatorSignalEstimate,
 		Data:   int64(remb.Bitrate),
 	})
 }
@@ -369,7 +369,7 @@ func (s *StreamAllocator) onTransportCCFeedback(downTrack *DownTrack, fb *rtcp.T
 // called when target bitrate changes (send side bandwidth estimation)
 func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 	s.postEvent(Event{
-		Signal: SignalEstimate,
+		Signal: streamAllocatorSignalEstimate,
 		Data:   int64(bitrate),
 	})
 }
@@ -402,7 +402,7 @@ func (s *StreamAllocator) onSubscribedLayersChanged(downTrack *DownTrack, layers
 
 	if shouldPost {
 		s.postEvent(Event{
-			Signal:  SignalAllocateTrack,
+			Signal:  streamAllocatorSignalAllocateTrack,
 			TrackID: livekit.TrackID(downTrack.ID()),
 		})
 	}
@@ -416,7 +416,7 @@ func (s *StreamAllocator) onPacketSent(downTrack *DownTrack, size int) {
 // called when prober wants to send packet(s)
 func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 	s.postEvent(Event{
-		Signal: SignalSendProbe,
+		Signal: streamAllocatorSignalSendProbe,
 		Data:   bytesToSend,
 	})
 }
@@ -424,7 +424,7 @@ func (s *StreamAllocator) onSendProbe(bytesToSend int) {
 // called when prober wants to send packet(s)
 func (s *StreamAllocator) onProbeClusterDone(info ProbeClusterInfo) {
 	s.postEvent(Event{
-		Signal: SignalProbeClusterDone,
+		Signal: streamAllocatorSignalProbeClusterDone,
 		Data:   info,
 	})
 }
@@ -441,7 +441,7 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *DownTrack) {
 
 	if shouldPost {
 		s.postEvent(Event{
-			Signal:  SignalAllocateTrack,
+			Signal:  streamAllocatorSignalAllocateTrack,
 			TrackID: livekit.TrackID(downTrack.ID()),
 		})
 	}
@@ -457,7 +457,7 @@ func (s *StreamAllocator) postEvent(event Event) {
 	select {
 	case s.eventCh <- event:
 	default:
-		s.params.Logger.Warnw("event queue full", nil)
+		s.params.Logger.Warnw("stream allocator: event queue full", nil)
 	}
 	s.eventChMu.RUnlock()
 }
@@ -479,26 +479,26 @@ func (s *StreamAllocator) ping() {
 		}
 
 		s.postEvent(Event{
-			Signal: SignalPeriodicPing,
+			Signal: streamAllocatorSignalPeriodicPing,
 		})
 	}
 }
 
 func (s *StreamAllocator) handleEvent(event *Event) {
 	switch event.Signal {
-	case SignalAllocateTrack:
+	case streamAllocatorSignalAllocateTrack:
 		s.handleSignalAllocateTrack(event)
-	case SignalAllocateAllTracks:
+	case streamAllocatorSignalAllocateAllTracks:
 		s.handleSignalAllocateAllTracks(event)
-	case SignalAdjustState:
+	case streamAllocatorSignalAdjustState:
 		s.handleSignalAdjustState(event)
-	case SignalEstimate:
+	case streamAllocatorSignalEstimate:
 		s.handleSignalEstimate(event)
-	case SignalPeriodicPing:
+	case streamAllocatorSignalPeriodicPing:
 		s.handleSignalPeriodicPing(event)
-	case SignalSendProbe:
+	case streamAllocatorSignalSendProbe:
 		s.handleSignalSendProbe(event)
-	case SignalProbeClusterDone:
+	case streamAllocatorSignalProbeClusterDone:
 		s.handleSignalProbeClusterDone(event)
 	}
 }
@@ -521,7 +521,7 @@ func (s *StreamAllocator) handleSignalAllocateAllTracks(event *Event) {
 	s.isAllocateAllPending = false
 	s.videoTracksMu.Unlock()
 
-	if s.state == StateDeficient {
+	if s.state == streamAllocatorStateDeficient {
 		s.allocateAllTracks()
 	}
 }
@@ -549,7 +549,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(event *Event) {
 	}
 
 	// probe if necessary and timing is right
-	if s.state == StateDeficient {
+	if s.state == streamAllocatorStateDeficient {
 		s.maybeProbe()
 	}
 }
@@ -599,12 +599,12 @@ func (s *StreamAllocator) handleSignalProbeClusterDone(event *Event) {
 	s.probeEndTime = s.lastProbeStartTime.Add(queueWait)
 }
 
-func (s *StreamAllocator) setState(state State) {
+func (s *StreamAllocator) setState(state streamAllocatorState) {
 	if s.state == state {
 		return
 	}
 
-	s.params.Logger.Debugw("state change", "from", s.state, "to", state)
+	s.params.Logger.Infow("stream allocator: state change", "from", s.state, "to", state)
 	s.state = state
 
 	// reset probe to enforce a delay after state change before probing
@@ -614,12 +614,12 @@ func (s *StreamAllocator) setState(state State) {
 func (s *StreamAllocator) adjustState() {
 	for _, track := range s.getTracks() {
 		if track.IsDeficient() {
-			s.setState(StateDeficient)
+			s.setState(streamAllocatorStateDeficient)
 			return
 		}
 	}
 
-	s.setState(StateStable)
+	s.setState(streamAllocatorStateStable)
 }
 
 func (s *StreamAllocator) handleNewEstimateInProbe() {
@@ -646,16 +646,18 @@ func (s *StreamAllocator) handleNewEstimateInProbe() {
 		// In rare cases, the estimate gets stuck. Prevent from probe running amok
 		// LK-TODO: Need more testing here to ensure that probe does not cause a lot of damage
 		//
-		s.params.Logger.Debugw("probe: aborting, no trend", "cluster", s.probeClusterId)
+		s.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", s.probeClusterId)
 		s.abortProbe()
+
 	case trend == ChannelTrendCongesting:
 		// stop immediately if the probe is congesting channel more
-		s.params.Logger.Debugw("probe: aborting, channel is congesting", "cluster", s.probeClusterId)
+		s.params.Logger.Infow("stream allocator: probe: aborting, channel is congesting", "cluster", s.probeClusterId)
 		s.abortProbe()
+
 	case s.channelObserver.GetHighestEstimate() > s.probeGoalBps:
 		// reached goal, stop probing
-		s.params.Logger.Debugw(
-			"probe: stopping, goal reached",
+		s.params.Logger.Infow(
+			"stream allocator: probe: stopping, goal reached",
 			"cluster", s.probeClusterId,
 			"goal", s.probeGoalBps,
 			"highest", s.channelObserver.GetHighestEstimate(),
@@ -688,7 +690,7 @@ func (s *StreamAllocator) handleNewEstimateInNonProbe() {
 	}
 
 	s.params.Logger.Infow(
-		"channel congestion detected, updating channel capacity",
+		"stream allocator: channel congestion detected, updating channel capacity",
 		"reason", reason,
 		"old(bps)", s.committedChannelCapacity,
 		"new(bps)", estimateToCommit,
@@ -714,7 +716,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.abortProbe()
 
 	// if not deficient, free pass allocate track
-	if !s.params.Config.Enabled || s.state == StateStable || !track.IsManaged() {
+	if !s.params.Config.Enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
 		update := NewStreamStateUpdate()
 		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal)
 		update.HandleStreamingChange(allocation.change, track)
@@ -844,7 +846,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	if s.params.Config.MinChannelCapacity > committedChannelCapacity {
 		committedChannelCapacity = s.params.Config.MinChannelCapacity
 		s.params.Logger.Debugw(
-			"overriding channel capacity",
+			"stream allocator: overriding channel capacity",
 			"actual", s.committedChannelCapacity,
 			"override", committedChannelCapacity,
 		)
@@ -899,7 +901,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	if s.params.Config.MinChannelCapacity > availableChannelCapacity {
 		availableChannelCapacity = s.params.Config.MinChannelCapacity
 		s.params.Logger.Debugw(
-			"overriding channel capacity",
+			"stream allocator: overriding channel capacity",
 			"actual", s.committedChannelCapacity,
 			"override", availableChannelCapacity,
 		)
@@ -974,7 +976,13 @@ func (s *StreamAllocator) maybeSendUpdate(update *StreamStateUpdate) {
 		return
 	}
 
-	s.params.Logger.Debugw("streamed tracks changed", "update", update)
+	// logging individual changes to make it easier for logging systems
+	for _, streamState := range update.StreamStates {
+		s.params.Logger.Debugw("streamed tracks changed",
+			"trackID", streamState.TrackID,
+			"state", streamState.State,
+		)
+	}
 	if s.onStreamStateChange != nil {
 		err := s.onStreamStateChange(update)
 		if err != nil {
@@ -1034,8 +1042,8 @@ func (s *StreamAllocator) initProbe(probeRateBps int64) {
 		ProbeMinDuration,
 		ProbeMaxDuration,
 	)
-	s.params.Logger.Debugw(
-		"starting probe",
+	s.params.Logger.Infow(
+		"stream allocator: starting probe",
 		"probeClusterId", s.probeClusterId,
 		"current usage", expectedBandwidthUsage,
 		"committed", s.committedChannelCapacity,
@@ -1201,6 +1209,17 @@ const (
 	StreamStateActive StreamState = iota
 	StreamStatePaused
 )
+
+func (s StreamState) String() string {
+	switch s {
+	case StreamStateActive:
+		return "active"
+	case StreamStatePaused:
+		return "paused"
+	default:
+		return "unknown"
+	}
+}
 
 type StreamStateInfo struct {
 	ParticipantID livekit.ParticipantID
@@ -1613,7 +1632,7 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 	switch {
 	case estimateDirection == TrendDirectionDownward:
 		c.logger.Debugw(
-			"channel observer: estimate is trending downward",
+			"stream allocator: channel observer: estimate is trending downward",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
 			"packets", packets,
@@ -1623,7 +1642,7 @@ func (c *ChannelObserver) GetTrend() (ChannelTrend, ChannelCongestionReason) {
 		return ChannelTrendCongesting, ChannelCongestionReasonEstimate
 	case c.params.NackWindowMinDuration != 0 && !c.nackWindowStartTime.IsZero() && time.Since(c.nackWindowStartTime) > c.params.NackWindowMinDuration && nackRatio > c.params.NackRatioThreshold:
 		c.logger.Debugw(
-			"channel observer: high rate of repeated NACKs",
+			"stream allocator: channel observer: high rate of repeated NACKs",
 			"name", c.params.Name,
 			"estimate", c.estimateTrend.ToString(),
 			"packets", packets,

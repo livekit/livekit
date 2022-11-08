@@ -1,6 +1,8 @@
 package sfu
 
 import (
+	"fmt"
+
 	"github.com/elliotchance/orderedmap"
 
 	"github.com/livekit/protocol/logger"
@@ -15,6 +17,8 @@ type TranslationParamsVP8 struct {
 	Header *buffer.VP8
 }
 
+// -----------------------------------------------------------
+
 type VP8MungerState struct {
 	ExtLastPictureId int32
 	PictureIdUsed    int
@@ -24,6 +28,13 @@ type VP8MungerState struct {
 	LastKeyIdx       uint8
 	KeyIdxUsed       int
 }
+
+func (v VP8MungerState) String() string {
+	return fmt.Sprintf("VP8MungerState{extLastPictureId: %d, pictureIdUsed: %+v, lastTl0PicIdx: %d, tl0PicIdxUsed: %+v, tidUsed: %+v, lastKeyIdx: %d, keyIdxUsed: %+v)",
+		v.ExtLastPictureId, v.PictureIdUsed, v.LastTl0PicIdx, v.Tl0PicIdxUsed, v.TidUsed, v.LastKeyIdx, v.KeyIdxUsed)
+}
+
+// -----------------------------------------------------------
 
 type VP8MungerParams struct {
 	pictureIdWrapHandler VP8PictureIdWrapHandler

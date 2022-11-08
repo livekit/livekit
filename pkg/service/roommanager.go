@@ -196,8 +196,8 @@ func (r *RoomManager) Stop() {
 	}
 
 	if r.rtcConfig != nil {
-		if r.rtcConfig.UDPMuxConn != nil {
-			_ = r.rtcConfig.UDPMuxConn.Close()
+		if r.rtcConfig.UDPMux != nil {
+			_ = r.rtcConfig.UDPMux.Close()
 		}
 		if r.rtcConfig.TCPMuxListener != nil {
 			_ = r.rtcConfig.TCPMuxListener.Close()
@@ -271,7 +271,8 @@ func (r *RoomManager) StartSession(
 	sid := livekit.ParticipantID(utils.NewGuid(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(room.Logger, pi.Identity, sid, false)
 	protoRoom := room.ToProto()
-	allowFallback := false
+	// default allow forceTCP
+	allowFallback := true
 	if r.config.RTC.AllowTCPFallback != nil {
 		allowFallback = *r.config.RTC.AllowTCPFallback
 	}
@@ -296,6 +297,12 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+			if p := room.GetParticipantBySid(pID); p != nil {
+				return p.ToProto()
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		return err
@@ -317,7 +324,7 @@ func (r *RoomManager) StartSession(
 
 	updateParticipantCount := func(proto *livekit.Room) {
 		if !participant.Hidden() {
-			err = r.roomStore.StoreRoom(ctx, proto)
+			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
 			if err != nil {
 				logger.Errorw("could not store room", err)
 			}
@@ -371,12 +378,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	}
 
 	// create new room, get details first
-	ri, err := r.roomStore.LoadRoom(ctx, roomName)
-	if err != nil {
-		return nil, err
-	}
-
-	internal, err := r.roomStore.LoadRoomInternal(ctx, roomName)
+	ri, internal, err := r.roomStore.LoadRoom(ctx, roomName, true)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +412,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 	})
 
 	newRoom.OnMetadataUpdate(func(metadata string) {
-		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto()); err != nil {
+		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
 			newRoom.Logger.Errorw("could not handle metadata update", err)
 		}
 	})
@@ -578,7 +580,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 				"subscribe", rm.UpdateSubscriptions.Subscribe)
 		}
 	case *livekit.RTCNodeMessage_SendData:
-		pLogger.Debugw("SendData", "size", len(rm.SendData.Data))
+		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
 		up := &livekit.UserPacket{
 			Payload:         rm.SendData.Data,
 			DestinationSids: rm.SendData.DestinationSids,

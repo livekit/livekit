@@ -46,7 +46,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}()
 
 	// find existing room and update it
-	rm, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name))
+	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 	if err == ErrRoomNotFound {
 		rm = &livekit.Room{
 			Sid:          utils.NewGuid(utils.RoomPrefix),
@@ -68,16 +68,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Metadata != "" {
 		rm.Metadata = req.Metadata
 	}
-
-	if err = r.roomStore.StoreRoom(ctx, rm); err != nil {
-		return nil, err
+	if req.Egress != nil && req.Egress.Tracks != nil {
+		internal = &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
 	}
 
-	if req.Egress != nil && req.Egress.Tracks != nil {
-		internal := &livekit.RoomInternal{TrackEgress: req.Egress.Tracks}
-		if err = r.roomStore.StoreRoomInternal(ctx, livekit.RoomName(req.Name), internal); err != nil {
-			return nil, err
-		}
+	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
+		return nil, err
 	}
 
 	// check if room already assigned
@@ -112,7 +108,7 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		nodeID = livekit.NodeID(node.Id)
 	}
 
-	logger.Debugw("selected node for room", "room", rm.Name, "roomID", rm.Sid, "nodeID", nodeID)
+	logger.Infow("selected node for room", "room", rm.Name, "roomID", rm.Sid, "selectedNodeID", nodeID)
 	err = r.router.SetNodeForRoom(ctx, livekit.RoomName(rm.Name), nodeID)
 	if err != nil {
 		return nil, err

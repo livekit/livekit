@@ -174,7 +174,7 @@ func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality liveki
 func (d *DynacastManager) update(force bool) {
 	d.lock.Lock()
 
-	d.params.Logger.Infow("processing quality change",
+	d.params.Logger.Debugw("processing quality change",
 		"force", force,
 		"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
 		"maxSubscribedQuality", d.maxSubscribedQuality,

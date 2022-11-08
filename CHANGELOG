@@ -1,6 +1,51 @@
 # Changelog
 
-Starting from v1.0, changes are documented in this log. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.5] - 2022-10-19
+### Added
+- Ability to filter IP addresses from being used #1052
+- Allow TCP  fallback on multiple connection failures #1077
+- Added support for track level stereo and RED setting #1086
+
+### Fixed
+- Fixed stream allocator with SVC codecs #1053
+- Fixed UDPMux connectivity issues when machine has multiple interfaces #1081
+- Ensure sender reports are in sync after transceiver is re-used #1080
+- Fixed simulcast codec blocking track closure #1082
+- Prevents multiple transport fallback in the same session #1090
+
+### Changed
+- Config validation has been enabled. Server will not start if there are invalid config values #1051
+- Improves NACK stats to count as a miss only if i t's not EOF #1061
+- Store track MIME type during publishing #1065
+- Minor cleanup of media track & friends module #1067
+- Split out shared media transport code into livekit/mediatransportutil #1071
+- Cleaned up logging, improved consistency of debug vs info #1073
+- Reduced memory usage with sequencer #1100
+- Improved IP address mapping, handling of multiple IPs #1094
+- Service API requests are logged #1091
+- Default HTTP handler responds with 404 for unknown paths #1088
+
+## [1.2.3] - 2022-09-13
+### Added
+- Supervisor framework to improve edge case & error handling #1005 #1006 #1010 #1017
+- Support for stereo Opus tracks #1013
+- Allow CORS responses to be cached to allow faster initial connection #1027
+
+### Fixed
+- Fixed SSRC mix-up for simulcasted tracks during session resume #1014
+- Fixed screen corruption for non-simulcasted tracks, caused by probing packets #1020
+- Fixed Handling of Simple NALU keyframes for H.264 #1016
+- Fixed TCPMux & UDPMux mixup when multiple host candidates are offered #1036
+
+### Changed
+- Webhook requests are now using Content-Type application/webhook+json to avoid eager JSON parsing #1025
+- Don't automatically add STUN servers when explicit Node IP has been set #1023
+- Automatic TCP and TURN/TLS fallback is now enabled by default #1033
+
+### Removed
+- Fully removed references to VP9. LiveKit is focused on AV1. #1004
 
 ## [1.2.1] - 2022-09-13
 ### Added

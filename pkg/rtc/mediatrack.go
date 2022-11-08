@@ -10,6 +10,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -64,6 +64,7 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
 		TrackInfo:           params.TrackInfo,
 		MediaTrack:          t,
+		IsRelayed:           false,
 		ParticipantID:       params.ParticipantID,
 		ParticipantIdentity: params.ParticipantIdentity,
 		ParticipantVersion:  params.ParticipantVersion,
@@ -241,7 +242,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 		)
 		newWR.SetRTCPCh(t.params.RTCPChan)
 		newWR.OnCloseHandler(func() {
-			t.MediaTrackReceiver.ClearReceiver(mime)
+			t.MediaTrackReceiver.ClearReceiver(mime, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
@@ -256,6 +257,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 			}
 		})
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+			// LK-TODO: this needs to be receiver/mime aware
 			t.params.Telemetry.TrackStats(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), stat)
 		})
 		if t.PrimaryReceiver() == nil {
@@ -312,6 +314,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track *webrtc.Tra
 	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability)
+
+	// if subscriber request fps before fps calculated, update them after fps updated.
+	buff.OnFpsChanged(func() {
+		t.MediaTrackSubscriptions.UpdateVideoLayers()
+	})
 	return newCodec
 }
 
@@ -353,11 +360,12 @@ func (t *MediaTrack) Restart() {
 	}
 }
 
-func (t *MediaTrack) Close() {
+func (t *MediaTrack) Close(willBeResumed bool) {
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
 
+	t.MediaTrackReceiver.ClearAllReceivers(willBeResumed)
 	t.MediaTrackReceiver.Close()
 }
 

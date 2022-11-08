@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -25,7 +24,7 @@ func StartTrackEgress(
 	track types.MediaTrack,
 	roomName livekit.RoomName,
 	roomID livekit.RoomID,
-) {
+) error {
 	if req, err := startTrackEgress(ctx, launcher, opts, track, roomName, roomID); err != nil {
 		// send egress failed webhook
 		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
@@ -38,7 +37,9 @@ func StartTrackEgress(
 				Request:  &livekit.EgressInfo_Track{Track: req},
 			},
 		})
+		return err
 	}
+	return nil
 }
 
 func startTrackEgress(
@@ -51,7 +52,7 @@ func startTrackEgress(
 ) (*livekit.TrackEgressRequest, error) {
 
 	output := &livekit.DirectFileOutput{
-		Filepath: getFilePath(opts.FilePrefix, string(track.ID())),
+		Filepath: getFilePath(opts.Filepath),
 	}
 
 	switch out := opts.Output.(type) {
@@ -84,10 +85,15 @@ func startTrackEgress(
 	return req, err
 }
 
-func getFilePath(prefix, identifier string) string {
-	if prefix == "" || strings.HasSuffix(prefix, "/") {
-		return fmt.Sprintf("%s%s_%s", prefix, identifier, time.Now().Format("2006-01-02T150405"))
+func getFilePath(filepath string) string {
+	if filepath == "" || strings.HasSuffix(filepath, "/") || strings.Contains(filepath, "{track_id}") {
+		return filepath
+	}
+
+	idx := strings.Index(filepath, ".")
+	if idx == -1 {
+		return fmt.Sprintf("%s-{track_id}", filepath)
 	} else {
-		return fmt.Sprintf("%s_%s_%s", prefix, identifier, time.Now().Format("2006-01-02T150405"))
+		return fmt.Sprintf("%s-%s%s", filepath[:idx], "{track_id}", filepath[idx:])
 	}
 }

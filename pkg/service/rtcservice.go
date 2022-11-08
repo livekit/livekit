@@ -171,7 +171,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// when auto create is disabled, we'll check to ensure it's already created
 	if !s.config.Room.AutoCreate {
-		_, err := s.store.LoadRoom(context.Background(), roomName)
+		_, _, err := s.store.LoadRoom(context.Background(), roomName, false)
 		if err == ErrRoomNotFound {
 			handleError(w, 404, err, loggerFields...)
 			return
@@ -255,8 +255,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-resSource.ReadChan():
 				if msg == nil {
-					pLogger.Infow("source closed connection",
-						"connID", connId)
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)

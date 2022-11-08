@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 type RTCClient struct {
@@ -507,7 +508,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	sender, _, err := c.publisher.AddTrack(track)
+	sender, _, err := c.publisher.AddTrack(track, types.AddTrackParams{})
 	if err != nil {
 		logger.Errorw("add track failed", err, "trackID", ti.Sid, "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
 		return

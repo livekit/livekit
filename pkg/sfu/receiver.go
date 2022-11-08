@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/sfu/twcc"
 )
 
 var (
@@ -38,7 +38,7 @@ type TrackReceiver interface {
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 
 	ReadRTP(buf []byte, layer uint8, sn uint16) (int, error)
-	GetBitrateTemporalCumulative() Bitrates
+	GetLayeredBitrate() Bitrates
 
 	GetAudioLevel() (float64, bool)
 
@@ -57,6 +57,11 @@ type TrackReceiver interface {
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
+
+	// Get red receiver for primary codec, used by forward red encodings for opus only codec
+	GetRedReceiver() TrackReceiver
+
+	GetTemporalLayerFpsForSpatial(layer int32) []float32
 }
 
 // WebRTCReceiver receives a media track
@@ -102,10 +107,9 @@ type WebRTCReceiver struct {
 	// update stats
 	onStatsUpdate func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 
-	// update layer info
-	onMaxLayerChange func(maxLayer int32)
-
 	primaryReceiver atomic.Value // *RedPrimaryReceiver
+	redReceiver     atomic.Value // *RedReceiver
+	redPktWriter    func(pkt *buffer.ExtPacket, spatialLayer int32)
 }
 
 func IsSvcCodec(mime string) bool {
@@ -177,15 +181,14 @@ func NewWebRTCReceiver(
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		// LK-TODO: this should be based on VideoLayers protocol message rather than RID based
-		isSimulcast:          len(track.RID()) > 0,
-		twcc:                 twcc,
-		streamTrackerManager: NewStreamTrackerManager(logger, trackInfo),
-		trackInfo:            trackInfo,
-		isSVC:                IsSvcCodec(track.Codec().MimeType),
-		isRED:                IsRedCodec(track.Codec().MimeType),
+		isSimulcast: len(track.RID()) > 0,
+		twcc:        twcc,
+		trackInfo:   trackInfo,
+		isSVC:       IsSvcCodec(track.Codec().MimeType),
+		isRED:       IsRedCodec(track.Codec().MimeType),
 	}
 
-	w.streamTrackerManager.OnMaxLayerChanged(w.onMaxLayerChange)
+	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC)
 	w.streamTrackerManager.OnAvailableLayersChanged(w.downTrackLayerChange)
 	w.streamTrackerManager.OnBitrateAvailabilityChanged(w.downTrackBitrateAvailabilityChange)
 
@@ -352,7 +355,7 @@ func (w *WebRTCReceiver) AddDownTrack(track TrackSender) error {
 	}
 
 	if w.downTrackSpreader.HasDownTrack(track.SubscriberID()) {
-		w.logger.Infow("subscriberID already exists, replace the downtrack", "subscriberID", track.SubscriberID())
+		w.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo {
@@ -382,8 +385,8 @@ func (w *WebRTCReceiver) downTrackBitrateAvailabilityChange() {
 	}
 }
 
-func (w *WebRTCReceiver) GetBitrateTemporalCumulative() Bitrates {
-	return w.streamTrackerManager.GetBitrateTemporalCumulative()
+func (w *WebRTCReceiver) GetLayeredBitrate() Bitrates {
+	return w.streamTrackerManager.GetLayeredBitrate()
 }
 
 // OnCloseHandler method to be called on remote tracked removed
@@ -522,6 +525,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			if pr := w.primaryReceiver.Load(); pr != nil {
 				pr.(*RedPrimaryReceiver).Close()
 			}
+			if pr := w.redReceiver.Load(); pr != nil {
+				pr.(*RedReceiver).Close()
+			}
 		})
 
 		w.streamTrackerManager.RemoveTracker(layer)
@@ -533,6 +539,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 	for {
 		w.bufferMu.RLock()
 		buf := w.buffers[layer]
+		redPktWriter := w.redPktWriter
 		w.bufferMu.RUnlock()
 		pkt, err := buf.ReadExtended()
 		if err == io.EOF {
@@ -551,14 +558,15 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		}
 
 		if spatialTracker != nil {
-			spatialTracker.Observe(pkt.Packet.SequenceNumber, pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
+			spatialTracker.Observe(pkt.Temporal, len(pkt.RawPacket), len(pkt.Packet.Payload))
 		}
 
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
-		if pr := w.primaryReceiver.Load(); pr != nil {
-			pr.(*RedPrimaryReceiver).ForwardRTP(pkt, spatialLayer)
+
+		if redPktWriter != nil {
+			redPktWriter(pkt, spatialLayer)
 		}
 	}
 }
@@ -609,7 +617,37 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		w.primaryReceiver.CompareAndSwap(nil, pr)
+		if w.primaryReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
 	}
 	return w.primaryReceiver.Load().(*RedPrimaryReceiver)
+}
+
+func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
+	if w.isRED || w.closed.Load() {
+		return w
+	}
+
+	if w.redReceiver.Load() == nil {
+		pr := NewRedReceiver(w, DownTrackSpreaderParams{
+			Threshold: w.lbThreshold,
+			Logger:    w.logger,
+		})
+		if w.redReceiver.CompareAndSwap(nil, pr) {
+			w.bufferMu.Lock()
+			w.redPktWriter = pr.ForwardRTP
+			w.bufferMu.Unlock()
+		}
+	}
+	return w.redReceiver.Load().(*RedReceiver)
+}
+
+func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
+	if !w.isSVC {
+		return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(0)
+	}
+	return w.getBuffer(layer).GetTemporalLayerFpsForSpatial(layer)
 }

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/mackerelio/go-osstat/loadavg"
+	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -84,6 +85,18 @@ func Init(nodeID string) {
 	initRoomStats(nodeID)
 }
 
+func getMemoryStats() (memoryLoad float32, err error) {
+	memInfo, err := memory.Get()
+	if err != nil {
+		return
+	}
+
+	if memInfo.Total != 0 {
+		memoryLoad = float32(memInfo.Used) / float32(memInfo.Total)
+	}
+	return
+}
+
 func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
 	loadAvg, err := loadavg.Get()
 	if err != nil {
@@ -94,6 +107,10 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 	if err != nil {
 		return nil, false, err
 	}
+
+	memoryLoad, _ := getMemoryStats()
+	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
+	// So, do not error out. Use the information if it is available.
 
 	sysPackets, sysDroppedPackets, err := getTCStats()
 	if err != nil {
@@ -154,6 +171,7 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
 		SysPacketsOut:              sysPackets,
 		SysPacketsDropped:          sysDroppedPackets,
+		MemoryLoad:                 memoryLoad,
 	}
 
 	// update stats

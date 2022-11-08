@@ -26,6 +26,16 @@ type FakeMediaTrack struct {
 	addSubscriberReturnsOnCall map[int]struct {
 		result1 error
 	}
+	ClearAllReceiversStub        func(bool)
+	clearAllReceiversMutex       sync.RWMutex
+	clearAllReceiversArgsForCall []struct {
+		arg1 bool
+	}
+	CloseStub        func(bool)
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct {
+		arg1 bool
+	}
 	GetAllSubscribersStub        func() []livekit.ParticipantID
 	getAllSubscribersMutex       sync.RWMutex
 	getAllSubscribersArgsForCall []struct {
@@ -58,6 +68,19 @@ type FakeMediaTrack struct {
 	getQualityForDimensionReturnsOnCall map[int]struct {
 		result1 livekit.VideoQuality
 	}
+	GetTemporalLayerForSpatialFpsStub        func(int32, uint32, string) int32
+	getTemporalLayerForSpatialFpsMutex       sync.RWMutex
+	getTemporalLayerForSpatialFpsArgsForCall []struct {
+		arg1 int32
+		arg2 uint32
+		arg3 string
+	}
+	getTemporalLayerForSpatialFpsReturns struct {
+		result1 int32
+	}
+	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
+		result1 int32
+	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -67,11 +90,6 @@ type FakeMediaTrack struct {
 	}
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.TrackID
-	}
-	InitiateCloseStub        func(bool)
-	initiateCloseMutex       sync.RWMutex
-	initiateCloseArgsForCall []struct {
-		arg1 bool
 	}
 	IsMutedStub        func() bool
 	isMutedMutex       sync.RWMutex
@@ -308,6 +326,70 @@ func (fake *FakeMediaTrack) AddSubscriberReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeMediaTrack) ClearAllReceivers(arg1 bool) {
+	fake.clearAllReceiversMutex.Lock()
+	fake.clearAllReceiversArgsForCall = append(fake.clearAllReceiversArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.ClearAllReceiversStub
+	fake.recordInvocation("ClearAllReceivers", []interface{}{arg1})
+	fake.clearAllReceiversMutex.Unlock()
+	if stub != nil {
+		fake.ClearAllReceiversStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversCallCount() int {
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
+	return len(fake.clearAllReceiversArgsForCall)
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversCalls(stub func(bool)) {
+	fake.clearAllReceiversMutex.Lock()
+	defer fake.clearAllReceiversMutex.Unlock()
+	fake.ClearAllReceiversStub = stub
+}
+
+func (fake *FakeMediaTrack) ClearAllReceiversArgsForCall(i int) bool {
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
+	argsForCall := fake.clearAllReceiversArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) Close(arg1 bool) {
+	fake.closeMutex.Lock()
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.CloseStub
+	fake.recordInvocation("Close", []interface{}{arg1})
+	fake.closeMutex.Unlock()
+	if stub != nil {
+		fake.CloseStub(arg1)
+	}
+}
+
+func (fake *FakeMediaTrack) CloseCallCount() int {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	return len(fake.closeArgsForCall)
+}
+
+func (fake *FakeMediaTrack) CloseCalls(stub func(bool)) {
+	fake.closeMutex.Lock()
+	defer fake.closeMutex.Unlock()
+	fake.CloseStub = stub
+}
+
+func (fake *FakeMediaTrack) CloseArgsForCall(i int) bool {
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
+	argsForCall := fake.closeArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeMediaTrack) GetAllSubscribers() []livekit.ParticipantID {
 	fake.getAllSubscribersMutex.Lock()
 	ret, specificReturn := fake.getAllSubscribersReturnsOnCall[len(fake.getAllSubscribersArgsForCall)]
@@ -476,6 +558,69 @@ func (fake *FakeMediaTrack) GetQualityForDimensionReturnsOnCall(i int, result1 l
 	}{result1}
 }
 
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFps(arg1 int32, arg2 uint32, arg3 string) int32 {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	ret, specificReturn := fake.getTemporalLayerForSpatialFpsReturnsOnCall[len(fake.getTemporalLayerForSpatialFpsArgsForCall)]
+	fake.getTemporalLayerForSpatialFpsArgsForCall = append(fake.getTemporalLayerForSpatialFpsArgsForCall, struct {
+		arg1 int32
+		arg2 uint32
+		arg3 string
+	}{arg1, arg2, arg3})
+	stub := fake.GetTemporalLayerForSpatialFpsStub
+	fakeReturns := fake.getTemporalLayerForSpatialFpsReturns
+	fake.recordInvocation("GetTemporalLayerForSpatialFps", []interface{}{arg1, arg2, arg3})
+	fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsCallCount() int {
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	return len(fake.getTemporalLayerForSpatialFpsArgsForCall)
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsCalls(stub func(int32, uint32, string) int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = stub
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsArgsForCall(i int) (int32, uint32, string) {
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	argsForCall := fake.getTemporalLayerForSpatialFpsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturns(result1 int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = nil
+	fake.getTemporalLayerForSpatialFpsReturns = struct {
+		result1 int32
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, result1 int32) {
+	fake.getTemporalLayerForSpatialFpsMutex.Lock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
+	fake.GetTemporalLayerForSpatialFpsStub = nil
+	if fake.getTemporalLayerForSpatialFpsReturnsOnCall == nil {
+		fake.getTemporalLayerForSpatialFpsReturnsOnCall = make(map[int]struct {
+			result1 int32
+		})
+	}
+	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
+		result1 int32
+	}{result1}
+}
+
 func (fake *FakeMediaTrack) ID() livekit.TrackID {
 	fake.iDMutex.Lock()
 	ret, specificReturn := fake.iDReturnsOnCall[len(fake.iDArgsForCall)]
@@ -527,38 +672,6 @@ func (fake *FakeMediaTrack) IDReturnsOnCall(i int, result1 livekit.TrackID) {
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.TrackID
 	}{result1}
-}
-
-func (fake *FakeMediaTrack) InitiateClose(arg1 bool) {
-	fake.initiateCloseMutex.Lock()
-	fake.initiateCloseArgsForCall = append(fake.initiateCloseArgsForCall, struct {
-		arg1 bool
-	}{arg1})
-	stub := fake.InitiateCloseStub
-	fake.recordInvocation("InitiateClose", []interface{}{arg1})
-	fake.initiateCloseMutex.Unlock()
-	if stub != nil {
-		fake.InitiateCloseStub(arg1)
-	}
-}
-
-func (fake *FakeMediaTrack) InitiateCloseCallCount() int {
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
-	return len(fake.initiateCloseArgsForCall)
-}
-
-func (fake *FakeMediaTrack) InitiateCloseCalls(stub func(bool)) {
-	fake.initiateCloseMutex.Lock()
-	defer fake.initiateCloseMutex.Unlock()
-	fake.InitiateCloseStub = stub
-}
-
-func (fake *FakeMediaTrack) InitiateCloseArgsForCall(i int) bool {
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
-	argsForCall := fake.initiateCloseArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeMediaTrack) IsMuted() bool {
@@ -1327,16 +1440,20 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addOnCloseMutex.RUnlock()
 	fake.addSubscriberMutex.RLock()
 	defer fake.addSubscriberMutex.RUnlock()
+	fake.clearAllReceiversMutex.RLock()
+	defer fake.clearAllReceiversMutex.RUnlock()
+	fake.closeMutex.RLock()
+	defer fake.closeMutex.RUnlock()
 	fake.getAllSubscribersMutex.RLock()
 	defer fake.getAllSubscribersMutex.RUnlock()
 	fake.getNumSubscribersMutex.RLock()
 	defer fake.getNumSubscribersMutex.RUnlock()
 	fake.getQualityForDimensionMutex.RLock()
 	defer fake.getQualityForDimensionMutex.RUnlock()
+	fake.getTemporalLayerForSpatialFpsMutex.RLock()
+	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
-	fake.initiateCloseMutex.RLock()
-	defer fake.initiateCloseMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
 	fake.isSimulcastMutex.RLock()

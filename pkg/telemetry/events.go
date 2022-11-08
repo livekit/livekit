@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,7 +15,6 @@ import (
 
 func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
 	if t.notifier == nil {
-		logger.Warnw("failed to notify webhook", errors.New("no notifier"), "event", event.Event)
 		return
 	}
 
@@ -72,18 +70,13 @@ func (t *telemetryService) ParticipantJoined(
 		prometheus.IncrementParticipantJoin(1)
 		prometheus.AddParticipant()
 
-		worker := newStatsWorker(
+		t.createWorker(
 			ctx,
-			t,
 			livekit.RoomID(room.Sid),
 			livekit.RoomName(room.Name),
 			livekit.ParticipantID(participant.Sid),
 			livekit.ParticipantIdentity(participant.Identity),
 		)
-
-		t.lock.Lock()
-		t.workers[livekit.ParticipantID(participant.Sid)] = worker
-		t.lock.Unlock()
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_JOINED,
@@ -111,6 +104,16 @@ func (t *telemetryService) ParticipantActive(
 			Room:        room,
 			Participant: participant,
 		})
+
+		if _, ok := t.getWorker(livekit.ParticipantID(participant.Sid)); !ok {
+			t.createWorker(
+				ctx,
+				livekit.RoomID(room.Sid),
+				livekit.RoomName(room.Name),
+				livekit.ParticipantID(participant.Sid),
+				livekit.ParticipantIdentity(participant.Identity),
+			)
+		}
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,

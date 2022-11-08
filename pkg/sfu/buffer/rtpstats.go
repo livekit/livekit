@@ -9,6 +9,7 @@ import (
 	"github.com/pion/rtp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -102,8 +103,9 @@ type RTPStats struct {
 	highestSN  uint16
 	cycles     uint16
 
-	isRRSeen               bool
 	extHighestSNOverridden uint32
+	lastRRTime             time.Time
+	lastRR                 rtcp.ReceptionReport
 
 	highestTS   uint32
 	highestTime int64
@@ -157,7 +159,7 @@ type RTPStats struct {
 	maxRtt uint32
 
 	rtpSR     uint32
-	ntpSR     NtpTime
+	ntpSR     mediatransportutil.NtpTime
 	arrivalSR int64
 
 	nextSnapshotId uint32
@@ -170,6 +172,89 @@ func NewRTPStats(params RTPStatsParams) *RTPStats {
 		logger:         params.Logger,
 		nextSnapshotId: FirstSnapshotId,
 		snapshots:      make(map[uint32]*Snapshot),
+	}
+}
+
+func (r *RTPStats) Seed(from *RTPStats) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if from == nil {
+		return
+	}
+
+	r.initialized = from.initialized
+	r.resyncOnNextPacket = from.resyncOnNextPacket
+
+	r.startTime = from.startTime
+	// do not clone endTime as a non-zero endTime indiacates an ended object
+
+	r.extStartSN = from.extStartSN
+	r.highestSN = from.highestSN
+	r.cycles = from.cycles
+
+	r.extHighestSNOverridden = from.extHighestSNOverridden
+	r.lastRRTime = from.lastRRTime
+	r.lastRR = from.lastRR
+
+	r.highestTS = from.highestTS
+	r.highestTime = from.highestTime
+
+	r.lastTransit = from.lastTransit
+
+	r.bytes = from.bytes
+	r.headerBytes = from.headerBytes
+	r.bytesDuplicate = from.bytesDuplicate
+	r.headerBytesDuplicate = from.headerBytesDuplicate
+	r.bytesPadding = from.bytesPadding
+	r.headerBytesPadding = from.headerBytesPadding
+	r.packetsDuplicate = from.packetsDuplicate
+	r.packetsPadding = from.packetsPadding
+
+	r.packetsOutOfOrder = from.packetsOutOfOrder
+
+	r.packetsLost = from.packetsLost
+	r.packetsLostOverridden = from.packetsLostOverridden
+
+	r.frames = from.frames
+
+	r.jitter = from.jitter
+	r.maxJitter = from.maxJitter
+	r.jitterOverridden = from.jitterOverridden
+	r.maxJitterOverridden = from.maxJitterOverridden
+
+	r.snInfos = from.snInfos
+	r.snInfoWritePtr = from.snInfoWritePtr
+
+	r.gapHistogram = from.gapHistogram
+
+	r.nacks = from.nacks
+	r.nackAcks = from.nackAcks
+	r.nackMisses = from.nackMisses
+	r.nackRepeated = from.nackRepeated
+
+	r.plis = from.plis
+	r.lastPli = from.lastPli
+
+	r.layerLockPlis = from.layerLockPlis
+	r.lastLayerLockPli = from.lastLayerLockPli
+
+	r.firs = from.firs
+	r.lastFir = from.lastFir
+
+	r.keyFrames = from.keyFrames
+	r.lastKeyFrame = from.lastKeyFrame
+
+	r.rtt = from.rtt
+	r.maxRtt = from.maxRtt
+
+	r.rtpSR = from.rtpSR
+	r.ntpSR = from.ntpSR
+	r.arrivalSR = from.arrivalSR
+
+	r.nextSnapshotId = from.nextSnapshotId
+	for id, ss := range from.snapshots {
+		r.snapshots[id] = ss
 	}
 }
 
@@ -365,7 +450,7 @@ func (r *RTPStats) getTotalPacketsPrimary() uint32 {
 	return packetsSeen - r.packetsPadding
 }
 
-func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uint32, rtt uint32, jitter float64) {
+func (r *RTPStats) UpdateFromReceiverReport(rr rtcp.ReceptionReport, rtt uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -373,29 +458,42 @@ func (r *RTPStats) UpdateFromReceiverReport(extHighestSN uint32, packetsLost uin
 		return
 	}
 
-	r.isRRSeen = true
-	r.extHighestSNOverridden = extHighestSN
-	r.packetsLostOverridden = packetsLost
+	if r.lastRRTime.IsZero() || r.extHighestSNOverridden <= rr.LastSequenceNumber {
+		r.extHighestSNOverridden = rr.LastSequenceNumber
+		r.packetsLostOverridden = rr.TotalLost
 
-	r.rtt = rtt
-	if rtt > r.maxRtt {
-		r.maxRtt = rtt
-	}
-
-	r.jitterOverridden = jitter
-	if jitter > r.maxJitterOverridden {
-		r.maxJitterOverridden = jitter
-	}
-
-	// update snapshots
-	for _, s := range r.snapshots {
-		if rtt > s.maxRtt {
-			s.maxRtt = rtt
+		r.rtt = rtt
+		if rtt > r.maxRtt {
+			r.maxRtt = rtt
 		}
 
-		if jitter > s.maxJitterOverridden {
-			s.maxJitterOverridden = jitter
+		r.jitterOverridden = float64(rr.Jitter)
+		if r.jitterOverridden > r.maxJitterOverridden {
+			r.maxJitterOverridden = r.jitterOverridden
 		}
+
+		// update snapshots
+		for _, s := range r.snapshots {
+			if rtt > s.maxRtt {
+				s.maxRtt = rtt
+			}
+
+			if r.jitterOverridden > s.maxJitterOverridden {
+				s.maxJitterOverridden = r.jitterOverridden
+			}
+		}
+
+		r.lastRRTime = time.Now()
+		r.lastRR = rr
+	} else {
+		r.logger.Warnw(
+			"receiver report potentially out of order",
+			fmt.Errorf("highestSN: existing: %d, received: %d", r.extHighestSNOverridden, rr.LastSequenceNumber),
+			"lastRRTime", r.lastRRTime,
+			"lastRR", r.lastRR,
+			"sinceLastRR", time.Since(r.lastRRTime),
+			"receivedRR", rr,
+		)
 	}
 }
 
@@ -552,7 +650,7 @@ func (r *RTPStats) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS NtpTime, arrival time.Time) {
+func (r *RTPStats) SetRtcpSenderReportData(rtpTS uint32, ntpTS mediatransportutil.NtpTime, arrival time.Time) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -570,7 +668,7 @@ func (r *RTPStats) GetRtcpSenderReport(ssrc uint32) *rtcp.SenderReport {
 	}
 
 	now := time.Now()
-	nowNTP := ToNtpTime(now)
+	nowNTP := mediatransportutil.ToNtpTime(now)
 	nowRTP := r.highestTS + uint32((now.UnixNano()-r.highestTime)*int64(r.params.ClockRate)/1e9)
 
 	return &rtcp.SenderReport{
@@ -893,7 +991,7 @@ func (r *RTPStats) getExtHighestSN() uint32 {
 }
 
 func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
-	if r.params.IsReceiverReportDriven && r.isRRSeen {
+	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.extHighestSNOverridden
 	}
 
@@ -901,7 +999,7 @@ func (r *RTPStats) getExtHighestSNAdjusted() uint32 {
 }
 
 func (r *RTPStats) getPacketsLost() uint32 {
-	if r.params.IsReceiverReportDriven && r.isRRSeen {
+	if r.params.IsReceiverReportDriven && !r.lastRRTime.IsZero() {
 		return r.packetsLostOverridden
 	}
 
@@ -1053,7 +1151,7 @@ func (r *RTPStats) updateGapHistogram(gap int) {
 }
 
 func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot) {
-	if !r.initialized || (r.params.IsReceiverReportDriven && !r.isRRSeen) {
+	if !r.initialized || (r.params.IsReceiverReportDriven && r.lastRRTime.IsZero()) {
 		return nil, nil
 	}
 
@@ -1089,6 +1187,10 @@ func (r *RTPStats) getAndResetSnapshot(snapshotId uint32) (*Snapshot, *Snapshot)
 // ----------------------------------
 
 func AggregateRTPStats(statsList []*livekit.RTPStats) *livekit.RTPStats {
+	if len(statsList) == 0 {
+		return nil
+	}
+
 	startTime := time.Time{}
 	endTime := time.Time{}
 

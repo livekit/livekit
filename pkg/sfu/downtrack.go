@@ -3,6 +3,7 @@ package sfu
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -47,6 +49,8 @@ const (
 	keyFrameIntervalMin = 200
 	keyFrameIntervalMax = 1000
 	flushTimeout        = 1 * time.Second
+
+	maxPadding = 2000
 )
 
 var (
@@ -97,6 +101,21 @@ var (
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
 )
+
+// -------------------------------------------------------------------
+
+type DownTrackState struct {
+	RTPStats             *buffer.RTPStats
+	DeltaStatsSnapshotId uint32
+	ForwarderState       ForwarderState
+}
+
+func (d DownTrackState) String() string {
+	return fmt.Sprintf("DownTrackState{rtpStats: %s, delta: %d, forwarder: %s}",
+		d.RTPStats.ToString(), d.DeltaStatsSnapshotId, d.ForwarderState.String())
+}
+
+// -------------------------------------------------------------------
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
@@ -291,7 +310,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.handleRTCP(pkt)
 		})
 	}
-	d.sequencer = newSequencer(d.maxTrack, d.logger)
+
+	if d.kind == webrtc.RTPCodecTypeAudio {
+		d.sequencer = newSequencer(d.maxTrack, 0, d.logger)
+	} else {
+		d.sequencer = newSequencer(d.maxTrack, maxPadding, d.logger)
+	}
+
 	d.codec = codec.RTPCodecCapability
 	d.forwarder.DetermineCodec(d.codec)
 	if d.onBind != nil {
@@ -599,7 +624,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int) int {
 		// So, retransmitting padding packets is only going to make matters worse.
 		//
 		if d.sequencer != nil {
-			d.sequencer.push(0, hdr.SequenceNumber, hdr.Timestamp, int8(InvalidLayerSpatial))
+			d.sequencer.pushPadding(hdr.SequenceNumber)
 		}
 
 		bytesSent += size
@@ -743,12 +768,18 @@ func (d *DownTrack) MaxLayers() VideoLayers {
 	return d.forwarder.MaxLayers()
 }
 
-func (d *DownTrack) GetForwarderState() ForwarderState {
-	return d.forwarder.GetState()
+func (d *DownTrack) GetState() DownTrackState {
+	return DownTrackState{
+		RTPStats:             d.rtpStats,
+		DeltaStatsSnapshotId: d.deltaStatsSnapshotId,
+		ForwarderState:       d.forwarder.GetState(),
+	}
 }
 
-func (d *DownTrack) SeedForwarderState(state ForwarderState) {
-	d.forwarder.SeedState(state)
+func (d *DownTrack) SeedState(state DownTrackState) {
+	d.rtpStats.Seed(state.RTPStats)
+	d.deltaStatsSnapshotId = state.DeltaStatsSnapshotId
+	d.forwarder.SeedState(state.ForwarderState)
 }
 
 func (d *DownTrack) GetForwardingStatus() ForwardingStatus {
@@ -834,7 +865,7 @@ func (d *DownTrack) IsDeficient() bool {
 }
 
 func (d *DownTrack) BandwidthRequested() int64 {
-	return d.forwarder.BandwidthRequested(d.receiver.GetBitrateTemporalCumulative())
+	return d.forwarder.BandwidthRequested(d.receiver.GetLayeredBitrate())
 }
 
 func (d *DownTrack) DistanceToDesired() int32 {
@@ -842,14 +873,13 @@ func (d *DownTrack) DistanceToDesired() int32 {
 }
 
 func (d *DownTrack) AllocateOptimal(allowOvershoot bool) VideoAllocation {
-	allocation := d.forwarder.AllocateOptimal(d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
-	d.logger.Debugw("stream: allocation optimal available", "allocation", allocation)
+	allocation := d.forwarder.AllocateOptimal(d.receiver.GetLayeredBitrate(), allowOvershoot)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
 func (d *DownTrack) ProvisionalAllocatePrepare() {
-	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetBitrateTemporalCumulative())
+	d.forwarder.ProvisionalAllocatePrepare(d.receiver.GetLayeredBitrate())
 }
 
 func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers VideoLayers, allowPause bool, allowOvershoot bool) int64 {
@@ -870,27 +900,24 @@ func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransiti
 
 func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	allocation := d.forwarder.ProvisionalAllocateCommit()
-	d.logger.Debugw("stream: allocation commit", "allocation", allocation)
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
 
 func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
-	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
-	d.logger.Debugw("stream: allocation next higher layer", "allocation", allocation, "available", available)
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, d.receiver.GetLayeredBitrate(), allowOvershoot)
 	d.maybeStartKeyFrameRequester()
 	return allocation, available
 }
 
 func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
-	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetBitrateTemporalCumulative(), allowOvershoot)
+	transition, available := d.forwarder.GetNextHigherTransition(d.receiver.GetLayeredBitrate(), allowOvershoot)
 	d.logger.Debugw("stream: get next higher layer", "transition", transition, "available", available)
 	return transition, available
 }
 
 func (d *DownTrack) Pause() VideoAllocation {
-	allocation := d.forwarder.Pause(d.receiver.GetBitrateTemporalCumulative())
-	d.logger.Debugw("stream: pause", "allocation", allocation)
+	allocation := d.forwarder.Pause(d.receiver.GetLayeredBitrate())
 	d.maybeStartKeyFrameRequester()
 	return allocation
 }
@@ -1133,12 +1160,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				}
 				rr.Reports = append(rr.Reports, r)
 
-				rtt := getRttMs(&r)
+				rtt := mediatransportutil.GetRttMs(&r)
 				if rtt != d.rtpStats.GetRtt() {
 					rttToReport = rtt
 				}
 
-				d.rtpStats.UpdateFromReceiverReport(r.LastSequenceNumber, r.TotalLost, rtt, float64(r.Jitter))
+				d.rtpStats.UpdateFromReceiverReport(r, rtt)
 			}
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
@@ -1219,11 +1246,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
 	for _, meta := range d.sequencer.getPacketsMeta(filtered) {
-		if meta.layer == int8(InvalidLayerSpatial) {
-			// padding packet, no RTX for those
-			continue
-		}
-
 		if disallowedLayers[meta.layer] {
 			continue
 		}
@@ -1238,10 +1260,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		pktBuff := *src
 		n, err := d.receiver.ReadRTP(pktBuff, uint8(meta.layer), meta.sourceSeqNo)
 		if err != nil {
-			nackMisses++
 			if err == io.EOF {
 				break
 			}
+			nackMisses++
 			continue
 		}
 

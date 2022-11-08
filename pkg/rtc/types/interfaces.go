@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 
 	"github.com/livekit/protocol/auth"
@@ -69,7 +70,6 @@ const (
 	ParticipantCloseReasonVerifyFailed
 	ParticipantCloseReasonJoinFailed
 	ParticipantCloseReasonJoinTimeout
-	ParticipantCloseReasonRTCSessionFinish
 	ParticipantCloseReasonStateDisconnected
 	ParticipantCloseReasonPeerConnectionDisconnected
 	ParticipantCloseReasonDuplicateIdentity
@@ -99,8 +99,6 @@ func (p ParticipantCloseReason) String() string {
 		return "JOIN_FAILED"
 	case ParticipantCloseReasonJoinTimeout:
 		return "JOIN_TIMEOUT"
-	case ParticipantCloseReasonRTCSessionFinish:
-		return "RTC_SESSION_FINISH"
 	case ParticipantCloseReasonStateDisconnected:
 		return "STATE_DISCONNECTED"
 	case ParticipantCloseReasonPeerConnectionDisconnected:
@@ -178,7 +176,7 @@ type Participant interface {
 
 	GetPublishedTrack(sid livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, willBeResumed bool)
+	RemovePublishedTrack(track MediaTrack, willBeResumed bool, shouldClose bool)
 
 	AddSubscriber(op LocalParticipant, params AddSubscriberParams) (int, error)
 	RemoveSubscriber(op LocalParticipant, trackID livekit.TrackID, resume bool)
@@ -228,6 +226,10 @@ const (
 	ICEConnectionTypeUnknown ICEConnectionType = "unknown"
 )
 
+type AddTrackParams struct {
+	Stereo bool
+}
+
 //counterfeiter:generate . LocalParticipant
 type LocalParticipant interface {
 	Participant
@@ -262,8 +264,8 @@ type LocalParticipant interface {
 	HandleAnswer(sdp webrtc.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *IceConfig)
-	AddTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
-	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
+	AddTransceiverFromTrackToSubscriber(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
 	RemoveTrackFromSubscriber(sender *webrtc.RTPSender) error
 
 	// subscriptions
@@ -271,6 +273,7 @@ type LocalParticipant interface {
 	RemoveSubscribedTrack(st SubscribedTrack)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings) error
 	GetSubscribedTracks() []SubscribedTrack
+	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -302,6 +305,7 @@ type LocalParticipant interface {
 	OnSubscribedTo(callback func(LocalParticipant, livekit.ParticipantID))
 	OnClose(callback func(LocalParticipant, map[livekit.TrackID]livekit.ParticipantID))
 	OnClaimsChanged(callback func(LocalParticipant))
+	OnReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
 	// session migration
 	MaybeStartMigration(force bool, onStart func()) bool
@@ -311,12 +315,12 @@ type LocalParticipant interface {
 
 	UpdateRTT(rtt uint32)
 
-	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, forwarderState sfu.ForwarderState)
+	CacheDownTrack(trackID livekit.TrackID, rtpTransceiver *webrtc.RTPTransceiver, downTrackState sfu.DownTrackState)
 	UncacheDownTrack(rtpTransceiver *webrtc.RTPTransceiver)
-	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.ForwarderState)
+	GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 
-	EnqueueSubscribeTrack(trackID livekit.TrackID, f func(sub LocalParticipant) error)
-	EnqueueUnsubscribeTrack(trackID livekit.TrackID, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
+	EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub LocalParticipant) error)
+	EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRelayed bool, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error)
 	ProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 	ClearInProgressAndProcessSubscriptionRequestsQueue(trackID livekit.TrackID)
 
@@ -363,6 +367,8 @@ type MediaTrack interface {
 	UpdateVideoLayers(layers []*livekit.VideoLayer)
 	IsSimulcast() bool
 
+	Close(willBeResumed bool)
+
 	// callbacks
 	AddOnClose(func())
 
@@ -370,7 +376,6 @@ type MediaTrack interface {
 	AddSubscriber(participant LocalParticipant) error
 	RemoveSubscriber(participantID livekit.ParticipantID, willBeResumed bool)
 	IsSubscriber(subID livekit.ParticipantID) bool
-	InitiateClose(willBeResumed bool)
 	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 	GetAllSubscribers() []livekit.ParticipantID
 	GetNumSubscribers() int
@@ -378,7 +383,11 @@ type MediaTrack interface {
 	// returns quality information that's appropriate for width & height
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
+	// returns temporal layer that's appropriate for fps
+	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
+
 	Receivers() []sfu.TrackReceiver
+	ClearAllReceivers(willBeResumed bool)
 }
 
 //counterfeiter:generate . LocalMediaTrack
@@ -429,6 +438,7 @@ const (
 	OperationMonitorEventUpdateSubscription OperationMonitorEvent = iota
 	OperationMonitorEventSetSubscribedTrack
 	OperationMonitorEventClearSubscribedTrack
+	OperationMonitorEventPublisherPeerConnectionConnected
 	OperationMonitorEventAddPendingPublication
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
@@ -443,6 +453,8 @@ func (o OperationMonitorEvent) String() string {
 		return "SET_SUBSCRIBED_TRACK"
 	case OperationMonitorEventClearSubscribedTrack:
 		return "CLEAR_SUBSCRIBED_TRACK"
+	case OperationMonitorEventPublisherPeerConnectionConnected:
+		return "PUBLISHER_PEER_CONNECTION_CONNECTED"
 	case OperationMonitorEventAddPendingPublication:
 		return "ADD_PENDING_PUBLICATION"
 	case OperationMonitorEventSetPublicationMute:

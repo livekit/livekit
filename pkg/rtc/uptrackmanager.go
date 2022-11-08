@@ -67,7 +67,7 @@ func (u *UpTrackManager) Close(willBeResumed bool) {
 
 	// remove all subscribers
 	for _, t := range u.GetPublishedTracks() {
-		t.InitiateClose(willBeResumed)
+		t.ClearAllReceivers(willBeResumed)
 	}
 
 	if notify && u.onClose != nil {
@@ -169,7 +169,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
-			u.params.Logger.Infow("mute status changed", "trackID", trackID, "muted", track.IsMuted())
+			u.params.Logger.Infow("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track, false)
 			}
@@ -327,8 +327,12 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool) {
-	track.InitiateClose(willBeResumed)
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, willBeResumed bool, shouldClose bool) {
+	if shouldClose {
+		track.Close(willBeResumed)
+	} else {
+		track.ClearAllReceivers(willBeResumed)
+	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()
