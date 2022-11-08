@@ -2,10 +2,36 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2022-11-08
+### Added
+- Ingress Service support #1125
+- Support for web egress #1126
+- Ability to set all configuration params via command line flags #1112
+- Server-side RED encoding for supported clients #1137
+- Opus RED active loss recovery #1139
+- Experimental: fallback to TCP when UDP is unstable #1119
+- Populate memory load in node stats #1121
+
+### Fixed
+- Fixed dynacast pausing a layer due to clients (FF) not publishing layer 0 #1117
+- Room.activeRecording updated correctly after users rejoin #1132
+- Don't collect external candidate IP when it's filtered out #1135
+- Install script to use uname without assuming /usr/bin #1138
+
+### Changed
+- Allocate packetMeta up front to reduce number of allocations #1108
+- Do not log duplicate packet error. #1116
+- Consolidate getMemoryStats #1122
+- Seed snapshots to avoid saving/restoring in downtrack #1128
+- Remove Dependency Descriptor extension when AV1 is not preferred #1129
+- Always send participant updates prior to negotiation #1147
+- Set track level codec settings for all pending tracks #1148
+- Use Redis universal client to support clustered redis #1149
+
 ## [1.2.5] - 2022-10-19
 ### Added
 - Ability to filter IP addresses from being used #1052
-- Allow TCP  fallback on multiple connection failures #1077
+- Allow TCP fallback on multiple connection failures #1077
 - Added support for track level stereo and RED setting #1086
 
 ### Fixed
