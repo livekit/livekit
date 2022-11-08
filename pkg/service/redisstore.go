@@ -48,12 +48,12 @@ const (
 )
 
 type RedisStore struct {
-	rc   *redis.Client
+	rc   redis.UniversalClient
 	ctx  context.Context
 	done chan struct{}
 }
 
-func NewRedisStore(rc *redis.Client) *RedisStore {
+func NewRedisStore(rc redis.UniversalClient) *RedisStore {
 	return &RedisStore{
 		ctx: context.Background(),
 		rc:  rc,

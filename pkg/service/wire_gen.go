@@ -35,18 +35,18 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	roomConfig := getRoomConf(conf)
-	client, err := createRedisClient(conf)
+	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(client, currentNode)
-	objectStore := createStore(client)
+	router := routing.CreateRouter(universalClient, currentNode)
+	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
 	}
 	nodeID := getNodeID(currentNode)
-	rpcClient := egress.NewRedisRPCClient(nodeID, client)
+	rpcClient := egress.NewRedisRPCClient(nodeID, universalClient)
 	egressStore := getEgressStore(objectStore)
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
@@ -65,7 +65,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressService := NewEgressService(rpcClient, objectStore, egressStore, roomService, telemetryService, rtcEgressLauncher)
 	ingressConfig := getIngressConfig(conf)
-	rpc := ingress.NewRedisRPC(nodeID, client)
+	rpc := ingress.NewRedisRPC(nodeID, universalClient)
 	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
@@ -88,11 +88,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 }
 
 func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routing.Router, error) {
-	client, err := createRedisClient(conf)
+	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(client, currentNode)
+	router := routing.CreateRouter(universalClient, currentNode)
 	return router, nil
 }
 
@@ -143,12 +143,12 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
-func createRedisClient(conf *config.Config) (*redis.Client, error) {
+func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	if !conf.HasRedis() {
 		return nil, nil
 	}
 
-	var rc *redis.Client
+	var rc redis.UniversalClient
 	var tlsConfig *tls.Config
 
 	if conf.Redis.UseTLS {
@@ -193,7 +193,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	return rc, nil
 }
 
-func createStore(rc *redis.Client) ObjectStore {
+func createStore(rc redis.UniversalClient) ObjectStore {
 	if rc != nil {
 		return NewRedisStore(rc)
 	}

@@ -117,12 +117,12 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	return webhook.NewNotifier(wc.APIKey, secret, wc.URLs), nil
 }
 
-func createRedisClient(conf *config.Config) (*redis.Client, error) {
+func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	if !conf.HasRedis() {
 		return nil, nil
 	}
 
-	var rc *redis.Client
+	var rc redis.UniversalClient
 	var tlsConfig *tls.Config
 
 	if conf.Redis.UseTLS {
@@ -167,7 +167,7 @@ func createRedisClient(conf *config.Config) (*redis.Client, error) {
 	return rc, nil
 }
 
-func createStore(rc *redis.Client) ObjectStore {
+func createStore(rc redis.UniversalClient) ObjectStore {
 	if rc != nil {
 		return NewRedisStore(rc)
 	}
