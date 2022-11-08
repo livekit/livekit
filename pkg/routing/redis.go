@@ -38,7 +38,7 @@ func signalNodeChannel(nodeID livekit.NodeID) string {
 	return "signal_channel:" + string(nodeID)
 }
 
-func publishRTCMessage(rc *redis.Client, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, msg proto.Message) error {
+func publishRTCMessage(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey, msg proto.Message) error {
 	rm := &livekit.RTCNodeMessage{
 		ParticipantKey: string(participantKey),
 	}
@@ -67,7 +67,7 @@ func publishRTCMessage(rc *redis.Client, nodeID livekit.NodeID, participantKey l
 	return rc.Publish(redisCtx, rtcNodeChannel(nodeID), data).Err()
 }
 
-func publishSignalMessage(rc *redis.Client, nodeID livekit.NodeID, connectionID livekit.ConnectionID, msg proto.Message) error {
+func publishSignalMessage(rc redis.UniversalClient, nodeID livekit.NodeID, connectionID livekit.ConnectionID, msg proto.Message) error {
 	rm := &livekit.SignalNodeMessage{
 		ConnectionId: string(connectionID),
 	}
@@ -94,14 +94,14 @@ func publishSignalMessage(rc *redis.Client, nodeID livekit.NodeID, connectionID 
 }
 
 type RTCNodeSink struct {
-	rc             *redis.Client
+	rc             redis.UniversalClient
 	nodeID         livekit.NodeID
 	participantKey livekit.ParticipantKey
 	isClosed       atomic.Bool
 	onClose        func()
 }
 
-func NewRTCNodeSink(rc *redis.Client, nodeID livekit.NodeID, participantKey livekit.ParticipantKey) *RTCNodeSink {
+func NewRTCNodeSink(rc redis.UniversalClient, nodeID livekit.NodeID, participantKey livekit.ParticipantKey) *RTCNodeSink {
 	return &RTCNodeSink{
 		rc:             rc,
 		nodeID:         nodeID,
@@ -130,14 +130,14 @@ func (s *RTCNodeSink) OnClose(f func()) {
 }
 
 type SignalNodeSink struct {
-	rc           *redis.Client
+	rc           redis.UniversalClient
 	nodeID       livekit.NodeID
 	connectionID livekit.ConnectionID
 	isClosed     atomic.Bool
 	onClose      func()
 }
 
-func NewSignalNodeSink(rc *redis.Client, nodeID livekit.NodeID, connectionID livekit.ConnectionID) *SignalNodeSink {
+func NewSignalNodeSink(rc redis.UniversalClient, nodeID livekit.NodeID, connectionID livekit.ConnectionID) *SignalNodeSink {
 	return &SignalNodeSink{
 		rc:           rc,
 		nodeID:       nodeID,

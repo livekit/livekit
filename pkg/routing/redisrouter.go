@@ -33,7 +33,7 @@ const (
 type RedisRouter struct {
 	LocalRouter
 
-	rc        *redis.Client
+	rc        redis.UniversalClient
 	ctx       context.Context
 	isStarted atomic.Bool
 	nodeMu    sync.RWMutex
@@ -44,7 +44,7 @@ type RedisRouter struct {
 	cancel func()
 }
 
-func NewRedisRouter(currentNode LocalNode, rc *redis.Client) *RedisRouter {
+func NewRedisRouter(currentNode LocalNode, rc redis.UniversalClient) *RedisRouter {
 	rr := &RedisRouter{
 		LocalRouter: *NewLocalRouter(currentNode),
 		rc:          rc,

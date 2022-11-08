@@ -93,7 +93,7 @@ type MessageRouter interface {
 	WriteRoomRTC(ctx context.Context, roomName livekit.RoomName, msg *livekit.RTCNodeMessage) error
 }
 
-func CreateRouter(rc *redis.Client, node LocalNode) Router {
+func CreateRouter(rc redis.UniversalClient, node LocalNode) Router {
 	if rc != nil {
 		return NewRedisRouter(node, rc)
 	}
