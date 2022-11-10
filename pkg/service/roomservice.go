@@ -61,6 +61,17 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, err
 	}
 
+	// actually start the room on an RTC node, to ensure metadata & empty timeout functionality
+	_, sink, source, err := s.router.StartParticipantSignal(ctx,
+		livekit.RoomName(req.Name),
+		routing.ParticipantInit{},
+	)
+	if err != nil {
+		return nil, err
+	}
+	sink.Close()
+	source.Close()
+
 	if req.Egress != nil && req.Egress.Room != nil {
 		egress := &livekit.StartEgressRequest{
 			Request: &livekit.StartEgressRequest_RoomComposite{
