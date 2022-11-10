@@ -72,6 +72,19 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	sink.Close()
 	source.Close()
 
+	// ensure it's created correctly
+	err = confirmExecution(func() error {
+		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
+		if err != nil {
+			return ErrOperationFailed
+		} else {
+			return nil
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	if req.Egress != nil && req.Egress.Room != nil {
 		egress := &livekit.StartEgressRequest{
 			Request: &livekit.StartEgressRequest_RoomComposite{
