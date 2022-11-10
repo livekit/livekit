@@ -219,6 +219,10 @@ func (r *RoomManager) StartSession(
 	}
 	defer room.Release()
 
+	// only create the room, but don't start a participant session
+	if pi.Identity == "" {
+		return nil
+	}
 	participant := room.GetParticipant(pi.Identity)
 	if participant != nil {
 		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
