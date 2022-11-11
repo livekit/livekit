@@ -535,12 +535,12 @@ func (p *ParticipantImpl) Start() {
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason) error {
-	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String())
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}
 
+	p.params.Logger.Infow("participant closing", "sendLeave", sendLeave, "reason", reason.String())
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 

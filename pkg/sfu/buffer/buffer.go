@@ -200,7 +200,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		switch fb.Type {
 		case webrtc.TypeRTCPFBGoogREMB:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
-			b.logger.Warnw("REMB not supported, RTCP feedback will not be generated", nil)
+			b.logger.Debugw("REMB not supported, RTCP feedback will not be generated")
 		case webrtc.TypeRTCPFBTransportCC:
 			if b.codecType == webrtc.RTPCodecTypeVideo {
 				b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBTransportCC)

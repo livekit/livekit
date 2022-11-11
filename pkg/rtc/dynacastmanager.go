@@ -210,7 +210,7 @@ func (d *DynacastManager) update(force bool) {
 		}
 
 		if downgradesOnly {
-			d.params.Logger.Infow("debouncing quality downgrade",
+			d.params.Logger.Debugw("debouncing quality downgrade",
 				"committedMaxSubscribedQuality", d.committedMaxSubscribedQuality,
 				"maxSubscribedQuality", d.maxSubscribedQuality,
 			)
