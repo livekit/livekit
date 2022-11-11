@@ -766,20 +766,9 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		avgScore = totalScore / float32(numTracks)
 	}
 
-	if avgScore < 4.5 {
-		p.params.Logger.Infow(
-			"low connection quality score",
-			"avgScore", avgScore,
-			"publisherScores", publisherScores,
-			"subscriberScores", subscriberScores,
-		)
-	}
-
-	rating := connectionquality.Score2Rating(avgScore)
-
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
-		Quality:        rating,
+		Quality:        connectionquality.Score2Rating(avgScore),
 		Score:          avgScore,
 	}
 }

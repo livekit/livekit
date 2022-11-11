@@ -435,7 +435,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 }
 
 func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
-	t.params.Logger.Infow("ice gathering state change", "state", state.String())
+	t.params.Logger.Debugw("ice gathering state change", "state", state.String())
 	if state != webrtc.ICEGathererStateComplete {
 		return
 	}
@@ -469,7 +469,7 @@ func (t *PCTransport) handleConnectionFailed() {
 }
 
 func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
-	t.params.Logger.Infow("ice connection state change", "state", state.String())
+	t.params.Logger.Debugw("ice connection state change", "state", state.String())
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
 		t.setICEConnectedAt(time.Now())
@@ -482,7 +482,7 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 }
 
 func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionState) {
-	t.params.Logger.Infow("peer connection state change", "state", state.String())
+	t.params.Logger.Debugw("peer connection state change", "state", state.String())
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		t.logICECandidates()
@@ -495,6 +495,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 			t.maybeNotifyFullyEstablished()
 		}
 	case webrtc.PeerConnectionStateFailed:
+		t.params.Logger.Infow("peer connection failed")
 		t.logICECandidates()
 		t.handleConnectionFailed()
 	}

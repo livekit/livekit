@@ -239,7 +239,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 	// store as is for use when migrating
 	u.subscriptionPermission = subscriptionPermission
 	if subscriptionPermission == nil {
-		u.params.Logger.Infow(
+		u.params.Logger.Debugw(
 			"updating subscription permission, setting to nil",
 			"version", u.subscriptionPermissionVersion.ToProto().String(),
 		)
@@ -248,7 +248,7 @@ func (u *UpTrackManager) UpdateSubscriptionPermission(
 		return nil
 	}
 
-	u.params.Logger.Infow(
+	u.params.Logger.Debugw(
 		"updating subscription permission",
 		"permissions", u.subscriptionPermission.String(),
 		"version", u.subscriptionPermissionVersion.ToProto().String(),
