@@ -17,6 +17,7 @@ var (
 			"pingAllCandidates called with no candidate pairs",
 			"failed to send packet",
 			"Ignoring remote candidate with tcpType active",
+			"discard message from",
 		},
 		"pc": {
 			"Failed to accept RTCP stream is already closed",
