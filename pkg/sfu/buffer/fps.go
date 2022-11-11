@@ -222,7 +222,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	if ep.DependencyDescriptor == nil {
-		f.logger.Infow("dependency descriptor is nil", nil)
+		f.logger.Infow("dependency descriptor is nil")
 		return false
 	}
 
