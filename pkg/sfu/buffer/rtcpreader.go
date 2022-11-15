@@ -33,6 +33,10 @@ func (r *RTCPReader) OnClose(fn func()) {
 }
 
 func (r *RTCPReader) Close() error {
+	if !r.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	r.closed.Store(true)
 	r.onClose()
 	return nil

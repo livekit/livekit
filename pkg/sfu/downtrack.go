@@ -152,6 +152,7 @@ type DownTrack struct {
 	receiver                TrackReceiver
 	transceiver             *webrtc.RTPTransceiver
 	writeStream             webrtc.TrackLocalWriter
+	rtcpReader              *buffer.RTCPReader
 	onCloseHandler          func(willBeResumed bool)
 	onBind                  func()
 	receiverReportListeners []ReceiverReportListener
@@ -309,6 +310,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		rr.OnPacket(func(pkt []byte) {
 			d.handleRTCP(pkt)
 		})
+		d.rtcpReader = rr
 	}
 
 	if d.kind == webrtc.RTPCodecTypeAudio {
@@ -713,6 +715,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.bound.Store(false)
 		d.logger.Debugw("closing sender", "kind", d.kind)
 		d.receiver.DeleteDownTrack(d.subscriberID)
+
+		if d.rtcpReader != nil {
+			logger.Infow("downtrack close rtcp reader")
+			d.rtcpReader.Close()
+			d.rtcpReader.OnPacket(nil)
+		}
 	}
 
 	d.bindLock.Unlock()
