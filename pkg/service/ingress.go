@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -75,7 +74,7 @@ func (s *IngressService) CreateIngressWithUrlPrefix(ctx context.Context, urlPref
 		IngressId:           utils.NewGuid(utils.IngressPrefix),
 		Name:                req.Name,
 		StreamKey:           sk,
-		Url:                 newRtmpUrl(urlPrefix, sk),
+		Url:                 urlPrefix,
 		InputType:           req.InputType,
 		Audio:               req.Audio,
 		Video:               req.Video,
@@ -320,8 +319,4 @@ func (s *IngressService) entitiesWorker() {
 			return
 		}
 	}
-}
-
-func newRtmpUrl(baseUrl string, ingressId string) string {
-	return fmt.Sprintf("%s/%s", baseUrl, ingressId)
 }
