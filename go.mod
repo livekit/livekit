@@ -34,7 +34,7 @@ require (
 	github.com/pion/stun v0.3.5
 	github.com/pion/transport v0.13.1
 	github.com/pion/turn/v2 v2.0.8
-	github.com/pion/webrtc/v3 v3.1.48-0.20221115035037-0769803a8aa6
+	github.com/pion/webrtc/v3 v3.1.48
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/rs/cors v1.8.2
