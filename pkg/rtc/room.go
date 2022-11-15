@@ -277,21 +277,23 @@ func (r *Room) Join(participant types.LocalParticipant, opts *ParticipantOptions
 		go func() {
 			// when a participant subscribes to another participant,
 			// send speaker update if the subscribed to participant is active.
-			speakers := r.GetActiveSpeakers()
-			for _, speaker := range speakers {
-				if livekit.ParticipantID(speaker.Sid) == publisherID {
-					_ = p.SendSpeakerUpdate(speakers)
-					break
+			/*
+				speakers := r.GetActiveSpeakers()
+				for _, speaker := range speakers {
+					if livekit.ParticipantID(speaker.Sid) == publisherID {
+						_ = p.SendSpeakerUpdate(speakers)
+						break
+					}
 				}
-			}
 
-			// send connection quality of subscribed to participant
-			pub := r.GetParticipantBySid(publisherID)
-			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
-				update := &livekit.ConnectionQualityUpdate{}
-				update.Updates = append(update.Updates, pub.GetConnectionQuality())
-				_ = p.SendConnectionQualityUpdate(update)
-			}
+				// send connection quality of subscribed to participant
+				pub := r.GetParticipantBySid(publisherID)
+				if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
+					update := &livekit.ConnectionQualityUpdate{}
+					update.Updates = append(update.Updates, pub.GetConnectionQuality())
+					_ = p.SendConnectionQualityUpdate(update)
+				}
+			*/
 		}()
 	})
 	r.Logger.Infow("new participant joined",
@@ -991,10 +993,12 @@ func (r *Room) audioUpdateWorker() {
 		}
 
 		// see if an update is needed
-		if len(changedSpeakers) > 0 {
-			r.sendActiveSpeakers(activeSpeakers)
-			r.sendSpeakerChanges(changedSpeakers)
-		}
+		/*
+			if len(changedSpeakers) > 0 {
+				r.sendActiveSpeakers(activeSpeakers)
+				r.sendSpeakerChanges(changedSpeakers)
+			}
+		*/
 
 		lastActiveMap = nextActiveMap
 
