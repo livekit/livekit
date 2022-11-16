@@ -102,7 +102,7 @@ func init() {
 }
 
 func main() {
-	generatedFlags, err := config.GenerateCLIFlags(baseFlags)
+	generatedFlags, err := config.GenerateCLIFlags(baseFlags, true)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -152,6 +152,11 @@ func main() {
 				Name:   "list-nodes",
 				Usage:  "list all nodes",
 				Action: listNodes,
+			},
+			{
+				Name:   "hidden-help",
+				Usage:  "prints app help and includes all hidden generated configuration flags",
+				Action: hiddenHelp,
 			},
 		},
 		Version: version.Version,

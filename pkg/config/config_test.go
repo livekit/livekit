@@ -34,7 +34,7 @@ room:
 }
 
 func TestGeneratedFlags(t *testing.T) {
-	generatedFlags, err := GenerateCLIFlags(nil)
+	generatedFlags, err := GenerateCLIFlags(nil, false)
 	require.NoError(t, err)
 
 	app := cli.NewApp()

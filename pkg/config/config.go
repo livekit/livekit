@@ -24,8 +24,7 @@ var DefaultStunServers = []string{
 type CongestionControlProbeMode string
 
 const (
-	generatedCLIFlagsHidden = true
-	generatedCLIFlagUsage   = "generated"
+	generatedCLIFlagUsage = "generated"
 
 	CongestionControlProbeModePadding CongestionControlProbeMode = "padding"
 	CongestionControlProbeModeMedia   CongestionControlProbeMode = "media"
@@ -398,7 +397,7 @@ func (conf *Config) ToCLIFlagNames(existingFlags []cli.Flag) map[string]reflect.
 	return flagNames
 }
 
-func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
+func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
 	blankConfig := &Config{}
 	flags := []cli.Flag{}
 	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
@@ -415,42 +414,42 @@ func GenerateCLIFlags(existingFlags []cli.Flag) ([]cli.Flag, error) {
 			flag = &cli.BoolFlag{
 				Name:   name,
 				Usage:  generatedCLIFlagUsage,
-				Hidden: generatedCLIFlagsHidden,
+				Hidden: hidden,
 			}
 		case reflect.String:
 			flag = &cli.StringFlag{
 				Name:    name,
 				EnvVars: []string{envVar},
 				Usage:   generatedCLIFlagUsage,
-				Hidden:  generatedCLIFlagsHidden,
+				Hidden:  hidden,
 			}
 		case reflect.Int, reflect.Int32:
 			flag = &cli.IntFlag{
 				Name:    name,
 				EnvVars: []string{envVar},
 				Usage:   generatedCLIFlagUsage,
-				Hidden:  generatedCLIFlagsHidden,
+				Hidden:  hidden,
 			}
 		case reflect.Int64:
 			flag = &cli.Int64Flag{
 				Name:    name,
 				EnvVars: []string{envVar},
 				Usage:   generatedCLIFlagUsage,
-				Hidden:  generatedCLIFlagsHidden,
+				Hidden:  hidden,
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{
 				Name:    name,
 				EnvVars: []string{envVar},
 				Usage:   generatedCLIFlagUsage,
-				Hidden:  generatedCLIFlagsHidden,
+				Hidden:  hidden,
 			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
 				Name:    name,
 				EnvVars: []string{envVar},
 				Usage:   generatedCLIFlagUsage,
-				Hidden:  generatedCLIFlagsHidden,
+				Hidden:  hidden,
 			}
 		case reflect.Slice:
 			// TODO
