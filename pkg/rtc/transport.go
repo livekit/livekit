@@ -1123,6 +1123,14 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 }
 
 func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
+	// when there is no previous answer, cannot migrate, force a full reconnect
+	if answer == nil {
+		if onNegotiationFailed := t.getOnNegotiationFailed(); onNegotiationFailed != nil {
+			onNegotiationFailed()
+		}
+		return
+	}
+
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
