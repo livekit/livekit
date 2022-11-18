@@ -546,6 +546,10 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 			return
 		}
 
+		//		if (pkt.Packet.Payload[0] & 0x60) != 0 {
+		//			fmt.Printf("READ PKT %d %d 0x%x 0x%x\n", pkt.Packet.Header.SequenceNumber, pkt.Packet.Header.Timestamp, pkt.Packet.Payload[0], pkt.Packet.Payload[1])
+		//		}
+
 		// svc packet, dispatch to correct tracker
 		spatialTracker := tracker
 		spatialLayer := layer

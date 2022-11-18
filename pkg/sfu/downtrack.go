@@ -451,6 +451,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}()
 
+	fmt.Printf("RTP downtrack %d %d 0x%x 0x%x\n", extPkt.Packet.Header.SequenceNumber, extPkt.Packet.Header.Timestamp, extPkt.RawPacket[extPkt.Packet.Header.MarshalSize()], extPkt.RawPacket[extPkt.Packet.Header.MarshalSize()+1])
+
 	if !d.bound.Load() {
 		return nil
 	}
@@ -530,7 +532,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 
 		if !tp.switchingToTargetLayer {
-			d.logger.Debugw("forwarding key frame", "layer", layer)
+			d.logger.Debugw("forwarding key frame", "layer", layer, "seq", extPkt.Packet.SequenceNumber)
 		}
 	}
 
@@ -1136,10 +1138,12 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 	for _, pkt := range pkts {
 		switch p := pkt.(type) {
 		case *rtcp.PictureLossIndication:
+			fmt.Println("PLI")
 			numPLIs++
 			sendPliOnce()
 
 		case *rtcp.FullIntraRequest:
+			fmt.Println("FIR")
 			numFIRs++
 			sendPliOnce()
 
