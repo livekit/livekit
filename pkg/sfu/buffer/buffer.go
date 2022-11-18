@@ -34,6 +34,11 @@ type pendingPacket struct {
 	packet      []byte
 }
 
+type queuedPacket struct {
+	arrivalTime int64
+	seqNum      uint16
+}
+
 type ExtPacket struct {
 	VideoLayer
 	Arrival              int64
@@ -52,7 +57,7 @@ type Buffer struct {
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
-	extPackets    deque.Deque
+	packets       deque.Deque
 	pPackets      []pendingPacket
 	closeOnce     sync.Once
 	mediaSSRC     uint32
@@ -99,11 +104,6 @@ type Buffer struct {
 	frameRateCalculated bool
 }
 
-// BufferOptions provides configuration options for the buffer
-type Options struct {
-	MaxBitRate uint64
-}
-
 // NewBuffer constructs a new Buffer
 func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 	l := logger.GetDefaultLogger() // will be reset with correct context via SetLogger
@@ -114,7 +114,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		pliThrottle: int64(500 * time.Millisecond),
 		logger:      l,
 	}
-	b.extPackets.SetMinCapacity(7)
+	b.packets.SetMinCapacity(7)
 	return b
 }
 
@@ -218,7 +218,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	for _, pp := range b.pPackets {
-		b.calc(pp.packet, pp.arrivalTime)
+		b.queue(pp.packet, pp.arrivalTime)
 	}
 	b.pPackets = nil
 	b.bound = true
@@ -244,7 +244,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	b.calc(pkt, time.Now().UnixNano())
+	b.queue(pkt, time.Now().UnixNano())
 	return
 }
 
@@ -273,14 +273,21 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 }
 
 func (b *Buffer) ReadExtended() (*ExtPacket, error) {
+	buf := make([]byte, bucket.MaxPktSize)
 	for {
 		if b.closed.Load() {
 			return nil, io.EOF
 		}
 		b.Lock()
-		if b.extPackets.Len() > 0 {
-			extPkt := b.extPackets.PopFront().(*ExtPacket)
+		if b.packets.Len() > 0 {
+			qp := b.packets.PopFront().(queuedPacket)
 			b.Unlock()
+
+			extPkt := b.prepareExtPacket(qp, buf)
+			if extPkt == nil {
+				continue
+			}
+
 			return extPkt, nil
 		}
 		b.Unlock()
@@ -362,8 +369,8 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
-	pb, err := b.bucket.AddPacket(pkt)
+func (b *Buffer) queue(pkt []byte, arrivalTime int64) {
+	_, err := b.bucket.AddPacket(pkt)
 	if err != nil {
 		//
 		// Even when erroring, do
@@ -384,27 +391,41 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		return
 	}
 
+	b.packets.PushBack(queuedPacket{
+		arrivalTime: arrivalTime,
+		seqNum:      binary.BigEndian.Uint16(pkt[2:4]),
+	})
+}
+
+func (b *Buffer) prepareExtPacket(qp queuedPacket, buf []byte) *ExtPacket {
+	n, err := b.GetPacket(buf, qp.seqNum)
+	if err != nil {
+		b.logger.Warnw("could not get packet", err, "sn", qp.seqNum)
+		return nil
+	}
+
 	var p rtp.Packet
-	err = p.Unmarshal(pb)
+	err = p.Unmarshal(buf[:n])
 	if err != nil {
 		b.logger.Warnw("error unmarshaling RTP packet", err)
-		return
+		return nil
 	}
 
-	b.updateStreamState(&p, arrivalTime)
-	b.processHeaderExtensions(&p, arrivalTime)
+	b.updateStreamState(&p, qp.arrivalTime)
+	b.processHeaderExtensions(&p, qp.arrivalTime)
 
-	ep := b.getExtPacket(pb, &p, arrivalTime)
+	ep := b.getExtPacket(buf[:n], &p, qp.arrivalTime)
 	if ep == nil {
-		return
+		return nil
 	}
-	b.extPackets.PushBack(ep)
 
 	b.doNACKs()
 
-	b.doReports(arrivalTime)
+	b.doReports(qp.arrivalTime)
 
 	b.doFpsCalc(ep)
+
+	return ep
 }
 
 func (b *Buffer) doFpsCalc(ep *ExtPacket) {
