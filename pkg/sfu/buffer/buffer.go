@@ -404,6 +404,8 @@ func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 		return
 	}
 	b.extPackets.PushBack(ep)
+
+	b.doFpsCalc(ep)
 }
 
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
