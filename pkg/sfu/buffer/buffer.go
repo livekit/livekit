@@ -366,7 +366,6 @@ func (b *Buffer) SetRTT(rtt uint32) {
 func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
 	pktBuf, err := b.bucket.AddPacket(pkt)
 	if err != nil {
-		// RAJA-TODO:this could be doing state update out-of-order, fix this
 		//
 		// Even when erroring, do
 		//  1. state update
