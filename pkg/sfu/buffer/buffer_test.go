@@ -146,20 +146,11 @@ func TestNack(t *testing.T) {
 }
 
 func TestNewBuffer(t *testing.T) {
-	type args struct {
-		options Options
-	}
 	tests := []struct {
 		name string
-		args args
 	}{
 		{
 			name: "Must not be nil and add packets in sequence",
-			args: args{
-				options: Options{
-					MaxBitRate: 1e6,
-				},
-			},
 		},
 	}
 	for _, tt := range tests {

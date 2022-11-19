@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -516,6 +517,7 @@ func (w *WebRTCReceiver) getDeltaStats() map[uint32]*buffer.StreamStatsWithLayer
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32) {
+	pktBuf := make([]byte, bucket.MaxPktSize)
 	tracker := w.streamTrackerManager.GetTracker(layer)
 
 	defer func() {
@@ -541,7 +543,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32) {
 		buf := w.buffers[layer]
 		redPktWriter := w.redPktWriter
 		w.bufferMu.RUnlock()
-		pkt, err := buf.ReadExtended()
+		pkt, err := buf.ReadExtended(pktBuf)
 		if err == io.EOF {
 			return
 		}

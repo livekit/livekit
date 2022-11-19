@@ -34,11 +34,6 @@ type pendingPacket struct {
 	packet      []byte
 }
 
-type queuedPacket struct {
-	arrivalTime int64
-	seqNum      uint16
-}
-
 type ExtPacket struct {
 	VideoLayer
 	Arrival              int64
@@ -57,7 +52,7 @@ type Buffer struct {
 	videoPool     *sync.Pool
 	audioPool     *sync.Pool
 	codecType     webrtc.RTPCodecType
-	packets       deque.Deque
+	extPackets    deque.Deque
 	pPackets      []pendingPacket
 	closeOnce     sync.Once
 	mediaSSRC     uint32
@@ -114,7 +109,7 @@ func NewBuffer(ssrc uint32, vp, ap *sync.Pool) *Buffer {
 		pliThrottle: int64(500 * time.Millisecond),
 		logger:      l,
 	}
-	b.packets.SetMinCapacity(7)
+	b.extPackets.SetMinCapacity(7)
 	return b
 }
 
@@ -218,7 +213,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	for _, pp := range b.pPackets {
-		b.queue(pp.packet, pp.arrivalTime)
+		b.calc(pp.packet, pp.arrivalTime)
 	}
 	b.pPackets = nil
 	b.bound = true
@@ -244,7 +239,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	b.queue(pkt, time.Now().UnixNano())
+	b.calc(pkt, time.Now().UnixNano())
 	return
 }
 
@@ -272,23 +267,22 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 	}
 }
 
-func (b *Buffer) ReadExtended() (*ExtPacket, error) {
-	buf := make([]byte, bucket.MaxPktSize)
+func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 	for {
 		if b.closed.Load() {
 			return nil, io.EOF
 		}
 		b.Lock()
-		if b.packets.Len() > 0 {
-			qp := b.packets.PopFront().(queuedPacket)
-			b.Unlock()
-
-			extPkt := b.prepareExtPacket(qp, buf)
-			if extPkt == nil {
+		if b.extPackets.Len() > 0 {
+			ep := b.extPackets.PopFront().(*ExtPacket)
+			ep = b.patchExtPacket(ep, buf)
+			if ep == nil {
+				b.Unlock()
 				continue
 			}
 
-			return extPkt, nil
+			b.Unlock()
+			return ep, nil
 		}
 		b.Unlock()
 		time.Sleep(10 * time.Millisecond)
@@ -369,9 +363,10 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) queue(pkt []byte, arrivalTime int64) {
-	_, err := b.bucket.AddPacket(pkt)
+func (b *Buffer) calc(pkt []byte, arrivalTime int64) {
+	pktBuf, err := b.bucket.AddPacket(pkt)
 	if err != nil {
+		// RAJA-TODO:this could be doing state update out-of-order, fix this
 		//
 		// Even when erroring, do
 		//  1. state update
@@ -391,39 +386,45 @@ func (b *Buffer) queue(pkt []byte, arrivalTime int64) {
 		return
 	}
 
-	b.packets.PushBack(queuedPacket{
-		arrivalTime: arrivalTime,
-		seqNum:      binary.BigEndian.Uint16(pkt[2:4]),
-	})
-}
-
-func (b *Buffer) prepareExtPacket(qp queuedPacket, buf []byte) *ExtPacket {
-	n, err := b.GetPacket(buf, qp.seqNum)
-	if err != nil {
-		b.logger.Warnw("could not get packet", err, "sn", qp.seqNum)
-		return nil
-	}
-
 	var p rtp.Packet
-	err = p.Unmarshal(buf[:n])
+	err = p.Unmarshal(pktBuf)
 	if err != nil {
 		b.logger.Warnw("error unmarshaling RTP packet", err)
-		return nil
+		return
 	}
 
-	b.updateStreamState(&p, qp.arrivalTime)
-	b.processHeaderExtensions(&p, qp.arrivalTime)
-
-	ep := b.getExtPacket(buf[:n], &p, qp.arrivalTime)
-	if ep == nil {
-		return nil
-	}
+	b.updateStreamState(&p, arrivalTime)
+	b.processHeaderExtensions(&p, arrivalTime)
 
 	b.doNACKs()
 
-	b.doReports(qp.arrivalTime)
+	b.doReports(arrivalTime)
 
-	b.doFpsCalc(ep)
+	ep := b.getExtPacket(&p, arrivalTime)
+	if ep == nil {
+		return
+	}
+	b.extPackets.PushBack(ep)
+}
+
+func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
+	n, err := b.getPacket(buf, ep.Packet.SequenceNumber)
+	if err != nil {
+		b.logger.Warnw("could not get packet", err, "sn", ep.Packet.SequenceNumber)
+		return nil
+	}
+	ep.RawPacket = buf[:n]
+
+	// patch RTP packet to point payload to new buffer
+	rtp := *ep.Packet
+	payloadStart := ep.Packet.Header.MarshalSize()
+	payloadEnd := payloadStart + len(ep.Packet.Payload)
+	if payloadEnd > n {
+		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
+		return nil
+	}
+	rtp.Payload = buf[payloadStart:payloadEnd]
+	ep.Packet = &rtp
 
 	return ep
 }
@@ -499,11 +500,10 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) getExtPacket(rawPacket []byte, rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64) *ExtPacket {
 	ep := &ExtPacket{
-		Packet:    rtpPacket,
-		Arrival:   arrivalTime,
-		RawPacket: rawPacket,
+		Packet:  rtpPacket,
+		Arrival: arrivalTime,
 		VideoLayer: VideoLayer{
 			Spatial:  InvalidLayerSpatial,
 			Temporal: InvalidLayerTemporal,
@@ -640,6 +640,11 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 func (b *Buffer) GetPacket(buff []byte, sn uint16) (int, error) {
 	b.Lock()
 	defer b.Unlock()
+
+	return b.getPacket(buff, sn)
+}
+
+func (b *Buffer) getPacket(buff []byte, sn uint16) (int, error) {
 	if b.closed.Load() {
 		return 0, io.EOF
 	}
