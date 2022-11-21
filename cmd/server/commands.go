@@ -68,7 +68,7 @@ func printPorts(c *cli.Context) error {
 	return nil
 }
 
-func hiddenHelp(c *cli.Context) error {
+func helpVerbose(c *cli.Context) error {
 	generatedFlags, err := config.GenerateCLIFlags(baseFlags, false)
 	if err != nil {
 		return err
