@@ -204,7 +204,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				}
 			}
 
-			if ti == nil || (ti.DisableDtx && !ti.Stereo) {
+			if ti == nil {
 				// no need to configure
 				continue
 			}
@@ -223,6 +223,10 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					if ti.Stereo {
 						attr.Value += ";stereo=1"
 					}
+					if ti.Bitrate > 0 {
+						attr.Value += fmt.Sprintf(";maxaveragebitrate=%d", ti.Bitrate)
+					}
+
 					m.Attributes[i] = attr
 				}
 			}
