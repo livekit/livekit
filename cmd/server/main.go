@@ -154,9 +154,9 @@ func main() {
 				Action: listNodes,
 			},
 			{
-				Name:   "hidden-help",
-				Usage:  "prints app help and includes all hidden generated configuration flags",
-				Action: hiddenHelp,
+				Name:   "help-verbose",
+				Usage:  "prints app help, including all generated configuration flags",
+				Action: helpVerbose,
 			},
 		},
 		Version: version.Version,
