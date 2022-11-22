@@ -1049,7 +1049,8 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		if iceConfig.PreferSub == types.PreferTls {
 			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
 		} else {
-			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
+			// UNSET indicates that clients could override RTCConfiguration to forceRelay
+			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_UNSET
 		}
 		p.lock.Unlock()
 
