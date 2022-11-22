@@ -19,6 +19,13 @@ redis:
   # If you use a different set of credentials for sentinel add
   # sentinel_username: user
   # sentinel_password: pass
+  #
+  # To use cluster remove the address key above and add the following
+  # cluster_addresses:
+  # - livekit-redis-node-0.livekit-redis-headless:6379
+  # - livekit-redis-node-1.livekit-redis-headless:6380
+  # And it will use the password key above as cluster password
+  # And the db key will not be used due to cluster mode not support it.
 
 # WebRTC configuration
 rtc:

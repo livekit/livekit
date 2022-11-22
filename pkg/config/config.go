@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/logger"
+	redisLiveKit "github.com/livekit/protocol/redis"
 )
 
 var DefaultStunServers = []string{
@@ -33,21 +34,21 @@ const (
 )
 
 type Config struct {
-	Port           uint32             `yaml:"port"`
-	BindAddresses  []string           `yaml:"bind_addresses"`
-	PrometheusPort uint32             `yaml:"prometheus_port,omitempty"`
-	RTC            RTCConfig          `yaml:"rtc,omitempty"`
-	Redis          RedisConfig        `yaml:"redis,omitempty"`
-	Audio          AudioConfig        `yaml:"audio,omitempty"`
-	Video          VideoConfig        `yaml:"video,omitempty"`
-	Room           RoomConfig         `yaml:"room,omitempty"`
-	TURN           TURNConfig         `yaml:"turn,omitempty"`
-	Ingress        IngressConfig      `yaml:"ingress,omitempty"`
-	WebHook        WebHookConfig      `yaml:"webhook,omitempty"`
-	NodeSelector   NodeSelectorConfig `yaml:"node_selector,omitempty"`
-	KeyFile        string             `yaml:"key_file,omitempty"`
-	Keys           map[string]string  `yaml:"keys,omitempty"`
-	Region         string             `yaml:"region,omitempty"`
+	Port           uint32                   `yaml:"port"`
+	BindAddresses  []string                 `yaml:"bind_addresses"`
+	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
+	RTC            RTCConfig                `yaml:"rtc,omitempty"`
+	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
+	Audio          AudioConfig              `yaml:"audio,omitempty"`
+	Video          VideoConfig              `yaml:"video,omitempty"`
+	Room           RoomConfig               `yaml:"room,omitempty"`
+	TURN           TURNConfig               `yaml:"turn,omitempty"`
+	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
+	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
+	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
+	KeyFile        string                   `yaml:"key_file,omitempty"`
+	Keys           map[string]string        `yaml:"keys,omitempty"`
+	Region         string                   `yaml:"region,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -132,18 +133,6 @@ type AudioConfig struct {
 
 type VideoConfig struct {
 	DynacastPauseDelay time.Duration `yaml:"dynacast_pause_delay,omitempty"`
-}
-
-type RedisConfig struct {
-	Address           string   `yaml:"address"`
-	Username          string   `yaml:"username"`
-	Password          string   `yaml:"password"`
-	DB                int      `yaml:"db"`
-	UseTLS            bool     `yaml:"use_tls"`
-	MasterName        string   `yaml:"sentinel_master_name"`
-	SentinelUsername  string   `yaml:"sentinel_username"`
-	SentinelPassword  string   `yaml:"sentinel_password"`
-	SentinelAddresses []string `yaml:"sentinel_addresses"`
 }
 
 type RoomConfig struct {
@@ -241,7 +230,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 		Video: VideoConfig{
 			DynacastPauseDelay: 5 * time.Second,
 		},
-		Redis: RedisConfig{},
+		Redis: redisLiveKit.RedisConfig{},
 		Room: RoomConfig{
 			AutoCreate: true,
 			EnabledCodecs: []CodecSpec{
@@ -329,14 +318,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	}
 
 	return conf, nil
-}
-
-func (conf *Config) HasRedis() bool {
-	return conf.Redis.Address != "" || conf.Redis.SentinelAddresses != nil
-}
-
-func (conf *Config) UseSentinel() bool {
-	return conf.Redis.SentinelAddresses != nil
 }
 
 func (conf *Config) IsTURNSEnabled() bool {
