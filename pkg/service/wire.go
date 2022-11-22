@@ -116,7 +116,7 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
-	return redisLiveKit.GetRedisClient(conf.Redis)
+	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
 func createStore(rc redis.UniversalClient) ObjectStore {
