@@ -1948,6 +1948,11 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 }
 
 func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) {
+	// do not queue subscription is participant is already closed/disconnected
+	if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
+		return
+	}
+
 	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID, "relayed", isRelayed)
 
 	p.supervisor.UpdateSubscription(trackID, true)
