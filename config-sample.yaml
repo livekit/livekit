@@ -80,6 +80,8 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
+  # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.  
+  # enable_loopback_candidate: true
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
   # # both inclusion and exclusion filters can be used together. If neither is defined (default), all interfaces on the machine will be used.
   # # If both of them are set, then only include takes effect.
