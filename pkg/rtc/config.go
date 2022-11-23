@@ -114,12 +114,15 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 				return nil, err
 			}
 		} else if rtcConf.UDPPort != 0 {
-			udpMux, err := ice.NewMultiUDPMuxFromPort(
-				int(rtcConf.UDPPort),
+			opts := []ice.UDPMuxFromPortOption{
 				ice.UDPMuxFromPortWithReadBufferSize(defaultUDPBufferSize),
 				ice.UDPMuxFromPortWithWriteBufferSize(defaultUDPBufferSize),
 				ice.UDPMuxFromPortWithLogger(s.LoggerFactory.NewLogger("udp_mux")),
-			)
+			}
+			if rtcConf.EnableLoopbackCandidate {
+				opts = append(opts, ice.UDPMuxFromPortWithLoopback())
+			}
+			udpMux, err := ice.NewMultiUDPMuxFromPort(int(rtcConf.UDPPort), opts...)
 			if err != nil {
 				return nil, err
 			}
@@ -158,6 +161,10 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		return nil, errors.New("TCP is forced but not configured")
 	}
 	s.SetNetworkTypes(networkTypes)
+
+	if rtcConf.EnableLoopbackCandidate {
+		s.SetIncludeLoopbackCandidate(true)
+	}
 
 	// publisher configuration
 	publisherConfig := DirectionConfig{
@@ -251,7 +258,7 @@ func getNAT1to1IPsForConf(conf *config.Config, ipFilter func(net.IP) bool) ([]st
 	if len(stunServers) == 0 {
 		stunServers = config.DefaultStunServers
 	}
-	localIPs, err := config.GetLocalIPAddresses()
+	localIPs, err := config.GetLocalIPAddresses(conf.RTC.EnableLoopbackCandidate)
 	if err != nil {
 		return nil, err
 	}

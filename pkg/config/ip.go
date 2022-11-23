@@ -30,14 +30,14 @@ func (conf *Config) determineIP() (string, error) {
 	}
 
 	// use local ip instead
-	addresses, err := GetLocalIPAddresses()
+	addresses, err := GetLocalIPAddresses(false)
 	if len(addresses) > 0 {
 		return addresses[0], err
 	}
 	return "", err
 }
 
-func GetLocalIPAddresses() ([]string, error) {
+func GetLocalIPAddresses(includeLoopback bool) ([]string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -68,6 +68,10 @@ func GetLocalIPAddresses() ([]string, error) {
 				addresses = append(addresses, ip.String())
 			}
 		}
+	}
+
+	if includeLoopback {
+		addresses = append(addresses, loopBacks...)
 	}
 
 	if len(addresses) > 0 {
