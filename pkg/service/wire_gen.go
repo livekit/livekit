@@ -7,8 +7,6 @@
 package service
 
 import (
-	"context"
-	"crypto/tls"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -19,7 +17,7 @@ import (
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
+	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/webhook"
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
@@ -144,53 +142,7 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
-	if !conf.HasRedis() {
-		return nil, nil
-	}
-
-	var rc redis.UniversalClient
-	var tlsConfig *tls.Config
-
-	if conf.Redis.UseTLS {
-		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-	}
-
-	values := make([]interface{}, 0)
-	values = append(values, "sentinel", conf.UseSentinel())
-	if conf.UseSentinel() {
-		values = append(values, "addr", conf.Redis.SentinelAddresses, "masterName", conf.Redis.MasterName)
-		rcOptions := &redis.FailoverOptions{
-			SentinelAddrs:    conf.Redis.SentinelAddresses,
-			SentinelUsername: conf.Redis.SentinelUsername,
-			SentinelPassword: conf.Redis.SentinelPassword,
-			MasterName:       conf.Redis.MasterName,
-			Username:         conf.Redis.Username,
-			Password:         conf.Redis.Password,
-			DB:               conf.Redis.DB,
-			TLSConfig:        tlsConfig,
-		}
-		rc = redis.NewFailoverClient(rcOptions)
-	} else {
-		values = append(values, "addr", conf.Redis.Address)
-		rcOptions := &redis.Options{
-			Addr:      conf.Redis.Address,
-			Username:  conf.Redis.Username,
-			Password:  conf.Redis.Password,
-			DB:        conf.Redis.DB,
-			TLSConfig: tlsConfig,
-		}
-		rc = redis.NewClient(rcOptions)
-	}
-	logger.Infow("using multi-node routing via redis", values...)
-
-	if err := rc.Ping(context.Background()).Err(); err != nil {
-		err = errors.Wrap(err, "unable to connect to redis")
-		return nil, err
-	}
-
-	return rc, nil
+	return redis2.GetRedisClient(&conf.Redis)
 }
 
 func createStore(rc redis.UniversalClient) ObjectStore {
