@@ -221,7 +221,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 						attr.Value += ";usedtx=1"
 					}
 					if ti.Stereo {
-						attr.Value += ";stereo=1"
+						attr.Value += ";stereo=1;maxaveragebitrate=510000"
 					}
 					m.Attributes[i] = attr
 				}
