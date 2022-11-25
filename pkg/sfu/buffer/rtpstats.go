@@ -179,7 +179,7 @@ func (r *RTPStats) Seed(from *RTPStats) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if from == nil {
+	if from == nil || !from.initialized {
 		return
 	}
 
