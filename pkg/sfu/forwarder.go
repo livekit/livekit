@@ -171,14 +171,15 @@ var (
 // -------------------------------------------------------------------
 
 type ForwarderState struct {
+	Started    bool
 	LastTSCalc int64
 	RTP        RTPMungerState
 	VP8        VP8MungerState
 }
 
 func (f ForwarderState) String() string {
-	return fmt.Sprintf("ForwarderState{lTSCalc: %d, rtp: %s, vp8: %s}",
-		f.LastTSCalc, f.RTP.String(), f.VP8.String())
+	return fmt.Sprintf("ForwarderState{started: %v, lTSCalc: %d, rtp: %s, vp8: %s}",
+		f.Started, f.LastTSCalc, f.RTP.String(), f.VP8.String())
 }
 
 // -------------------------------------------------------------------
@@ -261,7 +262,12 @@ func (f *Forwarder) GetState() ForwarderState {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
+	if !f.started {
+		return ForwarderState{}
+	}
+
 	state := ForwarderState{
+		Started:    f.started,
 		LastTSCalc: f.lTSCalc,
 		RTP:        f.rtpMunger.GetLast(),
 	}
@@ -274,6 +280,10 @@ func (f *Forwarder) GetState() ForwarderState {
 }
 
 func (f *Forwarder) SeedState(state ForwarderState) {
+	if !state.Started {
+		return
+	}
+
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
