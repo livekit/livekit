@@ -430,10 +430,9 @@ func (t *MediaTrackReceiver) removePendingSubscribeOp(subscriberID livekit.Parti
 
 // AddSubscriber subscribes sub to current mediaTrack
 func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) error {
-	t.addPendingSubscribeOp(sub.ID())
-
-	trackID := t.ID()
-	sub.EnqueueSubscribeTrack(trackID, t.params.IsRelayed, t.addSubscriber)
+	if sub.EnqueueSubscribeTrack(t.ID(), t.params.IsRelayed, t.addSubscriber) {
+		t.addPendingSubscribeOp(sub.ID())
+	}
 	return nil
 }
 
@@ -509,9 +508,9 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	}
 
 	sub := subTrack.Subscriber()
-	t.addPendingSubscribeOp(sub.ID())
-
-	sub.EnqueueUnsubscribeTrack(subTrack.ID(), t.params.IsRelayed, willBeResumed, t.removeSubscriber)
+	if sub.EnqueueUnsubscribeTrack(subTrack.ID(), t.params.IsRelayed, willBeResumed, t.removeSubscriber) {
+		t.addPendingSubscribeOp(sub.ID())
+	}
 }
 
 func (t *MediaTrackReceiver) removeSubscriber(subscriberID livekit.ParticipantID, willBeResumed bool) (err error) {

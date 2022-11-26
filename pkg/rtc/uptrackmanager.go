@@ -495,7 +495,9 @@ func (u *UpTrackManager) maybeRemovePendingSubscriptionLocked(trackID livekit.Tr
 	}
 
 	if sendUpdate && (forceUpdate || found) {
-		u.params.Logger.Debugw("removing pending subscription", "subscriberID", sub.ID(), "trackID", trackID)
+		if found {
+			u.params.Logger.Debugw("removing pending subscription", "subscriberID", sub.ID(), "trackID", trackID)
+		}
 		u.opsQueue.Enqueue(func() {
 			sub.SubscriptionPermissionUpdate(u.params.SID, trackID, true)
 		})
