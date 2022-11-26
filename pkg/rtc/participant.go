@@ -1948,10 +1948,10 @@ func (p *ParticipantImpl) onAnyTransportNegotiationFailed() {
 	p.supervisor.Stop()
 }
 
-func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) {
+func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelayed bool, f func(sub types.LocalParticipant) error) bool {
 	// do not queue subscription is participant is already closed/disconnected
 	if p.isClosed.Load() || p.State() == livekit.ParticipantInfo_DISCONNECTED {
-		return
+		return false
 	}
 
 	p.params.Logger.Debugw("queuing subscribe", "trackID", trackID, "relayed", isRelayed)
@@ -1966,9 +1966,15 @@ func (p *ParticipantImpl) EnqueueSubscribeTrack(trackID livekit.TrackID, isRelay
 	p.lock.Unlock()
 
 	go p.ProcessSubscriptionRequestsQueue(trackID)
+	return true
 }
 
-func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRelayed bool, willBeResumed bool, f func(subscriberID livekit.ParticipantID, willBeResumed bool) error) {
+func (p *ParticipantImpl) EnqueueUnsubscribeTrack(
+	trackID livekit.TrackID,
+	isRelayed bool,
+	willBeResumed bool,
+	f func(subscriberID livekit.ParticipantID, willBeResumed bool) error,
+) bool {
 	p.params.Logger.Debugw("queuing unsubscribe", "trackID", trackID, "relayed", isRelayed)
 
 	p.supervisor.UpdateSubscription(trackID, false)
@@ -1982,6 +1988,7 @@ func (p *ParticipantImpl) EnqueueUnsubscribeTrack(trackID livekit.TrackID, isRel
 	p.lock.Unlock()
 
 	go p.ProcessSubscriptionRequestsQueue(trackID)
+	return true
 }
 
 func (p *ParticipantImpl) ProcessSubscriptionRequestsQueue(trackID livekit.TrackID) {

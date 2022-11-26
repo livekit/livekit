@@ -453,7 +453,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		}
 	}()
 
-	if !d.bound.Load() {
+	if !d.bound.Load() || !d.connected.Load() {
 		return nil
 	}
 
