@@ -13,6 +13,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -244,6 +245,7 @@ type LocalParticipant interface {
 	SubscriberAsPrimary() bool
 	GetClientConfiguration() *livekit.ClientConfiguration
 	GetICEConnectionType() ICEConnectionType
+	GetBufferFactory() *buffer.Factory
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection()
