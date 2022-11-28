@@ -15,7 +15,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -40,7 +39,6 @@ type MediaTrackSubscriptionsParams struct {
 	MediaTrack types.MediaTrack
 	IsRelayed  bool
 
-	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
 
