@@ -131,11 +131,10 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 }
 
 func encodeRedForPrimary(redPkts []*rtp.Packet, primary *rtp.Packet, redPayload []byte) (int, error) {
-	payloadSize := 0
+	payloadSize := len(primary.Payload) + 1
 	for _, p := range redPkts {
 		payloadSize += len(p.Payload) + 4
 	}
-	payloadSize += len(primary.Payload) + 1
 
 	// if required payload size is larger than the redPayload buffer, encode the primary packet only
 	if payloadSize > len(redPayload) {
