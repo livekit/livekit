@@ -125,6 +125,27 @@ func TestRedReceiver(t *testing.T) {
 		}, 0)
 		verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
 	})
+
+	t.Run("encoding excceed space", func(t *testing.T) {
+		w := &WebRTCReceiver{isRED: true, kind: webrtc.RTPCodecTypeAudio}
+		require.Equal(t, w.GetRedReceiver(), w)
+		w.isRED = false
+		red := w.GetRedReceiver().(*RedReceiver)
+		require.NotNil(t, red)
+		require.NoError(t, red.AddDownTrack(dt))
+
+		header := rtp.Header{SequenceNumber: 65534, Timestamp: (uint32(1) << 31) - 2*tsStep, PayloadType: 111}
+		expectPkt := make([]*rtp.Packet, 0, maxRedCount+1)
+		for _, pkt := range generatePkts(header, 10, tsStep) {
+			// make sure red encodings don't have enough space to encoding redundant packet
+			pkt.Payload = make([]byte, 1000)
+			expectPkt = append(expectPkt[:0], pkt)
+			red.ForwardRTP(&buffer.ExtPacket{
+				Packet: pkt,
+			}, 0)
+			verifyRedEncodings(t, dt.lastReceivedPkt, expectPkt)
+		}
+	})
 }
 
 func verifyRedEncodings(t *testing.T, red *rtp.Packet, redPkts []*rtp.Packet) {
