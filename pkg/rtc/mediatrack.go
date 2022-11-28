@@ -68,7 +68,6 @@ func NewMediaTrack(params MediaTrackParams) *MediaTrack {
 		ParticipantID:       params.ParticipantID,
 		ParticipantIdentity: params.ParticipantIdentity,
 		ParticipantVersion:  params.ParticipantVersion,
-		BufferFactory:       params.BufferFactory,
 		ReceiverConfig:      params.ReceiverConfig,
 		SubscriberConfig:    params.SubscriberConfig,
 		Telemetry:           params.Telemetry,

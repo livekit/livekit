@@ -8,6 +8,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -214,6 +215,16 @@ type FakeLocalParticipant struct {
 	getAudioLevelReturnsOnCall map[int]struct {
 		result1 float64
 		result2 bool
+	}
+	GetBufferFactoryStub        func() *buffer.Factory
+	getBufferFactoryMutex       sync.RWMutex
+	getBufferFactoryArgsForCall []struct {
+	}
+	getBufferFactoryReturns struct {
+		result1 *buffer.Factory
+	}
+	getBufferFactoryReturnsOnCall map[int]struct {
+		result1 *buffer.Factory
 	}
 	GetCachedDownTrackStub        func(livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState)
 	getCachedDownTrackMutex       sync.RWMutex
@@ -1779,6 +1790,59 @@ func (fake *FakeLocalParticipant) GetAudioLevelReturnsOnCall(i int, result1 floa
 		result1 float64
 		result2 bool
 	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) GetBufferFactory() *buffer.Factory {
+	fake.getBufferFactoryMutex.Lock()
+	ret, specificReturn := fake.getBufferFactoryReturnsOnCall[len(fake.getBufferFactoryArgsForCall)]
+	fake.getBufferFactoryArgsForCall = append(fake.getBufferFactoryArgsForCall, struct {
+	}{})
+	stub := fake.GetBufferFactoryStub
+	fakeReturns := fake.getBufferFactoryReturns
+	fake.recordInvocation("GetBufferFactory", []interface{}{})
+	fake.getBufferFactoryMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetBufferFactoryCallCount() int {
+	fake.getBufferFactoryMutex.RLock()
+	defer fake.getBufferFactoryMutex.RUnlock()
+	return len(fake.getBufferFactoryArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetBufferFactoryCalls(stub func() *buffer.Factory) {
+	fake.getBufferFactoryMutex.Lock()
+	defer fake.getBufferFactoryMutex.Unlock()
+	fake.GetBufferFactoryStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetBufferFactoryReturns(result1 *buffer.Factory) {
+	fake.getBufferFactoryMutex.Lock()
+	defer fake.getBufferFactoryMutex.Unlock()
+	fake.GetBufferFactoryStub = nil
+	fake.getBufferFactoryReturns = struct {
+		result1 *buffer.Factory
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetBufferFactoryReturnsOnCall(i int, result1 *buffer.Factory) {
+	fake.getBufferFactoryMutex.Lock()
+	defer fake.getBufferFactoryMutex.Unlock()
+	fake.GetBufferFactoryStub = nil
+	if fake.getBufferFactoryReturnsOnCall == nil {
+		fake.getBufferFactoryReturnsOnCall = make(map[int]struct {
+			result1 *buffer.Factory
+		})
+	}
+	fake.getBufferFactoryReturnsOnCall[i] = struct {
+		result1 *buffer.Factory
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) GetCachedDownTrack(arg1 livekit.TrackID) (*webrtc.RTPTransceiver, sfu.DownTrackState) {
@@ -4902,6 +4966,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getAdaptiveStreamMutex.RUnlock()
 	fake.getAudioLevelMutex.RLock()
 	defer fake.getAudioLevelMutex.RUnlock()
+	fake.getBufferFactoryMutex.RLock()
+	defer fake.getBufferFactoryMutex.RUnlock()
 	fake.getCachedDownTrackMutex.RLock()
 	defer fake.getCachedDownTrackMutex.RUnlock()
 	fake.getClientConfigurationMutex.RLock()

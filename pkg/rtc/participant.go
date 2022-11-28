@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -248,6 +249,10 @@ func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration 
 
 func (p *ParticipantImpl) GetICEConnectionType() types.ICEConnectionType {
 	return p.TransportManager.GetICEConnectionType()
+}
+
+func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
+	return p.params.Config.BufferFactory
 }
 
 // SetMetadata attaches metadata to the participant

@@ -15,7 +15,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
@@ -40,7 +39,6 @@ type MediaTrackSubscriptionsParams struct {
 	MediaTrack types.MediaTrack
 	IsRelayed  bool
 
-	BufferFactory    *buffer.Factory
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
 
@@ -110,7 +108,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack, err := sfu.NewDownTrack(
 		codecs,
 		wr,
-		t.params.BufferFactory,
+		sub.GetBufferFactory(),
 		subscriberID,
 		t.params.ReceiverConfig.PacketBufferSize,
 		LoggerWithTrack(sub.GetLogger(), trackID, t.params.IsRelayed),
