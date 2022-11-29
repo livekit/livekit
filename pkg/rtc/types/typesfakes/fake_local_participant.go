@@ -540,10 +540,11 @@ type FakeLocalParticipant struct {
 	sendConnectionQualityUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendDataPacketStub        func(*livekit.DataPacket) error
+	SendDataPacketStub        func(*livekit.DataPacket, []byte) error
 	sendDataPacketMutex       sync.RWMutex
 	sendDataPacketArgsForCall []struct {
 		arg1 *livekit.DataPacket
+		arg2 []byte
 	}
 	sendDataPacketReturns struct {
 		result1 error
@@ -3591,18 +3592,24 @@ func (fake *FakeLocalParticipant) SendConnectionQualityUpdateReturnsOnCall(i int
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendDataPacket(arg1 *livekit.DataPacket) error {
+func (fake *FakeLocalParticipant) SendDataPacket(arg1 *livekit.DataPacket, arg2 []byte) error {
+	var arg2Copy []byte
+	if arg2 != nil {
+		arg2Copy = make([]byte, len(arg2))
+		copy(arg2Copy, arg2)
+	}
 	fake.sendDataPacketMutex.Lock()
 	ret, specificReturn := fake.sendDataPacketReturnsOnCall[len(fake.sendDataPacketArgsForCall)]
 	fake.sendDataPacketArgsForCall = append(fake.sendDataPacketArgsForCall, struct {
 		arg1 *livekit.DataPacket
-	}{arg1})
+		arg2 []byte
+	}{arg1, arg2Copy})
 	stub := fake.SendDataPacketStub
 	fakeReturns := fake.sendDataPacketReturns
-	fake.recordInvocation("SendDataPacket", []interface{}{arg1})
+	fake.recordInvocation("SendDataPacket", []interface{}{arg1, arg2Copy})
 	fake.sendDataPacketMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3616,17 +3623,17 @@ func (fake *FakeLocalParticipant) SendDataPacketCallCount() int {
 	return len(fake.sendDataPacketArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendDataPacketCalls(stub func(*livekit.DataPacket) error) {
+func (fake *FakeLocalParticipant) SendDataPacketCalls(stub func(*livekit.DataPacket, []byte) error) {
 	fake.sendDataPacketMutex.Lock()
 	defer fake.sendDataPacketMutex.Unlock()
 	fake.SendDataPacketStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendDataPacketArgsForCall(i int) *livekit.DataPacket {
+func (fake *FakeLocalParticipant) SendDataPacketArgsForCall(i int) (*livekit.DataPacket, []byte) {
 	fake.sendDataPacketMutex.RLock()
 	defer fake.sendDataPacketMutex.RUnlock()
 	argsForCall := fake.sendDataPacketArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) SendDataPacketReturns(result1 error) {

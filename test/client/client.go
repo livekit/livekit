@@ -589,7 +589,12 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		},
 	}
 
-	return c.publisher.SendDataPacket(dp)
+	dpData, err := proto.Marshal(dp)
+	if err != nil {
+		return err
+	}
+
+	return c.publisher.SendDataPacket(dp, dpData)
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {

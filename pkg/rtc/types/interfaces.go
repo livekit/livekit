@@ -289,7 +289,7 @@ type LocalParticipant interface {
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
-	SendDataPacket(packet *livekit.DataPacket) error
+	SendDataPacket(packet *livekit.DataPacket, data []byte) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)

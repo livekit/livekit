@@ -129,6 +129,9 @@ type ParticipantImpl struct {
 	subscribedTo      map[livekit.ParticipantID]struct{}
 	unpublishedTracks []*livekit.TrackInfo
 
+	// stats for signal and data channel
+	dataChannelStats *telemetry.SignalAndDataStats
+
 	rttUpdatedAt time.Time
 	lastRTT      uint32
 
@@ -184,6 +187,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscriptionInProgress:    make(map[livekit.TrackID]bool),
 		subscriptionRequestsQueue: make(map[livekit.TrackID][]SubscribeRequest),
 		trackPublisherVersion:     make(map[livekit.TrackID]uint32),
+		dataChannelStats:          telemetry.NewBytesTrackStats(true, params.SID, params.Telemetry),
 		supervisor:                supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 	}
 	p.version.Store(params.InitialVersion)
@@ -601,6 +605,8 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 		p.TransportManager.Close()
 	}()
+
+	p.dataChannelStats.Report()
 	return nil
 }
 
@@ -1186,6 +1192,8 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 	if p.State() == livekit.ParticipantInfo_DISCONNECTED || !p.CanPublishData() {
 		return
 	}
+
+	p.dataChannelStats.AddBytes(uint64(len(data)), false)
 
 	dp := livekit.DataPacket{}
 	if err := proto.Unmarshal(data, &dp); err != nil {

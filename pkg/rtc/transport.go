@@ -18,7 +18,6 @@ import (
 	"github.com/pion/webrtc/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -726,12 +725,7 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 	return t.pc.WriteRTCP(pkts)
 }
 
-func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket) error {
-	data, err := proto.Marshal(dp)
-	if err != nil {
-		return err
-	}
-
+func (t *PCTransport) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
 	var dc *webrtc.DataChannel
 	t.lock.RLock()
 	if dp.Kind == livekit.DataPacket_RELIABLE {
