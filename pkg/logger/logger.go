@@ -18,6 +18,8 @@ var (
 			"failed to send packet: io: read/write on closed pipe",
 			"Ignoring remote candidate with tcpType active",
 			"discard message from",
+			"Failed to discover mDNS candidate",
+			"Failed to read from candidate tcp",
 		},
 		"pc": {
 			"Failed to accept RTCP stream is already closed",
