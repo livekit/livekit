@@ -772,6 +772,7 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 
 func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacket) {
 	dest := dp.GetUser().GetDestinationSids()
+	var dpData []byte
 
 	for _, op := range r.GetParticipants() {
 		if op.State() != livekit.ParticipantInfo_ACTIVE {
@@ -792,7 +793,16 @@ func (r *Room) onDataPacket(source types.LocalParticipant, dp *livekit.DataPacke
 				continue
 			}
 		}
-		err := op.SendDataPacket(dp)
+		if dpData == nil {
+			var err error
+			dpData, err = proto.Marshal(dp)
+			if err != nil {
+				r.Logger.Errorw("failed to marshal data packet", err)
+				return
+			}
+		}
+
+		err := op.SendDataPacket(dp, dpData)
 		if err != nil {
 			r.Logger.Infow("send data packet error", "error", err, "participant", op.Identity())
 		}
@@ -879,9 +889,18 @@ func (r *Room) sendActiveSpeakers(speakers []*livekit.SpeakerInfo) {
 		},
 	}
 
+	var dpData []byte
 	for _, p := range r.GetParticipants() {
 		if p.ProtocolVersion().HandlesDataPackets() && !p.ProtocolVersion().SupportsSpeakerChanged() {
-			_ = p.SendDataPacket(dp)
+			if dpData == nil {
+				var err error
+				dpData, err = proto.Marshal(dp)
+				if err != nil {
+					r.Logger.Errorw("failed to marshal ActiveSpeaker data packet", err)
+					return
+				}
+			}
+			_ = p.SendDataPacket(dp, dpData)
 		}
 	}
 }

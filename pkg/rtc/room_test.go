@@ -554,7 +554,8 @@ func TestDataChannel(t *testing.T) {
 				continue
 			}
 			require.Equal(t, 1, fp.SendDataPacketCallCount())
-			require.Equal(t, packet.Value, fp.SendDataPacketArgsForCall(0).Value)
+			dp, _ := fp.SendDataPacketArgsForCall(0)
+			require.Equal(t, packet.Value, dp.Value)
 		}
 	})
 
@@ -585,7 +586,8 @@ func TestDataChannel(t *testing.T) {
 			}
 		}
 		require.Equal(t, 1, p1.SendDataPacketCallCount())
-		require.Equal(t, packet.Value, p1.SendDataPacketArgsForCall(0).Value)
+		dp, _ := p1.SendDataPacketArgsForCall(0)
+		require.Equal(t, packet.Value, dp.Value)
 	})
 
 	t.Run("publishing disallowed", func(t *testing.T) {

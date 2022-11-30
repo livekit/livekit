@@ -67,7 +67,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressRPCClient := getIngressRPCClient(rpc)
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, ingressRPCClient, ingressStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode)
+	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
 	clientConfigurationManager := createClientConfiguration()
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher)
 	if err != nil {

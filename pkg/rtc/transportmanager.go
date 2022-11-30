@@ -284,9 +284,9 @@ func (t *TransportManager) OnDataMessage(f func(kind livekit.DataPacket_Kind, da
 	t.publisher.OnDataPacket(f)
 }
 
-func (t *TransportManager) SendDataPacket(dp *livekit.DataPacket) error {
+func (t *TransportManager) SendDataPacket(dp *livekit.DataPacket, data []byte) error {
 	// downstream data is sent via primary peer connection
-	return t.getTransport(true).SendDataPacket(dp)
+	return t.getTransport(true).SendDataPacket(dp, data)
 }
 
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
