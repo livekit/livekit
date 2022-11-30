@@ -215,9 +215,12 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
 	}
 
-	var signalStats *telemetry.SignalAndDataStats
+	var signalStats *telemetry.BytesTrackStats
 	if pi.ID != "" {
-		signalStats = telemetry.NewBytesTrackStats(false, pi.ID, s.telemetry)
+		signalStats = telemetry.NewBytesTrackStats(
+			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
+			pi.ID,
+			s.telemetry)
 	}
 
 	pLogger := rtc.LoggerWithParticipant(
@@ -288,7 +291,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				if pi.ID == "" && initialResponse.GetJoin() != nil {
 					pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
-					signalStats = telemetry.NewBytesTrackStats(false, pi.ID, s.telemetry)
+					signalStats = telemetry.NewBytesTrackStats(
+						telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeSignal, pi.ID),
+						pi.ID,
+						s.telemetry)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {

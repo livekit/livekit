@@ -129,8 +129,7 @@ type ParticipantImpl struct {
 	subscribedTo      map[livekit.ParticipantID]struct{}
 	unpublishedTracks []*livekit.TrackInfo
 
-	// stats for signal and data channel
-	dataChannelStats *telemetry.SignalAndDataStats
+	dataChannelStats *telemetry.BytesTrackStats
 
 	rttUpdatedAt time.Time
 	lastRTT      uint32
@@ -187,8 +186,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		subscriptionInProgress:    make(map[livekit.TrackID]bool),
 		subscriptionRequestsQueue: make(map[livekit.TrackID][]SubscribeRequest),
 		trackPublisherVersion:     make(map[livekit.TrackID]uint32),
-		dataChannelStats:          telemetry.NewBytesTrackStats(true, params.SID, params.Telemetry),
-		supervisor:                supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
+		dataChannelStats: telemetry.NewBytesTrackStats(
+			telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, params.SID),
+			params.SID,
+			params.Telemetry),
+		supervisor: supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger}),
 	}
 	p.version.Store(params.InitialVersion)
 	p.migrateState.Store(types.MigrateStateInit)

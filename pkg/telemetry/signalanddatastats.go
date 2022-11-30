@@ -12,8 +12,15 @@ import (
 
 const statsReportInterval = 10 * time.Second
 
+type BytesTrackType string
+
+const (
+	BytesTrackTypeData   BytesTrackType = "DT"
+	BytesTrackTypeSignal BytesTrackType = "SG"
+)
+
 // stats for signal and data channel
-type SignalAndDataStats struct {
+type BytesTrackStats struct {
 	trackID         livekit.TrackID
 	pID             livekit.ParticipantID
 	send, recv      atomic.Uint64
@@ -21,15 +28,8 @@ type SignalAndDataStats struct {
 	telemetry       TelemetryService
 }
 
-func NewBytesTrackStats(datatrack bool, pID livekit.ParticipantID, telemetry TelemetryService) *SignalAndDataStats {
-	var trackID livekit.TrackID
-	if datatrack {
-		trackID = dataTrackIDForParticipantID(pID)
-	} else {
-		trackID = signalTrackIDForRoomID(pID)
-	}
-
-	s := &SignalAndDataStats{
+func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
+	s := &BytesTrackStats{
 		trackID:   trackID,
 		pID:       pID,
 		telemetry: telemetry,
@@ -39,7 +39,7 @@ func NewBytesTrackStats(datatrack bool, pID livekit.ParticipantID, telemetry Tel
 	return s
 }
 
-func (s *SignalAndDataStats) AddBytes(bytes uint64, isSend bool) {
+func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 	if isSend {
 		s.send.Add(bytes)
 	} else {
@@ -49,15 +49,15 @@ func (s *SignalAndDataStats) AddBytes(bytes uint64, isSend bool) {
 	s.report(false)
 }
 
-func (s *SignalAndDataStats) Report() {
+func (s *BytesTrackStats) Report() {
 	s.report(true)
 }
 
-func (p *SignalAndDataStats) report(force bool) {
+func (p *BytesTrackStats) report(force bool) {
 	now := time.Now()
 	if !force {
 		lr := p.lastStatsReport.Load().(*time.Time)
-		if lr.Add(statsReportInterval).After(now) {
+		if time.Since(*lr) < statsReportInterval {
 			return
 		}
 
@@ -85,10 +85,6 @@ func (p *SignalAndDataStats) report(force bool) {
 	}
 }
 
-func dataTrackIDForParticipantID(participantID livekit.ParticipantID) livekit.TrackID {
-	return livekit.TrackID(fmt.Sprintf("%s_DT%s", utils.TrackPrefix, participantID))
-}
-
-func signalTrackIDForRoomID(participantID livekit.ParticipantID) livekit.TrackID {
-	return livekit.TrackID(fmt.Sprintf("%s_SG%s", utils.TrackPrefix, participantID))
+func BytesTrackIDForParticipantID(typ BytesTrackType, participantID livekit.ParticipantID) livekit.TrackID {
+	return livekit.TrackID(fmt.Sprintf("%s_%s%s", utils.TrackPrefix, string(typ), participantID))
 }
