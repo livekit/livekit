@@ -28,7 +28,7 @@ var (
 	promSysDroppedPacketPctGauge prometheus.Gauge
 )
 
-func Init(nodeID string) {
+func Init(nodeID string, nodeType livekit.NodeType) {
 	if initialized.Swap(true) {
 		return
 	}
@@ -38,7 +38,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "messages",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status"},
 	)
@@ -48,7 +48,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "service_operation",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
 		[]string{"type", "status", "error_type"},
 	)
@@ -58,7 +58,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "packet_total",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level packet count. Count starts at 0 when service is first started.",
 		},
 		[]string{"type"},
@@ -69,7 +69,7 @@ func Init(nodeID string) {
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "dropped_packets",
-			ConstLabels: prometheus.Labels{"node_id": nodeID},
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Help:        "System level dropped outgoing packet percentage.",
 		},
 	)
@@ -81,8 +81,8 @@ func Init(nodeID string) {
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
-	initPacketStats(nodeID)
-	initRoomStats(nodeID)
+	initPacketStats(nodeID, nodeType)
+	initRoomStats(nodeID, nodeType)
 }
 
 func getMemoryStats() (memoryLoad float32, err error) {

@@ -3,6 +3,8 @@ package prometheus
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 type Direction string
@@ -35,48 +37,48 @@ var (
 	promConnections     *prometheus.GaugeVec
 )
 
-func initPacketStats(nodeID string) {
+func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	promPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "packet",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promPacketLabels)
 	promPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "packet",
 		Name:        "bytes",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promPacketLabels)
 	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "nack",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
 	promPliTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "pli",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
 	promFirTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "fir",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
 	promParticipantJoin = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "participant_join",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, nil)
 	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "connection",
 		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID},
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
 
 	prometheus.MustRegister(promPacketTotal)
