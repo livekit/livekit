@@ -15,7 +15,7 @@ require (
 	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-version v1.6.0
-	github.com/hashicorp/golang-lru v0.5.4
+	github.com/hashicorp/golang-lru v0.6.0
 	github.com/livekit/mageutil v0.0.0-20221002073820-d9198083cfdc
 	github.com/livekit/mediatransportutil v0.0.0-20221007030528-7440725c362b
 	github.com/livekit/protocol v1.2.3
