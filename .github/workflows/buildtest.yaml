@@ -24,7 +24,7 @@ jobs:
           go-version: '>=1.17'
 
       - name: Set up gotestfmt
-        run: go install github.com/GoTestTools/gotestfmt/v2/cmd/gotestfmt@2.4.1
+        run: go install github.com/GoTestTools/gotestfmt/v2/cmd/gotestfmt@v2.4.1
 
       - name: Replace mutexes
         run: |
