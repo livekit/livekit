@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	logKey = struct{}{}
+	loggerKey = struct{}{}
 )
 
 // logging handling inspired by https://github.com/bakins/twirpzap
@@ -37,7 +37,7 @@ func TwirpLogger(logger logger.Logger) *twirp.ServerHooks {
 		New: func() interface{} {
 			return &requestLogger{
 				logger:     logger,
-				fieldsOrig: make([]interface{}, 0, 20),
+				fieldsOrig: make([]interface{}, 0, 30),
 			}
 		},
 	}
@@ -63,6 +63,15 @@ type requestLogger struct {
 	startedAt  time.Time
 }
 
+func AppendLogFields(ctx context.Context, fields ...interface{}) {
+	r, ok := ctx.Value(loggerKey).(*requestLogger)
+	if !ok || r == nil {
+		return
+	}
+
+	r.fields = append(r.fields, fields...)
+}
+
 func requestReceived(ctx context.Context, requestLoggerPool *sync.Pool) (context.Context, error) {
 	r := requestLoggerPool.Get().(*requestLogger)
 	r.startedAt = time.Now()
@@ -74,13 +83,13 @@ func requestReceived(ctx context.Context, requestLoggerPool *sync.Pool) (context
 		r.fields = append(r.fields, "service", svc)
 	}
 
-	ctx = context.WithValue(ctx, logKey, r)
+	ctx = context.WithValue(ctx, loggerKey, r)
 	return ctx, nil
 }
 
 func responseRouted(ctx context.Context) (context.Context, error) {
 	if meth, ok := twirp.MethodName(ctx); ok {
-		l, ok := ctx.Value(logKey).(*requestLogger)
+		l, ok := ctx.Value(loggerKey).(*requestLogger)
 		if !ok || l == nil {
 			return ctx, nil
 		}
@@ -92,7 +101,7 @@ func responseRouted(ctx context.Context) (context.Context, error) {
 }
 
 func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
-	r, ok := ctx.Value(logKey).(*requestLogger)
+	r, ok := ctx.Value(loggerKey).(*requestLogger)
 	if !ok || r == nil {
 		return
 	}
@@ -106,7 +115,7 @@ func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
 		r.fields = append(r.fields, "error", r.error.Msg())
 		r.fields = append(r.fields, "code", r.error.Code())
 	}
-	
+
 	serviceMethod := "API " + r.service + "." + r.method
 	r.logger.Infow(serviceMethod, r.fields...)
 
@@ -117,7 +126,7 @@ func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
 }
 
 func errorReceived(ctx context.Context, e twirp.Error) context.Context {
-	r, ok := ctx.Value(logKey).(*requestLogger)
+	r, ok := ctx.Value(loggerKey).(*requestLogger)
 	if !ok || r == nil {
 		return ctx
 	}
