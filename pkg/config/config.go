@@ -38,6 +38,7 @@ type Config struct {
 	BindAddresses  []string                 `yaml:"bind_addresses"`
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
+	API            APIConfig                `yaml:"api,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          AudioConfig              `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
@@ -85,6 +86,11 @@ type RTCConfig struct {
 
 	// for testing, disable UDP
 	ForceTCP bool `yaml:"force_tcp,omitempty"`
+}
+
+type APIConfig struct {
+	// amount of time to wait for API to execute, default 2s
+	ExecutionTimeout int `yaml:"execution_timeout,omitempty"`
 }
 
 type TURNServer struct {
@@ -221,6 +227,9 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 				AllowPause: false,
 				ProbeMode:  CongestionControlProbeModePadding,
 			},
+		},
+		API: APIConfig{
+			ExecutionTimeout: 2,
 		},
 		Audio: AudioConfig{
 			ActiveLevel:     35, // -35dBov

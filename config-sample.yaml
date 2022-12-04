@@ -80,7 +80,7 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
-  # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.  
+  # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.
   # enable_loopback_candidate: true
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
   # # both inclusion and exclusion filters can be used together. If neither is defined (default), all interfaces on the machine will be used.
@@ -143,6 +143,11 @@ keys:
 #   enable_remote_unmute: true
 #   # limit size of room and participant's metadata, 0 for no limit
 #   max_metadata_size: 0
+
+# api:
+#   # amount of time in seconds to allow API to execute a API service request
+#   # this currently only applies to RoomService
+#   execution_timeout: 2
 
 # Webhooks
 # when configured, LiveKit notifies your URL handler with room events

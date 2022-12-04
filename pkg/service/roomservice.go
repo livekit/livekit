@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	executionTimeout = 2 * time.Second
-	checkInterval    = 50 * time.Millisecond
+	checkInterval = 50 * time.Millisecond
 )
 
 // A rooms service that supports a single node
 type RoomService struct {
-	conf           config.RoomConfig
+	roomConf       config.RoomConfig
+	apiConf        config.APIConfig
 	router         routing.MessageRouter
 	roomAllocator  RoomAllocator
 	roomStore      ServiceStore
@@ -31,15 +31,16 @@ type RoomService struct {
 }
 
 func NewRoomService(
-	conf config.RoomConfig,
+	roomConf config.RoomConfig,
+	apiConf config.APIConfig,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
 	egressLauncher rtc.EgressLauncher,
 ) (svc *RoomService, err error) {
-
 	svc = &RoomService{
-		conf:           conf,
+		roomConf:       roomConf,
+		apiConf:        apiConf,
 		router:         router,
 		roomAllocator:  roomAllocator,
 		roomStore:      serviceStore,
@@ -74,7 +75,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	source.Close()
 
 	// ensure it's created correctly
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), false)
 		if err != nil {
 			return ErrOperationFailed
@@ -137,7 +138,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	// we should not return until when the room is confirmed deleted
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err == nil {
 			return ErrOperationFailed
@@ -196,7 +197,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, err
 	}
 
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		_, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err == ErrParticipantNotFound {
 			return nil
@@ -229,7 +230,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 	}
 
 	var track *livekit.TrackInfo
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		p, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
 			return err
@@ -260,8 +261,9 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
-	if s.conf.MaxMetadataSize > 0 && len(req.Metadata) > int(s.conf.MaxMetadataSize) {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.conf.MaxMetadataSize)))
+	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
+	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
 
 	err := s.writeParticipantMessage(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity), &livekit.RTCNodeMessage{
@@ -274,7 +276,7 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 	}
 
 	var participant *livekit.ParticipantInfo
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		participant, err = s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
 			return err
@@ -333,8 +335,9 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
-	if s.conf.MaxMetadataSize > 0 && len(req.Metadata) > int(s.conf.MaxMetadataSize) {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.conf.MaxMetadataSize)))
+	maxMetadataSize := int(s.roomConf.MaxMetadataSize)
+	if maxMetadataSize > 0 && len(req.Metadata) > maxMetadataSize {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(maxMetadataSize))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
@@ -365,7 +368,7 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, err
 	}
 
-	err = confirmExecution(func() error {
+	err = s.confirmExecution(func() error {
 		room, _, err = s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
 		if err != nil {
 			return err
@@ -390,8 +393,8 @@ func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.
 	return s.router.WriteParticipantRTC(ctx, room, identity, msg)
 }
 
-func confirmExecution(f func() error) error {
-	expired := time.After(executionTimeout)
+func (s *RoomService) confirmExecution(f func() error) error {
+	expired := time.After(time.Duration(s.apiConf.ExecutionTimeout) * time.Second)
 	var err error
 	for {
 		select {
