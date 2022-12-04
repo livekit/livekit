@@ -16,10 +16,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const (
-	checkInterval = 50 * time.Millisecond
-)
-
 // A rooms service that supports a single node
 type RoomService struct {
 	roomConf       config.RoomConfig
@@ -394,7 +390,7 @@ func (s *RoomService) writeParticipantMessage(ctx context.Context, room livekit.
 }
 
 func (s *RoomService) confirmExecution(f func() error) error {
-	expired := time.After(time.Duration(s.apiConf.ExecutionTimeout) * time.Second)
+	expired := time.After(s.apiConf.ExecutionTimeout)
 	var err error
 	for {
 		select {
@@ -405,7 +401,7 @@ func (s *RoomService) confirmExecution(f func() error) error {
 			if err == nil {
 				return nil
 			}
-			time.Sleep(checkInterval)
+			time.Sleep(s.apiConf.CheckInterval)
 		}
 	}
 }

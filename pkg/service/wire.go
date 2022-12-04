@@ -37,7 +37,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createClientConfiguration,
 		routing.CreateRouter,
 		getRoomConf,
-		getAPIConf,
+		config.DefaultAPIConfig,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -159,10 +159,6 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getRoomConf(config *config.Config) config.RoomConfig {
 	return config.Room
-}
-
-func getAPIConf(config *config.Config) config.APIConfig {
-	return config.API
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {

@@ -33,7 +33,7 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	roomConfig := getRoomConf(conf)
-	apiConfig := getAPIConf(conf)
+	apiConfig := config.DefaultAPIConfig()
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -185,10 +185,6 @@ func createClientConfiguration() clientconfiguration.ClientConfigurationManager 
 
 func getRoomConf(config2 *config.Config) config.RoomConfig {
 	return config2.Room
-}
-
-func getAPIConf(config2 *config.Config) config.APIConfig {
-	return config2.API
 }
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
