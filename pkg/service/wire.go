@@ -37,6 +37,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createClientConfiguration,
 		routing.CreateRouter,
 		getRoomConf,
+		config.DefaultAPIConfig,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,

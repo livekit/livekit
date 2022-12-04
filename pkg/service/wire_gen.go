@@ -33,6 +33,7 @@ import (
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	roomConfig := getRoomConf(conf)
+	apiConfig := config.DefaultAPIConfig()
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
 	telemetryService := telemetry.NewTelemetryService(notifier, analyticsService)
 	rtcEgressLauncher := NewEgressLauncher(rpcClient, egressStore, telemetryService)
-	roomService, err := NewRoomService(roomConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
+	roomService, err := NewRoomService(roomConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher)
 	if err != nil {
 		return nil, err
 	}

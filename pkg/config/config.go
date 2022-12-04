@@ -199,6 +199,22 @@ type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url"`
 }
 
+// not exposed to YAML
+type APIConfig struct {
+	// amount of time to wait for API to execute, default 2s
+	ExecutionTimeout time.Duration
+
+	// amount of time to wait before checking for operation complete
+	CheckInterval time.Duration
+}
+
+func DefaultAPIConfig() APIConfig {
+	return APIConfig{
+		ExecutionTimeout: 2 * time.Second,
+		CheckInterval:    100 * time.Millisecond,
+	}
+}
+
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
 	// start with defaults
 	conf := &Config{
