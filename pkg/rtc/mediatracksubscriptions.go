@@ -139,7 +139,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		if reusingTransceiver.Load() {
 			downTrack.SeedState(dtState)
 		}
-		if err = wr.AddDownTrack(downTrack); err != nil {
+		if err = wr.AddDownTrack(downTrack); err != nil && err != sfu.ErrReceiverClosed {
 			sub.GetLogger().Errorw(
 				"could not add down track", err,
 				"publisher", subTrack.PublisherIdentity(),
