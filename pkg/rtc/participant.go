@@ -261,6 +261,27 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
+// SetName attaches name to the participant
+func (p *ParticipantImpl) SetName(name string) {
+	p.lock.Lock()
+	changed := p.grants.Name != name
+	p.grants.Name = name
+	onParticipantUpdate := p.onParticipantUpdate
+	onClaimsChanged := p.onClaimsChanged
+	p.lock.Unlock()
+
+	if !changed {
+		return
+	}
+
+	if onParticipantUpdate != nil {
+		onParticipantUpdate(p)
+	}
+	if onClaimsChanged != nil {
+		onClaimsChanged(p)
+	}
+}
+
 // SetMetadata attaches metadata to the participant
 func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.lock.Lock()
@@ -346,7 +367,7 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	info := &livekit.ParticipantInfo{
 		Sid:         string(p.params.SID),
 		Identity:    string(p.params.Identity),
-		Name:        string(p.params.Name),
+		Name:        p.grants.Name,
 		State:       p.State(),
 		JoinedAt:    p.ConnectedAt().Unix(),
 		Version:     p.version.Inc(),

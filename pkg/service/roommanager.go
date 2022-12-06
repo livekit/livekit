@@ -553,6 +553,9 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomName livekit.Roo
 		}
 		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
 			"permission", rm.UpdateParticipant.Permission)
+		if rm.UpdateParticipant.Name != "" {
+			participant.SetName(rm.UpdateParticipant.Name)
+		}
 		if rm.UpdateParticipant.Metadata != "" {
 			participant.SetMetadata(rm.UpdateParticipant.Metadata)
 		}
